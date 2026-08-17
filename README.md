@@ -138,7 +138,8 @@ flutter run
 | `XianYu-Music-Website` | 官网，含隐藏后台入口 |
 | `XY-Music-Mobile` | RawS 原生安卓端（Kotlin + C++），算法参考来源 |
 
-## 设计稿
+## 文档
 
+- IDEA 构建指南：[`docs/build-guide.md`](docs/build-guide.md)
 - 移动主页高保真稿：[`docs/mobile-home-mockup.html`](docs/mobile-home-mockup.html)
 - 移动主页设计说明：[`docs/mobile-home-design.md`](docs/mobile-home-design.md)
