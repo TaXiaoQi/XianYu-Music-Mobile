@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弦予音乐 · 移动主页设计稿</title>
+<style>
+  :root{
+    --red:#EC4141; --red-soft:rgba(236,65,65,.14); --red-deep:#b92f2f;
+    --bg:#262626; --bg-1:#1f1f1f; --bg-2:#2c2c2c; --bg-3:#333333;
+    --glass:rgba(38,38,38,.55); --glass-strong:rgba(48,48,48,.72);
+    --border:rgba(255,255,255,.08); --border-2:rgba(255,255,255,.05);
+    --text:#f2f2f4; --text-2:rgba(242,242,244,.62); --text-3:rgba(242,242,244,.40);
+    --shadow:0 8px 30px rgba(0,0,0,.45);
+    --r-card:13px; --r-lg:16px; --r-xl:24px; --r-full:999px;
+    --font:Inter,ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:var(--font); background:#141414; color:var(--text);
+    display:flex; align-items:center; justify-content:center; gap:48px;
+    flex-wrap:wrap; padding:32px; min-height:100vh;
+    background-image:
+      radial-gradient(900px 600px at 18% 8%, rgba(236,65,65,.16), transparent 60%),
+      radial-gradient(800px 600px at 88% 92%, rgba(120,90,220,.14), transparent 60%),
+      radial-gradient(600px 500px at 70% 18%, rgba(60,160,200,.10), transparent 60%);
+  }
+
+  /* ---- device ---- */
+  .device{
+    width:390px; height:844px; background:var(--bg);
+    border-radius:46px; position:relative; overflow:hidden;
+    box-shadow:0 0 0 11px #0c0c0c, 0 0 0 13px #2a2a2a, var(--shadow);
+  }
+  .screen{ position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; background:var(--bg);}
+  .screen::-webkit-scrollbar{display:none}
+  .notch{ position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    width:118px; height:30px; background:#000; border-radius:18px; z-index:30}
+
+  /* ambient flow background (static) */
+  .amb{ position:absolute; inset:0; z-index:0; opacity:.55; pointer-events:none}
+  .amb::before, .amb::after{ content:""; position:absolute; border-radius:50%; filter:blur(70px)}
+  .amb::before{ width:300px; height:300px; top:-60px; right:-40px;
+    background:radial-gradient(circle, rgba(236,65,65,.5), transparent 65%)}
+  .amb::after{ width:340px; height:340px; bottom:120px; left:-90px;
+    background:radial-gradient(circle, rgba(90,120,220,.36), transparent 65%)}
+
+  .pad{ position:relative; z-index:1; padding:0 18px 140px}
+
+  /* status bar */
+  .status{ height:54px; display:flex; align-items:flex-end; justify-content:space-between;
+    padding:0 22px 6px; font-size:14px; font-weight:600}
+  .status .icons{ display:flex; gap:6px; align-items:center}
+  .status .icons span{ width:5px; height:5px; border-radius:2px; background:var(--text)}
+
+  /* top header */
+  .topbar{ height:48px; display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .icon-btn{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center;
+    justify-content:center; background:rgba(255,255,255,.06); color:var(--text);
+    border:1px solid var(--border); font-size:18px; cursor:pointer; transition:.18s}
+  .icon-btn:hover{ background:rgba(255,255,255,.12)}
+  .brand{ font-size:18px; font-weight:700; letter-spacing:.5px}
+  .brand b{ color:var(--red)}
+  .top-right{ display:flex; gap:8px}
+
+  /* search */
+  .search{ height:44px; border-radius:var(--r-full); display:flex; align-items:center; gap:10px;
+    padding:0 18px; background:var(--glass); backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%); border:1px solid var(--border);
+    color:var(--text-2); font-size:14px; margin-bottom:20px}
+  .search svg{ flex:0 0 auto; opacity:.7}
+
+  /* cover carousel */
+  .carousel{ position:relative; height:312px; border-radius:var(--r-xl); overflow:hidden;
+    margin-bottom:22px; border:1px solid var(--red); box-shadow:0 14px 40px rgba(236,65,65,.18)}
+  .covers{ display:flex; height:100%; transition:transform .5s cubic-bezier(.22,1,.36,1)}
+  .covers .c{ flex:0 0 100%; display:flex; flex-direction:column; justify-content:flex-end;
+    padding:22px; position:relative}
+  .c .art{ position:absolute; inset:0; z-index:0}
+  .c .scrim{ position:absolute; inset:0; z-index:1;
+    background:linear-gradient(180deg, transparent 38%, rgba(0,0,0,.72) 100%)}
+  .c .meta{ position:relative; z-index:2}
+  .badge{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700;
+    color:#fff; background:var(--red); padding:4px 10px; border-radius:var(--r-full); margin-bottom:10px}
+  .badge .eq{ display:inline-flex; gap:2px; align-items:flex-end; height:10px}
+  .badge .eq i{ width:2.5px; background:#fff; border-radius:2px; animation:eq 1s ease-in-out infinite}
+  .badge .eq i:nth-child(1){ height:5px; animation-delay:0s}
+  .badge .eq i:nth-child(2){ height:9px; animation-delay:.2s}
+  .badge .eq i:nth-child(3){ height:6px; animation-delay:.4s}
+  @keyframes eq{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+  .c .title{ font-size:22px; font-weight:700; margin-bottom:4px; text-shadow:0 2px 8px rgba(0,0,0,.5)}
+  .c .artist{ font-size:14px; color:rgba(255,255,255,.78)}
+  .dots{ position:absolute; bottom:14px; right:18px; z-index:3; display:flex; gap:6px}
+  .dots i{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.4); transition:.2s}
+  .dots i.on{ width:18px; border-radius:6px; background:var(--red)}
+
+  /* cover art gradients (placeholder album art) */
+  .art.a1{ background:linear-gradient(135deg,#EC4141,#ff8a5c 60%,#ffd06b)}
+  .art.a2{ background:linear-gradient(135deg,#3a6cf5,#9b6bff 60%,#e36ff5)}
+  .art.a3{ background:linear-gradient(135deg,#12b6a4,#3a6cf5 65%,#9b6bff)}
+
+  /* section title */
+  .sec{ display:flex; align-items:center; justify-content:space-between; margin:6px 2px 14px}
+  .sec h2{ font-size:21px; font-weight:700; letter-spacing:.3px}
+  .sec .more{ font-size:13px; color:var(--text-2); display:flex; align-items:center; gap:3px}
+
+  /* library grid */
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:24px}
+  .tile{ height:96px; border-radius:var(--r-card); position:relative; overflow:hidden;
+    padding:14px; display:flex; flex-direction:column; justify-content:space-between;
+    background:var(--bg-2); border:1px solid var(--border); cursor:pointer; transition:.22s}
+  .tile:hover{ transform:translateY(-2px); border-color:rgba(236,65,65,.4)}
+  .tile .ic{ width:34px; height:34px; border-radius:10px; display:flex; align-items:center;
+    justify-content:center; color:#fff; font-size:16px}
+  .tile .nm{ font-size:15px; font-weight:600}
+  .tile .sub{ font-size:11px; color:var(--text-3)}
+  .tile.g1 .ic{ background:linear-gradient(135deg,#EC4141,#ff6b6b)}
+  .tile.g2 .ic{ background:linear-gradient(135deg,#5b8def,#7c6bff)}
+  .tile.g3 .ic{ background:linear-gradient(135deg,#2ec5a6,#5b8def)}
+  .tile.g4 .ic{ background:linear-gradient(135deg,#ffb347,#ff5c8a)}
+  .tile.g5 .ic{ background:linear-gradient(135deg,#a06bff,#ff5c8a)}
+  .tile.g6 .ic{ background:linear-gradient(135deg,#3ac2a6,#ffb347)}
+
+  /* most played */
+  .list{ display:flex; flex-direction:column; gap:8px; margin-bottom:24px}
+  .row{ height:62px; border-radius:var(--r-card); display:flex; align-items:center; gap:12px;
+    padding:0 12px; background:var(--glass); backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px); border:1px solid var(--border); transition:.18s; cursor:pointer}
+  .row:hover{ background:rgba(255,255,255,.08)}
+  .row .cv{ width:42px; height:42px; border-radius:10px; flex:0 0 auto}
+  .row .info{ flex:1; min-width:0}
+  .row .info .t{ font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .row .info .s{ font-size:12px; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .row .cnt{ font-size:12px; color:var(--text-3); font-variant-numeric:tabular-nums}
+  .row .pl{ width:34px; height:34px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center;
+    justify-content:center; color:var(--red); background:var(--red-soft); font-size:14px}
+  .cv.r1{ background:linear-gradient(135deg,#EC4141,#ffd06b)}
+  .cv.r2{ background:linear-gradient(135deg,#3a6cf5,#e36ff5)}
+  .cv.r3{ background:linear-gradient(135deg,#2ec5a6,#3a6cf5)}
+
+  /* ---- mini player (frosted, floating) ---- */
+  .mini{ position:absolute; left:14px; right:14px; bottom:96px; height:58px; border-radius:var(--r-full);
+    display:flex; align-items:center; gap:12px; padding:6px 10px 6px 6px;
+    background:var(--glass-strong); backdrop-filter:blur(22px) saturate(150%);
+    -webkit-backdrop-filter:blur(22px) saturate(150%); border:1px solid var(--border);
+    box-shadow:0 8px 26px rgba(0,0,0,.45); z-index:20}
+  .mini .disc{ width:46px; height:46px; border-radius:50%; flex:0 0 auto; position:relative;
+    background:conic-gradient(from -90deg, var(--red) 0 62%, rgba(255,255,255,.12) 62% 100%);
+    padding:3px}
+  .mini .disc .core{ width:100%; height:100%; border-radius:50%; background:linear-gradient(135deg,#EC4141,#ff8a5c);
+    animation:spin 8s linear infinite}
+  .mini.paused .disc .core{ animation-play-state:paused}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .mini .info{ flex:1; min-width:0}
+  .mini .info .t{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .mini .info .s{ font-size:11px; color:var(--text-2)}
+  .mini .ctrl{ display:flex; align-items:center; gap:2px; flex:0 0 auto}
+  .mini .ctrl .b{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center;
+    justify-content:center; color:var(--text); font-size:16px; cursor:pointer; transition:.15s}
+  .mini .ctrl .b.play{ color:var(--red); font-size:20px}
+  .mini .ctrl .b:active{ transform:scale(.9)}
+
+  /* ---- bottom nav (liquid glass capsule) ---- */
+  .nav{ position:absolute; left:18px; right:18px; bottom:18px; height:60px; border-radius:var(--r-full);
+    display:flex; align-items:center; justify-content:space-around; padding:0 6px;
+    background:var(--glass-strong); backdrop-filter:blur(22px) saturate(150%);
+    -webkit-backdrop-filter:blur(22px) saturate(150%); border:1px solid var(--border);
+    box-shadow:0 8px 26px rgba(0,0,0,.4); z-index:20}
+  .nav .tab{ display:flex; flex-direction:column; align-items:center; gap:3px; flex:1;
+    color:var(--text-3); font-size:10px; font-weight:600; cursor:pointer; transition:.18s; position:relative}
+  .nav .tab svg{ width:22px; height:22px}
+  .nav .tab.on{ color:var(--red)}
+  .nav .tab.on::after{ content:""; position:absolute; bottom:-6px; width:4px; height:4px; border-radius:50%; background:var(--red)}
+
+  /* annotations panel */
+  .notes{ width:300px; color:var(--text)}
+  .notes h3{ font-size:16px; font-weight:700; margin-bottom:14px}
+  .notes .item{ display:flex; gap:12px; margin-bottom:18px}
+  .notes .n{ width:26px; height:26px; border-radius:8px; flex:0 0 auto; display:flex; align-items:center;
+    justify-content:center; font-size:13px; font-weight:700; color:#fff; background:var(--red)}
+  .notes .item .tx .t{ font-size:14px; font-weight:600; margin-bottom:2px}
+  .notes .item .tx .d{ font-size:12.5px; color:var(--text-2); line-height:1.6}
+  .notes .meta{ margin-top:24px; padding-top:16px; border-top:1px solid var(--border); font-size:12px; color:var(--text-3)}
+  .pill{ display:inline-block; font-size:11px; padding:3px 9px; border-radius:var(--r-full);
+    background:var(--red-soft); color:var(--red); font-weight:600; margin-right:6px}
+  @media (max-width:880px){ .notes{display:none} }
+</style>
+</head>
+<body>
+
+  <div class="device">
+    <div class="notch"></div>
+    <div class="screen" id="screen">
+      <div class="amb"></div>
+
+      <div class="pad">
+        <!-- status -->
+        <div class="status">
+          <span>9:41</span>
+          <div class="icons"><span></span><span></span><span></span><span></span></div>
+        </div>
+
+        <!-- top header -->
+        <div class="topbar">
+          <div class="icon-btn">☰</div>
+          <div class="brand">弦予<b>音乐</b></div>
+          <div class="top-right">
+            <div class="icon-btn" title="流光背景">◐</div>
+            <div class="icon-btn" title="设置">⚙</div>
+          </div>
+        </div>
+
+        <!-- search -->
+        <div class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          搜索歌曲、歌手、专辑
+        </div>
+
+        <!-- cover carousel -->
+        <div class="carousel">
+          <div class="covers" id="covers">
+            <div class="c">
+              <div class="art a1"></div>
+              <div class="scrim"></div>
+              <div class="meta">
+                <span class="badge"><span class="eq"><i></i><i></i><i></i></span>播放中</span>
+                <div class="title">晚风心里吹</div>
+                <div class="artist">弦予 · 单曲</div>
+              </div>
+            </div>
+            <div class="c">
+              <div class="art a2"></div>
+              <div class="scrim"></div>
+              <div class="meta">
+                <span class="badge"><span class="eq"><i></i><i></i><i></i></span>播放中</span>
+                <div class="title">星河入梦</div>
+                <div class="artist">弦予 · 专辑</div>
+              </div>
+            </div>
+            <div class="c">
+              <div class="art a3"></div>
+              <div class="scrim"></div>
+              <div class="meta">
+                <span class="badge"><span class="eq"><i></i><i></i><i></i></span>播放中</span>
+                <div class="title">雨后初晴</div>
+                <div class="artist">弦予 · 单曲</div>
+              </div>
+            </div>
+          </div>
+          <div class="dots" id="dots">
+            <i class="on"></i><i></i><i></i>
+          </div>
+        </div>
+
+        <!-- 音乐库 -->
+        <div class="sec"><h2>音乐库</h2><span class="more">全部 ›</span></div>
+        <div class="grid">
+          <div class="tile g1"><div class="ic">♪</div><div><div class="nm">歌曲</div><div class="sub">本地全部</div></div></div>
+          <div class="tile g2"><div class="ic">▤</div><div><div class="nm">文件夹</div><div class="sub">按目录浏览</div></div></div>
+          <div class="tile g3"><div class="ic">▣</div><div><div class="nm">专辑</div><div class="sub">封面网格</div></div></div>
+          <div class="tile g4"><div class="ic">★</div><div><div class="nm">歌手</div><div class="sub">字母索引</div></div></div>
+          <div class="tile g5"><div class="ic">♥</div><div><div class="nm">歌单</div><div class="sub">我的收藏</div></div></div>
+          <div class="tile g6"><div class="ic">⌛</div><div><div class="nm">最近添加</div><div class="sub">新入库</div></div></div>
+        </div>
+
+        <!-- 听过最多 -->
+        <div class="sec"><h2>听过最多</h2><span class="more">查看更多 ›</span></div>
+        <div class="list">
+          <div class="row">
+            <div class="cv r1"></div>
+            <div class="info"><div class="t">晚风心里吹</div><div class="s">弦予 · 03:24</div></div>
+            <div class="cnt">128 次</div>
+            <div class="pl">▶</div>
+          </div>
+          <div class="row">
+            <div class="cv r2"></div>
+            <div class="info"><div class="t">星河入梦</div><div class="s">弦予 · 04:08</div></div>
+            <div class="cnt">96 次</div>
+            <div class="pl">▶</div>
+          </div>
+          <div class="row">
+            <div class="cv r3"></div>
+            <div class="info"><div class="t">雨后初晴</div><div class="s">弦予 · 03:51</div></div>
+            <div class="cnt">72 次</div>
+            <div class="pl">▶</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- mini player -->
+      <div class="mini" id="mini">
+        <div class="disc"><div class="core"></div></div>
+        <div class="info"><div class="t">晚风心里吹</div><div class="s">弦予 · 01:12 / 03:24</div></div>
+        <div class="ctrl">
+          <div class="b play" id="playBtn">▶</div>
+          <div class="b">⏭</div>
+        </div>
+      </div>
+
+      <!-- bottom nav -->
+      <div class="nav" id="nav">
+        <div class="tab on" data-i="0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+          主界面
+        </div>
+        <div class="tab" data-i="1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          音乐库
+        </div>
+        <div class="tab" data-i="2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16V8a8 8 0 0 1 16 0v8"/><path d="M4 14h4M16 14h4M4 14v4M20 14v4"/></svg>
+          音效
+        </div>
+        <div class="tab" data-i="3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          搜索
+        </div>
+        <div class="tab" data-i="4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.6 14H3.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5.2 8.6a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 11 4.6V3.5a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 16.4 5.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.6 1.6 0 0 0 20.4 10H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+          设置
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- design notes -->
+  <aside class="notes">
+    <h3>移动主页 · 设计说明</h3>
+
+    <div class="item">
+      <div class="n">1</div>
+      <div class="tx">
+        <div class="t">顶部栏</div>
+        <div class="d">左菜单 / 中品牌 / 右背景切换+设置。沿用桌面版 TitleBar 结构，移动端收为 48dp 单行。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">2</div>
+      <div class="tx">
+        <div class="t">毛玻璃搜索</div>
+        <div class="d">胶囊形，backdrop-blur 18px，点击进入全局搜索。点按不直接输入。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">3</div>
+      <div class="tx">
+        <div class="t">封面轮播（焦点）</div>
+        <div class="d">取自 RawS：当前播放队列封面横向滑动。叠加桌面版网易云红"播放中"徽章 + 频谱条动效，封面渐变遮罩 + 歌曲信息。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">4</div>
+      <div class="tx">
+        <div class="t">音乐库网格</div>
+        <div class="d">2 列方块卡（13dp 圆角），渐变图标块。6 入口：歌曲/文件夹/专辑/歌手/歌单/最近添加。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">5</div>
+      <div class="tx">
+        <div class="t">听过最多</div>
+        <div class="d">按播放次数排序，毛玻璃行卡 + 播放次数 + 红色播放按钮。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">6</div>
+      <div class="tx">
+        <div class="t">迷你播放器</div>
+        <div class="d">浮动毛玻璃胶囊：旋转封面 + 环形进度 + 歌曲信息 + 播放/下一首。可上拖展开全屏播放页。</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="n">7</div>
+      <div class="tx">
+        <div class="t">液态玻璃底栏</div>
+        <div class="d">5 Tab 胶囊浮动栏（主界面/音乐库/音效/搜索/设置），选中态网易云红 + 圆点指示。</div>
+      </div>
+    </div>
+
+    <div class="meta">
+      <span class="pill">桌面版风格</span><span class="pill">RawS 布局</span><br>
+      主题色 #EC4141 · 暗色 #262626 · Inter<br>
+      毛玻璃 backdrop-blur · 圆角 13/16/24px<br>
+      频谱/旋转/转场动效
+    </div>
+  </aside>
+
+<script>
+  // carousel
+  const covers = document.getElementById('covers');
+  const dots = [...document.getElementById('dots').children];
+  let idx = 0;
+  function go(i){ idx = (i+3)%3; covers.style.transform = `translateX(-${idx*100}%)`;
+    dots.forEach((d,j)=>d.classList.toggle('on', j===idx)); }
+  let timer = setInterval(()=>go(idx+1), 4000);
+  document.querySelector('.carousel').addEventListener('mouseenter',()=>clearInterval(timer));
+
+  // play/pause
+  const mini = document.getElementById('mini');
+  document.getElementById('playBtn').addEventListener('click',()=>{
+    mini.classList.toggle('paused');
+    document.getElementById('playBtn').textContent = mini.classList.contains('paused')?'▶':'⏸';
+  });
+
+  // nav tabs
+  document.getElementById('nav').querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click',()=>{
+      document.getElementById('nav').querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

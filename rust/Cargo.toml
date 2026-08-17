@@ -1,0 +1,51 @@
+[package]
+name = "xianyu_core"
+version = "0.1.0"
+description = "弦予音乐移动端复用核心（从桌面端抽取的纯逻辑，不依赖 Tauri）"
+authors = ["lyc"]
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[lib]
+name = "xianyu_core"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+amll-lyric = "0.3.0"
+regex = "1"
+sha1 = "0.10"
+hex = "0.4"
+md5 = "0.7"
+urlencoding = "2"
+reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate", "blocking"] }
+tokio = { version = "1.48.0", features = ["sync", "rt-multi-thread", "time", "macros", "fs", "io-util"] }
+rustfft = "6.4.1"
+base64 = "0.22.1"
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+encoding_rs = "0.8"
+thiserror = "2"
+id3 = "1.14"
+lofty = "0.21"
+flutter_rust_bridge = "=2.12.0"
+flate2 = "1"
+aes = "0.8"
+sha2 = "0.10"
+quick-xml = "0.39.2"
+rayon = "1.10"
+walkdir = "2"
+symphonia = { version = "0.5.5", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+uuid = { version = "1", features = ["v4"] }
+image = { version = "0.25", features = ["jpeg", "png", "webp"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2"
+
+[profile.dev]
+# 与桌面端保持一致：DSP/FFT 热路径在 opt-level=0 下较慢
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
