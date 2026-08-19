@@ -65,15 +65,16 @@ void main() {
     }
   }
 
-  // 3) 生成透明方形图（内容占比约 78%，四周留边距）
-  _composeSquare(content, marginRatio: 0.11, output: 'assets/icon/app_icon.png', background: null);
+  // 3) 生成透明方形图（内容占比约 88%，四周仅留少量边距）
+  _composeSquare(content, marginRatio: 0.06, output: 'assets/icon/app_icon.png', background: null);
 
   // 4) 白底方形图（同布局，填白背景）
-  _composeSquare(content, marginRatio: 0.11, output: 'assets/icon/app_icon_bg.png',
+  _composeSquare(content, marginRatio: 0.06, output: 'assets/icon/app_icon_bg.png',
       background: img.ColorRgba8(255, 255, 255, 255));
 
-  // 5) 自适应图标前景层：留更大边距（约 32%），避免被系统圆形/圆角遮罩裁掉
-  _composeSquare(content, marginRatio: 0.30, output: 'assets/icon/app_icon_foreground.png', background: null);
+  // 5) 自适应图标前景层：留边距约 18%，配合 xml 的 16% inset 仍在安全区内，
+  //    同时让 logo 明显放大（避免叠加后过小）
+  _composeSquare(content, marginRatio: 0.18, output: 'assets/icon/app_icon_foreground.png', background: null);
 
   stdout.writeln('完成：已生成 app_icon.png / app_icon_bg.png / app_icon_foreground.png');
 }
