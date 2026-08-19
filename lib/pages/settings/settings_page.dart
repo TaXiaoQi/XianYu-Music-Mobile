@@ -200,10 +200,11 @@ class SettingsPage extends ConsumerWidget {
         _Choice('跟随系统', ThemeModePreference.system),
         _Choice('浅色', ThemeModePreference.light),
         _Choice('深色', ThemeModePreference.dark),
-      ], cur.index, labelOf: (v) => switch (v) {
+      ], cur, labelOf: (v) => switch (v) {
         ThemeModePreference.system => '跟随系统',
         ThemeModePreference.light => '浅色',
         ThemeModePreference.dark => '深色',
+        _ => '跟随系统',
       }),
     );
     if (choice != null) {
@@ -268,18 +269,17 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _pickQuality(BuildContext context, WidgetRef ref,
       AppSettings? s, {required bool isOnline}) async {
-    const qualities = ['128k', '192k', '320k', 'flac'];
     final cur = isOnline
         ? s?.onlineDefaultQuality ?? '320k'
         : s?.downloadQuality ?? '320k';
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showModalBottomSheet<_Choice>(
       context: context,
       builder: (_) => _choiceSheet(context, const [
         _Choice('128k', '128k'),
         _Choice('192k', '192k'),
         _Choice('320k', '320k'),
         _Choice('标准无损', 'flac'),
-      ], qualities.indexOf(cur), labelOf: (v) => v as String),
+      ], cur, labelOf: (v) => v as String),
     );
     if (choice != null) {
       final n = ref.read(settingsProvider.notifier);
@@ -377,7 +377,7 @@ class SettingsPage extends ConsumerWidget {
     await ref.read(settingsProvider.notifier).setDownloadPath(path);
   }
 
-  Widget _choiceSheet(BuildContext context, List<_Choice> choices, int cur,
+  Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
     return SafeArea(
       child: Column(
@@ -386,11 +386,11 @@ class SettingsPage extends ConsumerWidget {
           for (final c in choices)
             ListTile(
               title: Text(labelOf(c.value)),
-              trailing: c.index == cur
+              trailing: c.value == cur
                   ? Icon(Icons.check,
                       color: Theme.of(context).colorScheme.primary)
                   : null,
-              selected: c.index == cur,
+              selected: c.value == cur,
               onTap: () => Navigator.pop(context, c),
             ),
         ],
