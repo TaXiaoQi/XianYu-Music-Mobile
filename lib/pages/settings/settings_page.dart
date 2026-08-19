@@ -1,10 +1,11 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
-import '../../src/navigation/shell.dart';
 import 'scan_folders_page.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -17,193 +18,203 @@ class SettingsPage extends ConsumerWidget {
     final auth = ref.watch(authProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 150),
+      // 透明 AppBar 透出氛围背景，标题左对齐放大更现代。
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        title: const Text(
+          '设置',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+        ),
+      ),
+      extendBodyBehindAppBar: true,
+      body: Stack(
         children: [
-          _sectionHeader(context, '账号'),
-          _tile(
-            context,
-            icon: Icons.account_circle,
-            title: '账号与安全',
-            trailing: Text(
-              auth.isLoggedIn ? auth.user!.nickname : '未登录',
-              style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const _AmbientBackground(),
+          ListView(
+            padding: EdgeInsets.only(
+              // AppBar 高度 + 状态栏，避免首组被顶栏盖住。
+              top: MediaQuery.of(context).padding.top + kToolbarHeight,
+              left: 16,
+              right: 16,
+              bottom: 150,
             ),
-            onTap: () => context.push('/settings/account'),
-          ),
-          _sectionHeader(context, '外观'),
-          _tile(
-            context,
-            icon: Icons.palette,
-            title: '主题模式',
-            trailing: _themeLabel(settings),
-            onTap: () => _pickThemeMode(context, ref, settings),
-          ),
-          _tile(
-            context,
-            icon: Icons.color_lens,
-            title: '主题色',
-            trailing: _ColorDot(color: Color(settings?.accentColor ?? 0xFFEC4141)),
-            onTap: () => _pickAccentColor(context, ref, settings),
-          ),
-          _sectionHeader(context, '播放'),
-          _tile(context, icon: Icons.volume_up, title: '音量',
-              trailing: _volumeSlider(settings, notifier)),
-          _tile(
-            context,
-            icon: Icons.high_quality,
-            title: '在线默认音质',
-            trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, settings, isOnline: true),
-          ),
-          _sectionHeader(context, '歌词'),
-          _switchTile(
-            context,
-            icon: Icons.translate,
-            title: '显示翻译',
-            value: settings?.showLyricsTranslation ?? true,
-            onChanged: (v) => notifier.setShowLyricsTranslation(v),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.spellcheck,
-            title: '逐字动效',
-            value: settings?.enableWordEffect ?? true,
-            onChanged: (v) => notifier.setEnableWordEffect(v),
-          ),
-          _sectionHeader(context, '音乐库'),
-          _tile(
-            context,
-            icon: Icons.folder_special,
-            title: '扫描文件夹',
-            trailing: const Text(''),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ScanFoldersPage()),
-            ),
-          ),
-          _tile(
-            context,
-            icon: Icons.audiotrack,
-            title: '扫描格式',
-            trailing: Text('${settings?.scanFormats.length ?? 0} 种'),
-            onTap: () => _pickScanFormats(context, ref, settings),
-          ),
-          _tile(
-            context,
-            icon: Icons.timer,
-            title: '排除短音频（秒）',
-            trailing: Text('${settings?.libraryMinDurationSeconds ?? 0}'),
-            onTap: () => _pickMinDuration(context, ref, settings),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.verified,
-            title: '显示音质标识',
-            value: settings?.showQualityBadges ?? true,
-            onChanged: (v) => notifier.setShowQualityBadges(v),
-          ),
-          _sectionHeader(context, '下载'),
-          _tile(
-            context,
-            icon: Icons.folder,
-            title: '下载路径',
-            trailing: Text(
-              settings?.downloadPath == null || settings!.downloadPath.isEmpty
-                  ? '默认'
-                  : '自定义',
-            ),
-            onTap: () => _pickDownloadPath(context, ref, settings),
-          ),
-          _tile(
-            context,
-            icon: Icons.download,
-            title: '下载音质',
-            trailing: Text(settings?.downloadQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, settings, isOnline: false),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.lyrics,
-            title: '同时下载歌词',
-            value: settings?.downloadLyrics ?? true,
-            onChanged: (v) => notifier.setDownloadLyrics(v),
-          ),
-          _sectionHeader(context, '其他'),
-          _switchTile(
-            context,
-            icon: Icons.screen_lock_rotation,
-            title: '保持屏幕常亮',
-            value: settings?.keepScreenOn ?? true,
-            onChanged: (v) => notifier.setKeepScreenOn(v),
+            children: [
+              _section(context, '账号', [
+                _GlassTile(
+                  icon: Icons.account_circle,
+                  title: '账号与安全',
+                  trailing: Text(
+                    auth.isLoggedIn ? auth.user!.nickname : '未登录',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  onTap: () => context.push('/settings/account'),
+                ),
+              ]),
+              _section(context, '外观', [
+                _GlassTile(
+                  icon: Icons.palette,
+                  title: '主题模式',
+                  trailing: _themeLabel(context, settings),
+                  onTap: () => _pickThemeMode(context, ref, settings),
+                ),
+                _GlassTile(
+                  icon: Icons.color_lens,
+                  title: '主题色',
+                  trailing: _ColorDot(
+                      color: Color(settings?.accentColor ?? 0xFFEC4141)),
+                  onTap: () => _pickAccentColor(context, ref, settings),
+                ),
+              ]),
+              _section(context, '播放', [
+                _GlassTile(
+                  icon: Icons.volume_up,
+                  title: '音量',
+                  trailing: _volumeSlider(settings, notifier),
+                ),
+                _GlassTile(
+                  icon: Icons.high_quality,
+                  title: '在线默认音质',
+                  trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
+                  onTap: () => _pickQuality(context, ref, settings, isOnline: true),
+                ),
+              ]),
+              _section(context, '歌词', [
+                _GlassSwitchTile(
+                  icon: Icons.translate,
+                  title: '显示翻译',
+                  value: settings?.showLyricsTranslation ?? true,
+                  onChanged: (v) => notifier.setShowLyricsTranslation(v),
+                ),
+                _GlassSwitchTile(
+                  icon: Icons.spellcheck,
+                  title: '逐字动效',
+                  value: settings?.enableWordEffect ?? true,
+                  onChanged: (v) => notifier.setEnableWordEffect(v),
+                ),
+              ]),
+              _section(context, '音乐库', [
+                _GlassTile(
+                  icon: Icons.folder_special,
+                  title: '扫描文件夹',
+                  trailing: const Text(''),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ScanFoldersPage()),
+                  ),
+                ),
+                _GlassTile(
+                  icon: Icons.audiotrack,
+                  title: '扫描格式',
+                  trailing: Text('${settings?.scanFormats.length ?? 0} 种'),
+                  onTap: () => _pickScanFormats(context, ref, settings),
+                ),
+                _GlassTile(
+                  icon: Icons.timer,
+                  title: '排除短音频（秒）',
+                  trailing: Text('${settings?.libraryMinDurationSeconds ?? 0}'),
+                  onTap: () => _pickMinDuration(context, ref, settings),
+                ),
+                _GlassSwitchTile(
+                  icon: Icons.verified,
+                  title: '显示音质标识',
+                  value: settings?.showQualityBadges ?? true,
+                  onChanged: (v) => notifier.setShowQualityBadges(v),
+                ),
+              ]),
+              _section(context, '下载', [
+                _GlassTile(
+                  icon: Icons.folder,
+                  title: '下载路径',
+                  trailing: Text(
+                    settings?.downloadPath == null ||
+                            settings!.downloadPath.isEmpty
+                        ? '默认'
+                        : '自定义',
+                  ),
+                  onTap: () => _pickDownloadPath(context, ref, settings),
+                ),
+                _GlassTile(
+                  icon: Icons.download,
+                  title: '下载音质',
+                  trailing: Text(settings?.downloadQuality ?? '320k'),
+                  onTap: () => _pickQuality(context, ref, settings, isOnline: false),
+                ),
+                _GlassSwitchTile(
+                  icon: Icons.lyrics,
+                  title: '同时下载歌词',
+                  value: settings?.downloadLyrics ?? true,
+                  onChanged: (v) => notifier.setDownloadLyrics(v),
+                ),
+              ]),
+              _section(context, '其他', [
+                _GlassSwitchTile(
+                  icon: Icons.screen_lock_rotation,
+                  title: '保持屏幕常亮',
+                  value: settings?.keepScreenOn ?? true,
+                  onChanged: (v) => notifier.setKeepScreenOn(v),
+                ),
+              ]),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w600,
+  /// 一组设置：小节标题 + 毛玻璃卡片。
+  Widget _section(BuildContext context, String title, List<Widget> rows) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
+            ),
           ),
-        ),
-      );
-
-  Widget _tile(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required Widget trailing,
-      VoidCallback? onTap}) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: onTap == null
-          ? trailing
-          : Row(mainAxisSize: MainAxisSize.min, children: [
-              trailing,
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right,
-                  size: 18, color: Theme.of(context).colorScheme.outline),
-            ]),
-      onTap: onTap,
+          _GlassCard(children: rows),
+        ],
+      ),
     );
   }
 
-  Widget _switchTile(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required bool value,
-      required ValueChanged<bool> onChanged}) {
-    return SwitchListTile(
-      secondary: Icon(icon),
-      title: Text(title),
-      value: value,
-      onChanged: onChanged,
+  Widget _themeLabel(BuildContext context, AppSettings? s) {
+    return Text(
+      switch (s?.themeMode ?? ThemeModePreference.system) {
+        ThemeModePreference.system => '跟随系统',
+        ThemeModePreference.light => '浅色',
+        ThemeModePreference.dark => '深色',
+      },
+      style: TextStyle(
+          fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
     );
-  }
-
-  Widget _themeLabel(AppSettings? s) {
-    return Text(switch (s?.themeMode ?? ThemeModePreference.system) {
-      ThemeModePreference.system => '跟随系统',
-      ThemeModePreference.light => '浅色',
-      ThemeModePreference.dark => '深色',
-    });
   }
 
   Widget _volumeSlider(AppSettings? s, SettingsNotifier n) {
     return SizedBox(
-      width: 120,
-      child: Slider(
-        value: s?.volume ?? 1.0,
-        onChanged: (v) => n.setVolume(v),
+      width: 140,
+      child: SliderTheme(
+        data: SliderThemeData(
+          trackHeight: 3,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+        ),
+        child: Slider(
+          value: s?.volume ?? 1.0,
+          onChanged: (v) => n.setVolume(v),
+        ),
       ),
     );
   }
@@ -213,6 +224,7 @@ class SettingsPage extends ConsumerWidget {
     final cur = s?.themeMode ?? ThemeModePreference.system;
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => _choiceSheet(context, const [
         _Choice('跟随系统', ThemeModePreference.system),
         _Choice('浅色', ThemeModePreference.light),
@@ -240,44 +252,45 @@ class SettingsPage extends ConsumerWidget {
     ];
     final choice = await showModalBottomSheet<int>(
       context: context,
-      builder: (_) => Padding(
-        // 底部额外避让浮动底栏。
-        padding: const EdgeInsets.fromLTRB(
-            16, 16, 16, 16 + kFloatingNavBarInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('主题色', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final c in colors)
-                  InkWell(
-                    onTap: () => Navigator.pop(context, c),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Color(c),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: c == cur
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.transparent,
-                          width: 3,
+      useRootNavigator: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('主题色', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final c in colors)
+                    InkWell(
+                      onTap: () => Navigator.pop(context, c),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Color(c),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: c == cur
+                                ? Theme.of(context).colorScheme.primary
+                                : Colors.transparent,
+                            width: 3,
+                          ),
                         ),
+                        child: c == cur
+                            ? const Icon(Icons.check, color: Colors.white, size: 20)
+                            : null,
                       ),
-                      child: c == cur
-                          ? const Icon(Icons.check, color: Colors.white, size: 20)
-                          : null,
                     ),
-                  ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -293,6 +306,7 @@ class SettingsPage extends ConsumerWidget {
         : s?.downloadQuality ?? '320k';
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => _choiceSheet(context, const [
         _Choice('128k', '128k'),
         _Choice('192k', '192k'),
@@ -321,6 +335,7 @@ class SettingsPage extends ConsumerWidget {
     ];
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => _choiceSheet(context, choices, cur, labelOf: (v) => switch (v) {
         0 => '不排除',
         10 => '10 秒',
@@ -351,6 +366,7 @@ class SettingsPage extends ConsumerWidget {
     };
     final result = await showModalBottomSheet<Set<String>>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => StatefulBuilder(
         builder: (context, setModalState) {
           return SafeArea(
@@ -379,9 +395,7 @@ class SettingsPage extends ConsumerWidget {
                       },
                     ),
                   Padding(
-                    // 底部额外避让浮动底栏，确保确定按钮可点。
-                    padding: const EdgeInsets.fromLTRB(
-                        16, 16, 16, 16 + kFloatingNavBarInset),
+                    padding: const EdgeInsets.all(16),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -419,56 +433,55 @@ class SettingsPage extends ConsumerWidget {
     final controller = TextEditingController(text: cur);
     final action = await showModalBottomSheet<Object?>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          // 键盘弹出时底栏已被键盘覆盖，无需再避让；
-          // 键盘收起时补出底栏高度。
-          bottom: MediaQuery.of(ctx).viewInsets.bottom == 0
-              ? 16 + kFloatingNavBarInset
-              : MediaQuery.of(ctx).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('下载路径',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(
-              '留空使用默认下载目录',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(ctx).colorScheme.outline),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: '路径',
-                hintText: '例如 /storage/emulated/0/Music',
-                border: OutlineInputBorder(),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('下载路径',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                '留空使用默认下载目录',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(ctx).colorScheme.outline),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, 'default'),
-                  child: const Text('恢复默认'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: '路径',
+                  hintText: '例如 /storage/emulated/0/Music',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                  child: const Text('确定'),
-                ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, 'default'),
+                    child: const Text('恢复默认'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                    child: const Text('确定'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -480,25 +493,210 @@ class SettingsPage extends ConsumerWidget {
   Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
     return SafeArea(
-      // SafeArea 只避让系统区域，管不到应用自绘的浮动底栏，
-      // 因此额外补出底栏高度，避免最后一项被压住。
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final c in choices)
+            ListTile(
+              title: Text(labelOf(c.value)),
+              trailing: c.value == cur
+                  ? Icon(Icons.check,
+                      color: Theme.of(context).colorScheme.primary)
+                  : null,
+              selected: c.value == cur,
+              onTap: () => Navigator.pop(context, c),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 氛围背景：与主界面一致的主题色光斑，叠加全屏模糊晕开成柔光。
+class _AmbientBackground extends StatelessWidget {
+  const _AmbientBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(color: scheme.surface),
+          Positioned(
+            top: -90,
+            right: -70,
+            child: _glow(300, scheme.primary.withValues(alpha: isDark ? 0.24 : 0.16)),
+          ),
+          Positioned(
+            bottom: -70,
+            left: -90,
+            child: _glow(320, scheme.tertiary.withValues(alpha: isDark ? 0.14 : 0.09)),
+          ),
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+            child: Container(color: Colors.transparent),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glow(double size, Color color) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+        ),
+      );
+}
+
+/// 毛玻璃分组卡片：承载若干设置行，行间以细分割线隔开。
+class _GlassCard extends StatelessWidget {
+  const _GlassCard({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.white.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i != children.length - 1)
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    indent: 56,
+                    color: scheme.onSurface.withValues(alpha: 0.06),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 毛玻璃设置行：图标 + 标题 + 右侧控件/箭头。
+class _GlassTile extends StatelessWidget {
+  const _GlassTile({
+    required this.icon,
+    required this.title,
+    required this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: kFloatingNavBarInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
           children: [
-            for (final c in choices)
-              ListTile(
-                title: Text(labelOf(c.value)),
-                trailing: c.value == cur
-                    ? Icon(Icons.check,
-                        color: Theme.of(context).colorScheme.primary)
-                    : null,
-                selected: c.value == cur,
-                onTap: () => Navigator.pop(context, c),
+            // 图标用主题色容器包裹，增强分组感。
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(9),
               ),
+              child: Icon(icon, size: 18, color: scheme.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500)),
+            ),
+            if (onTap != null)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DefaultTextStyle(
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant),
+                    child: trailing,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right,
+                      size: 18, color: scheme.onSurfaceVariant),
+                ],
+              )
+            else
+              trailing,
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 毛玻璃开关行：图标 + 标题 + 开关。
+class _GlassSwitchTile extends StatelessWidget {
+  const _GlassSwitchTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 18, color: scheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500)),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
       ),
     );
   }
