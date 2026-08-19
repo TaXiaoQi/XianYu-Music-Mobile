@@ -45,12 +45,6 @@ final appRouter = GoRouter(
                 path: 'recent',
                 builder: (context, state) => const RecentPage(),
               ),
-              // 搜索页：底栏已移除该入口（主界面顶部有搜索栏），
-              // 保留为主页子路由，push 进入自带返回按钮。
-              GoRoute(
-                path: 'search',
-                builder: (context, state) => const SearchPage(),
-              ),
             ],
           ),
         ]),
@@ -85,6 +79,11 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/player',
       builder: (context, state) => const PlayerPage(),
+    ),
+    // 搜索页同为全屏：底栏会遮挡结果列表，且检索场景不需要底部导航。
+    GoRoute(
+      path: '/search',
+      builder: (context, state) => const SearchPage(),
     ),
   ],
 );
