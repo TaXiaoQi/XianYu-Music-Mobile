@@ -8,11 +8,14 @@ class SongsListView extends StatelessWidget {
   final Future<void> Function(List<Song> songs, int index)? onPlay;
   /// 列表内边距。全屏页可留出底部安全区，嵌在 shell 内的页面可避让底栏。
   final EdgeInsetsGeometry? padding;
+  /// 需要高亮的关键词。非空时在标题/歌手/专辑中以主题色标出命中片段。
+  final String? highlight;
   const SongsListView({
     super.key,
     required this.songs,
     this.onPlay,
     this.padding,
+    this.highlight,
   });
 
   @override
@@ -26,13 +29,20 @@ class SongsListView extends StatelessWidget {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final s = songs[i];
+        final hlColor = Theme.of(context).colorScheme.primary;
         return ListTile(
           leading: SongCover(song: s),
-          title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            '${s.artist} · ${s.album}',
+          title: highlightedText(
+            s.title,
+            highlight,
+            hlColor,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: highlightedText(
+            '${s.artist} · ${s.album}',
+            highlight,
+            hlColor,
+            maxLines: 1,
           ),
           trailing: Text(
             _fmt(s.duration),
@@ -51,6 +61,58 @@ class SongsListView extends StatelessWidget {
     final sec = s % 60;
     return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
   }
+}
+
+/// 构建关键词高亮文本：命中片段仅改变字体颜色，不加背景色。
+///
+/// 匹配大小写不敏感，但渲染时保留原文的大小写。keyword 为空或无命中时
+/// 返回普通 Text，避免不必要的富文本开销。
+Widget highlightedText(
+  String source,
+  String? keyword,
+  Color highlightColor, {
+  int? maxLines,
+  TextOverflow overflow = TextOverflow.ellipsis,
+}) {
+  final kw = keyword?.trim() ?? '';
+  if (kw.isEmpty || source.isEmpty) {
+    return Text(source, maxLines: maxLines, overflow: overflow);
+  }
+
+  final lowerSource = source.toLowerCase();
+  final lowerKw = kw.toLowerCase();
+  // 无命中时走普通文本。
+  if (!lowerSource.contains(lowerKw)) {
+    return Text(source, maxLines: maxLines, overflow: overflow);
+  }
+
+  final spans = <TextSpan>[];
+  var start = 0;
+  while (true) {
+    final idx = lowerSource.indexOf(lowerKw, start);
+    if (idx < 0) {
+      // 命中位于末尾时无剩余文本，避免追加空 span。
+      if (start < source.length) {
+        spans.add(TextSpan(text: source.substring(start)));
+      }
+      break;
+    }
+    if (idx > start) {
+      spans.add(TextSpan(text: source.substring(start, idx)));
+    }
+    // 用原文切片保留大小写，仅着色。
+    spans.add(TextSpan(
+      text: source.substring(idx, idx + kw.length),
+      style: TextStyle(color: highlightColor, fontWeight: FontWeight.w700),
+    ));
+    start = idx + kw.length;
+  }
+
+  return Text.rich(
+    TextSpan(children: spans),
+    maxLines: maxLines,
+    overflow: overflow,
+  );
 }
 
 class SongCover extends StatelessWidget {

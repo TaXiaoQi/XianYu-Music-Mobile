@@ -7,6 +7,12 @@ import 'package:go_router/go_router.dart';
 import '../widgets/mini_player_bar.dart';
 import 'routes.dart';
 
+/// 浮动底栏占据的底部高度（距底 18 + 栏高 60 + 阴影余量）。
+///
+/// 底栏是叠在内容之上的 `Positioned`，不参与布局，`SafeArea` 也无法感知。
+/// 弹窗、列表等需要避让它的地方统一引用此常量，改动底栏尺寸时只需改这里。
+const double kFloatingNavBarInset = 90;
+
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});

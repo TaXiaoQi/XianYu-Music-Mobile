@@ -26,6 +26,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Timer? _debounce;
   /// 递增序号：只接受最新一次查询的结果，避免慢查询覆盖新结果。
   int _queryToken = 0;
+  /// 当前结果对应的查询词，用于高亮。防抖期间仍指向旧词，
+  /// 保证高亮与列表内容一致。
+  String _activeQuery = '';
 
   @override
   void dispose() {
@@ -46,6 +49,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         _results = const [];
         _searched = false;
         _loading = false;
+        _activeQuery = '';
       });
       return;
     }
@@ -58,6 +62,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       setState(() {
         _results = const [];
         _searched = false;
+        _activeQuery = '';
       });
       return;
     }
@@ -77,6 +82,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       if (!mounted || token != _queryToken) return;
       setState(() {
         _results = list;
+        _activeQuery = q;
         _loading = false;
       });
     } catch (_) {
@@ -111,6 +117,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).padding.bottom + 12,
       ),
+      // 高亮当前已生效的查询词（而非输入框实时文本），与结果保持一致。
+      highlight: _activeQuery,
       onPlay: (list, i) => ref.read(libraryProvider.notifier).playList(list, i),
     );
   }
@@ -141,6 +149,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         _results = const [];
                         _searched = false;
                         _loading = false;
+                        _activeQuery = '';
                       });
                     },
                   ),

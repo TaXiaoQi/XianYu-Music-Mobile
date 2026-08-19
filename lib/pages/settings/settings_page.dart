@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/navigation/shell.dart';
 import 'scan_folders_page.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -240,7 +241,9 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showModalBottomSheet<int>(
       context: context,
       builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
+        // 底部额外避让浮动底栏。
+        padding: const EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + kFloatingNavBarInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -376,7 +379,9 @@ class SettingsPage extends ConsumerWidget {
                       },
                     ),
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    // 底部额外避让浮动底栏，确保确定按钮可点。
+                    padding: const EdgeInsets.fromLTRB(
+                        16, 16, 16, 16 + kFloatingNavBarInset),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -420,7 +425,11 @@ class SettingsPage extends ConsumerWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          // 键盘弹出时底栏已被键盘覆盖，无需再避让；
+          // 键盘收起时补出底栏高度。
+          bottom: MediaQuery.of(ctx).viewInsets.bottom == 0
+              ? 16 + kFloatingNavBarInset
+              : MediaQuery.of(ctx).viewInsets.bottom + 16,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -471,20 +480,25 @@ class SettingsPage extends ConsumerWidget {
   Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final c in choices)
-            ListTile(
-              title: Text(labelOf(c.value)),
-              trailing: c.value == cur
-                  ? Icon(Icons.check,
-                      color: Theme.of(context).colorScheme.primary)
-                  : null,
-              selected: c.value == cur,
-              onTap: () => Navigator.pop(context, c),
-            ),
-        ],
+      // SafeArea 只避让系统区域，管不到应用自绘的浮动底栏，
+      // 因此额外补出底栏高度，避免最后一项被压住。
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: kFloatingNavBarInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final c in choices)
+              ListTile(
+                title: Text(labelOf(c.value)),
+                trailing: c.value == cur
+                    ? Icon(Icons.check,
+                        color: Theme.of(context).colorScheme.primary)
+                    : null,
+                selected: c.value == cur,
+                onTap: () => Navigator.pop(context, c),
+              ),
+          ],
+        ),
       ),
     );
   }
