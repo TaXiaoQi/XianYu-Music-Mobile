@@ -237,6 +237,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         .toList();
 
     var total = 0;
+    final errors = <String>[];
     for (final folder in folders) {
       try {
         final songsJson = await scanMusicFolder(
@@ -246,11 +247,16 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           allowedFormats: allowed,
         );
         total += (jsonDecode(songsJson) as List).length;
-      } catch (_) {
-        // 单个目录失败不阻断其它目录。
+      } catch (e) {
+        // 单个目录失败不阻断其它目录，但记录错误以便暴露给用户。
+        errors.add('$folder: $e');
       }
     }
     await load();
+    // 一首都没扫到且有错误时，抛出以便 UI 展示真实原因。
+    if (total == 0 && errors.isNotEmpty) {
+      throw Exception('扫描失败：${errors.first}');
+    }
     return total;
   }
 

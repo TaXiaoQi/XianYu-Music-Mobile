@@ -359,8 +359,17 @@ class _FolderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.folder),
-      title: Text(node.path, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('${node.songCount} 首'),
+      // 标题只显示文件夹名，完整路径放副标题（从右侧省略，保留末级目录）。
+      title: Text(
+        node.name.isNotEmpty ? node.name : node.path.split('/').last,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        '${node.songCount} 首',
+        style: const TextStyle(fontSize: 12),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
