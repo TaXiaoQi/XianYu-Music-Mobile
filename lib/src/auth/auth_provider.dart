@@ -43,7 +43,7 @@ class AuthUser {
       nickname: nickname,
       email: (j['email'] as String?) ?? '',
       avatar: (j['avatar_url'] ?? j['avatar']) as String?,
-      ciyuanxiId: ciyuanxi != null ? ciyuanxi.toString() : null,
+      ciyuanxiId: ciyuanxi?.toString(),
       role: (j['role'] as String?) ?? '',
     );
   }
@@ -66,11 +66,16 @@ class AuthState {
   const AuthState({this.user, this.loading = false, this.error});
   bool get isLoggedIn => user != null;
 
-  AuthState copyWith({AuthUser? user, bool? loading, String? error}) {
+  AuthState copyWith({
+    AuthUser? user,
+    bool? loading,
+    String? error,
+    bool clearError = false,
+  }) {
     return AuthState(
       user: user ?? this.user,
       loading: loading ?? this.loading,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -80,6 +85,40 @@ class AuthException implements Exception {
   AuthException(this.message);
   @override
   String toString() => message;
+}
+
+/// 人机验证题目（内置算术题模式，与桌面端 get_captcha 一致）。
+class HumanCaptcha {
+  final String captchaId;
+  final String question;
+  final int? expireSeconds;
+  const HumanCaptcha({
+    required this.captchaId,
+    required this.question,
+    this.expireSeconds,
+  });
+
+  factory HumanCaptcha.fromJson(Map<String, dynamic> j) => HumanCaptcha(
+        captchaId: (j['captcha_id'] ?? '').toString(),
+        question: (j['question'] ?? '').toString(),
+        expireSeconds: (j['expire_seconds'] as num?)?.toInt(),
+      );
+}
+
+/// 人机验证结果载荷（算术题：id + 答案）。
+class HumanCaptchaPayload {
+  final String captchaId;
+  final String captchaAnswer;
+  const HumanCaptchaPayload({
+    required this.captchaId,
+    required this.captchaAnswer,
+  });
+
+  /// 并入请求体的 captcha 字段（与桌面端 withCaptcha 一致）。
+  Map<String, dynamic> toBodyFields() => {
+        'captcha_id': captchaId,
+        'captcha_answer': captchaAnswer,
+      };
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
@@ -119,7 +158,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await authSetBaseUrl(dataDir: dir, baseUrl: defaultAuthBaseUrl);
       await authSetApiSecret(dataDir: dir, apiSecret: defaultAuthApiSecret);
       final credsJson = await authGetCredentials(dataDir: dir);
-      if (credsJson != null && credsJson.trim().isNotEmpty && credsJson != 'null') {
+      if (credsJson.trim().isNotEmpty && credsJson != 'null') {
         final j = jsonDecode(credsJson) as Map<String, dynamic>;
         final userJson = j['user'];
         if (userJson is Map<String, dynamic>) {
@@ -161,11 +200,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState(user: user);
   }
 
-  /// 发送邮箱验证码（注册/找回密码等场景）。
-  Future<String> sendCode(String email, String type) async {
+  /// 获取一次性人机验证题（算术题，purpose=auth）。
+  Future<HumanCaptcha> fetchCaptcha() async {
+    final data = await _requestAction('get_captcha', {'purpose': 'auth'});
+    return HumanCaptcha.fromJson(data);
+  }
+
+  /// 预校验人机验证答案。答案正确返回，错误抛 AuthException。
+  /// 此接口只确认答案，不消费验证码；后续登录/注册/发码请求会再次校验并消费。
+  Future<void> verifyCaptcha(HumanCaptchaPayload payload) async {
+    await _requestAction('verify_captcha', {
+      'purpose': 'auth',
+      'captcha_id': payload.captchaId,
+      'captcha_answer': payload.captchaAnswer,
+    });
+  }
+
+  /// 发送邮箱验证码（注册/找回密码等场景），需先通过人机验证。
+  Future<String> sendCode(String email, String type,
+      {HumanCaptchaPayload? captcha}) async {
     final data = await _requestAction('send_verify_code', {
       'email': email,
       'type': type,
+      if (captcha != null) ...captcha.toBodyFields(),
     });
     return (data['message'] as String?) ??
         (data['msg'] as String?) ??
@@ -176,13 +233,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> login({
     required String ciyuanxiId,
     required String password,
+    HumanCaptchaPayload? captcha,
   }) async {
-    state = state.copyWith(loading: true, error: null);
+    state = state.copyWith(loading: true, clearError: true);
     try {
       final data = await _requestAction('user_login', {
         'ciyuanxi_id': ciyuanxiId.trim(),
         'password': password,
         'device_id': await _deviceId(),
+        if (captcha != null) ...captcha.toBodyFields(),
       });
       final token = data['token'];
       if (token == null || token.toString().isEmpty) {
@@ -201,8 +260,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String password,
     required String email,
     required String code,
+    HumanCaptchaPayload? captcha,
   }) async {
-    state = state.copyWith(loading: true, error: null);
+    state = state.copyWith(loading: true, clearError: true);
     try {
       final data = await _requestAction('register', {
         'ciyuanxi_id': ciyuanxiId.trim(),
@@ -211,6 +271,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         'email': email.trim(),
         'verify_code': code.trim(),
         'device_id': await _deviceId(),
+        if (captcha != null) ...captcha.toBodyFields(),
       });
       final token = data['token'];
       if (token == null || token.toString().isEmpty) {
@@ -220,6 +281,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       state = state.copyWith(loading: false, error: _msg(e, '注册失败'));
     }
+  }
+
+  /// 设置内联错误信息（供 UI 展示本地校验错误，如两次密码不一致）。
+  void setError(String message) {
+    state = state.copyWith(loading: false, error: message);
+  }
+
+  /// 清除内联错误（切换登录/注册页时调用）。
+  void clearError() {
+    if (state.error == null) return;
+    state = state.copyWith(clearError: true);
   }
 
   /// 退出登录（仅清理本地凭证）。
