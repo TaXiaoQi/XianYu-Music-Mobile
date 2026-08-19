@@ -421,10 +421,12 @@ Future<String> scanMusicFolder({
   required String dbPath,
   required String folderPath,
   int? minimumDurationSeconds,
+  List<String>? allowedFormats,
 }) => RustLib.instance.api.crateApiScanMusicFolder(
   dbPath: dbPath,
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  allowedFormats: allowedFormats,
 );
 
 /// 解析指定音频文件路径并返回歌曲（不写库）。
@@ -1090,6 +1092,73 @@ Future<String> buildDownloadBasename({
   album: album,
   fileNameStyle: fileNameStyle,
 );
+
+/// 启动 USB 独占播放。返回设备名或错误信息。
+/// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
+Future<String> startUsbExclusivePlayback({
+  required String path,
+  required int deviceId,
+  required double volume,
+  required double startTimeSecs,
+  required bool isPlaying,
+  required double volumeBalanceGain,
+  required String equalizerSettingsJson,
+  required String soundEffectSettingsJson,
+}) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
+  path: path,
+  deviceId: deviceId,
+  volume: volume,
+  startTimeSecs: startTimeSecs,
+  isPlaying: isPlaying,
+  volumeBalanceGain: volumeBalanceGain,
+  equalizerSettingsJson: equalizerSettingsJson,
+  soundEffectSettingsJson: soundEffectSettingsJson,
+);
+
+/// 停止 USB 独占播放并释放设备。
+Future<void> stopUsbExclusivePlayback() =>
+    RustLib.instance.api.crateApiStopUsbExclusivePlayback();
+
+/// 跳转到指定位置（秒）。
+Future<void> seekUsbExclusive({
+  required double timeSecs,
+  required bool isPlaying,
+}) => RustLib.instance.api.crateApiSeekUsbExclusive(
+  timeSecs: timeSecs,
+  isPlaying: isPlaying,
+);
+
+/// 设置用户音量（0.0–1.0）。
+Future<void> setUsbExclusiveVolume({required double volume}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveVolume(volume: volume);
+
+/// 更新 EQ 设置（camelCase JSON）。
+Future<void> setUsbExclusiveEqualizer({required String settingsJson}) => RustLib
+    .instance
+    .api
+    .crateApiSetUsbExclusiveEqualizer(settingsJson: settingsJson);
+
+/// 更新音效设置（camelCase JSON）。
+Future<void> setUsbExclusiveSoundEffect({required String settingsJson}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveSoundEffect(
+      settingsJson: settingsJson,
+    );
+
+/// USB 独占播放是否活跃。
+Future<bool> isUsbExclusiveActive() =>
+    RustLib.instance.api.crateApiIsUsbExclusiveActive();
+
+/// 获取当前播放位置（秒）。
+Future<double> getUsbExclusivePositionSecs() =>
+    RustLib.instance.api.crateApiGetUsbExclusivePositionSecs();
+
+/// 获取当前播放采样率。
+Future<int> getUsbExclusiveSampleRate() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveSampleRate();
+
+/// 获取当前声道数。
+Future<int> getUsbExclusiveChannels() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveChannels();
 
 /// 检查 GitHub Release 最新版本（返回原始 JSON）。
 Future<String> checkUpdateByRust({

@@ -521,6 +521,20 @@ impl<R: Read + Seek> Seek for QmcDecryptReader<R> {
     }
 }
 
+/// 让 QmcDecryptReader 可直接喂给 symphonia 的 MediaSourceStream。
+/// 需要底层 reader 同时满足 Read + Seek + Send + Sync。
+impl<R: Read + Seek + Send + Sync> symphonia::core::io::MediaSource
+    for QmcDecryptReader<R>
+{
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        None
+    }
+}
+
 // ============================================================
 // QTag / V1 footer detection (for extracting ekey from file)
 // ============================================================

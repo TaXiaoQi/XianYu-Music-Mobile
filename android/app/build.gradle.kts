@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.xianyu_music_mobile"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker 依赖的 flutter_plugin_android_lifecycle 要求 compileSdk >= 36
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

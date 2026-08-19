@@ -30,15 +30,53 @@ pub(super) const DB_PROGRESS_BATCH: usize = 100;
 pub(super) const UNKNOWN_ARTIST: &str = "未知歌手";
 pub(super) const UNKNOWN_ALBUM: &str = "未知专辑";
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ScanOptions {
     pub(crate) minimum_duration_seconds: u32,
+    /// 允许入库的扩展名白名单（小写，无点）。None 表示不限制（沿用全部受支持格式）。
+    pub(crate) allowed_extensions: Option<Vec<String>>,
 }
 
 impl ScanOptions {
     pub(crate) fn from_minimum_duration_seconds(value: Option<u32>) -> Self {
         Self {
             minimum_duration_seconds: value.unwrap_or(0),
+            allowed_extensions: None,
+        }
+    }
+
+    /// 同时指定最小时长与扩展名白名单。
+    /// `allowed` 中的扩展名会转为小写去点；空 Vec 视为不限制（None 语义）。
+    pub(crate) fn new(
+        minimum_duration_seconds: Option<u32>,
+        allowed: Option<Vec<String>>,
+    ) -> Self {
+        let allowed_extensions = allowed.and_then(|list| {
+            let normalized: Vec<String> = list
+                .into_iter()
+                .map(|e| e.trim().trim_start_matches('.').to_ascii_lowercase())
+                .filter(|e| !e.is_empty())
+                .collect();
+            if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized)
+            }
+        });
+        Self {
+            minimum_duration_seconds: minimum_duration_seconds.unwrap_or(0),
+            allowed_extensions,
+        }
+    }
+
+    /// 判断某扩展名是否允许入库：先看是否受支持，再看白名单（若有）。
+    pub(crate) fn is_ext_allowed(&self, ext: &str) -> bool {
+        if !super::utils::is_supported_library_extension(ext) {
+            return false;
+        }
+        match &self.allowed_extensions {
+            Some(list) => list.iter().any(|e| e == ext),
+            None => true,
         }
     }
 }

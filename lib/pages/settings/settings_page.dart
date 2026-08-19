@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import 'scan_folders_page.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -73,6 +74,23 @@ class SettingsPage extends ConsumerWidget {
             onChanged: (v) => notifier.setEnableWordEffect(v),
           ),
           _sectionHeader(context, '音乐库'),
+          _tile(
+            context,
+            icon: Icons.folder_special,
+            title: '扫描文件夹',
+            trailing: const Text(''),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ScanFoldersPage()),
+            ),
+          ),
+          _tile(
+            context,
+            icon: Icons.audiotrack,
+            title: '扫描格式',
+            trailing: Text('${settings?.scanFormats.length ?? 0} 种'),
+            onTap: () => _pickScanFormats(context, ref, settings),
+          ),
           _tile(
             context,
             icon: Icons.timer,
@@ -312,6 +330,81 @@ class SettingsPage extends ConsumerWidget {
       await ref
           .read(settingsProvider.notifier)
           .setLibraryMinDurationSeconds(choice.value as int);
+    }
+  }
+
+  /// 扫描格式多选：勾选要扫描入库的音频格式（至少保留一种）。
+  Future<void> _pickScanFormats(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final selected = {...(s?.scanFormats ?? kSupportedScanFormats)};
+    const labels = {
+      'flac': 'FLAC（无损）',
+      'mp3': 'MP3',
+      'wav': 'WAV（无损）',
+      'aac': 'AAC',
+      'm4a': 'M4A / ALAC',
+      'ogg': 'OGG / Vorbis',
+      'aiff': 'AIFF',
+    };
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text('扫描格式',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 16)),
+                  ),
+                  for (final fmt in kSupportedScanFormats)
+                    CheckboxListTile(
+                      title: Text(labels[fmt] ?? fmt.toUpperCase()),
+                      value: selected.contains(fmt),
+                      onChanged: (v) {
+                        setModalState(() {
+                          if (v == true) {
+                            selected.add(fmt);
+                          } else {
+                            selected.remove(fmt);
+                          }
+                        });
+                      },
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () => Navigator.pop(context, selected),
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      final ordered =
+          kSupportedScanFormats.where((f) => result.contains(f)).toList();
+      await ref.read(settingsProvider.notifier).setScanFormats(ordered);
     }
   }
 

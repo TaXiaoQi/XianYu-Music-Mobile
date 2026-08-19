@@ -8,6 +8,17 @@ enum ThemeModePreference {
   dark,
 }
 
+/// 扫描支持的主流音频格式大类（与 Rust 白名单展开对应）。
+const kSupportedScanFormats = <String>[
+  'flac',
+  'mp3',
+  'wav',
+  'aac',
+  'm4a',
+  'ogg',
+  'aiff',
+];
+
 /// 全局设置（小而美：仅移动端必需项，key 语义与桌面端一致）。
 class AppSettings {
   const AppSettings({
@@ -26,6 +37,7 @@ class AppSettings {
     this.downloadQuality = '320k',
     this.downloadLyrics = true,
     this.organizeRule = '{Artist}/{Album}/{Title}',
+    this.scanFormats = kSupportedScanFormats,
   });
 
   final double volume;
@@ -43,6 +55,7 @@ class AppSettings {
   final String downloadQuality;
   final bool downloadLyrics;
   final String organizeRule;
+  final List<String> scanFormats;
 
   AppSettings copyWith({
     double? volume,
@@ -60,6 +73,7 @@ class AppSettings {
     String? downloadQuality,
     bool? downloadLyrics,
     String? organizeRule,
+    List<String>? scanFormats,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -79,6 +93,7 @@ class AppSettings {
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadLyrics: downloadLyrics ?? this.downloadLyrics,
       organizeRule: organizeRule ?? this.organizeRule,
+      scanFormats: scanFormats ?? this.scanFormats,
     );
   }
 }
@@ -106,6 +121,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       downloadQuality: prefs.getString('downloadQuality') ?? '320k',
       downloadLyrics: prefs.getBool('downloadLyrics') ?? true,
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
+      scanFormats:
+          prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
     );
   }
 
@@ -142,6 +159,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('downloadQuality', next.downloadQuality),
       prefs.setBool('downloadLyrics', next.downloadLyrics),
       prefs.setString('organizeRule', next.organizeRule),
+      prefs.setStringList('scanFormats', next.scanFormats),
     ]);
   }
 
@@ -160,6 +178,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setDownloadQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQuality: q));
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
+  Future<void> setScanFormats(List<String> f) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: f));
 }
 
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(

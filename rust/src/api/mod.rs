@@ -775,11 +775,13 @@ pub fn scan_music_folder(
     db_path: String,
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    allowed_formats: Option<Vec<String>>,
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let options = crate::music::scanner::ScanOptions::from_minimum_duration_seconds(
+    let options = crate::music::scanner::ScanOptions::new(
         minimum_duration_seconds,
+        allowed_formats,
     );
     let songs = crate::music::scanner::scan_single_directory_internal(
         folder_path, db_conn, None, None, 1, 1, options,

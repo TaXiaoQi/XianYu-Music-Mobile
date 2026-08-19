@@ -283,15 +283,61 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     }
   }
 
+  bool _scanning = false;
+
+  Future<void> _onRefresh() async {
+    if (_scanning) return;
+    setState(() => _scanning = true);
+    try {
+      final count = await ref.read(libraryProvider.notifier).scanAllFolders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('扫描完成，共 $count 首'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('扫描失败：$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
-    if (root.isEmpty) {
-      return const Center(child: Text('暂无文件夹，请先在扫描设置中添加音乐目录'));
-    }
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
-    return ListView(children: tiles);
+    // 用 RefreshIndicator 包裹，空态也可下拉；空态用可滚动布局撑满。
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: root.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  child: const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加音乐目录，\n然后在此下拉刷新开始扫描',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: tiles,
+            ),
+    );
   }
 }
 

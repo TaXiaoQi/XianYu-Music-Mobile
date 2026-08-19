@@ -1,4 +1,4 @@
 rust_input: crate::api
-rust_root: '\\?\D:\Program Files\MC\开发端\开发组\弦予音乐\XianYu-Music-Mobile\rust'
-rust_output: '\\?\D:\Program Files\MC\开发端\开发组\弦予音乐\XianYu-Music-Mobile\rust\src\frb_generated.rs'
-dart_output: 'D:/Program Files/MC/开发端/开发组/弦予音乐/XianYu-Music-Mobile/lib/src/rust'
+rust_root: rust
+rust_output: '\\?\C:\Users\yiche\Desktop\Xianyu\XianYu-Music-Mobile\rust\src\frb_generated.rs'
+dart_output: lib/src/rust

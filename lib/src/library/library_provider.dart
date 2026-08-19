@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
 
@@ -60,11 +61,12 @@ class ArtistInfo {
     this.avatarPath,
   });
 
+  // Rust ArtistCatalogItem 为 snake_case，兼容 camelCase。
   factory ArtistInfo.fromJson(Map<String, dynamic> j) => ArtistInfo(
         id: (j['id'] as num?)?.toInt() ?? 0,
         name: j['name'] as String? ?? '',
         count: (j['count'] as num?)?.toInt() ?? 0,
-        avatarPath: j['avatarPath'] as String?,
+        avatarPath: (j['avatar_path'] ?? j['avatarPath']) as String?,
       );
 }
 
@@ -83,12 +85,14 @@ class AlbumInfo {
     required this.firstSongPath,
   });
 
+  // Rust AlbumCatalogItem 为 snake_case，兼容 camelCase。
   factory AlbumInfo.fromJson(Map<String, dynamic> j) => AlbumInfo(
         key: j['key'] as String? ?? '',
         name: j['name'] as String? ?? '',
         count: (j['count'] as num?)?.toInt() ?? 0,
         artist: j['artist'] as String? ?? '',
-        firstSongPath: j['firstSongPath'] as String? ?? '',
+        firstSongPath:
+            ((j['first_song_path'] ?? j['firstSongPath']) as String?) ?? '',
       );
 }
 
@@ -107,14 +111,17 @@ class FolderNodeData {
     this.songCount = 0,
   });
 
+  // Rust FolderNode 序列化为 snake_case，兼容读取 camelCase 以防上游改动。
   factory FolderNodeData.fromJson(Map<String, dynamic> j) => FolderNodeData(
         name: j['name'] as String? ?? '',
         path: j['path'] as String? ?? '',
         children: (j['children'] as List? ?? [])
             .map((e) => FolderNodeData.fromJson(e as Map<String, dynamic>))
             .toList(),
-        childCount: (j['childCount'] as num?)?.toInt() ?? 0,
-        songCount: (j['songCount'] as num?)?.toInt() ?? 0,
+        childCount:
+            ((j['child_count'] ?? j['childCount']) as num?)?.toInt() ?? 0,
+        songCount:
+            ((j['song_count'] ?? j['songCount']) as num?)?.toInt() ?? 0,
       );
 }
 
@@ -175,7 +182,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       final treeJson = await getLibraryHierarchy(dbPath: dbPath);
       state = LibraryState(
         songs: _parseSongs(songsJson),
-        folders: (jsonDecode(foldersJson) as List).map((e) => e as String).toList(),
+        // getLibraryFolders 返回 [{path, song_count}, ...]，取出 path。
+        folders: (jsonDecode(foldersJson) as List)
+            .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
+            .where((p) => p.isNotEmpty)
+            .toList(),
         artists: (jsonDecode(artistsJson) as List)
             .map((e) => ArtistInfo.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -195,6 +206,53 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   List<Song> _parseSongs(String json) => (jsonDecode(json) as List)
       .map((e) => Song.fromJson(e as Map<String, dynamic>))
       .toList();
+
+  /// 格式大类 → 实际扩展名白名单（与 Rust is_ext_allowed 对应）。
+  static const _formatExtensions = <String, List<String>>{
+    'flac': ['flac'],
+    'mp3': ['mp3'],
+    'wav': ['wav'],
+    'aac': ['aac'],
+    'm4a': ['m4a', 'm4b', 'mp4'],
+    'ogg': ['ogg', 'oga'],
+    'aiff': ['aif', 'aiff'],
+  };
+
+  /// 扫描全部已配置目录，按选定格式白名单入库，返回扫描到的歌曲总数。
+  Future<int> scanAllFolders() async {
+    final dbPath = await _ref.read(dbPathProvider.future);
+    final settings = _ref.read(settingsProvider).valueOrNull;
+    final selectedFormats = settings?.scanFormats ?? kSupportedScanFormats;
+    final minDuration = settings?.libraryMinDurationSeconds ?? 0;
+
+    // 展开为扩展名白名单。
+    final allowed = <String>[
+      for (final f in selectedFormats) ...(_formatExtensions[f] ?? [f]),
+    ];
+
+    final foldersJson = await getLibraryFolders(dbPath: dbPath);
+    final folders = (jsonDecode(foldersJson) as List)
+        .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    var total = 0;
+    for (final folder in folders) {
+      try {
+        final songsJson = await scanMusicFolder(
+          dbPath: dbPath,
+          folderPath: folder,
+          minimumDurationSeconds: minDuration > 0 ? minDuration : null,
+          allowedFormats: allowed,
+        );
+        total += (jsonDecode(songsJson) as List).length;
+      } catch (_) {
+        // 单个目录失败不阻断其它目录。
+      }
+    }
+    await load();
+    return total;
+  }
 
   /// 按歌手取歌曲列表。
   Future<List<Song>> songsByArtist(String name) async {

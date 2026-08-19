@@ -245,7 +245,7 @@ pub(super) fn parse_audio_files_internal(paths: Vec<String>, options: ScanOption
             continue;
         };
 
-        if !is_supported_library_extension(&extension) {
+        if !options.is_ext_allowed(&extension) {
             continue;
         }
 

@@ -32,9 +32,10 @@ class LibraryGrid extends ConsumerWidget {
               borderRadius: BorderRadius.circular(13),
               border: Border.all(color: border),
             ),
+            // GridView 已给定固定高度(mainAxisExtent)，Column 用默认 max
+            // 配合 Spacer 实现"图标顶部、文字底部"且不溢出。
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
                   width: 34,
@@ -49,29 +50,26 @@ class LibraryGrid extends ConsumerWidget {
                   ),
                   child: Icon(icon, color: Colors.white, size: 18),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
+                // 弹性间距：高度富余时撑开，紧张时收缩，避免文字被裁。
+                const Spacer(),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
                 ),
               ],
             ),
@@ -85,13 +83,21 @@ class LibraryGrid extends ConsumerWidget {
       context.go('/library');
     }
 
-    return GridView.count(
-      crossAxisCount: 2,
+    // 卡片高度按内容与系统字体缩放动态计算，避免副标题被裁切。
+    // 固定部分：上下 padding 14*2 + 图标块 34 + 标题与副标题间距 1
+    // 文字部分：标题 15px + 副标题 11px，乘以系统字体缩放系数
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final tileHeight = 14 * 2 + 34 + 1 + (15 + 11) * 1.35 * textScale + 10;
+
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 14,
-      crossAxisSpacing: 14,
-      childAspectRatio: 1.85,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        mainAxisExtent: tileHeight,
+      ),
       children: [
         tile(
           title: '歌曲',

@@ -45,7 +45,7 @@ pub fn scan_single_directory_internal(
 
     let original_db_count = db_snapshot.len();
     let mut scan_diff =
-        collect_scan_diff(&normalized_folder, db_snapshot, reporter.as_ref(), options)?;
+        collect_scan_diff(&normalized_folder, db_snapshot, reporter.as_ref(), &options)?;
 
     let folder_is_accessible =
         Path::new(&normalized_folder).is_dir() && fs::read_dir(&normalized_folder).is_ok();

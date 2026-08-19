@@ -54,6 +54,10 @@ dependencies:
   # 轻量本地存储（设置项）
   shared_preferences: ^2.3.0
 
+  # 文件夹选择与存储权限（本地音乐扫描）
+  file_picker: ^8.1.0
+  permission_handler: ^11.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
