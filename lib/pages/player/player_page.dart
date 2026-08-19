@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/favorites/favorites_provider.dart';
 import '../../src/player/player_provider.dart';
 
 /// 正在播放页：现代毛玻璃风格。
@@ -196,13 +197,14 @@ class _GlassControlCard extends ConsumerWidget {
   }
 }
 
-class _TitleRow extends StatelessWidget {
+class _TitleRow extends ConsumerWidget {
   const _TitleRow({required this.current});
   final QueueItem current;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final isFav = ref.watch(favoritesProvider).contains(current.path);
     return Row(
       children: [
         Expanded(
@@ -227,8 +229,12 @@ class _TitleRow extends StatelessWidget {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.favorite_border),
-          onPressed: () {},
+          icon: Icon(
+            isFav ? Icons.favorite : Icons.favorite_border,
+            color: isFav ? scheme.primary : null,
+          ),
+          onPressed: () =>
+              ref.read(favoritesProvider.notifier).toggle(current.path),
         ),
       ],
     );

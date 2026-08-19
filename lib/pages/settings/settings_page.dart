@@ -31,7 +31,7 @@ class SettingsPage extends ConsumerWidget {
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
-            onTap: () => context.push('/account'),
+            onTap: () => context.push('/settings/account'),
           ),
           _sectionHeader(context, '外观'),
           _tile(

@@ -132,14 +132,14 @@ class LibraryGrid extends ConsumerWidget {
           subtitle: '我的收藏',
           icon: Icons.favorite,
           gradient: const [Color(0xFFA06BFF), Color(0xFFFF5C8A)],
-          onTap: () => context.go('/favorites'),
+          onTap: () => context.push('/home/favorites'),
         ),
         tile(
           title: '最近播放',
           subtitle: '播放记录',
           icon: Icons.history,
           gradient: const [Color(0xFF3AC2A6), Color(0xFFFFB347)],
-          onTap: () => context.go('/recent'),
+          onTap: () => context.push('/home/recent'),
         ),
       ],
     );

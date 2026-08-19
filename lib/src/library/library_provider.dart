@@ -293,6 +293,17 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     return _parseSongs(songsJson);
   }
 
+  /// 按路径批量取歌曲（用于收藏等自定义路径集合）。
+  ///
+  /// 已从库中移除的路径不会返回，因此结果可能少于传入路径数。
+  Future<List<Song>> songsByPaths(List<String> paths) async {
+    if (paths.isEmpty) return const [];
+    final dbPath = await _ref.read(dbPathProvider.future);
+    final songsJson =
+        await getLibrarySongsByPaths(dbPath: dbPath, paths: paths);
+    return _parseSongs(songsJson);
+  }
+
   /// 播放全部歌曲（或从指定索引开始）。
   Future<void> playFrom(int index) async {
     final songs = state.songs;
