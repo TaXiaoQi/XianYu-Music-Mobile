@@ -418,52 +418,38 @@ class _ProfileView extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
       children: [
-        // 资料卡：渐变背景 + 头像 + 昵称 + 弦予号
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [scheme.primary, scheme.primary.withValues(alpha: 0.7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.25),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              _Avatar(user: user, onColor: scheme.onPrimary),
-              const SizedBox(height: 14),
-              Text(
-                user.nickname.isEmpty ? '未命名用户' : user.nickname,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: scheme.onPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty
-                    ? '弦予号：${user.ciyuanxiId}'
-                    : (user.email.isEmpty ? '' : user.email),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onPrimary.withValues(alpha: 0.85),
-                ),
-              ),
-            ],
+        // 头像区：干净地居中放在页面背景上，无大色块
+        Center(child: _Avatar(user: user)),
+        const SizedBox(height: 16),
+        Center(
+          child: Text(
+            user.nickname.isEmpty ? '未命名用户' : user.nickname,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
         ),
-        const SizedBox(height: 20),
+        if (user.role.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                user.role,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 32),
         // 信息分组卡
         _InfoCard(
           children: [
@@ -477,12 +463,6 @@ class _ProfileView extends StatelessWidget {
                 icon: Icons.tag,
                 label: '弦予号',
                 value: user.ciyuanxiId!,
-              ),
-            if (user.role.isNotEmpty)
-              _InfoTile(
-                icon: Icons.workspace_premium_outlined,
-                label: '角色',
-                value: user.role,
               ),
           ],
         ),
@@ -505,35 +485,43 @@ class _ProfileView extends StatelessWidget {
   }
 }
 
-/// 头像：有网络头像则加载，否则用昵称首字符占位。
+/// 头像：有网络头像则加载，否则用昵称首字符 + 主题色实心底占位。
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.user, required this.onColor});
+  const _Avatar({required this.user});
   final AuthUser user;
-  final Color onColor;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final avatar = user.avatar;
     final hasAvatar = avatar != null && avatar.isNotEmpty;
     final fallbackChar = user.nickname.isEmpty
         ? '?'
         : String.fromCharCode(user.nickname.runes.first);
     return Container(
-      width: 84,
-      height: 84,
+      width: 96,
+      height: 96,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: onColor.withValues(alpha: 0.2),
-        border: Border.all(color: onColor.withValues(alpha: 0.6), width: 2),
+        color: scheme.primary,
+        border: Border.all(color: scheme.surface, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: hasAvatar
           ? Image.network(
               avatar,
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _fallback(fallbackChar, onColor),
+              errorBuilder: (_, _, _) =>
+                  _fallback(fallbackChar, scheme.onPrimary),
             )
-          : _fallback(fallbackChar, onColor),
+          : _fallback(fallbackChar, scheme.onPrimary),
     );
   }
 
@@ -542,7 +530,7 @@ class _Avatar extends StatelessWidget {
       child: Text(
         char,
         style: TextStyle(
-            fontSize: 34, fontWeight: FontWeight.bold, color: color),
+            fontSize: 40, fontWeight: FontWeight.bold, color: color),
       ),
     );
   }
