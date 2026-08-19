@@ -253,3 +253,6 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>(
   (ref) => LibraryNotifier(ref),
 );
+
+/// 音乐库页当前 Tab（0 全部 / 1 歌手 / 2 专辑 / 3 文件夹），供主页网格跳转。
+final libraryTabProvider = StateProvider<int>((ref) => 0);

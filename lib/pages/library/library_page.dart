@@ -2,42 +2,69 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/song_list_view.dart';
 import 'song_list_page.dart';
 
-class LibraryPage extends ConsumerWidget {
+class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends ConsumerState<LibraryPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 4, vsync: this);
+    _tab.index = ref.read(libraryTabProvider);
+    ref.listenManual(libraryTabProvider, (prev, next) {
+      if (next != prev && _tab.index != next) {
+        _tab.animateTo(next);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
 
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('音乐库'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () => ref.read(libraryProvider.notifier).load(),
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: '全部'),
-              Tab(text: '歌手'),
-              Tab(text: '专辑'),
-              Tab(text: '文件夹'),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('音乐库'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => ref.read(libraryProvider.notifier).load(),
           ),
+        ],
+        bottom: TabBar(
+          controller: _tab,
+          tabs: const [
+            Tab(text: '全部'),
+            Tab(text: '歌手'),
+            Tab(text: '专辑'),
+            Tab(text: '文件夹'),
+          ],
         ),
-        body: lib.loading
+      ),
+      body: Padding(
+        padding: const EdgeInsets.only(bottom: 150),
+        child: lib.loading
             ? const Center(child: CircularProgressIndicator())
             : lib.error != null
                 ? _ErrorView(message: lib.error!, onRetry: () => ref.read(libraryProvider.notifier).load())
                 : TabBarView(
+                    controller: _tab,
                     children: [
                       _AllSongsTab(),
                       _ArtistsTab(),
@@ -45,7 +72,6 @@ class LibraryPage extends ConsumerWidget {
                       _FoldersTab(),
                     ],
                   ),
-        bottomNavigationBar: const MiniPlayerBar(),
       ),
     );
   }

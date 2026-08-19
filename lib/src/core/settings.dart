@@ -16,7 +16,7 @@ class AppSettings {
     this.lastTab = 0,
     this.keepScreenOn = true,
     this.themeMode = ThemeModePreference.system,
-    this.accentColor = 0xFFE0245E,
+    this.accentColor = 0xFFEC4141,
     this.showQualityBadges = true,
     this.onlineDefaultQuality = '320k',
     this.libraryMinDurationSeconds = 0,
@@ -93,7 +93,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       lastTab: prefs.getInt('lastTab') ?? 0,
       keepScreenOn: prefs.getBool('keepScreenOn') ?? true,
       themeMode: _themeFromInt(prefs.getInt('themeMode') ?? 0),
-      accentColor: prefs.getInt('accentColor') ?? 0xFFE0245E,
+      accentColor: prefs.getInt('accentColor') ?? 0xFFEC4141,
       showQualityBadges: prefs.getBool('showQualityBadges') ?? true,
       onlineDefaultQuality:
           prefs.getString('onlineDefaultQuality') ?? '320k',

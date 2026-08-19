@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../pages/home/home_page.dart';
 import '../../pages/library/library_page.dart';
+import '../../pages/effects/effects_page.dart';
+import '../../pages/search/search_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
@@ -11,7 +14,7 @@ import 'shell.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
 final appRouter = GoRouter(
-  initialLocation: '/library',
+  initialLocation: '/home',
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
@@ -20,20 +23,26 @@ final appRouter = GoRouter(
       branches: [
         StatefulShellBranch(routes: [
           GoRoute(
+            path: '/home',
+            builder: (context, state) => const HomePage(),
+          ),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
             path: '/library',
             builder: (context, state) => const LibraryPage(),
           ),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-            path: '/favorites',
-            builder: (context, state) => const FavoritesPage(),
+            path: '/effects',
+            builder: (context, state) => const EffectsPage(),
           ),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-            path: '/recent',
-            builder: (context, state) => const RecentPage(),
+            path: '/search',
+            builder: (context, state) => const SearchPage(),
           ),
         ]),
         StatefulShellBranch(routes: [
@@ -54,6 +63,15 @@ final appRouter = GoRouter(
       path: '/account',
       builder: (context, state) => const AccountPage(),
     ),
+    // 收藏 / 最近（主页网格进入）。
+    GoRoute(
+      path: '/favorites',
+      builder: (context, state) => const FavoritesPage(),
+    ),
+    GoRoute(
+      path: '/recent',
+      builder: (context, state) => const RecentPage(),
+    ),
   ],
 );
 
@@ -66,8 +84,9 @@ class BottomNavItem {
 }
 
 const bottomNavItems = [
+  BottomNavItem('主界面', Icons.home, '/home'),
   BottomNavItem('音乐库', Icons.library_music, '/library'),
-  BottomNavItem('收藏', Icons.favorite, '/favorites'),
-  BottomNavItem('最近', Icons.history, '/recent'),
+  BottomNavItem('音效', Icons.graphic_eq, '/effects'),
+  BottomNavItem('搜索', Icons.search, '/search'),
   BottomNavItem('设置', Icons.settings, '/settings'),
 ];

@@ -30,10 +30,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       ),
       useMaterial3: true,
     );
+    final darkBase = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.dark,
+    );
     _darkTheme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: seed,
-        brightness: Brightness.dark,
+      colorScheme: darkBase.copyWith(
+        surface: const Color(0xFF262626),
+        surfaceContainerLowest: const Color(0xFF1f1f1f),
+        surfaceContainerLow: const Color(0xFF262626),
+        surfaceContainer: const Color(0xFF2c2c2c),
+        surfaceContainerHigh: const Color(0xFF333333),
+        surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
       useMaterial3: true,
     );
@@ -43,7 +51,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
   Widget build(BuildContext context) {
     final init = ref.watch(rustInitProvider);
     final settings = ref.watch(settingsProvider).valueOrNull;
-    final accent = settings?.accentColor ?? 0xFFE0245E;
+    final accent = settings?.accentColor ?? 0xFFEC4141;
     final themeMode = switch (settings?.themeMode ?? ThemeModePreference.system) {
       ThemeModePreference.light => ThemeMode.light,
       ThemeModePreference.dark => ThemeMode.dark,

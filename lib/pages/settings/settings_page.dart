@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
-import '../../src/widgets/mini_player_bar.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -18,7 +17,7 @@ class SettingsPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 150),
         children: [
           _sectionHeader(context, '账号'),
           _tile(
@@ -45,7 +44,7 @@ class SettingsPage extends ConsumerWidget {
             context,
             icon: Icons.color_lens,
             title: '主题色',
-            trailing: _ColorDot(color: Color(settings?.accentColor ?? 0xFFE0245E)),
+            trailing: _ColorDot(color: Color(settings?.accentColor ?? 0xFFEC4141)),
             onTap: () => _pickAccentColor(context, ref, settings),
           ),
           _sectionHeader(context, '播放'),
@@ -124,7 +123,6 @@ class SettingsPage extends ConsumerWidget {
           ),
         ],
       ),
-      bottomNavigationBar: const MiniPlayerBar(),
     );
   }
 
@@ -216,9 +214,9 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _pickAccentColor(
       BuildContext context, WidgetRef ref, AppSettings? s) async {
-    final cur = s?.accentColor ?? 0xFFE0245E;
+    final cur = s?.accentColor ?? 0xFFEC4141;
     const colors = [
-      0xFFE0245E, 0xFFE64A2E, 0xFFFF8A00, 0xFF4CAF50, 0xFF2196F3,
+      0xFFEC4141, 0xFFE64A2E, 0xFFFF8A00, 0xFF4CAF50, 0xFF2196F3,
       0xFF7C4DFF, 0xFF9C27B0, 0xFF795548, 0xFF607D8B, 0xFF000000,
     ];
     final choice = await showModalBottomSheet<int>(
