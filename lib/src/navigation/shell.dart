@@ -29,29 +29,22 @@ final navBarInsetProvider = Provider<double>((ref) {
   return floating ? 175 : 82;
 });
 
-/// 液态玻璃的统一参数。
+/// 最新调优的晶莹水晶物理 Shader 液态玻璃参数。
 ///
-/// 底栏与迷你播放条共用，保证两者观感一致；调参只需改这里。
-///
-/// 各参数含义：
-/// - `blur` 背景模糊强度
-/// - `refractiveIndex` 折射率，越高玻璃感越强但文字越容易发虚
-/// - `chromaticAberration` 边缘色散
-/// - `saturation` 透过色饱和度，保持 1.0 为中性（默认 1.5 会过饱和）
+/// 极低底色遮罩 + 适当轻模糊 + 高饱和透光 + 强烈边缘高光与折射，呈现如 iOS 18/26 般水润透亮的液态玻璃。
 LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
-      // 亮色下需要更强白化才压得住背景内容。
       glassColor: isDark
-          ? const Color.fromARGB(18, 255, 255, 255)
-          : const Color.fromARGB(60, 255, 255, 255),
-      blur: isDark ? 12 : 9,
-      thickness: 16,
-      refractiveIndex: 1.18,
-      chromaticAberration: 0.012,
-      lightIntensity: isDark ? 0.55 : 0.42,
-      ambientStrength: 0.12,
-      glowIntensity: 0.5,
-      saturation: 1.0,
-      shadowElevation: 1.4,
+          ? const Color.fromARGB(10, 255, 255, 255)
+          : const Color.fromARGB(32, 255, 255, 255),
+      blur: isDark ? 6.5 : 5.0,
+      thickness: 22,
+      refractiveIndex: 1.38,
+      chromaticAberration: 0.035,
+      lightIntensity: isDark ? 1.45 : 1.15,
+      ambientStrength: 0.25,
+      glowIntensity: 0.85,
+      saturation: 1.28,
+      shadowElevation: 2.2,
     );
 
 /// 请求隐藏底栏与迷你播放条的页面计数。
@@ -827,10 +820,13 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 获取用户在设置中的首选展开方向
+    // 获取用户在设置中的首选展开方向与液态玻璃设置
     final preferredDir = ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
         SideBarExpandDirection.down;
+    final liquid = ref.watch(
+            settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+        true;
 
     // 展开面板预估高度 (用于方向判断)
     const double approxExpandedH = 295.0;
@@ -930,6 +926,72 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           ),
         );
 
+        final panelBody = SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: isUp
+                ? [
+                    if (progress > 0.01)
+                      Align(
+                        heightFactor: progress,
+                        alignment: Alignment.bottomCenter,
+                        child: navContent,
+                      ),
+                    logoButton,
+                  ]
+                : [
+                    logoButton,
+                    if (progress > 0.01)
+                      Align(
+                        heightFactor: progress,
+                        alignment: Alignment.topCenter,
+                        child: navContent,
+                      ),
+                  ],
+          ),
+        );
+
+        Widget panelWidget;
+        if (liquid) {
+          panelWidget = AdaptiveGlass(
+            shape: const LiquidRoundedRectangle(borderRadius: 24),
+            settings: liquidGlassSettings(isDark),
+            child: SizedBox(width: panelWidth, child: panelBody),
+          );
+        } else {
+          panelWidget = ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                width: panelWidth,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.05)
+                      : Colors.white.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : Colors.white.withValues(alpha: 0.45),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black
+                          .withValues(alpha: isDark ? 0.3 : 0.1),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: panelBody,
+              ),
+            ),
+          );
+        }
+
         return Positioned(
           left: left,
           top: isUp ? null : currentTop,
@@ -939,60 +1001,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             child: AnimatedOpacity(
               opacity: widget.hidden ? 0.0 : 1.0,
               duration: const Duration(milliseconds: 180),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                  child: Container(
-                    width: panelWidth,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : scheme.surface.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : scheme.onSurface.withValues(alpha: 0.1),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.35 : 0.12),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: SingleChildScrollView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: isUp
-                            ? [
-                                if (progress > 0.01)
-                                  Align(
-                                    heightFactor: progress,
-                                    alignment: Alignment.bottomCenter,
-                                    child: navContent,
-                                  ),
-                                logoButton,
-                              ]
-                            : [
-                                logoButton,
-                                if (progress > 0.01)
-                                  Align(
-                                    heightFactor: progress,
-                                    alignment: Alignment.topCenter,
-                                    child: navContent,
-                                  ),
-                              ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              child: panelWidget,
             ),
           ),
         );

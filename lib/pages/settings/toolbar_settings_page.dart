@@ -71,13 +71,11 @@ class ToolbarSettingsPage extends ConsumerWidget {
                 _GlassSwitchTile(
                   icon: Icons.blur_on,
                   title: '液态玻璃',
-                  subtitle: isSide
-                      ? '选中侧边栏时不可用'
-                      : !isFloating
-                          ? '需先开启悬浮底栏'
-                          : '底栏与播放条使用 shader 折射与动态光照',
-                  value: isSide ? false : (settings?.liquidGlass ?? true),
-                  onChanged: (isSide || !isFloating)
+                  subtitle: (!isSide && !isFloating)
+                      ? '需先开启悬浮底栏'
+                      : '导航栏与迷你播放条使用 shader 折射与动态光影',
+                  value: settings?.liquidGlass ?? true,
+                  onChanged: (!isSide && !isFloating)
                       ? null
                       : (v) => notifier.setLiquidGlass(v),
                 ),
