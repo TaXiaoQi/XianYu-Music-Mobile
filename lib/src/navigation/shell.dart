@@ -125,19 +125,20 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
+    // 只要有页面请求隐藏底栏（说明在二级页面，如音源管理/扫描文件夹/歌曲列表等）
+    // 或者 GoRouter 栈深 > 1，就 100% 处于二级页面。
+    // 处于二级页面时将 canPop 设为 true，放开系统的 PopScope 拦截，
+    // 让 Android 13+ 预测性返回手势（Predictive Back）正常拉动预览；
+    // 仅在根 Tab 无法退栈时设为 false，拦截切回主界面或提示双击退出。
+    final isSubPage =
+        ref.watch(navBarHiddenProvider) > 0 || GoRouter.of(context).canPop();
+
     return PopScope(
-      canPop: false,
+      canPop: isSubPage,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
-        // 1. 如果当前上下文内（包括内嵌的 Router/Navigator 或最外层 Router）有可 Pop 的路由，优先 Pop
-        final router = GoRouter.of(context);
-        if (router.canPop()) {
-          router.pop();
-          return;
-        }
-
-        // 2. 如果已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
+        // 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
         if (index != 0) {
           widget.navigationShell.goBranch(0);
           return;

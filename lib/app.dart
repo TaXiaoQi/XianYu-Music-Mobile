@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,11 +24,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     if (_cachedAccent == accent && _lightTheme != null) return;
     _cachedAccent = accent;
     final seed = Color(accent);
+    final pageTransitions = PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: const PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
+      },
+    );
     _lightTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(
         seedColor: seed,
         brightness: Brightness.light,
       ),
+      pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
     final darkBase = ColorScheme.fromSeed(
@@ -43,6 +51,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
+      pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
   }
