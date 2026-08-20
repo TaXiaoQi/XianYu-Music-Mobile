@@ -77,29 +77,49 @@ class OnlineTrack {
   ///
   /// `path` 使用 `lx://` 伪协议以便与本地文件路径区分。
   QueueItem toQueueItem() {
+    final String intervalStr = interval.isNotEmpty
+        ? interval
+        : '${durationSeconds ~/ 60}:${(durationSeconds % 60).toString().padLeft(2, '0')}';
+    final int intervalMs = durationSeconds * 1000;
+
+    // 容错提取各类音源的关键 ID 字段（匹配 Rust LyricSongInfo 反序列化）
+    final dynamic songId =
+        raw['song_id'] ?? raw['songId'] ?? raw['id'] ?? songmid;
+    final dynamic hash = raw['hash'] ??
+        raw['FileHash'] ??
+        raw['hash_flac'] ??
+        raw['hash_high'] ??
+        (source == 'kg' ? songmid : null);
+    final dynamic copyrightId = raw['copyright_id'] ?? raw['copyrightId'];
+    final dynamic strMediaMid =
+        raw['str_media_mid'] ?? raw['strMediaMid'] ?? raw['media_mid'];
+    final dynamic albumMid = raw['album_mid'] ?? raw['albumMid'];
+    final dynamic albumId = raw['album_id'] ?? raw['albumId'];
+
     return QueueItem(
       path: 'lx://$source/$songmid',
       title: title,
       artist: artist,
       album: album,
-      durationMs: durationSeconds * 1000,
+      durationMs: intervalMs,
       coverUrl: coverUrl,
       source: source,
-      // Rust 侧 LxUrlSongInfo 按 camelCase 反序列化，
-      // 搜索结果的 snake_case 字段需要转换。
+      // Rust 侧 LyricSongInfo 按 camelCase 反序列化，类型要求 strict。
       onlineInfoJson: jsonEncode({
-        'songmid': songmid,
+        'songmid': songmid.toString(),
         'source': source,
-        'hash': raw['hash'],
+        'hash': hash?.toString(),
         'name': title,
         'singer': artist,
         'albumName': album,
-        'albumId': raw['album_id'],
-        'albumMid': raw['album_mid'],
-        'copyrightId': raw['copyright_id'],
-        'strMediaMid': raw['str_media_mid'],
-        'songId': raw['song_id'],
-        '_types': raw['lx_types'],
+        'interval': intervalStr, // String 类型，完全匹配 Rust 要求
+        '_interval': intervalMs, // u32 毫秒数，匹配 Rust _interval 要求
+        'albumId': albumId,
+        'albumMid': albumMid?.toString(),
+        'copyrightId': copyrightId?.toString(),
+        'strMediaMid': strMediaMid?.toString(),
+        'songId': songId,
+        '_types': raw['lx_types'] ?? raw['_types'],
       }),
     );
   }

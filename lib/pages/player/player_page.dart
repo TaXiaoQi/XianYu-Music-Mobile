@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -484,6 +485,30 @@ class _Controls extends ConsumerWidget {
   }
 }
 
+/// 剥离所有音源（酷我/酷狗/LX/KRC/YRC/QRC 等）内嵌的逐字时间戳与元数据标签。
+String _cleanLyricText(String raw) {
+  if (raw.isEmpty) return '';
+
+  String text = raw;
+
+  // 1. 过滤元数据控制头 [ar:xx], [ti:xx], [al:xx], [by:xx], [offset:xx], [kuwo:xx], [kugou:xx], [hash:xx] 等
+  text = text.replaceAll(
+      RegExp(r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
+          caseSensitive: false),
+      '');
+
+  // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳 (如 (1234,500,0) 或 (1234,500))
+  text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
+
+  // 3. 过滤方括号内嵌逐字时间戳 [1234,5678]
+  text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
+
+  // 4. 过滤尖括号时间戳 <2688,-2688> 或 <00:12.34>
+  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+
+  return text.trim();
+}
+
 /// 单行歌词数据
 class _LyricLineItem {
   final int timeMs;
@@ -519,6 +544,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
   String? _loadedPath;
   final ScrollController _scrollCtrl = ScrollController();
 
+  /// 用户是否手动翻看/拖动了歌词
+  bool _userInteracted = false;
+  Timer? _recenterTimer;
+  int _lastActiveIndex = -1;
+
   @override
   void initState() {
     super.initState();
@@ -531,14 +561,53 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
     if (oldWidget.current?.path != widget.current?.path) {
       _fetchLyrics();
     } else {
-      _autoScrollToActiveLine();
+      // 监测用户拖动进度条（Seek）：当进度跳变幅度 > 1.0 秒时，清除脱焦状态并强制重聚焦到对应歌词行
+      final posDelta = (widget.position - oldWidget.position).abs();
+      final isSeek = posDelta > 1.0;
+      if (isSeek) {
+        _recenterTimer?.cancel();
+        _userInteracted = false;
+        _autoScrollToActiveLine(force: true);
+      } else {
+        _autoScrollToActiveLine();
+      }
     }
   }
 
   @override
   void dispose() {
+    _recenterTimer?.cancel();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _onUserScrollStart() {
+    _recenterTimer?.cancel();
+    if (!_userInteracted) {
+      setState(() {
+        _userInteracted = true;
+      });
+    }
+  }
+
+  void _scheduleAutoRecenter() {
+    _recenterTimer?.cancel();
+    // 用户停止翻看 4 秒后，自动平滑对齐重聚焦到当前播放行
+    _recenterTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && _userInteracted) {
+        _recenterToActiveLine();
+      }
+    });
+  }
+
+  void _recenterToActiveLine() {
+    _recenterTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _userInteracted = false;
+      });
+      _autoScrollToActiveLine(force: true);
+    }
   }
 
   Future<void> _fetchLyrics() async {
@@ -552,27 +621,104 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
     });
 
     try {
-      final dbPath = await ref.read(dbPathProvider.future);
-      final jsonStr =
-          await getSongLyricsPayload(dbPath: dbPath, path: item.path);
-      final map = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final rawLines = map['lines'] as List? ?? [];
+      String jsonStr = '';
 
-      final lines = rawLines.map((e) {
-        final m = e as Map<String, dynamic>;
-        return _LyricLineItem(
-          timeMs: (m['timeMs'] as num?)?.toInt() ?? 0,
-          text: m['text'] as String? ?? '',
-          translation: m['translation'] as String?,
+      if (item.isOnline && item.source != null && item.onlineInfoJson != null) {
+        // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词 (kw/kg/tx/wy/mg)
+        final rawResultStr = await fetchLyricFromSource(
+          source: item.source!,
+          songInfoJson: item.onlineInfoJson!,
         );
-      }).toList();
+
+        if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
+          String lyricsToParse = '';
+
+          // 提取 LyricResult JSON 对象中的真实歌词正文 (lxlyric > lyric)
+          try {
+            final lyricObj = jsonDecode(rawResultStr) as Map<String, dynamic>;
+            final lxlyric = lyricObj['lxlyric'] as String? ?? '';
+            final lyric = lyricObj['lyric'] as String? ?? '';
+            final tlyric = lyricObj['tlyric'] as String? ?? '';
+
+            if (lxlyric.trim().isNotEmpty) {
+              lyricsToParse = lxlyric;
+            } else if (lyric.trim().isNotEmpty) {
+              if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
+                lyricsToParse = '$lyric\n$tlyric';
+              } else {
+                lyricsToParse = lyric;
+              }
+            }
+          } catch (_) {
+            lyricsToParse = rawResultStr;
+          }
+
+          if (lyricsToParse.trim().isNotEmpty) {
+            jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+          }
+        }
+      } else {
+        // 本地曲目：通过数据库及本地资源提取
+        final dbPath = await ref.read(dbPathProvider.future);
+        jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+      }
+
+      if (jsonStr.isNotEmpty && jsonStr != 'null') {
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+        final rawLines = (map['displayLines'] as List?) ??
+            (map['display_lines'] as List?) ??
+            (map['lines'] as List?) ??
+            [];
+
+        final lines = <_LyricLineItem>[];
+
+        for (final item in rawLines) {
+          if (item is Map<String, dynamic>) {
+            double timeSec = 0.0;
+            if (item['time'] is num) {
+              timeSec = (item['time'] as num).toDouble();
+            } else if (item['timeMs'] is num) {
+              timeSec = (item['timeMs'] as num).toDouble() / 1000.0;
+            } else if (item['startTime'] is num) {
+              timeSec = (item['startTime'] as num).toDouble();
+            } else if (item['startTimeMs'] is num) {
+              timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
+            }
+
+            final rawText = (item['text'] as String?) ?? '';
+            final text = _cleanLyricText(rawText);
+
+            final rawTrans = (item['translation'] as String?);
+            final translation = rawTrans != null ? _cleanLyricText(rawTrans) : null;
+
+            if (text.isNotEmpty) {
+              lines.add(_LyricLineItem(
+                timeMs: (timeSec * 1000).toInt(),
+                text: text,
+                translation: (translation != null && translation.isNotEmpty)
+                    ? translation
+                    : null,
+              ));
+            }
+          }
+        }
+
+        if (lines.isNotEmpty && mounted) {
+          setState(() {
+            _lines = lines;
+            _loading = false;
+          });
+          _autoScrollToActiveLine();
+          return;
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _lines = lines;
+          _lines = [];
           _loading = false;
         });
-        _autoScrollToActiveLine();
       }
     } catch (_) {
       if (mounted) {
@@ -584,8 +730,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
     }
   }
 
-  void _autoScrollToActiveLine() {
+  void _autoScrollToActiveLine({bool force = false}) {
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
+    if (_userInteracted && !force) return; // 用户正在手动翻看歌词中，暂不打扰
+
     final curMs = (widget.position * 1000).toInt();
 
     int activeIndex = 0;
@@ -597,12 +745,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
       }
     }
 
-    const double lineEstimateH = 68.0;
-    final targetOffset = activeIndex * lineEstimateH;
+    if (activeIndex == _lastActiveIndex && !force) return;
+    _lastActiveIndex = activeIndex;
+
+    // 计算实际滚动的目标 Offset（使高亮行尽量靠近视图中央）
+    final maxScroll = _scrollCtrl.position.maxScrollExtent;
+    final itemRatio = activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1);
+    final targetOffset = maxScroll * itemRatio;
 
     _scrollCtrl.animateTo(
-      targetOffset.clamp(0.0, _scrollCtrl.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 280),
+      targetOffset.clamp(0.0, maxScroll),
+      duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
     );
   }
@@ -645,61 +798,116 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
         ),
       );
     } else {
-      content = ListView.builder(
-        controller: _scrollCtrl,
-        padding: const EdgeInsets.symmetric(vertical: 90, horizontal: 24),
-        itemCount: _lines.length,
-        itemBuilder: (context, idx) {
-          final line = _lines[idx];
-          final isActive = idx == activeIndex;
-          final isPrimaryColor = isActive;
-
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 220),
-              style: TextStyle(
-                fontSize: isActive ? 18 : 15,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isPrimaryColor
-                    ? const Color(0xFFEC4141)
-                    : scheme.onSurface.withValues(alpha: 0.45),
-                height: 1.4,
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    line.text,
-                    textAlign: TextAlign.center,
-                  ),
-                  if (line.translation != null &&
-                      line.translation!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      line.translation!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: isActive ? 14 : 12,
-                        fontWeight:
-                            isActive ? FontWeight.w600 : FontWeight.w400,
-                        color: isPrimaryColor
-                            ? const Color(0xFFEC4141).withValues(alpha: 0.8)
-                            : scheme.onSurface.withValues(alpha: 0.35),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
+      content = NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is UserScrollNotification) {
+            _onUserScrollStart();
+            _scheduleAutoRecenter();
+          }
+          return false;
         },
+        child: ListView.builder(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.symmetric(vertical: 90, horizontal: 24),
+          itemCount: _lines.length,
+          itemBuilder: (context, idx) {
+            final line = _lines[idx];
+            final isActive = idx == activeIndex;
+            final isPrimaryColor = isActive;
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 220),
+                style: TextStyle(
+                  fontSize: isActive ? 18 : 15,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  color: isPrimaryColor
+                      ? const Color(0xFFEC4141)
+                      : scheme.onSurface.withValues(alpha: 0.45),
+                  height: 1.4,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      line.text,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (line.translation != null &&
+                        line.translation!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        line.translation!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isActive ? 14 : 12,
+                          fontWeight:
+                              isActive ? FontWeight.w600 : FontWeight.w400,
+                          color: isPrimaryColor
+                              ? const Color(0xFFEC4141).withValues(alpha: 0.8)
+                              : scheme.onSurface.withValues(alpha: 0.35),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       );
     }
 
     return GestureDetector(
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: content,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          content,
+
+          // 用户手动滑动脱焦后，右下角弹出“回到正在播放”悬浮按钮
+          if (_userInteracted)
+            Positioned(
+              right: 18,
+              bottom: 18,
+              child: InkWell(
+                onTap: _recenterToActiveLine,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4141).withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.gps_fixed, size: 15, color: Colors.white),
+                      SizedBox(width: 6),
+                      Text(
+                        '回到正在播放',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
