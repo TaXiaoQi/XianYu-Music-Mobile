@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/plugins/plugin_provider.dart';
+import 'music_sources_page.dart';
 import 'scan_folders_page.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -80,6 +82,16 @@ class SettingsPage extends ConsumerWidget {
                   title: '在线默认音质',
                   trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
                   onTap: () => _pickQuality(context, ref, settings, isOnline: true),
+                ),
+                // 在线播放依赖用户导入的音源插件
+                _GlassTile(
+                  icon: Icons.extension,
+                  title: '音源管理',
+                  trailing: _sourceSummary(context, ref),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MusicSourcesPage()),
+                  ),
                 ),
               ]),
               _section(context, '歌词', [
@@ -199,6 +211,25 @@ class SettingsPage extends ConsumerWidget {
       },
       style: TextStyle(
           fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+    );
+  }
+
+  /// 音源管理右侧摘要：已启用数量，未导入时提示去添加。
+  Widget _sourceSummary(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(pluginProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = state.plugins.where((p) => p.enabled).length;
+
+    if (state.plugins.isEmpty) {
+      // 未导入音源时在线播放不可用，用主题色提示需要处理。
+      return Text(
+        '未导入',
+        style: TextStyle(fontSize: 13, color: scheme.primary),
+      );
+    }
+    return Text(
+      '已启用 $enabled 个',
+      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
     );
   }
 

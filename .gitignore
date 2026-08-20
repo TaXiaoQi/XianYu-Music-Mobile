@@ -56,3 +56,6 @@ app.*.map.json
 # Flutter-generated ephemeral build metadata (machine-specific paths)
 **/Flutter/ephemeral/
 **/ephemeral/
+
+# 音源脚本取样：含用户私有 API 密钥，仅供本地验证，不得入库
+/rust/examples/fixtures/

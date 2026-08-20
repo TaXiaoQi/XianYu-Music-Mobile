@@ -168,6 +168,7 @@ class _RotatingDisc extends StatelessWidget {
                 angle: spin.value * 2 * math.pi,
                 child: CoverImage(
                   songPath: current.path,
+                  networkUrl: current.coverUrl,
                   width: 40,
                   height: 40,
                   radius: 0,

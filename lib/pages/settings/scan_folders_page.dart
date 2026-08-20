@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/library/scan_settings_provider.dart';
+import '../../src/navigation/shell.dart';
 
 /// 扫描目录管理页：添加/删除本地音乐扫描目录。
 class ScanFoldersPage extends ConsumerStatefulWidget {
@@ -15,7 +16,8 @@ class ScanFoldersPage extends ConsumerStatefulWidget {
   ConsumerState<ScanFoldersPage> createState() => _ScanFoldersPageState();
 }
 
-class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage> {
+class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
+    with HidesShellChrome {
   bool _adding = false;
 
   void _toast(String msg) {

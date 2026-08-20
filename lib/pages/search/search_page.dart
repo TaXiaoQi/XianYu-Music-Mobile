@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
+import '../../src/online/online_search_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 
 /// 搜索页：本地曲库搜索。
@@ -17,8 +19,10 @@ class SearchPage extends ConsumerStatefulWidget {
   ConsumerState<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends ConsumerState<SearchPage> {
+class _SearchPageState extends ConsumerState<SearchPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _ctrl = TextEditingController();
+  late final TabController _tab;
   List<Song> _results = const [];
   bool _loading = false;
   bool _searched = false;
@@ -31,8 +35,29 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   String _activeQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 2, vsync: this);
+    // 切换 Tab 时同步提示文案，并按需触发另一侧的搜索。
+    _tab.addListener(() {
+      if (_tab.indexIsChanging) return;
+      setState(() {});
+      final q = _ctrl.text.trim();
+      if (q.isEmpty) return;
+      if (_tab.index == 1) {
+        final online = ref.read(onlineSearchProvider);
+        // 在线侧尚未搜过该词时补一次，避免空白。
+        if (online.keyword != q) {
+          ref.read(onlineSearchProvider.notifier).search(q);
+        }
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
+    _tab.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -45,6 +70,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final q = keyword.trim();
     if (q.isEmpty) {
       _queryToken++; // 作废在途请求
+      ref.read(onlineSearchProvider.notifier).clear();
       setState(() {
         _results = const [];
         _searched = false;
@@ -53,7 +79,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 220), () => _search(q));
+    _debounce = Timer(const Duration(milliseconds: 220), () {
+      // 本地搜索始终执行（切回本地 Tab 时结果已就绪）；
+      // 在线搜索仅在当前处于在线 Tab 时触发，避免无谓的网络请求。
+      _search(q);
+      if (_tab.index == 1) {
+        ref.read(onlineSearchProvider.notifier).search(q);
+      }
+    });
   }
 
   Future<void> _search(String keyword) async {
@@ -133,31 +166,152 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           autofocus: true,
           textInputAction: TextInputAction.search,
           onChanged: _onChanged,
-          onSubmitted: _search,
+          onSubmitted: (q) {
+            _search(q);
+            if (_tab.index == 1) {
+              ref.read(onlineSearchProvider.notifier).search(q);
+            }
+          },
           decoration: InputDecoration(
-            hintText: '搜索歌曲、歌手、专辑',
+            hintText: _tab.index == 0 ? '搜索本地音乐' : '搜索在线音乐',
             border: InputBorder.none,
             suffixIcon: _ctrl.text.isEmpty
                 ? null
                 : IconButton(
                     icon: const Icon(Icons.clear, size: 20),
-                    onPressed: () {
-                      _ctrl.clear();
-                      _debounce?.cancel();
-                      _queryToken++; // 作废在途请求
-                      setState(() {
-                        _results = const [];
-                        _searched = false;
-                        _loading = false;
-                        _activeQuery = '';
-                      });
-                    },
+                    onPressed: _clearInput,
                   ),
           ),
         ),
+        bottom: TabBar(
+          controller: _tab,
+          tabs: const [
+            Tab(text: '本地'),
+            Tab(text: '在线'),
+          ],
+        ),
       ),
       // 全屏路由，无底栏遮挡，结果列表铺满可用高度。
-      body: _buildBody(scheme),
+      body: TabBarView(
+        controller: _tab,
+        children: [
+          _buildBody(scheme),
+          _OnlineSearchTab(highlight: _activeQuery),
+        ],
+      ),
+    );
+  }
+
+  void _clearInput() {
+    _ctrl.clear();
+    _debounce?.cancel();
+    _queryToken++; // 作废在途请求
+    ref.read(onlineSearchProvider.notifier).clear();
+    setState(() {
+      _results = const [];
+      _searched = false;
+      _loading = false;
+      _activeQuery = '';
+    });
+  }
+}
+
+/// 在线搜索结果页：音源切换 + 带封面时长的结果列表。
+class _OnlineSearchTab extends ConsumerWidget {
+  const _OnlineSearchTab({required this.highlight});
+
+  final String highlight;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(onlineSearchProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        // 音源切换条
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            children: [
+              for (final s in kOnlineSources)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(s.label),
+                    selected: state.source == s.id,
+                    onSelected: (_) =>
+                        ref.read(onlineSearchProvider.notifier).setSource(s.id),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(child: _buildResults(context, ref, state, scheme)),
+      ],
+    );
+  }
+
+  Widget _buildResults(
+    BuildContext context,
+    WidgetRef ref,
+    OnlineSearchState state,
+    ColorScheme scheme,
+  ) {
+    if (state.keyword.isEmpty) {
+      return Center(
+        child: Text(
+          '输入关键词搜索在线音乐',
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
+      );
+    }
+    // 有旧结果时不整页替换为转圈，避免切换音源时闪烁。
+    if (state.loading && state.results.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (state.error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(state.error!, textAlign: TextAlign.center),
+        ),
+      );
+    }
+    if (state.results.isEmpty) {
+      return const Center(child: Text('该音源没有匹配结果'));
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom + 12,
+      ),
+      itemCount: state.results.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, i) {
+        final t = state.results[i];
+        return ListTile(
+          leading: OnlineCover(url: t.coverUrl),
+          title: highlightedText(t.title, highlight, scheme.primary,
+              maxLines: 1),
+          subtitle: highlightedText(
+            t.album.isEmpty ? t.artist : '${t.artist} · ${t.album}',
+            highlight,
+            scheme.primary,
+            maxLines: 1,
+          ),
+          trailing: Text(
+            t.interval.isEmpty ? '--:--' : t.interval,
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          onTap: () => ref.read(onlineSearchProvider.notifier).play(i),
+        );
+      },
     );
   }
 }
+
+

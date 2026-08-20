@@ -11,6 +11,11 @@ name = "xianyu_core"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+# 插件沙箱 JS 引擎（执行 LX Music 兼容音源脚本）
+#
+# 选用纯 Rust 实现的 boa：无 C 依赖、无需 bindgen/libclang，
+# 交叉编译到 Android 无额外环境要求。
+boa_engine = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 amll-lyric = "0.3.0"

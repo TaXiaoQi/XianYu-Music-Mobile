@@ -10,19 +10,40 @@ import '../core/settings.dart';
 import '../rust/api.dart';
 
 /// 播放中的单曲信息（小而美：仅保留 UI 需要的最小字段）。
+///
+/// 同时承载本地与在线两类曲目：
+/// - 本地：`path` 为文件路径，[isOnline] 为 false
+/// - 在线：`path` 为 `lx://{source}/{songmid}` 形式的标识，
+///   [onlineInfoJson] 保存解析直链所需的原始信息，[coverUrl] 为网络封面
 class QueueItem {
   final String path;
   final String title;
   final String artist;
   final String album;
   final int durationMs;
+
+  /// 在线曲目的封面 URL；本地曲目为 null。
+  final String? coverUrl;
+
+  /// 在线音源标识（kw/kg/tx/wy/mg）；本地曲目为 null。
+  final String? source;
+
+  /// 解析直链所需的 `LxUrlSongInfo` JSON；本地曲目为 null。
+  final String? onlineInfoJson;
+
   const QueueItem({
     required this.path,
     required this.title,
     required this.artist,
     required this.album,
     this.durationMs = 0,
+    this.coverUrl,
+    this.source,
+    this.onlineInfoJson,
   });
+
+  /// 是否为在线曲目（需要解析直链后播放）。
+  bool get isOnline => onlineInfoJson != null;
 }
 
 class PlaybackState {
@@ -33,6 +54,13 @@ class PlaybackState {
   final double position;
   final double duration;
   final int playMode; // 0 顺序(列表循环) 1 单曲循环 2 随机
+
+  /// 在线曲目正在解析直链（UI 可展示加载态）。
+  final bool resolving;
+
+  /// 最近一次播放失败的提示；成功播放时清空。
+  final String? error;
+
   const PlaybackState({
     this.current,
     this.queue = const [],
@@ -41,6 +69,8 @@ class PlaybackState {
     this.position = 0,
     this.duration = 0,
     this.playMode = 0,
+    this.resolving = false,
+    this.error,
   });
 
   PlaybackState copyWith({
@@ -51,6 +81,9 @@ class PlaybackState {
     double? position,
     double? duration,
     int? playMode,
+    bool? resolving,
+    // 传入 null 需显式清空，故用哨兵区分「未传」与「置空」。
+    Object? error = _noChange,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -60,9 +93,14 @@ class PlaybackState {
       position: position ?? this.position,
       duration: duration ?? this.duration,
       playMode: playMode ?? this.playMode,
+      resolving: resolving ?? this.resolving,
+      error: error == _noChange ? this.error : error as String?,
     );
   }
 }
+
+/// `copyWith` 中区分「参数未传」与「显式置为 null」的哨兵值。
+const Object _noChange = Object();
 
 class PlayerNotifier extends StateNotifier<PlaybackState> {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
@@ -199,15 +237,68 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       isPlaying: false,
       position: 0,
       duration: item.durationMs / 1000.0,
+      error: null,
+      resolving: item.isOnline,
     );
     try {
-      await _player.setFilePath(item.path);
+      if (item.isOnline) {
+        final url = await _resolveOnlineUrl(item);
+        // 解析期间用户可能已切歌，丢弃过期结果。
+        if (state.queueIndex != index) return;
+        if (url == null) {
+          state = state.copyWith(
+            isPlaying: false,
+            resolving: false,
+            error: '无法获取播放链接',
+          );
+          return;
+        }
+        await _player.setUrl(url);
+      } else {
+        await _player.setFilePath(item.path);
+      }
+      state = state.copyWith(resolving: false);
       await _player.setVolume(_ref.read(volumeProvider));
       await _player.play();
-    } catch (_) {
-      state = state.copyWith(isPlaying: false);
+    } catch (e) {
+      state = state.copyWith(
+        isPlaying: false,
+        resolving: false,
+        error: item.isOnline ? '在线播放失败' : '文件无法播放',
+      );
     }
     _persistSession();
+  }
+
+  /// 解析在线曲目的播放直链，按设置的默认音质并在失败时降级。
+  Future<String?> _resolveOnlineUrl(QueueItem item) async {
+    final infoJson = item.onlineInfoJson;
+    if (infoJson == null) return null;
+    final preferred =
+        _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
+    // 传入数据目录，让 Rust 侧优先用已导入的音源插件解析。
+    final dataDir = await _ref.read(appDataDirProvider.future);
+    // 首选音质失败时逐级降级，提升可播率。
+    final candidates = <String>[
+      preferred,
+      if (preferred != '320k') '320k',
+      if (preferred != '128k') '128k',
+    ];
+    for (final quality in candidates) {
+      try {
+        final json = await lxResolveUrl(
+          songInfoJson: infoJson,
+          quality: quality,
+          dataDir: dataDir,
+        );
+        if (json == 'null') continue;
+        final url = (jsonDecode(json) as Map<String, dynamic>)['url'] as String?;
+        if (url != null && url.isNotEmpty) return url;
+      } catch (_) {
+        // 尝试下一档音质
+      }
+    }
+    return null;
   }
 
   Future<void> toggle() async {
@@ -321,6 +412,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     final settings = _ref.read(settingsProvider).valueOrNull;
     final item = state.current;
     if (item == null) return;
+    // 在线曲目的直链有时效，恢复时无法当本地文件播放；
+    // 队列含在线曲目时跳过持久化，避免下次启动恢复出无法播放的条目。
+    if (item.isOnline || state.queue.any((q) => q.isOnline)) return;
     final sessionJson = jsonEncode({
       'currentSongPath': item.path,
       'playQueuePaths': state.queue.map((q) => q.path).toList(),

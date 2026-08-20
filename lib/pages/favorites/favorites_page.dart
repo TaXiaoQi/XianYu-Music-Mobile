@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/song_list_view.dart';
 
 /// 收藏页：展示已收藏的歌曲，点击即播放整个收藏列表。
@@ -13,11 +14,11 @@ class FavoritesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final favPaths = ref.watch(favoritesProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('收藏')),
-      body: Padding(
-        padding: const EdgeInsets.only(bottom: 150),
-        child: favPaths.isEmpty
+    return HideShellChrome(
+      child: Scaffold(
+        appBar: AppBar(title: const Text('收藏')),
+        // 底栏在二级页面已隐藏，无需额外底部避让。
+        body: favPaths.isEmpty
             ? const Center(child: Text('暂无收藏'))
             : FutureBuilder<List<Song>>(
                 // 收藏集合变化时重新查询。

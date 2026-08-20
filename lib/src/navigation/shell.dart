@@ -14,6 +14,38 @@ import 'routes.dart';
 /// 弹窗、列表等需要避让它的地方统一引用此常量，改动底栏尺寸时只需改这里。
 const double kFloatingNavBarInset = 90;
 
+/// 请求隐藏底栏与迷你播放条的页面计数。
+///
+/// 二级页面（音源管理、扫描文件夹、歌曲列表等）不该被浮层遮挡，
+/// 进入时 +1、离开时 -1；大于 0 时 shell 隐藏浮层。
+/// 用计数而非布尔，以正确处理多层页面叠加。
+final navBarHiddenProvider = StateProvider<int>((ref) => 0);
+
+/// 让当前页面在显示期间隐藏 shell 浮层。
+///
+/// 用法：在页面 State 中混入本 mixin，无需手动管理计数。
+mixin HidesShellChrome<T extends ConsumerStatefulWidget>
+    on ConsumerState<T> {
+  @override
+  void initState() {
+    super.initState();
+    // 延后一帧，避免在 build 期间修改 provider。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(navBarHiddenProvider.notifier).state++;
+    });
+  }
+
+  @override
+  void dispose() {
+    // 页面销毁时恢复；用 Future 规避 dispose 期间的状态修改限制。
+    final notifier = ref.read(navBarHiddenProvider.notifier);
+    Future.microtask(() {
+      if (notifier.mounted && notifier.state > 0) notifier.state--;
+    });
+    super.dispose();
+  }
+}
+
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -69,6 +101,65 @@ class _AppShellState extends ConsumerState<AppShell> {
         body: Stack(
           children: [
             widget.navigationShell,
+            // 二级页面（如音源管理、扫描文件夹、歌曲列表）隐藏底栏与播放条，
+            // 避免浮层压住页面内容；由 _ShellOverlay 监听栈深自动切换。
+            _ShellOverlay(
+              index: index,
+              onSelect: (i) => widget.navigationShell.goBranch(
+                i,
+                initialLocation: i == index,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 包装二级页面，使其显示期间隐藏 shell 浮层。
+///
+/// 供无状态页面（`ConsumerWidget` / `StatelessWidget`）使用；
+/// 有状态页面可直接混入 [HidesShellChrome]。
+///
+/// 用法：`HideShellChrome(child: Scaffold(...))`
+class HideShellChrome extends ConsumerStatefulWidget {
+  const HideShellChrome({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<HideShellChrome> createState() => _HideShellChromeState();
+}
+
+class _HideShellChromeState extends ConsumerState<HideShellChrome>
+    with HidesShellChrome {
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// shell 浮层：迷你播放条 + 液态玻璃底栏。
+///
+/// 有页面请求隐藏时整体淡出并让出手势，避免遮挡二级页面内容。
+class _ShellOverlay extends ConsumerWidget {
+  const _ShellOverlay({required this.index, required this.onSelect});
+
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hidden = ref.watch(navBarHiddenProvider) > 0;
+
+    return IgnorePointer(
+      ignoring: hidden,
+      child: AnimatedOpacity(
+        opacity: hidden ? 0 : 1,
+        duration: const Duration(milliseconds: 180),
+        child: Stack(
+          // 撑满父级，保证 Positioned 的定位基准与原实现一致。
+          fit: StackFit.expand,
+          children: [
             Positioned(
               left: 14,
               right: 14,
@@ -79,13 +170,7 @@ class _AppShellState extends ConsumerState<AppShell> {
               left: 18,
               right: 18,
               bottom: 18,
-              child: _LiquidNavBar(
-                index: index,
-                onSelect: (i) => widget.navigationShell.goBranch(
-                  i,
-                  initialLocation: i == index,
-                ),
-              ),
+              child: _LiquidNavBar(index: index, onSelect: onSelect),
             ),
           ],
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/song_list_view.dart';
 
 /// 歌曲列表详情页：用于歌手/专辑/文件夹的下钻浏览。
@@ -12,7 +13,8 @@ class SongListPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
+    return HideShellChrome(
+      child: Scaffold(
       appBar: AppBar(title: Text(title)),
       body: FutureBuilder<List<Song>>(
         future: loader(),
@@ -32,6 +34,7 @@ class SongListPage extends ConsumerWidget {
                 ref.read(libraryProvider.notifier).playList(list, i),
           );
         },
+      ),
       ),
     );
   }

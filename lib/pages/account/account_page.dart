@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/navigation/shell.dart';
 
 /// 账号认证页：未登录时展示登录/注册，已登录时展示个人资料。
 class AccountPage extends ConsumerStatefulWidget {
@@ -12,7 +13,7 @@ class AccountPage extends ConsumerStatefulWidget {
 }
 
 class _AccountPageState extends ConsumerState<AccountPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
   final _nicknameCtrl = TextEditingController();
   final _idCtrl = TextEditingController();

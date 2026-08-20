@@ -51,6 +51,9 @@ dependencies:
   # 音频播放
   just_audio: ^0.9.0
 
+  # 在线封面加载与磁盘缓存
+  cached_network_image: ^3.4.1
+
   # 轻量本地存储（设置项）
   shared_preferences: ^2.3.0
 

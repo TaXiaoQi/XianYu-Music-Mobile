@@ -1,16 +1,23 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../online/cover_proxy.dart';
 import '../rust/api.dart';
 
-/// 封面加载组件：经 Rust 缩略图接口取本地缓存封面，无封面/失败时回退渐变占位。
+/// 封面加载组件。
+///
+/// 传入 [networkUrl] 时加载在线封面（带磁盘缓存）；
+/// 否则经 Rust 缩略图接口取本地封面。两者均失败时回退渐变占位。
 class CoverImage extends ConsumerStatefulWidget {
   const CoverImage({
     super.key,
     required this.songPath,
+    this.networkUrl,
     this.width = 48,
     this.height = 48,
     this.radius = 12,
@@ -19,6 +26,9 @@ class CoverImage extends ConsumerStatefulWidget {
   });
 
   final String songPath;
+
+  /// 在线封面 URL；非空时优先使用，跳过本地提取。
+  final String? networkUrl;
   final double width;
   final double height;
   final double radius;
@@ -34,22 +44,51 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   static final Map<String, String> _cache = {};
   String? _path;
 
+  /// 经后端代理取回的在线封面字节。
+  Uint8List? _proxied;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _maybeProxy();
   }
 
   @override
   void didUpdateWidget(CoverImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.songPath != widget.songPath) {
+    if (oldWidget.songPath != widget.songPath ||
+        oldWidget.networkUrl != widget.networkUrl) {
       _path = null;
+      _proxied = null;
       _load();
+      _maybeProxy();
     }
   }
 
+  /// 在线封面需要代理时异步拉取。
+  void _maybeProxy() {
+    final url = widget.networkUrl;
+    if (url == null || url.isEmpty) return;
+    if (!CoverProxy.needsProxy(url)) return;
+
+    final hit = CoverProxy.cached(url);
+    if (hit != null) {
+      _proxied = hit;
+      return;
+    }
+    if (CoverProxy.hasFailed(url)) return;
+
+    CoverProxy.fetch(url).then((bytes) {
+      if (!mounted || bytes == null) return;
+      if (widget.networkUrl != url) return; // 期间已切歌
+      setState(() => _proxied = bytes);
+    });
+  }
+
   Future<void> _load() async {
+    // 在线封面直接走网络，无需 Rust 本地提取。
+    if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) return;
     final cached = _cache[widget.songPath];
     if (cached != null) {
       if (mounted) setState(() => _path = cached.isEmpty ? null : cached);
@@ -73,20 +112,45 @@ class _CoverImageState extends ConsumerState<CoverImage> {
 
   @override
   Widget build(BuildContext context) {
-    final path = _path;
+    final url = widget.networkUrl;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
       child: SizedBox(
         width: widget.width,
         height: widget.height,
-        child: (path != null && File(path).existsSync())
-            ? Image.file(
-                File(path),
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _placeholder(),
-              )
-            : _placeholder(),
+        child: (url != null && url.isNotEmpty)
+            ? _networkImage(url)
+            : _localImage(),
       ),
+    );
+  }
+
+  /// 在线封面：防盗链域名经后端代理，其余直连并走磁盘缓存。
+  Widget _networkImage(String url) {
+    if (_proxied != null) {
+      return Image.memory(
+        _proxied!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _placeholder(),
+      );
+    }
+    // 需要代理但未就绪时显示占位，避免渲染必然失败的请求。
+    if (CoverProxy.needsProxy(url)) return _placeholder();
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => _placeholder(),
+      errorWidget: (_, _, _) => _placeholder(),
+    );
+  }
+
+  Widget _localImage() {
+    final path = _path;
+    if (path == null || !File(path).existsSync()) return _placeholder();
+    return Image.file(
+      File(path),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => _placeholder(),
     );
   }
 

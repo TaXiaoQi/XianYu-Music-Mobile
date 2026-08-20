@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/cover_image.dart';
 
 /// 正在播放页：现代毛玻璃风格。
 /// 封面大圆角浮于流光背景之上，下方毛玻璃控制卡承载进度与按钮。
@@ -51,7 +52,7 @@ class PlayerPage extends ConsumerWidget {
                 ),
                 const Spacer(),
                 // 封面（大圆角 + 柔和投影）
-                const _BigCover(),
+                _BigCover(current: current),
                 const Spacer(),
                 // 毛玻璃控制卡
                 Padding(
@@ -114,9 +115,11 @@ class _AmbientBackground extends StatelessWidget {
       );
 }
 
-/// 封面占位：渐变 + 音符，圆角与投影。
+/// 大封面：本地/在线封面，无封面时回退渐变占位。
 class _BigCover extends StatelessWidget {
-  const _BigCover();
+  const _BigCover({required this.current});
+
+  final QueueItem? current;
 
   @override
   Widget build(BuildContext context) {
@@ -127,11 +130,6 @@ class _BigCover extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
-        ),
         boxShadow: [
           BoxShadow(
             color: scheme.primary.withValues(alpha: 0.35),
@@ -139,6 +137,29 @@ class _BigCover extends StatelessWidget {
             offset: const Offset(0, 18),
           ),
         ],
+      ),
+      child: current == null
+          ? _placeholder(scheme, size)
+          : CoverImage(
+              songPath: current!.path,
+              networkUrl: current!.coverUrl,
+              width: size,
+              height: size,
+              radius: 28,
+              gradient: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
+            ),
+    );
+  }
+
+  Widget _placeholder(ColorScheme scheme, double size) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
+        ),
       ),
       child: Icon(Icons.music_note,
           size: size * 0.34, color: Colors.white.withValues(alpha: 0.92)),
@@ -159,6 +180,7 @@ class _GlassControlCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final glassColor = isDark
         ? Colors.white.withValues(alpha: 0.08)
@@ -185,6 +207,23 @@ class _GlassControlCard extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _TitleRow(current: current!),
+                    if (player.error != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.error_outline,
+                              size: 15, color: scheme.error),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              player.error!,
+                              style:
+                                  TextStyle(fontSize: 12, color: scheme.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     _ProgressBar(player: player, notifier: notifier),
                     const SizedBox(height: 6),
@@ -331,14 +370,23 @@ class _Controls extends ConsumerWidget {
               ),
             ],
           ),
-          child: IconButton(
-            icon: Icon(
-              player.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-            ),
-            iconSize: 34,
-            onPressed: notifier.toggle,
-          ),
+          // 在线曲目解析直链期间显示加载态，避免看起来无响应。
+          child: player.resolving
+              ? const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : IconButton(
+                  icon: Icon(
+                    player.isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white,
+                  ),
+                  iconSize: 34,
+                  onPressed: notifier.toggle,
+                ),
         ),
         IconButton(
           iconSize: 32,
