@@ -21,10 +21,11 @@ const double kFloatingNavBarInset = 90;
 /// - 悬浮式：底栏与播放条都是浮层（顶端到屏幕底部约 165px），页面留出 175px 保证末项完全露出。
 /// - 固定式：底栏由 `Scaffold` 收缩内容区，但播放条仍是浮层，
 ///   页面只需为播放条留白 (82px)。
+/// - 侧边栏：导航移到左侧，底部仅剩浮层播放条，页面同样只需留出 82px。
 final navBarInsetProvider = Provider<double>((ref) {
-  final floating =
-      ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
-          true;
+  final s = ref.watch(settingsProvider).valueOrNull;
+  if (s?.navBarPosition == NavBarPosition.side) return 82;
+  final floating = s?.floatingNavBar ?? true;
   return floating ? 175 : 82;
 });
 
@@ -59,6 +60,11 @@ LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
 /// 进入时 +1、离开时 -1；大于 0 时 shell 隐藏浮层。
 /// 用计数而非布尔，以正确处理多层页面叠加。
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
+
+/// 侧边导航栏是否展开。
+///
+/// 默认折叠（仅在左上角显示 3 条竖线 logo 按钮），点击展开完整侧边栏。
+final sideBarExpandedProvider = StateProvider<bool>((ref) => false);
 
 /// 让当前页面在显示期间隐藏 shell 浮层。
 ///
@@ -200,6 +206,38 @@ class _ShellScaffold extends ConsumerWidget {
           i,
           initialLocation: i == index,
         );
+
+    // 侧边栏模式：导航为左上角悬浮层，主内容全屏显示（不被挤压占位）；
+    // 播放条仍以悬浮胶囊浮在内容区底部。
+    final isSide = ref.watch(settingsProvider
+            .select((s) => s.valueOrNull?.navBarPosition)) ==
+        NavBarPosition.side;
+    if (isSide) {
+      final expanded = ref.watch(sideBarExpandedProvider);
+      return Scaffold(
+        body: Stack(
+          children: [
+            navigationShell,
+            if (!hidden)
+              const Positioned(
+                left: 14,
+                right: 14,
+                bottom: 12,
+                child: MiniPlayerBar(),
+              ),
+            _SideNavRail(
+              index: index,
+              hidden: hidden,
+              expanded: expanded,
+              onToggleExpand: () {
+                ref.read(sideBarExpandedProvider.notifier).state = !expanded;
+              },
+              onSelect: select,
+            ),
+          ],
+        ),
+      );
+    }
 
     if (floating) {
       // 悬浮式：底栏与播放条同为浮层，一并叠在内容之上。
@@ -598,6 +636,421 @@ class _NavTab extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 三条竖线 Logo 图标（音乐感动态竖波纹）。
+class _ThreeBarsIcon extends StatelessWidget {
+  const _ThreeBarsIcon({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 20,
+      height: 18,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 3.5),
+          Container(
+            width: 3,
+            height: 18,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 3.5),
+          Container(
+            width: 3,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 侧边导航栏悬浮面板：支持拖动三条竖线按钮更改悬浮位置，避免遮挡内容。
+///
+/// 完全采用 [Positioned] 悬浮定位，不挤压或占据主内容画面；
+/// 支持手势拖动，微小移动识别为点击切换展开/折叠状态；
+/// 支持基于设置（向下/向上展开）与屏幕空间溢出自动反转；
+/// 二级页面（[hidden]）时优雅淡出，不阻挡页面返回。
+class _SideNavRail extends ConsumerStatefulWidget {
+  const _SideNavRail({
+    required this.index,
+    required this.hidden,
+    required this.expanded,
+    required this.onToggleExpand,
+    required this.onSelect,
+  });
+
+  final int index;
+  final bool hidden;
+  final bool expanded;
+  final VoidCallback onToggleExpand;
+  final ValueChanged<int> onSelect;
+
+  @override
+  ConsumerState<_SideNavRail> createState() => _SideNavRailState();
+}
+
+class _SideNavRailState extends ConsumerState<_SideNavRail>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animCtrl;
+  late final Animation<double> _curvedAnim;
+
+  /// 悬浮面板的相对位置（Top 与 Left）
+  double? _top;
+  double? _left;
+
+  /// 拖动过程中的移动总距离，用于区分点按（Tap）与拖拽（Drag）
+  double _dragDistance = 0;
+
+  /// 是否正处于手势拖拽中
+  bool _isDragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: widget.expanded ? 1.0 : 0.0,
+    );
+    _curvedAnim = CurvedAnimation(
+      parent: _animCtrl,
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_SideNavRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expanded != widget.expanded) {
+      if (widget.expanded) {
+        _animCtrl.forward();
+      } else {
+        _animCtrl.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    _dragDistance = 0;
+    _isDragging = true;
+  }
+
+  void _onPanUpdate(
+    DragUpdateDetails details,
+    Size screenSize,
+    EdgeInsets padding,
+  ) {
+    _dragDistance += details.delta.distance;
+    final currentTop = _top ?? (padding.top + 10.0);
+    final currentLeft = _left ?? 10.0;
+
+    final panelW = widget.expanded ? 84.0 : 48.0;
+
+    final minTop = padding.top + 6.0;
+    final maxTop = screenSize.height - padding.bottom - 48.0 - 12.0;
+    final minLeft = 8.0;
+    final maxLeft = screenSize.width - panelW - 8.0;
+
+    final nextTop = currentTop + details.delta.dy;
+    final nextLeft = currentLeft + details.delta.dx;
+
+    setState(() {
+      _top = nextTop.clamp(
+        minTop,
+        maxTop > minTop ? maxTop : minTop,
+      );
+      _left = nextLeft.clamp(
+        minLeft,
+        maxLeft > minLeft ? maxLeft : minLeft,
+      );
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (_isDragging) {
+      setState(() {
+        _isDragging = false;
+      });
+    }
+    // 移动距离极小（< 6 像素）判定为轻触点击
+    if (_dragDistance < 6) {
+      widget.onToggleExpand();
+    }
+  }
+
+  void _onPanCancel() {
+    if (_isDragging) {
+      setState(() {
+        _isDragging = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+
+    final currentTop = _top ?? (padding.top + 10.0);
+    final left = _left ?? 10.0;
+
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 获取用户在设置中的首选展开方向
+    final preferredDir = ref.watch(settingsProvider
+            .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
+        SideBarExpandDirection.down;
+
+    // 展开面板预估高度 (用于方向判断)
+    const double approxExpandedH = 295.0;
+
+    // 检测向下与向上展开是否能够被屏幕完整包裹
+    final bool canFitDown =
+        (currentTop + approxExpandedH) <= (screenSize.height - padding.bottom - 8.0);
+    final bool canFitUp =
+        (currentTop + 48.0 - approxExpandedH) >= (padding.top + 6.0);
+
+    // 智能决策实际展开方向
+    SideBarExpandDirection effectiveDir = preferredDir;
+    if (preferredDir == SideBarExpandDirection.down) {
+      if (!canFitDown &&
+          (canFitUp || (currentTop > (screenSize.height / 2)))) {
+        effectiveDir = SideBarExpandDirection.up;
+      }
+    } else {
+      if (!canFitUp &&
+          (canFitDown || (currentTop <= (screenSize.height / 2)))) {
+        effectiveDir = SideBarExpandDirection.down;
+      }
+    }
+
+    final isUp = effectiveDir == SideBarExpandDirection.up;
+
+    return AnimatedBuilder(
+      animation: _curvedAnim,
+      builder: (context, child) {
+        final progress = _curvedAnim.value;
+        final panelWidth = lerpDouble(48.0, 84.0, progress)!;
+
+        // 3条竖线 Logo 按钮组件（随 progress 旋转与变色）
+        final logoButton = GestureDetector(
+          onPanStart: _onPanStart,
+          onPanUpdate: (d) => _onPanUpdate(d, screenSize, padding),
+          onPanEnd: _onPanEnd,
+          onPanCancel: _onPanCancel,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: panelWidth,
+            height: 48,
+            child: Center(
+              child: Transform.rotate(
+                angle: progress * (3.141592653589793 / 2),
+                child: _ThreeBarsIcon(
+                  color: Color.lerp(
+                    scheme.onSurface.withValues(alpha: 0.85),
+                    const Color(0xFFEC4141),
+                    progress,
+                  )!,
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // 4个 Tab 导航按钮组件（随着 progress 顺畅展开与淡入）
+        final navItems = [
+          for (var i = 0; i < bottomNavItems.length; i++)
+            _SideNavTab(
+              item: bottomNavItems[i],
+              selected: i == widget.index,
+              onTap: () => widget.onSelect(i),
+            ),
+        ];
+
+        final navContent = Opacity(
+          opacity: progress.clamp(0.0, 1.0),
+          child: IgnorePointer(
+            ignoring: progress < 0.2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isUp)
+                  Divider(
+                    height: 1,
+                    indent: 10,
+                    endIndent: 10,
+                    thickness: 0.5,
+                    color: scheme.onSurface.withValues(alpha: 0.1 * progress),
+                  ),
+                const SizedBox(height: 4),
+                ...navItems,
+                if (isUp) ...[
+                  const SizedBox(height: 4),
+                  Divider(
+                    height: 1,
+                    indent: 10,
+                    endIndent: 10,
+                    thickness: 0.5,
+                    color: scheme.onSurface.withValues(alpha: 0.1 * progress),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+
+        return Positioned(
+          left: left,
+          top: isUp ? null : currentTop,
+          bottom: isUp ? (screenSize.height - currentTop - 48.0) : null,
+          child: IgnorePointer(
+            ignoring: widget.hidden,
+            child: AnimatedOpacity(
+              opacity: widget.hidden ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 180),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                  child: Container(
+                    width: panelWidth,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : scheme.surface.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.1)
+                            : scheme.onSurface.withValues(alpha: 0.1),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: isDark ? 0.35 : 0.12),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: isUp
+                            ? [
+                                if (progress > 0.01)
+                                  Align(
+                                    heightFactor: progress,
+                                    alignment: Alignment.bottomCenter,
+                                    child: navContent,
+                                  ),
+                                logoButton,
+                              ]
+                            : [
+                                logoButton,
+                                if (progress > 0.01)
+                                  Align(
+                                    heightFactor: progress,
+                                    alignment: Alignment.topCenter,
+                                    child: navContent,
+                                  ),
+                              ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 侧边导航栏条目：图标 + 标题竖排，选中态主色胶囊高亮。
+class _SideNavTab extends StatelessWidget {
+  const _SideNavTab({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final BottomNavItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFFEC4141);
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected
+        ? accent
+        : scheme.onSurfaceVariant.withValues(alpha: 0.6);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color:
+                selected ? accent.withValues(alpha: 0.14) : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(item.icon, size: 22, color: color),
+              const SizedBox(height: 4),
+              Text(
+                item.title,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -8,6 +8,18 @@ enum ThemeModePreference {
   dark,
 }
 
+/// 底栏/导航条显示位置（底部 / 侧边）
+enum NavBarPosition {
+  bottom,
+  side,
+}
+
+/// 侧边栏展开方向（向下 / 向上）
+enum SideBarExpandDirection {
+  down,
+  up,
+}
+
 /// 扫描支持的主流音频格式大类（与 Rust 白名单展开对应）。
 const kSupportedScanFormats = <String>[
   'flac',
@@ -40,6 +52,8 @@ class AppSettings {
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = true,
     this.liquidGlass = true,
+    this.navBarPosition = NavBarPosition.bottom,
+    this.sideBarExpandDirection = SideBarExpandDirection.down,
   });
 
   final double volume;
@@ -66,6 +80,12 @@ class AppSettings {
   /// 关闭后退回轻量的毛玻璃模糊。仅在悬浮模式下生效。
   final bool liquidGlass;
 
+  /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
+  final NavBarPosition navBarPosition;
+
+  /// 侧边栏展开方向：down 向下展开，up 向上展开。仅在侧边栏模式生效。
+  final SideBarExpandDirection sideBarExpandDirection;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -85,6 +105,8 @@ class AppSettings {
     List<String>? scanFormats,
     bool? floatingNavBar,
     bool? liquidGlass,
+    NavBarPosition? navBarPosition,
+    SideBarExpandDirection? sideBarExpandDirection,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -107,6 +129,9 @@ class AppSettings {
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       liquidGlass: liquidGlass ?? this.liquidGlass,
+      navBarPosition: navBarPosition ?? this.navBarPosition,
+      sideBarExpandDirection:
+          sideBarExpandDirection ?? this.sideBarExpandDirection,
     );
   }
 }
@@ -138,6 +163,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
       floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
       liquidGlass: prefs.getBool('liquidGlass') ?? true,
+      navBarPosition:
+          (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
+              ? NavBarPosition.side
+              : NavBarPosition.bottom,
+      sideBarExpandDirection:
+          (prefs.getString('sideBarExpandDirection') ?? 'down') == 'up'
+              ? SideBarExpandDirection.up
+              : SideBarExpandDirection.down,
     );
   }
 
@@ -177,6 +210,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
       prefs.setBool('liquidGlass', next.liquidGlass),
+      prefs.setString('navBarPosition', next.navBarPosition.name),
+      prefs.setString(
+          'sideBarExpandDirection', next.sideBarExpandDirection.name),
     ]);
   }
 
@@ -198,6 +234,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setScanFormats(List<String> f) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: f));
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
+  Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
+  Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
 }
 
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
