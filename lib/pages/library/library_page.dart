@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/song_list_view.dart';
 import 'song_list_page.dart';
 
@@ -58,7 +59,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ),
       ),
       body: Padding(
-        padding: const EdgeInsets.only(bottom: 150),
+        // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
+        padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider)),
         child: lib.loading
             ? const Center(child: CircularProgressIndicator())
             : lib.error != null

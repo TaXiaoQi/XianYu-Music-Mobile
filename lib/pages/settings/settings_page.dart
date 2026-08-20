@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/plugins/plugin_provider.dart';
 import 'music_sources_page.dart';
 import 'scan_folders_page.dart';
@@ -40,7 +41,8 @@ class SettingsPage extends ConsumerWidget {
               top: MediaQuery.of(context).padding.top + kToolbarHeight,
               left: 16,
               right: 16,
-              bottom: 150,
+              // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
+              bottom: ref.watch(navBarInsetProvider),
             ),
             children: [
               _section(context, '账号', [
@@ -69,6 +71,25 @@ class SettingsPage extends ConsumerWidget {
                   trailing: _ColorDot(
                       color: Color(settings?.accentColor ?? 0xFFEC4141)),
                   onTap: () => _pickAccentColor(context, ref, settings),
+                ),
+                _GlassSwitchTile(
+                  icon: Icons.web_asset,
+                  title: '悬浮底栏',
+                  subtitle: '关闭后使用贴合底部的固定式导航栏',
+                  value: settings?.floatingNavBar ?? true,
+                  onChanged: (v) => notifier.setFloatingNavBar(v),
+                ),
+                // 液态玻璃只作用于悬浮底栏，固定式下无意义故禁用。
+                _GlassSwitchTile(
+                  icon: Icons.blur_on,
+                  title: '液态玻璃',
+                  subtitle: (settings?.floatingNavBar ?? true)
+                      ? '底栏使用折射与动态光照，关闭则用普通毛玻璃'
+                      : '需先开启悬浮底栏',
+                  value: settings?.liquidGlass ?? true,
+                  onChanged: (settings?.floatingNavBar ?? true)
+                      ? (v) => notifier.setLiquidGlass(v)
+                      : null,
                 ),
               ]),
               _section(context, '播放', [
@@ -697,12 +718,18 @@ class _GlassSwitchTile extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onChanged,
+    this.subtitle,
   });
 
   final IconData icon;
   final String title;
+
+  /// 可选说明文字，用于解释开关的作用。
+  final String? subtitle;
   final bool value;
-  final ValueChanged<bool> onChanged;
+
+  /// 传 null 时开关置灰不可用（例如依赖的前置设置未开启）。
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -722,9 +749,31 @@ class _GlassSwitchTile extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(title,
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w500)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      // 不可用时标题置灰，与开关状态一致。
+                      color: onChanged == null
+                          ? scheme.onSurface.withValues(alpha: 0.4)
+                          : null,
+                    )),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
           Switch(value: value, onChanged: onChanged),
         ],

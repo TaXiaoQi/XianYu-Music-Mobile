@@ -38,6 +38,8 @@ class AppSettings {
     this.downloadLyrics = true,
     this.organizeRule = '{Artist}/{Album}/{Title}',
     this.scanFormats = kSupportedScanFormats,
+    this.floatingNavBar = true,
+    this.liquidGlass = true,
   });
 
   final double volume;
@@ -57,6 +59,13 @@ class AppSettings {
   final String organizeRule;
   final List<String> scanFormats;
 
+  /// 底栏样式：true 为悬浮毛玻璃胶囊，false 为固定式底栏。
+  final bool floatingNavBar;
+
+  /// 悬浮底栏是否启用液态玻璃（shader 折射与动态光照）。
+  /// 关闭后退回轻量的毛玻璃模糊。仅在悬浮模式下生效。
+  final bool liquidGlass;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -74,6 +83,8 @@ class AppSettings {
     bool? downloadLyrics,
     String? organizeRule,
     List<String>? scanFormats,
+    bool? floatingNavBar,
+    bool? liquidGlass,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -94,6 +105,8 @@ class AppSettings {
       downloadLyrics: downloadLyrics ?? this.downloadLyrics,
       organizeRule: organizeRule ?? this.organizeRule,
       scanFormats: scanFormats ?? this.scanFormats,
+      floatingNavBar: floatingNavBar ?? this.floatingNavBar,
+      liquidGlass: liquidGlass ?? this.liquidGlass,
     );
   }
 }
@@ -123,6 +136,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       scanFormats:
           prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
+      floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
+      liquidGlass: prefs.getBool('liquidGlass') ?? true,
     );
   }
 
@@ -160,6 +175,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('downloadLyrics', next.downloadLyrics),
       prefs.setString('organizeRule', next.organizeRule),
       prefs.setStringList('scanFormats', next.scanFormats),
+      prefs.setBool('floatingNavBar', next.floatingNavBar),
+      prefs.setBool('liquidGlass', next.liquidGlass),
     ]);
   }
 
@@ -179,6 +196,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
   Future<void> setScanFormats(List<String> f) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: f));
+  Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
+  Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
 }
 
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(

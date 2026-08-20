@@ -4,11 +4,17 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import '../core/settings.dart';
+import '../navigation/shell.dart';
 import '../player/player_provider.dart';
 import 'cover_image.dart';
 
-/// 浮动迷你播放条：旋转封面 + 环形进度 + 播放/下一首，上拖或点击展开全屏。
+/// 迷你播放条：旋转封面 + 环形进度 + 播放/下一首，上拖或点击展开全屏。
+///
+/// 始终为悬浮胶囊：底栏无论固定还是悬浮，播放条都浮在其上方，
+/// 保持一致的观感与手势区域。
 class MiniPlayerBar extends ConsumerStatefulWidget {
   const MiniPlayerBar({super.key});
 
@@ -56,84 +62,108 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         ? 0.0
         : (player.position / player.duration).clamp(0.0, 1.0);
 
+    final liquid =
+        ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            true;
+
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
+      child: Row(
+        children: [
+          _RotatingDisc(
+            current: current,
+            progress: progress,
+            spin: _spin,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  current.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  current.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(
+              player.isPlaying ? Icons.pause : Icons.play_arrow,
+              color: const Color(0xFFEC4141),
+            ),
+            iconSize: 26,
+            onPressed: () => ref.read(playerProvider.notifier).toggle(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.skip_next),
+            iconSize: 24,
+            onPressed: () => ref.read(playerProvider.notifier).next(),
+          ),
+        ],
+      ),
+    );
+
     return GestureDetector(
       onTap: () => context.push('/player'),
       onVerticalDragEnd: (d) {
         final v = d.primaryVelocity;
         if (v != null && v < -200) context.push('/player');
       },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: Container(
-            height: 58,
-            padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  blurRadius: 26,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                _RotatingDisc(
-                  current: current,
-                  progress: progress,
-                  spin: _spin,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        current.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        current.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    player.isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: const Color(0xFFEC4141),
-                  ),
-                  iconSize: 26,
-                  onPressed: () =>
-                      ref.read(playerProvider.notifier).toggle(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.skip_next),
-                  iconSize: 24,
-                  onPressed: () =>
-                      ref.read(playerProvider.notifier).next(),
-                ),
-              ],
-            ),
+      child: liquid
+          ? _liquidSurface(context, content)
+          : _frostedSurface(content),
+    );
+  }
+
+  /// 液态玻璃表面：与底栏同一套参数，保证两者观感一致。
+  Widget _liquidSurface(BuildContext context, Widget content) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AdaptiveGlass(
+      // 高 58，圆角取一半成胶囊。
+      shape: const LiquidRoundedRectangle(borderRadius: 29),
+      settings: liquidGlassSettings(isDark),
+      child: SizedBox(height: 58, child: content),
+    );
+  }
+
+  /// 毛玻璃表面：液态玻璃关闭时使用。
+  Widget _frostedSurface(Widget content) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          height: 58,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 26,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
+          child: content,
         ),
       ),
     );

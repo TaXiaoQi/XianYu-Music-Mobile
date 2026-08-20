@@ -60,6 +60,7 @@ dependencies:
   # 文件夹选择与存储权限（本地音乐扫描）
   file_picker: ^8.1.0
   permission_handler: ^11.3.0
+  liquid_glass_widgets: ^0.30.1
 
 dev_dependencies:
   flutter_test:
