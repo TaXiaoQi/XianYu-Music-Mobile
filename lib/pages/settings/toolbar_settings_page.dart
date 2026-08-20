@@ -70,7 +70,7 @@ class ToolbarSettingsPage extends ConsumerWidget {
                 ),
                 _GlassSwitchTile(
                   icon: Icons.blur_on,
-                  title: '液态玻璃',
+                  title: '导航栏液态玻璃',
                   subtitle: (!isSide && !isFloating)
                       ? '需先开启悬浮底栏'
                       : '导航栏与迷你播放条使用 shader 折射与动态光影',
@@ -78,6 +78,13 @@ class ToolbarSettingsPage extends ConsumerWidget {
                   onChanged: (!isSide && !isFloating)
                       ? null
                       : (v) => notifier.setLiquidGlass(v),
+                ),
+                _GlassSwitchTile(
+                  icon: Icons.music_video,
+                  title: '歌曲详情页液态玻璃',
+                  subtitle: '正在播放页面的控制卡片使用 shader 折射与动态光效',
+                  value: settings?.playerLiquidGlass ?? true,
+                  onChanged: (v) => notifier.setPlayerLiquidGlass(v),
                 ),
                 _GlassRadioTile<SideBarExpandDirection>(
                   icon: Icons.south,

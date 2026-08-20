@@ -27,7 +27,7 @@ class HomePage extends ConsumerWidget {
               children: [
                 _TopBar(onSettings: () => context.go('/settings')),
                 const SizedBox(height: 16),
-                _SearchBar(onTap: () => context.push('/search')),
+                _SearchBar(onTap: () => context.push('/home/search')),
                 const SizedBox(height: 22),
                 const CoverCarousel(),
                 const SizedBox(height: 26),

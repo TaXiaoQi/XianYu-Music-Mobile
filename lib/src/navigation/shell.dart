@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -174,7 +175,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 ///   页面需自行留出 [kFloatingNavBarInset] 的底部间距。
 /// - 固定式：底栏与播放条参与布局（`Scaffold.bottomNavigationBar`），
 ///   Scaffold 自动收缩内容区，页面无需额外避让。
-class _ShellScaffold extends ConsumerWidget {
+class _ShellScaffold extends ConsumerStatefulWidget {
   const _ShellScaffold({
     required this.navigationShell,
     required this.index,
@@ -183,43 +184,159 @@ class _ShellScaffold extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
   final int index;
 
-  /// 固定的 key：悬浮式与固定式处在 widget 树的不同位置，
-  /// 没有它 State 会被丢弃重建，`didUpdateWidget` 也就收不到形态变化。
+  @override
+  ConsumerState<_ShellScaffold> createState() => _ShellScaffoldState();
+}
+
+class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
   static final _jellyKey = GlobalKey<State<_JellySwitch>>();
 
+  /// 迷你播放条拖拽的绝对位置 (Top & Left)
+  double? _playerTop;
+  double? _playerLeft;
+
+  bool _isPlayerDragging = false;
+
+  void _onPlayerPanStart(DragStartDetails details) {
+    setState(() {
+      _isPlayerDragging = true;
+    });
+  }
+
+  void _onPlayerPanUpdate(
+    DragUpdateDetails details,
+    Size screenSize,
+    EdgeInsets padding,
+    double defaultLeft,
+    double defaultTop,
+  ) {
+    final currentLeft = _playerLeft ?? defaultLeft;
+    final currentTop = _playerTop ?? defaultTop;
+
+    const barW = 340.0;
+    const barH = 58.0;
+
+    final minLeft = 6.0;
+    final maxLeft = screenSize.width - barW - 6.0;
+    final minTop = padding.top + 6.0;
+    final maxTop = screenSize.height - padding.bottom - barH - 6.0;
+
+    setState(() {
+      _playerLeft = (currentLeft + details.delta.dx).clamp(
+        minLeft,
+        maxLeft > minLeft ? maxLeft : minLeft,
+      );
+      _playerTop = (currentTop + details.delta.dy).clamp(
+        minTop,
+        maxTop > minTop ? maxTop : minTop,
+      );
+    });
+  }
+
+  void _onPlayerPanEnd(
+    DragEndDetails details,
+    double defaultLeft,
+    double defaultTop,
+  ) {
+    setState(() {
+      _isPlayerDragging = false;
+    });
+
+    // 磁吸检测：若松手位置距默认吸附点 < 60px，自动平滑磁吸回归默认位置
+    if (_playerLeft != null && _playerTop != null) {
+      final dx = _playerLeft! - defaultLeft;
+      final dy = _playerTop! - defaultTop;
+      final dist = math.sqrt(dx * dx + dy * dy);
+      if (dist < 60.0) {
+        setState(() {
+          _playerLeft = null;
+          _playerTop = null;
+        });
+      }
+    }
+  }
+
+  void _onPlayerPanCancel() {
+    setState(() {
+      _isPlayerDragging = false;
+    });
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+
     final floating =
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
-    // 二级页面（音源管理、歌曲列表等）不显示底栏与播放条。
-    final hidden = ref.watch(navBarHiddenProvider) > 0;
 
-    void select(int i) => navigationShell.goBranch(
+    final canPop = GoRouter.of(context).canPop();
+    final hiddenCount = ref.watch(navBarHiddenProvider);
+    final hidden = hiddenCount > 0 || canPop;
+
+    // 安全防护：根 Tab 节点下自动重置漂移的 hidden 计数
+    if (!canPop && hiddenCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(navBarHiddenProvider.notifier).state = 0;
+      });
+    }
+
+    void select(int i) => widget.navigationShell.goBranch(
           i,
-          initialLocation: i == index,
+          initialLocation: i == widget.index,
         );
 
-    // 侧边栏模式：导航为左上角悬浮层，主内容全屏显示（不被挤压占位）；
-    // 播放条仍以悬浮胶囊浮在内容区底部。
     final isSide = ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.navBarPosition)) ==
         NavBarPosition.side;
-    if (isSide) {
-      final expanded = ref.watch(sideBarExpandedProvider);
-      return Scaffold(
-        body: Stack(
-          children: [
-            navigationShell,
-            if (!hidden)
-              const Positioned(
-                left: 14,
-                right: 14,
-                bottom: 12,
-                child: MiniPlayerBar(),
+
+    final expanded = ref.watch(sideBarExpandedProvider);
+
+    // 默认定位坐标
+    final defaultLeft = 14.0;
+    final defaultTop = isSide
+        ? (screenSize.height - padding.bottom - 58.0 - 12.0)
+        : (floating
+            ? (screenSize.height - padding.bottom - 58.0 - 82.0)
+            : (screenSize.height - padding.bottom - 58.0 - 70.0));
+
+    final actualLeft = _playerLeft ?? defaultLeft;
+    final actualTop = _playerTop ?? defaultTop;
+
+    // 检测当前路由：全屏歌曲详情页 /player 隐去迷你播放条，其余所有界面 100% 常驻！
+    final isPlayerPage =
+        GoRouterState.of(context).uri.toString() == '/player';
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          widget.navigationShell,
+
+          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹
+          if (!isPlayerPage)
+            AnimatedPositioned(
+              duration: _isPlayerDragging
+                  ? Duration.zero
+                  : const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
+              left: actualLeft,
+              top: actualTop,
+              width: screenSize.width - 28.0,
+              child: MiniPlayerBar(
+                onPanStart: _onPlayerPanStart,
+                onPanUpdate: (d) => _onPlayerPanUpdate(
+                    d, screenSize, padding, defaultLeft, defaultTop),
+                onPanEnd: (d) =>
+                    _onPlayerPanEnd(d, defaultLeft, defaultTop),
+                onPanCancel: _onPlayerPanCancel,
               ),
+            ),
+
+          // 侧边栏悬浮层
+          if (isSide)
             _SideNavRail(
-              index: index,
+              index: widget.index,
               hidden: hidden,
               expanded: expanded,
               onToggleExpand: () {
@@ -227,94 +344,29 @@ class _ShellScaffold extends ConsumerWidget {
               },
               onSelect: select,
             ),
-          ],
-        ),
-      );
-    }
 
-    if (floating) {
-      // 悬浮式：底栏与播放条同为浮层，一并叠在内容之上。
-      return Scaffold(
-        body: Stack(
-          children: [
-            navigationShell,
-            _JellySwitch(
-              key: _jellyKey,
-              mode: true,
-              child: _FloatingChrome(
-                index: index,
-                onSelect: select,
-                hidden: hidden,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // 固定式：底栏贴底参与布局，播放条仍以悬浮胶囊浮在其上方。
-    //
-    // 播放条不并入 bottomNavigationBar：那样两者会拼成一整块，
-    // 失去悬浮观感。改为放进 Stack，定位在底栏上沿之上。
-    return Scaffold(
-      body: Stack(
-        children: [
-          navigationShell,
-          if (!hidden)
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: 12,
-              child: MiniPlayerBar(),
-            ),
-        ],
-      ),
-      bottomNavigationBar: _JellySwitch(
-        key: _jellyKey,
-        mode: false,
-        child: _FixedChrome(index: index, hidden: hidden, onSelect: select),
-      ),
-    );
-  }
-}
-
-/// 悬浮式浮层：迷你播放条 + 液态玻璃胶囊底栏。
-class _FloatingChrome extends StatelessWidget {
-  const _FloatingChrome({
-    required this.index,
-    required this.onSelect,
-    required this.hidden,
-  });
-
-  final int index;
-  final ValueChanged<int> onSelect;
-  final bool hidden;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: hidden,
-      child: AnimatedOpacity(
-        opacity: hidden ? 0 : 1,
-        duration: const Duration(milliseconds: 180),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: 82,
-              child: MiniPlayerBar(),
-            ),
+          // 悬浮底栏
+          if (!isSide && floating)
             Positioned(
               left: 18,
               right: 18,
               bottom: 18,
-              child: _LiquidNavBar(index: index, onSelect: onSelect),
+              child: _JellySwitch(
+                key: _jellyKey,
+                mode: true,
+                child: _LiquidNavBar(index: widget.index, onSelect: select),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
+      bottomNavigationBar: (!isSide && !floating)
+          ? _JellySwitch(
+              key: _jellyKey,
+              mode: false,
+              child:
+                  _FixedChrome(index: widget.index, hidden: hidden, onSelect: select),
+            )
+          : null,
     );
   }
 }

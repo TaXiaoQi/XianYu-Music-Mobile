@@ -52,6 +52,7 @@ class AppSettings {
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = true,
     this.liquidGlass = true,
+    this.playerLiquidGlass = true,
     this.navBarPosition = NavBarPosition.bottom,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
   });
@@ -77,8 +78,10 @@ class AppSettings {
   final bool floatingNavBar;
 
   /// 悬浮底栏是否启用液态玻璃（shader 折射与动态光照）。
-  /// 关闭后退回轻量的毛玻璃模糊。仅在悬浮模式下生效。
   final bool liquidGlass;
+
+  /// 正在播放详情页控制面板是否启用液态玻璃。
+  final bool playerLiquidGlass;
 
   /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
   final NavBarPosition navBarPosition;
@@ -105,6 +108,7 @@ class AppSettings {
     List<String>? scanFormats,
     bool? floatingNavBar,
     bool? liquidGlass,
+    bool? playerLiquidGlass,
     NavBarPosition? navBarPosition,
     SideBarExpandDirection? sideBarExpandDirection,
   }) {
@@ -129,6 +133,7 @@ class AppSettings {
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       liquidGlass: liquidGlass ?? this.liquidGlass,
+      playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       navBarPosition: navBarPosition ?? this.navBarPosition,
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
@@ -163,6 +168,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
       floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
       liquidGlass: prefs.getBool('liquidGlass') ?? true,
+      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
       navBarPosition:
           (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
               ? NavBarPosition.side
@@ -210,6 +216,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
       prefs.setBool('liquidGlass', next.liquidGlass),
+      prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
       prefs.setString('navBarPosition', next.navBarPosition.name),
       prefs.setString(
           'sideBarExpandDirection', next.sideBarExpandDirection.name),
@@ -234,6 +241,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setScanFormats(List<String> f) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: f));
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
+  Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerLiquidGlass: v));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
 }

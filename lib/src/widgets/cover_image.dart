@@ -115,6 +115,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     final url = widget.networkUrl;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: widget.width,
         height: widget.height,

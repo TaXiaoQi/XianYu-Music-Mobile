@@ -34,7 +34,7 @@ final appRouter = GoRouter(
           GoRoute(
             path: '/home',
             builder: (context, state) => const HomePage(),
-            // 收藏 / 最近作为主页子路由：保留底栏与迷你播放条，
+            // 收藏 / 最近 / 搜索作为主页子路由：保留 Shell 外壳与迷你播放条，
             // 并能正确入栈（自带返回按钮、系统返回键回主页）。
             routes: [
               GoRoute(
@@ -44,6 +44,10 @@ final appRouter = GoRouter(
               GoRoute(
                 path: 'recent',
                 builder: (context, state) => const RecentPage(),
+              ),
+              GoRoute(
+                path: 'search',
+                builder: (context, state) => const SearchPage(),
               ),
             ],
           ),
@@ -79,11 +83,6 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/player',
       builder: (context, state) => const PlayerPage(),
-    ),
-    // 搜索页同为全屏：底栏会遮挡结果列表，且检索场景不需要底部导航。
-    GoRoute(
-      path: '/search',
-      builder: (context, state) => const SearchPage(),
     ),
   ],
 );

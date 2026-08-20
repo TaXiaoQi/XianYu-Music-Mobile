@@ -11,12 +11,20 @@ import '../navigation/shell.dart';
 import '../player/player_provider.dart';
 import 'cover_image.dart';
 
-/// 迷你播放条：旋转封面 + 环形进度 + 播放/下一首，上拖或点击展开全屏。
-///
-/// 始终为悬浮胶囊：底栏无论固定还是悬浮，播放条都浮在其上方，
-/// 保持一致的观感与手势区域。
+/// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
 class MiniPlayerBar extends ConsumerStatefulWidget {
-  const MiniPlayerBar({super.key});
+  const MiniPlayerBar({
+    super.key,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+    this.onPanCancel,
+  });
+
+  final GestureDragStartCallback? onPanStart;
+  final GestureDragUpdateCallback? onPanUpdate;
+  final GestureDragEndCallback? onPanEnd;
+  final VoidCallback? onPanCancel;
 
   @override
   ConsumerState<MiniPlayerBar> createState() => _MiniPlayerBarState();
@@ -104,6 +112,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.skip_previous),
+            iconSize: 22,
+            onPressed: () => ref.read(playerProvider.notifier).previous(),
+          ),
+          IconButton(
             icon: Icon(
               player.isPlaying ? Icons.pause : Icons.play_arrow,
               color: const Color(0xFFEC4141),
@@ -113,7 +126,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           ),
           IconButton(
             icon: const Icon(Icons.skip_next),
-            iconSize: 24,
+            iconSize: 22,
             onPressed: () => ref.read(playerProvider.notifier).next(),
           ),
         ],
@@ -121,11 +134,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     );
 
     return GestureDetector(
+      onPanStart: widget.onPanStart,
+      onPanUpdate: widget.onPanUpdate,
+      onPanEnd: widget.onPanEnd,
+      onPanCancel: widget.onPanCancel,
       onTap: () => context.push('/player'),
-      onVerticalDragEnd: (d) {
-        final v = d.primaryVelocity;
-        if (v != null && v < -200) context.push('/player');
-      },
+      behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
           : _frostedSurface(content),
