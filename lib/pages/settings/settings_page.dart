@@ -42,7 +42,7 @@ class SettingsPage extends ConsumerWidget {
               left: 16,
               right: 16,
               // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
-              bottom: ref.watch(navBarInsetProvider),
+              bottom: ref.watch(navBarInsetProvider) + 24,
             ),
             children: [
               _section(context, '账号', [

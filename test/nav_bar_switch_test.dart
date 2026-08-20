@@ -12,13 +12,13 @@ void main() {
   });
 
   group('navBarInsetProvider', () {
-    test('悬浮式返回 150，页面需自行避让', () async {
+    test('悬浮式返回 175，页面需自行避让', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       // 等设置加载完成
       await c.read(settingsProvider.future);
       await c.read(settingsProvider.notifier).setFloatingNavBar(true);
-      expect(c.read(navBarInsetProvider), 150);
+      expect(c.read(navBarInsetProvider), 175);
     });
 
     test('固定式返回 82，仅为悬浮播放条留白', () async {

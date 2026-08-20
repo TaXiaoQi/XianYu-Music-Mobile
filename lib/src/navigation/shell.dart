@@ -18,14 +18,14 @@ const double kFloatingNavBarInset = 90;
 
 /// 分支根页面需要的底部避让高度。
 ///
-/// - 悬浮式：底栏与播放条都是浮层、不参与布局，页面须为两者留白。
+/// - 悬浮式：底栏与播放条都是浮层（顶端到屏幕底部约 165px），页面留出 175px 保证末项完全露出。
 /// - 固定式：底栏由 `Scaffold` 收缩内容区，但播放条仍是浮层，
-///   页面只需为播放条留白。
+///   页面只需为播放条留白 (82px)。
 final navBarInsetProvider = Provider<double>((ref) {
   final floating =
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
           true;
-  return floating ? 150 : 82;
+  return floating ? 175 : 82;
 });
 
 /// 液态玻璃的统一参数。

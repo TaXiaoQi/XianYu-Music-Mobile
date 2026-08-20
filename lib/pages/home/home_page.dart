@@ -23,7 +23,7 @@ class HomePage extends ConsumerWidget {
             child: ListView(
               // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
               padding: EdgeInsets.fromLTRB(
-                  18, 8, 18, ref.watch(navBarInsetProvider)),
+                  18, 8, 18, ref.watch(navBarInsetProvider) + 24),
               children: [
                 _TopBar(onSettings: () => context.go('/settings')),
                 const SizedBox(height: 16),

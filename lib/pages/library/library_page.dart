@@ -58,23 +58,19 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           ],
         ),
       ),
-      body: Padding(
-        // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
-        padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider)),
-        child: lib.loading
-            ? const Center(child: CircularProgressIndicator())
-            : lib.error != null
-                ? _ErrorView(message: lib.error!, onRetry: () => ref.read(libraryProvider.notifier).load())
-                : TabBarView(
-                    controller: _tab,
-                    children: [
-                      _AllSongsTab(),
-                      _ArtistsTab(),
-                      _AlbumsTab(),
-                      _FoldersTab(),
-                    ],
-                  ),
-      ),
+      body: lib.loading
+          ? const Center(child: CircularProgressIndicator())
+          : lib.error != null
+              ? _ErrorView(message: lib.error!, onRetry: () => ref.read(libraryProvider.notifier).load())
+              : TabBarView(
+                  controller: _tab,
+                  children: [
+                    _AllSongsTab(),
+                    _ArtistsTab(),
+                    _AlbumsTab(),
+                    _FoldersTab(),
+                  ],
+                ),
     );
   }
 }
@@ -144,6 +140,9 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               ? const Center(child: Text('没有匹配的歌曲'))
               : SongsListView(
                   songs: songs,
+                  padding: EdgeInsets.only(
+                    bottom: ref.watch(navBarInsetProvider) + 24,
+                  ),
                   onPlay: (list, i) =>
                       ref.read(libraryProvider.notifier).playList(list, i),
                 ),
@@ -160,6 +159,7 @@ class _ArtistsTab extends ConsumerWidget {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
     if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
     return ListView.separated(
+      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
       itemCount: artists.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
@@ -199,6 +199,7 @@ class _AlbumsTab extends ConsumerWidget {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
     if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
     return ListView.separated(
+      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
       itemCount: albums.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
@@ -315,10 +316,14 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
     // 用 RefreshIndicator 包裹，空态也可下拉；空态用可滚动布局撑满。
+    final bottomPadding = EdgeInsets.only(
+      bottom: ref.watch(navBarInsetProvider) + 24,
+    );
     return RefreshIndicator(
       onRefresh: _onRefresh,
       child: root.isEmpty
           ? ListView(
+              padding: bottomPadding,
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 SizedBox(
@@ -336,6 +341,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               ],
             )
           : ListView(
+              padding: bottomPadding,
               physics: const AlwaysScrollableScrollPhysics(),
               children: tiles,
             ),
