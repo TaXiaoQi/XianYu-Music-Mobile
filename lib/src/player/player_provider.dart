@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -141,53 +142,95 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     await _restoreSession();
   }
 
-  /// 启动时从 SQLite 恢复上次播放会话。
+  /// 启动时恢复上次关闭时的播放会话（优先从 SharedPreferences 1 毫秒极速恢复，SQLite 兜底）。
   Future<void> _restoreSession() async {
     try {
-      final dbPath = await _ref.read(dbPathProvider.future);
-      final jsonStr = await loadPlaybackSession(dbPath: dbPath);
+      String jsonStr = '';
+
+      // 第一重保障：从 SharedPreferences 瞬间毫秒级读取
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        jsonStr = prefs.getString('last_playback_session') ?? '';
+      } catch (_) {}
+
+      // 第二重保障：未命中时从 SQLite 加载
+      if (jsonStr.isEmpty || jsonStr == 'null') {
+        try {
+          final dbPath = await _ref.read(dbPathProvider.future);
+          jsonStr = await loadPlaybackSession(dbPath: dbPath);
+        } catch (_) {}
+      }
+
+      if (jsonStr.isEmpty || jsonStr == 'null') return;
+
       final j = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final paths = (j['playQueuePaths'] as List? ?? const []).cast<String>();
+      final paths = ((j['play_queue_paths'] ?? j['playQueuePaths']) as List? ?? const [])
+          .cast<String>();
       if (paths.isEmpty) return;
-      final items = paths
-          .map((p) => QueueItem(
-                path: p,
-                title: _titleFromPath(p),
-                artist: '',
-                album: '',
-              ))
-          .toList();
-      final currentPath = j['currentSongPath'] as String?;
-      final startIndex = currentPath == null
-          ? 0
-          : paths.indexOf(currentPath);
+
+      final metaMap = (j['queue_song_meta'] ?? j['queueSongMeta']) as Map<String, dynamic>?;
+      final metaList = j['queueMetaList'] as List?;
+      final items = <QueueItem>[];
+
+      for (final p in paths) {
+        Map<String, dynamic>? m;
+        if (metaMap != null && metaMap.containsKey(p)) {
+          m = metaMap[p] as Map<String, dynamic>?;
+        } else if (metaList != null) {
+          final found = metaList.firstWhere(
+            (element) => (element as Map)['path'] == p,
+            orElse: () => null,
+          );
+          if (found != null) m = found as Map<String, dynamic>;
+        }
+
+        if (m != null) {
+          items.add(QueueItem(
+            path: m['path'] as String? ?? p,
+            title: m['title'] as String? ?? _titleFromPath(p),
+            artist: m['artist'] as String? ?? '',
+            album: m['album'] as String? ?? '',
+            durationMs: (m['durationMs'] as num?)?.toInt() ?? 0,
+            coverUrl: m['coverUrl'] as String?,
+            source: m['source'] as String?,
+            onlineInfoJson: m['onlineInfoJson'] as String?,
+          ));
+        } else {
+          items.add(QueueItem(
+            path: p,
+            title: _titleFromPath(p),
+            artist: '',
+            album: '',
+          ));
+        }
+      }
+
+      final currentPath = (j['current_song_path'] ?? j['currentSongPath']) as String?;
+      final startIndex = currentPath == null ? 0 : paths.indexOf(currentPath);
       final idx = startIndex < 0 ? 0 : startIndex;
-      final mode = (j['playMode'] as num?)?.toInt() ?? 0;
-      final pos = (j['currentPositionSecs'] as num?)?.toDouble() ?? 0;
-      final wasPlaying = j['isPlaying'] as bool? ?? false;
+      final mode = (j['play_mode'] ?? j['playMode'] as num?)?.toInt() ?? 0;
+      final pos = (j['current_position_secs'] ?? j['currentPositionSecs'] as num?)?.toDouble() ?? 0;
+
+      final currentItem = items[idx];
 
       state = state.copyWith(
         queue: items,
         queueIndex: idx,
-        current: items[idx],
+        current: currentItem,
         playMode: mode,
         position: pos,
         isPlaying: false,
       );
+
       await _ref.read(settingsProvider.notifier).setPlayMode(mode);
-      try {
-        await _player.setFilePath(items[idx].path);
-        await seek(pos);
-        if (wasPlaying) {
-          _manualPause = false;
-          await _player.play();
-        }
-      } catch (_) {
-        // 文件不可用，仅恢复队列不播放。
+
+      if (!currentItem.isOnline) {
+        try {
+          await _player.setFilePath(currentItem.path);
+          await seek(pos);
+        } catch (_) {}
       }
-    } catch (_) {
-      // 无有效会话，忽略。
-    }
+    } catch (_) {}
   }
 
   String _titleFromPath(String p) {
@@ -210,6 +253,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
           positionSecs: state.position,
           isPlaying: state.isPlaying,
         );
+        await _persistSession();
       } catch (_) {}
     });
   }
@@ -310,6 +354,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       _manualPause = false;
       await _player.play();
     }
+    _persistSession();
   }
 
   Future<void> seek(double secs) async {
@@ -408,25 +453,41 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> _persistSession() async {
-    final dbPath = await _ref.read(dbPathProvider.future);
-    final settings = _ref.read(settingsProvider).valueOrNull;
-    final item = state.current;
-    if (item == null) return;
-    // 在线曲目的直链有时效，恢复时无法当本地文件播放；
-    // 队列含在线曲目时跳过持久化，避免下次启动恢复出无法播放的条目。
-    if (item.isOnline || state.queue.any((q) => q.isOnline)) return;
-    final sessionJson = jsonEncode({
-      'currentSongPath': item.path,
-      'playQueuePaths': state.queue.map((q) => q.path).toList(),
-      'sourceSongPaths': const <String>[],
-      'playMode': state.playMode,
-      'volume': settings?.volume ?? 1.0,
-      'currentPositionSecs': state.position,
-      'isPlaying': state.isPlaying,
-      'sessionQualityOverride': null,
-      'queueSongMeta': const <String, dynamic>{},
-    });
-    await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final settings = _ref.read(settingsProvider).valueOrNull;
+      final item = state.current;
+      if (item == null || state.queue.isEmpty) return;
+
+      final Map<String, dynamic> queueSongMeta = {};
+      for (final q in state.queue) {
+        queueSongMeta[q.path] = {
+          'path': q.path,
+          'title': q.title,
+          'artist': q.artist,
+          'album': q.album,
+          'durationMs': q.durationMs,
+          'coverUrl': q.coverUrl,
+          'source': q.source,
+          'onlineInfoJson': q.onlineInfoJson,
+        };
+      }
+
+      // 遵循 Rust 侧 PlaybackSessionData 的 snake_case 序列化结构
+      final sessionJson = jsonEncode({
+        'current_song_path': item.path,
+        'play_queue_paths': state.queue.map((q) => q.path).toList(),
+        'source_song_paths': state.queue.map((q) => q.path).toList(),
+        'play_mode': state.playMode,
+        'volume': (settings?.volume ?? 1.0) * 100.0, // Rust volume 范围 0-100
+        'current_position_secs': state.position,
+        'is_playing': state.isPlaying,
+        'session_quality_override': null,
+        'queue_song_meta': queueSongMeta,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      });
+      await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
+    } catch (_) {}
   }
 
   @override

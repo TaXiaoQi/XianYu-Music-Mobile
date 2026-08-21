@@ -4,13 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/settings.dart';
+import '../../src/navigation/shell.dart';
 
 /// 底栏与工具栏设置页：支持配置底栏位置（底部/侧边）、悬浮样式与液态玻璃。
-class ToolbarSettingsPage extends ConsumerWidget {
+class ToolbarSettingsPage extends ConsumerStatefulWidget {
   const ToolbarSettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ToolbarSettingsPage> createState() =>
+      _ToolbarSettingsPageState();
+}
+
+class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
+    with HidesShellChrome {
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider).valueOrNull;
     final notifier = ref.read(settingsProvider.notifier);
     final isSide = settings?.navBarPosition == NavBarPosition.side;

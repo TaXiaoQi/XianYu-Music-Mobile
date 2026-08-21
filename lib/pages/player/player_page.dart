@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -509,16 +510,31 @@ String _cleanLyricText(String raw) {
   return text.trim();
 }
 
+/// 单字/单词逐字时间数据 (单位: 秒)
+class _LyricWordItem {
+  final String text;
+  final double start;
+  final double end;
+
+  const _LyricWordItem({
+    required this.text,
+    required this.start,
+    required this.end,
+  });
+}
+
 /// 单行歌词数据
 class _LyricLineItem {
   final int timeMs;
   final String text;
   final String? translation;
+  final List<_LyricWordItem> words;
 
   const _LyricLineItem({
     required this.timeMs,
     required this.text,
     this.translation,
+    this.words = const [],
   });
 }
 
@@ -692,6 +708,26 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
             final rawTrans = (item['translation'] as String?);
             final translation = rawTrans != null ? _cleanLyricText(rawTrans) : null;
 
+            // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
+            final words = <_LyricWordItem>[];
+            final rawWords = item['words'] as List?;
+            if (rawWords != null && rawWords.isNotEmpty) {
+              for (final w in rawWords) {
+                if (w is Map<String, dynamic>) {
+                  final wText = _cleanLyricText((w['text'] as String?) ?? '');
+                  final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
+                  final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
+                  if (wText.isNotEmpty) {
+                    words.add(_LyricWordItem(
+                      text: wText,
+                      start: wStart,
+                      end: wEnd,
+                    ));
+                  }
+                }
+              }
+            }
+
             if (text.isNotEmpty) {
               lines.add(_LyricLineItem(
                 timeMs: (timeSec * 1000).toInt(),
@@ -699,6 +735,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
                 translation: (translation != null && translation.isNotEmpty)
                     ? translation
                     : null,
+                words: words,
               ));
             }
           }
@@ -815,44 +852,59 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
             final isActive = idx == activeIndex;
             final isPrimaryColor = isActive;
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 220),
-                style: TextStyle(
-                  fontSize: isActive ? 18 : 15,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isPrimaryColor
-                      ? const Color(0xFFEC4141)
-                      : scheme.onSurface.withValues(alpha: 0.45),
-                  height: 1.4,
-                ),
-                child: Column(
-                  children: [
-                    Text(
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              children: [
+                // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
+                if (isActive && line.words.isNotEmpty)
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (final w in line.words)
+                        _buildKaraokeWordWidget(
+                          w,
+                          widget.position,
+                          scheme,
+                        ),
+                    ],
+                  )
+                else
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 220),
+                    style: TextStyle(
+                      fontSize: isActive ? 18 : 15,
+                      fontWeight:
+                          isActive ? FontWeight.w700 : FontWeight.w500,
+                      color: isPrimaryColor
+                          ? const Color(0xFFEC4141)
+                          : scheme.onSurface.withValues(alpha: 0.45),
+                      height: 1.4,
+                    ),
+                    child: Text(
                       line.text,
                       textAlign: TextAlign.center,
                     ),
-                    if (line.translation != null &&
-                        line.translation!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        line.translation!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: isActive ? 14 : 12,
-                          fontWeight:
-                              isActive ? FontWeight.w600 : FontWeight.w400,
-                          color: isPrimaryColor
-                              ? const Color(0xFFEC4141).withValues(alpha: 0.8)
-                              : scheme.onSurface.withValues(alpha: 0.35),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
+                  ),
+                if (line.translation != null &&
+                    line.translation!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    line.translation!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isActive ? 14 : 12,
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isPrimaryColor
+                          ? const Color(0xFFEC4141).withValues(alpha: 0.8)
+                          : scheme.onSurface.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
           },
         ),
       );
@@ -907,6 +959,53 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 渲染单个词/字的卡拉OK漫过染色高光
+  Widget _buildKaraokeWordWidget(
+    _LyricWordItem word,
+    double position,
+    ColorScheme scheme,
+  ) {
+    final duration = math.max(0.001, word.end - word.start);
+    final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
+
+    const activeColor = Color(0xFFEC4141);
+    final inactiveColor = scheme.onSurface.withValues(alpha: 0.45);
+
+    const style = TextStyle(
+      fontSize: 18,
+      fontWeight: FontWeight.w700,
+      height: 1.4,
+    );
+
+    if (progress <= 0) {
+      return Text(
+        word.text,
+        style: style.copyWith(color: inactiveColor),
+      );
+    }
+
+    if (progress >= 1.0) {
+      return Text(
+        word.text,
+        style: style.copyWith(color: activeColor),
+      );
+    }
+
+    // 正在唱当前词：渐变染色漫过 (ShaderMask)
+    return ShaderMask(
+      shaderCallback: (bounds) {
+        return LinearGradient(
+          colors: [activeColor, inactiveColor],
+          stops: [progress, progress],
+        ).createShader(bounds);
+      },
+      child: Text(
+        word.text,
+        style: style.copyWith(color: Colors.white),
       ),
     );
   }

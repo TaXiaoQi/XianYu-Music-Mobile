@@ -152,7 +152,10 @@ class _SearchPageState extends ConsumerState<SearchPage>
       ),
       // 高亮当前已生效的查询词（而非输入框实时文本），与结果保持一致。
       highlight: _activeQuery,
-      onPlay: (list, i) => ref.read(libraryProvider.notifier).playList(list, i),
+      onPlay: (list, i) {
+        FocusScope.of(context).unfocus();
+        return ref.read(libraryProvider.notifier).playList(list, i);
+      },
     );
   }
 
@@ -167,6 +170,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
           textInputAction: TextInputAction.search,
           onChanged: _onChanged,
           onSubmitted: (q) {
+            FocusScope.of(context).unfocus();
             _search(q);
             if (_tab.index == 1) {
               ref.read(onlineSearchProvider.notifier).search(q);
@@ -307,7 +311,10 @@ class _OnlineSearchTab extends ConsumerWidget {
             t.interval.isEmpty ? '--:--' : t.interval,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
-          onTap: () => ref.read(onlineSearchProvider.notifier).play(i),
+          onTap: () {
+            FocusScope.of(context).unfocus();
+            ref.read(onlineSearchProvider.notifier).play(i);
+          },
         );
       },
     );

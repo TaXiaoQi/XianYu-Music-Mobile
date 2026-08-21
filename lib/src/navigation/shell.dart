@@ -209,6 +209,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     EdgeInsets padding,
     double defaultLeft,
     double defaultTop,
+    bool hasBottomBar,
   ) {
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
@@ -219,7 +220,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final minLeft = 6.0;
     final maxLeft = screenSize.width - barW - 6.0;
     final minTop = padding.top + 6.0;
-    final maxTop = screenSize.height - padding.bottom - barH - 6.0;
+
+    // 当底栏显示 (hasBottomBar) 时，拖拽下限物理截断在底栏上方 (80px)，绝对防止播放栏与底栏重合！
+    final double bottomInset = hasBottomBar ? 80.0 : 12.0;
+    final maxTop = screenSize.height - padding.bottom - barH - bottomInset;
 
     setState(() {
       _playerLeft = (currentLeft + details.delta.dx).clamp(
@@ -293,12 +297,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
 
     final expanded = ref.watch(sideBarExpandedProvider);
 
-    // 默认定位坐标
+    // 默认定位坐标（进入二级页面隐藏底栏时，播放栏自动下沉占位到原本底栏位置 18px 处；回到根页面时浮起回到 82px 处）
     final defaultLeft = 14.0;
     final defaultTop = isSide
         ? (screenSize.height - padding.bottom - 58.0 - 12.0)
         : (floating
-            ? (screenSize.height - padding.bottom - 58.0 - 82.0)
+            ? (hidden
+                ? (screenSize.height - padding.bottom - 58.0 - 18.0)
+                : (screenSize.height - padding.bottom - 58.0 - 82.0))
             : (screenSize.height - padding.bottom - 58.0 - 70.0));
 
     final actualLeft = _playerLeft ?? defaultLeft;
@@ -313,7 +319,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
         children: [
           widget.navigationShell,
 
-          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹
+          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；二级页面进出时带有平滑上浮/下沉动画
           if (!isPlayerPage)
             AnimatedPositioned(
               duration: _isPlayerDragging
@@ -325,8 +331,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               width: screenSize.width - 28.0,
               child: MiniPlayerBar(
                 onPanStart: _onPlayerPanStart,
-                onPanUpdate: (d) => _onPlayerPanUpdate(
-                    d, screenSize, padding, defaultLeft, defaultTop),
+                onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
+                    defaultLeft, defaultTop, !isSide && !hidden),
                 onPanEnd: (d) =>
                     _onPlayerPanEnd(d, defaultLeft, defaultTop),
                 onPanCancel: _onPlayerPanCancel,
@@ -345,16 +351,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               onSelect: select,
             ),
 
-          // 悬浮底栏
+          // 悬浮底栏（仅在 4 个主 Tab 根页面展示，二级页面 hidden 时优雅淡出缩小隐去）
           if (!isSide && floating)
             Positioned(
               left: 18,
               right: 18,
               bottom: 18,
-              child: _JellySwitch(
-                key: _jellyKey,
-                mode: true,
-                child: _LiquidNavBar(index: widget.index, onSelect: select),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                opacity: hidden ? 0.0 : 1.0,
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  scale: hidden ? 0.92 : 1.0,
+                  child: IgnorePointer(
+                    ignoring: hidden,
+                    child: _JellySwitch(
+                      key: _jellyKey,
+                      mode: true,
+                      child: _LiquidNavBar(index: widget.index, onSelect: select),
+                    ),
+                  ),
+                ),
               ),
             ),
         ],
