@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -95,6 +96,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     child: _LyricsView(
                       current: current,
                       position: player.position,
+                      isPlaying: player.isPlaying,
+                      visible: _showLyrics,
                       onTap: () {
                         setState(() {
                           _showLyrics = false;
@@ -526,35 +529,48 @@ class _LyricWordItem {
 /// 单行歌词数据
 class _LyricLineItem {
   final int timeMs;
+
+  /// 行结束时间（毫秒）；0 表示未知，解析后由边界修正补齐。
+  final int endTimeMs;
   final String text;
   final String? translation;
   final List<_LyricWordItem> words;
 
   const _LyricLineItem({
     required this.timeMs,
+    this.endTimeMs = 0,
     required this.text,
     this.translation,
     this.words = const [],
   });
 }
 
-/// 歌词展示组件：支持根据播放进度高亮及自动滚屏，点击可切回封面。
+/// 歌词展示组件：逐字卡拉OK填充 + 自动滚屏，点击可切回封面。
+///
+/// 逐字效果移植自桌面端方案：positionStream 约 200ms 一跳，直接驱动逐字
+/// 填充会呈阶梯跳变；这里用 Ticker 每帧外推（显示进度 = 锚点进度 + 锚点
+/// 以来的流逝时间），实现 60fps 平滑扫字。
 class _LyricsView extends ConsumerStatefulWidget {
   const _LyricsView({
     required this.current,
     required this.position,
+    required this.isPlaying,
+    required this.visible,
     required this.onTap,
   });
 
   final QueueItem? current;
-  final double position; // 播放进度（秒）
+  final double position; // 播放进度（秒，来自 positionStream 锚点）
+  final bool isPlaying; // 是否正在播放（驱动逐帧插值时钟）
+  final bool visible; // 歌词视图是否可见（不可见时停帧省电）
   final VoidCallback onTap;
 
   @override
   ConsumerState<_LyricsView> createState() => _LyricsViewState();
 }
 
-class _LyricsViewState extends ConsumerState<_LyricsView> {
+class _LyricsViewState extends ConsumerState<_LyricsView>
+    with TickerProviderStateMixin {
   List<_LyricLineItem> _lines = [];
   bool _loading = false;
   String? _loadedPath;
@@ -565,9 +581,23 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
   Timer? _recenterTimer;
   int _lastActiveIndex = -1;
 
+  /// 逐字卡拉OK时钟（等价桌面端 rAF 驱动 setCurrentTime）。
+  late final Ticker _ticker;
+  final Stopwatch _anchorWatch = Stopwatch();
+
+  /// 最近一次 positionStream 锚点进度（秒）。
+  double _anchorPos = 0;
+
+  /// 当前帧用于渲染的平滑进度（秒）。
+  double _displayPos = 0;
+
   @override
   void initState() {
     super.initState();
+    _anchorPos = widget.position;
+    _displayPos = widget.position;
+    _ticker = createTicker(_onTick);
+    _syncTicker();
     _fetchLyrics();
   }
 
@@ -575,26 +605,67 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
   void didUpdateWidget(_LyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.current?.path != widget.current?.path) {
+      // 换歌：重置插值时钟并重新拉取歌词
+      _anchorPos = widget.position;
+      _displayPos = widget.position;
+      _lastActiveIndex = -1;
+      _syncTicker();
       _fetchLyrics();
-    } else {
-      // 监测用户拖动进度条（Seek）：当进度跳变幅度 > 1.0 秒时，清除脱焦状态并强制重聚焦到对应歌词行
-      final posDelta = (widget.position - oldWidget.position).abs();
-      final isSeek = posDelta > 1.0;
-      if (isSeek) {
-        _recenterTimer?.cancel();
-        _userInteracted = false;
-        _autoScrollToActiveLine(force: true);
-      } else {
-        _autoScrollToActiveLine();
-      }
+      return;
     }
+
+    // 进度锚点更新：与外推值偏差过大视为用户 Seek
+    final jumped = (widget.position - _displayPos).abs() > 1.2;
+    _anchorPos = widget.position;
+    _anchorWatch.reset();
+    if (jumped) {
+      _recenterTimer?.cancel();
+      _userInteracted = false;
+      _displayPos = widget.position;
+      _autoScrollToActiveLine(force: true);
+    } else if (!widget.isPlaying) {
+      // 暂停态直接定格在新锚点
+      _displayPos = widget.position;
+    }
+    _syncTicker();
+    _autoScrollToActiveLine();
   }
 
   @override
   void dispose() {
+    _ticker.dispose();
     _recenterTimer?.cancel();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  /// 每帧外推平滑进度并刷新逐字填充。
+  void _onTick(Duration _) {
+    final next = _anchorPos + _anchorWatch.elapsedMilliseconds / 1000.0;
+    if ((next - _displayPos).abs() < 0.002) return;
+    _displayPos = next;
+    _autoScrollToActiveLine();
+    setState(() {});
+  }
+
+  /// 根据播放/可见状态启停逐帧时钟。
+  void _syncTicker() {
+    final shouldRun = widget.isPlaying && widget.visible;
+    if (shouldRun && !_ticker.isActive) {
+      _anchorPos = widget.position;
+      _displayPos = _anchorPos;
+      _anchorWatch
+        ..reset()
+        ..start();
+      _ticker.start();
+    } else if (!shouldRun && _ticker.isActive) {
+      _ticker.stop();
+      _anchorWatch.stop();
+      if (!widget.isPlaying) {
+        // 暂停：定格在锚点
+        _displayPos = _anchorPos;
+      }
+    }
   }
 
   void _onUserScrollStart() {
@@ -702,6 +773,15 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
               timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
             }
 
+            // 行结束时间（Rust 侧 camelCase 序列化为 endTime）
+            double endTimeSec = 0.0;
+            final rawEndTime = item['endTime'] ?? item['end_time'];
+            if (rawEndTime is num) {
+              endTimeSec = rawEndTime.toDouble();
+            } else if (item['endTimeMs'] is num) {
+              endTimeSec = (item['endTimeMs'] as num).toDouble() / 1000.0;
+            }
+
             final rawText = (item['text'] as String?) ?? '';
             final text = _cleanLyricText(rawText);
 
@@ -731,6 +811,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
             if (text.isNotEmpty) {
               lines.add(_LyricLineItem(
                 timeMs: (timeSec * 1000).toInt(),
+                endTimeMs: (endTimeSec * 1000).round(),
                 text: text,
                 translation: (translation != null && translation.isNotEmpty)
                     ? translation
@@ -743,7 +824,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
 
         if (lines.isNotEmpty && mounted) {
           setState(() {
-            _lines = lines;
+            _lines = _normalizeBoundaries(lines);
             _loading = false;
           });
           _autoScrollToActiveLine();
@@ -767,11 +848,80 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
     }
   }
 
+  /// 时间边界修正（移植自桌面端 converters.ts）：
+  /// - 行结束时间缺失/无效时，用下一行起点回推（提前量 = min(300ms, 间隔×25%)，
+  ///   行最短 40ms）；最后一行给 5s 宽松结束
+  /// - 词的 end 裁剪到下一词 start 与行结束之内（最短 20ms），
+  ///   避免相邻词重叠导致的填充回跳
+  List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
+    final result = <_LyricLineItem>[];
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final startMs = line.timeMs.toDouble();
+      final nextStartMs =
+          i + 1 < lines.length ? lines[i + 1].timeMs.toDouble() : double.infinity;
+
+      var endMs = line.endTimeMs.toDouble();
+      if (endMs <= startMs) {
+        if (nextStartMs.isFinite) {
+          final gap = nextStartMs - startMs;
+          final leadIn = math.min(300.0, gap * 0.25);
+          endMs = nextStartMs - leadIn;
+        } else {
+          endMs = startMs + 5000;
+        }
+      }
+      endMs = math.max(endMs, startMs + 40);
+
+      final words = <_LyricWordItem>[];
+      for (var j = 0; j < line.words.length; j++) {
+        final w = line.words[j];
+        final wStartMs = w.start * 1000.0;
+        var wEndMs = w.end * 1000.0;
+        if (j + 1 < line.words.length) {
+          wEndMs = math.min(wEndMs, line.words[j + 1].start * 1000.0);
+        }
+        wEndMs = math.min(wEndMs, endMs);
+        wEndMs = math.max(wEndMs, wStartMs + 20);
+
+        // 移植 MusicFree splitWordToChars：多字符词拆成逐字符子词，
+        // 时长按字符数均分——英文单词也能逐字母卡拉OK
+        // （中文音源逐字数据通常已是单字，不受影响）。
+        final chars = w.text.runes.toList();
+        if (chars.length > 1) {
+          final durMs = (wEndMs - wStartMs) / chars.length;
+          for (var c = 0; c < chars.length; c++) {
+            words.add(_LyricWordItem(
+              text: String.fromCharCode(chars[c]),
+              start: (wStartMs + durMs * c) / 1000.0,
+              end: (wStartMs + durMs * (c + 1)) / 1000.0,
+            ));
+          }
+        } else {
+          words.add(_LyricWordItem(
+            text: w.text,
+            start: wStartMs / 1000.0,
+            end: wEndMs / 1000.0,
+          ));
+        }
+      }
+
+      result.add(_LyricLineItem(
+        timeMs: line.timeMs,
+        endTimeMs: endMs.round(),
+        text: line.text,
+        translation: line.translation,
+        words: words,
+      ));
+    }
+    return result;
+  }
+
   void _autoScrollToActiveLine({bool force = false}) {
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
     if (_userInteracted && !force) return; // 用户正在手动翻看歌词中，暂不打扰
 
-    final curMs = (widget.position * 1000).toInt();
+    final curMs = (_displayPos * 1000).toInt();
 
     int activeIndex = 0;
     for (int i = 0; i < _lines.length; i++) {
@@ -800,7 +950,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final curMs = (widget.position * 1000).toInt();
+    final curMs = (_displayPos * 1000).toInt();
 
     int activeIndex = -1;
     for (int i = 0; i < _lines.length; i++) {
@@ -864,7 +1014,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
                       for (final w in line.words)
                         _buildKaraokeWordWidget(
                           w,
-                          widget.position,
+                          _displayPos,
                           scheme,
                         ),
                     ],
@@ -995,12 +1145,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView> {
       );
     }
 
-    // 正在唱当前词：渐变染色漫过 (ShaderMask)
+    // 正在唱当前词：渐变染色漫过 (ShaderMask)。
+    // 填充前沿之后带 10% 宽度的羽化软边，对应桌面端 AMLL 的 wordFadeWidth 扫字效果。
+    final featherEnd = (progress + 0.1).clamp(0.0, 1.0);
     return ShaderMask(
       shaderCallback: (bounds) {
         return LinearGradient(
           colors: [activeColor, inactiveColor],
-          stops: [progress, progress],
+          stops: [progress, featherEnd],
         ).createShader(bounds);
       },
       child: Text(

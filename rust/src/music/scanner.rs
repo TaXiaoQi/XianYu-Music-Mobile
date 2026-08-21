@@ -412,7 +412,7 @@ mod tests {
             &normalized_folder,
             db_snapshot,
             None,
-            ScanOptions::default(),
+            &ScanOptions::default(),
         )
         .expect("collect diff");
 
@@ -459,8 +459,9 @@ mod tests {
             &normalized_folder,
             db_snapshot,
             None,
-            ScanOptions {
+            &ScanOptions {
                 minimum_duration_seconds: 10,
+                allowed_extensions: None,
             },
         )
         .expect("collect diff");
@@ -502,7 +503,7 @@ mod tests {
             &normalized_folder,
             HashMap::new(),
             None,
-            ScanOptions::default(),
+            &ScanOptions::default(),
         )
         .expect("collect diff");
 
