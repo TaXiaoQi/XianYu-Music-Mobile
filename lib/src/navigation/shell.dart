@@ -214,7 +214,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
 
-    const barW = 340.0;
+    // 实际宽度（与悬浮底栏一致的 18px 双侧边距），拖拽边界按真实尺寸夹取。
+    final barW = screenSize.width - 36.0;
     const barH = 58.0;
 
     final minLeft = 6.0;
@@ -298,7 +299,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final expanded = ref.watch(sideBarExpandedProvider);
 
     // 默认定位坐标（进入二级页面隐藏底栏时，播放栏自动下沉占位到原本底栏位置 18px 处；回到根页面时浮起回到 82px 处）
-    final defaultLeft = 14.0;
+    // 左右边距与悬浮底栏统一（18px），两者宽度对齐。
+    final defaultLeft = 18.0;
     final defaultTop = isSide
         ? (screenSize.height - padding.bottom - 58.0 - 12.0)
         : (floating
@@ -328,7 +330,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               curve: Curves.easeOutCubic,
               left: actualLeft,
               top: actualTop,
-              width: screenSize.width - 28.0,
+              width: screenSize.width - 36.0,
               child: MiniPlayerBar(
                 onPanStart: _onPlayerPanStart,
                 onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
@@ -447,17 +449,21 @@ class _FixedNavBar extends StatelessWidget {
         top: false,
         child: SizedBox(
           height: 58,
-          child: Row(
-            children: [
-              for (var i = 0; i < bottomNavItems.length; i++)
-                Expanded(
-                  child: _NavTab(
-                    item: bottomNavItems[i],
-                    selected: i == index,
-                    onTap: () => onSelect(i),
+          // 与悬浮底栏一致：左右留边，避免最外侧 tab 的选中色块贴屏幕边缘。
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                for (var i = 0; i < bottomNavItems.length; i++)
+                  Expanded(
+                    child: _NavTab(
+                      item: bottomNavItems[i],
+                      selected: i == index,
+                      onTap: () => onSelect(i),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -600,17 +606,22 @@ class _LiquidNavBar extends ConsumerWidget {
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true;
 
-    final tabs = Row(
-      children: [
-        for (var i = 0; i < bottomNavItems.length; i++)
-          Expanded(
-            child: _NavTab(
-              item: bottomNavItems[i],
-              selected: i == index,
-              onTap: () => onSelect(i),
+    // 水平留 10px：选中色块占满整个 Expanded 宽度，不加内边距的话
+    // 最左/最右 tab 的色块会顶到胶囊两端，被玻璃圆角边界裁切。
+    final tabs = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          for (var i = 0; i < bottomNavItems.length; i++)
+            Expanded(
+              child: _NavTab(
+                item: bottomNavItems[i],
+                selected: i == index,
+                onTap: () => onSelect(i),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
 
     if (liquid) return _liquidGlass(context, tabs);
@@ -676,30 +687,37 @@ class _NavTab extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(item.icon, size: 22, color: color),
-          const SizedBox(height: 3),
-          Text(
-            item.title,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        // 纵向 padding 恒定：选中/未选中高度一致，图标+文字整体
+        // 由 Row 垂直居中（栏高 60 > 内容 47，切换不跳动）。
+        padding: EdgeInsets.symmetric(
+          horizontal: selected ? 14 : 4,
+          vertical: 4,
+        ),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFFEC4141).withValues(alpha: 0.14)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(item.icon, size: 22, color: color),
+            const SizedBox(height: 3),
+            Text(
+              item.title,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
-          ),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            margin: const EdgeInsets.only(top: 2),
-            width: selected ? 4 : 0,
-            height: 4,
-            decoration: const BoxDecoration(
-              color: Color(0xFFEC4141),
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

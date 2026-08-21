@@ -98,16 +98,20 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('扫描文件夹')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _adding ? null : _addFolder,
-        icon: _adding
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.create_new_folder),
-        label: const Text('添加目录'),
+      floatingActionButton: Padding(
+        // 上移避让二级页面下沉的迷你播放条（高 58 + 距底 18 + 间隙 12）。
+        padding: const EdgeInsets.only(bottom: 88),
+        child: FloatingActionButton.extended(
+          onPressed: _adding ? null : _addFolder,
+          icon: _adding
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.create_new_folder),
+          label: const Text('添加目录'),
+        ),
       ),
       body: foldersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

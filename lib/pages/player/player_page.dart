@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -651,6 +652,20 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   Timer? _recenterTimer;
   int _lastActiveIndex = -1;
 
+  /// 拖动选行播放（移植自 MusicFree）：视口中心对应的行索引，
+  /// 拖动时显示中央指示条，点击播放按钮从该行开始播放。
+  int? _draggingIndex;
+  Timer? _draggingIndexTimer;
+
+  /// 每行在滚动内容中的布局缓存（内容偏移, 高度），供拖动定位中心行。
+  /// 对应 MusicFree LayoutCache 的前缀和，用实测替代估算。
+  final Map<int, (double, double)> _lineLayouts = {};
+
+  // 歌词样式设置（build 中从 settingsProvider 同步，供非 build 路径读取）。
+  int _fontSizeIdx = 1;
+  bool _showTranslation = true;
+  int _offsetMs = 0;
+
   /// 逐字卡拉OK时钟（等价桌面端 rAF 驱动 setCurrentTime）。
   late final Ticker _ticker;
   final Stopwatch _anchorWatch = Stopwatch();
@@ -679,6 +694,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _anchorPos = widget.position;
       _displayPos = widget.position;
       _lastActiveIndex = -1;
+      _draggingIndexTimer?.cancel();
+      _draggingIndex = null;
+      _lineLayouts.clear();
       _syncTicker();
       _fetchLyrics();
       return;
@@ -705,6 +723,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   void dispose() {
     _ticker.dispose();
     _recenterTimer?.cancel();
+    _draggingIndexTimer?.cancel();
     _scrollCtrl.dispose();
     super.dispose();
   }
@@ -765,6 +784,74 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       });
       _autoScrollToActiveLine(force: true);
     }
+  }
+
+  // ==================== 拖动选行播放（移植自 MusicFree） ====================
+
+  /// 行布局回调：记录该行在滚动内容中的偏移与高度。
+  void _onLineMeasured(int index, double viewportDy, double height) {
+    if (!mounted) return;
+    _lineLayouts[index] = (viewportDy + _scrollCtrl.offset, height);
+  }
+
+  /// 滚动更新：定位视口中心对应的歌词行（MusicFree 的 onScroll 中心命中测试）。
+  void _updateDraggingIndex() {
+    if (!_scrollCtrl.hasClients || _lines.isEmpty) return;
+
+    final offset = _scrollCtrl.offset;
+    final viewport = _scrollCtrl.position.viewportDimension;
+    final center = offset + viewport / 2;
+
+    // 在已测量布局中找中心距离最近的行（视口内的行必然已构建测量）。
+    int? best;
+    var bestDist = double.infinity;
+    _lineLayouts.forEach((i, layout) {
+      final dist = (layout.$1 + layout.$2 / 2 - center).abs();
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+
+    if (best != null) {
+      final idx = best!.clamp(0, _lines.length - 1);
+      if (_draggingIndex != idx) {
+        setState(() => _draggingIndex = idx);
+      }
+      // 停止拖动 2 秒后自动清除（对应 MusicFree useDelayFalsy 2000ms）。
+      _draggingIndexTimer?.cancel();
+      _draggingIndexTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted && _draggingIndex != null) {
+          setState(() => _draggingIndex = null);
+        }
+      });
+    }
+  }
+
+  /// 从拖动选中的歌词行开始播放（对应 MusicFree onLyricSeekPress）。
+  void _seekToDraggingLine() {
+    final idx = _draggingIndex;
+    if (idx == null || idx < 0 || idx >= _lines.length) return;
+
+    ref.read(playerProvider.notifier).seek(_lines[idx].timeMs / 1000.0);
+
+    // 立即清除拖动状态并回正到目标行。
+    _draggingIndexTimer?.cancel();
+    setState(() {
+      _draggingIndex = null;
+      _userInteracted = false;
+    });
+    _autoScrollToActiveLine(force: true);
+  }
+
+  /// 拖动指示条的时间文本（mm:ss）。
+  String _draggingTimeLabel() {
+    final idx = _draggingIndex;
+    if (idx == null || idx < 0 || idx >= _lines.length) return '00:00';
+    final s = _lines[idx].timeMs / 1000.0;
+    final m = s ~/ 60;
+    final sec = (s % 60).floor();
+    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
   }
 
   Future<void> _fetchLyrics() async {
@@ -991,7 +1078,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
     if (_userInteracted && !force) return; // 用户正在手动翻看歌词中，暂不打扰
 
-    final curMs = (_displayPos * 1000).toInt();
+    final curMs = ((_displayPos - _offsetMs / 1000.0) * 1000).toInt();
 
     int activeIndex = 0;
     for (int i = 0; i < _lines.length; i++) {
@@ -1020,7 +1107,20 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final curMs = (_displayPos * 1000).toInt();
+
+    // 歌词样式设置（移植自 MF LyricOperations）：字号档位 / 翻译开关 / 时间偏移。
+    // 存到字段供 _onTick → _autoScrollToActiveLine 等非 build 路径使用。
+    final settings = ref.watch(settingsProvider).valueOrNull;
+    _fontSizeIdx = settings?.lyricFontSize ?? 1;
+    _showTranslation = settings?.showLyricsTranslation ?? true;
+    _offsetMs = settings?.lyricOffsetMs ?? 0;
+
+    // 档位 → 字号（对应 MF fontSizeMap 的小/标准/大/特大）。
+    final inactiveFont = [14.0, 15.5, 17.0, 19.0][_fontSizeIdx];
+    final activeFont = inactiveFont + 2.5;
+    final transFont = inactiveFont - 2;
+
+    final curMs = ((_displayPos - _offsetMs / 1000.0) * 1000).toInt();
 
     int activeIndex = -1;
     for (int i = 0; i < _lines.length; i++) {
@@ -1060,19 +1160,27 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           if (notification is UserScrollNotification) {
             _onUserScrollStart();
             _scheduleAutoRecenter();
+          } else if (notification is ScrollUpdateNotification) {
+            // 拖动/惯性滚动中：实时定位视口中心行（拖动选行播放）。
+            if (_userInteracted) _updateDraggingIndex();
           }
           return false;
         },
         child: ListView.builder(
           controller: _scrollCtrl,
-          padding: const EdgeInsets.symmetric(vertical: 90, horizontal: 24),
+          // 底部留出操作栏高度，最后几行不被遮挡。
+          padding: const EdgeInsets.fromLTRB(24, 60, 24, 52),
           itemCount: _lines.length,
           itemBuilder: (context, idx) {
             final line = _lines[idx];
             final isActive = idx == activeIndex;
             final isPrimaryColor = isActive;
+            final isDragging = idx == _draggingIndex;
 
-          return Padding(
+          return _MeasuredLine(
+            index: idx,
+            onMeasured: _onLineMeasured,
+            child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Column(
               children: [
@@ -1084,8 +1192,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       for (final w in line.words)
                         _buildKaraokeWordWidget(
                           w,
-                          _displayPos,
+                          _displayPos - _offsetMs / 1000.0,
                           scheme,
+                          activeFont,
                         ),
                     ],
                   )
@@ -1093,12 +1202,15 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   AnimatedDefaultTextStyle(
                     duration: const Duration(milliseconds: 220),
                     style: TextStyle(
-                      fontSize: isActive ? 18 : 15,
+                      fontSize: isActive ? activeFont : inactiveFont,
                       fontWeight:
                           isActive ? FontWeight.w700 : FontWeight.w500,
-                      color: isPrimaryColor
-                          ? const Color(0xFFEC4141)
-                          : scheme.onSurface.withValues(alpha: 0.45),
+                      // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）
+                      color: isDragging
+                          ? Colors.white
+                          : isPrimaryColor
+                              ? const Color(0xFFEC4141)
+                              : scheme.onSurface.withValues(alpha: 0.45),
                       height: 1.4,
                     ),
                     child: Text(
@@ -1106,24 +1218,29 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       textAlign: TextAlign.center,
                     ),
                   ),
-                if (line.translation != null &&
+                if (_showTranslation &&
+                    line.translation != null &&
                     line.translation!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
                     line.translation!,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: isActive ? 14 : 12,
+                      fontSize:
+                          isActive ? transFont + 1.5 : transFont,
                       fontWeight:
                           isActive ? FontWeight.w600 : FontWeight.w400,
-                      color: isPrimaryColor
-                          ? const Color(0xFFEC4141).withValues(alpha: 0.8)
-                          : scheme.onSurface.withValues(alpha: 0.35),
+                      color: isDragging
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : isPrimaryColor
+                              ? const Color(0xFFEC4141).withValues(alpha: 0.8)
+                              : scheme.onSurface.withValues(alpha: 0.35),
                     ),
                   ),
                 ],
               ],
             ),
+          ),
           );
           },
         ),
@@ -1138,48 +1255,217 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         children: [
           content,
 
-          // 用户手动滑动脱焦后，右下角弹出“回到正在播放”悬浮按钮
-          if (_userInteracted)
-            Positioned(
-              right: 18,
-              bottom: 18,
-              child: InkWell(
-                onTap: _recenterToActiveLine,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEC4141).withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+          // 拖动选行指示条（移植自 MusicFree draggingTime）：
+          // 拖动歌词时在中央显示目标时间 + 播放按钮，点按从该行开始播放。
+          if (_draggingIndex != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  // 时间胶囊
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _draggingTimeLabel(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.87),
+                        fontFeatures: const [
+                          FontFeature.tabularFigures()
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.gps_fixed, size: 15, color: Colors.white),
-                      SizedBox(width: 6),
-                      Text(
-                        '回到正在播放',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 10),
+                  // 中央基准横线：穿过视口中心的选中行
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  // 播放按钮：从选中行开始播放
+                  _DraggingPlayButton(onPressed: _seekToDraggingLine),
+                ],
               ),
             ),
+
+          // 歌词样式操作栏（移植自 MF LyricOperations）：
+          // 字号调节 / 翻译开关 / 时间偏移校正。
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _LyricOperationsBar(
+              fontSizeIdx: _fontSizeIdx,
+              showTranslation: _showTranslation,
+              offsetMs: _offsetMs,
+              hasTranslation: _lines.any((l) =>
+                  (l.translation ?? '').isNotEmpty),
+              onFontSize: _showFontSizeSheet,
+              onToggleTranslation: () {
+                if (!_lines.any((l) => (l.translation ?? '').isNotEmpty)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('当前歌曲无翻译'),
+                        duration: Duration(seconds: 1)),
+                  );
+                  return;
+                }
+                ref.read(settingsProvider.notifier).setShowLyricsTranslation(
+                    !_showTranslation);
+              },
+              onOffset: _showOffsetSheet,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
+  void _showFontSizeSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        final notifier = ref.read(settingsProvider.notifier);
+        var current =
+            ref.read(settingsProvider).valueOrNull?.lyricFontSize ?? 1;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('歌词字号',
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                StatefulBuilder(
+                  builder: (ctx, setSheetState) {
+                    return Row(
+                      children: [
+                        ...List.generate(4, (i) {
+                          final labels = ['小', '标准', '大', '特大'];
+                          return Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setSheetState(() => current = i);
+                                notifier.setLyricFontSize(i);
+                              },
+                              child: Container(
+                                alignment: Alignment.center,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: current == i
+                                      ? const Color(0xFFEC4141)
+                                          .withValues(alpha: 0.14)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  labels[i],
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: current == i
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: current == i
+                                        ? const Color(0xFFEC4141)
+                                        : Theme.of(ctx)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 歌词偏移校正面板（对应 MF SetLyricOffset）：-500ms ~ +500ms 滑杆。
+  void _showOffsetSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        final notifier = ref.read(settingsProvider.notifier);
+        var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('歌词偏移',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                    TextButton(
+                      onPressed: () {
+                        notifier.setLyricOffsetMs(0);
+                        Navigator.of(sheetCtx).pop();
+                      },
+                      child: const Text('重置'),
+                    ),
+                  ],
+                ),
+                StatefulBuilder(
+                  builder: (ctx, setSheetState) {
+                    return Column(
+                      children: [
+                        Text(
+                          value > 0
+                              ? '提前 ${value}ms'
+                              : value < 0
+                                  ? '延后 ${-value}ms'
+                                  : '无偏移',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color:
+                                Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Slider(
+                          value: value.toDouble(),
+                          min: -500,
+                          max: 500,
+                          divisions: 100,
+                          label: '${value}ms',
+                          onChanged: (v) {
+                            setSheetState(() => value = v.round());
+                            notifier.setLyricOffsetMs(v.round());
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1188,6 +1474,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _LyricWordItem word,
     double position,
     ColorScheme scheme,
+    double fontSize,
   ) {
     final duration = math.max(0.001, word.end - word.start);
     final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
@@ -1195,8 +1482,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     const activeColor = Color(0xFFEC4141);
     final inactiveColor = scheme.onSurface.withValues(alpha: 0.45);
 
-    const style = TextStyle(
-      fontSize: 18,
+    final style = TextStyle(
+      fontSize: fontSize,
       fontWeight: FontWeight.w700,
       height: 1.4,
     );
@@ -1230,5 +1517,136 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         style: style.copyWith(color: Colors.white),
       ),
     );
+  }
+}
+
+/// 行测量包装（拖动选行播放）：布局后上报该行在滚动内容中的偏移与高度。
+///
+/// 用 `RenderAbstractViewport.of` 拿到相对视口的位置，叠加当前滚动偏移
+/// 即得内容坐标——等价 MusicFree LayoutCache 的实测前缀和。仅视口附近
+/// 的行会被 ListView 构建，缓存规模天然可控。
+class _MeasuredLine extends StatefulWidget {
+  const _MeasuredLine({
+    required this.index,
+    required this.onMeasured,
+    required this.child,
+  });
+
+  final int index;
+  final void Function(int index, double viewportDy, double height) onMeasured;
+  final Widget child;
+
+  @override
+  State<_MeasuredLine> createState() => _MeasuredLineState();
+}
+
+class _MeasuredLineState extends State<_MeasuredLine> {
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached || box.hasSize == false) return;
+      final viewport = RenderAbstractViewport.of(box);
+      final dy = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+      widget.onMeasured(widget.index, dy, box.size.height);
+    });
+    return widget.child;
+  }
+}
+
+/// 拖动选行的播放按钮：圆形主题色底 + 白色播放图标。
+class _DraggingPlayButton extends StatelessWidget {
+  const _DraggingPlayButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFEC4141),
+      shape: const CircleBorder(),
+      elevation: 3,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: const SizedBox(
+          width: 32,
+          height: 32,
+          child: Icon(Icons.play_arrow, size: 20, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+/// 歌词样式操作栏（移植自 MF LyricOperations）：
+/// 字号 / 翻译开关 / 时间偏移三个入口，均分排列在歌词底部。
+class _LyricOperationsBar extends StatelessWidget {
+  const _LyricOperationsBar({
+    required this.fontSizeIdx,
+    required this.showTranslation,
+    required this.offsetMs,
+    required this.hasTranslation,
+    required this.onFontSize,
+    required this.onToggleTranslation,
+    required this.onOffset,
+  });
+
+  final int fontSizeIdx;
+  final bool showTranslation;
+  final int offsetMs;
+  final bool hasTranslation;
+  final VoidCallback onFontSize;
+  final VoidCallback onToggleTranslation;
+  final VoidCallback onOffset;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget op(IconData icon, String label, VoidCallback onTap,
+        {bool active = true}) {
+      final color = active
+          ? (scheme.brightness == Brightness.dark
+              ? Colors.white.withValues(alpha: 0.85)
+              : scheme.onSurface.withValues(alpha: 0.75))
+          : scheme.onSurface.withValues(alpha: 0.25);
+      return Expanded(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: color),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 10, color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        op(Icons.format_size, '字号', onFontSize),
+        op(Icons.translate, '翻译', onToggleTranslation,
+            active: hasTranslation && showTranslation),
+        op(Icons.timer_sharp, _offsetLabel(offsetMs), onOffset,
+            active: offsetMs != 0),
+      ],
+    );
+  }
+
+  String _offsetLabel(int ms) {
+    if (ms == 0) return '偏移';
+    return ms > 0 ? '偏移+$ms' : '偏移$ms';
   }
 }

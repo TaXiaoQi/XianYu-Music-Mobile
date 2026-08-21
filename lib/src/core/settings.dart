@@ -45,6 +45,8 @@ class AppSettings {
     this.libraryMinDurationSeconds = 0,
     this.showLyricsTranslation = true,
     this.enableWordEffect = true,
+    this.lyricFontSize = 1, // 0 小 1 标准 2 大 3 特大（对应 MF 的 detailFontSize）
+    this.lyricOffsetMs = 0, // 歌词时间偏移：正值提前显示，负值延后
     this.downloadPath = '',
     this.downloadQuality = '320k',
     this.downloadLyrics = true,
@@ -68,6 +70,12 @@ class AppSettings {
   final int libraryMinDurationSeconds;
   final bool showLyricsTranslation;
   final bool enableWordEffect;
+
+  /// 歌词字号档位（0-3，对应 MF lyric.detailFontSize）。
+  final int lyricFontSize;
+
+  /// 歌词时间偏移（毫秒）：正值提前显示，负值延后（对应 MF 的歌词偏移校正）。
+  final int lyricOffsetMs;
   final String downloadPath;
   final String downloadQuality;
   final bool downloadLyrics;
@@ -101,6 +109,8 @@ class AppSettings {
     int? libraryMinDurationSeconds,
     bool? showLyricsTranslation,
     bool? enableWordEffect,
+    int? lyricFontSize,
+    int? lyricOffsetMs,
     String? downloadPath,
     String? downloadQuality,
     bool? downloadLyrics,
@@ -126,6 +136,8 @@ class AppSettings {
       showLyricsTranslation:
           showLyricsTranslation ?? this.showLyricsTranslation,
       enableWordEffect: enableWordEffect ?? this.enableWordEffect,
+      lyricFontSize: lyricFontSize ?? this.lyricFontSize,
+      lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
       downloadPath: downloadPath ?? this.downloadPath,
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadLyrics: downloadLyrics ?? this.downloadLyrics,
@@ -160,6 +172,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       showLyricsTranslation:
           prefs.getBool('showLyricsTranslation') ?? true,
       enableWordEffect: prefs.getBool('enableWordEffect') ?? true,
+      lyricFontSize: (prefs.getInt('lyricFontSize') ?? 1).clamp(0, 3),
+      lyricOffsetMs: (prefs.getInt('lyricOffsetMs') ?? 0).clamp(-500, 500),
       downloadPath: prefs.getString('downloadPath') ?? '',
       downloadQuality: prefs.getString('downloadQuality') ?? '320k',
       downloadLyrics: prefs.getBool('downloadLyrics') ?? true,
@@ -209,6 +223,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           'libraryMinDurationSeconds', next.libraryMinDurationSeconds),
       prefs.setBool('showLyricsTranslation', next.showLyricsTranslation),
       prefs.setBool('enableWordEffect', next.enableWordEffect),
+      prefs.setInt('lyricFontSize', next.lyricFontSize),
+      prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
       prefs.setString('downloadPath', next.downloadPath),
       prefs.setString('downloadQuality', next.downloadQuality),
       prefs.setBool('downloadLyrics', next.downloadLyrics),
@@ -234,6 +250,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLibraryMinDurationSeconds(int s) => _save((state.valueOrNull ?? const AppSettings()).copyWith(libraryMinDurationSeconds: s));
   Future<void> setShowLyricsTranslation(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showLyricsTranslation: v));
   Future<void> setEnableWordEffect(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enableWordEffect: v));
+  Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v.clamp(0, 3)));
+  Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v.clamp(-500, 500)));
   Future<void> setDownloadPath(String p) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadPath: p));
   Future<void> setDownloadQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQuality: q));
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));

@@ -136,20 +136,26 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage>
           ),
         ],
       ),
-      floatingActionButton: _importing
-          ? const FloatingActionButton(
-              onPressed: null,
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Padding(
+        // 二级页面底栏隐藏时，迷你播放条会下沉到距底 18px 处占位
+        // （高 58 + 距底 18 + 间隙 12），FAB 默认位置会与它重叠。
+        padding: const EdgeInsets.only(bottom: 88),
+        child: _importing
+            ? const FloatingActionButton(
+                onPressed: null,
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : FloatingActionButton.extended(
+                onPressed: _showImportSheet,
+                icon: const Icon(Icons.add),
+                label: const Text('导入音源'),
               ),
-            )
-          : FloatingActionButton.extended(
-              onPressed: _showImportSheet,
-              icon: const Icon(Icons.add),
-              label: const Text('导入音源'),
-            ),
+      ),
       body: state.loading && state.plugins.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : Column(

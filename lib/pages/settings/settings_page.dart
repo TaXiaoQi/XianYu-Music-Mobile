@@ -280,7 +280,10 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
       useRootNavigator: true,
-      builder: (_) => _choiceSheet(context, const [
+      // 必须用 builder 自己的 context 关闭：sheet 弹在 root navigator 上，
+      // 而设置页的 context 属于 branch navigator，用它 pop 会打错 Navigator，
+      // 误伤路由栈导致黑屏。
+      builder: (sheetCtx) => _choiceSheet(sheetCtx, const [
         _Choice('跟随系统', ThemeModePreference.system),
         _Choice('浅色', ThemeModePreference.light),
         _Choice('深色', ThemeModePreference.dark),
@@ -308,7 +311,8 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showModalBottomSheet<int>(
       context: context,
       useRootNavigator: true,
-      builder: (_) => SafeArea(
+      // 用 sheet 自己的 context pop（见 _pickThemeMode 注释）。
+      builder: (sheetCtx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -322,7 +326,7 @@ class SettingsPage extends ConsumerWidget {
                 children: [
                   for (final c in colors)
                     InkWell(
-                      onTap: () => Navigator.pop(context, c),
+                      onTap: () => Navigator.pop(sheetCtx, c),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
                         width: 40,
@@ -362,7 +366,8 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
       useRootNavigator: true,
-      builder: (_) => _choiceSheet(context, const [
+      // 用 sheet 自己的 context pop（见 _pickThemeMode 注释）。
+      builder: (sheetCtx) => _choiceSheet(sheetCtx, const [
         _Choice('128k', '128k'),
         _Choice('192k', '192k'),
         _Choice('320k', '320k'),
@@ -391,7 +396,9 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showModalBottomSheet<_Choice>(
       context: context,
       useRootNavigator: true,
-      builder: (_) => _choiceSheet(context, choices, cur, labelOf: (v) => switch (v) {
+      // 用 sheet 自己的 context pop（见 _pickThemeMode 注释）。
+      builder: (sheetCtx) => _choiceSheet(sheetCtx, choices, cur,
+          labelOf: (v) => switch (v) {
         0 => '不排除',
         10 => '10 秒',
         30 => '30 秒',
@@ -545,7 +552,9 @@ class SettingsPage extends ConsumerWidget {
     await ref.read(settingsProvider.notifier).setDownloadPath(path);
   }
 
-  Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
+  /// [sheetCtx] 必须是 bottom sheet builder 的 context（root navigator 下），
+  /// 用它 pop 才能精确关闭 sheet 本身。
+  Widget _choiceSheet(BuildContext sheetCtx, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
     return SafeArea(
       child: Column(
@@ -556,10 +565,10 @@ class SettingsPage extends ConsumerWidget {
               title: Text(labelOf(c.value)),
               trailing: c.value == cur
                   ? Icon(Icons.check,
-                      color: Theme.of(context).colorScheme.primary)
+                      color: Theme.of(sheetCtx).colorScheme.primary)
                   : null,
               selected: c.value == cur,
-              onTap: () => Navigator.pop(context, c),
+              onTap: () => Navigator.pop(sheetCtx, c),
             ),
         ],
       ),
