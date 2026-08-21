@@ -21,7 +21,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
   final _confirmCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _codeCtrl = TextEditingController();
-  bool _obscure = true;
+
+  /// 密码/确认密码各自独立的密文开关（互不联动）。
+  bool _pwdObscure = true;
+  bool _confirmObscure = true;
   int _countdown = 0;
 
   @override
