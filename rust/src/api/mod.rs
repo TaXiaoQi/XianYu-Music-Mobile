@@ -1821,6 +1821,70 @@ pub async fn download_audio_to_temp(url: String, headers_json: String) -> Result
     crate::plugins::download_audio_to_temp(url, Some(headers)).await
 }
 
+// =========================================================================
+// 插件引擎（QuickJS 沙箱，移植自桌面端 plugin_host）
+// =========================================================================
+
+/// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
+pub fn plugin_engine_init(data_dir: String) -> Result<(), String> {
+    crate::plugin_host::global_engine(&data_dir);
+    Ok(())
+}
+
+/// 加载 LX 格式插件，返回 `EngineLoadResult` JSON（`ok`/`error`/`metadata`/`logs`）。
+pub async fn plugin_engine_load_lx(
+    data_dir: String,
+    plugin_id: String,
+    script: String,
+    script_info_json: String,
+) -> Result<String, String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    let result = engine.load_lx(&plugin_id, &script, &script_info_json).await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 加载 MusicFree 格式插件，返回 `EngineLoadResult` JSON。
+pub async fn plugin_engine_load_musicfree(
+    data_dir: String,
+    plugin_id: String,
+    script: String,
+    user_vars_json: String,
+) -> Result<String, String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    let result = engine.load_musicfree(&plugin_id, &script, &user_vars_json).await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 调用插件方法，返回 `EngineCallResult` JSON（`ok`/`error`/`data`/`logs`）。
+pub async fn plugin_engine_call(
+    data_dir: String,
+    plugin_id: String,
+    method: String,
+    args_json: String,
+    user_vars_json: Option<String>,
+    timeout_ms: u64,
+) -> Result<String, String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    let result = engine
+        .call(&plugin_id, &method, &args_json, user_vars_json.as_deref(), timeout_ms)
+        .await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 销毁指定插件的沙箱实例。
+pub async fn plugin_engine_destroy(data_dir: String, plugin_id: String) -> Result<(), String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    engine.unload(&plugin_id).await;
+    Ok(())
+}
+
+/// 销毁全部插件沙箱实例。
+pub async fn plugin_engine_destroy_all(data_dir: String) -> Result<(), String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    engine.unload_all().await;
+    Ok(())
+}
+
 /// 取消正在进行的音频识别。
 pub fn cancel_recognize_system_audio() -> Result<(), String> {
     crate::recognize::cancel_recognize_system_audio()

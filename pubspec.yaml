@@ -53,6 +53,13 @@ dependencies:
 
   # 轻量本地存储（设置项）
   shared_preferences: ^2.3.0
+  image_picker: ^1.2.3
+  # 头像压缩（resize + JPEG 编码）
+  image: ^4.2.0
+  # 打开外部链接（关于页官网/开源地址等）
+  url_launcher: ^6.3.0
+  # 同步歌曲 song_hash / 上报签名等 MD5 计算
+  crypto: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -71,7 +78,6 @@ dev_dependencies:
 
   # 应用图标生成 + 源图裁切处理
   flutter_launcher_icons: ^0.14.1
-  image: ^4.2.0
 
 # 应用图标生成配置（运行：dart run flutter_launcher_icons）
 flutter_launcher_icons:

@@ -1,7 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
+import 'account_dialogs.dart';
+import 'human_captcha_dialog.dart';
 
 /// 账号认证页：未登录时展示登录/注册，已登录时展示个人资料。
 class AccountPage extends ConsumerStatefulWidget {
@@ -129,20 +136,24 @@ class _AccountPageState extends ConsumerState<AccountPage>
     required String title,
     required String description,
   }) {
-    return showDialog<HumanCaptchaPayload>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _HumanCaptchaDialog(
-        title: title,
-        description: description,
-        notifier: ref.read(authProvider.notifier),
-      ),
+    return showHumanCaptchaDialog(
+      context,
+      notifier: ref.read(authProvider.notifier),
+      title: title,
+      description: description,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+    // 会话失效：弹窗提示并回到登录态。
+    if (auth.sessionExpired) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showSessionExpiredDialog();
+      });
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(auth.isLoggedIn ? '我的' : '账号'),
@@ -155,6 +166,30 @@ class _AccountPageState extends ConsumerState<AccountPage>
             )
           : _buildAuthForm(context, auth),
     );
+  }
+
+  Future<void> _showSessionExpiredDialog() async {
+    final notifier = ref.read(authProvider.notifier);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('登录状态已失效'),
+        content: const Text('登录状态已失效，请重新登录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('确认'),
+          ),
+          FilledButton(
+            // 本页即账号页，关闭弹窗后自动回到登录表单。
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('登录'),
+          ),
+        ],
+      ),
+    );
+    notifier.consumeSessionExpired();
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -265,6 +300,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
             obscure: _obscure),
         _errorBanner(context, auth),
         _submitButton(context, auth, '登录'),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton(
+            onPressed: auth.loading
+                ? null
+                : () => showForgotPasswordDialog(
+                    context, ref.read(authProvider.notifier)),
+            child: const Text('忘记密码？'),
+          ),
+        ),
       ],
     );
   }
@@ -408,26 +453,205 @@ class _AccountPageState extends ConsumerState<AccountPage>
   }
 }
 
-/// 已登录资料视图。
-class _ProfileView extends StatelessWidget {
+/// 已登录资料视图：头像/昵称可编辑，含账号管理入口。
+class _ProfileView extends ConsumerStatefulWidget {
   const _ProfileView({required this.user, required this.onLogout});
   final AuthUser user;
   final VoidCallback onLogout;
 
   @override
+  ConsumerState<_ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends ConsumerState<_ProfileView> {
+  AuthNotifier get _notifier => ref.read(authProvider.notifier);
+
+  bool _avatarUploading = false;
+  String _avatarStatus = 'none'; // pending / rejected / none
+  String _nicknameStatus = 'none';
+  bool _refreshingStatus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshStatus();
+  }
+
+  /// 查询头像/昵称审核状态；任一审核通过时重新拉取用户信息。
+  Future<void> _refreshStatus() async {
+    if (_refreshingStatus) return;
+    setState(() => _refreshingStatus = true);
+    try {
+      final avatarSt = await _notifier.getAvatarStatus();
+      final nicknameSt = await _notifier.getNicknameStatus();
+      if (!mounted) return;
+      setState(() {
+        _avatarStatus = avatarSt;
+        _nicknameStatus = nicknameSt;
+      });
+      if (avatarSt == 'none' || nicknameSt == 'none') {
+        await _notifier.getProfile();
+      }
+    } catch (_) {
+      // 查询失败静默，保持当前状态。
+    } finally {
+      if (mounted) setState(() => _refreshingStatus = false);
+    }
+  }
+
+  /// 点击头像：选图 → 压缩 → 上传（走审核流程）。
+  Future<void> _pickAvatar() async {
+    final limit = await _notifier.getAvatarChangeLimitStatus();
+    if (!mounted) return;
+    if (limit.todayBlocked) {
+      _toast(limit.blockMessage.isNotEmpty ? limit.blockMessage : '今日已修改过啦');
+      return;
+    }
+    if (limit.status == 'pending') {
+      _toast('头像正在审核中哦');
+      return;
+    }
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      _toast('头像不能超过 5MB');
+      return;
+    }
+    setState(() => _avatarUploading = true);
+    try {
+      final dataUrl = await _compressAvatar(bytes);
+      await _notifier.uploadAvatar(dataUrl);
+      if (!mounted) return;
+      setState(() => _avatarStatus = 'pending');
+      _toast('头像已上传，等待管理员审核');
+    } catch (e) {
+      if (!mounted) return;
+      _toast(e is AuthException ? e.message : '头像上传失败');
+    } finally {
+      if (mounted) setState(() => _avatarUploading = false);
+    }
+  }
+
+  /// 压缩头像：256px 宽度、JPEG 质量 75%（与桌面端一致），输出 base64 data URL。
+  Future<String> _compressAvatar(Uint8List bytes) async {
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) throw AuthException('无法解析图片');
+    final resized = img.copyResize(decoded, width: 256);
+    final jpg = img.encodeJpg(resized, quality: 75);
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+  }
+
+  /// 点击昵称：弹修改昵称弹窗（走审核流程）。
+  Future<void> _editNickname() async {
+    final limit = await _notifier.getNicknameChangeLimitStatus();
+    if (!mounted) return;
+    if (limit.todayBlocked) {
+      _toast(limit.blockMessage.isNotEmpty ? limit.blockMessage : '今日已修改过啦');
+      return;
+    }
+    if (limit.status == 'pending') {
+      _toast('昵称正在审核中哦');
+      return;
+    }
+    final result = await showChangeNicknameDialog(context, _notifier);
+    if (result != null && mounted) {
+      setState(() => _nicknameStatus = 'pending');
+      _refreshStatus();
+    }
+  }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final user = widget.user;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       children: [
-        // 头像区：干净地居中放在页面背景上，无大色块
-        Center(child: _Avatar(user: user)),
-        const SizedBox(height: 16),
+        // 头像区：点击更换，下方显示审核状态。
         Center(
-          child: Text(
-            user.nickname.isEmpty ? '未命名用户' : user.nickname,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          child: GestureDetector(
+            onTap: _avatarUploading ? null : _pickAvatar,
+            child: Stack(
+              children: [
+                _Avatar(user: user),
+                // 相机角标
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: scheme.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: scheme.surface, width: 2),
+                    ),
+                    child: _avatarUploading
+                        ? Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.onPrimary),
+                          )
+                        : Icon(Icons.photo_camera,
+                            size: 15, color: scheme.onPrimary),
+                  ),
+                ),
+              ],
+            ),
           ),
+        ),
+        const SizedBox(height: 10),
+        _StatusBadge(
+          status: _avatarStatus,
+          pendingText: '头像审核中',
+          rejectedText: '头像未通过',
+          onRefresh: _refreshStatus,
+          refreshing: _refreshingStatus,
+        ),
+        const SizedBox(height: 12),
+        // 昵称：点击修改。
+        Center(
+          child: InkWell(
+            onTap: _editNickname,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      user.nickname.isEmpty ? '未命名用户' : user.nickname,
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
+                ],
+              ),
+            ),
+          ),
+        ),
+        _StatusBadge(
+          status: _nicknameStatus,
+          pendingText: '改名审核中',
+          rejectedText: '改名未通过',
+          onRefresh: _refreshStatus,
+          refreshing: _refreshingStatus,
         ),
         if (user.role.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -449,27 +673,63 @@ class _ProfileView extends StatelessWidget {
             ),
           ),
         ],
-        const SizedBox(height: 32),
-        // 信息分组卡
+        const SizedBox(height: 28),
+        // 账号信息卡
         _InfoCard(
           children: [
             _InfoTile(
               icon: Icons.mail_outline,
               label: '邮箱',
               value: user.email.isEmpty ? '未绑定' : user.email,
+              onTap: user.email.isEmpty
+                  ? () => showBindEmailDialog(context, _notifier)
+                  : null,
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
               _InfoTile(
                 icon: Icons.tag,
                 label: '弦予号',
                 value: user.ciyuanxiId!,
+                onTap: () => showChangeCiyuanxiDialog(context, _notifier),
               ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // 账号管理卡
+        Text('账号管理',
+            style: TextStyle(
+                fontSize: 13,
+                color: scheme.primary,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        _InfoCard(
+          children: [
+            _InfoTile(
+              icon: Icons.lock_outline,
+              label: '修改密码',
+              value: '',
+              onTap: () => showChangePasswordDialog(context, _notifier),
+            ),
+            if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
+              _InfoTile(
+                icon: Icons.tag,
+                label: '修改弦予号',
+                value: '每月限一次',
+                onTap: () => showChangeCiyuanxiDialog(context, _notifier),
+              ),
+            _InfoTile(
+              icon: Icons.delete_outline,
+              label: '注销账号',
+              value: '',
+              danger: true,
+              onTap: () => showDeleteAccountDialog(context, _notifier),
+            ),
           ],
         ),
         const SizedBox(height: 24),
         // 退出登录
         OutlinedButton.icon(
-          onPressed: onLogout,
+          onPressed: widget.onLogout,
           icon: Icon(Icons.logout, color: scheme.error),
           label: Text('退出登录', style: TextStyle(color: scheme.error)),
           style: OutlinedButton.styleFrom(
@@ -481,6 +741,70 @@ class _ProfileView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 审核状态小徽章（pending/rejected 时显示，可点击刷新）。
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.status,
+    required this.pendingText,
+    required this.rejectedText,
+    required this.onRefresh,
+    required this.refreshing,
+  });
+  final String status;
+  final String pendingText;
+  final String rejectedText;
+  final VoidCallback onRefresh;
+  final bool refreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    if (status != 'pending' && status != 'rejected') {
+      return const SizedBox(height: 4);
+    }
+    final isPending = status == 'pending';
+    final color = isPending ? const Color(0xFFB45309) : const Color(0xFFE11D48);
+    final bg = isPending
+        ? const Color(0x1AB45309)
+        : const Color(0x1AE11D48);
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(isPending ? Icons.hourglass_top : Icons.close,
+                size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              isPending ? pendingText : rejectedText,
+              style: TextStyle(fontSize: 11, color: color),
+            ),
+            if (isPending) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: refreshing ? null : onRefresh,
+                child: refreshing
+                    ? SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 1.5, color: color),
+                      )
+                    : Icon(Icons.refresh, size: 13, color: color),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -567,21 +891,44 @@ class _InfoTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
+    this.danger = false,
   });
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final color = danger ? scheme.error : scheme.primary;
     return ListTile(
-      leading: Icon(icon, color: scheme.primary),
-      title: Text(label),
-      trailing: Text(
-        value,
-        style: TextStyle(color: scheme.onSurfaceVariant),
-      ),
+      leading: Icon(icon, color: color),
+      title: Text(label,
+          style: danger
+              ? TextStyle(color: scheme.error, fontWeight: FontWeight.w500)
+              : null),
+      trailing: value.isEmpty
+          ? (onTap == null
+              ? null
+              : Icon(Icons.chevron_right,
+                  size: 18, color: scheme.outline))
+          : Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(
+                child: Text(
+                  value,
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+              ],
+            ]),
+      onTap: onTap,
     );
   }
 }

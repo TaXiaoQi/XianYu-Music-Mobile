@@ -10,6 +10,12 @@ import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
+import '../../pages/feedback/feedback_page.dart';
+import '../../pages/about/about_page.dart';
+import '../../pages/leaderboard/leaderboard_page.dart';
+import '../../pages/sync/sync_page.dart';
+import '../../pages/plugin/plugin_page.dart';
+import '../../pages/playlist/playlists_page.dart';
 import 'shell.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
@@ -62,6 +68,36 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/account',
       builder: (context, state) => const AccountPage(),
+    ),
+    // 意见反馈页（从设置页进入）。
+    GoRoute(
+      path: '/feedback',
+      builder: (context, state) => const FeedbackPage(),
+    ),
+    // 关于页（从设置页进入）。
+    GoRoute(
+      path: '/about',
+      builder: (context, state) => const AboutPage(),
+    ),
+    // 听歌排行榜（从设置页进入）。
+    GoRoute(
+      path: '/leaderboard',
+      builder: (context, state) => const LeaderboardPage(),
+    ),
+    // 同步与备份（从设置页进入）。
+    GoRoute(
+      path: '/sync',
+      builder: (context, state) => const SyncPage(),
+    ),
+    // 插件管理（从设置页进入）。
+    GoRoute(
+      path: '/plugin',
+      builder: (context, state) => const PluginPage(),
+    ),
+    // 我的歌单（从设置页进入）。
+    GoRoute(
+      path: '/playlists',
+      builder: (context, state) => const PlaylistsPage(),
     ),
     // 收藏 / 最近（主页网格进入）。
     GoRoute(

@@ -4,22 +4,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../notifications/notification_service.dart';
+import '../sync/auto_sync.dart';
 import '../widgets/mini_player_bar.dart';
 import 'routes.dart';
 
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final index = navigationShell.currentIndex;
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  bool _notificationsChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 启动自动同步调度器（每分钟 tick，到点才同步）。
+    ref.read(autoSyncProvider).start();
+    // 首帧后检查公告/反馈完成通知，避免与启动动画冲突。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_notificationsChecked) return;
+      _notificationsChecked = true;
+      ref
+          .read(notificationServiceProvider)
+          .checkOnStartup(context)
+          .catchError((_) {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final index = widget.navigationShell.currentIndex;
     return Scaffold(
       body: Stack(
         children: [
-          navigationShell,
+          widget.navigationShell,
           Positioned(
             left: 14,
             right: 14,
@@ -32,7 +57,7 @@ class AppShell extends ConsumerWidget {
             bottom: 18,
             child: _LiquidNavBar(
               index: index,
-              onSelect: (i) => navigationShell.goBranch(
+              onSelect: (i) => widget.navigationShell.goBranch(
                 i,
                 initialLocation: i == index,
               ),

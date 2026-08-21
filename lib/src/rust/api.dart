@@ -1091,6 +1091,73 @@ Future<String> buildDownloadBasename({
   fileNameStyle: fileNameStyle,
 );
 
+/// 启动 USB 独占播放。返回设备名或错误信息。
+/// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
+Future<String> startUsbExclusivePlayback({
+  required String path,
+  required int deviceId,
+  required double volume,
+  required double startTimeSecs,
+  required bool isPlaying,
+  required double volumeBalanceGain,
+  required String equalizerSettingsJson,
+  required String soundEffectSettingsJson,
+}) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
+  path: path,
+  deviceId: deviceId,
+  volume: volume,
+  startTimeSecs: startTimeSecs,
+  isPlaying: isPlaying,
+  volumeBalanceGain: volumeBalanceGain,
+  equalizerSettingsJson: equalizerSettingsJson,
+  soundEffectSettingsJson: soundEffectSettingsJson,
+);
+
+/// 停止 USB 独占播放并释放设备。
+Future<void> stopUsbExclusivePlayback() =>
+    RustLib.instance.api.crateApiStopUsbExclusivePlayback();
+
+/// 跳转到指定位置（秒）。
+Future<void> seekUsbExclusive({
+  required double timeSecs,
+  required bool isPlaying,
+}) => RustLib.instance.api.crateApiSeekUsbExclusive(
+  timeSecs: timeSecs,
+  isPlaying: isPlaying,
+);
+
+/// 设置用户音量（0.0–1.0）。
+Future<void> setUsbExclusiveVolume({required double volume}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveVolume(volume: volume);
+
+/// 更新 EQ 设置（camelCase JSON）。
+Future<void> setUsbExclusiveEqualizer({required String settingsJson}) => RustLib
+    .instance
+    .api
+    .crateApiSetUsbExclusiveEqualizer(settingsJson: settingsJson);
+
+/// 更新音效设置（camelCase JSON）。
+Future<void> setUsbExclusiveSoundEffect({required String settingsJson}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveSoundEffect(
+      settingsJson: settingsJson,
+    );
+
+/// USB 独占播放是否活跃。
+Future<bool> isUsbExclusiveActive() =>
+    RustLib.instance.api.crateApiIsUsbExclusiveActive();
+
+/// 获取当前播放位置（秒）。
+Future<double> getUsbExclusivePositionSecs() =>
+    RustLib.instance.api.crateApiGetUsbExclusivePositionSecs();
+
+/// 获取当前播放采样率。
+Future<int> getUsbExclusiveSampleRate() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveSampleRate();
+
+/// 获取当前声道数。
+Future<int> getUsbExclusiveChannels() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveChannels();
+
 /// 检查 GitHub Release 最新版本（返回原始 JSON）。
 Future<String> checkUpdateByRust({
   required String owner,
@@ -1265,6 +1332,66 @@ Future<String> downloadAudioToTemp({
   url: url,
   headersJson: headersJson,
 );
+
+/// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
+Future<void> pluginEngineInit({required String dataDir}) =>
+    RustLib.instance.api.crateApiPluginEngineInit(dataDir: dataDir);
+
+/// 加载 LX 格式插件，返回 `EngineLoadResult` JSON（`ok`/`error`/`metadata`/`logs`）。
+Future<String> pluginEngineLoadLx({
+  required String dataDir,
+  required String pluginId,
+  required String script,
+  required String scriptInfoJson,
+}) => RustLib.instance.api.crateApiPluginEngineLoadLx(
+  dataDir: dataDir,
+  pluginId: pluginId,
+  script: script,
+  scriptInfoJson: scriptInfoJson,
+);
+
+/// 加载 MusicFree 格式插件，返回 `EngineLoadResult` JSON。
+Future<String> pluginEngineLoadMusicfree({
+  required String dataDir,
+  required String pluginId,
+  required String script,
+  required String userVarsJson,
+}) => RustLib.instance.api.crateApiPluginEngineLoadMusicfree(
+  dataDir: dataDir,
+  pluginId: pluginId,
+  script: script,
+  userVarsJson: userVarsJson,
+);
+
+/// 调用插件方法，返回 `EngineCallResult` JSON（`ok`/`error`/`data`/`logs`）。
+Future<String> pluginEngineCall({
+  required String dataDir,
+  required String pluginId,
+  required String method,
+  required String argsJson,
+  String? userVarsJson,
+  required BigInt timeoutMs,
+}) => RustLib.instance.api.crateApiPluginEngineCall(
+  dataDir: dataDir,
+  pluginId: pluginId,
+  method: method,
+  argsJson: argsJson,
+  userVarsJson: userVarsJson,
+  timeoutMs: timeoutMs,
+);
+
+/// 销毁指定插件的沙箱实例。
+Future<void> pluginEngineDestroy({
+  required String dataDir,
+  required String pluginId,
+}) => RustLib.instance.api.crateApiPluginEngineDestroy(
+  dataDir: dataDir,
+  pluginId: pluginId,
+);
+
+/// 销毁全部插件沙箱实例。
+Future<void> pluginEngineDestroyAll({required String dataDir}) =>
+    RustLib.instance.api.crateApiPluginEngineDestroyAll(dataDir: dataDir);
 
 /// 取消正在进行的音频识别。
 Future<void> cancelRecognizeSystemAudio() =>

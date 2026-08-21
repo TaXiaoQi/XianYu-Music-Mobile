@@ -20,18 +20,7 @@ class SettingsPage extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: 150),
         children: [
           _sectionHeader(context, '账号'),
-          _tile(
-            context,
-            icon: Icons.account_circle,
-            title: '账号与安全',
-            trailing: Text(
-              auth.isLoggedIn ? auth.user!.nickname : '未登录',
-              style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            onTap: () => context.push('/account'),
-          ),
+          _AccountCard(auth: auth, onTap: () => context.push('/account')),
           _sectionHeader(context, '外观'),
           _tile(
             context,
@@ -120,6 +109,48 @@ class SettingsPage extends ConsumerWidget {
             title: '保持屏幕常亮',
             value: settings?.keepScreenOn ?? true,
             onChanged: (v) => notifier.setKeepScreenOn(v),
+          ),
+          _tile(
+            context,
+            icon: Icons.leaderboard_outlined,
+            title: '听歌排行榜',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/leaderboard'),
+          ),
+          _tile(
+            context,
+            icon: Icons.cloud_sync_outlined,
+            title: '同步与备份',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/sync'),
+          ),
+          _tile(
+            context,
+            icon: Icons.extension_outlined,
+            title: '插件',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/plugin'),
+          ),
+          _tile(
+            context,
+            icon: Icons.queue_music_outlined,
+            title: '我的歌单',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/playlists'),
+          ),
+          _tile(
+            context,
+            icon: Icons.feedback_outlined,
+            title: '意见反馈',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/feedback'),
+          ),
+          _tile(
+            context,
+            icon: Icons.info_outline,
+            title: '关于',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/about'),
           ),
         ],
       ),
@@ -406,6 +437,101 @@ class _ColorDot extends StatelessWidget {
       width: 24,
       height: 24,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+/// 设置页账号卡片：登录时显示头像+昵称，未登录时显示登录引导。
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.auth, required this.onTap});
+  final AuthState auth;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final user = auth.user;
+    final loggedIn = auth.isLoggedIn && user != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Material(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                // 头像
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: loggedIn
+                      ? (user.avatar != null && user.avatar!.isNotEmpty
+                          ? Image.network(
+                              user.avatar!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _fallback(
+                                  scheme, user.nickname),
+                            )
+                          : _fallback(scheme, user.nickname))
+                      : Icon(Icons.person, color: scheme.onPrimary, size: 26),
+                ),
+                const SizedBox(width: 14),
+                // 昵称 + 副标题
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        loggedIn
+                            ? (user.nickname.isEmpty
+                                ? '未命名用户'
+                                : user.nickname)
+                            : '未登录',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        loggedIn
+                            ? '点击管理账号与安全'
+                            : '登录后同步你的音乐与设置',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: scheme.outline),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback(ColorScheme scheme, String nickname) {
+    final char = nickname.isEmpty
+        ? '?'
+        : String.fromCharCode(nickname.runes.first);
+    return Center(
+      child: Text(
+        char,
+        style: TextStyle(
+            fontSize: 20, fontWeight: FontWeight.bold, color: scheme.onPrimary),
+      ),
     );
   }
 }

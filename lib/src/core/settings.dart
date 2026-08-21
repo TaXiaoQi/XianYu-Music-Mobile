@@ -160,6 +160,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setDownloadQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQuality: q));
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
+
+  /// 整体保存（自动同步合并后调用）。
+  Future<void> saveAll(AppSettings next) => _save(next);
 }
 
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(

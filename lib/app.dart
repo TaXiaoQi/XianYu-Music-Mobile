@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
+import 'src/auth/account_api.dart';
 import 'src/navigation/routes.dart';
 
 class XianYuApp extends ConsumerStatefulWidget {
@@ -18,6 +19,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
   int? _cachedAccent;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
+
+  @override
+  void initState() {
+    super.initState();
+    // 启动统计上报（fire-and-forget，失败静默）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(accountApiProvider).reportAppOpen();
+    });
+  }
 
   void _ensureThemes(int accent) {
     if (_cachedAccent == accent && _lightTheme != null) return;
