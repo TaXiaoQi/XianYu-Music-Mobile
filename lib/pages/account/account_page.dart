@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -155,16 +155,32 @@ class _AccountPageState extends ConsumerState<AccountPage>
       });
     }
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(auth.isLoggedIn ? '我的' : '账号'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          auth.isLoggedIn ? '账号与安全' : '账号认证',
+          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
       ),
-      body: auth.isLoggedIn
-          ? _ProfileView(
-              user: auth.user!,
-              onLogout: () => _confirmLogout(context),
-            )
-          : _buildAuthForm(context, auth),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const _AmbientBackground(),
+          SafeArea(
+            child: auth.isLoggedIn
+                ? _ProfileView(
+                    user: auth.user!,
+                    onLogout: () => _confirmLogout(context),
+                  )
+                : _buildAuthForm(context, auth),
+          ),
+        ],
+      ),
     );
   }
 
@@ -453,7 +469,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
   }
 }
 
-/// 已登录资料视图：头像/昵称可编辑，含账号管理入口。
+/// 已登录资料视图：英雄头图 + 毛玻璃分组，头像/昵称可编辑，含账号管理入口。
 class _ProfileView extends ConsumerStatefulWidget {
   const _ProfileView({required this.user, required this.onLogout});
   final AuthUser user;
@@ -571,80 +587,41 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
+  void _copy(BuildContext context, String text, String label) {
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已复制$label：$text'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final user = widget.user;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        // 头像区：点击更换，下方显示审核状态。
-        Center(
-          child: GestureDetector(
-            onTap: _avatarUploading ? null : _pickAvatar,
-            child: Stack(
-              children: [
-                _Avatar(user: user),
-                // 相机角标
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: scheme.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: scheme.surface, width: 2),
-                    ),
-                    child: _avatarUploading
-                        ? Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.onPrimary),
-                          )
-                        : Icon(Icons.photo_camera,
-                            size: 15, color: scheme.onPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // 1. 英雄头图卡片（头像可点击上传、昵称可点击修改）
+        _ProfileHeaderCard(
+          user: user,
+          onCopy: _copy,
+          avatarUploading: _avatarUploading,
+          onAvatarTap: _avatarUploading ? null : _pickAvatar,
+          onNicknameTap: _editNickname,
         ),
-        const SizedBox(height: 10),
+        // 头像/昵称审核状态
         _StatusBadge(
           status: _avatarStatus,
           pendingText: '头像审核中',
           rejectedText: '头像未通过',
           onRefresh: _refreshStatus,
           refreshing: _refreshingStatus,
-        ),
-        const SizedBox(height: 12),
-        // 昵称：点击修改。
-        Center(
-          child: InkWell(
-            onTap: _editNickname,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      user.nickname.isEmpty ? '未命名用户' : user.nickname,
-                      style: const TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
-                ],
-              ),
-            ),
-          ),
         ),
         _StatusBadge(
           status: _nicknameStatus,
@@ -653,94 +630,144 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
           onRefresh: _refreshStatus,
           refreshing: _refreshingStatus,
         ),
-        if (user.role.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                user.role,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onPrimaryContainer,
-                ),
-              ),
-            ),
-          ),
-        ],
-        const SizedBox(height: 28),
-        // 账号信息卡
-        _InfoCard(
+
+        const SizedBox(height: 24),
+
+        // 2. 「基本信息」分组卡片
+        _sectionTitle(context, '基本信息'),
+        _GlassCard(
           children: [
-            _InfoTile(
-              icon: Icons.mail_outline,
-              label: '邮箱',
+            _GlassTile(
+              icon: Icons.mail_outline_rounded,
+              title: '绑定邮箱',
               value: user.email.isEmpty ? '未绑定' : user.email,
               onTap: user.email.isEmpty
                   ? () => showBindEmailDialog(context, _notifier)
                   : null,
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
-              _InfoTile(
-                icon: Icons.tag,
-                label: '弦予号',
+              _GlassTile(
+                icon: Icons.tag_rounded,
+                title: '弦予号',
                 value: user.ciyuanxiId!,
-                onTap: () => showChangeCiyuanxiDialog(context, _notifier),
+                onTap: () => _copy(context, user.ciyuanxiId!, '弦予号'),
+                trailing: Icon(
+                  Icons.copy_rounded,
+                  size: 16,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
               ),
           ],
         ),
-        const SizedBox(height: 24),
-        // 账号管理卡
-        Text('账号管理',
-            style: TextStyle(
-                fontSize: 13,
-                color: scheme.primary,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        _InfoCard(
+
+        const SizedBox(height: 20),
+
+        // 3. 「账号安全与隐私」分组卡片
+        _sectionTitle(context, '账号安全与隐私'),
+        _GlassCard(
           children: [
-            _InfoTile(
-              icon: Icons.lock_outline,
-              label: '修改密码',
-              value: '',
+            _GlassTile(
+              icon: Icons.lock_reset_rounded,
+              title: '修改密码',
+              subtitle: '定期更新密码提升安全等级',
               onTap: () => showChangePasswordDialog(context, _notifier),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
-              _InfoTile(
-                icon: Icons.tag,
-                label: '修改弦予号',
-                value: '每月限一次',
+              _GlassTile(
+                icon: Icons.tag_rounded,
+                title: '修改弦予号',
+                subtitle: '每月限一次',
                 onTap: () => showChangeCiyuanxiDialog(context, _notifier),
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
               ),
-            _InfoTile(
-              icon: Icons.delete_outline,
-              label: '注销账号',
-              value: '',
-              danger: true,
+            _GlassTile(
+              icon: Icons.delete_outline_rounded,
+              title: '注销账号',
+              subtitle: '注销后数据将无法恢复',
               onTap: () => showDeleteAccountDialog(context, _notifier),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.error.withValues(alpha: 0.6),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        // 退出登录
-        OutlinedButton.icon(
-          onPressed: widget.onLogout,
-          icon: Icon(Icons.logout, color: scheme.error),
-          label: Text('退出登录', style: TextStyle(color: scheme.error)),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            side: BorderSide(color: scheme.error.withValues(alpha: 0.5)),
+
+        const SizedBox(height: 28),
+
+        // 4. 警示型毛玻璃退出登录卡片
+        Container(
+          decoration: BoxDecoration(
+            color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: scheme.error.withValues(alpha: isDark ? 0.25 : 0.18),
+            ),
+          ),
+          child: ListTile(
+            onTap: widget.onLogout,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: scheme.error.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.logout_rounded,
+                  size: 20, color: scheme.error),
+            ),
+            title: Text(
+              '退出登录',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: scheme.error,
+              ),
+            ),
+            subtitle: Text(
+              '注销当前设备上的身份凭据',
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.error.withValues(alpha: 0.7),
+              ),
+            ),
+            trailing: Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 15,
+              color: scheme.error.withValues(alpha: 0.7),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String title) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          color: scheme.primary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
     );
   }
 }
@@ -809,7 +836,179 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// 头像：有网络头像则加载，否则用昵称首字符 + 主题色实心底占位。
+/// 英雄头图区：大尺寸头像 + 2px 渐变描边 + 弥散光影 + 身份胶囊。
+/// 头像可点击上传（带相机角标），昵称可点击修改。
+class _ProfileHeaderCard extends StatelessWidget {
+  const _ProfileHeaderCard({
+    required this.user,
+    required this.onCopy,
+    this.avatarUploading = false,
+    this.onAvatarTap,
+    this.onNicknameTap,
+  });
+
+  final AuthUser user;
+  final Function(BuildContext, String, String) onCopy;
+  final bool avatarUploading;
+  final VoidCallback? onAvatarTap;
+  final VoidCallback? onNicknameTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+      decoration: BoxDecoration(
+        color: isDark
+            ? scheme.surfaceContainerHigh
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // 大尺寸头像与弥散光环（可点击上传）
+          GestureDetector(
+            onTap: onAvatarTap,
+            child: Stack(
+              children: [
+                _Avatar(user: user),
+                if (onAvatarTap != null)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: scheme.surface, width: 2),
+                      ),
+                      child: avatarUploading
+                          ? Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.onPrimary),
+                            )
+                          : Icon(Icons.photo_camera,
+                              size: 15, color: scheme.onPrimary),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          // 昵称（可点击修改）
+          InkWell(
+            onTap: onNicknameTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      user.nickname.isEmpty ? '弦予用户' : user.nickname,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (onNicknameTap != null) ...[
+                    const SizedBox(width: 6),
+                    Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // 身份胶囊
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.verified_user_rounded,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      user.role.isNotEmpty ? user.role : '标准会员',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => onCopy(context, user.ciyuanxiId!, '弦予号'),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: scheme.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'ID: ${user.ciyuanxiId}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.copy_rounded,
+                          size: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 头像：支持网络图片 / 首字符兜底 + 弥散光影与 2px 描边。
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.user});
   final AuthUser user;
@@ -822,113 +1021,217 @@ class _Avatar extends StatelessWidget {
     final fallbackChar = user.nickname.isEmpty
         ? '?'
         : String.fromCharCode(user.nickname.runes.first);
+
     return Container(
-      width: 96,
-      height: 96,
+      width: 92,
+      height: 92,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: scheme.primary,
-        border: Border.all(color: scheme.surface, width: 3),
+        gradient: LinearGradient(
+          colors: [
+            scheme.primary,
+            scheme.primary.withValues(alpha: 0.6),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: scheme.primary.withValues(alpha: 0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: hasAvatar
-          ? Image.network(
-              avatar,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  _fallback(fallbackChar, scheme.onPrimary),
-            )
-          : _fallback(fallbackChar, scheme.onPrimary),
+      padding: const EdgeInsets.all(2.5),
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: scheme.surface,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: hasAvatar
+            ? Image.network(
+                avatar,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
+              )
+            : _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
+      ),
     );
   }
 
-  Widget _fallback(String char, Color color) {
-    return Center(
-      child: Text(
-        char,
-        style: TextStyle(
-            fontSize: 40, fontWeight: FontWeight.bold, color: color),
+  Widget _fallback(String char, Color bg, Color fg) {
+    return Container(
+      color: bg,
+      child: Center(
+        child: Text(
+          char.toUpperCase(),
+          style: TextStyle(
+            fontSize: 38,
+            fontWeight: FontWeight.bold,
+            color: fg,
+          ),
+        ),
       ),
     );
   }
 }
 
-/// 信息分组卡片容器。
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.children});
+/// 全高透毛玻璃分组卡片。
+class _GlassCard extends StatelessWidget {
+  const _GlassCard({required this.children});
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 在项之间插入分隔线。
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
       if (i != children.length - 1) {
-        items.add(Divider(height: 1, indent: 52, color: scheme.outlineVariant));
+        items.add(
+          Divider(
+            height: 1,
+            indent: 58,
+            endIndent: 14,
+            thickness: 0.5,
+            color: scheme.onSurface.withValues(alpha: 0.08),
+          ),
+        );
       }
     }
+
     return Container(
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
+        color: isDark
+            ? scheme.surfaceContainer
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
+        ),
       ),
       child: Column(children: items),
     );
   }
 }
 
-class _InfoTile extends StatelessWidget {
-  const _InfoTile({
+/// 毛玻璃列表条目：软色图标框 + 标题/副标题 + 尾部动作。
+class _GlassTile extends StatelessWidget {
+  const _GlassTile({
     required this.icon,
-    required this.label,
-    required this.value,
+    required this.title,
+    this.subtitle,
+    this.value,
+    this.trailing,
     this.onTap,
-    this.danger = false,
   });
+
   final IconData icon;
-  final String label;
-  final String value;
+  final String title;
+  final String? subtitle;
+  final String? value;
+  final Widget? trailing;
   final VoidCallback? onTap;
-  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = danger ? scheme.error : scheme.primary;
-    return ListTile(
-      leading: Icon(icon, color: color),
-      title: Text(label,
-          style: danger
-              ? TextStyle(color: scheme.error, fontWeight: FontWeight.w500)
-              : null),
-      trailing: value.isEmpty
-          ? (onTap == null
-              ? null
-              : Icon(Icons.chevron_right,
-                  size: 18, color: scheme.outline))
-          : Row(mainAxisSize: MainAxisSize.min, children: [
-              Flexible(
-                child: Text(
-                  value,
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                  overflow: TextOverflow.ellipsis,
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            // 图标软背景框
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 19, color: scheme.primary),
+            ),
+            const SizedBox(width: 14),
+            // 左侧标题区（单行防折行）
+            if (subtitle != null)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              Text(
+                title,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              if (onTap != null) ...[
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right, size: 18, color: scheme.outline),
-              ],
-            ]),
-      onTap: onTap,
+              const SizedBox(width: 12),
+            ],
+            // 右侧 Value 值区（完整展示邮箱等文本）
+            if (value != null && value!.isNotEmpty) ...[
+              if (subtitle == null) const Spacer(),
+              Flexible(
+                child: Text(
+                  value!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            ?trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 沉浸氛围背景。
+class _AmbientBackground extends StatelessWidget {
+  const _AmbientBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return IgnorePointer(
+      child: Container(color: scheme.surface),
     );
   }
 }

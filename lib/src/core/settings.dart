@@ -8,6 +8,18 @@ enum ThemeModePreference {
   dark,
 }
 
+/// 底栏/导航条显示位置（底部 / 侧边）
+enum NavBarPosition {
+  bottom,
+  side,
+}
+
+/// 侧边栏展开方向（向下 / 向上）
+enum SideBarExpandDirection {
+  down,
+  up,
+}
+
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff'];
 
@@ -34,6 +46,9 @@ class AppSettings {
     this.liquidGlass = true,
     this.playerLiquidGlass = true,
     this.scanFormats = kSupportedScanFormats,
+    this.floatingNavBar = true,
+    this.navBarPosition = NavBarPosition.bottom,
+    this.sideBarExpandDirection = SideBarExpandDirection.down,
   });
 
   final double volume;
@@ -57,6 +72,15 @@ class AppSettings {
   final bool playerLiquidGlass;
   final List<String> scanFormats;
 
+  /// 底栏样式：true 为悬浮毛玻璃胶囊，false 为固定式底栏。
+  final bool floatingNavBar;
+
+  /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
+  final NavBarPosition navBarPosition;
+
+  /// 侧边栏展开方向：down 向下展开，up 向上展开。仅在侧边栏模式生效。
+  final SideBarExpandDirection sideBarExpandDirection;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -78,6 +102,9 @@ class AppSettings {
     bool? liquidGlass,
     bool? playerLiquidGlass,
     List<String>? scanFormats,
+    bool? floatingNavBar,
+    NavBarPosition? navBarPosition,
+    SideBarExpandDirection? sideBarExpandDirection,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -102,6 +129,10 @@ class AppSettings {
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       scanFormats: scanFormats ?? this.scanFormats,
+      floatingNavBar: floatingNavBar ?? this.floatingNavBar,
+      navBarPosition: navBarPosition ?? this.navBarPosition,
+      sideBarExpandDirection:
+          sideBarExpandDirection ?? this.sideBarExpandDirection,
     );
   }
 }
@@ -134,6 +165,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       liquidGlass: prefs.getBool('liquidGlass') ?? true,
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
+      floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
+      navBarPosition:
+          (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
+              ? NavBarPosition.side
+              : NavBarPosition.bottom,
+      sideBarExpandDirection:
+          (prefs.getString('sideBarExpandDirection') ?? 'down') == 'up'
+              ? SideBarExpandDirection.up
+              : SideBarExpandDirection.down,
     );
   }
 
@@ -175,6 +215,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('liquidGlass', next.liquidGlass),
       prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
       prefs.setStringList('scanFormats', next.scanFormats),
+      prefs.setBool('floatingNavBar', next.floatingNavBar),
+      prefs.setString('navBarPosition', next.navBarPosition.name),
+      prefs.setString(
+          'sideBarExpandDirection', next.sideBarExpandDirection.name),
     ]);
   }
 
@@ -198,6 +242,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerLiquidGlass: v));
   Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
+  Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
+  Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
+  Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

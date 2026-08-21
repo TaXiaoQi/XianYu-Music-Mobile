@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:audio_service/audio_service.dart' as as_pkg;
 import 'package:crypto/crypto.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../auth/account_api.dart';
+import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
@@ -14,6 +17,92 @@ import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import '../stats/listen_stats.dart';
+
+/// 全局系统控制中心 AudioHandler 句柄
+XianYuAudioHandler? audioHandler;
+
+/// 系统控制中心（MediaSession / Notification）与 Flutter 播放状态的双向桥梁
+class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler {
+  PlayerNotifier? _notifier;
+
+  void bindNotifier(PlayerNotifier notifier) {
+    _notifier = notifier;
+  }
+
+  /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
+  void syncMediaItem(QueueItem item, double durationSecs) {
+    mediaItem.add(
+      as_pkg.MediaItem(
+        id: item.path,
+        album: item.album.isEmpty ? '弦予音乐' : item.album,
+        title: item.title,
+        artist: item.artist.isEmpty ? '未知歌手' : item.artist,
+        duration: Duration(milliseconds: (durationSecs * 1000).round()),
+        artUri: (item.coverUrl != null && item.coverUrl!.isNotEmpty)
+            ? Uri.tryParse(item.coverUrl!)
+            : null,
+      ),
+    );
+  }
+
+  /// 广播更新系统的 PlaybackState（播放状态/进度/控制动作/循环模式）
+  void syncPlaybackState({
+    required bool isPlaying,
+    required double positionSecs,
+    required double durationSecs,
+  }) {
+    playbackState.add(
+      as_pkg.PlaybackState(
+        controls: [
+          as_pkg.MediaControl.skipToPrevious,
+          if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
+          as_pkg.MediaControl.skipToNext,
+        ],
+        systemActions: const {
+          as_pkg.MediaAction.seek,
+          as_pkg.MediaAction.seekForward,
+          as_pkg.MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 2],
+        processingState: as_pkg.AudioProcessingState.ready,
+        playing: isPlaying,
+        updatePosition: Duration(milliseconds: (positionSecs * 1000).round()),
+        bufferedPosition: Duration(milliseconds: (positionSecs * 1000).round()),
+        speed: 1.0,
+      ),
+    );
+  }
+
+  @override
+  Future<void> play() async {
+    await _notifier?.toggle();
+  }
+
+  @override
+  Future<void> pause() async {
+    await _notifier?.toggle();
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    await _notifier?.next();
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    await _notifier?.previous();
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    await _notifier?.seek(position.inMilliseconds / 1000.0);
+  }
+
+  @override
+  Future<void> stop() async {
+    await _notifier?.toggle();
+  }
+}
 
 /// 播放中的单曲信息（小而美：仅保留 UI 需要的最小字段）。
 class QueueItem {
@@ -46,7 +135,9 @@ class QueueItem {
   });
 
   bool get isOnline =>
-      path.startsWith('lx://') || path.startsWith('plugin://');
+      path.startsWith('lx://') ||
+      path.startsWith('plugin://') ||
+      onlineInfoJson != null;
 }
 
 class PlaybackState {
@@ -82,7 +173,7 @@ class PlaybackState {
     double? duration,
     int? playMode,
     bool? resolving,
-    String? error,
+    Object? error = _noChange,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -93,13 +184,18 @@ class PlaybackState {
       duration: duration ?? this.duration,
       playMode: playMode ?? this.playMode,
       resolving: resolving ?? this.resolving,
-      error: error ?? this.error,
+      error: error == _noChange ? this.error : error as String?,
     );
   }
 }
 
-class PlayerNotifier extends StateNotifier<PlaybackState> {
+const Object _noChange = Object();
+
+class PlayerNotifier extends StateNotifier<PlaybackState>
+    with WidgetsBindingObserver {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
+    WidgetsBinding.instance.addObserver(this);
+    audioHandler?.bindNotifier(this);
     _init();
   }
 
@@ -115,23 +211,37 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   // 在线歌曲连续失败跳过计数（防环）。
   int _skipDepth = 0;
 
-  // 随机模式历史/未来栈（与桌面端一致）。
+  double? _restoredOnlinePending;
+  DateTime? _trackStartTime;
+
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _persistSession();
+    }
+  }
+
   Future<void> _init() async {
     _posSub = _player.positionStream.listen((p) {
-      state = state.copyWith(position: p.inMilliseconds / 1000.0);
+      final pos = p.inMilliseconds / 1000.0;
+      state = state.copyWith(position: pos);
+      _syncToSystemMediaSession();
       _persistPositionDebounced();
     });
     _durSub = _player.durationStream.listen((d) {
-      state = state.copyWith(
-          duration: (d ?? Duration.zero).inMilliseconds / 1000.0);
+      final dur = (d ?? Duration.zero).inMilliseconds / 1000.0;
+      state = state.copyWith(duration: dur);
+      _syncToSystemMediaSession();
     });
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
       if (playing != state.isPlaying) {
         state = state.copyWith(isPlaying: playing);
+        _syncToSystemMediaSession();
         if (!playing && !_manualPause) {
           _onTrackEnd();
         }
@@ -167,52 +277,94 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     }
   }
 
-  /// 启动时从 SQLite 恢复上次播放会话。
+  /// 同步更新 Android/iOS 系统控制中心与通知栏
+  void _syncToSystemMediaSession() {
+    final cur = state.current;
+    if (cur != null) {
+      audioHandler?.syncMediaItem(cur, state.duration);
+      audioHandler?.syncPlaybackState(
+        isPlaying: state.isPlaying,
+        positionSecs: state.position,
+        durationSecs: state.duration,
+      );
+    }
+  }
+
   Future<void> _restoreSession() async {
     try {
-      final dbPath = await _ref.read(dbPathProvider.future);
-      final jsonStr = await loadPlaybackSession(dbPath: dbPath);
-      final j = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final paths = (j['playQueuePaths'] as List? ?? const []).cast<String>();
-      if (paths.isEmpty) return;
-      final items = paths
-          .map((p) => QueueItem(
-                path: p,
-                title: _titleFromPath(p),
-                artist: '',
-                album: '',
-              ))
-          .toList();
-      final currentPath = j['currentSongPath'] as String?;
-      final startIndex = currentPath == null
-          ? 0
-          : paths.indexOf(currentPath);
-      final idx = startIndex < 0 ? 0 : startIndex;
-      final mode = (j['playMode'] as num?)?.toInt() ?? 0;
-      final pos = (j['currentPositionSecs'] as num?)?.toDouble() ?? 0;
-      final wasPlaying = j['isPlaying'] as bool? ?? false;
-
-      state = state.copyWith(
-        queue: items,
-        queueIndex: idx,
-        current: items[idx],
-        playMode: mode,
-        position: pos,
-        isPlaying: false,
-      );
-      await _ref.read(settingsProvider.notifier).setPlayMode(mode);
+      String jsonStr = '';
       try {
-        await _player.setFilePath(items[idx].path);
-        await seek(pos);
-        if (wasPlaying) {
-          _manualPause = false;
-          await _player.play();
-        }
-      } catch (_) {
-        // 文件不可用，仅恢复队列不播放。
+        final dbPath = await _ref.read(dbPathProvider.future);
+        jsonStr = await loadPlaybackSession(dbPath: dbPath);
+      } catch (e) {
+        AppLogger.instance.log('session', '读取数据库播放会话失败: $e');
       }
-    } catch (_) {
-      // 无有效会话，忽略。
+
+      if (jsonStr.isEmpty || jsonStr == 'null') return;
+
+      final Map<String, dynamic> data = jsonDecode(jsonStr);
+      final String curPath = data['currentSongPath'] as String? ?? '';
+      final List rawQueue = data['playQueuePaths'] as List? ?? [];
+      final Map rawMeta = data['queueSongMeta'] as Map? ?? {};
+      final int mode = (data['playMode'] as num?)?.toInt() ?? 0;
+      final double pos = (data['currentPositionSecs'] as num?)?.toDouble() ?? 0;
+
+      if (rawQueue.isEmpty || curPath.isEmpty) return;
+
+      final List<QueueItem> queue = [];
+      for (final p in rawQueue) {
+        final pathStr = p as String;
+        final meta = rawMeta[pathStr] as Map<String, dynamic>?;
+        if (meta != null) {
+          queue.add(QueueItem(
+            path: pathStr,
+            title: meta['title'] as String? ?? _titleFromPath(pathStr),
+            artist: meta['artist'] as String? ?? '',
+            album: meta['album'] as String? ?? '',
+            durationMs: (meta['durationMs'] as num?)?.toInt() ?? 0,
+            coverUrl: meta['coverUrl'] as String?,
+            source: meta['source'] as String?,
+            onlineInfoJson: meta['onlineInfoJson'] as String?,
+          ));
+        } else {
+          queue.add(QueueItem(
+            path: pathStr,
+            title: _titleFromPath(pathStr),
+            artist: '',
+            album: '',
+          ));
+        }
+      }
+
+      final curIdx = queue.indexWhere((q) => q.path == curPath);
+      final currentItem = curIdx >= 0 ? queue[curIdx] : queue.first;
+
+      state = PlaybackState(
+        queue: queue,
+        queueIndex: curIdx >= 0 ? curIdx : 0,
+        current: currentItem,
+        isPlaying: false,
+        position: pos,
+        playMode: mode,
+      );
+
+      _syncToSystemMediaSession();
+
+      final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
+      await _player.setVolume(vol);
+
+      if (!currentItem.isOnline) {
+        try {
+          await _player.setFilePath(currentItem.path);
+          await seek(pos);
+        } catch (e) {
+          AppLogger.instance.log('session', '本地曲目预加载失败: $e');
+        }
+      } else {
+        _restoredOnlinePending = pos;
+      }
+    } catch (e) {
+      AppLogger.instance.log('session', '恢复播放会话异常: $e');
     }
   }
 
@@ -241,7 +393,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     });
   }
 
-  /// 播放一组歌曲（替换队列）。
   Future<void> playQueue(List<QueueItem> items, {int startIndex = 0}) async {
     if (items.isEmpty) return;
     _shuffleHistory.clear();
@@ -256,7 +407,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
 
   Future<void> _playAt(int index, {required bool manualPause}) async {
     if (index < 0 || index >= state.queue.length) return;
+
+    _flushPlayStats();
+
     _manualPause = manualPause;
+    _restoredOnlinePending = null;
     final item = state.queue[index];
     state = state.copyWith(
       queueIndex: index,
@@ -267,6 +422,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       resolving: item.isOnline,
       error: null,
     );
+    _syncToSystemMediaSession();
     try {
       if (item.isOnline) {
         await _playOnline(item);
@@ -279,6 +435,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       state = state.copyWith(resolving: false, error: null);
       _reportBehavior(item, 'play', 0);
       _recordRecentPlay(item);
+      _recordHistory(item);
+      _trackStartTime = DateTime.now();
+      _syncToSystemMediaSession();
     } catch (e) {
       state = state.copyWith(isPlaying: false, resolving: false);
       // 在线歌曲失败自动跳下一首（防环：跳过数不超过队列长度）。
@@ -297,6 +456,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
                 ? e.message
                 : '播放失败：${e.toString()}');
       }
+      _syncToSystemMediaSession();
     }
     if (!item.isOnline) _persistSession();
   }
@@ -304,35 +464,107 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   /// 在线歌曲：解析直链后播放。失败抛异常由调用方处理。
   Future<void> _playOnline(QueueItem item) async {
     final json = item.onlineSongJson;
-    if (json == null || json.isEmpty) {
-      throw StateError('在线歌曲信息缺失');
-    }
-    final songJson = jsonDecode(json) as Map<String, dynamic>;
-    // 插件音源：走插件引擎解析直链
-    if (songJson.containsKey('pluginId')) {
-      final url = await _resolvePluginUrl(songJson, item.onlineQuality ?? '320k');
+    if (json != null && json.isNotEmpty) {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      // 插件音源：走插件引擎解析直链
+      if (songJson.containsKey('pluginId')) {
+        final url =
+            await _resolvePluginUrl(songJson, item.onlineQuality ?? '320k');
+        if (url == null || url.isEmpty) {
+          throw StateError('插件直链解析失败');
+        }
+        await _player.setUrl(url);
+        await _player.setVolume(_ref.read(volumeProvider));
+        await _player.play();
+        return;
+      }
+      final resolved = await lxResolveUrl(
+        songInfoJson: json,
+        quality: item.onlineQuality ?? '320k',
+      );
+      if (resolved == 'null' || resolved.isEmpty) {
+        throw StateError('直链解析失败');
+      }
+      final url = jsonDecode(resolved)['url'] as String?;
       if (url == null || url.isEmpty) {
-        throw StateError('插件直链解析失败');
+        throw StateError('直链为空');
       }
       await _player.setUrl(url);
       await _player.setVolume(_ref.read(volumeProvider));
       await _player.play();
       return;
     }
-    final resolved = await lxResolveUrl(
-      songInfoJson: json,
-      quality: item.onlineQuality ?? '320k',
-    );
-    if (resolved == 'null' || resolved.isEmpty) {
-      throw StateError('直链解析失败');
-    }
-    final url = jsonDecode(resolved)['url'] as String?;
-    if (url == null || url.isEmpty) {
-      throw StateError('直链为空');
-    }
+    // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
+    final url = await _resolveOnlineUrl(item);
+    if (url == null) throw StateError('无法获取播放链接');
     await _player.setUrl(url);
-    await _player.setVolume(_ref.read(volumeProvider));
+    final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
+    await _player.setVolume(vol);
     await _player.play();
+  }
+
+  void _flushPlayStats() {
+    final item = state.current;
+    if (item != null && _trackStartTime != null) {
+      final listenedSecs =
+          DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
+      _recordPlayStats(item, listenedSecs);
+      _trackStartTime = null;
+    }
+  }
+
+  void _recordHistory(QueueItem item) {
+    Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        await statsAddToHistory(dbPath: dbPath, songPath: item.path);
+      } catch (_) {}
+    });
+  }
+
+  void _recordPlayStats(QueueItem item, double listenedSecs) {
+    if (listenedSecs < 3) return;
+    Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        final payloadJson = jsonEncode({
+          'songPath': item.path,
+          'listenedMs': (listenedSecs * 1000).toInt(),
+          'durationMs': item.durationMs > 0
+              ? item.durationMs
+              : (state.duration * 1000).toInt(),
+          'title': item.title,
+          'artist': item.artist,
+        });
+        await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
+      } catch (_) {}
+    });
+  }
+
+  Future<String?> _resolveOnlineUrl(QueueItem item) async {
+    final infoJson = item.onlineInfoJson;
+    if (infoJson == null) return null;
+    final preferred =
+        _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
+    final dataDir = await _ref.read(appDataDirProvider.future);
+    final candidates = <String>[
+      preferred,
+      if (preferred != '320k') '320k',
+      if (preferred != '128k') '128k',
+    ];
+    for (final quality in candidates) {
+      try {
+        final json = await lxResolveUrl(
+          songInfoJson: infoJson,
+          quality: quality,
+          dataDir: dataDir,
+        );
+        if (json == 'null') continue;
+        final url = (jsonDecode(json) as Map<String, dynamic>)['url'] as String?;
+        if (url != null && url.isNotEmpty) return url;
+      } catch (_) {}
+    }
+    return null;
   }
 
   /// 通过插件引擎解析播放直链。
@@ -450,15 +682,33 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     if (state.current == null) return;
     if (state.isPlaying) {
       _manualPause = true;
+      _flushPlayStats();
       await _player.pause();
     } else {
       _manualPause = false;
+      _trackStartTime = DateTime.now();
+      final pendingPos = _restoredOnlinePending;
+      if (pendingPos != null) {
+        _restoredOnlinePending = null;
+        await _resumeRestoredOnline(pendingPos);
+        _persistSession();
+        return;
+      }
       await _player.play();
     }
+    _syncToSystemMediaSession();
+    _persistSession();
   }
 
   Future<void> seek(double secs) async {
+    if (_restoredOnlinePending != null) {
+      _restoredOnlinePending = secs;
+      state = state.copyWith(position: secs);
+      _syncToSystemMediaSession();
+      return;
+    }
     await _player.seek(Duration(milliseconds: (secs * 1000).round()));
+    _syncToSystemMediaSession();
   }
 
   Future<void> next() async {
@@ -493,10 +743,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   Future<void> _onTrackEnd() async {
     final ended = state.current;
     if (ended != null) _reportBehavior(ended, 'complete', 0);
+    _flushPlayStats();
     if (state.playMode == 1) {
-      // 单曲循环：重播当前曲。
       await seek(0);
       await _player.play();
+      _trackStartTime = DateTime.now();
       return;
     }
     final next = _pickNextIndex();
@@ -515,10 +766,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       return _randomNextIndex();
     }
     if (state.queueIndex < 0) return 0;
-    return (state.queueIndex + 1) % n; // 顺序：列表循环环绕
+    return (state.queueIndex + 1) % n;
   }
 
-  /// 随机模式下一首：优先 future 栈，否则随机不重复当前曲并记录历史。
   int _randomNextIndex() {
     if (_shuffleFuture.isNotEmpty) {
       final path = _shuffleFuture.removeLast();
@@ -555,27 +805,86 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> _persistSession() async {
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final settings = _ref.read(settingsProvider).valueOrNull;
+      final item = state.current;
+      if (item == null || state.queue.isEmpty) return;
+
+      final Map<String, dynamic> queueSongMeta = {};
+      for (final q in state.queue) {
+        queueSongMeta[q.path] = {
+          'path': q.path,
+          'title': q.title,
+          'artist': q.artist,
+          'album': q.album,
+          'durationMs': q.durationMs,
+          'coverUrl': q.coverUrl,
+          'source': q.source,
+          'onlineInfoJson': q.onlineInfoJson,
+        };
+      }
+
+      final sessionJson = jsonEncode({
+        'currentSongPath': item.path,
+        'playQueuePaths': state.queue.map((q) => q.path).toList(),
+        'sourceSongPaths': state.queue.map((q) => q.path).toList(),
+        'playMode': state.playMode,
+        'volume': (settings?.volume ?? 1.0) * 100.0,
+        'currentPositionSecs': state.position,
+        'isPlaying': state.isPlaying,
+        'sessionQualityOverride': null,
+        'queueSongMeta': queueSongMeta,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+      await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
+    } catch (e) {
+      AppLogger.instance.log('session', '播放会话保存失败: $e');
+      debugPrint('播放会话保存失败: $e');
+    }
+  }
+
+  Future<void> _resumeRestoredOnline(double pos) async {
     final item = state.current;
-    if (item == null || item.isOnline) return;
-    final dbPath = await _ref.read(dbPathProvider.future);
-    final settings = _ref.read(settingsProvider).valueOrNull;
-    final sessionJson = jsonEncode({
-      'currentSongPath': item.path,
-      'playQueuePaths': state.queue.map((q) => q.path).toList(),
-      'sourceSongPaths': const <String>[],
-      'playMode': state.playMode,
-      'volume': settings?.volume ?? 1.0,
-      'currentPositionSecs': state.position,
-      'isPlaying': state.isPlaying,
-      'sessionQualityOverride': null,
-      'queueSongMeta': const <String, dynamic>{},
-    });
-    await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
+    if (item == null) return;
+    state = state.copyWith(resolving: true, error: null);
+    _syncToSystemMediaSession();
+    try {
+      if (item.onlineSongJson != null && item.onlineSongJson!.isNotEmpty) {
+        await _playOnline(item);
+      } else {
+        final url = await _resolveOnlineUrl(item);
+        if (url == null) {
+          state = state.copyWith(
+            isPlaying: false,
+            resolving: false,
+            error: '无法获取播放链接',
+          );
+          _syncToSystemMediaSession();
+          return;
+        }
+        await _player.setUrl(url);
+        final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
+        await _player.setVolume(vol);
+      }
+      state = state.copyWith(resolving: false);
+      await seek(pos);
+      await _player.play();
+      _syncToSystemMediaSession();
+    } catch (e) {
+      state = state.copyWith(
+        isPlaying: false,
+        resolving: false,
+        error: '在线播放失败',
+      );
+      _syncToSystemMediaSession();
+    }
   }
 
   @override
   void dispose() {
     _listenTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
@@ -589,7 +898,6 @@ final volumeProvider = Provider<double>((ref) {
   return ref.watch(settingsProvider.select((s) => s.valueOrNull?.volume)) ?? 1.0;
 });
 
-final playerProvider =
-    StateNotifierProvider<PlayerNotifier, PlaybackState>((ref) {
-  return PlayerNotifier(ref);
-});
+final playerProvider = StateNotifierProvider<PlayerNotifier, PlaybackState>(
+  (ref) => PlayerNotifier(ref),
+);

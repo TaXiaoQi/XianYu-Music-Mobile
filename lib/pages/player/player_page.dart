@@ -38,8 +38,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
 
-    final coverSize = MediaQuery.of(context).size.width * 0.68;
-
     // 背景是深色模糊封面（学 MusicFree），前景统一按深色主题渲染，
     // 保证浅色系统主题下文字/图标仍可读。
     final bgScheme = scheme.copyWith(
@@ -47,6 +45,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       onSurface: Colors.white,
       onSurfaceVariant: Colors.white.withValues(alpha: 0.72),
     );
+
+    final settings = ref.watch(settingsProvider).valueOrNull;
+    final fontSizeIdx = settings?.lyricFontSize ?? 1;
+    final showTranslation = settings?.showLyricsTranslation ?? true;
+    final offsetMs = settings?.lyricOffsetMs ?? 0;
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -62,73 +65,97 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
           _BlurredCoverBackground(current: current),
           SafeArea(
-            child: Column(
+            child: Stack(
               children: [
-                // 顶栏
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-                        onPressed: () => Navigator.of(context).pop(),
+                Column(
+                  children: [
+                    // 顶栏
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                          Expanded(
+                            child: Text(
+                              _showLyrics ? '歌词' : '正在播放',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white.withValues(alpha: 0.9)),
+                            ),
+                          ),
+                          // 右侧留位 48px 占位，保持标题居中
+                          const SizedBox(width: 48),
+                        ],
                       ),
+                    ),
+                    // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
+                    if (!_showLyrics) ...[
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showLyrics = true;
+                          });
+                        },
+                        child: _BigCover(current: current),
+                      ),
+                      const Spacer(),
+                    ] else ...[
                       Expanded(
-                        child: Text(
-                          _showLyrics ? '歌词' : '正在播放',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withValues(alpha: 0.9)),
+                        child: ClipRect(
+                          child: _LyricsView(
+                            current: current,
+                            position: player.position,
+                            isPlaying: player.isPlaying,
+                            visible: _showLyrics,
+                            onTap: () {
+                              setState(() {
+                                _showLyrics = false;
+                              });
+                            },
+                          ),
                         ),
                       ),
-                      // 右侧留位占位，保持标题居中（切歌/切词通过点击封面）。
-                      const SizedBox(width: 48),
+                      const SizedBox(height: 8),
                     ],
-                  ),
+                    // 毛玻璃控制卡
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      child: _GlassControlCard(
+                        player: player,
+                        notifier: notifier,
+                        current: current,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                // 中间区域：封面 / 歌词模式平滑切换
-                AnimatedCrossFade(
-                  firstChild: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _showLyrics = true;
-                      });
-                    },
-                    child: _BigCover(current: current),
-                  ),
-                  secondChild: SizedBox(
-                    height: coverSize + 20,
-                    width: double.infinity,
-                    child: _LyricsView(
-                      current: current,
-                      position: player.position,
-                      isPlaying: player.isPlaying,
-                      visible: _showLyrics,
-                      onTap: () {
-                        setState(() {
-                          _showLyrics = false;
-                        });
+
+                // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（与左侧下拉图标/居中标题在同一水平线）
+                if (_showLyrics)
+                  Positioned(
+                    top: 4,
+                    right: 12,
+                    child: _LyricSettingsRail(
+                      fontSizeIdx: fontSizeIdx,
+                      showTranslation: showTranslation,
+                      offsetMs: offsetMs,
+                      hasTranslation: true,
+                      onFontSize: () =>
+                          _LyricsViewState._showFontSizeSheet(context, ref),
+                      onToggleTranslation: () {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setShowLyricsTranslation(!showTranslation);
                       },
+                      onOffset: () =>
+                          _LyricsViewState._showOffsetSheet(context, ref),
                     ),
                   ),
-                  crossFadeState: _showLyrics
-                      ? CrossFadeState.showSecond
-                      : CrossFadeState.showFirst,
-                  duration: const Duration(milliseconds: 260),
-                ),
-                const Spacer(),
-                // 毛玻璃控制卡
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                  child: _GlassControlCard(
-                    player: player,
-                    notifier: notifier,
-                    current: current,
-                  ),
-                ),
               ],
             ),
           ),
@@ -1190,8 +1217,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         },
         child: ListView.builder(
           controller: _scrollCtrl,
-          // 底部留出操作栏高度，最后几行不被遮挡。
-          padding: const EdgeInsets.fromLTRB(24, 60, 24, 52),
+          // 歌词列表内边距：工具栏已移至右上角，底部留空 40px 即可完全无遮挡展现
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
           itemCount: _lines.length,
           itemBuilder: (context, idx) {
             final line = _lines[idx];
@@ -1317,42 +1344,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                 ],
               ),
             ),
-
-          // 歌词样式操作栏（移植自 MF LyricOperations）：
-          // 字号调节 / 翻译开关 / 时间偏移校正。
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _LyricOperationsBar(
-              fontSizeIdx: _fontSizeIdx,
-              showTranslation: _showTranslation,
-              offsetMs: _offsetMs,
-              hasTranslation: _lines.any((l) =>
-                  (l.translation ?? '').isNotEmpty),
-              onFontSize: _showFontSizeSheet,
-              onToggleTranslation: () {
-                if (!_lines.any((l) => (l.translation ?? '').isNotEmpty)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('当前歌曲无翻译'),
-                        duration: Duration(seconds: 1)),
-                  );
-                  return;
-                }
-                ref.read(settingsProvider.notifier).setShowLyricsTranslation(
-                    !_showTranslation);
-              },
-              onOffset: _showOffsetSheet,
-            ),
-          ),
         ],
       ),
     );
   }
 
   /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
-  void _showFontSizeSheet() {
+  static void _showFontSizeSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetCtx) {
@@ -1424,7 +1422,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 
   /// 歌词偏移校正面板（对应 MF SetLyricOffset）：-500ms ~ +500ms 滑杆。
-  void _showOffsetSheet() {
+  static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetCtx) {
@@ -1602,10 +1600,9 @@ class _DraggingPlayButton extends StatelessWidget {
   }
 }
 
-/// 歌词样式操作栏（移植自 MF LyricOperations）：
-/// 字号 / 翻译开关 / 时间偏移三个入口，均分排列在歌词底部。
-class _LyricOperationsBar extends StatelessWidget {
-  const _LyricOperationsBar({
+/// 歌词设置悬浮按钮面板（复用悬浮侧边栏 UI 设计）：位于歌词页右上角，点击调出字号/翻译/偏移控件。
+class _LyricSettingsRail extends StatefulWidget {
+  const _LyricSettingsRail({
     required this.fontSizeIdx,
     required this.showTranslation,
     required this.offsetMs,
@@ -1624,52 +1621,162 @@ class _LyricOperationsBar extends StatelessWidget {
   final VoidCallback onOffset;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  State<_LyricSettingsRail> createState() => _LyricSettingsRailState();
+}
 
-    Widget op(IconData icon, String label, VoidCallback onTap,
-        {bool active = true}) {
-      final color = active
-          ? (scheme.brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.85)
-              : scheme.onSurface.withValues(alpha: 0.75))
-          : scheme.onSurface.withValues(alpha: 0.25);
-      return Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 20, color: color),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 10, color: color),
-                ),
-              ],
+class _LyricSettingsRailState extends State<_LyricSettingsRail> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panelWidth = _expanded ? 46.0 : 40.0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          width: panelWidth,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white.withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 1. 右上角毛玻璃主控制 Icon 按钮
+              InkWell(
+                onTap: () => setState(() => _expanded = !_expanded),
+                borderRadius: BorderRadius.circular(20),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: AnimatedRotation(
+                      turns: _expanded ? 0.25 : 0.0,
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.tune_rounded,
+                        size: 20,
+                        color: _expanded
+                            ? const Color(0xFFEC4141)
+                            : Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // 2. 展开时向下延伸显示的 3 个工具按钮（字号 / 翻译 / 偏移）
+              AnimatedSize(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _expanded
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Divider(
+                            height: 1,
+                            indent: 8,
+                            endIndent: 8,
+                            thickness: 0.5,
+                            color: Colors.white.withValues(alpha: 0.15),
+                          ),
+                          const SizedBox(height: 4),
+
+                          // (1) 字号按钮
+                          _RailIconButton(
+                            icon: Icons.format_size_rounded,
+                            active: widget.fontSizeIdx != 1,
+                            onTap: widget.onFontSize,
+                          ),
+
+                          // (2) 翻译开关按钮
+                          _RailIconButton(
+                            icon: Icons.translate_rounded,
+                            active: widget.showTranslation && widget.hasTranslation,
+                            disabled: !widget.hasTranslation,
+                            onTap: widget.onToggleTranslation,
+                          ),
+
+                          // (3) 时间偏移校正按钮
+                          _RailIconButton(
+                            icon: Icons.av_timer_rounded,
+                            active: widget.offsetMs != 0,
+                            onTap: widget.onOffset,
+                          ),
+
+                          const SizedBox(height: 6),
+                        ],
+                      )
+                    : const SizedBox(width: 40, height: 0),
+              ),
+            ],
           ),
         ),
-      );
-    }
-
-    return Row(
-      children: [
-        op(Icons.format_size, '字号', onFontSize),
-        op(Icons.translate, '翻译', onToggleTranslation,
-            active: hasTranslation && showTranslation),
-        op(Icons.timer_sharp, _offsetLabel(offsetMs), onOffset,
-            active: offsetMs != 0),
-      ],
+      ),
     );
   }
+}
 
-  String _offsetLabel(int ms) {
-    if (ms == 0) return '偏移';
-    return ms > 0 ? '偏移+$ms' : '偏移$ms';
+/// 侧边栏按钮图标样式
+class _RailIconButton extends StatelessWidget {
+  const _RailIconButton({
+    required this.icon,
+    required this.active,
+    this.disabled = false,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool active;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const activeColor = Color(0xFFEC4141);
+    final inactiveColor = Colors.white.withValues(alpha: disabled ? 0.3 : 0.85);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: InkWell(
+        onTap: disabled ? null : onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: active
+                ? activeColor.withValues(alpha: 0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            icon,
+            size: 19,
+            color: active ? activeColor : inactiveColor,
+          ),
+        ),
+      ),
+    );
   }
 }
 

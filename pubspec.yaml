@@ -48,8 +48,9 @@ dependencies:
   path_provider: ^2.1.0
   path: ^1.9.0
 
-  # 音频播放
+  # 音频播放与系统控制中心 (MediaSession / MediaNotification)
   just_audio: ^0.9.0
+  audio_service: ^0.18.18
 
   # 在线封面加载与磁盘缓存
   cached_network_image: ^3.4.1
