@@ -245,6 +245,9 @@ class _OnlineSearchTab extends ConsumerWidget {
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
                     label: Text(s.label),
+                    // 去掉默认的垂直内边距，使 chip 自然高度与横向列表
+                    // 强制的 32px 一致，避免内部布局被压缩导致文字偏下。
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     selected: state.source == s.id,
                     onSelected: (_) =>
                         ref.read(onlineSearchProvider.notifier).setSource(s.id),
