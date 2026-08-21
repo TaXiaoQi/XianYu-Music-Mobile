@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
+import 'src/core/rust_init.dart';
 import 'pages/account/account_page.dart';
 import 'pages/effects/effects_page.dart';
 import 'pages/favorites/favorites_page.dart';
@@ -86,18 +87,19 @@ void _installErrorReporting(ProviderContainer container) {
 }
 
 /// 应用程序路由与关键页面预热器（含全屏精致 Splash / Warmup 加载屏）
-class AppWarmupRunner extends StatefulWidget {
+class AppWarmupRunner extends ConsumerStatefulWidget {
   const AppWarmupRunner({super.key, required this.child});
 
   final Widget child;
 
   @override
-  State<AppWarmupRunner> createState() => _AppWarmupRunnerState();
+  ConsumerState<AppWarmupRunner> createState() => _AppWarmupRunnerState();
 }
 
-class _AppWarmupRunnerState extends State<AppWarmupRunner>
+class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner>
     with SingleTickerProviderStateMixin {
   bool _warmedUp = false;
+  bool _minTimeElapsed = false;
   double _progress = 0.0;
   Timer? _timer;
   late final AnimationController _fadeController;
@@ -118,24 +120,38 @@ class _AppWarmupRunnerState extends State<AppWarmupRunner>
     // 启动平滑模拟进度条，涵盖预热过程
     _startProgressSimulation();
 
+    // rust 初始化完成（无论成功/失败）后尝试结束启动页
+    ref.listen(rustInitProvider, (prev, next) {
+      if (next.hasValue || next.hasError) _tryFinish();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 预留足够时间预热所有离屏 Widget、Shader 和渲染管线 (约 800ms)
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
           setState(() {
-            _progress = 1.0;
+            _minTimeElapsed = true;
           });
-          // 进度拉满后停留 150ms 然后平滑淡出全屏加载页
-          Future.delayed(const Duration(milliseconds: 150), () {
-            if (mounted) {
-              _fadeController.forward().then((_) {
-                if (mounted) {
-                  setState(() {
-                    _warmedUp = true;
-                  });
-                }
-              });
-            }
+          _tryFinish();
+        }
+      });
+    });
+  }
+
+  void _tryFinish() {
+    if (!mounted || _warmedUp || !_minTimeElapsed) return;
+    final init = ref.read(rustInitProvider);
+    if (!init.hasValue && !init.hasError) return;
+    setState(() {
+      _progress = 1.0;
+    });
+    // 进度拉满后停留 150ms 然后平滑淡出全屏加载页
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      _fadeController.forward().then((_) {
+        if (mounted) {
+          setState(() {
+            _warmedUp = true;
           });
         }
       });
@@ -163,39 +179,47 @@ class _AppWarmupRunnerState extends State<AppWarmupRunner>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        widget.child,
+    // 该 Stack 位于 MaterialApp 之上，无 Directionality 祖先，需显式提供文本方向
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(
+        children: [
+          widget.child,
 
-        // 离屏预热沙盒（隐藏在全屏加载页后）
-        if (!_warmedUp)
-          Positioned.fill(
-            child: TickerMode(
-              enabled: true,
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.001,
-                  child: Material(
-                    child: SingleChildScrollView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      child: SizedBox(
-                        width: 400,
-                        height: 800,
-                        child: Stack(
-                          children: const [
-                            HomePage(),
-                            LibraryPage(),
-                            PlayerPage(),
-                            AccountPage(),
-                            SettingsPage(),
-                            FavoritesPage(),
-                            RecentPage(),
-                            SearchPage(),
-                            EffectsPage(),
-                            MusicSourcesPage(),
-                            ScanFoldersPage(),
-                            ToolbarSettingsPage(),
-                          ],
+          // 离屏预热沙盒（隐藏在全屏加载页后）
+          // 页面在 MaterialApp 之外渲染，需提供完整应用上下文（Directionality/MediaQuery/Theme/Localizations）
+          if (!_warmedUp)
+            Positioned.fill(
+              child: TickerMode(
+                enabled: true,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.001,
+                    child: MaterialApp(
+                      debugShowCheckedModeBanner: false,
+                      home: Scaffold(
+                        body: SingleChildScrollView(
+                          physics: const NeverScrollableScrollPhysics(),
+                          child: SizedBox(
+                            width: 400,
+                            height: 800,
+                            child: Stack(
+                              children: const [
+                                HomePage(),
+                                LibraryPage(),
+                                PlayerPage(),
+                                AccountPage(),
+                                SettingsPage(),
+                                FavoritesPage(),
+                                RecentPage(),
+                                SearchPage(),
+                                EffectsPage(),
+                                MusicSourcesPage(),
+                                ScanFoldersPage(),
+                                ToolbarSettingsPage(),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -203,17 +227,17 @@ class _AppWarmupRunnerState extends State<AppWarmupRunner>
                 ),
               ),
             ),
-          ),
 
-        // 全屏启动加载遮罩界面：品牌 Logo "弦予音乐-移动端" + 动态进度条
-        if (!_warmedUp)
-          Positioned.fill(
-            child: FadeTransition(
-              opacity: Tween(begin: 1.0, end: 0.0).animate(_fadeAnimation),
-              child: _FullSplashScreen(progress: _progress),
+          // 全屏启动加载遮罩界面：品牌 Logo "弦予音乐-移动端" + 动态进度条
+          if (!_warmedUp)
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: Tween(begin: 1.0, end: 0.0).animate(_fadeAnimation),
+                child: _FullSplashScreen(progress: _progress),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
