@@ -1,0 +1,265 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../src/download/download_provider.dart';
+import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
+import '../../src/widgets/cover_image.dart';
+
+/// 下载管理页：进行中的下载任务 + 下载历史。
+class DownloadPage extends ConsumerWidget {
+  const DownloadPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(downloadProvider);
+    final notifier = ref.read(downloadProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
+
+    final active = state.tasks
+        .where((t) => t.status == DownloadStatus.downloading)
+        .toList();
+    final finished = state.tasks
+        .where((t) => t.status != DownloadStatus.downloading)
+        .toList();
+
+    return HideShellChrome(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('下载管理'),
+          actions: [
+            if (state.history.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined),
+                tooltip: '清空记录',
+                onPressed: () => _confirmClear(context, notifier),
+              ),
+          ],
+        ),
+        body: state.loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.only(bottom: 24),
+                children: [
+                  if (active.isNotEmpty) ...[
+                    _sectionHeader(context, '下载中'),
+                    for (final t in active)
+                      _ActiveTaskTile(task: t),
+                    if (finished.isNotEmpty) const Divider(height: 24),
+                  ],
+                  if (finished.isNotEmpty) ...[
+                    _sectionHeader(context, '最近完成'),
+                    for (final t in finished)
+                      _FinishedTaskTile(
+                        task: t,
+                        onDismiss: () => notifier.clearFinishedTasks(),
+                      ),
+                    const Divider(height: 24),
+                  ],
+                  _sectionHeader(context, '下载记录'),
+                  if (state.history.isEmpty)
+                    _empty(context, scheme)
+                  else
+                    for (final e in state.history)
+                      _HistoryTile(
+                        entry: e,
+                        onPlay: () => _play(context, ref, e),
+                        onRemove: () => notifier.removeHistory(e.songPath),
+                      ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  void _play(BuildContext context, WidgetRef ref, DownloadHistoryEntry e) {
+    final file = File(e.filePath);
+    if (!file.existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('文件不存在：${e.fileName}')),
+      );
+      return;
+    }
+    ref.read(playerProvider.notifier).playQueue([e.toQueueItem()], startIndex: 0);
+  }
+
+  void _confirmClear(BuildContext context, DownloadManager notifier) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空下载记录'),
+        content: const Text('确定要清空全部下载记录吗？（不会删除已下载的文件）'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              notifier.clearHistory();
+            },
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+
+  Widget _empty(BuildContext context, ColorScheme scheme) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Column(
+          children: [
+            Icon(Icons.download_outlined,
+                size: 48, color: scheme.onSurface.withValues(alpha: 0.25)),
+            const SizedBox(height: 12),
+            Text(
+              '暂无下载记录\n在搜索结果或播放页点击下载按钮即可下载',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+}
+
+/// 进行中的下载任务。
+class _ActiveTaskTile extends StatelessWidget {
+  const _ActiveTaskTile({required this.task});
+  final DownloadTask task;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      dense: true,
+      leading: SizedBox(
+        width: 36,
+        height: 36,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            Icon(Icons.download, size: 16, color: scheme.primary),
+          ],
+        ),
+      ),
+      title: Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${task.artist} · ${task.quality}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// 已结束的下载任务（成功/失败）。
+class _FinishedTaskTile extends StatelessWidget {
+  const _FinishedTaskTile({required this.task, required this.onDismiss});
+  final DownloadTask task;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final ok = task.status == DownloadStatus.done;
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        ok ? Icons.check_circle : Icons.error_outline,
+        size: 22,
+        color: ok ? const Color(0xFF4CAF50) : scheme.error,
+      ),
+      title: Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        ok ? '下载完成' : (task.error ?? '下载失败'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontSize: 12,
+            color: ok ? scheme.onSurfaceVariant : scheme.error),
+      ),
+      trailing: IconButton(
+        icon: Icon(Icons.close, size: 18, color: scheme.outline),
+        tooltip: '移除',
+        onPressed: onDismiss,
+      ),
+    );
+  }
+}
+
+/// 下载记录条目。
+class _HistoryTile extends StatelessWidget {
+  const _HistoryTile({
+    required this.entry,
+    required this.onPlay,
+    required this.onRemove,
+  });
+
+  final DownloadHistoryEntry entry;
+  final VoidCallback onPlay;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final exists = File(entry.filePath).existsSync();
+    return ListTile(
+      dense: true,
+      leading: CoverImage(
+        songPath: entry.filePath,
+        width: 44,
+        height: 44,
+        radius: 8,
+        icon: Icons.music_note,
+      ),
+      title: Text(entry.title ?? entry.fileName,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${entry.artist ?? ''}${entry.artist?.isNotEmpty == true ? ' · ' : ''}${entry.quality}${exists ? '' : ' · 文件缺失'}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          color: exists ? scheme.onSurfaceVariant : scheme.error,
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(Icons.play_arrow, size: 20, color: scheme.primary),
+            tooltip: '播放',
+            onPressed: exists ? onPlay : null,
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 18, color: scheme.outline),
+            tooltip: '移除记录',
+            onPressed: onRemove,
+          ),
+        ],
+      ),
+      onTap: exists ? onPlay : null,
+    );
+  }
+}

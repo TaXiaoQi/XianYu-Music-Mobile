@@ -10,6 +10,7 @@ import '../auth/account_api.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
+import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import '../stats/listen_stats.dart';
@@ -25,6 +26,12 @@ class QueueItem {
   final String? onlineSongJson;
   /// 在线歌曲音质（如 320k / flac）。
   final String? onlineQuality;
+  /// 在线歌曲封面 URL（在线歌曲优先展示，本地歌曲为空）。
+  final String? coverUrl;
+  /// 在线歌曲音源 key（如 kw/kg/tx/wy），用于歌词抓取。
+  final String? source;
+  /// 在线歌曲信息 JSON（歌词抓取用，LyricSongInfo 格式）。
+  final String? onlineInfoJson;
   const QueueItem({
     required this.path,
     required this.title,
@@ -33,6 +40,9 @@ class QueueItem {
     this.durationMs = 0,
     this.onlineSongJson,
     this.onlineQuality,
+    this.coverUrl,
+    this.source,
+    this.onlineInfoJson,
   });
 
   bool get isOnline =>
@@ -47,6 +57,10 @@ class PlaybackState {
   final double position;
   final double duration;
   final int playMode; // 0 顺序(列表循环) 1 单曲循环 2 随机
+  /// 在线歌曲直链解析中（UI 播放键显示加载态）。
+  final bool resolving;
+  /// 当前播放错误信息（在线歌曲解析/播放失败时展示）。
+  final String? error;
   const PlaybackState({
     this.current,
     this.queue = const [],
@@ -55,6 +69,8 @@ class PlaybackState {
     this.position = 0,
     this.duration = 0,
     this.playMode = 0,
+    this.resolving = false,
+    this.error,
   });
 
   PlaybackState copyWith({
@@ -65,6 +81,8 @@ class PlaybackState {
     double? position,
     double? duration,
     int? playMode,
+    bool? resolving,
+    String? error,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -74,6 +92,8 @@ class PlaybackState {
       position: position ?? this.position,
       duration: duration ?? this.duration,
       playMode: playMode ?? this.playMode,
+      resolving: resolving ?? this.resolving,
+      error: error ?? this.error,
     );
   }
 }
@@ -244,6 +264,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       isPlaying: false,
       position: 0,
       duration: item.durationMs / 1000.0,
+      resolving: item.isOnline,
+      error: null,
     );
     try {
       if (item.isOnline) {
@@ -254,10 +276,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
         await _player.play();
       }
       _skipDepth = 0;
+      state = state.copyWith(resolving: false, error: null);
       _reportBehavior(item, 'play', 0);
       _recordRecentPlay(item);
-    } catch (_) {
-      state = state.copyWith(isPlaying: false);
+    } catch (e) {
+      state = state.copyWith(isPlaying: false, resolving: false);
       // 在线歌曲失败自动跳下一首（防环：跳过数不超过队列长度）。
       if (item.isOnline && _skipDepth < state.queue.length) {
         _skipDepth++;
@@ -266,6 +289,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
           await _playAt(next, manualPause: true);
           return;
         }
+      }
+      // 无下一首可跳时透出错误信息。
+      if (item.isOnline) {
+        state = state.copyWith(
+            error: e is PluginEngineException
+                ? e.message
+                : '播放失败：${e.toString()}');
       }
     }
     if (!item.isOnline) _persistSession();

@@ -16,6 +16,7 @@ import '../../pages/leaderboard/leaderboard_page.dart';
 import '../../pages/sync/sync_page.dart';
 import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
+import '../../pages/download/download_page.dart';
 import 'shell.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
@@ -107,6 +108,11 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/recent',
       builder: (context, state) => const RecentPage(),
+    ),
+    // 下载管理（从设置页进入）。
+    GoRoute(
+      path: '/download',
+      builder: (context, state) => const DownloadPage(),
     ),
   ],
 );

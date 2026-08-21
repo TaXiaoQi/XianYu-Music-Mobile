@@ -7,9 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
-import '../navigation/shell.dart';
 import '../player/player_provider.dart';
 import 'cover_image.dart';
+import 'glass_settings.dart';
 
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
 class MiniPlayerBar extends ConsumerStatefulWidget {

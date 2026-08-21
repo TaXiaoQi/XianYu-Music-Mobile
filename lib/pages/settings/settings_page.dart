@@ -102,6 +102,13 @@ class SettingsPage extends ConsumerWidget {
             value: settings?.downloadLyrics ?? true,
             onChanged: (v) => notifier.setDownloadLyrics(v),
           ),
+          _tile(
+            context,
+            icon: Icons.download_done_outlined,
+            title: '下载管理',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/download'),
+          ),
           _sectionHeader(context, '其他'),
           _switchTile(
             context,

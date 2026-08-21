@@ -191,7 +191,6 @@ class _ReverbSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
     final active = settings.reverbKind == 'none' ? null : settings.reverbPreset;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -458,7 +457,7 @@ class _AdvancedSection extends ConsumerWidget {
           ],
           _switchTile(
             context,
-            icon: Icons.echo,
+            icon: Icons.repeat,
             title: '延迟回声',
             value: settings.delayEnabled,
             onChanged: (v) => notifier.set(settings.copyWith(delayEnabled: v)),

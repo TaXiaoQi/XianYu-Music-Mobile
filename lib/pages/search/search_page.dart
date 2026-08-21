@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/core/db_path.dart';
+import '../../src/download/download_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
@@ -120,6 +121,17 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final service = PluginSearchService(engine, ref.read(pluginManagerProvider).sources);
     final item = service.toQueueItem(source, r);
     ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
+  }
+
+  void _downloadOnlineResult(PluginSource source, PluginSearchResult r) {
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) return;
+    final service = PluginSearchService(engine, ref.read(pluginManagerProvider).sources);
+    final item = service.toQueueItem(source, r);
+    ref.read(downloadProvider.notifier).download(item);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('开始下载：${item.title}')),
+    );
   }
 
   @override
@@ -250,6 +262,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           for (final r in items) _OnlineResultTile(
             result: r,
             onTap: () => _playOnlineResult(source, r),
+            onDownload: () => _downloadOnlineResult(source, r),
           ),
         ],
       ],
@@ -258,9 +271,14 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 }
 
 class _OnlineResultTile extends StatelessWidget {
-  const _OnlineResultTile({required this.result, required this.onTap});
+  const _OnlineResultTile({
+    required this.result,
+    required this.onTap,
+    required this.onDownload,
+  });
   final PluginSearchResult result;
   final VoidCallback onTap;
+  final VoidCallback onDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -286,9 +304,19 @@ class _OnlineResultTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
       ),
-      trailing: Text(
-        result.interval,
-        style: TextStyle(fontSize: 12, color: scheme.outline),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(Icons.download_outlined, size: 20, color: scheme.primary),
+            tooltip: '下载',
+            onPressed: onDownload,
+          ),
+          Text(
+            result.interval,
+            style: TextStyle(fontSize: 12, color: scheme.outline),
+          ),
+        ],
       ),
       onTap: onTap,
     );

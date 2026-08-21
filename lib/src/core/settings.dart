@@ -8,6 +8,9 @@ enum ThemeModePreference {
   dark,
 }
 
+/// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
+const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff'];
+
 /// 全局设置（小而美：仅移动端必需项，key 语义与桌面端一致）。
 class AppSettings {
   const AppSettings({
@@ -26,6 +29,11 @@ class AppSettings {
     this.downloadQuality = '320k',
     this.downloadLyrics = true,
     this.organizeRule = '{Artist}/{Album}/{Title}',
+    this.lyricFontSize = 1,
+    this.lyricOffsetMs = 0,
+    this.liquidGlass = true,
+    this.playerLiquidGlass = true,
+    this.scanFormats = kSupportedScanFormats,
   });
 
   final double volume;
@@ -43,6 +51,11 @@ class AppSettings {
   final String downloadQuality;
   final bool downloadLyrics;
   final String organizeRule;
+  final int lyricFontSize;
+  final int lyricOffsetMs;
+  final bool liquidGlass;
+  final bool playerLiquidGlass;
+  final List<String> scanFormats;
 
   AppSettings copyWith({
     double? volume,
@@ -60,6 +73,11 @@ class AppSettings {
     String? downloadQuality,
     bool? downloadLyrics,
     String? organizeRule,
+    int? lyricFontSize,
+    int? lyricOffsetMs,
+    bool? liquidGlass,
+    bool? playerLiquidGlass,
+    List<String>? scanFormats,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -79,6 +97,11 @@ class AppSettings {
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadLyrics: downloadLyrics ?? this.downloadLyrics,
       organizeRule: organizeRule ?? this.organizeRule,
+      lyricFontSize: lyricFontSize ?? this.lyricFontSize,
+      lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
+      liquidGlass: liquidGlass ?? this.liquidGlass,
+      playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
+      scanFormats: scanFormats ?? this.scanFormats,
     );
   }
 }
@@ -106,6 +129,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       downloadQuality: prefs.getString('downloadQuality') ?? '320k',
       downloadLyrics: prefs.getBool('downloadLyrics') ?? true,
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
+      lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
+      lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
+      liquidGlass: prefs.getBool('liquidGlass') ?? true,
+      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
+      scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
     );
   }
 
@@ -142,6 +170,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('downloadQuality', next.downloadQuality),
       prefs.setBool('downloadLyrics', next.downloadLyrics),
       prefs.setString('organizeRule', next.organizeRule),
+      prefs.setInt('lyricFontSize', next.lyricFontSize),
+      prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
+      prefs.setBool('liquidGlass', next.liquidGlass),
+      prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
+      prefs.setStringList('scanFormats', next.scanFormats),
     ]);
   }
 
@@ -160,6 +193,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setDownloadQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQuality: q));
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
+  Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
+  Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
+  Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
+  Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerLiquidGlass: v));
+  Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

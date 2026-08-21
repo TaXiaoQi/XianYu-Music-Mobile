@@ -11,11 +11,12 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
+import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
-import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/glass_settings.dart';
 
 /// 正在播放页：现代毛玻璃风格。
 /// 封面大圆角浮于流光背景之上，支持点击封面在“封面模式”与“歌词模式”间平滑切换。
@@ -430,8 +431,18 @@ class _TitleRow extends ConsumerWidget {
             color: isFav ? scheme.primary : null,
           ),
           onPressed: () =>
-              ref.read(favoritesProvider.notifier).toggle(current.path),
+              ref.read(favoritesProvider.notifier).toggle(current),
         ),
+        if (current.isOnline)
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            onPressed: () {
+              ref.read(downloadProvider.notifier).download(current);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('开始下载：${current.title}')),
+              );
+            },
+          ),
       ],
     );
   }
@@ -553,9 +564,20 @@ class _Controls extends ConsumerWidget {
         IconButton(
           iconSize: 21,
           icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant),
-          onPressed: () {},
+          onPressed: () => _showQueueSheet(context, ref, player),
         ),
       ],
+    );
+  }
+
+  /// 播放队列弹窗：展示/点播/移除/拖拽排序。
+  void _showQueueSheet(
+      BuildContext context, WidgetRef ref, PlaybackState player) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QueueSheet(player: player),
     );
   }
 }
@@ -1648,5 +1670,149 @@ class _LyricOperationsBar extends StatelessWidget {
   String _offsetLabel(int ms) {
     if (ms == 0) return '偏移';
     return ms > 0 ? '偏移+$ms' : '偏移$ms';
+  }
+}
+
+/// 播放队列弹窗（移植自桌面端播放队列）：
+/// 顶部显示当前播放信息，下方为可拖拽排序的队列列表。
+class _QueueSheet extends ConsumerStatefulWidget {
+  const _QueueSheet({required this.player});
+
+  final PlaybackState player;
+
+  @override
+  ConsumerState<_QueueSheet> createState() => _QueueSheetState();
+}
+
+class _QueueSheetState extends ConsumerState<_QueueSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final player = ref.watch(playerProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final queue = player.queue;
+    final currentIndex = player.queueIndex;
+
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 顶部标题栏
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 12, 4),
+          child: Row(
+            children: [
+              Text(
+                '播放队列',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${queue.length} 首',
+                style: TextStyle(
+                    fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+        if (queue.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Text(
+              '队列为空',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          )
+        else
+          Flexible(
+            child: ReorderableListView.builder(
+              shrinkWrap: true,
+              buildDefaultDragHandles: false,
+              itemCount: queue.length,
+              onReorderItem: (oldIndex, newIndex) {
+                ref
+                    .read(playerProvider.notifier)
+                    .reorderQueue(oldIndex, newIndex);
+              },
+              itemBuilder: (context, index) {
+                final item = queue[index];
+                final isCurrent = index == currentIndex;
+                return ReorderableDelayedDragStartListener(
+                  key: ValueKey('${item.path}_$index'),
+                  index: index,
+                  child: ListTile(
+                    dense: true,
+                    leading: isCurrent
+                        ? Icon(Icons.graphic_eq,
+                            size: 18, color: const Color(0xFFEC4141))
+                        : Icon(Icons.music_note,
+                            size: 18, color: scheme.outline),
+                    title: Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isCurrent
+                            ? const Color(0xFFEC4141)
+                            : scheme.onSurface,
+                        fontWeight:
+                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      item.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.drag_handle,
+                              size: 18, color: scheme.outline),
+                          onPressed: null,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close,
+                              size: 18, color: scheme.outline),
+                          onPressed: () => ref
+                              .read(playerProvider.notifier)
+                              .removeFromQueue(index),
+                        ),
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ref
+                          .read(playerProvider.notifier)
+                          .playQueueItem(index);
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+
+    return SafeArea(
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: content,
+      ),
+    );
   }
 }

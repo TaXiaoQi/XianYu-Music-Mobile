@@ -9,6 +9,23 @@ import '../sync/auto_sync.dart';
 import '../widgets/mini_player_bar.dart';
 import 'routes.dart';
 
+/// 底部悬浮导航栏占位高度（页面底部避让用，含底栏自身高度与底部间距）。
+final navBarInsetProvider = Provider<double>((ref) => 78);
+
+/// 二级页面混入标记：这些页面以全屏路由压入，外壳控件天然被覆盖。
+mixin HidesShellChrome<T extends StatefulWidget> on State<T> {}
+
+/// 隐藏外壳悬浮控件（迷你播放器/底栏）的包装。
+/// 这些页面以全屏路由压入，外壳控件天然被覆盖，此包装仅作语义标记。
+class HideShellChrome extends StatelessWidget {
+  const HideShellChrome({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});

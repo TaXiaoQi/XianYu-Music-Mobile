@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../favorites/favorites_provider.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';

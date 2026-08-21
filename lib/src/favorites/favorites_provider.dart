@@ -14,6 +14,9 @@ class FavoriteEntry {
   final int durationMs;
   final String? onlineSongJson;
   final String? onlineQuality;
+  final String? coverUrl;
+  final String? source;
+  final String? onlineInfoJson;
   final int addedAt;
 
   FavoriteEntry({
@@ -24,6 +27,9 @@ class FavoriteEntry {
     this.durationMs = 0,
     this.onlineSongJson,
     this.onlineQuality,
+    this.coverUrl,
+    this.source,
+    this.onlineInfoJson,
     required this.addedAt,
   });
 
@@ -38,6 +44,9 @@ class FavoriteEntry {
         durationMs: durationMs,
         onlineSongJson: onlineSongJson,
         onlineQuality: onlineQuality,
+        coverUrl: coverUrl,
+        source: source,
+        onlineInfoJson: onlineInfoJson,
       );
 
   Map<String, dynamic> toJson() => {
@@ -48,6 +57,9 @@ class FavoriteEntry {
         'durationMs': durationMs,
         'onlineSongJson': onlineSongJson,
         'onlineQuality': onlineQuality,
+        'coverUrl': coverUrl,
+        'source': source,
+        'onlineInfoJson': onlineInfoJson,
         'addedAt': addedAt,
       };
 
@@ -59,6 +71,9 @@ class FavoriteEntry {
         durationMs: (j['durationMs'] as num?)?.toInt() ?? 0,
         onlineSongJson: j['onlineSongJson'] as String?,
         onlineQuality: j['onlineQuality'] as String?,
+        coverUrl: j['coverUrl'] as String?,
+        source: j['source'] as String?,
+        onlineInfoJson: j['onlineInfoJson'] as String?,
         addedAt: (j['addedAt'] as num?)?.toInt() ?? 0,
       );
 }
@@ -101,6 +116,8 @@ class FavoritesState {
       loading: loading ?? this.loading,
     );
   }
+
+  bool contains(String path) => entries.any((e) => e.path == path);
 }
 
 class FavoritesManager extends StateNotifier<FavoritesState> {
@@ -138,6 +155,9 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
       durationMs: item.durationMs,
       onlineSongJson: item.onlineSongJson,
       onlineQuality: item.onlineQuality,
+      coverUrl: item.coverUrl,
+      source: item.source,
+      onlineInfoJson: item.onlineInfoJson,
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
     final entries = [entry, ...state.entries];
