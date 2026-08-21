@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -537,54 +535,48 @@ class _ProfileView extends StatelessWidget {
         const SizedBox(height: 28),
 
         // 4. 警示型毛玻璃退出登录卡片
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
+        Container(
+          decoration: BoxDecoration(
+            color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: scheme.error.withValues(alpha: isDark ? 0.25 : 0.18),
+            ),
+          ),
+          child: ListTile(
+            onTap: onLogout,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: Container(
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: scheme.error.withValues(alpha: isDark ? 0.25 : 0.18),
-                ),
+                color: scheme.error.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: ListTile(
-                onTap: onLogout,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: scheme.error.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(Icons.logout_rounded,
-                      size: 20, color: scheme.error),
-                ),
-                title: Text(
-                  '退出登录',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: scheme.error,
-                  ),
-                ),
-                subtitle: Text(
-                  '注销当前设备上的身份凭据',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.error.withValues(alpha: 0.7),
-                  ),
-                ),
-                trailing: Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 15,
-                  color: scheme.error.withValues(alpha: 0.7),
-                ),
+              child: Icon(Icons.logout_rounded,
+                  size: 20, color: scheme.error),
+            ),
+            title: Text(
+              '退出登录',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: scheme.error,
               ),
+            ),
+            subtitle: Text(
+              '注销当前设备上的身份凭据',
+              style: TextStyle(
+                fontSize: 12,
+                color: scheme.error.withValues(alpha: 0.7),
+              ),
+            ),
+            trailing: Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 15,
+              color: scheme.error.withValues(alpha: 0.7),
             ),
           ),
         ),
@@ -621,108 +613,102 @@ class _ProfileHeaderCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.white.withValues(alpha: 0.65),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+      decoration: BoxDecoration(
+        color: isDark
+            ? scheme.surfaceContainerHigh
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // 大尺寸头像与弥散光环
+          _Avatar(user: user),
+          const SizedBox(height: 14),
+          // 昵称
+          Text(
+            user.nickname.isEmpty ? '弦予用户' : user.nickname,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.3,
             ),
           ),
-          child: Column(
+          const SizedBox(height: 8),
+          // 身份胶囊
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // 大尺寸头像与弥散光环
-              _Avatar(user: user),
-              const SizedBox(height: 14),
-              // 昵称
-              Text(
-                user.nickname.isEmpty ? '弦予用户' : user.nickname,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.3,
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.verified_user_rounded,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      user.role.isNotEmpty ? user.role : '标准会员',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              // 身份胶囊
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => onCopy(context, user.ciyuanxiId!, '弦予号'),
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.14),
+                      color: scheme.onSurface.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: scheme.primary.withValues(alpha: 0.25),
-                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.verified_user_rounded,
-                          size: 14,
-                          color: scheme.primary,
-                        ),
-                        const SizedBox(width: 5),
                         Text(
-                          user.role.isNotEmpty ? user.role : '标准会员',
+                          'ID: ${user.ciyuanxiId}',
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.primary,
+                            color: scheme.onSurfaceVariant,
                           ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.copy_rounded,
+                          size: 12,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ],
                     ),
                   ),
-                  if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => onCopy(context, user.ciyuanxiId!, '弦予号'),
-                      borderRadius: BorderRadius.circular(999),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: scheme.onSurface.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'ID: ${user.ciyuanxiId}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.copy_rounded,
-                              size: 12,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -825,23 +811,17 @@ class _GlassCard extends StatelessWidget {
       }
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.white.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5),
-            ),
-          ),
-          child: Column(children: items),
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark
+            ? scheme.surfaceContainer
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.3),
         ),
       ),
+      child: Column(children: items),
     );
   }
 }
@@ -955,43 +935,11 @@ class _AmbientBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return IgnorePointer(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Container(color: scheme.surface),
-          Positioned(
-            top: -90,
-            right: -70,
-            child: _glow(
-                300, scheme.primary.withValues(alpha: isDark ? 0.24 : 0.16)),
-          ),
-          Positioned(
-            bottom: -70,
-            left: -90,
-            child: _glow(
-                320, scheme.tertiary.withValues(alpha: isDark ? 0.14 : 0.09)),
-          ),
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
-            child: Container(color: Colors.transparent),
-          ),
-        ],
-      ),
+      child: Container(color: scheme.surface),
     );
   }
-
-  Widget _glow(double size, Color color) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-              colors: [color, color.withValues(alpha: 0)]),
-        ),
-      );
 }
 
 /// 人机验证弹窗（内置算术题模式）。
