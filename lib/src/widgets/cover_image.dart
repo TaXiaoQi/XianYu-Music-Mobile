@@ -23,6 +23,7 @@ class CoverImage extends ConsumerStatefulWidget {
     this.radius = 12,
     this.gradient = const [Color(0xFFEC4141), Color(0xFFFF8A5C)],
     this.icon = Icons.music_note,
+    this.placeholder,
   });
 
   final String songPath;
@@ -34,6 +35,9 @@ class CoverImage extends ConsumerStatefulWidget {
   final double radius;
   final List<Color> gradient;
   final IconData icon;
+
+  /// 自定义占位（如全屏背景需要无图标占位）；null 时用默认渐变+图标。
+  final Widget? placeholder;
 
   @override
   ConsumerState<CoverImage> createState() => _CoverImageState();
@@ -156,6 +160,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   }
 
   Widget _placeholder() {
+    if (widget.placeholder != null) return widget.placeholder!;
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(

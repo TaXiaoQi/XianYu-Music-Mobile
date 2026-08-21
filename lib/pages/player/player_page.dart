@@ -38,13 +38,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
     final coverSize = MediaQuery.of(context).size.width * 0.68;
 
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 背景：封面取色氛围光斑
-          const _AmbientBackground(),
+    // 背景是深色模糊封面（学 MusicFree），前景统一按深色主题渲染，
+    // 保证浅色系统主题下文字/图标仍可读。
+    final bgScheme = scheme.copyWith(
+      brightness: Brightness.dark,
+      onSurface: Colors.white,
+      onSurfaceVariant: Colors.white.withValues(alpha: 0.72),
+    );
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        brightness: Brightness.dark,
+        colorScheme: bgScheme,
+        iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
+      ),
+      child: Scaffold(
+        backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+          // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
+          _BlurredCoverBackground(current: current),
           SafeArea(
             child: Column(
               children: [
@@ -61,8 +75,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                         child: Text(
                           _showLyrics ? '歌词' : '正在播放',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.9)),
                         ),
                       ),
                       IconButton(
@@ -125,6 +141,67 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+/// 模糊封面全屏背景（学 MusicFree 播放详情页）：
+/// 封面 cover 填满全屏 + 大半径模糊 + 深色遮罩保证前景可读；
+/// 无封面时回退氛围光斑。
+///
+/// 模糊用 [ImageFiltered] 作用于图片本身而非 BackdropFilter——静态图
+/// 只渲染一次即缓存，不参与每帧合成。
+class _BlurredCoverBackground extends StatelessWidget {
+  const _BlurredCoverBackground({required this.current});
+
+  final QueueItem? current;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final item = current;
+    if (item == null) {
+      return const _AmbientBackground();
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 深色底：封面加载前/加载失败时的兜底
+        Container(color: Color.lerp(scheme.surface, Colors.black, 0.6)),
+        // 封面铺满全屏 + 大半径模糊（对应 MusicFree blurRadius=50）
+        ImageFiltered(
+          imageFilter: ImageFilter.blur(
+            sigmaX: 50,
+            sigmaY: 50,
+            tileMode: TileMode.decal,
+          ),
+          child: CoverImage(
+            songPath: item.path,
+            networkUrl: item.coverUrl,
+            width: double.infinity,
+            height: double.infinity,
+            radius: 0,
+            gradient: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
+            // 全屏背景占位不要中央大图标
+            placeholder: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.primary.withValues(alpha: 0.55),
+                    Color.lerp(scheme.surface, Colors.black, 0.6)!,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 深色遮罩：对齐 MusicFree「黑底 + 50% 透明封面」的可读性
+        Container(color: Colors.black.withValues(alpha: 0.45)),
+      ],
     );
   }
 }
@@ -340,8 +417,10 @@ class _TitleRow extends ConsumerWidget {
                 current.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white),
               ),
               const SizedBox(height: 3),
               Text(
