@@ -119,7 +119,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           IconButton(
             icon: Icon(
               player.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: const Color(0xFFEC4141),
+              color: scheme.primary,
             ),
             iconSize: 26,
             onPressed: () => ref.read(playerProvider.notifier).toggle(),

@@ -282,7 +282,7 @@ class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
 
             // 智能与系统歌单分组标题
             Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 12),
+              padding: const EdgeInsets.only(left: 4, top: 12, bottom: 12),
               child: Text(
                 '快捷智能歌单',
                 style: theme.textTheme.titleMedium?.copyWith(

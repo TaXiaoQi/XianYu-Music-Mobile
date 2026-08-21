@@ -714,8 +714,9 @@ class _NavTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
     final color = selected
-        ? const Color(0xFFEC4141)
+        ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     return InkWell(
       onTap: onTap,
@@ -731,7 +732,7 @@ class _NavTab extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: selected
-              ? const Color(0xFFEC4141).withValues(alpha: 0.14)
+              ? primary.withValues(alpha: 0.14)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
         ),
@@ -997,7 +998,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 child: _ThreeBarsIcon(
                   color: Color.lerp(
                     scheme.onSurface.withValues(alpha: 0.85),
-                    const Color(0xFFEC4141),
+                    scheme.primary,
                     progress,
                   )!,
                 ),
@@ -1146,10 +1147,10 @@ class _SideNavTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFFEC4141);
     final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
     final color = selected
-        ? accent
+        ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
 
     return Padding(
@@ -1163,7 +1164,7 @@ class _SideNavTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color:
-                selected ? accent.withValues(alpha: 0.14) : Colors.transparent,
+                selected ? primary.withValues(alpha: 0.14) : Colors.transparent,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -16,6 +17,7 @@ import 'pages/settings/music_sources_page.dart';
 import 'pages/settings/scan_folders_page.dart';
 import 'pages/settings/settings_page.dart';
 import 'pages/settings/toolbar_settings_page.dart';
+import 'src/player/player_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +27,22 @@ Future<void> main() async {
     await LiquidGlassWidgets.initialize();
   } catch (_) {
     // 忽略：液态玻璃为可选视觉增强，不可用时降级即可。
+  }
+
+  // 初始化系统 MediaSession / 控制中心音频服务
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => XianYuAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'cc.xymusic.mobile.channel.audio',
+        androidNotificationChannelName: '弦予音乐播放控制',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+      ),
+    );
+  } catch (_) {
+    // 忽略：桌面端或不支持环境静默回退
   }
 
   runApp(
