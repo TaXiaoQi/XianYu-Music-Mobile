@@ -121,7 +121,8 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner>
     _startProgressSimulation();
 
     // rust 初始化完成（无论成功/失败）后尝试结束启动页
-    ref.listen(rustInitProvider, (prev, next) {
+    // initState 中只能使用 listenManual（listen 仅限 build 方法内）
+    ref.listenManual(rustInitProvider, (prev, next) {
       if (next.hasValue || next.hasError) _tryFinish();
     });
 
