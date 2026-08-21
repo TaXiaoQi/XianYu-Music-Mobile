@@ -133,6 +133,8 @@ class AccountApi {
       'title': title.trim(),
       'content': content.trim(),
       'feedback_type': feedbackType,
+      'platform': 'mobile',
+      'app_version': appVersion,
       if (errorLogs != null && errorLogs.isNotEmpty) 'error_logs': errorLogs,
       if (allLogs != null && allLogs.isNotEmpty) 'all_logs': allLogs,
       if (images != null && images.isNotEmpty) 'images': images,
