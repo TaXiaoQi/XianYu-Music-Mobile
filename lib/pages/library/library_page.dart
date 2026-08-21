@@ -176,8 +176,7 @@ class _ArtistsTab extends ConsumerWidget {
           title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text('${a.count} 首'),
           trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
                 title: a.name,
@@ -222,8 +221,7 @@ class _AlbumsTab extends ConsumerWidget {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
                 title: a.name,
@@ -267,8 +265,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
         },
         onOpen: () {
           if (n.songCount > 0) {
-            Navigator.push(
-              context,
+            Navigator.of(context, rootNavigator: true).push(
               MaterialPageRoute(
                 builder: (_) => SongListPage(
                   title: n.name,

@@ -266,7 +266,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
         _field(_passwordCtrl, '密码',
             hint: '请输入密码',
             icon: Icons.lock,
-            obscure: _obscure),
+            isPassword: true,
+            obscure: _pwdObscure,
+            onToggleObscure: () =>
+                setState(() => _pwdObscure = !_pwdObscure)),
         _errorBanner(context, auth),
         _submitButton(context, auth, '登录'),
       ],
@@ -278,8 +281,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
       children: [
         _field(_idCtrl, '弦予号', hint: '6-20 位数字/字母', icon: Icons.tag),
         _field(_nicknameCtrl, '昵称（可选）', hint: '留空使用默认昵称', icon: Icons.badge),
-        _field(_passwordCtrl, '密码', hint: '设置登录密码', icon: Icons.lock, obscure: _obscure),
-        _field(_confirmCtrl, '确认密码', hint: '再次输入密码', icon: Icons.lock, obscure: _obscure),
+        _field(_passwordCtrl, '密码', hint: '设置登录密码', icon: Icons.lock,
+            isPassword: true,
+            obscure: _pwdObscure,
+            onToggleObscure: () =>
+                setState(() => _pwdObscure = !_pwdObscure)),
+        _field(_confirmCtrl, '确认密码', hint: '再次输入密码', icon: Icons.lock,
+            isPassword: true,
+            obscure: _confirmObscure,
+            onToggleObscure: () =>
+                setState(() => _confirmObscure = !_confirmObscure)),
         _field(_emailCtrl, '邮箱', hint: '用于接收验证码', icon: Icons.mail, keyboard: TextInputType.emailAddress),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -345,12 +356,17 @@ class _AccountPageState extends ConsumerState<AccountPage>
     );
   }
 
+  /// [isPassword] 恒定标识密码类字段（决定是否显示眼睛按钮）；
+  /// [obscure] 是当前密文状态，与 [onToggleObscure] 配对由调用方持有。
+  /// 两者分离：切换明密文不会让按钮消失，输入区宽度恒定不跳动。
   Widget _field(
     TextEditingController ctrl,
     String label, {
     String? hint,
     IconData? icon,
+    bool isPassword = false,
     bool obscure = false,
+    VoidCallback? onToggleObscure,
     TextInputType? keyboard,
   }) {
     return Padding(
@@ -381,10 +397,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
               width: 2,
             ),
           ),
-          suffixIcon: obscure
+          suffixIcon: isPassword
               ? IconButton(
-                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () => setState(() => _obscure = !_obscure),
+                  icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
+                  onPressed: onToggleObscure,
                 )
               : null,
         ),

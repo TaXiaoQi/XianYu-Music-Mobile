@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import '../core/app_logger.dart';
 import '../core/settings.dart';
 import '../widgets/mini_player_bar.dart';
 import 'routes.dart';
@@ -80,6 +81,7 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
       if (!mounted) return;
       _container = ProviderScope.containerOf(context, listen: false);
       _counted = true;
+      AppLogger.instance.log('shell', '进入二级页面 ${widget.runtimeType}');
       _container!.read(navBarHiddenProvider.notifier).state++;
     });
   }
@@ -98,6 +100,7 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
     if (_counted) {
       final container = _container;
       _counted = false;
+      AppLogger.instance.log('shell', '离开二级页面 ${widget.runtimeType}');
       if (container != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final notifier = container.read(navBarHiddenProvider.notifier);
@@ -125,17 +128,20 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
+    final hiddenCount = ref.watch(navBarHiddenProvider);
     // 只要有页面请求隐藏底栏（说明在二级页面，如音源管理/扫描文件夹/歌曲列表等）
     // 或者 GoRouter 栈深 > 1，就 100% 处于二级页面。
     // 处于二级页面时将 canPop 设为 true，放开系统的 PopScope 拦截，
     // 让 Android 13+ 预测性返回手势（Predictive Back）正常拉动预览；
     // 仅在根 Tab 无法退栈时设为 false，拦截切回主界面或提示双击退出。
-    final isSubPage =
-        ref.watch(navBarHiddenProvider) > 0 || GoRouter.of(context).canPop();
+    final isSubPage = hiddenCount > 0 || GoRouter.of(context).canPop();
 
     return PopScope(
       canPop: isSubPage,
       onPopInvokedWithResult: (didPop, result) {
+        // 诊断日志：系统返回触发时的完整栈状态（回桌面问题的关键证据）。
+        AppLogger.instance.log('back',
+            'onPopInvoked didPop=$didPop canPop=$isSubPage tab=$index hidden=$hiddenCount routerCanPop=${GoRouter.of(context).canPop()}');
         if (didPop) return;
 
         // 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab

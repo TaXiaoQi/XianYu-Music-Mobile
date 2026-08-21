@@ -3,7 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../src/core/app_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -87,8 +89,7 @@ class SettingsPage extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  onTap: () => Navigator.push(
-                    context,
+                  onTap: () => Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(
                       builder: (_) => const ToolbarSettingsPage(),
                     ),
@@ -112,8 +113,7 @@ class SettingsPage extends ConsumerWidget {
                   icon: Icons.extension,
                   title: '音源管理',
                   trailing: _sourceSummary(context, ref),
-                  onTap: () => Navigator.push(
-                    context,
+                  onTap: () => Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(builder: (_) => const MusicSourcesPage()),
                   ),
                 ),
@@ -137,8 +137,7 @@ class SettingsPage extends ConsumerWidget {
                   icon: Icons.folder_special,
                   title: '扫描文件夹',
                   trailing: const Text(''),
-                  onTap: () => Navigator.push(
-                    context,
+                  onTap: () => Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(builder: (_) => const ScanFoldersPage()),
                   ),
                 ),
@@ -193,6 +192,12 @@ class SettingsPage extends ConsumerWidget {
                   value: settings?.keepScreenOn ?? true,
                   onChanged: (v) => notifier.setKeepScreenOn(v),
                 ),
+                _GlassTile(
+                  icon: Icons.bug_report_outlined,
+                  title: '问题诊断',
+                  trailing: _diagLabel(context, ref),
+                  onTap: () => _toggleDiagnostic(context, ref),
+                ),
               ]),
             ],
           ),
@@ -222,6 +227,51 @@ class SettingsPage extends ConsumerWidget {
           ),
           _GlassCard(children: rows),
         ],
+      ),
+    );
+  }
+
+  /// 问题诊断开关的状态文案。
+  Widget _diagLabel(BuildContext context, WidgetRef ref) {
+    final recording = ref.watch(diagRecordingProvider);
+    return Text(
+      recording ? '记录中 · 点击停止' : '点击开始记录',
+      style: TextStyle(
+        fontSize: 13,
+        color: recording
+            ? const Color(0xFFEC4141)
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+
+  /// 切换诊断记录：开始 → 提示；停止 → 落盘并弹系统分享面板。
+  Future<void> _toggleDiagnostic(BuildContext context, WidgetRef ref) async {
+    final logger = AppLogger.instance;
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (!logger.isRecording) {
+      logger.start();
+      ref.read(diagRecordingProvider.notifier).state = true;
+      messenger.showSnackBar(const SnackBar(
+        content: Text('开始记录，请复现问题后回到这里停止记录'),
+        duration: Duration(seconds: 3),
+      ));
+      return;
+    }
+
+    ref.read(diagRecordingProvider.notifier).state = false;
+    final path = await logger.stopAndSave();
+    if (path == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('日志保存失败')));
+      return;
+    }
+    // 系统原生分享面板：用户可选择转发到微信/QQ 等。
+    await SharePlus.instance.share(
+      ShareParams(
+        title: '弦予音乐诊断日志',
+        text: '问题诊断日志，请转发给开发者',
+        files: [XFile(path)],
       ),
     );
   }
