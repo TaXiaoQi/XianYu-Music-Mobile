@@ -81,17 +81,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               color: Colors.white.withValues(alpha: 0.9)),
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          _showLyrics ? Icons.image_outlined : Icons.lyrics_outlined,
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showLyrics = !_showLyrics;
-                          });
-                        },
-                      ),
+                      // 右侧留位占位，保持标题居中（切歌/切词通过点击封面）。
+                      const SizedBox(width: 48),
                     ],
                   ),
                 ),
