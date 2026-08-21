@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../rust/api.dart';
@@ -103,8 +104,10 @@ class PlaybackState {
 /// `copyWith` 中区分「参数未传」与「显式置为 null」的哨兵值。
 const Object _noChange = Object();
 
-class PlayerNotifier extends StateNotifier<PlaybackState> {
+class PlayerNotifier extends StateNotifier<PlaybackState>
+    with WidgetsBindingObserver {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
@@ -117,9 +120,23 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   bool _manualPause = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// 恢复的在线曲目尚未加载直链：恢复时只展示信息，
+  /// 用户点播放时再解析直链并跳回恢复位置。
+  double? _restoredOnlinePending;
+
   // 随机模式历史/未来栈（与桌面端一致）。
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
+
+  /// 应用切后台/被杀前立即落盘播放会话，避免丢失最后 5 秒内的状态
+  /// （平时依赖 5 秒防抖保存，退出场景需要即时保存）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _persistSession();
+    }
+  }
 
   Future<void> _init() async {
     _posSub = _player.positionStream.listen((p) {
@@ -142,46 +159,39 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
     await _restoreSession();
   }
 
-  /// 启动时恢复上次关闭时的播放会话（优先从 SharedPreferences 1 毫秒极速恢复，SQLite 兜底）。
+  /// 启动时恢复上次关闭时的播放会话（SQLite）。
   Future<void> _restoreSession() async {
     try {
       String jsonStr = '';
-
-      // 第一重保障：从 SharedPreferences 瞬间毫秒级读取
       try {
-        final prefs = await SharedPreferences.getInstance();
-        jsonStr = prefs.getString('last_playback_session') ?? '';
-      } catch (_) {}
-
-      // 第二重保障：未命中时从 SQLite 加载
-      if (jsonStr.isEmpty || jsonStr == 'null') {
-        try {
-          final dbPath = await _ref.read(dbPathProvider.future);
-          jsonStr = await loadPlaybackSession(dbPath: dbPath);
-        } catch (_) {}
+        final dbPath = await _ref.read(dbPathProvider.future);
+        jsonStr = await loadPlaybackSession(dbPath: dbPath);
+      } catch (e) {
+        AppLogger.instance.log('session', '读取播放会话失败: $e');
       }
 
-      if (jsonStr.isEmpty || jsonStr == 'null') return;
+      AppLogger.instance.log('session',
+          '读取到会话数据长度=${jsonStr.length} 内容=${jsonStr.length > 300 ? jsonStr.substring(0, 300) : jsonStr}');
+      if (jsonStr.isEmpty || jsonStr == 'null') {
+        AppLogger.instance.log('session', '无持久化会话，跳过恢复');
+        return;
+      }
 
       final j = jsonDecode(jsonStr) as Map<String, dynamic>;
       final paths = ((j['play_queue_paths'] ?? j['playQueuePaths']) as List? ?? const [])
           .cast<String>();
-      if (paths.isEmpty) return;
+      if (paths.isEmpty) {
+        AppLogger.instance.log('session', '会话队列为空，跳过恢复');
+        return;
+      }
 
       final metaMap = (j['queue_song_meta'] ?? j['queueSongMeta']) as Map<String, dynamic>?;
-      final metaList = j['queueMetaList'] as List?;
       final items = <QueueItem>[];
 
       for (final p in paths) {
         Map<String, dynamic>? m;
         if (metaMap != null && metaMap.containsKey(p)) {
           m = metaMap[p] as Map<String, dynamic>?;
-        } else if (metaList != null) {
-          final found = metaList.firstWhere(
-            (element) => (element as Map)['path'] == p,
-            orElse: () => null,
-          );
-          if (found != null) m = found as Map<String, dynamic>;
         }
 
         if (m != null) {
@@ -219,18 +229,38 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
         current: currentItem,
         playMode: mode,
         position: pos,
+        // 恢复时长先用元数据，本地曲加载后 durationStream 会刷新为精确值。
+        duration: currentItem.durationMs > 0
+            ? currentItem.durationMs / 1000.0
+            : 0,
         isPlaying: false,
       );
+      AppLogger.instance.log('session',
+          '恢复成功: 队列${items.length}首 当前「${currentItem.title}」位置${pos.toStringAsFixed(1)}s 在线=${currentItem.isOnline}');
 
-      await _ref.read(settingsProvider.notifier).setPlayMode(mode);
+      // settings 尚未加载完（AsyncNotifier loading）时跳过：
+      // setPlayMode 会以默认值整体覆盖保存，重置用户全部设置。
+      final settingsReady = _ref.read(settingsProvider).hasValue;
+      if (settingsReady) {
+        await _ref.read(settingsProvider.notifier).setPlayMode(mode);
+      }
+      await _player.setVolume(_ref.read(volumeProvider));
 
       if (!currentItem.isOnline) {
         try {
           await _player.setFilePath(currentItem.path);
           await seek(pos);
-        } catch (_) {}
+        } catch (e) {
+          AppLogger.instance.log('session', '本地曲目预加载失败: $e');
+        }
+      } else {
+        // 在线曲目：恢复阶段仅展示信息（封面/标题/进度），
+        // 点播放时再解析直链，避免启动即发起网络请求。
+        _restoredOnlinePending = pos;
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLogger.instance.log('session', '恢复播放会话异常: $e');
+    }
   }
 
   String _titleFromPath(String p) {
@@ -274,6 +304,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
   Future<void> _playAt(int index, {required bool manualPause}) async {
     if (index < 0 || index >= state.queue.length) return;
     _manualPause = manualPause;
+    // 切歌后旧的「待恢复」状态作废。
+    _restoredOnlinePending = null;
     final item = state.queue[index];
     state = state.copyWith(
       queueIndex: index,
@@ -352,12 +384,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
       await _player.pause();
     } else {
       _manualPause = false;
+      // 恢复的在线曲目尚未加载直链：首次播放时解析并跳回恢复位置。
+      final pendingPos = _restoredOnlinePending;
+      if (pendingPos != null) {
+        _restoredOnlinePending = null;
+        await _resumeRestoredOnline(pendingPos);
+        _persistSession();
+        return;
+      }
       await _player.play();
     }
     _persistSession();
   }
 
   Future<void> seek(double secs) async {
+    // 恢复的在线曲目未加载直链前，播放器无源不能 seek：
+    // 记录目标位置，首次播放时跳到该处。
+    if (_restoredOnlinePending != null) {
+      _restoredOnlinePending = secs;
+      state = state.copyWith(position: secs);
+      return;
+    }
     await _player.seek(Duration(milliseconds: (secs * 1000).round()));
   }
 
@@ -473,25 +520,62 @@ class PlayerNotifier extends StateNotifier<PlaybackState> {
         };
       }
 
-      // 遵循 Rust 侧 PlaybackSessionData 的 snake_case 序列化结构
+      // Rust 侧 PlaybackSessionData 标注 #[serde(rename_all = "camelCase")]，
+      // 字段名必须是 camelCase：此前误用 snake_case 导致 Rust 反序列化
+      // 「missing field」失败，会话从未保存成功（播放记忆失效的根因）。
       final sessionJson = jsonEncode({
-        'current_song_path': item.path,
-        'play_queue_paths': state.queue.map((q) => q.path).toList(),
-        'source_song_paths': state.queue.map((q) => q.path).toList(),
-        'play_mode': state.playMode,
+        'currentSongPath': item.path,
+        'playQueuePaths': state.queue.map((q) => q.path).toList(),
+        'sourceSongPaths': state.queue.map((q) => q.path).toList(),
+        'playMode': state.playMode,
         'volume': (settings?.volume ?? 1.0) * 100.0, // Rust volume 范围 0-100
-        'current_position_secs': state.position,
-        'is_playing': state.isPlaying,
-        'session_quality_override': null,
-        'queue_song_meta': queueSongMeta,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        'currentPositionSecs': state.position,
+        'isPlaying': state.isPlaying,
+        'sessionQualityOverride': null,
+        'queueSongMeta': queueSongMeta,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
       });
       await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
-    } catch (_) {}
+    } catch (e) {
+      // 保存失败不再静默吞掉：这是播放记忆的唯一持久化通道，
+      // 失败需要能从日志发现（诊断日志 + debugPrint）。
+      AppLogger.instance.log('session', '播放会话保存失败: $e');
+      debugPrint('播放会话保存失败: $e');
+    }
+  }
+
+  /// 恢复的在线曲目点播放时：解析直链 → 加载 → 跳回恢复位置。
+  Future<void> _resumeRestoredOnline(double pos) async {
+    final item = state.current;
+    if (item == null) return;
+    state = state.copyWith(resolving: true, error: null);
+    try {
+      final url = await _resolveOnlineUrl(item);
+      if (url == null) {
+        state = state.copyWith(
+          isPlaying: false,
+          resolving: false,
+          error: '无法获取播放链接',
+        );
+        return;
+      }
+      await _player.setUrl(url);
+      await _player.setVolume(_ref.read(volumeProvider));
+      state = state.copyWith(resolving: false);
+      await seek(pos);
+      await _player.play();
+    } catch (e) {
+      state = state.copyWith(
+        isPlaying: false,
+        resolving: false,
+        error: '在线播放失败',
+      );
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();

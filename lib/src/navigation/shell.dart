@@ -125,27 +125,51 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   DateTime? _lastBackTime;
 
+  /// 上次记录的返回状态（诊断日志去重，build 频繁防刷屏）。
+  bool? _lastLoggedSubPage;
+
   @override
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
     final hiddenCount = ref.watch(navBarHiddenProvider);
     // 只要有页面请求隐藏底栏（说明在二级页面，如音源管理/扫描文件夹/歌曲列表等）
     // 或者 GoRouter 栈深 > 1，就 100% 处于二级页面。
-    // 处于二级页面时将 canPop 设为 true，放开系统的 PopScope 拦截，
-    // 让 Android 13+ 预测性返回手势（Predictive Back）正常拉动预览；
-    // 仅在根 Tab 无法退栈时设为 false，拦截切回主界面或提示双击退出。
     final isSubPage = hiddenCount > 0 || GoRouter.of(context).canPop();
 
-    return PopScope(
-      canPop: isSubPage,
-      onPopInvokedWithResult: (didPop, result) {
-        // 诊断日志：系统返回触发时的完整栈状态（回桌面问题的关键证据）。
-        AppLogger.instance.log('back',
-            'onPopInvoked didPop=$didPop canPop=$isSubPage tab=$index hidden=$hiddenCount routerCanPop=${GoRouter.of(context).canPop()}');
-        if (didPop) return;
+    // 诊断日志：返回状态变化时记录。
+    if (isSubPage != _lastLoggedSubPage) {
+      _lastLoggedSubPage = isSubPage;
+      AppLogger.instance
+          .log('shell', '返回状态 isSubPage=$isSubPage (hidden=$hiddenCount)');
+    }
 
-        // 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
+    return PopScope(
+      // 恒为 false：让栈顶 route 的 popDisposition 永远是 doNotPop。
+      //
+      // 若按二级页面动态放开（true），在部分系统的预测性返回下引擎会把
+      // 返回判定为 bubble（栈顶无 PopEntry 拦截且不可 pop），系统直接
+      // finish 回桌面——Flutter 层零感知（诊断日志无 [back]、无 pop 记录），
+      // 这正是用户遇到的「返回直接回桌面」。恒 false 后系统永远把返回
+      // 交给 Flutter，由 onPopInvokedWithResult 统一手动分发；
+      // 代价是预测性返回手势没有页面预览动画，正确性优先。
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final router = GoRouter.of(context);
+        AppLogger.instance.log('back',
+            'onPopInvoked tab=$index hidden=$hiddenCount routerCanPop=${router.canPop()}');
+
+        // 1. 二级页面（go_router 子路由或直接 push 到 root navigator 的
+        //    页面都在 root 栈上，router.canPop 均为 true）：弹栈返回。
+        if (router.canPop()) {
+          AppLogger.instance.log('back', '手动 pop 二级页面');
+          router.pop();
+          return;
+        }
+
+        // 2. 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
         if (index != 0) {
+          AppLogger.instance.log('back', '切回主界面 tab');
           widget.navigationShell.goBranch(0);
           return;
         }
@@ -155,6 +179,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         if (_lastBackTime == null ||
             now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
           _lastBackTime = now;
+          AppLogger.instance.log('back', '提示再按一次退出');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('再按一次退出应用'),
@@ -165,6 +190,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         }
 
         // 4. 2秒内再次触发系统返回，顺畅退出程序
+        AppLogger.instance.log('back', 'SystemNavigator.pop 退出应用');
         SystemNavigator.pop();
       },
       child: _ShellScaffold(

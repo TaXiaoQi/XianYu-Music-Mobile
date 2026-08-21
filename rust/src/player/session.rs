@@ -227,6 +227,77 @@ mod tests {
         assert_eq!(count, 0);
     }
 
+    /// 模拟 Flutter 端 save_playback_session 的完整链路：
+    /// Dart 构造 camelCase JSON → serde 反序列化 → 写库 → 重新加载。
+    /// 验证字段命名（camelCase）与 queueSongMeta 的往返完整性。
+    #[test]
+    fn test_flutter_camel_case_json_round_trip() {
+        let conn = setup_db();
+        let state = PlaybackSessionState::new();
+
+        // 与 Dart _persistSession 构造的 JSON 完全一致（camelCase）
+        let dart_json = r#"{
+            "currentSongPath": "lx://kw/12345",
+            "playQueuePaths": ["lx://kw/12345", "/music/local.flac"],
+            "sourceSongPaths": ["lx://kw/12345", "/music/local.flac"],
+            "playMode": 2,
+            "volume": 80.0,
+            "currentPositionSecs": 95.5,
+            "isPlaying": true,
+            "sessionQualityOverride": null,
+            "queueSongMeta": {
+                "lx://kw/12345": {
+                    "path": "lx://kw/12345",
+                    "title": "晴天",
+                    "artist": "周杰伦",
+                    "album": "叶惠美",
+                    "durationMs": 269000,
+                    "coverUrl": "https://example.com/cover.jpg",
+                    "source": "kw",
+                    "onlineInfoJson": "{\"songmid\":\"12345\"}"
+                },
+                "/music/local.flac": {
+                    "path": "/music/local.flac",
+                    "title": "本地歌",
+                    "artist": "歌手",
+                    "album": "专辑",
+                    "durationMs": 200000,
+                    "coverUrl": null,
+                    "source": null,
+                    "onlineInfoJson": null
+                }
+            },
+            "updatedAt": 1760000000000
+        }"#;
+
+        // 走 api::save_playback_session 同样的反序列化路径
+        let session: PlaybackSessionData =
+            serde_json::from_str(dart_json).expect("反序列化 Dart JSON");
+        assert_eq!(session.current_song_path.as_deref(), Some("lx://kw/12345"));
+        assert_eq!(session.play_queue_paths.len(), 2);
+        assert_eq!(session.queue_song_meta.len(), 2);
+
+        state.save_playback_session(&conn, session).expect("save");
+
+        // 新实例重新加载（模拟应用重启后 load_playback_session）
+        let state2 = PlaybackSessionState::new();
+        state2.load_from_db(&conn).expect("load");
+        let loaded = state2.get_playback_session();
+
+        assert_eq!(loaded.current_song_path.as_deref(), Some("lx://kw/12345"));
+        assert_eq!(loaded.play_queue_paths.len(), 2);
+        assert_eq!(loaded.play_mode, 2);
+        assert_eq!(loaded.current_position_secs, 95.5);
+        assert!(loaded.is_playing);
+        assert_eq!(loaded.queue_song_meta.len(), 2);
+        let meta = loaded
+            .queue_song_meta
+            .get("lx://kw/12345")
+            .expect("在线曲目元数据");
+        assert_eq!(meta["title"], "晴天");
+        assert_eq!(meta["source"], "kw");
+    }
+
     #[test]
     fn test_update_position_persists_after_interval() {
         let conn = setup_db();

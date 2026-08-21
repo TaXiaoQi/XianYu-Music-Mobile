@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibrary;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:xianyu_music_mobile/src/rust/frb_generated.dart' show RustLib;
 import 'package:xianyu_music_mobile/src/rust/lib.dart';
 
@@ -11,8 +13,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    final dllPath =
-        r'D:\Program Files\MC\开发端\开发组\弦予音乐\XianYu-Music-Mobile\rust\target\debug\xianyu_core.dll';
+    // DLL 路径：优先环境变量 XIANYU_DLL，否则用项目内相对路径
+    // （cwd 为项目根；另一台开发机的绝对路径不再硬编码）。
+    final dllPath = Platform.environment['XIANYU_DLL'] ??
+        p.join('rust', 'target', 'debug', 'xianyu_core.dll');
     await RustLib.init(externalLibrary: ExternalLibrary.open(dllPath));
   });
 
@@ -213,5 +217,72 @@ void main() {
       throwsA(anything),
       reason: '不存在的文件应抛异常而非崩溃',
     );
+  });
+
+  /// 播放记忆端到端往返：完全复刻 PlayerNotifier._persistSession 构造的
+  /// camelCase JSON → 真实 save → 新数据库连接 load（模拟应用重启）。
+  /// 覆盖 open_stats_conn 的 ensure_base_schema 建表与 serde 兼容。
+  test('播放会话保存-加载往返（播放记忆）', () async {
+    final tmpDir =
+        await Directory.systemTemp.createTemp('xianyu_session_test');
+    final dbPath = p.join(tmpDir.path, 'library.db');
+    addTearDown(() async {
+      try {
+        await tmpDir.delete(recursive: true);
+      } catch (_) {}
+    });
+
+    // 与 _persistSession 完全一致的 camelCase JSON
+    final sessionJson = jsonEncode({
+      'currentSongPath': 'lx://kw/12345',
+      'playQueuePaths': ['lx://kw/12345', '/music/local.flac'],
+      'sourceSongPaths': ['lx://kw/12345', '/music/local.flac'],
+      'playMode': 2,
+      'volume': 80.0,
+      'currentPositionSecs': 95.5,
+      'isPlaying': false,
+      'sessionQualityOverride': null,
+      'queueSongMeta': {
+        'lx://kw/12345': {
+          'path': 'lx://kw/12345',
+          'title': '晴天',
+          'artist': '周杰伦',
+          'album': '叶惠美',
+          'durationMs': 269000,
+          'coverUrl': 'https://example.com/cover.jpg',
+          'source': 'kw',
+          'onlineInfoJson': '{"songmid":"12345"}',
+        },
+        '/music/local.flac': {
+          'path': '/music/local.flac',
+          'title': '本地歌',
+          'artist': '歌手',
+          'album': '专辑',
+          'durationMs': 200000,
+          'coverUrl': null,
+          'source': null,
+          'onlineInfoJson': null,
+        },
+      },
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    // 保存（不应抛异常——此前 snake_case 版本会在此静默失败）
+    await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
+
+    // 加载（模拟应用重启后的读取路径）
+    final loaded = await loadPlaybackSession(dbPath: dbPath);
+    expect(loaded, isNot(anyOf('', 'null', '{}')),
+        reason: '应加载出已保存的会话数据');
+
+    final j = jsonDecode(loaded) as Map<String, dynamic>;
+    expect(j['currentSongPath'], 'lx://kw/12345');
+    expect((j['playQueuePaths'] as List).length, 2);
+    expect(j['playMode'], 2);
+    expect(j['currentPositionSecs'], 95.5);
+
+    final meta = j['queueSongMeta'] as Map<String, dynamic>;
+    expect(meta.length, 2, reason: '队列元数据应完整往返');
+    expect((meta['lx://kw/12345'] as Map)['title'], '晴天');
   });
 }

@@ -32,18 +32,24 @@ class AppLogger with WidgetsBindingObserver {
   bool get isRecording => _recording;
 
   /// 开始记录。
+  ///
+  /// 不清空缓冲：日志在进程启动起就常驻内存环形缓冲（见 [log]），
+  /// 这样开启诊断后导出的内容**包含启动期的关键过程**（如播放会话
+  /// 恢复）——这些发生在用户打开设置页之前，事后无法补录。
   void start() {
     _recording = true;
-    _seq = 0;
-    _entries
-      ..clear()
-      ..add('==== 弦予音乐诊断日志 开始于 ${_fullStamp(DateTime.now())} ====');
+    _entries.add('==== 诊断开启于 ${_fullStamp(DateTime.now())}'
+        '（以下含启动至今的历史记录）====');
     WidgetsBinding.instance.addObserver(this);
   }
 
-  /// 记录一条日志；未开启记录时为空操作。
+  /// 记录一条日志。
+  ///
+  /// 常开缓存：即使未开启诊断也写入内存环形缓冲——启动期事件
+  /// （播放会话恢复、Rust 初始化）必须先记录下来，用户事后开启
+  /// 诊断才能看到。调用点均为低频事件（路由/生命周期/返回键），
+  /// 字符串拼接开销可忽略。
   void log(String tag, String message) {
-    if (!_recording) return;
     _entries.add('${_stamp(DateTime.now())} [#$_seq] [$tag] $message');
     _seq++;
     if (_entries.length > maxEntries) {
