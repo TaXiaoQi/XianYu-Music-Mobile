@@ -54,6 +54,16 @@ $env:Path = "C:\Windows\System32;C:\Windows;C:\flutter\sdk_tmp\flutter\bin\cache
             [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + `
             [Environment]::GetEnvironmentVariable("Path","User")
 
+# ---------- 0. 同步版本号（version.ts -> pubspec/account_api） ----------
+Push-Location $realSource
+try {
+    Write-Host "[build-release] 同步版本号 (version.ts -> pubspec/account_api) ..." -ForegroundColor Cyan
+    & "C:\flutter\sdk_tmp\flutter\bin\cache\dart-sdk\bin\dart.bat" run tool/sync_version.dart
+    if ($LASTEXITCODE -ne 0) { throw "[build-release] 版本号同步失败 (exit=$LASTEXITCODE)" }
+} finally {
+    Pop-Location
+}
+
 # ---------- 1. 同步源码到 ASCII 构建目录 ----------
 if (-not $SkipBuild) {
     Write-Host "[build-release] 同步源码到 ASCII 构建目录: $buildRoot" -ForegroundColor Cyan
