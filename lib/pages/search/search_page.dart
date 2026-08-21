@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/online/online_search_provider.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -162,6 +164,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final player = ref.watch(playerProvider);
+    final hasSong = player.current != null;
+
     return Scaffold(
       appBar: AppBar(
         title: TextField(
@@ -195,12 +200,23 @@ class _SearchPageState extends ConsumerState<SearchPage>
           ],
         ),
       ),
-      // 全屏路由，无底栏遮挡，结果列表铺满可用高度。
-      body: TabBarView(
-        controller: _tab,
+      // 搜索页自带 MiniPlayerBar，确保搜索并播放时播放条 100% 出现
+      body: Stack(
         children: [
-          _buildBody(scheme),
-          _OnlineSearchTab(highlight: _activeQuery),
+          TabBarView(
+            controller: _tab,
+            children: [
+              _buildBody(scheme),
+              _OnlineSearchTab(highlight: _activeQuery),
+            ],
+          ),
+          if (hasSong)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: MediaQuery.of(context).padding.bottom + 12,
+              child: const MiniPlayerBar(),
+            ),
         ],
       ),
     );
@@ -294,7 +310,7 @@ class _OnlineSearchTab extends ConsumerWidget {
 
     return ListView.separated(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+        bottom: MediaQuery.of(context).padding.bottom + 82,
       ),
       itemCount: state.results.length,
       separatorBuilder: (_, _) => const Divider(height: 1),

@@ -302,7 +302,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
+    // 使用纯硬件安全区内边距 (padding.bottom)，不受软键盘 viewInsets 干扰
     final padding = MediaQuery.of(context).padding;
+    final safeBottom = padding.bottom;
 
     final floating =
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
@@ -330,16 +332,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
 
     final expanded = ref.watch(sideBarExpandedProvider);
 
-    // 默认定位坐标（进入二级页面隐藏底栏时，播放栏自动下沉占位到原本底栏位置 18px 处；回到根页面时浮起回到 82px 处）
-    // 左右边距与悬浮底栏统一（18px），两者宽度对齐。
+    // 默认定位坐标（不受软键盘影响，始终保持在底部稳定避让区）
     final defaultLeft = 18.0;
     final defaultTop = isSide
-        ? (screenSize.height - padding.bottom - 58.0 - 12.0)
+        ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
             ? (hidden
-                ? (screenSize.height - padding.bottom - 58.0 - 18.0)
-                : (screenSize.height - padding.bottom - 58.0 - 82.0))
-            : (screenSize.height - padding.bottom - 58.0 - 70.0));
+                ? (screenSize.height - safeBottom - 58.0 - 18.0)
+                : (screenSize.height - safeBottom - 58.0 - 82.0))
+            : (screenSize.height - safeBottom - 58.0 - 70.0));
 
     final actualLeft = _playerLeft ?? defaultLeft;
     final actualTop = _playerTop ?? defaultTop;

@@ -124,6 +124,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 用户点播放时再解析直链并跳回恢复位置。
   double? _restoredOnlinePending;
 
+  /// 本首歌曲开始听歌的时间戳，用于计算有效听歌时长
+  DateTime? _trackStartTime;
+
   // 随机模式历史/未来栈（与桌面端一致）。
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
@@ -303,6 +306,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _playAt(int index, {required bool manualPause}) async {
     if (index < 0 || index >= state.queue.length) return;
+
+    // 切歌时先结清上一首歌曲的听歌时长
+    _flushPlayStats();
+
     _manualPause = manualPause;
     // 切歌后旧的「待恢复」状态作废。
     _restoredOnlinePending = null;
@@ -336,6 +343,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(resolving: false);
       await _player.setVolume(_ref.read(volumeProvider));
       await _player.play();
+
+      // 记录添加到播放历史 + 标记本次听歌开始时间
+      _recordHistory(item);
+      _trackStartTime = DateTime.now();
     } catch (e) {
       state = state.copyWith(
         isPlaying: false,
@@ -344,6 +355,47 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
     }
     _persistSession();
+  }
+
+  /// 结清当前歌曲的有效听歌时长
+  void _flushPlayStats() {
+    final item = state.current;
+    if (item != null && _trackStartTime != null) {
+      final listenedSecs =
+          DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
+      _recordPlayStats(item, listenedSecs);
+      _trackStartTime = null;
+    }
+  }
+
+  /// 记录添加到播放历史
+  void _recordHistory(QueueItem item) {
+    Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        await statsAddToHistory(dbPath: dbPath, songPath: item.path);
+      } catch (_) {}
+    });
+  }
+
+  /// 记录本次播放时长与播放次数
+  void _recordPlayStats(QueueItem item, double listenedSecs) {
+    if (listenedSecs < 3) return; // 播放小于 3 秒视作试听跳过，不计入有效听歌数据
+    Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        final payloadJson = jsonEncode({
+          'songPath': item.path,
+          'listenedMs': (listenedSecs * 1000).toInt(),
+          'durationMs': item.durationMs > 0
+              ? item.durationMs
+              : (state.duration * 1000).toInt(),
+          'title': item.title,
+          'artist': item.artist,
+        });
+        await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
+      } catch (_) {}
+    });
   }
 
   /// 解析在线曲目的播放直链，按设置的默认音质并在失败时降级。
@@ -381,9 +433,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (state.current == null) return;
     if (state.isPlaying) {
       _manualPause = true;
+      _flushPlayStats();
       await _player.pause();
     } else {
       _manualPause = false;
+      _trackStartTime = DateTime.now();
       // 恢复的在线曲目尚未加载直链：首次播放时解析并跳回恢复位置。
       final pendingPos = _restoredOnlinePending;
       if (pendingPos != null) {
@@ -438,10 +492,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   Future<void> _onTrackEnd() async {
+    _flushPlayStats();
     if (state.playMode == 1) {
       // 单曲循环：重播当前曲。
       await seek(0);
       await _player.play();
+      _trackStartTime = DateTime.now();
       return;
     }
     final next = _pickNextIndex();

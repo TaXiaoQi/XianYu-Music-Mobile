@@ -486,24 +486,6 @@ class _ProfileView extends StatelessWidget {
               icon: Icons.mail_outline_rounded,
               title: '绑定邮箱',
               value: user.email.isEmpty ? '未绑定' : user.email,
-              trailing: user.email.isNotEmpty
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.check_circle_rounded,
-                            size: 16, color: scheme.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          '已验证',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.primary,
-                          ),
-                        ),
-                      ],
-                    )
-                  : null,
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
               _GlassTile(
@@ -533,16 +515,6 @@ class _ProfileView extends StatelessWidget {
               onTap: () => ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('暂未开放修改密码功能')),
               ),
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            _GlassTile(
-              icon: Icons.devices_rounded,
-              title: '登录设备管理',
-              subtitle: '已在此 Android / Windows 设备登录',
               trailing: Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
@@ -914,38 +886,56 @@ class _GlassTile extends StatelessWidget {
               child: Icon(icon, size: 19, color: scheme.primary),
             ),
             const SizedBox(width: 14),
-            // 文字区
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
+            // 左侧标题区（单行防折行）
+            if (subtitle != null)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
                       ),
                     ),
                   ],
-                ],
-              ),
-            ),
-            if (value != null && value!.isNotEmpty) ...[
+                ),
+              )
+            else ...[
               Text(
-                value!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                title,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            // 右侧 Value 值区（完整展示邮箱等文本）
+            if (value != null && value!.isNotEmpty) ...[
+              if (subtitle == null) const Spacer(),
+              Flexible(
+                child: Text(
+                  value!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
