@@ -107,11 +107,21 @@ Rust 核心从桌面端抽取为纯逻辑库，同一套算法在桌面端（Tau
 flutter_rust_bridge_codegen generate
 ```
 
-### 本地运行
+### 本地运行（Dev 开发模式）
 ```bash
 flutter pub get
 flutter run
 ```
+
+**Dev 工作流要点：**
+- **设备**：`flutter devices` 查看已连接设备（真机需开启 USB 调试，无线调试为 `adb connect <ip>:5555`）；多设备时用 `flutter run -d <device-id>` 指定目标
+- **热更新**：改 Dart 代码后按 `r` 热重载、`R` 热重启，即时生效，无需重新安装 APK
+- **改了 Rust 侧代码**：需先重新生成绑定再运行（Rust 改动不会热更新，必须重新编译）：
+  ```bash
+  flutter_rust_bridge_codegen generate
+  flutter run
+  ```
+- **dev 与 release 的区别**：dev 模式在项目原目录直接 `flutter run` 即可，不受非 ASCII 路径影响；正式打包才需要走 `scripts/build-release.ps1`（见下）
 
 ### Release 构建（按 ABI 拆包）
 使用 `scripts/build-release.ps1`，自动同步源码到 ASCII 构建目录（规避 Dart AOT 对非 ASCII 路径的 bug），按 ABI 拆包并交付 arm64 单架构产物（约 14MB）：
