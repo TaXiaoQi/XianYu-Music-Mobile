@@ -4,6 +4,7 @@
 //! 仅把「逐样本 Iterator 组合」重构为「缓冲级 process_block(&[f32])」，
 //! 便于被 Flutter 播放引擎直接调用。交错 PCM 输入输出。
 
+use serde::Deserialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -12,10 +13,13 @@ pub const BANDS: [f32; 10] = [
     31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct EqualizerSettings {
+    #[serde(default)]
     pub enabled: bool,
-    pub preamp: f32,      // preamp 增益 (dB)
+    #[serde(default)]
+    pub preamp: f32, // preamp 增益 (dB)
+    #[serde(default)]
     pub gains: [f32; 10], // 10个频带的增益 (dB)
 }
 

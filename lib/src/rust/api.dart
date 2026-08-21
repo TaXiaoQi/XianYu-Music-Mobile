@@ -66,9 +66,11 @@ Future<String> parseLyrics({required String rawLyrics}) =>
 Future<String> lxResolveUrl({
   required String songInfoJson,
   required String quality,
+  String? dataDir,
 }) => RustLib.instance.api.crateApiLxResolveUrl(
   songInfoJson: songInfoJson,
   quality: quality,
+  dataDir: dataDir,
 );
 
 /// 获取 LX 音源封面 URL，返回 URL 字符串；无封面返回 `#optional#` 空值。
@@ -89,6 +91,63 @@ Future<String> lxSearch({
 
 /// 清除 LX 缓存（URL + 搜索）。
 Future<void> lxClearCache() => RustLib.instance.api.crateApiLxClearCache();
+
+/// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
+Future<String> pluginList({required String dataDir}) =>
+    RustLib.instance.api.crateApiPluginList(dataDir: dataDir);
+
+/// 从脚本文本安装音源插件。
+///
+/// 安装前会在沙箱中试运行，脚本无效时直接返回错误。
+/// 返回安装后的 `PluginInfo` JSON。
+Future<String> pluginInstallScript({
+  required String dataDir,
+  required String script,
+  required String origin,
+}) => RustLib.instance.api.crateApiPluginInstallScript(
+  dataDir: dataDir,
+  script: script,
+  origin: origin,
+);
+
+/// 从本地文件安装音源插件（限 `.js`）。
+Future<String> pluginInstallFile({
+  required String dataDir,
+  required String path,
+}) => RustLib.instance.api.crateApiPluginInstallFile(
+  dataDir: dataDir,
+  path: path,
+);
+
+/// 从订阅 URL 安装音源插件。
+Future<String> pluginInstallUrl({
+  required String dataDir,
+  required String url,
+}) => RustLib.instance.api.crateApiPluginInstallUrl(dataDir: dataDir, url: url);
+
+/// 启用或停用插件。
+Future<void> pluginSetEnabled({
+  required String dataDir,
+  required String id,
+  required bool enabled,
+}) => RustLib.instance.api.crateApiPluginSetEnabled(
+  dataDir: dataDir,
+  id: id,
+  enabled: enabled,
+);
+
+/// 卸载插件。
+Future<void> pluginRemove({required String dataDir, required String id}) =>
+    RustLib.instance.api.crateApiPluginRemove(dataDir: dataDir, id: id);
+
+/// 是否存在可用于该音源的已启用插件。
+Future<bool> pluginHasSource({
+  required String dataDir,
+  required String source,
+}) => RustLib.instance.api.crateApiPluginHasSource(
+  dataDir: dataDir,
+  source: source,
+);
 
 /// 从指定音源抓取歌词（kg/kw/tx/wy）。
 ///
@@ -421,10 +480,12 @@ Future<String> scanMusicFolder({
   required String dbPath,
   required String folderPath,
   int? minimumDurationSeconds,
+  List<String>? allowedFormats,
 }) => RustLib.instance.api.crateApiScanMusicFolder(
   dbPath: dbPath,
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  allowedFormats: allowedFormats,
 );
 
 /// 解析指定音频文件路径并返回歌曲（不写库）。

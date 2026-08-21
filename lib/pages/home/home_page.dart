@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/home/home_providers.dart';
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/library_grid.dart';
@@ -20,11 +21,13 @@ class HomePage extends ConsumerWidget {
           const _AmbientBackground(),
           SafeArea(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 150),
+              // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
+              padding: EdgeInsets.fromLTRB(
+                  18, 8, 18, ref.watch(navBarInsetProvider) + 24),
               children: [
                 _TopBar(onSettings: () => context.go('/settings')),
                 const SizedBox(height: 16),
-                _SearchBar(onTap: () => context.go('/search')),
+                _SearchBar(onTap: () => context.push('/home/search')),
                 const SizedBox(height: 22),
                 const CoverCarousel(),
                 const SizedBox(height: 26),

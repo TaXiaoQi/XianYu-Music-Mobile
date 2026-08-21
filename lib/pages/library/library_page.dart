@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/song_list_view.dart';
 import 'song_list_page.dart';
 
@@ -57,22 +58,19 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           ],
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.only(bottom: 150),
-        child: lib.loading
-            ? const Center(child: CircularProgressIndicator())
-            : lib.error != null
-                ? _ErrorView(message: lib.error!, onRetry: () => ref.read(libraryProvider.notifier).load())
-                : TabBarView(
-                    controller: _tab,
-                    children: [
-                      _AllSongsTab(),
-                      _ArtistsTab(),
-                      _AlbumsTab(),
-                      _FoldersTab(),
-                    ],
-                  ),
-      ),
+      body: lib.loading
+          ? const Center(child: CircularProgressIndicator())
+          : lib.error != null
+              ? _ErrorView(message: lib.error!, onRetry: () => ref.read(libraryProvider.notifier).load())
+              : TabBarView(
+                  controller: _tab,
+                  children: [
+                    _AllSongsTab(),
+                    _ArtistsTab(),
+                    _AlbumsTab(),
+                    _FoldersTab(),
+                  ],
+                ),
     );
   }
 }
@@ -142,6 +140,9 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               ? const Center(child: Text('没有匹配的歌曲'))
               : SongsListView(
                   songs: songs,
+                  padding: EdgeInsets.only(
+                    bottom: ref.watch(navBarInsetProvider) + 24,
+                  ),
                   onPlay: (list, i) =>
                       ref.read(libraryProvider.notifier).playList(list, i),
                 ),
@@ -158,6 +159,7 @@ class _ArtistsTab extends ConsumerWidget {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
     if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
     return ListView.separated(
+      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
       itemCount: artists.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
@@ -174,8 +176,7 @@ class _ArtistsTab extends ConsumerWidget {
           title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text('${a.count} 首'),
           trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
                 title: a.name,
@@ -197,6 +198,7 @@ class _AlbumsTab extends ConsumerWidget {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
     if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
     return ListView.separated(
+      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
       itemCount: albums.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
@@ -219,8 +221,7 @@ class _AlbumsTab extends ConsumerWidget {
             overflow: TextOverflow.ellipsis,
           ),
           trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
                 title: a.name,
@@ -264,8 +265,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
         },
         onOpen: () {
           if (n.songCount > 0) {
-            Navigator.push(
-              context,
+            Navigator.of(context, rootNavigator: true).push(
               MaterialPageRoute(
                 builder: (_) => SongListPage(
                   title: n.name,
@@ -283,15 +283,66 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     }
   }
 
+  bool _scanning = false;
+
+  Future<void> _onRefresh() async {
+    if (_scanning) return;
+    setState(() => _scanning = true);
+    try {
+      final count = await ref.read(libraryProvider.notifier).scanAllFolders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('扫描完成，共 $count 首'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('扫描失败：$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
-    if (root.isEmpty) {
-      return const Center(child: Text('暂无文件夹，请先在扫描设置中添加音乐目录'));
-    }
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
-    return ListView(children: tiles);
+    // 用 RefreshIndicator 包裹，空态也可下拉；空态用可滚动布局撑满。
+    final bottomPadding = EdgeInsets.only(
+      bottom: ref.watch(navBarInsetProvider) + 24,
+    );
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: root.isEmpty
+          ? ListView(
+              padding: bottomPadding,
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  child: const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加音乐目录，\n然后在此下拉刷新开始扫描',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : ListView(
+              padding: bottomPadding,
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: tiles,
+            ),
+    );
   }
 }
 
@@ -313,8 +364,17 @@ class _FolderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.folder),
-      title: Text(node.path, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('${node.songCount} 首'),
+      // 标题只显示文件夹名，完整路径放副标题（从右侧省略，保留末级目录）。
+      title: Text(
+        node.name.isNotEmpty ? node.name : node.path.split('/').last,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        '${node.songCount} 首',
+        style: const TextStyle(fontSize: 12),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

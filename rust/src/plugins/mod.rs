@@ -1,4 +1,9 @@
 //! 插件管理：HTTP 请求、文件读写、图片代理、音频临时下载。
+//!
+//! 音源脚本的执行与管理见 [`lx_sandbox`] 与 [`manager`]。
+
+pub mod lx_sandbox;
+pub mod manager;
 
 use crate::security::path_validator;
 use serde::Serialize;

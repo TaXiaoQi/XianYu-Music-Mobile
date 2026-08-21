@@ -822,7 +822,7 @@ pub fn scan_library(
             None,
             index + 1,
             folder_total.max(1),
-            options,
+            options.clone(),
         );
     }
 

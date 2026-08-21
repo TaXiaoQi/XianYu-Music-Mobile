@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../home/home_providers.dart';
 import '../player/player_provider.dart';
 import 'cover_image.dart';
 
-/// 封面轮播：展示播放队列封面，自动轮播 + 红色"播放中"徽章 + 频谱动效。
+/// 首页顶端轮播块：固定 2 页（第 1 页正在播放单曲，第 2 页听歌统计数据）。
 class CoverCarousel extends ConsumerStatefulWidget {
   const CoverCarousel({super.key});
 
@@ -31,7 +32,7 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
       duration: const Duration(milliseconds: 1000),
     );
     final p = ref.read(playerProvider);
-    if (p.queue.isNotEmpty && p.isPlaying) _eq.repeat();
+    if (p.current != null && p.isPlaying) _eq.repeat();
     _startTimer();
   }
 
@@ -45,27 +46,24 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
 
   void _startTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      final queue = ref.read(playerProvider).queue;
-      if (queue.length > 1) {
-        final next = (_index + 1) % queue.length;
-        _controller.animateToPage(
-          next,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeOutCubic,
-        );
-      }
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final next = (_index + 1) % 2;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
-    final queue = player.queue;
 
-    // 频谱条只在有队列且播放时运转，省电。
+    // 频谱条只在正在播放时运转
     ref.listen(playerProvider, (prev, next) {
-      final shouldRun = next.queue.isNotEmpty && next.isPlaying;
+      final shouldRun = next.current != null && next.isPlaying;
       if (shouldRun && !_eq.isAnimating) {
         _eq.repeat();
       } else if (!shouldRun && _eq.isAnimating) {
@@ -73,34 +71,263 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
       }
     });
 
-    if (queue.isEmpty) {
-      return const _EmptyCarousel();
-    }
     return Column(
       children: [
         SizedBox(
-          height: 260,
-          child: PageView.builder(
+          height: 240,
+          child: PageView(
             controller: _controller,
-            itemCount: queue.length,
             onPageChanged: (i) {
               setState(() => _index = i);
               _startTimer();
             },
-            itemBuilder: (context, i) {
-              final item = queue[i];
-              return _CarouselCard(
-                item: item,
-                isCurrent: i == player.queueIndex,
-                isPlaying: player.isPlaying,
+            children: [
+              // 第 1 页：正在播放单曲
+              _NowPlayingCard(
+                player: player,
                 eq: _eq,
                 onTap: () => context.push('/player'),
-              );
-            },
+              ),
+              // 第 2 页：听歌数据统计
+              const _StatsCard(),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        _Dots(count: queue.length, index: _index),
+        const SizedBox(height: 10),
+        _Dots(count: 2, index: _index),
+      ],
+    );
+  }
+}
+
+/// 第 1 页：正在播放卡片。
+class _NowPlayingCard extends StatelessWidget {
+  const _NowPlayingCard({
+    required this.player,
+    required this.eq,
+    required this.onTap,
+  });
+
+  final PlaybackState player;
+  final AnimationController eq;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = player.current;
+    if (item == null) {
+      return const _EmptyCarousel();
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CoverImage(
+              songPath: item.path,
+              networkUrl: item.coverUrl,
+              width: double.infinity,
+              height: double.infinity,
+              radius: 0,
+              icon: Icons.album,
+              gradient: const [Color(0xFFEC4141), Color(0xFF3A6CF5)],
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black87],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PlayingBadge(eq: eq, isPlaying: player.isPlaying),
+                  const SizedBox(height: 10),
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black45, blurRadius: 8)],
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.artist.isEmpty ? item.album : item.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 第 2 页：听歌数据统计卡片。
+class _StatsCard extends ConsumerWidget {
+  const _StatsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statsAsync = ref.watch(listenStatsProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF1E2638),
+            scheme.surfaceContainerHigh,
+          ],
+        ),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEC4141).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.insights,
+                  size: 18,
+                  color: Color(0xFFEC4141),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                '听歌数据统计',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          statsAsync.when(
+            loading: () => const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            error: (_, _) => const Text(
+              '暂无统计数据',
+              style: TextStyle(color: Colors.white54),
+            ),
+            data: (stats) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '累计听歌总时长',
+                  style: TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  stats.totalDurationText,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SubStatItem(
+                        icon: Icons.today,
+                        label: '今天听歌时长',
+                        value: stats.todayDurationText,
+                      ),
+                    ),
+                    Expanded(
+                      child: _SubStatItem(
+                        icon: Icons.queue_music,
+                        label: '今天已听',
+                        value: '${stats.todayPlayCount} 首',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubStatItem extends StatelessWidget {
+  const _SubStatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFFEC4141)),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 10, color: Colors.white54),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -113,7 +340,7 @@ class _EmptyCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 260,
+      height: 240,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
@@ -136,88 +363,6 @@ class _EmptyCarousel extends StatelessWidget {
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CarouselCard extends StatelessWidget {
-  const _CarouselCard({
-    required this.item,
-    required this.isCurrent,
-    required this.isPlaying,
-    required this.eq,
-    required this.onTap,
-  });
-
-  final QueueItem item;
-  final bool isCurrent;
-  final bool isPlaying;
-  final AnimationController eq;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            CoverImage(
-              songPath: item.path,
-              width: double.infinity,
-              height: double.infinity,
-              radius: 0,
-              icon: Icons.album,
-              gradient: const [Color(0xFFEC4141), Color(0xFF3A6CF5)],
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black54],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 22,
-              right: 22,
-              bottom: 22,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (isCurrent)
-                    _PlayingBadge(eq: eq, isPlaying: isPlaying),
-                  const SizedBox(height: 10),
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      shadows: [Shadow(color: Colors.black45, blurRadius: 8)],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.artist.isEmpty ? item.album : item.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.78),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

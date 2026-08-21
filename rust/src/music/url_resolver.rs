@@ -207,6 +207,18 @@ pub async fn resolve_lx_music_url_inner(
     song_info: &LxUrlSongInfo,
     quality: &str,
 ) -> Option<ResolvedUrl> {
+    resolve_lx_music_url_with_plugins(song_info, quality, None).await
+}
+
+/// 解析播放直链，可指定插件目录。
+///
+/// - `data_dir` 为 `Some` 时优先使用用户导入的音源插件；
+/// - 为 `None` 或插件不可用时回退到公共 API。
+pub async fn resolve_lx_music_url_with_plugins(
+    song_info: &LxUrlSongInfo,
+    quality: &str,
+    data_dir: Option<&str>,
+) -> Option<ResolvedUrl> {
     let source = song_info.source.clone();
 
     let id = match resolve_song_id(song_info, quality) {
@@ -221,7 +233,18 @@ pub async fn resolve_lx_music_url_inner(
         return Some(cached);
     }
 
-    // 通过 API 解析
+    // 优先用已导入的插件解析。
+    if let Some(dir) = data_dir {
+        if let Some(url) = resolve_via_plugins(dir, song_info, &source, quality).await {
+            set_cached_url(&source, &id, quality, url.clone()).await;
+            return Some(ResolvedUrl {
+                url,
+                quality: quality.to_string(),
+            });
+        }
+    }
+
+    // 回退：公共 API
     match resolve_url_via_api(&source, &id, quality).await {
         Ok(url) => {
             set_cached_url(&source, &id, quality, url.clone()).await;
@@ -234,6 +257,43 @@ pub async fn resolve_lx_music_url_inner(
             None
         }
     }
+}
+
+/// 调用插件解析直链。
+///
+/// 插件沙箱含 boa `Context`（非 Send），必须在阻塞线程内完整使用，
+/// 不能跨 await 持有，故整段放进 `spawn_blocking`。
+async fn resolve_via_plugins(
+    data_dir: &str,
+    song_info: &LxUrlSongInfo,
+    source: &str,
+    quality: &str,
+) -> Option<String> {
+    if !crate::plugins::manager::has_enabled_plugin_for(data_dir, source) {
+        return None;
+    }
+
+    // 传给脚本的歌曲信息：字段名与 LX 插件约定一致。
+    let info_json = serde_json::json!({
+        "songmid": song_info.songmid,
+        "hash": song_info.hash,
+        "albumId": song_info.album_id,
+        "albumMid": song_info.album_mid,
+        "copyrightId": song_info.copyright_id,
+        "_types": song_info.types,
+    })
+    .to_string();
+
+    let dir = data_dir.to_string();
+    let source = source.to_string();
+    let quality = quality.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        crate::plugins::manager::resolve_url_with_plugins(&dir, &source, &info_json, &quality).ok()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// 通过公共 API 代理解析音频 URL

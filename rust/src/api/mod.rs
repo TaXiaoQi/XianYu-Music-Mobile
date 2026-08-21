@@ -127,11 +127,20 @@ impl SoundEffectProcessor {
 /// - `quality`：音质（如 "128k"、"320k"、"flac" 等）
 ///
 /// 返回 [`ResolvedUrl`] 的 JSON；解析失败返回 `"null"`。
-pub async fn lx_resolve_url(song_info_json: String, quality: String) -> Result<String, String> {
+pub async fn lx_resolve_url(
+    song_info_json: String,
+    quality: String,
+    data_dir: Option<String>,
+) -> Result<String, String> {
     let song_info: LxUrlSongInfo =
         serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let resolved =
-        crate::music::url_resolver::resolve_lx_music_url_inner(&song_info, &quality).await;
+    // 传入 data_dir 时优先用已导入的音源插件解析。
+    let resolved = crate::music::url_resolver::resolve_lx_music_url_with_plugins(
+        &song_info,
+        &quality,
+        data_dir.as_deref(),
+    )
+    .await;
     match resolved {
         Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
         None => Ok("null".to_string()),
@@ -157,6 +166,76 @@ pub async fn lx_search(source: String, keyword: String, limit: u32) -> Result<St
 /// 清除 LX 缓存（URL + 搜索）。
 pub async fn lx_clear_cache() -> Result<(), String> {
     crate::music::lx_search::clear_lx_all_cache().await
+}
+
+// =========================================================================
+// 音源插件管理
+// =========================================================================
+
+/// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
+pub fn plugin_list(data_dir: String) -> Result<String, String> {
+    let list = crate::plugins::manager::list_plugins(&data_dir);
+    serde_json::to_string(&list).map_err(|e| e.to_string())
+}
+
+/// 从脚本文本安装音源插件。
+///
+/// 安装前会在沙箱中试运行，脚本无效时直接返回错误。
+/// 返回安装后的 `PluginInfo` JSON。
+pub async fn plugin_install_script(
+    data_dir: String,
+    script: String,
+    origin: String,
+) -> Result<String, String> {
+    // 沙箱含 boa Context（非 Send），需在阻塞线程内完成。
+    let info = tokio::task::spawn_blocking(move || {
+        crate::plugins::manager::install_plugin(&data_dir, &script, &origin)
+    })
+    .await
+    .map_err(|e| format!("安装任务失败: {e}"))??;
+    serde_json::to_string(&info).map_err(|e| e.to_string())
+}
+
+/// 从本地文件安装音源插件（限 `.js`）。
+pub async fn plugin_install_file(data_dir: String, path: String) -> Result<String, String> {
+    let script = crate::plugins::read_plugin_file(path.clone())?;
+    plugin_install_script(data_dir, script, path).await
+}
+
+/// 从订阅 URL 安装音源插件。
+pub async fn plugin_install_url(data_dir: String, url: String) -> Result<String, String> {
+    // 先下载（异步），再在阻塞线程内试运行安装。
+    let resp = crate::plugins::plugin_http_request(
+        "GET".to_string(),
+        url.clone(),
+        Some(std::collections::HashMap::from([(
+            "User-Agent".to_string(),
+            "lx-music request".to_string(),
+        )])),
+        None,
+        Some(30),
+        Some(5),
+    )
+    .await?;
+    if resp.status != 200 {
+        return Err(format!("下载脚本失败: HTTP {}", resp.status));
+    }
+    plugin_install_script(data_dir, resp.body, url).await
+}
+
+/// 启用或停用插件。
+pub fn plugin_set_enabled(data_dir: String, id: String, enabled: bool) -> Result<(), String> {
+    crate::plugins::manager::set_plugin_enabled(&data_dir, &id, enabled)
+}
+
+/// 卸载插件。
+pub fn plugin_remove(data_dir: String, id: String) -> Result<(), String> {
+    crate::plugins::manager::remove_plugin(&data_dir, &id)
+}
+
+/// 是否存在可用于该音源的已启用插件。
+pub fn plugin_has_source(data_dir: String, source: String) -> bool {
+    crate::plugins::manager::has_enabled_plugin_for(&data_dir, &source)
 }
 
 // =========================================================================
@@ -775,11 +854,13 @@ pub fn scan_music_folder(
     db_path: String,
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    allowed_formats: Option<Vec<String>>,
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let options = crate::music::scanner::ScanOptions::from_minimum_duration_seconds(
+    let options = crate::music::scanner::ScanOptions::new(
         minimum_duration_seconds,
+        allowed_formats,
     );
     let songs = crate::music::scanner::scan_single_directory_internal(
         folder_path, db_conn, None, None, 1, 1, options,

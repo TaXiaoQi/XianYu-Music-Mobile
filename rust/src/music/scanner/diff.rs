@@ -56,7 +56,7 @@ struct ParsedTaskResult {
     is_add: bool,
 }
 
-fn song_meets_duration_threshold(song: &Song, options: ScanOptions) -> bool {
+fn song_meets_duration_threshold(song: &Song, options: &ScanOptions) -> bool {
     options.minimum_duration_seconds == 0 || song.duration >= options.minimum_duration_seconds
 }
 
@@ -155,6 +155,7 @@ pub(super) fn load_db_snapshot_for_folder(
 fn collect_disk_candidates(
     normalized_folder: &str,
     reporter: Option<&ScanProgressReporter>,
+    options: &ScanOptions,
 ) -> Vec<DiskCandidate> {
     let mut candidates = Vec::new();
     let mut discovered = 0usize;
@@ -177,7 +178,7 @@ fn collect_disk_candidates(
             None => continue,
         };
 
-        if !is_supported_library_extension(&ext) {
+        if !options.is_ext_allowed(&ext) {
             continue;
         }
 
@@ -283,7 +284,7 @@ fn collect_disk_candidates(
 fn parse_tasks_in_parallel(
     tasks: Vec<ParseTask>,
     reporter: Option<ScanProgressReporter>,
-    options: ScanOptions,
+    options: &ScanOptions,
 ) -> Result<Vec<ParsedTaskResult>, String> {
     if tasks.is_empty() {
         return Ok(Vec::new());
@@ -363,7 +364,7 @@ fn probe_audio_duration_ms(path: &Path) -> Option<u32> {
     Some((seconds.min(u32::MAX as u64) * 1000) as u32)
 }
 
-fn process_cue_parse_tasks(tasks: &[ParseTask], options: ScanOptions) -> Vec<ParsedTaskResult> {
+fn process_cue_parse_tasks(tasks: &[ParseTask], options: &ScanOptions) -> Vec<ParsedTaskResult> {
     if tasks.is_empty() {
         return Vec::new();
     }
@@ -435,9 +436,9 @@ pub(super) fn collect_scan_diff(
     normalized_folder: &str,
     mut db_snapshot: HashMap<String, DbSongSnapshot>,
     reporter: Option<&ScanProgressReporter>,
-    options: ScanOptions,
+    options: &ScanOptions,
 ) -> Result<ScanDiff, String> {
-    let candidates = collect_disk_candidates(normalized_folder, reporter);
+    let candidates = collect_disk_candidates(normalized_folder, reporter, options);
     let has_disk_songs = !candidates.is_empty();
     let mut songs_by_index: Vec<Option<Song>> = vec![None; candidates.len()];
     let mut parse_tasks = Vec::new();

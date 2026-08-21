@@ -222,7 +222,7 @@ struct SymphoniaDecoder {
     sample_rate: u32,
     channels: u16,
     total_duration: Option<Duration>,
-    sample_buf: Option<symphonia::core::audio::RawSampleBuffer<f32>>,
+    sample_buf: Option<symphonia::core::audio::SampleBuffer<f32>>,
     sample_buf_frames: usize,
     leftover: Vec<f32>,
     eof: bool,
@@ -328,7 +328,7 @@ impl BlockProducer for SymphoniaDecoder {
             return Some(out);
         }
 
-        use symphonia::core::audio::RawSampleBuffer;
+        use symphonia::core::audio::SampleBuffer;
 
         loop {
             let packet = match self.format_reader.next_packet() {
@@ -361,12 +361,12 @@ impl BlockProducer for SymphoniaDecoder {
 
             let spec = *decoded.spec();
             if self.sample_buf.is_none() || self.sample_buf_frames < frames {
-                self.sample_buf = Some(RawSampleBuffer::<f32>::new(frames as u64, spec));
+                self.sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
                 self.sample_buf_frames = frames;
             }
 
             if let Some(ref mut buf) = self.sample_buf {
-                buf.copy_interleaved_ref(&decoded);
+                buf.copy_interleaved_ref(decoded);
                 let samples = buf.samples().to_vec();
                 if samples.len() > max_samples {
                     self.leftover = samples[max_samples..].to_vec();
@@ -516,9 +516,11 @@ pub fn start_exclusive_playback(
 
 pub fn stop_exclusive_playback() {
     if let Ok(mut guard) = instance().lock() {
-        if let Some(playback) = guard.take() {
+        if let Some(mut playback) = guard.take() {
             let _ = playback.tx.send(ExclusiveCommand::Stop);
-            if let Some(handle) = playback.join_handle {
+            // join_handle 是 Option<JoinHandle>，用 take() 取出避免从
+            // 实现了 Drop 的 AndroidExclusivePlayback 中部分 move 字段。
+            if let Some(handle) = playback.join_handle.take() {
                 let _ = handle.join();
             }
         }
@@ -670,7 +672,7 @@ fn run_exclusive_playback(
         serde_json::from_str(&request.equalizer_settings_json).unwrap_or_default()
     };
     let eq_handle = Arc::new(EqualizerHandle::new(eq_settings));
-    let mut equalizer = Equalizer::new(source_sample_rate, source_channels, eq_handle);
+    let mut equalizer = Equalizer::new(source_sample_rate, source_channels, eq_handle.clone());
 
     let mut sound_effect = SoundEffectBlockProcessor::new(source_sample_rate, source_channels);
     if !request.sound_effect_settings_json.is_empty() {

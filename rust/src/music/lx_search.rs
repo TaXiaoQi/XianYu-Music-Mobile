@@ -130,6 +130,52 @@ fn format_play_time(seconds: f64) -> String {
     format!("{:02}:{:02}", m, s)
 }
 
+/// 网易云图片 ID 加密，用于拼接封面 CDN 路径。
+///
+/// 搜索接口只返回 `album.picId`、不返回 `picUrl`，需本地推导：
+/// picId 与固定密钥逐字节异或 → MD5 → base64（`/`→`_`、`+`→`-`）。
+fn wy_encrypt_pic_id(pic_id: &str) -> String {
+    const MAGIC: &[u8] = b"3go8&$8*3*3h0k(2)2";
+    let xored: Vec<u8> = pic_id
+        .as_bytes()
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| b ^ MAGIC[i % MAGIC.len()])
+        .collect();
+    let digest = md5::compute(&xored);
+    base64::engine::general_purpose::STANDARD
+        .encode(digest.0)
+        .replace('/', "_")
+        .replace('+', "-")
+}
+
+/// 由网易云专辑的 picId 构造封面 URL。
+///
+/// picId 可能是数字或字符串（超出 i64 精度时以字符串返回），两者都要支持。
+fn wy_cover_url(album: &serde_json::Value) -> Option<String> {
+    // 优先用接口直接给出的 picUrl（部分接口版本会返回）。
+    if let Some(url) = album.get("picUrl").and_then(|v| v.as_str()) {
+        if !url.is_empty() {
+            return Some(url.replace("http://", "https://"));
+        }
+    }
+    // 回退：用 picId 本地推导，避免为每首歌额外请求专辑详情。
+    let pic = album.get("picId")?;
+    let pic_id = match pic {
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        _ => return None,
+    };
+    if pic_id.is_empty() || pic_id == "0" {
+        return None;
+    }
+    Some(format!(
+        "https://p1.music.126.net/{}/{}.jpg",
+        wy_encrypt_pic_id(&pic_id),
+        pic_id
+    ))
+}
+
 fn size_formate(bytes: f64) -> String {
     if bytes <= 0.0 {
         return "0B".to_string();
@@ -937,6 +983,16 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
 }
 
 async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    // 优先走无需签名的 soso 接口。
+    //
+    // 带签名的 musics.fcg 已返回 code 2000（签名校验失败），
+    // 且该接口对桌面版 User-Agent 会返回空列表，需用移动端 UA。
+    if let Ok(items) = search_tx_soso(keyword, limit).await {
+        if !items.is_empty() {
+            return Ok(items);
+        }
+    }
+
     let request_data = serde_json::json!({
         "comm": {
             "ct": "24", "cv": "4747474", "v": "4747474", "tmeAppID": "qqmusic",
@@ -1042,6 +1098,42 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     Ok(result)
 }
 
+/// QQ 音乐搜索（soso 接口，无需签名）。
+///
+/// 必须使用移动端 User-Agent：桌面版 UA 会得到 `code:0` 但列表为空。
+async fn search_tx_soso(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1";
+
+    // 注意：不能带 new_json=1，否则上游返回 code:0 但 song.list 恒为空。
+    let url = format!(
+        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?ct=24&qqmusic_ver=1298\
+         &remoteplace=txt.yqq.song&t=0&aggr=1&cr=1&catZhida=1&lossless=0\
+         &flag_qc=0&p=1&n={}&w={}&format=json&inCharset=utf8&outCharset=utf-8\
+         &notice=0&platform=yqq.json&needNewCode=0",
+        limit,
+        urlencoding::encode(keyword)
+    );
+
+    let body = http_get_json(
+        &url,
+        &[
+            ("User-Agent", MOBILE_UA),
+            ("Referer", "https://y.qq.com/"),
+        ],
+    )
+    .await?;
+
+    if body.get("code").and_then(|v| v.as_i64()) != Some(0) {
+        return Err("TX soso: code != 0".to_string());
+    }
+
+    // soso 接口的列表位于 data.song.list，复用统一的路径探测与解析。
+    let data = body.pointer("/data").unwrap_or(&serde_json::Value::Null);
+    Ok(tx_pick_search_raw_list(data)
+        .map(tx_handle_result)
+        .unwrap_or_default())
+}
+
 /// 生成一个类似 Date.now().toString().slice(2) 的随机 ID
 fn chrono_like_random() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1139,10 +1231,8 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
-        let img = al
-            .get("picUrl")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        // 搜索接口不返回 picUrl，改由 picId 推导（见 wy_cover_url）。
+        let img = wy_cover_url(&al);
 
         let singer = ar
             .iter()

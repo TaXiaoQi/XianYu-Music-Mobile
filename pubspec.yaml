@@ -51,6 +51,9 @@ dependencies:
   # 音频播放
   just_audio: ^0.9.0
 
+  # 在线封面加载与磁盘缓存
+  cached_network_image: ^3.4.1
+
   # 轻量本地存储（设置项）
   shared_preferences: ^2.3.0
   image_picker: ^1.2.3
@@ -60,6 +63,14 @@ dependencies:
   url_launcher: ^6.3.0
   # 同步歌曲 song_hash / 上报签名等 MD5 计算
   crypto: ^3.0.0
+
+  # 文件夹选择与存储权限（本地音乐扫描）
+  file_picker: ^8.1.0
+  permission_handler: ^11.3.0
+  liquid_glass_widgets: ^0.30.1
+
+  # 诊断日志分享（Android 系统分享面板）
+  share_plus: ^11.0.0
 
 dev_dependencies:
   flutter_test:
