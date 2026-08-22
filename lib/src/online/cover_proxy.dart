@@ -28,8 +28,14 @@ class CoverProxy {
     'migu.cn',
   ];
 
-  /// 解码后的图片字节缓存（原始 URL → 字节）。
+  /// 图片字节缓存（原始 URL → 字节），LinkedHashMap 实现按插入序的 LRU。
+  ///
+  /// 封面单张几十 KB 到 1MB 不等，无上限缓存在长会话下会无限增长，
+  /// 故限制条数与总字节数，超出按最久未使用淘汰。
+  static const _maxEntries = 48;
+  static const _maxTotalBytes = 24 * 1024 * 1024;
   static final Map<String, Uint8List> _cache = {};
+  static int _totalBytes = 0;
 
   /// 已尝试且失败的 URL，避免反复请求。
   static final Set<String> _failed = {};
@@ -43,8 +49,13 @@ class CoverProxy {
     return _proxyDomains.any(url.contains);
   }
 
-  /// 读取缓存的图片字节；未缓存返回 null。
-  static Uint8List? cached(String url) => _cache[url];
+  /// 读取缓存的图片字节；未缓存返回 null。命中会刷新 LRU 位置。
+  static Uint8List? cached(String url) {
+    final hit = _cache.remove(url);
+    if (hit == null) return null;
+    _cache[url] = hit;
+    return hit;
+  }
 
   /// 该 URL 是否已确认失败。
   static bool hasFailed(String url) => _failed.contains(url);
@@ -54,7 +65,7 @@ class CoverProxy {
   /// 成功后写入缓存；失败记录到 [_failed] 并返回 null。
   static Future<Uint8List?> fetch(String url) async {
     if (url.isEmpty) return null;
-    final hit = _cache[url];
+    final hit = cached(url);
     if (hit != null) return hit;
     if (_failed.contains(url)) return null;
 
@@ -65,11 +76,24 @@ class CoverProxy {
         _failed.add(url);
         return null;
       }
+      final old = _cache.remove(url);
+      if (old != null) _totalBytes -= old.length;
       _cache[url] = bytes;
+      _totalBytes += bytes.length;
+      _evict();
       return bytes;
     } catch (_) {
       _failed.add(url);
       return null;
+    }
+  }
+
+  /// 淘汰最久未使用的条目，直到满足条数与字节上限。
+  static void _evict() {
+    while (_cache.isNotEmpty &&
+        (_cache.length > _maxEntries || _totalBytes > _maxTotalBytes)) {
+      final oldest = _cache.keys.first;
+      _totalBytes -= _cache.remove(oldest)!.length;
     }
   }
 
@@ -87,6 +111,7 @@ class CoverProxy {
   /// 清空缓存与失败记录。
   static void clear() {
     _cache.clear();
+    _totalBytes = 0;
     _failed.clear();
   }
 }
