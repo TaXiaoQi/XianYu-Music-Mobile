@@ -51,3 +51,29 @@ tasks.configureEach {
         enabled = false
     }
 }
+
+// Rust 自动编译钩子：flutter run / flutter build apk 时自动检测并编译
+// Rust（绑定 + .so，见 scripts/gradle-rust-hook.ps1）。环境变量 XIANMU_SKIP_RUST=1 可跳过。
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+tasks.register("rustHook") {
+    doLast {
+        if (isWindows) {
+            val proc = ProcessBuilder(
+                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", rootProject.projectDir.resolve("../scripts/gradle-rust-hook.ps1").absolutePath,
+            ).apply {
+                directory(projectDir)
+                inheritIO()
+            }.start()
+            val code = proc.waitFor()
+            if (code != 0) {
+                throw GradleException(
+                    "Rust 钩子退出码 $code：若上方提示 API 绑定已更新，重新运行一次 flutter run / flutter build 即可",
+                )
+            }
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn("rustHook")
+}

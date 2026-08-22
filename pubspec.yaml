@@ -91,9 +91,9 @@ dev_dependencies:
   # 应用图标生成 + 源图裁切处理
   flutter_launcher_icons: ^0.14.1
 
-  # cargokit 集成：构建时自动编译 Rust 核心（rust_builder 为 FFI 插件包）
-  xianyu_core:
-    path: rust_builder
+# Rust 核心说明：不再需要任何 pub 依赖——libxianyu_core.so 预编译在
+# android/app/src/main/jniLibs/，由 gradle rustHook（scripts/gradle-rust-hook.ps1）
+# 在 flutter run / flutter build 时自动重编更新。
 
 # 应用图标生成配置（运行：dart run flutter_launcher_icons）
 flutter_launcher_icons:

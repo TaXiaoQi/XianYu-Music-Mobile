@@ -91,30 +91,24 @@ Rust 核心从桌面端抽取为纯逻辑库，同一套算法在桌面端（Tau
 
 ### 环境要求
 - Flutter 3.47.0 + Dart 3.13.0，`git` 与 `System32` 在 PATH 中
-- Rust toolchain（stable）
-- Android SDK + NDK（Android 构建）
+- Android SDK + NDK
+- Rust toolchain（stable）+ `cargo ndk`（仅改 Rust 代码时用到，见下）
 - 系统依赖：Linux 需 `libwebkit2gtk-4.1-dev`
 
-### 生成 Dart 绑定
-修改 Rust 侧 API 后需重新生成绑定：
-```bash
-flutter_rust_bridge_codegen generate
-```
+### Rust 内核自动构建（rustHook）
+直接使用 Flutter 原生命令即可，**Rust（绑定 + `.so`）全自动**：`android/app/build.gradle.kts` 中的 `rustHook` 任务（`preBuild` 前执行 `scripts/gradle-rust-hook.ps1`）会自动检测 Rust 源码状态：
 
-### Rust 内核自动构建（cargokit）
-Rust 核心（`xianyu_core`）通过 **cargokit** 集成进 Flutter 构建：`flutter run` / `flutter build apk` 会自动检测 Rust 源码改动（基于 crate 哈希）并交叉编译 `libxianyu_core.so` 打包进 APK，**无需手动编 .so**。因此：
+| 场景 | 行为 |
+|------|------|
+| 只改 Dart（日常） | 钩子约 1 秒静默通过，不拖慢构建 |
+| 改 Rust 内部逻辑 | 自动 `cargo ndk` 重编 `.so`，一次构建直接生效 |
+| 改 Rust API（`rust/src/api/`） | 自动 `flutter_rust_bridge_codegen generate` 后**中止本次构建**，重跑一次命令即可（Dart kernel 编译在 gradle 之前，新绑定下次生效） |
 
-- **只改 Dart 代码**：直接 `flutter run` / `flutter build apk` 即可
-- **改了 Rust 代码**：直接 `flutter run` / `flutter build apk`，cargokit 自动重编 Rust；仅改了 Rust API（`api/mod.rs`）时需先重新生成绑定（见上「生成 Dart 绑定」）
+- 编译输出记录于 `build/rust-hook.log`，失败时自动打印尾部
+- 环境变量 `XIANMU_SKIP_RUST=1` 可临时跳过钩子
+- Rust 改动不会热重载，重编后需重启应用（`R` 热重启或重新 `flutter run`）
 
-> 注意：Rust 改动不会热重载，重编后需重启应用（`R` 热重启或重新 `flutter run`）。
-
-集成方式：`rust_builder/` 是一个 FFI 插件包（包名 `xianyu_core`），内含 cargokit 胶水，通过 pubspec 的 `xianyu_core: {path: rust_builder}` 接入；其 `android/build.gradle` 指向 `../../rust` 编译现有 crate。构建机需安装 Rust toolchain + NDK（cargokit 自动从 `ANDROID_HOME` 定位 NDK）。
-
-**手动编译 .so（备用）**：如需手动交叉编译，可用 `scripts/build-rust.ps1`：
-```powershell
-.\scripts\build-rust.ps1 -SkipApk   # 只编 .so（含绑定生成）
-```
+> Windows 中文用户名路径会导致 NDK 链接器（ld.lld）打开 sysroot 失败；钩子已自动使用 ASCII 路径工具链拷贝（`D:\ascii-env\`），无需手动处理。
 
 ### 本地运行（Dev 开发模式）
 ```bash
@@ -125,16 +119,14 @@ flutter run
 **Dev 工作流要点：**
 - **设备**：`flutter devices` 查看已连接设备（真机需开启 USB 调试，无线调试为 `adb connect <ip>:5555`）；多设备时用 `flutter run -d <device-id>` 指定目标
 - **热更新**：改 Dart 代码后按 `r` 热重载、`R` 热重启，即时生效，无需重新安装 APK
-- **改了 Rust 侧代码**：Rust 改动不会热更新，但 `flutter run` / `flutter build` 会自动重编 Rust（cargokit 按 crate 哈希检测）；仅改了 Rust API 时先 `flutter_rust_bridge_codegen generate`，再 `flutter run`
-- **dev 与 release 的区别**：dev 模式在项目原目录直接 `flutter run` 即可，不受非 ASCII 路径影响；正式打包才需要走 `scripts/build-release.ps1`（见下）
+- **改了 Rust 侧代码**：同样直接 `flutter run` / `flutter build apk`，rustHook 自动重编（见上表）；改 API 时第一次会中止并提示，重跑一次即可
 
 ### Release 构建（按 ABI 拆包）
-使用 `scripts/build-release.ps1`，自动同步源码到 ASCII 构建目录（规避 Dart AOT 对非 ASCII 路径的 bug），按 ABI 拆包并交付 arm64 单架构产物（约 14MB）：
 ```powershell
 ./scripts/build-release.ps1
-# 产物：releases/弦予音乐_<version>_arm64.apk
+# 产物：releases/弦予音乐_<version>_arm64.apk（约 14MB）
 ```
-> 中文路径会导致 `gen_snapshot` AOT 编译失败，故脚本先 robocopy 到 `D:\build\XianYuMusicSrc` 再构建。
+> 该脚本解决的是 Flutter 的另一个问题：`gen_snapshot` AOT 编译器无法读取含中文的项目路径（flutter/flutter#149194），故先 robocopy 到 ASCII 目录 `D:\build\XianYuMusicSrc` 再 `flutter build apk --release --split-per-abi`。Rust 部分同样由 rustHook 自动处理。
 
 ## 开发约定
 

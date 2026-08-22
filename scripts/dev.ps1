@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
 .SYNOPSIS
   开发运行：键入本脚本时先自动同步版本号（version.ts），再直接 `flutter run`。
@@ -18,6 +18,7 @@ $ErrorActionPreference = "Stop"
 $realSource = Split-Path -Parent $PSScriptRoot   # XianYu-Music-Mobile
 $flutterBin = "C:\flutter\sdk_tmp\flutter\bin\flutter.bat"
 $dartBin    = "C:\flutter\sdk_tmp\flutter\bin\cache\dart-sdk\bin\dart.bat"
+# Rust 编译由 gradle 的 rustHook 自动处理（见 docs/build-guide.md），此处无需干预。
 
 # 构建所需环境（与 build-release.ps1 保持一致）
 $env:ANDROID_HOME     = "$env:LOCALAPPDATA\Android\Sdk"
