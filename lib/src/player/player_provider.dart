@@ -324,6 +324,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             durationMs: (meta['durationMs'] as num?)?.toInt() ?? 0,
             coverUrl: meta['coverUrl'] as String?,
             source: meta['source'] as String?,
+            onlineSongJson: meta['onlineSongJson'] as String?,
+            onlineQuality: meta['onlineQuality'] as String?,
             onlineInfoJson: meta['onlineInfoJson'] as String?,
           ));
         } else {
@@ -466,41 +468,86 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final json = item.onlineSongJson;
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
-      // 插件音源：走插件引擎解析直链
+      final candidates = _qualityCandidates(item.onlineQuality ??
+          _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ??
+          '320k');
+
+      // 插件音源：引擎逐档解析；全档失败时带上 LX 源信息走 lx 解析兜底。
       if (songJson.containsKey('pluginId')) {
-        final url =
-            await _resolvePluginUrl(songJson, item.onlineQuality ?? '320k');
-        if (url == null || url.isEmpty) {
-          throw StateError('插件直链解析失败');
+        for (final quality in candidates) {
+          final url = await _resolvePluginUrl(songJson, quality);
+          if (_isPlayableUrl(url)) {
+            await _startUrl(url!);
+            return;
+          }
         }
-        await _player.setUrl(url);
-        await _player.setVolume(_ref.read(volumeProvider));
-        await _player.play();
-        return;
+        final musicInfo =
+            songJson['musicInfo'] as Map<String, dynamic>? ?? {};
+        final fallbackInfo = <String, dynamic>{
+          if ((songJson['source'] as String?)?.isNotEmpty ?? false)
+            'source': songJson['source'],
+          ...musicInfo,
+        };
+        final fallback = await _tryLxResolve(
+            jsonEncode(fallbackInfo), candidates);
+        if (fallback != null) {
+          await _startUrl(fallback);
+          return;
+        }
+        throw StateError('插件直链解析失败');
       }
-      final resolved = await lxResolveUrl(
-        songInfoJson: json,
-        quality: item.onlineQuality ?? '320k',
-      );
-      if (resolved == 'null' || resolved.isEmpty) {
-        throw StateError('直链解析失败');
-      }
-      final url = jsonDecode(resolved)['url'] as String?;
-      if (url == null || url.isEmpty) {
-        throw StateError('直链为空');
-      }
-      await _player.setUrl(url);
-      await _player.setVolume(_ref.read(volumeProvider));
-      await _player.play();
+
+      // LX 在线歌曲：lx 解析（已导入插件优先 → 公共 API），多音质降级。
+      final url = await _tryLxResolve(json, candidates);
+      if (url == null) throw StateError('直链解析失败');
+      await _startUrl(url);
       return;
     }
     // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError('无法获取播放链接');
+    await _startUrl(url);
+  }
+
+  /// 音质阶梯（低 → 高），与设置页可选档位一致。
+  static const List<String> _qualityLadder = ['128k', '192k', '320k', 'flac'];
+
+  /// 音质候选链：首选优先，其后向下降级（对齐桌面端 resolveOnlinePlayQuality
+  /// 的 'lower' 行为）。首选不在阶梯内时先试首选再全阶梯降级。
+  static List<String> _qualityCandidates(String preferred) {
+    final desc = _qualityLadder.reversed.toList();
+    final i = desc.indexOf(preferred);
+    return i < 0 ? [preferred, ...desc] : desc.sublist(i);
+  }
+
+  static bool _isPlayableUrl(String? url) =>
+      url != null && RegExp(r'^https?://').hasMatch(url);
+
+  Future<void> _startUrl(String url) async {
     await _player.setUrl(url);
-    final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
-    await _player.setVolume(vol);
+    await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
+  }
+
+  /// 按候选音质依次调用 lxResolveUrl（已导入插件 → 公共 API），
+  /// 返回首个合法 http(s) 直链。
+  Future<String?> _tryLxResolve(
+      String songInfoJson, List<String> candidates) async {
+    final dataDir = await _ref.read(appDataDirProvider.future);
+    for (final quality in candidates) {
+      try {
+        final resolved = await lxResolveUrl(
+          songInfoJson: songInfoJson,
+          quality: quality,
+          dataDir: dataDir,
+        );
+        if (resolved == 'null' || resolved.isEmpty) continue;
+        final url =
+            (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
+        if (_isPlayableUrl(url)) return url;
+      } catch (_) {}
+    }
+    return null;
   }
 
   void _flushPlayStats() {
@@ -546,25 +593,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (infoJson == null) return null;
     final preferred =
         _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
-    final dataDir = await _ref.read(appDataDirProvider.future);
-    final candidates = <String>[
-      preferred,
-      if (preferred != '320k') '320k',
-      if (preferred != '128k') '128k',
-    ];
-    for (final quality in candidates) {
-      try {
-        final json = await lxResolveUrl(
-          songInfoJson: infoJson,
-          quality: quality,
-          dataDir: dataDir,
-        );
-        if (json == 'null') continue;
-        final url = (jsonDecode(json) as Map<String, dynamic>)['url'] as String?;
-        if (url != null && url.isNotEmpty) return url;
-      } catch (_) {}
-    }
-    return null;
+    return _tryLxResolve(infoJson, _qualityCandidates(preferred));
   }
 
   /// 通过插件引擎解析播放直链。
@@ -821,6 +850,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'durationMs': q.durationMs,
           'coverUrl': q.coverUrl,
           'source': q.source,
+          'onlineSongJson': q.onlineSongJson,
+          'onlineQuality': q.onlineQuality,
           'onlineInfoJson': q.onlineInfoJson,
         };
       }
