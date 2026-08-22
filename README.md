@@ -13,7 +13,7 @@
 | 跨语言桥接 | flutter_rust_bridge 2.12.0（生成 Dart 绑定） |
 | Rust 核心 | `serde`、`symphonia`（解码）、`rustfft`（FFT）、`rusqlite`（bundled）、`reqwest`（rustls-tls，无 OpenSSL 依赖）、`rayon`（并行）、`tokio` |
 | 音频 I/O | 共享模式 `just_audio`；Android 独占模式 AAudio（FFI 动态加载 `libaaudio.so`） |
-| 平台 | Android（主）/ iOS / 桌面（Windows/macOS/Linux 兜底） |
+| 平台 | Android（主）/ Apple（iOS / macOS） |
 
 ## 功能特性
 
@@ -83,7 +83,7 @@ XianYu-Music-Mobile/
 | Riverpod 状态管理 | `playerProvider` / `libraryProvider` / `settingsProvider` / `authProvider` / `onlineSearchProvider` / `pluginProvider` 等 |
 | flutter_rust_bridge | 复合类型 JSON 交换；有状态对象（DSP/EQ/响度）以 opaque 句柄传递 |
 | Rust 核心 xianyu_core | 音乐搜索/歌词、播放器/音效 DSP、曲库/统计、插件引擎（QuickJS 沙箱）、WebDAV、SQLite |
-| 平台层 | Android（AAudio USB 独占）/ iOS / macOS / Windows / Linux |
+| 平台层 | Android（AAudio USB 独占）/ Apple（iOS / macOS） |
 
 Rust 核心从桌面端抽取为纯逻辑库，同一套算法在桌面端（Tauri + Vue）、移动端（Flutter）、服务端复用，仅音频 I/O 与窗口材质按平台 `#[cfg]` 分流。
 
