@@ -1,152 +1,100 @@
-# 弦予音乐 · 移动端（XianYu-Music-Mobile）
+<div align="center">
+  <img src="logo.png" width="120" height="120" alt="XianYu Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-弦予音乐的移动端，基于 **Flutter + Rust** 跨平台架构。Rust 核心（`xianyu_core`）从桌面端抽取为纯逻辑库（不依赖 Tauri），通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 暴露给 Flutter 调用，实现音频解码、DSP 处理、音乐库管理、USB 独占播放等能力跨平台复用。
+# 弦予音乐 · 移动端
+## (XianYu-Music-Mobile)
 
-> 仓库：`github.com/TaXiaoQi/XianYu-Music-Mobile`  
-> 版本：`1.0.0+1` · Rust 核心 `0.1.0` · 许可证 `AGPL-3.0-only`
+弦予音乐的移动端。基于 **Flutter + Rust** 跨平台架构，Rust 核心（`xianyu_core`）与桌面端同源复用，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接，提供专业级音频播放与音效体验。
 
-## 技术栈
+ [](https://flutter.dev/)
+ [](https://www.rust-lang.org/)
+ [](https://dart.dev/)
 
-| 层 | 技术 |
-|----|------|
-| UI | Flutter 3.47.0 + Dart 3.13.0、`go_router`、`flutter_riverpod`、`just_audio` |
-| 跨语言桥接 | flutter_rust_bridge 2.12.0（生成 Dart 绑定） |
-| Rust 核心 | `serde`、`symphonia`（解码）、`rustfft`（FFT）、`rusqlite`（bundled）、`reqwest`（rustls-tls，无 OpenSSL 依赖）、`rayon`（并行）、`tokio` |
-| 音频 I/O | 共享模式 `just_audio`；Android 独占模式 AAudio（FFI 动态加载 `libaaudio.so`） |
-| 平台 | Android（主）/ Apple（iOS / macOS） |
+[](./LICENSE)
 
-## 功能特性
+</div>
 
-### Rust 核心（`rust/`）
-- **音频解码**：基于 `symphonia`，支持 MP3/FLAC/AAC/ALAC/OGG/Vorbis/WAV/AIFF 等格式
-- **QMC2 解密**：内置 QMC2 加密格式解密，支持在线加密资源播放
-- **DSP 音效链**：解码 → 响度归一化 → 均衡器(EQ) → 音效 → 音量 → 限幅，独占/共享模式管线一致
-  - **FFT 卷积混响**（`sound_effect/convolver.rs`）：均匀分块重叠相加（uniform partitioned overlap-add）算法
-  - **交叉淡入 / Gapless**（`crossfade.rs`）：常数功率交叉淡入（cos/sin 归一化增益）
-  - **实时频谱**（`spectrum.rs`）：环形缓冲 + 4096 点 FFT + 时间平滑（30ms 上升 / 180ms 释放）
-  - **变速保持音调**（`pitch.rs`）：OLA 相位声码器时间拉伸
-  - 动态、调制、塑形、空间等效果模块
-- **USB 独占播放**（`player/output/`）：Android 端 AAudio `AAUDIO_SHARING_MODE_EXCLUSIVE`，绕过混音器直连 USB DAC，bit-perfect 输出；非 Android 返回不支持错误
-- **音乐库**：`rayon` 并行扫描、`id3`/`lofty` 标签解析、封面提取与调色板、增量差异更新
-- **歌词**：支持 QRC/LYS/YRC 多种格式，经 `amll-lyric` 渲染；本地缓存 + 远程获取
-- **WebDAV 远程**：远程音乐库扫描、缓存、流式播放
-- **数据库**：`rusqlite`（bundled），含迁移、schema 自检、自动补列、本地缓存降级
-- **统计 / 插件 / 识别**等工具模块
-- **安全**：路径校验器，防止越权访问
+## ✨ 功能亮点
 
-### Flutter UI（`lib/`）
-- 底部导航 5 入口（规划）：主界面 / 音乐库 / 音效 / 搜索 / 设置
-- 页面：音乐库（全部/歌手/专辑/文件夹 4 Tab）、播放器、收藏、最近、设置、账号
-- 迷你播放条、歌曲列表、通用组件
-- Material 3 动态取色，支持浅色/暗色/跟随系统，主题强调色可自定义
-- 移动端主页重构方向：融合桌面版风格（网易云红 `#EC4141` + 毛玻璃）与 RawS 布局，详见 [`docs/mobile-home-design.md`](docs/mobile-home-design.md)
+- 🎨 **高颜值液态玻璃 UI**
 
-## 项目结构
+  - **液态玻璃质感**：自研液态玻璃着色器，半透明磨砂设计与系统环境自然融合。
+  - **Material 3 动态取色**：支持浅色 / 暗色 / 跟随系统，主题强调色可自定义（默认网易云红 `#EC4141`）。
+  - **沉浸式播放页**：封面液态网格渐变背景随曲目色彩动态演变，实时频谱可视化。
 
-```
-XianYu-Music-Mobile/
-├── lib/                          # Flutter 侧
-│   ├── app.dart / main.dart      # 应用入口、主题与路由装配
-│   ├── pages/                    # 页面：library / player / favorites / recent / settings / account
-│   └── src/
-│       ├── auth/                 # 账号认证状态
-│       ├── core/                 # db 路径、Rust 初始化、设置持久化
-│       ├── library/              # 音乐库状态
-│       ├── navigation/           # 路由定义、AppShell 底栏
-│       ├── player/               # 播放状态
-│       ├── rust/                 # flutter_rust_bridge 生成的 Dart 绑定（frb_generated.*）
-│       └── widgets/              # 迷你播放条、歌曲列表等通用组件
-├── rust/                         # Rust 核心（crate: xianyu_core）
-│   └── src/
-│       ├── api/                  # 暴露给 Flutter 的 API（FRB 入口）
-│       ├── database/             # SQLite：迁移 / schema / 状态 / 重置
-│       ├── music/                # 扫描 / 标签 / 封面 / 调色板 / 歌词 / WebDAV / URL 解析
-│       │   └── scanner/          # 并行扫描：编排 / 解析 / 差异 / 进度 / 仓储
-│       ├── player/               # 音频播放核心
-│       │   ├── output/           # 跨平台输出 + Android AAudio 独占
-│       │   └── sound_effect/     # EQ / 卷积混响 / 动态 / 调制 / 塑形 / 空间 / 变速
-│       ├── remote/               # WebDAV 远程库：缓存 / 仓储 / 扫描
-│       ├── security/             # 路径校验
-│       └── statistics/ plugins/ recognize/ toolbox/ ...
-├── android/ ios/ linux/ macos/ windows/   # 各平台壳工程
-├── scripts/build-release.ps1     # 按 ABI 拆包构建（arm64 ≈14MB）
-└── docs/                         # 设计稿与说明
-```
+- 🎧 **专业音频引擎**
 
-## 架构设计
+  - **全格式解码**：基于 `symphonia`，支持 MP3 / FLAC / AAC / ALAC / OGG / Vorbis / WAV / AIFF。
+  - **QMC2 解密**：内置加密格式解密，在线加密资源直接播放。
+  - **USB 独占输出**：Android 端 AAudio `EXCLUSIVE` 模式直连 USB DAC，绕过系统混音器，bit-perfect 输出。
 
-![架构分层图](docs/architecture.svg)
+- 🎚️ **全 Rust 音效 DSP**
 
-| 层 | 职责 |
-|----|------|
-| Flutter 应用层 | 16 个页面 + GoRouter 导航外壳（底部/侧边导航、迷你播放条）+ 液态玻璃 UI |
-| Riverpod 状态管理 | `playerProvider` / `libraryProvider` / `settingsProvider` / `authProvider` / `onlineSearchProvider` / `pluginProvider` 等 |
-| flutter_rust_bridge | 复合类型 JSON 交换；有状态对象（DSP/EQ/响度）以 opaque 句柄传递 |
-| Rust 核心 xianyu_core | 音乐搜索/歌词、播放器/音效 DSP、曲库/统计、插件引擎（QuickJS 沙箱）、WebDAV、SQLite |
-| 平台层 | Android（AAudio USB 独占）/ Apple（iOS / macOS） |
+  - **完整音效链**：响度归一化 → 10 段 EQ → 音效 → 音量 → 限幅，独占 / 共享模式管线一致。
+  - **30+ 音效**：FFT 卷积混响、常数功率交叉淡入、变速不变调（OLA 相位声码器）、3D / 8D / 36D 环绕等。
+  - **实时频谱**：环形缓冲 + 4096 点 FFT + 时间平滑，低开销高帧率。
 
-Rust 核心从桌面端抽取为纯逻辑库，同一套算法在桌面端（Tauri + Vue）、移动端（Flutter）、服务端复用，仅音频 I/O 与窗口材质按平台 `#[cfg]` 分流。
+- 📱 **平台原生体验**
 
-## 构建与运行
+  - **原生手势**：Android Predictive Back 预测性返回、下拉返回等系统级手势与转场，不做自绘转场，省电且跟手。
+  - **后台播放**：系统媒体通知 + 锁屏控制，后台稳定续航。
+  - **本地音乐库**：`rayon` 并行扫描、标签解析、封面提取与调色板、增量差异更新。
+
+- 🌐 **在线与云端**
+
+  - **双格式插件**：兼容 MusicFree / LX 落雪插件，QuickJS 沙箱执行，HTTP 请求经 Rust 代理无 CORS 限制。
+  - **云端同步**：歌单 / 收藏 / 插件 / 设置多端同步，自动同步调度。
+  - **WebDAV 远程音源**：远程曲库扫描、LRU 缓存、流式播放。
+  - **歌词**：QRC / LYS / YRC 逐字歌词，AMLL 风格渲染，本地缓存 + 远程获取。
+
+- 📦 **极致体积**
+
+  - 安装包仅 **~17MB**：`.so` 包内压缩 + Dart AOT 混淆 + R8 收缩 + thin LTO，安装时自动解压。
+
+---
+
+## 🛠️ 使用源码构建运行
 
 ### 环境要求
-- Flutter 3.47.0 + Dart 3.13.0，`git` 与 `System32` 在 PATH 中
-- Android SDK + NDK
-- Rust toolchain（stable）+ `cargo ndk`（仅改 Rust 代码时用到，见下）
-- 系统依赖：Linux 需 `libwebkit2gtk-4.1-dev`
 
-### Rust 内核自动构建（rustHook）
-直接使用 Flutter 原生命令即可，**Rust（绑定 + `.so`）全自动**：`android/app/build.gradle.kts` 中的 `rustHook` 任务（`preBuild` 前执行 `scripts/gradle-rust-hook.ps1`）会自动检测 Rust 源码状态：
+| 依赖项 | 推荐版本 / 要求 |
+| --- | --- |
+| **Flutter** | `3.47.0+`（Dart `3.13.0`） |
+| **Android SDK + NDK** | API 36 编译，NDK r27+ |
+| **Rust** | Stable 稳定版 + `cargo ndk`（构建钩子自动调用） |
+| **操作系统** | Windows 10 / 11（构建钩子为 PowerShell 脚本） |
 
-| 场景 | 行为 |
-|------|------|
-| 只改 Dart（日常） | 钩子约 1 秒静默通过，不拖慢构建 |
-| 改 Rust 内部逻辑 | 自动 `cargo ndk` 重编 `.so`，一次构建直接生效 |
-| 改 Rust API（`rust/src/api/`） | 自动 `flutter_rust_bridge_codegen generate` 后**中止本次构建**，重跑一次命令即可（Dart kernel 编译在 gradle 之前，新绑定下次生效） |
+### 运行与构建步骤
 
-- 编译输出记录于 `build/rust-hook.log`，失败时自动打印尾部
-- 环境变量 `XIANMU_SKIP_RUST=1` 可临时跳过钩子
-- Rust 改动不会热重载，重编后需重启应用（`R` 热重启或重新 `flutter run`）
+1. 克隆本仓库：
 
-> Windows 中文用户名路径会导致 NDK 链接器（ld.lld）打开 sysroot 失败；钩子已自动使用 ASCII 路径工具链拷贝（`D:\ascii-env\`），无需手动处理。
+  ```bash
+  git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
+  cd XianYu-Music-Mobile
+  ```
 
-### 本地运行（Dev 开发模式）
-```bash
-flutter pub get
-flutter run
-```
+2. 安装依赖并连接设备（真机开启 USB 调试，`flutter devices` 确认识别）：
 
-**Dev 工作流要点：**
-- **设备**：`flutter devices` 查看已连接设备（真机需开启 USB 调试，无线调试为 `adb connect <ip>:5555`）；多设备时用 `flutter run -d <device-id>` 指定目标
-- **热更新**：改 Dart 代码后按 `r` 热重载、`R` 热重启，即时生效，无需重新安装 APK
-- **改了 Rust 侧代码**：同样直接 `flutter run` / `flutter build apk`，rustHook 自动重编（见上表）；改 API 时第一次会中止并提示，重跑一次即可
+  ```bash
+  flutter pub get
+  ```
 
-### Release 构建（按 ABI 拆包）
-```powershell
-./scripts/build-release.ps1
-# 产物：releases/弦予音乐_<version>_arm64.apk（约 14MB）
-```
-> 该脚本解决的是 Flutter 的另一个问题：`gen_snapshot` AOT 编译器无法读取含中文的项目路径（flutter/flutter#149194），故先 robocopy 到 ASCII 目录 `D:\build\XianYuMusicSrc` 再 `flutter build apk --release --split-per-abi`。Rust 部分同样由 rustHook 自动处理。
+3. 开发调试运行（热重载 `r` / 热重启 `R`）：
 
-## 开发约定
+  ```bash
+  flutter run
+  ```
 
-- Rust 核心使用 `rustls-tls`（非 `native-tls`），保证移动端无系统 OpenSSL 依赖
-- 平台相关模块用 `#[cfg(target_os)]` 分流：`output/`、窗口材质、字体、音频环回、凭据存储等
-- Linux/macOS 音频回退 `rodio`（ALSA/PulseAudio/CoreAudio），独占模式不可用时降级共享模式
-- 验证码、账号、反馈、审核等业务规则与桌面端/服务端保持一致（见 `project_memory` 约束）
-- 移动端 UI 采用平台原生手势（Android Predictive Back），避免自定义转场耗电
+4. 构建 Release 安装包：
 
-## 相关项目
+  ```bash
+  flutter build apk --release
+  ```
 
-| 仓库 | 说明 |
-|------|------|
-| `XianYu-Music-Desktop` | 桌面端，Vue 3 + Tauri 2 + Rust，本端 Rust 核心的上游 |
-| `XianYu-Music-Server` | 服务端，Rust 纯 API 服务（`/api` `/admin/api` `/uploads`） |
-| `XianYu-Music-Website` | 官网，含隐藏后台入口 |
-| `XY-Music-Mobile` | RawS 原生安卓端（Kotlin + C++），算法参考来源 |
+> **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
+>
+> **正式发布**：若项目路径含中文（如 `C:\Users\小奇\...`），请改用一键脚本 `powershell scripts\build-release.ps1`（自动同步到 ASCII 路径构建，附带 arm64 单架构 + AOT 混淆 + 符号归档，产物在 `releases\` 下，约 17MB）。
 
-## 文档
+---
 
-- IDEA 构建指南：[`docs/build-guide.md`](docs/build-guide.md)
-- 移动主页高保真稿：[`docs/mobile-home-mockup.html`](docs/mobile-home-mockup.html)
-- 移动主页设计说明：[`docs/mobile-home-design.md`](docs/mobile-home-design.md)
+*更新日期：2026-08-22*
