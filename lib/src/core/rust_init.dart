@@ -8,5 +8,5 @@ import '../rust/frb_generated.dart' as frb;
 /// 按平台加载正确的库名：Android `libxianyu_core.so`、Windows `xianyu_core.dll`
 /// 等。手动传裸名 `xianyu_core` 会导致 Android 下 dlopen 失败。
 final rustInitProvider = FutureProvider<void>((ref) async {
-  await frb.RustLib.init();
+  await frb.RustLib.init(forceSameCodegenVersion: false);
 });
