@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
-const COVER_CACHE_MAX_SIZE_BYTES: u64 = 4 * 1024 * 1024 * 1024; // 4 GB
+// 移动端降档：封面可随时从音频标签重新提取，1GB 上限 + LRU 淘汰足够
+const COVER_CACHE_MAX_SIZE_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB
 const THUMBNAIL_EDGE_PX: u32 = 150;
 const FULL_COVER_EDGE_PX: u32 = 800;
 const FULL_COVER_CACHE_VERSION: &str = "v3";

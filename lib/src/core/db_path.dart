@@ -23,3 +23,21 @@ final dbPathProvider = FutureProvider<String>((ref) async {
 final appDataDirProvider = FutureProvider<String>((ref) async {
   return await _resolveAppDataDir();
 });
+
+/// 封面缓存根目录（系统临时缓存目录）。
+///
+/// 封面缩略图可随时从音频标签重新提取，放系统缓存目录让 Android
+/// 在存储紧张时自动回收；顺带清理旧版本遗留在应用数据目录下的
+/// 封面缓存，避免成为永不回收的孤儿文件。
+final coverCacheRootProvider = FutureProvider<String>((ref) async {
+  final legacy = Directory(
+    p.join(await _resolveAppDataDir(), 'covers'),
+  );
+  if (legacy.existsSync()) {
+    try {
+      legacy.deleteSync(recursive: true);
+    } catch (_) {/* 清理失败不影响运行 */}
+  }
+  final tmp = await getTemporaryDirectory();
+  return tmp.path;
+});

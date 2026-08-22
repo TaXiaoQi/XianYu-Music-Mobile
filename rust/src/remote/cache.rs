@@ -7,7 +7,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-pub(crate) const MAX_REMOTE_CACHE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+// 移动端降档：手机存储有限，远程整文件缓存 2GB 足够（LRU 自动淘汰）
+pub(crate) const MAX_REMOTE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const REMOTE_DOWNLOAD_ATTEMPTS: usize = 3;
 
 /// 远程下载进度通知器（移动端由调用方注入，桌面端为 Tauri 事件发射）。

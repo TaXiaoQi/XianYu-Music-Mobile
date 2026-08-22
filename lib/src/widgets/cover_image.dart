@@ -100,7 +100,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     }
     try {
       final dbPath = await ref.read(dbPathProvider.future);
-      final cacheRoot = await ref.read(appDataDirProvider.future);
+      final cacheRoot = await ref.read(coverCacheRootProvider.future);
       final p = await getSongCoverThumbnail(
         dbPath: dbPath,
         cacheRoot: cacheRoot,

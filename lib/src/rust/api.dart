@@ -98,7 +98,7 @@ Future<String> pluginList({required String dataDir}) =>
 
 /// 从脚本文本安装音源插件。
 ///
-/// 安装前会在沙箱中试运行，脚本无效时直接返回错误。
+/// 安装前会在 QuickJS 引擎中试运行，脚本无效时直接返回错误。
 /// 返回安装后的 `PluginInfo` JSON。
 Future<String> pluginInstallScript({
   required String dataDir,
