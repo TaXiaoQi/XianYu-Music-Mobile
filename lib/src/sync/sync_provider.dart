@@ -7,6 +7,7 @@ import '../auth/auth_provider.dart';
 import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../favorites/favorites_provider.dart';
+import '../player/player_provider.dart';
 import '../rust/api.dart';
 
 /// 上传选项配置
@@ -209,9 +210,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
         final favorites = backupData['favorites'] as List? ?? [];
         int importedFavs = 0;
         for (final item in favorites) {
-          final p = item['path'] as String?;
+          final p = item is Map ? item['path'] as String? : null;
+          final title = item is Map ? item['title'] as String? : null;
           if (p != null && p.isNotEmpty) {
-            await _ref.read(favoritesProvider.notifier).toggle(p);
+            await _ref.read(favoritesProvider.notifier).toggle(
+              QueueItem(
+                path: p,
+                title: title ?? p.split(RegExp(r'[\\/]')).last,
+                artist: item is Map ? item['artist'] as String? ?? '' : '',
+                album: item is Map ? item['album'] as String? ?? '' : '',
+              ),
+            );
             importedFavs++;
           }
         }
@@ -346,8 +355,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     try {
       final dir = await _dataDir();
-      final favPaths = _ref.read(favoritesProvider).toList();
-      final songsPayload = favPaths.map((p) => {'path': p, 'title': p.split(RegExp(r'[\\/]')).last}).toList();
+      final favState = _ref.read(favoritesProvider);
+      final favEntries = favState.entries;
+      final songsPayload = favEntries.map((e) => {
+        'path': e.path,
+        'title': e.title.isNotEmpty ? e.title : e.path.split(RegExp(r'[\\/]')).last,
+        'artist': e.artist,
+        'album': e.album,
+      }).toList();
 
       await authAuthedRequest(
         dataDir: dir,
@@ -361,7 +376,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         favoritesSync: state.favoritesSync.copyWith(
           syncing: false,
-          lastSummary: '已上传 ${favPaths.length} 首收藏歌曲',
+          lastSummary: '已上传 ${favEntries.length} 首收藏歌曲',
           lastTime: DateTime.now(),
           errors: [],
         ),
@@ -392,9 +407,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final data = jsonDecode(resJson) as Map<String, dynamic>;
       final favs = data['favorites'] as List? ?? [];
       for (final item in favs) {
-        final path = item['path'] as String?;
+        final path = item is Map ? item['path'] as String? : null;
+        final title = item is Map ? item['title'] as String? : null;
         if (path != null && path.isNotEmpty) {
-          await _ref.read(favoritesProvider.notifier).toggle(path);
+          await _ref.read(favoritesProvider.notifier).toggle(
+            QueueItem(
+              path: path,
+              title: title ?? path.split(RegExp(r'[\\/]')).last,
+              artist: item is Map ? item['artist'] as String? ?? '' : '',
+              album: item is Map ? item['album'] as String? ?? '' : '',
+            ),
+          );
         }
       }
 

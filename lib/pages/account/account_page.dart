@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/sync/sync_provider.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
 
@@ -603,6 +604,8 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final user = widget.user;
+    final syncState = ref.watch(syncProvider);
+    final syncNotifier = ref.read(syncProvider.notifier);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -657,6 +660,115 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
               ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        // ==================== 云端同步与上传板块 ====================
+        _sectionTitle(context, '云端同步与上传'),
+
+        // 上传开关配置卡片
+        _GlassCard(
+          children: [
+            _SwitchTile(
+              title: '歌单',
+              subtitle: '同步本地创建与编辑的歌单',
+              value: syncState.uploadConfig.playlists,
+              onChanged: (val) => syncNotifier.updateUploadConfig(
+                syncState.uploadConfig.copyWith(playlists: val),
+              ),
+            ),
+            _SwitchTile(
+              title: '收藏',
+              subtitle: '同步我的收藏歌曲',
+              value: syncState.uploadConfig.favorites,
+              onChanged: (val) => syncNotifier.updateUploadConfig(
+                syncState.uploadConfig.copyWith(favorites: val),
+              ),
+            ),
+            _SwitchTile(
+              title: '插件',
+              subtitle: '同步已安装的插件配置',
+              value: syncState.uploadConfig.plugins,
+              onChanged: (val) => syncNotifier.updateUploadConfig(
+                syncState.uploadConfig.copyWith(plugins: val),
+              ),
+            ),
+            _SwitchTile(
+              title: '本地设置',
+              subtitle: '同步播放设置、歌词设置等偏好配置',
+              value: syncState.uploadConfig.settings,
+              onChanged: (val) => syncNotifier.updateUploadConfig(
+                syncState.uploadConfig.copyWith(settings: val),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // 手动同步数据卡片
+        _GlassCard(
+          children: [
+            _SyncActionTile(
+              title: '歌单同步',
+              state: syncState.playlistSync,
+              onUpload: syncNotifier.syncPlaylistsUpload,
+              onDownload: syncNotifier.syncPlaylistsDownload,
+            ),
+            _SyncActionTile(
+              title: '收藏同步',
+              state: syncState.favoritesSync,
+              onUpload: syncNotifier.syncFavoritesUpload,
+              onDownload: syncNotifier.syncFavoritesDownload,
+            ),
+            _SyncActionTile(
+              title: '插件同步',
+              state: syncState.pluginSync,
+              onUpload: syncNotifier.syncPluginsUpload,
+              onDownload: syncNotifier.syncPluginsDownload,
+            ),
+            _SyncActionTile(
+              title: '设置同步',
+              state: syncState.settingsSync,
+              onUpload: syncNotifier.syncSettingsUpload,
+              onDownload: syncNotifier.syncSettingsDownload,
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // 定时与自动同步及本地备份导入卡片
+        _GlassCard(
+          children: [
+            _SwitchTile(
+              title: '自动同步',
+              subtitle: '后台定时增量同步',
+              value: syncState.autoSyncConfig.enabled,
+              onChanged: (val) => syncNotifier.updateAutoSyncConfig(
+                syncState.autoSyncConfig.copyWith(enabled: val),
+              ),
+            ),
+            _GlassTile(
+              icon: Icons.file_upload_outlined,
+              title: '从本地备份恢复数据',
+              subtitle: '导入应用备份 JSON 文件的歌单与收藏',
+              onTap: () async {
+                final msg = await syncNotifier.importLocalBackupFile();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(msg)),
+                  );
+                }
+              },
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+            ),
           ],
         ),
 
@@ -1218,6 +1330,112 @@ class _GlassTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SyncActionTile extends StatelessWidget {
+  const _SyncActionTile({
+    required this.title,
+    required this.state,
+    required this.onUpload,
+    required this.onDownload,
+  });
+
+  final String title;
+  final SyncItemState state;
+  final VoidCallback onUpload;
+  final VoidCallback onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final lastTimeStr = state.lastTime != null
+        ? '${state.lastTime!.month.toString().padLeft(2, '0')}-${state.lastTime!.day.toString().padLeft(2, '0')} ${state.lastTime!.hour.toString().padLeft(2, '0')}:${state.lastTime!.minute.toString().padLeft(2, '0')}'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+              Row(
+                children: [
+                  FilledButton.tonal(
+                    onPressed: state.syncing ? null : onUpload,
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    child: const Text('上传', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: state.syncing ? null : onDownload,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    child: const Text('下载', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (state.syncing)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('正在同步...', style: TextStyle(fontSize: 12, color: Colors.blue)),
+            )
+          else if (state.lastSummary != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '上次：${state.lastSummary}${lastTimeStr != null ? ' · $lastTimeStr' : ''}',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.75)),
+              ),
+            ),
+          if (state.errors.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                state.errors.first,
+                style: TextStyle(fontSize: 12, color: scheme.error),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwitchTile extends StatelessWidget {
+  const _SwitchTile({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+      value: value,
+      onChanged: onChanged,
     );
   }
 }
