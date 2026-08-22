@@ -589,6 +589,21 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
+  /// 邮箱中省略格式化（用户名超过4个字符时，保留前2位和后2位，中间用***代替）
+  static String _formatEmail(String email) {
+    if (email.isEmpty) return '未绑定';
+    final parts = email.split('@');
+    if (parts.length != 2) return email;
+    final username = parts[0];
+    final domain = parts[1];
+    if (username.length <= 4) {
+      return email;
+    }
+    final start = username.substring(0, 2);
+    final end = username.substring(username.length - 2);
+    return '$start***$end@$domain';
+  }
+
   void _copy(BuildContext context, String text, String label) {
     if (text.isEmpty) return;
     Clipboard.setData(ClipboardData(text: text));
@@ -644,10 +659,10 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
             _GlassTile(
               icon: Icons.mail_outline_rounded,
               title: '绑定邮箱',
-              value: user.email.isEmpty ? '未绑定' : user.email,
+              value: _formatEmail(user.email),
               onTap: user.email.isEmpty
                   ? () => showBindEmailDialog(context, _notifier)
-                  : null,
+                  : () => _copy(context, user.email, '绑定邮箱'),
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
               _GlassTile(
@@ -1317,6 +1332,8 @@ class _GlassTile extends StatelessWidget {
               Flexible(
                 child: Text(
                   value!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.9),

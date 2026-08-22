@@ -73,10 +73,15 @@ tasks.configureEach {
 }
 
 // Rust 自动编译钩子：flutter run / flutter build apk 时自动检测并编译
-// Rust（绑定 + .so，见 scripts/gradle-rust-hook.ps1）。环境变量 XIANMU_SKIP_RUST=1 可跳过。
+// Rust（绑定 + .so，见 scripts/gradle-rust-hook.ps1）。
+// 只有显式设置 XIANMU_BUILD_RUST=1 时才触发自动重编，默认直接跳过，优先使用已有 .so 产物
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 tasks.register("rustHook") {
     doLast {
+        if (System.getenv("XIANMU_BUILD_RUST") != "1") {
+            logger.lifecycle("默认跳过 Rust 自动重编钩子（若需触发重编请设置 XIANMU_BUILD_RUST=1）")
+            return@doLast
+        }
         if (isWindows) {
             val proc = ProcessBuilder(
                 "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,7 +15,7 @@ import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../player/player_provider.dart' show QueueItem;
 import '../plugin/plugin_backup_import.dart';
-import '../plugins/plugin_provider.dart';
+import '../plugin/plugin_provider.dart';
 import '../rust/api.dart' as rust;
 
 /// 上传选项配置
@@ -196,24 +197,30 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
-  /// 导入本地备份文件（支持 .json 应用程序备份）
+  /// 导入本地备份文件（支持 BakaMusic / MusicFree / 洛雪及软件应用备份）
   Future<String> importLocalBackupFile() async {
     try {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['json'],
+        allowedExtensions: ['json', 'txt'],
       );
       if (res == null || res.files.isEmpty) return '未选择文件';
       final file = res.files.first;
-      final bytes = file.bytes;
       String jsonContent = '';
-      if (bytes != null) {
-        jsonContent = utf8.decode(bytes);
+      if (file.bytes != null && file.bytes!.isNotEmpty) {
+        jsonContent = utf8.decode(file.bytes!);
+      } else if (file.path != null && file.path!.isNotEmpty) {
+        final ioFile = File(file.path!);
+        if (await ioFile.exists()) {
+          jsonContent = await ioFile.readAsString();
+        }
       }
-      if (jsonContent.isEmpty) return '读取文件失败或文件为空';
+      if (jsonContent.trim().isEmpty) return '读取文件失败或文件为空';
 
       final Map<String, dynamic> data = jsonDecode(jsonContent);
       final schema = data['schema'] as String?;
+
+      // 1. 如果是原生全量备份格式
       if (schema == 'xianyu-music.app-backup') {
         final backupData = data['data'] as Map<String, dynamic>? ?? {};
         final favorites = backupData['favorites'] as List? ?? [];
@@ -235,7 +242,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
         }
         return '成功导入备份：包含 $importedFavs 首收藏曲目';
       }
-      return '不支持的备份文件格式';
+
+      // 2. 兼容导入 BakaMusic / MusicFree / 洛雪备份文件
+      final pluginSources = _ref.read(pluginManagerProvider).sources;
+      final prepared = preparePluginBackupImport(jsonContent, pluginSources);
+      final importedPlaylists = await _ref
+          .read(playlistManagerProvider.notifier)
+          .addFromBackup(prepared);
+
+      final versionNote = describeBackupVersion(prepared);
+      return '导入成功（$versionNote）：共新增 ${importedPlaylists.length} 个歌单，包含 ${prepared.importedSongCount} 首歌曲';
+    } on FormatException catch (e) {
+      return '文件格式不匹配或无法解析: ${e.message}';
     } catch (e) {
       AppLogger.instance.log('sync', '导入本地备份失败: $e');
       return '导入失败: $e';
@@ -477,12 +495,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       pluginSync: state.pluginSync.copyWith(syncing: true, errors: []),
     );
     try {
-      var plugins = _ref.read(pluginProvider).plugins;
-      if (plugins.isEmpty) {
-        await _ref.read(pluginProvider.notifier).load();
-        plugins = _ref.read(pluginProvider).plugins;
+      var sources = _ref.read(pluginManagerProvider).sources;
+      if (sources.isEmpty) {
+        await _ref.read(pluginManagerProvider.notifier).refresh();
+        sources = _ref.read(pluginManagerProvider).sources;
       }
-      if (plugins.isEmpty) {
+      if (sources.isEmpty) {
         state = state.copyWith(
           pluginSync: state.pluginSync.copyWith(
             syncing: false,
@@ -495,8 +513,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final dir = await _dataDir();
       final errors = <String>[];
       var uploaded = 0;
-      for (var i = 0; i < plugins.length; i++) {
-        final p = plugins[i];
+      for (var i = 0; i < sources.length; i++) {
+        final p = sources[i];
         final scriptPath = '$dir/plugins/${p.id}.js';
         try {
           final script = await rust.readPluginFile(path: scriptPath);
@@ -512,7 +530,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             'description': p.description,
             'enabled': p.enabled,
             'sources': p.sources,
-            'qualitys': p.qualitys,
             'filePath': scriptPath,
             'script': _encodeRevBase64(script),
             'scriptEncoded': true,
@@ -589,7 +606,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           errors.add('插件 "$name" 恢复失败');
         }
       }
-      await _ref.read(pluginProvider.notifier).load();
+      await _ref.read(pluginManagerProvider.notifier).refresh();
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,

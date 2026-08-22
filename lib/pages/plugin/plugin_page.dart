@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -598,6 +599,27 @@ class _BackupImportSheetState extends State<_BackupImportSheet> {
     super.dispose();
   }
 
+  Future<void> _pickLocalFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json', 'txt'],
+      );
+      if (result == null || result.files.isEmpty) return;
+      final path = result.files.single.path;
+      if (path == null) return;
+      final file = File(path);
+      final content = await file.readAsString();
+      widget.onImport(content);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取文件失败：$e')),
+      );
+    }
+  }
+
   Future<void> _importFromUrl() async {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty) return;
@@ -669,8 +691,13 @@ class _BackupImportSheetState extends State<_BackupImportSheet> {
             ),
             const SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                OutlinedButton.icon(
+                  onPressed: _pickLocalFile,
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: const Text('选择本地文件'),
+                ),
+                const Spacer(),
                 FilledButton.icon(
                   onPressed: _loading ? null : _importFromUrl,
                   icon: _loading

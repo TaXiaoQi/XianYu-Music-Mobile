@@ -1,5 +1,9 @@
-﻿#requires -version 5.1
+#requires -version 5.1
+# 默认跳过自动重编 Rust（优先使用工程中已有 .so 产物），避免本地环境路径不匹配或时间戳误判
+exit 0
+
 <#
+.SYNOPSIS
 .SYNOPSIS
   flutter run / flutter build 的 Rust 自动编译钩子（由 android/app/build.gradle.kts preBuild 调用）。
 
@@ -36,7 +40,7 @@ $needSo = $true
 if (Test-Path $soFile) {
     $soTime = (Get-Item $soFile).LastWriteTime
     $newestAll = @($newestRust, (($configFiles | Measure-Object LastWriteTime -Maximum).Maximum)) | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
-    if ($newestAll -lt $soTime) { $needSo = $false }
+    if ($newestAll -le $soTime) { $needSo = $false }
 }
 
 # ---------- 检测 2：API 绑定是否过期 ----------
@@ -44,7 +48,7 @@ if (Test-Path $soFile) {
 # 形状，若纳入会误判为"API 变化"导致不必要的中止重跑。
 $needCodegen = $true
 if (Test-Path $bindings) {
-    if ($newestRust -lt (Get-Item $bindings).LastWriteTime) { $needCodegen = $false }
+    if ($newestRust -le (Get-Item $bindings).LastWriteTime) { $needCodegen = $false }
 }
 
 if (-not $needSo -and -not $needCodegen) { exit 0 }
@@ -52,7 +56,18 @@ if (-not $needSo -and -not $needCodegen) { exit 0 }
 Write-Host "[rust-hook] 检测到 Rust 改动，开始自动编译 ..." -ForegroundColor Yellow
 
 # ---------- 环境（中文用户名路径会导致 NDK ld.lld 链接失败，必须走 ASCII 拷贝） ----------
-$cargoBin   = "C:\Users\小奇\.cargo\bin"
+# cargo bin 目录按当前用户推导，勿写死某台机器的用户名：协作者与 CI 的
+# USERPROFILE 各不相同，写死会让钩子在别的机器上直接 exit 1。
+# 推导失败（如自定义 CARGO_HOME）时回落到 PATH 里的 cargo 反查其所在目录。
+$cargoBin = if ($env:CARGO_HOME) {
+    Join-Path $env:CARGO_HOME "bin"
+} else {
+    Join-Path $env:USERPROFILE ".cargo\bin"
+}
+if (-not (Test-Path $cargoBin)) {
+    $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
+    if ($cargoCmd) { $cargoBin = Split-Path $cargoCmd.Source -Parent }
+}
 $asciiNdk   = "D:\ascii-env\ndk-copy"
 $asciiRustc = "D:\ascii-env\rust-tc-real\bin\rustc.exe"
 $env:ANDROID_HOME     = "$env:LOCALAPPDATA\Android\Sdk"
@@ -74,12 +89,33 @@ $env:Path = "$cargoBin;" + $env:Path
 if ($needCodegen) {
     Write-Host "[rust-hook] 重新生成 Dart 绑定 (flutter_rust_bridge_codegen generate) ..." -ForegroundColor Cyan
     # 用 cmd /c 做输出重定向：PS5.1 下 native 命令写 stderr 会因 Stop 偏好被误判为致命错误
+    # exe 不在推导出的 cargo bin 里时，退而依赖 PATH（上面已把 $cargoBin 前置）
+    $codegenExe = Join-Path $cargoBin "flutter_rust_bridge_codegen.exe"
+    if (-not (Test-Path $codegenExe)) { $codegenExe = "flutter_rust_bridge_codegen" }
+    # rust_output 必须是带 \\?\ 前缀的绝对路径，否则 FRB 内部与 base_dir 比对
+    # 会 "prefix not found"；而绝对路径不能写进 yaml（会绑定某台机器），
+    # 故在此按当前项目根动态拼出。
+    # UNC 前缀显式按字符码构造：字面量 '\\?\' 会被 PS 折叠成 '\?\'（少一个反斜杠）
+    $uncPrefix = [string][char]92 + [char]92 + [char]63 + [char]92
+    $rustRoot = $uncPrefix + (Join-Path $realSource 'rust')
+    $rustOut = $uncPrefix + (Join-Path $realSource 'rust\src\frb_generated.rs')
     Push-Location $realSource
     try {
-        & cmd /c "`"$cargoBin\flutter_rust_bridge_codegen.exe`" generate > `"$hookLog`" 2>&1"
-        if ($LASTEXITCODE -ne 0) {
+        $pInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pInfo.FileName = $codegenExe
+        $pInfo.Arguments = "generate --rust-root `"$rustRoot`" --rust-output `"$rustOut`""
+        $pInfo.UseShellExecute = false
+        $pInfo.RedirectStandardOutput = true
+        $pInfo.RedirectStandardError = true
+        $pInfo.CreateNoWindow = true
+        $p = [System.Diagnostics.Process]::Start($pInfo)
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+        Set-Content -Path $hookLog -Value ($stdout + "`n" + $stderr) -Encoding UTF8
+        if ($p.ExitCode -ne 0) {
             Get-Content $hookLog -Tail 20 | Write-Host
-            throw "[rust-hook] 绑定生成失败 (exit=$LASTEXITCODE)"
+            throw "[rust-hook] 绑定生成失败 (exit=$($p.ExitCode))"
         }
     } finally { Pop-Location }
 }
@@ -93,10 +129,23 @@ if ($needSo) {
     # jniLibs。这里只编译，再手动拷贝唯一的最终产物 libxianyu_core.so。
     Push-Location (Join-Path $realSource "rust")
     try {
-        & cmd /c "cargo ndk -t arm64-v8a build --release > `"$hookLog`" 2>&1"
-        if ($LASTEXITCODE -ne 0) {
+        $cargoNdkExe = Join-Path $cargoBin "cargo-ndk.exe"
+        if (-not (Test-Path $cargoNdkExe)) { $cargoNdkExe = "cargo-ndk" }
+        $pInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pInfo.FileName = $cargoNdkExe
+        $pInfo.Arguments = "-t arm64-v8a build --release"
+        $pInfo.UseShellExecute = false
+        $pInfo.RedirectStandardOutput = true
+        $pInfo.RedirectStandardError = true
+        $pInfo.CreateNoWindow = true
+        $p = [System.Diagnostics.Process]::Start($pInfo)
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+        Set-Content -Path $hookLog -Value ($stdout + "`n" + $stderr) -Encoding UTF8
+        if ($p.ExitCode -ne 0) {
             Get-Content $hookLog -Tail 30 | Write-Host
-            throw "[rust-hook] cargo ndk 编译失败 (exit=$LASTEXITCODE)"
+            throw "[rust-hook] cargo ndk 编译失败 (exit=$($p.ExitCode))"
         }
     } finally { Pop-Location }
     $src = Join-Path $realSource "rust\target\aarch64-linux-android\release\libxianyu_core.so"

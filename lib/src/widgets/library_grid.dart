@@ -139,7 +139,7 @@ class LibraryGrid extends ConsumerWidget {
           subtitle: '播放记录',
           icon: Icons.history,
           gradient: const [Color(0xFF3AC2A6), Color(0xFFFFB347)],
-          onTap: () => context.push('/home/recent'),
+          onTap: () => context.push('/recent'),
         ),
       ],
     );

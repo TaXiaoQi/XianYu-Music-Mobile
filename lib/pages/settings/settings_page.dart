@@ -17,147 +17,227 @@ class SettingsPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 150),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          150 + MediaQuery.of(context).padding.bottom,
+        ),
         children: [
-          _sectionHeader(context, '账号'),
           _AccountCard(auth: auth, onTap: () => context.push('/account')),
-          _sectionHeader(context, '外观'),
-          _tile(
-            context,
-            icon: Icons.palette,
-            title: '主题模式',
-            trailing: _themeLabel(settings),
-            onTap: () => _pickThemeMode(context, ref, settings),
+          
+          _sectionHeader(context, '外观与界面'),
+          _CardGroup(
+            children: [
+              _tile(
+                context,
+                icon: Icons.palette_outlined,
+                title: '主题模式',
+                trailing: _themeLabel(settings),
+                onTap: () => _pickThemeMode(context, ref, settings),
+              ),
+              _tile(
+                context,
+                icon: Icons.color_lens_outlined,
+                title: '主题色',
+                trailing: _ColorDot(color: Color(settings?.accentColor ?? 0xFFEC4141)),
+                onTap: () => _pickAccentColor(context, ref, settings),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.blur_on_outlined,
+                title: '晶莹液态玻璃 (Liquid Glass)',
+                value: settings?.liquidGlass ?? true,
+                onChanged: (v) => notifier.setLiquidGlass(v),
+              ),
+              _tile(
+                context,
+                icon: Icons.navigation_outlined,
+                title: '导航栏位置',
+                trailing: Text(switch (settings?.navBarPosition ?? NavBarPosition.bottom) {
+                  NavBarPosition.bottom => '底部导航',
+                  NavBarPosition.side => '侧边悬浮',
+                }),
+                onTap: () => _pickNavBarPosition(context, ref, settings),
+              ),
+              if ((settings?.navBarPosition ?? NavBarPosition.bottom) == NavBarPosition.bottom)
+                _switchTile(
+                  context,
+                  icon: Icons.subtitles_outlined,
+                  title: '悬浮式底栏',
+                  value: settings?.floatingNavBar ?? true,
+                  onChanged: (v) => notifier.setFloatingNavBar(v),
+                ),
+              if ((settings?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
+                _tile(
+                  context,
+                  icon: Icons.swap_vert_outlined,
+                  title: '侧边栏展开方向',
+                  trailing: Text(switch (settings?.sideBarExpandDirection ?? SideBarExpandDirection.down) {
+                    SideBarExpandDirection.down => '向下展开',
+                    SideBarExpandDirection.up => '向上展开',
+                  }),
+                  onTap: () => _pickSideBarExpandDirection(context, ref, settings),
+                ),
+            ],
           ),
-          _tile(
-            context,
-            icon: Icons.color_lens,
-            title: '主题色',
-            trailing: _ColorDot(color: Color(settings?.accentColor ?? 0xFFEC4141)),
-            onTap: () => _pickAccentColor(context, ref, settings),
+
+          _sectionHeader(context, '播放与音效'),
+          _CardGroup(
+            children: [
+              _tile(
+                context,
+                icon: Icons.volume_up_outlined,
+                title: '音量',
+                trailing: _volumeSlider(settings, notifier),
+              ),
+              _tile(
+                context,
+                icon: Icons.high_quality_outlined,
+                title: '在线默认音质',
+                trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
+                onTap: () => _pickQuality(context, ref, settings, isOnline: true),
+              ),
+            ],
           ),
-          _sectionHeader(context, '播放'),
-          _tile(context, icon: Icons.volume_up, title: '音量',
-              trailing: _volumeSlider(settings, notifier)),
-          _tile(
-            context,
-            icon: Icons.high_quality,
-            title: '在线默认音质',
-            trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, settings, isOnline: true),
+
+          _sectionHeader(context, '歌词显示'),
+          _CardGroup(
+            children: [
+              _switchTile(
+                context,
+                icon: Icons.translate_outlined,
+                title: '显示翻译',
+                value: settings?.showLyricsTranslation ?? true,
+                onChanged: (v) => notifier.setShowLyricsTranslation(v),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.spellcheck_outlined,
+                title: '逐字动效',
+                value: settings?.enableWordEffect ?? true,
+                onChanged: (v) => notifier.setEnableWordEffect(v),
+              ),
+            ],
           ),
-          _sectionHeader(context, '歌词'),
-          _switchTile(
-            context,
-            icon: Icons.translate,
-            title: '显示翻译',
-            value: settings?.showLyricsTranslation ?? true,
-            onChanged: (v) => notifier.setShowLyricsTranslation(v),
+
+          _sectionHeader(context, '音乐库管理'),
+          _CardGroup(
+            children: [
+              _tile(
+                context,
+                icon: Icons.timer_outlined,
+                title: '排除短音频（秒）',
+                trailing: Text('${settings?.libraryMinDurationSeconds ?? 0}'),
+                onTap: () => _pickMinDuration(context, ref, settings),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.verified_outlined,
+                title: '显示音质标识',
+                value: settings?.showQualityBadges ?? true,
+                onChanged: (v) => notifier.setShowQualityBadges(v),
+              ),
+            ],
           ),
-          _switchTile(
-            context,
-            icon: Icons.spellcheck,
-            title: '逐字动效',
-            value: settings?.enableWordEffect ?? true,
-            onChanged: (v) => notifier.setEnableWordEffect(v),
+
+          _sectionHeader(context, '下载设置'),
+          _CardGroup(
+            children: [
+              _tile(
+                context,
+                icon: Icons.folder_outlined,
+                title: '下载路径',
+                trailing: Text(
+                  settings?.downloadPath == null || settings!.downloadPath.isEmpty
+                      ? '默认'
+                      : '自定义',
+                ),
+                onTap: () => _pickDownloadPath(context, ref, settings),
+              ),
+              _tile(
+                context,
+                icon: Icons.download_outlined,
+                title: '下载音质',
+                trailing: Text(settings?.downloadQuality ?? '320k'),
+                onTap: () => _pickQuality(context, ref, settings, isOnline: false),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.lyrics_outlined,
+                title: '同时下载歌词',
+                value: settings?.downloadLyrics ?? true,
+                onChanged: (v) => notifier.setDownloadLyrics(v),
+              ),
+              _tile(
+                context,
+                icon: Icons.download_done_outlined,
+                title: '下载管理',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/download'),
+              ),
+            ],
           ),
-          _sectionHeader(context, '音乐库'),
-          _tile(
-            context,
-            icon: Icons.timer,
-            title: '排除短音频（秒）',
-            trailing: Text('${settings?.libraryMinDurationSeconds ?? 0}'),
-            onTap: () => _pickMinDuration(context, ref, settings),
+
+          _sectionHeader(context, '数据与扩展'),
+          _CardGroup(
+            children: [
+              _tile(
+                context,
+                icon: Icons.cloud_sync_outlined,
+                title: '同步与备份',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/sync'),
+              ),
+              _tile(
+                context,
+                icon: Icons.extension_outlined,
+                title: '插件扩展',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/plugin'),
+              ),
+              _tile(
+                context,
+                icon: Icons.queue_music_outlined,
+                title: '我的歌单',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/playlists'),
+              ),
+              _tile(
+                context,
+                icon: Icons.leaderboard_outlined,
+                title: '听歌排行榜',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/leaderboard'),
+              ),
+            ],
           ),
-          _switchTile(
-            context,
-            icon: Icons.verified,
-            title: '显示音质标识',
-            value: settings?.showQualityBadges ?? true,
-            onChanged: (v) => notifier.setShowQualityBadges(v),
-          ),
-          _sectionHeader(context, '下载'),
-          _tile(
-            context,
-            icon: Icons.folder,
-            title: '下载路径',
-            trailing: Text(
-              settings?.downloadPath == null || settings!.downloadPath.isEmpty
-                  ? '默认'
-                  : '自定义',
-            ),
-            onTap: () => _pickDownloadPath(context, ref, settings),
-          ),
-          _tile(
-            context,
-            icon: Icons.download,
-            title: '下载音质',
-            trailing: Text(settings?.downloadQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, settings, isOnline: false),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.lyrics,
-            title: '同时下载歌词',
-            value: settings?.downloadLyrics ?? true,
-            onChanged: (v) => notifier.setDownloadLyrics(v),
-          ),
-          _tile(
-            context,
-            icon: Icons.download_done_outlined,
-            title: '下载管理',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/download'),
-          ),
-          _sectionHeader(context, '其他'),
-          _switchTile(
-            context,
-            icon: Icons.screen_lock_rotation,
-            title: '保持屏幕常亮',
-            value: settings?.keepScreenOn ?? true,
-            onChanged: (v) => notifier.setKeepScreenOn(v),
-          ),
-          _tile(
-            context,
-            icon: Icons.leaderboard_outlined,
-            title: '听歌排行榜',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/leaderboard'),
-          ),
-          _tile(
-            context,
-            icon: Icons.cloud_sync_outlined,
-            title: '同步与备份',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/sync'),
-          ),
-          _tile(
-            context,
-            icon: Icons.extension_outlined,
-            title: '插件',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/plugin'),
-          ),
-          _tile(
-            context,
-            icon: Icons.queue_music_outlined,
-            title: '我的歌单',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/playlists'),
-          ),
-          _tile(
-            context,
-            icon: Icons.feedback_outlined,
-            title: '意见反馈',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/feedback'),
-          ),
-          _tile(
-            context,
-            icon: Icons.info_outline,
-            title: '关于',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/about'),
+
+          _sectionHeader(context, '关于与系统'),
+          _CardGroup(
+            children: [
+              _switchTile(
+                context,
+                icon: Icons.screen_lock_rotation_outlined,
+                title: '保持屏幕常亮',
+                value: settings?.keepScreenOn ?? true,
+                onChanged: (v) => notifier.setKeepScreenOn(v),
+              ),
+              _tile(
+                context,
+                icon: Icons.feedback_outlined,
+                title: '意见反馈',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/feedback'),
+              ),
+              _tile(
+                context,
+                icon: Icons.info_outline,
+                title: '关于',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/about'),
+              ),
+            ],
           ),
         ],
       ),
@@ -207,6 +287,48 @@ class SettingsPage extends ConsumerWidget {
       value: value,
       onChanged: onChanged,
     );
+  }
+
+  Future<void> _pickNavBarPosition(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.navBarPosition ?? NavBarPosition.bottom;
+    final choice = await showModalBottomSheet<_Choice>(
+      context: context,
+      builder: (_) => _choiceSheet(context, const [
+        _Choice('底部导航', NavBarPosition.bottom),
+        _Choice('侧边悬浮', NavBarPosition.side),
+      ], cur, labelOf: (v) => switch (v) {
+        NavBarPosition.bottom => '底部导航',
+        NavBarPosition.side => '侧边悬浮',
+        _ => '底部导航',
+      }),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setNavBarPosition(choice.value as NavBarPosition);
+    }
+  }
+
+  Future<void> _pickSideBarExpandDirection(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.sideBarExpandDirection ?? SideBarExpandDirection.down;
+    final choice = await showModalBottomSheet<_Choice>(
+      context: context,
+      builder: (_) => _choiceSheet(context, const [
+        _Choice('向下展开', SideBarExpandDirection.down),
+        _Choice('向上展开', SideBarExpandDirection.up),
+      ], cur, labelOf: (v) => switch (v) {
+        SideBarExpandDirection.down => '向下展开',
+        SideBarExpandDirection.up => '向上展开',
+        _ => '向下展开',
+      }),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setSideBarExpandDirection(choice.value as SideBarExpandDirection);
+    }
   }
 
   Widget _themeLabel(AppSettings? s) {
@@ -259,8 +381,13 @@ class SettingsPage extends ConsumerWidget {
     ];
     final choice = await showModalBottomSheet<int>(
       context: context,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + MediaQuery.of(ctx).padding.bottom + 80, // 给全局底部导航栏和安全区留出空间
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -415,22 +542,60 @@ class SettingsPage extends ConsumerWidget {
 
   Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final c in choices)
-            ListTile(
-              title: Text(labelOf(c.value)),
-              trailing: c.value == cur
-                  ? Icon(Icons.check,
-                      color: Theme.of(context).colorScheme.primary)
-                  : null,
-              selected: c.value == cur,
-              onTap: () => Navigator.pop(context, c),
-            ),
-        ],
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom + 80,
       ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final c in choices)
+              ListTile(
+                title: Text(labelOf(c.value)),
+                trailing: c.value == cur
+                    ? Icon(Icons.check,
+                        color: Theme.of(context).colorScheme.primary)
+                    : null,
+                selected: c.value == cur,
+                onTap: () => Navigator.pop(context, c),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 分组圆角卡片包裹容器
+class _CardGroup extends StatelessWidget {
+  const _CardGroup({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final items = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      items.add(children[i]);
+      if (i != children.length - 1) {
+        items.add(
+          Divider(
+            height: 1,
+            indent: 52,
+            endIndent: 16,
+            thickness: 0.5,
+            color: scheme.onSurface.withValues(alpha: 0.08),
+          ),
+        );
+      }
+    }
+
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: items),
     );
   }
 }
@@ -459,69 +624,67 @@ class _AccountCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final user = auth.user;
     final loggedIn = auth.isLoggedIn && user != null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Material(
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                // 头像
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.primary,
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: loggedIn
-                      ? (user.avatar != null && user.avatar!.isNotEmpty
-                          ? UserAvatarImage(
-                              avatar: user.avatar,
-                              fallback:
-                                  _fallback(scheme, user.nickname),
-                            )
-                          : _fallback(scheme, user.nickname))
-                      : Icon(Icons.person, color: scheme.onPrimary, size: 26),
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              // 头像
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: scheme.primary,
                 ),
-                const SizedBox(width: 14),
-                // 昵称 + 副标题
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        loggedIn
-                            ? (user.nickname.isEmpty
-                                ? '未命名用户'
-                                : user.nickname)
-                            : '未登录',
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        loggedIn
-                            ? '点击管理账号与安全'
-                            : '登录后同步你的音乐与设置',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                clipBehavior: Clip.antiAlias,
+                child: loggedIn
+                    ? (user.avatar != null && user.avatar!.isNotEmpty
+                        ? UserAvatarImage(
+                            avatar: user.avatar,
+                            fallback:
+                                _fallback(scheme, user.nickname),
+                          )
+                        : _fallback(scheme, user.nickname))
+                    : Icon(Icons.person, color: scheme.onPrimary, size: 26),
+              ),
+              const SizedBox(width: 14),
+              // 昵称 + 副标题
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      loggedIn
+                          ? (user.nickname.isEmpty
+                              ? '未命名用户'
+                              : user.nickname)
+                          : '未登录',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      loggedIn
+                          ? '点击管理账号与安全'
+                          : '登录后同步你的音乐与设置',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                Icon(Icons.chevron_right, color: scheme.outline),
-              ],
-            ),
+              ),
+              Icon(Icons.chevron_right, color: scheme.outline),
+            ],
           ),
         ),
       ),

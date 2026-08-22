@@ -17,15 +17,22 @@ import '../../pages/sync/sync_page.dart';
 import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../../pages/download/download_page.dart';
+import 'animated_branch_container.dart';
 import 'shell.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
 final appRouter = GoRouter(
   initialLocation: '/home',
   routes: [
-    StatefulShellRoute.indexedStack(
+    StatefulShellRoute(
       builder: (context, state, navigationShell) {
         return AppShell(navigationShell: navigationShell);
+      },
+      navigatorContainerBuilder: (context, navigationShell, children) {
+        return AnimatedBranchContainer(
+          currentIndex: navigationShell.currentIndex,
+          children: children,
+        );
       },
       branches: [
         StatefulShellBranch(routes: [
@@ -48,17 +55,16 @@ final appRouter = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-            path: '/search',
-            builder: (context, state) => const SearchPage(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsPage(),
           ),
         ]),
       ],
+    ),
+    // 搜索页（从主页搜索栏进入）。
+    GoRoute(
+      path: '/search',
+      builder: (context, state) => const SearchPage(),
     ),
     // 播放页为全屏覆盖，不占底部导航。
     GoRoute(
@@ -129,6 +135,5 @@ const bottomNavItems = [
   BottomNavItem('主界面', Icons.home, '/home'),
   BottomNavItem('音乐库', Icons.library_music, '/library'),
   BottomNavItem('音效', Icons.graphic_eq, '/effects'),
-  BottomNavItem('搜索', Icons.search, '/search'),
   BottomNavItem('设置', Icons.settings, '/settings'),
 ];

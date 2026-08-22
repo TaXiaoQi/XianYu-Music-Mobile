@@ -14,6 +14,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -27,7 +28,7 @@ class SearchPage extends ConsumerStatefulWidget {
 }
 
 class _SearchPageState extends ConsumerState<SearchPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   final TextEditingController _ctrl = TextEditingController();
   late final TabController _tab;
   List<Song> _results = const [];
