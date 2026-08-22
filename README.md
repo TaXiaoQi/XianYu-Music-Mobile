@@ -85,15 +85,17 @@
   flutter run
   ```
 
-4. 构建 Release 安装包：
+4. 构建 Release 正式安装包：
 
   ```bash
   flutter build apk --release
   ```
 
+  产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，已含 arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）。
+
 > **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
 >
-> **正式发布**：若项目路径含中文（如 `C:\Users\小奇\...`），请改用一键脚本 `powershell scripts\build-release.ps1`（自动同步到 ASCII 路径构建，附带 arm64 单架构 + AOT 混淆 + 符号归档，产物在 `releases\` 下，约 17MB）。
+> **一键发布脚本**：`powershell scripts\build-release.ps1` 额外完成版本号同步（`version.ts` → `pubspec`）与混淆符号归档（`releases\symbols\<版本>\`，还原线上崩溃堆栈用），适合正式发版。
 
 ---
 

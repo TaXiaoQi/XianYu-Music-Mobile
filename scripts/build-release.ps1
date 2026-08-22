@@ -86,6 +86,15 @@ if (-not $SkipBuild) {
     robocopy $realSource $buildRoot /E @excludeArgs /NFL /NDL /NJH /NP /R:1 /W:1 | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "[build-release] robocopy 同步失败 (exit=$LASTEXITCODE)" }
 
+    # 移除源目录为「裸 flutter build 自动正式化」注入的 gen_snapshot 选项：
+    # 本脚本显式传 --obfuscate --split-debug-info（带符号归档），避免与注入的
+    # --strip/--save-debug-info 冲突导致符号文件缺失或路径错乱
+    $gp = Join-Path $buildRoot "android\gradle.properties"
+    if (Test-Path $gp) {
+        (Get-Content $gp) | Where-Object { $_ -notmatch "^extra-gen-snapshot-options=" } |
+            Set-Content $gp -Encoding Ascii
+    }
+
     # ---------- 2. 构建 release ----------
     # --obfuscate --split-debug-info：Dart AOT 混淆，libapp.so 缩小且防逆向；
     # 符号文件输出到 ASCII 构建目录（供 releases\symbols\<version>\ 还原线上堆栈）
