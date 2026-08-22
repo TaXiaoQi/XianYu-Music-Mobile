@@ -87,15 +87,18 @@
 
 4. 构建 Release 正式安装包：
 
-  ```bash
-  flutter build apk --release
-  ```
+   ```bash
+   flutter build apk --release
+   ```
 
-  产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，已含 arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）。
+   一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
+   - **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
+   - 产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）
+   - 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
 
 > **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
 >
-> **一键发布脚本**：`powershell scripts\build-release.ps1` 额外完成版本号同步（`version.ts` → `pubspec`）与混淆符号归档（`releases\symbols\<版本>\`，还原线上崩溃堆栈用），适合正式发版。
+> 版本号同步仅在 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
 
 ---
 

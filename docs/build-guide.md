@@ -54,16 +54,18 @@ flutter pub get
 ## 步骤 5：Release 构建
 
 ```powershell
-./scripts/build-release.ps1
-# 产物：releases/弦予音乐_<version>_arm64.apk（约 14MB，按 ABI 拆包）
+flutter build apk --release
 ```
 
-脚本逻辑：
+一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
 
-1. robocopy 源码到 `D:\build\XianYuMusicSrc`（ASCII 路径，规避 `gen_snapshot` 对非 ASCII 路径的兼容问题）
-2. 在该目录执行 `flutter build apk --release --split-per-abi`（Rust 部分同样由 rustHook 自动处理）
-3. 将 arm64 单架构 APK 复制到 `releases/`
+1. 版本号自动同步：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
+2. Rust 由 rustHook 自动编译（见上表）
+3. APK 自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 + 混淆 + R8）
+4. 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（还原线上崩溃堆栈用）
+
+> 版本同步仅 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
 
 ## 一句话总结
 
-IDEA 里 **直接 Run 就行，Rust 全自动**；Release 走 `./scripts/build-release.ps1`。
+IDEA 里 **直接 Run 就行，Rust 全自动**；Release 直接 `flutter build apk --release`，发版动作全自动。
