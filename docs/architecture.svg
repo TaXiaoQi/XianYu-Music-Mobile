@@ -1,0 +1,132 @@
+<svg viewBox="0 0 720 742" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    :root {
+      color-scheme: light;
+      --surface: #F7F7F8;
+      --text: #171717;
+      --text-muted: #52525B;
+      --border: rgba(23, 23, 23, 0.12);
+      --brand: #4B3FE3;
+      --brand-soft: #F2F7FF;
+      --brand-text: #1A1759;
+      --font-sans: "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --text-caption: 12px/18px;
+      --text-body: 14px/20px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --surface: #171717;
+        --text: #E5E5E5;
+        --text-muted: #A1A1AA;
+        --border: rgba(229, 229, 229, 0.12);
+        --brand: #6054F1;
+        --brand-soft: #1A1759;
+        --brand-text: #CFD8FF;
+      }
+    }
+    .th { fill: var(--text); font: var(--weight-medium) var(--text-body) var(--font-sans); }
+    .ts { fill: var(--text-muted); font: var(--weight-regular) var(--text-caption) var(--font-sans); }
+    .arr { stroke: var(--text-muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .boundary { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    g.c-neutral > rect, rect.c-neutral { fill: var(--surface); stroke: var(--border); }
+    g.c-brand > rect, rect.c-brand { fill: var(--brand-soft); stroke: var(--brand); }
+    .c-brand > .th { fill: var(--brand-text); }
+    .c-brand > .ts { fill: var(--brand); }
+    .sw-brand { fill: var(--brand); }
+    .sw-neutral { fill: var(--surface); stroke: var(--border); }
+  </style>
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="var(--text-muted)"/>
+    </marker>
+  </defs>
+
+  <path class="arr" marker-end="url(#arr)" d="M360 190 L360 208"/>
+  <path class="arr" marker-end="url(#arr)" d="M360 266 L360 284"/>
+  <path class="arr" marker-end="url(#arr)" d="M360 342 L360 360"/>
+  <path class="arr" marker-end="url(#arr)" d="M360 572 L360 590"/>
+
+  <rect class="boundary" x="40" y="40" width="640" height="150" rx="12"/>
+  <text x="56" y="64" class="th">Flutter 应用层</text>
+  <g class="c-neutral">
+    <rect x="56" y="84" width="190" height="76" rx="8"/>
+    <text x="151" y="110" text-anchor="middle" class="th">页面层</text>
+    <text x="151" y="132" text-anchor="middle" class="ts">16 个页面</text>
+    <text x="151" y="150" text-anchor="middle" class="ts">首页·曲库·播放·搜索</text>
+  </g>
+  <g class="c-neutral">
+    <rect x="266" y="84" width="190" height="76" rx="8"/>
+    <text x="361" y="110" text-anchor="middle" class="th">导航外壳</text>
+    <text x="361" y="132" text-anchor="middle" class="ts">GoRouter Shell</text>
+    <text x="361" y="150" text-anchor="middle" class="ts">迷你播放条</text>
+  </g>
+  <g class="c-neutral">
+    <rect x="476" y="84" width="190" height="76" rx="8"/>
+    <text x="571" y="110" text-anchor="middle" class="th">液态玻璃 UI</text>
+    <text x="571" y="132" text-anchor="middle" class="ts">liquid_glass_widgets</text>
+    <text x="571" y="150" text-anchor="middle" class="ts">毛玻璃·悬浮底栏</text>
+  </g>
+
+  <g class="c-neutral">
+    <rect x="40" y="210" width="640" height="56" rx="8"/>
+    <text x="56" y="232" class="th">Riverpod 状态管理</text>
+    <text x="56" y="252" class="ts">player · library · settings · auth · online · plugin · favorites · recent</text>
+  </g>
+
+  <g class="c-neutral">
+    <rect x="40" y="286" width="640" height="56" rx="8"/>
+    <text x="56" y="308" class="th">flutter_rust_bridge</text>
+    <text x="56" y="328" class="ts">复合类型 JSON 交换 · 有状态对象 opaque 句柄</text>
+  </g>
+
+  <rect class="boundary" x="40" y="362" width="640" height="210" rx="12"/>
+  <text x="56" y="386" class="th">Rust 核心 xianyu_core</text>
+  <g class="c-neutral">
+    <rect x="56" y="406" width="140" height="100" rx="8"/>
+    <text x="126" y="434" text-anchor="middle" class="th">音乐搜索/歌词</text>
+    <text x="126" y="456" text-anchor="middle" class="ts">LX 5 音源</text>
+    <text x="126" y="474" text-anchor="middle" class="ts">直链解析</text>
+    <text x="126" y="492" text-anchor="middle" class="ts">多格式歌词</text>
+  </g>
+  <g class="c-brand">
+    <rect x="212" y="406" width="140" height="100" rx="8"/>
+    <text x="282" y="434" text-anchor="middle" class="th">播放器/音效</text>
+    <text x="282" y="456" text-anchor="middle" class="ts">会话持久化</text>
+    <text x="282" y="474" text-anchor="middle" class="ts">QMC2 · 均衡器</text>
+    <text x="282" y="492" text-anchor="middle" class="ts">音效 DSP · 频谱</text>
+  </g>
+  <g class="c-neutral">
+    <rect x="368" y="406" width="140" height="100" rx="8"/>
+    <text x="438" y="434" text-anchor="middle" class="th">曲库/统计</text>
+    <text x="438" y="456" text-anchor="middle" class="ts">增量扫描</text>
+    <text x="438" y="474" text-anchor="middle" class="ts">SQLite 存储</text>
+    <text x="438" y="492" text-anchor="middle" class="ts">听歌统计</text>
+  </g>
+  <g class="c-neutral">
+    <rect x="524" y="406" width="140" height="100" rx="8"/>
+    <text x="594" y="434" text-anchor="middle" class="th">插件引擎</text>
+    <text x="594" y="456" text-anchor="middle" class="ts">QuickJS 沙箱</text>
+    <text x="594" y="474" text-anchor="middle" class="ts">LX / MusicFree</text>
+    <text x="594" y="492" text-anchor="middle" class="ts">插件搜索</text>
+  </g>
+  <rect class="sw-brand" x="56" y="534" width="10" height="10" rx="2"/>
+  <text x="72" y="543" class="ts">核心播放引擎</text>
+  <rect class="sw-neutral" x="180" y="534" width="10" height="10" rx="2"/>
+  <text x="196" y="543" class="ts">功能模块</text>
+
+  <rect class="boundary" x="40" y="592" width="640" height="110" rx="12"/>
+  <text x="56" y="616" class="th">平台层</text>
+  <g class="c-neutral">
+    <rect x="56" y="636" width="300" height="52" rx="8"/>
+    <text x="206" y="658" text-anchor="middle" class="th">Android</text>
+    <text x="206" y="678" text-anchor="middle" class="ts">AAudio USB 独占输出</text>
+  </g>
+  <g class="c-neutral">
+    <rect x="376" y="636" width="300" height="52" rx="8"/>
+    <text x="526" y="658" text-anchor="middle" class="th">Apple</text>
+    <text x="526" y="678" text-anchor="middle" class="ts">iOS / macOS · 系统控制中心</text>
+  </g>
+</svg>

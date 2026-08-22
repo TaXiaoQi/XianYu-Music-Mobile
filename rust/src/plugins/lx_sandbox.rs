@@ -545,7 +545,6 @@ fn js_to_json(value: &JsValue, ctx: &mut Context) -> Json {
         .get(js_string!("JSON"), ctx)
         .and_then(|v| {
             v.as_object()
-                .cloned()
                 .ok_or_else(|| JsError::from_opaque(JsValue::undefined()))
         })
     else {

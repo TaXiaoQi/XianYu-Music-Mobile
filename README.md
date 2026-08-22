@@ -75,21 +75,15 @@ XianYu-Music-Mobile/
 
 ## 架构设计
 
-```
-┌──────────────────────────────────────┐
-│  Flutter UI（Dart）                  │  状态：Riverpod · 路由：go_router
-├──────────────────────────────────────┤
-│  flutter_rust_bridge（自动生成绑定） │
-├──────────────────────────────────────┤
-│  Rust 核心 xianyu_core               │  纯逻辑，无 Tauri 依赖
-│  ┌────────┬──────────┬─────────────┐ │
-│  │ 解码   │ DSP 音效 │ USB 独占播放│ │
-│  │ 扫描   │ 歌词/QMC │ WebDAV/DB   │ │
-│  └────────┴──────────┴─────────────┘ │
-├──────────────────────────────────────┤
-│  平台音频后端                         │  Android: AAudio · 其他: rodio/just_audio
-└──────────────────────────────────────┘
-```
+![架构分层图](docs/architecture.svg)
+
+| 层 | 职责 |
+|----|------|
+| Flutter 应用层 | 16 个页面 + GoRouter 导航外壳（底部/侧边导航、迷你播放条）+ 液态玻璃 UI |
+| Riverpod 状态管理 | `playerProvider` / `libraryProvider` / `settingsProvider` / `authProvider` / `onlineSearchProvider` / `pluginProvider` 等 |
+| flutter_rust_bridge | 复合类型 JSON 交换；有状态对象（DSP/EQ/响度）以 opaque 句柄传递 |
+| Rust 核心 xianyu_core | 音乐搜索/歌词、播放器/音效 DSP、曲库/统计、插件引擎（QuickJS 沙箱）、WebDAV、SQLite |
+| 平台层 | Android（AAudio USB 独占）/ iOS / macOS / Windows / Linux |
 
 Rust 核心从桌面端抽取为纯逻辑库，同一套算法在桌面端（Tauri + Vue）、移动端（Flutter）、服务端复用，仅音频 I/O 与窗口材质按平台 `#[cfg]` 分流。
 
