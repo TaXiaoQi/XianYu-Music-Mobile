@@ -261,8 +261,7 @@ pub async fn resolve_lx_music_url_with_plugins(
 
 /// 调用插件解析直链。
 ///
-/// 插件沙箱含 boa `Context`（非 Send），必须在阻塞线程内完整使用，
-/// 不能跨 await 持有，故整段放进 `spawn_blocking`。
+/// 脚本在 QuickJS 引擎（[`crate::plugin_host`]）中执行，全程异步。
 async fn resolve_via_plugins(
     data_dir: &str,
     song_info: &LxUrlSongInfo,
@@ -284,16 +283,9 @@ async fn resolve_via_plugins(
     })
     .to_string();
 
-    let dir = data_dir.to_string();
-    let source = source.to_string();
-    let quality = quality.to_string();
-
-    tokio::task::spawn_blocking(move || {
-        crate::plugins::manager::resolve_url_with_plugins(&dir, &source, &info_json, &quality).ok()
-    })
-    .await
-    .ok()
-    .flatten()
+    crate::plugins::manager::resolve_url_with_plugins(data_dir, source, &info_json, quality)
+        .await
+        .ok()
 }
 
 /// 通过公共 API 代理解析音频 URL

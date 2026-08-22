@@ -42,7 +42,6 @@ uuid = { version = "1", features = ["v4"] }
 # 会让 arm64 .so 白涨约 5-8MB（封面只需 jpeg/png/webp）
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 rquickjs = { version = "0.12", features = ["futures", "parallel"] }
-boa_engine = "0.21"
 getrandom = "0.3"
 url = "2"
 

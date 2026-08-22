@@ -1,6 +1,7 @@
 //! 插件管理端到端验证：安装 → 列表 → 解析直链 → 停用 → 卸载。
 //!
-//! 运行：`cargo run --example plugin_smoke`
+//! 运行：`cargo run --example plugin_smoke -- <音源脚本路径>`
+//! （缺省读 `examples/fixtures/lx_sample.js`，该文件为本地真实脚本，不入库）
 //!
 //! 在临时目录内操作，不影响真实应用数据。
 
@@ -8,8 +9,15 @@ use std::fs;
 
 use xianyu_core::plugins::manager;
 
-fn main() {
-    let script = include_str!("fixtures/lx_sample.js");
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    let default_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/fixtures/lx_sample.js"
+    );
+    let script_path = std::env::args().nth(1).unwrap_or_else(|| default_path.to_string());
+    let script = fs::read_to_string(&script_path)
+        .unwrap_or_else(|e| panic!("读取音源脚本失败 {script_path}: {e}"));
 
     // 用系统临时目录，避免污染工作区。
     let data_dir = std::env::temp_dir().join("xianyu_plugin_smoke");
@@ -17,8 +25,8 @@ fn main() {
     fs::create_dir_all(&data_dir).expect("创建临时目录失败");
     let dir = data_dir.to_string_lossy().to_string();
 
-    println!("=== 1. 安装插件 ===");
-    let info = match manager::install_plugin(&dir, script, "smoke-test") {
+    println!("=== 1. 安装插件（QuickJS 试运行）===");
+    let info = match manager::install_plugin(&dir, &script, "smoke-test").await {
         Ok(i) => {
             println!("  [OK] id={} name={} version={}", i.id, i.name, i.version);
             println!("       音源: {:?}", i.sources);
@@ -45,7 +53,7 @@ fn main() {
         let song = format!(
             r#"{{"songmid":"{id}","hash":null,"albumId":null,"albumMid":null,"copyrightId":null}}"#
         );
-        match manager::resolve_url_with_plugins(&dir, source, &song, "320k") {
+        match manager::resolve_url_with_plugins(&dir, source, &song, "320k").await {
             Ok(url) => println!("  [OK]   {source} -> {}", &url[..url.len().min(64)]),
             Err(e) => println!("  [FAIL] {source} -> {e}"),
         }
@@ -55,7 +63,7 @@ fn main() {
     manager::set_plugin_enabled(&dir, &info.id, false).expect("停用失败");
     println!("  kw 可用: {}", manager::has_enabled_plugin_for(&dir, "kw"));
     let song = r#"{"songmid":"228908","hash":null}"#;
-    match manager::resolve_url_with_plugins(&dir, "kw", song, "320k") {
+    match manager::resolve_url_with_plugins(&dir, "kw", song, "320k").await {
         Ok(_) => println!("  [FAIL] 停用后仍解析成功"),
         Err(e) => println!("  [OK] 已拒绝: {e}"),
     }

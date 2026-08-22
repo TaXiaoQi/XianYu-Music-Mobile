@@ -180,19 +180,15 @@ pub fn plugin_list(data_dir: String) -> Result<String, String> {
 
 /// 从脚本文本安装音源插件。
 ///
-/// 安装前会在沙箱中试运行，脚本无效时直接返回错误。
+/// 安装前会在 QuickJS 引擎中试运行，脚本无效时直接返回错误。
 /// 返回安装后的 `PluginInfo` JSON。
 pub async fn plugin_install_script(
     data_dir: String,
     script: String,
     origin: String,
 ) -> Result<String, String> {
-    // 沙箱含 boa Context（非 Send），需在阻塞线程内完成。
-    let info = tokio::task::spawn_blocking(move || {
-        crate::plugins::manager::install_plugin(&data_dir, &script, &origin)
-    })
-    .await
-    .map_err(|e| format!("安装任务失败: {e}"))??;
+    let info =
+        crate::plugins::manager::install_plugin(&data_dir, &script, &origin).await?;
     serde_json::to_string(&info).map_err(|e| e.to_string())
 }
 

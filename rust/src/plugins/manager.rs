@@ -3,12 +3,11 @@
 //! 插件脚本保存在 `{data_dir}/plugins/{id}.js`，元信息索引保存在
 //! `{data_dir}/plugins/index.json`，与桌面端的插件目录职责一致。
 //!
-//! # 沙箱生命周期
+//! # 脚本执行引擎
 //!
-//! [`super::lx_sandbox::LxSandbox`] 内含 boa 的 `Context`，不是 `Send`，
-//! 无法跨 `await` 持有或放进全局缓存。因此这里只缓存脚本文本，
-//! 解析直链时在阻塞线程内临时构建沙箱、用完即弃。
-//! 单次直链解析的脚本初始化开销约在毫秒级，相对网络请求可忽略。
+//! 脚本试运行与直链解析统一走 [`crate::plugin_host`]（QuickJS，
+//! 与桌面端同架构）。每次操作用唯一实例 id 装载、用完即卸载，
+//! 避免并发解析同一插件时互相销毁实例。
 
 use std::collections::HashMap;
 use std::fs;
@@ -17,7 +16,51 @@ use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
-use super::lx_sandbox::{parse_script_meta, LxSandbox};
+/// 脚本元信息（取自脚本头部注释）。
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ScriptMeta {
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub description: String,
+    pub homepage: String,
+}
+
+/// 从脚本头部注释解析元信息。
+///
+/// 形如：
+/// ```text
+/// /*!
+///  * @name ikun音源
+///  * @version v26
+///  * @author ikunshare
+///  */
+/// ```
+pub fn parse_script_meta(script: &str) -> ScriptMeta {
+    let mut meta = ScriptMeta::default();
+    // 只扫描前若干行，避免在混淆正文里误匹配。
+    for line in script.lines().take(40) {
+        let line = line.trim().trim_start_matches('*').trim();
+        let Some(rest) = line.strip_prefix('@') else {
+            continue;
+        };
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let key = parts.next().unwrap_or("").to_ascii_lowercase();
+        let value = parts.next().unwrap_or("").trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        match key.as_str() {
+            "name" => meta.name = value,
+            "version" => meta.version = value,
+            "author" => meta.author = value,
+            "description" => meta.description = value,
+            "homepage" => meta.homepage = value,
+            _ => {}
+        }
+    }
+    meta
+}
 
 /// 已安装插件的元信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,27 +172,85 @@ pub fn list_plugins(data_dir: &str) -> Vec<PluginInfo> {
     load_index(data_dir).plugins
 }
 
+/// 生成一次性引擎实例 id：并发解析同一插件时互不干扰。
+fn probe_instance_id() -> String {
+    format!("lx-probe-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// 在 QuickJS 引擎中试运行脚本，返回脚本上报的音源能力
+/// `{ 音源标识 → 音质档位列表 }`。
+async fn probe_sources(data_dir: &str, script: &str) -> Result<HashMap<String, Vec<String>>, String> {
+    let engine = crate::plugin_host::global_engine(data_dir);
+    let instance = probe_instance_id();
+
+    let meta = parse_script_meta(script);
+    let script_info = serde_json::json!({
+        "name": meta.name,
+        "version": meta.version,
+        "author": meta.author,
+        "description": meta.description,
+        "homepage": meta.homepage,
+    });
+
+    let result = engine
+        .load_lx(&instance, script, &script_info.to_string())
+        .await;
+    let sources = match result {
+        r if r.ok => sources_from_init_info(r.metadata.as_ref()),
+        r => Err(r.error.unwrap_or_else(|| "脚本初始化失败".to_string())),
+    };
+    engine.unload(&instance).await;
+    sources
+}
+
+/// 从 `load_lx` 返回的 initInfo 提取音源能力。
+fn sources_from_init_info(
+    metadata: Option<&serde_json::Value>,
+) -> Result<HashMap<String, Vec<String>>, String> {
+    let Some(meta) = metadata else {
+        return Err("脚本未上报音源信息".to_string());
+    };
+    let Some(sources) = meta.get("sources").and_then(|s| s.as_object()) else {
+        return Err("脚本未上报任何可用音源".to_string());
+    };
+
+    let mut out = HashMap::new();
+    for (key, val) in sources {
+        let qualitys = val
+            .get("qualitys")
+            .and_then(|q| q.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.insert(key.clone(), qualitys);
+    }
+    if out.is_empty() {
+        return Err("脚本未上报任何可用音源".to_string());
+    }
+    Ok(out)
+}
+
 /// 安装插件脚本。
 ///
-/// 会先在沙箱中试运行，确认脚本能正常上报音源，再落盘。
+/// 会先在引擎中试运行，确认脚本能正常上报音源，再落盘。
 /// 这样可以在导入阶段就拦掉无效脚本，而不是等到播放时才失败。
-pub fn install_plugin(data_dir: &str, script: &str, origin: &str) -> Result<PluginInfo, String> {
+pub async fn install_plugin(
+    data_dir: &str,
+    script: &str,
+    origin: &str,
+) -> Result<PluginInfo, String> {
     if script.trim().is_empty() {
         return Err("脚本内容为空".to_string());
     }
 
     // 试运行：验证脚本有效性并取得音源能力。
-    let sandbox = LxSandbox::load(script)?;
-    let meta = sandbox.meta().clone();
-    let caps = sandbox.sources().clone();
-
-    let fallback_meta = parse_script_meta(script);
+    let caps = probe_sources(data_dir, script).await?;
+    let meta = parse_script_meta(script);
     let name = if meta.name.is_empty() {
-        if fallback_meta.name.is_empty() {
-            "未命名音源".to_string()
-        } else {
-            fallback_meta.name
-        }
+        "未命名音源".to_string()
     } else {
         meta.name
     };
@@ -157,10 +258,6 @@ pub fn install_plugin(data_dir: &str, script: &str, origin: &str) -> Result<Plug
     let id = derive_id(&name, &meta.author);
     let mut sources: Vec<String> = caps.keys().cloned().collect();
     sources.sort();
-    let qualitys: HashMap<String, Vec<String>> = caps
-        .iter()
-        .map(|(k, v)| (k.clone(), v.qualitys.clone()))
-        .collect();
 
     let info = PluginInfo {
         id: id.clone(),
@@ -170,7 +267,7 @@ pub fn install_plugin(data_dir: &str, script: &str, origin: &str) -> Result<Plug
         description: meta.description,
         enabled: true,
         sources,
-        qualitys,
+        qualitys: caps,
         origin: origin.to_string(),
     };
 
@@ -207,7 +304,7 @@ pub async fn install_plugin_from_url(data_dir: &str, url: &str) -> Result<Plugin
     if resp.status != 200 {
         return Err(format!("下载脚本失败: HTTP {}", resp.status));
     }
-    install_plugin(data_dir, &resp.body, url)
+    install_plugin(data_dir, &resp.body, url).await
 }
 
 /// 设置启用状态。
@@ -246,8 +343,8 @@ pub fn has_enabled_plugin_for(data_dir: &str, source: &str) -> bool {
 /// 用已启用的插件解析播放直链。
 ///
 /// 按索引顺序依次尝试支持该音源的插件，任一成功即返回。
-/// 沙箱在阻塞线程内构建，避免 `Context` 跨线程/跨 await。
-pub fn resolve_url_with_plugins(
+/// 每个插件用一次性引擎实例执行，用完即卸载。
+pub async fn resolve_url_with_plugins(
     data_dir: &str,
     source: &str,
     song_info_json: &str,
@@ -263,7 +360,9 @@ pub fn resolve_url_with_plugins(
         return Err("没有可用于该音源的插件".to_string());
     }
 
+    let engine = crate::plugin_host::global_engine(data_dir);
     let mut last_err = String::new();
+
     for plugin in candidates {
         let path = script_path(data_dir, &plugin.id);
         let script = match fs::read_to_string(&path) {
@@ -276,21 +375,67 @@ pub fn resolve_url_with_plugins(
 
         // 音质降级：插件声明的档位里挑一个可用的。
         let qualities = pick_qualities(&plugin, source, quality);
-        let mut sandbox = match LxSandbox::load(&script) {
-            Ok(s) => s,
-            Err(e) => {
-                last_err = format!("插件 {} 初始化失败: {e}", plugin.name);
-                continue;
-            }
-        };
 
-        for q in qualities {
-            match sandbox.get_music_url(source, song_info_json, &q) {
-                Ok(url) if !url.is_empty() => return Ok(url),
-                Ok(_) => last_err = "插件返回空链接".to_string(),
-                Err(e) => last_err = e,
+        let instance = probe_instance_id();
+        let meta = parse_script_meta(&script);
+        let script_info = serde_json::json!({
+            "name": meta.name,
+            "version": meta.version,
+            "author": meta.author,
+            "description": meta.description,
+            "homepage": meta.homepage,
+        });
+
+        let loaded = engine
+            .load_lx(&instance, &script, &script_info.to_string())
+            .await;
+        if !loaded.ok {
+            last_err = format!(
+                "插件 {} 初始化失败: {}",
+                plugin.name,
+                loaded.error.unwrap_or_else(|| "未知错误".to_string())
+            );
+            engine.unload(&instance).await;
+            continue;
+        }
+
+        let music_info: serde_json::Value =
+            serde_json::from_str(song_info_json).unwrap_or(serde_json::Value::Null);
+
+        for q in &qualities {
+            let args = serde_json::json!([{
+                "source": source,
+                "action": "musicUrl",
+                "info": { "musicInfo": music_info, "type": q },
+            }]);
+            let call = engine
+                .call(&instance, "request", &args.to_string(), None, 30_000)
+                .await;
+
+            let url = match call {
+                r if r.ok => r
+                    .data
+                    .and_then(|d| d.as_str().map(str::to_string))
+                    .filter(|u| !u.is_empty()),
+                r => {
+                    last_err = r.error.unwrap_or_else(|| "插件调用失败".to_string());
+                    None
+                }
+            };
+
+            match url {
+                Some(u) => {
+                    engine.unload(&instance).await;
+                    return Ok(u);
+                }
+                None => {
+                    if last_err.is_empty() {
+                        last_err = "插件未返回播放链接".to_string();
+                    }
+                }
             }
         }
+        engine.unload(&instance).await;
     }
 
     Err(if last_err.is_empty() {
