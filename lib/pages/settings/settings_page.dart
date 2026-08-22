@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/widgets/user_avatar.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -482,11 +482,10 @@ class _AccountCard extends StatelessWidget {
                   clipBehavior: Clip.antiAlias,
                   child: loggedIn
                       ? (user.avatar != null && user.avatar!.isNotEmpty
-                          ? Image.network(
-                              user.avatar!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => _fallback(
-                                  scheme, user.nickname),
+                          ? UserAvatarImage(
+                              avatar: user.avatar,
+                              fallback:
+                                  _fallback(scheme, user.nickname),
                             )
                           : _fallback(scheme, user.nickname))
                       : Icon(Icons.person, color: scheme.onPrimary, size: 26),

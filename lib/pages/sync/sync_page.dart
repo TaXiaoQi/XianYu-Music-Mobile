@@ -155,7 +155,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              '收藏、歌单、插件同步为桌面端专属功能，移动端暂不支持。',
+              '歌单、收藏、插件的同步与上传位于「账号与安全」页的云端同步板块。',
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
           ),

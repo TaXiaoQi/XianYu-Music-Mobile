@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/sync/sync_provider.dart';
+import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
 
@@ -1163,11 +1164,9 @@ class _Avatar extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: hasAvatar
-            ? Image.network(
-                avatar,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) =>
-                    _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
+            ? UserAvatarImage(
+                avatar: avatar,
+                fallback: _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
               )
             : _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
       ),

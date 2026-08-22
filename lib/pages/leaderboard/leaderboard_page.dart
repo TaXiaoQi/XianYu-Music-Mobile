@@ -6,6 +6,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/stats/listen_stats.dart';
+import '../../src/widgets/user_avatar.dart';
 
 /// 听歌排行榜：日榜/周榜/总榜切换，Top 列表 + 底部个人排名。
 class LeaderboardPage extends ConsumerStatefulWidget {
@@ -449,10 +450,9 @@ class _Avatar extends StatelessWidget {
         width: 36,
         height: 36,
         child: avatar.isNotEmpty
-            ? Image.network(
-                avatar,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _fallback(scheme, char),
+            ? UserAvatarImage(
+                avatar: avatar,
+                fallback: _fallback(scheme, char),
               )
             : _fallback(scheme, char),
       ),
