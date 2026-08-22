@@ -399,15 +399,21 @@ fn load_image_bytes(source: &str) -> Result<Vec<u8>, String> {
             Ok(decoded)
         }
     } else if source.starts_with("http://") || source.starts_with("https://") {
-        let client = reqwest::blocking::Client::builder()
+        // 本函数由 FRB 同步处理器在专用线程调用（非 tokio 上下文），
+        // 建临时 current-thread runtime 执行异步请求，避免链接 reqwest blocking 模块。
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .build()
             .map_err(|e| e.to_string())?;
-        let bytes = client
-            .get(source)
-            .send()
-            .map_err(|e| e.to_string())?
-            .bytes()
+        let bytes = rt
+            .block_on(async {
+                let resp = client.get(source).send().await?;
+                resp.bytes().await
+            })
             .map_err(|e| e.to_string())?;
         Ok(bytes.to_vec())
     } else {

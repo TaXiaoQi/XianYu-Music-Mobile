@@ -19,7 +19,7 @@ sha1 = "0.10"
 hex = "0.4"
 md5 = "0.7"
 urlencoding = "2"
-reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate", "blocking"] }
+reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
 tokio = { version = "1.48.0", features = ["sync", "rt-multi-thread", "time", "macros", "fs", "io-util"] }
 rustfft = "6.4.1"
 base64 = "0.22.1"
@@ -58,3 +58,6 @@ opt-level = 3
 [profile.release]
 # 直接产出已 strip 的 .so：jniLibs 里的 libxianyu_core.so 从 ~42MB（含 13MB 符号表）降到 ~30MB
 strip = "symbols"
+# thin LTO + 单 codegen unit：跨 crate 内联去重，再省约 2~4MB（代价是编译变慢）
+lto = "thin"
+codegen-units = 1

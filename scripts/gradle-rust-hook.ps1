@@ -87,28 +87,25 @@ if ($needCodegen) {
 # ---------- 2) 交叉编译 .so ----------
 if ($needSo) {
     Write-Host "[rust-hook] 交叉编译 .so（输出记录于 $hookLog）..." -ForegroundColor Cyan
-    # 不用 cargo ndk 的 -o：它会把依赖 crate 的 cdylib（libboa_engine 等）一起拷进
+    # 只编 arm64：真机均为 arm64，armv7 会白付一份编译时间和 jniLibs 体积
+    # （如需模拟器 x86_64，临时手动 cargo ndk -t x86_64-android build）
+    # 不用 cargo ndk 的 -o：它会把依赖 crate 的 cdylib 一起拷进
     # jniLibs。这里只编译，再手动拷贝唯一的最终产物 libxianyu_core.so。
     Push-Location (Join-Path $realSource "rust")
     try {
-        & cmd /c "cargo ndk -t arm64-v8a -t armeabi-v7a build --release > `"$hookLog`" 2>&1"
+        & cmd /c "cargo ndk -t arm64-v8a build --release > `"$hookLog`" 2>&1"
         if ($LASTEXITCODE -ne 0) {
             Get-Content $hookLog -Tail 30 | Write-Host
             throw "[rust-hook] cargo ndk 编译失败 (exit=$LASTEXITCODE)"
         }
     } finally { Pop-Location }
-    $soMap = @{
-        "aarch64-linux-android"     = "arm64-v8a"
-        "armv7-linux-androideabi"   = "armeabi-v7a"
-    }
-    foreach ($t in $soMap.Keys) {
-        $src = Join-Path $realSource "rust\target\$t\release\libxianyu_core.so"
-        $dst = Join-Path $realSource "android\app\src\main\jniLibs\$($soMap[$t])"
-        Copy-Item $src -Destination $dst -Force
-    }
-    # 清掉历史上 -o 误拷进来的依赖 cdylib
+    $src = Join-Path $realSource "rust\target\aarch64-linux-android\release\libxianyu_core.so"
+    $dst = Join-Path $realSource "android\app\src\main\jniLibs\arm64-v8a"
+    Copy-Item $src -Destination $dst -Force
+    # 清理历史遗留：其他 ABI 的 .so（避免打进 APK 白增体积）与 -o 误拷的依赖 cdylib
     Get-ChildItem (Join-Path $realSource "android\app\src\main\jniLibs") -Recurse -Filter "*.so" |
-        Where-Object { $_.Name -ne "libxianyu_core.so" } | Remove-Item -Force
+        Where-Object { $_.Directory.Name -ne "arm64-v8a" -or $_.Name -ne "libxianyu_core.so" } |
+        Remove-Item -Force
 }
 
 # ---------- API 改动：新绑定只能在下次构建的 Dart 编译中生效，中止本次 ----------

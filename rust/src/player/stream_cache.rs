@@ -500,7 +500,22 @@ pub fn start_streaming_download(
     let dl_error = download_error.clone();
 
     let handle = std::thread::spawn(move || {
-        download_thread(
+        // 专用线程内建临时 runtime：下载走异步 reqwest（不再链接 blocking 模块），
+        // 对外仍通过原子计数汇报进度，读取侧无需感知差异。
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                dl_failed.store(true, Ordering::Relaxed);
+                if let Ok(mut err) = dl_error.lock() {
+                    *err = Some(format!("创建下载运行时失败: {}", e));
+                }
+                return;
+            }
+        };
+        rt.block_on(download_thread(
             &url_clone,
             &hash_clone,
             headers_clone.as_ref(),
@@ -512,7 +527,7 @@ pub fn start_streaming_download(
             dl_post_check,
             dl_ekey,
             dl_error,
-        );
+        ));
     });
 
     mgr.entries.insert(
@@ -924,10 +939,10 @@ fn is_valid_audio_header(bytes: &[u8]) -> bool {
 }
 
 fn apply_stream_request_headers(
-    mut req: reqwest::blocking::RequestBuilder,
+    mut req: reqwest::RequestBuilder,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
-) -> reqwest::blocking::RequestBuilder {
+) -> reqwest::RequestBuilder {
     let has_plugin_user_agent = headers
         .map(|hdrs| hdrs.keys().any(|key| key.eq_ignore_ascii_case("user-agent")))
         .unwrap_or(false);
@@ -956,7 +971,9 @@ fn apply_stream_request_headers(
     req
 }
 
-fn download_thread(
+/// 下载主体。在专用线程的临时 current-thread runtime 中执行（见 spawn 处），
+/// 通过原子计数向读取侧汇报进度，架构与阻塞版完全一致。
+async fn download_thread(
     url: &str,
     hash: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
@@ -980,7 +997,7 @@ fn download_thread(
         }
     };
 
-    let client = match reqwest::blocking::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
         .gzip(true)
@@ -997,7 +1014,7 @@ fn download_thread(
 
     let req = apply_stream_request_headers(client.get(url), headers, user_agent);
 
-    let mut response = match req.send() {
+    let mut response = match req.send().await {
         Ok(r) => r,
         Err(e) => {
             fail_download(&format!("下载请求失败: {}", e), 0);
@@ -1026,7 +1043,7 @@ fn download_thread(
         // 部分 Baka 插件的 getMediaSource 返回的是 API 端点 URL（如酷狗 PHP 接口），
         // 响应可能是 JSON、text/plain 直链、甚至 HTML 页面。
         // 对所有非音频内容类型统一尝试解析正文提取 URL 并重试下载。
-        let body_text: String = response.text().unwrap_or_default();
+        let body_text: String = response.text().await.unwrap_or_default();
         if let Some((real_url, json_ekey)) = extract_audio_info_from_text(&body_text) {
             // 如果 JSON 中包含 ekey，更新共享 ekey 字段供后续 QMC 解密使用
             if let Some(ref ek) = json_ekey {
@@ -1038,7 +1055,7 @@ fn download_thread(
             }
             // 用提取到的 URL 重新请求
             let retry_req = apply_stream_request_headers(client.get(&real_url), headers, user_agent);
-            match retry_req.send() {
+            match retry_req.send().await {
                 Ok(retry_resp) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
                         .headers()
@@ -1053,7 +1070,7 @@ fn download_thread(
                         || retry_ct.contains("text/xml")
                     {
                         // 二次提取：重试 URL 仍返回非音频内容，尝试再次提取
-                        let retry_body: String = retry_resp.text().unwrap_or_default();
+                        let retry_body: String = retry_resp.text().await.unwrap_or_default();
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
                             // 用二次提取的 URL 再次请求
                             let resp2_req = apply_stream_request_headers(
@@ -1061,7 +1078,7 @@ fn download_thread(
                                 headers,
                                 user_agent,
                             );
-                            match resp2_req.send() {
+                            match resp2_req.send().await {
                                 Ok(resp2) if resp2.status().is_success() => {
                                     let ct2 = resp2
                                         .headers()
@@ -1149,21 +1166,21 @@ fn download_thread(
         }
     };
 
-    let mut buf = [0u8; 64 * 1024];
     let mut bytes_written = 0u64;
     let mut error: Option<String> = None;
 
     loop {
-        match response.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                if let Err(e) = file.write_all(&buf[..n]) {
+        // Response 未实现 AsyncRead，用原生的 chunk() 逐块读取
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                if let Err(e) = file.write_all(&chunk) {
                     error = Some(format!("写入缓存文件失败: {}", e));
                     break;
                 }
-                bytes_written += n as u64;
+                bytes_written += chunk.len() as u64;
                 downloaded_bytes.store(bytes_written, Ordering::Relaxed);
             }
+            Ok(None) => break,
             Err(e) => {
                 error = Some(format!("下载流读取错误: {}", e));
                 break;

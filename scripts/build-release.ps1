@@ -74,14 +74,33 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ge 8) { throw "[build-release] robocopy 同步失败 (exit=$LASTEXITCODE)" }
 
     # ---------- 2. 构建 release ----------
-    Write-Host "[build-release] 执行 flutter build apk --release --split-per-abi ..." -ForegroundColor Cyan
+    # --obfuscate --split-debug-info：Dart AOT 混淆，libapp.so 缩小且防逆向；
+    # 符号文件输出到 ASCII 构建目录（供 releases\symbols\<version>\ 还原线上堆栈）
+    $symbolsDir = Join-Path $buildRoot "build\app-symbols"
+    Write-Host "[build-release] 执行 flutter build apk --release（arm64 + 混淆）..." -ForegroundColor Cyan
     Push-Location $buildRoot
     try {
-        & "C:\flutter\sdk_tmp\flutter\bin\flutter.bat" build apk --release --split-per-abi
+        & "C:\flutter\sdk_tmp\flutter\bin\flutter.bat" build apk --release --split-per-abi `
+            --target-platform android-arm64 `
+            --obfuscate --split-debug-info="$symbolsDir"
         if ($LASTEXITCODE -ne 0) { throw "[build-release] flutter build 失败 (exit=$LASTEXITCODE)" }
     } finally {
         Pop-Location
     }
+}
+
+# ---------- 3.0 归档混淆符号（还原 release 崩溃堆栈必需，随版本保存） ----------
+if (Test-Path (Join-Path $buildRoot "build\app-symbols\*")) {
+    $pubspecEarly = Join-Path $buildRoot "pubspec.yaml"
+    $verEarly = "0.0.0"
+    if (Test-Path $pubspecEarly) {
+        $lineE = Select-String -Path $pubspecEarly -Pattern "^version:" | Select-Object -First 1
+        if ($lineE) { $verEarly = ($lineE.Line -replace "^version:\s*", "" -split "\+")[0] }
+    }
+    $symDest = Join-Path $releasesDir "symbols\$verEarly"
+    New-Item -ItemType Directory -Force -Path $symDest | Out-Null
+    Copy-Item (Join-Path $buildRoot "build\app-symbols\*") $symDest -Force
+    Write-Host "[build-release] 混淆符号已归档: releases\symbols\$verEarly" -ForegroundColor Green
 }
 
 # ---------- 3. 校验产物 ----------
