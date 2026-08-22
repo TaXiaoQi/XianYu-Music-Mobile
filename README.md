@@ -107,14 +107,23 @@ Rust 核心（`xianyu_core`）编译为 `libxianyu_core.so` 后**预置**在 `an
 - **只改 Dart 代码**：无需编译 Rust，直接 `flutter run` / `flutter build apk` 即可
 - **改了 Rust 代码**：必须重新交叉编译 .so，再打包
 
-工具链位于 `C:\Users\小奇\.cargo\bin`（含 `cargo-ndk`、`flutter_rust_bridge_codegen`）：
+**一键脚本**（推荐，封装了绑定生成 + 交叉编译 + 打包三步）：
+
+```powershell
+.\scripts\build-rust.ps1                 # 全流程：绑定 + .so + debug APK
+.\scripts\build-rust.ps1 -SkipCodegen    # 只改 Rust 内部逻辑：跳过绑定生成
+.\scripts\build-rust.ps1 -SkipApk        # 只编 .so，不打包
+.\scripts\build-rust.ps1 -Release        # 绑定 + .so + release APK（走 build-release.ps1）
+```
+
+**手动三步**（脚本内部等价命令，工具链位于 `C:\Users\小奇\.cargo\bin`）：
 
 ```powershell
 $env:Path += ";C:\Users\小奇\.cargo\bin"
-cd rust
-# 1) 改了 Rust API（api/mod.rs）才需要重新生成绑定；只改内部逻辑可跳过
+# 1) 改了 Rust API（api/mod.rs）才需要重新生成绑定（须在项目根目录执行）；只改内部逻辑可跳过
 flutter_rust_bridge_codegen generate
 # 2) 交叉编译 .so 到 jniLibs（cargo-ndk 自动从 ANDROID_HOME 找 NDK）
+cd rust
 cargo ndk -t arm64-v8a -t armeabi-v7a -o ../android/app/src/main/jniLibs build --release
 # 3) 再打包 APK
 cd ..
@@ -130,10 +139,9 @@ flutter run
 **Dev 工作流要点：**
 - **设备**：`flutter devices` 查看已连接设备（真机需开启 USB 调试，无线调试为 `adb connect <ip>:5555`）；多设备时用 `flutter run -d <device-id>` 指定目标
 - **热更新**：改 Dart 代码后按 `r` 热重载、`R` 热重启，即时生效，无需重新安装 APK
-- **改了 Rust 侧代码**：Rust 改动不会热更新，需重新编译 .so 再运行，完整流程见上方「编译 Rust 内核（.so）」：
+- **改了 Rust 侧代码**：Rust 改动不会热更新，需重新编译 .so 再运行。一键执行 `.\scripts\build-rust.ps1 -SkipApk`（编 .so），或手动按上方「编译 Rust 内核（.so）」三步执行，再 `flutter run`：
   ```bash
-  flutter_rust_bridge_codegen generate   # 改了 Rust API 才需要
-  cargo ndk -t arm64-v8a -t armeabi-v7a -o ../android/app/src/main/jniLibs build --release
+  .\scripts\build-rust.ps1 -SkipApk   # 编 .so（含绑定生成）
   flutter run
   ```
 - **dev 与 release 的区别**：dev 模式在项目原目录直接 `flutter run` 即可，不受非 ASCII 路径影响；正式打包才需要走 `scripts/build-release.ps1`（见下）
