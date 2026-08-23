@@ -78,6 +78,52 @@ class FavoriteEntry {
       );
 }
 
+/// 收藏的歌单/专辑/榜单（收藏集，非单曲）。
+class FavoriteCollection {
+  final String key;
+  final String kind; // playlist | album | toplist
+  final String pluginId;
+  final String title;
+  final String subtitle;
+  final String? coverUrl;
+  final Map<String, dynamic> raw;
+  final int addedAt;
+
+  FavoriteCollection({
+    required this.key,
+    required this.kind,
+    required this.pluginId,
+    required this.title,
+    required this.subtitle,
+    this.coverUrl,
+    required this.raw,
+    required this.addedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'key': key,
+        'kind': kind,
+        'pluginId': pluginId,
+        'title': title,
+        'subtitle': subtitle,
+        'coverUrl': coverUrl,
+        'raw': raw,
+        'addedAt': addedAt,
+      };
+
+  factory FavoriteCollection.fromJson(Map<String, dynamic> j) =>
+      FavoriteCollection(
+        key: j['key'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'playlist',
+        pluginId: j['pluginId'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        subtitle: j['subtitle'] as String? ?? '',
+        coverUrl: j['coverUrl'] as String?,
+        raw: (j['raw'] as Map? ?? const {}).cast<String, dynamic>(),
+        addedAt: (j['addedAt'] as num?)?.toInt() ?? 0,
+      );
+}
+
 /// 收藏存储（SharedPreferences 持久化，支持本地与在线歌曲）。
 class FavoritesStore {
   static const _key = 'xianyu_favorites_v1';
@@ -106,18 +152,54 @@ class FavoritesStore {
 
 class FavoritesState {
   final List<FavoriteEntry> entries;
+  final List<FavoriteCollection> collections;
   final bool loading;
 
-  const FavoritesState({this.entries = const [], this.loading = true});
+  const FavoritesState(
+      {this.entries = const [], this.collections = const [], this.loading = true});
 
-  FavoritesState copyWith({List<FavoriteEntry>? entries, bool? loading}) {
+  FavoritesState copyWith({
+    List<FavoriteEntry>? entries,
+    List<FavoriteCollection>? collections,
+    bool? loading,
+  }) {
     return FavoritesState(
       entries: entries ?? this.entries,
+      collections: collections ?? this.collections,
       loading: loading ?? this.loading,
     );
   }
 
   bool contains(String path) => entries.any((e) => e.path == path);
+
+  bool isCollectionFavorite(String key) =>
+      collections.any((c) => c.key == key);
+}
+
+/// 收藏集的持久化存储。
+class FavoritesCollectionStore {
+  static const _key = 'xianyu_favorite_collections_v1';
+
+  Future<List<FavoriteCollection>> loadAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list
+          .whereType<Map>()
+          .map((e) => FavoriteCollection.fromJson(e.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveAll(List<FavoriteCollection> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _key, jsonEncode(items.map((e) => e.toJson()).toList()));
+  }
 }
 
 class FavoritesManager extends StateNotifier<FavoritesState> {
@@ -127,10 +209,16 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
 
   final Ref _ref;
   final FavoritesStore _store = FavoritesStore();
+  final FavoritesCollectionStore _collectionStore = FavoritesCollectionStore();
 
   Future<void> refresh() async {
     final entries = await _store.loadAll();
-    state = FavoritesState(entries: entries, loading: false);
+    final collections = await _collectionStore.loadAll();
+    state = FavoritesState(
+      entries: entries,
+      collections: collections,
+      loading: false,
+    );
   }
 
   bool isFavorite(String path) =>
@@ -173,7 +261,43 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
 
   Future<void> clear() async {
     await _store.saveAll(const []);
-    state = const FavoritesState(entries: [], loading: false);
+    state = FavoritesState(
+      entries: const [],
+      collections: state.collections,
+      loading: false,
+    );
+  }
+
+  /// 收藏/取消收藏整张歌单、专辑或榜单。
+  Future<void> toggleCollection({
+    required String kind, // playlist | album | toplist
+    required String pluginId,
+    required String title,
+    String subtitle = '',
+    String? coverUrl,
+    required Map<String, dynamic> raw,
+  }) async {
+    final key = '$kind:$pluginId:$title';
+    final current = state.collections;
+    if (current.any((c) => c.key == key)) {
+      final next = current.where((c) => c.key != key).toList();
+      await _collectionStore.saveAll(next);
+      state = state.copyWith(collections: next);
+      return;
+    }
+    final item = FavoriteCollection(
+      key: key,
+      kind: kind,
+      pluginId: pluginId,
+      title: title,
+      subtitle: subtitle,
+      coverUrl: coverUrl,
+      raw: raw,
+      addedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    final next = [item, ...current];
+    await _collectionStore.saveAll(next);
+    state = state.copyWith(collections: next);
   }
 
   /// 播放收藏（从指定索引开始）。

@@ -27,18 +27,25 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
     );
   }
 
-  /// 申请存储权限：Android 11+ 优先「所有文件访问」，回退媒体/存储权限。
+  /// 申请存储权限（按 Android 版本细分，仅申请音乐读取）：
+  /// - Android 13+：READ_MEDIA_AUDIO（媒体音频权限）
+  /// - Android 12 及以下：READ_EXTERNAL_STORAGE（传统存储权限）
+  /// 不再申请「所有文件访问」（MANAGE_EXTERNAL_STORAGE）。
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
-    // 优先所有文件访问权限（扫描任意目录需要真实路径）。
-    if (await Permission.manageExternalStorage.isGranted) return true;
-    final manage = await Permission.manageExternalStorage.request();
-    if (manage.isGranted) return true;
-    // 回退：媒体音频 / 传统存储权限。
+    if (await Permission.audio.isGranted) return true;
+    if (await Permission.storage.isGranted) return true;
+    // Android 13+ 弹媒体音频权限；低版本该权限不存在，自动跳过。
     final audio = await Permission.audio.request();
     if (audio.isGranted) return true;
+    // Android 12 及以下弹传统存储权限；13+ 已由 maxSdkVersion 移除，自动拒绝。
     final storage = await Permission.storage.request();
-    return storage.isGranted;
+    if (storage.isGranted) return true;
+    // 双双被永久拒绝时引导用户去系统设置手动开启。
+    if (audio.isPermanentlyDenied && storage.isPermanentlyDenied) {
+      await openAppSettings();
+    }
+    return false;
   }
 
   Future<void> _addFolder() async {
@@ -53,7 +60,7 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
       if (dir == null) return; // 用户取消
       // SAF 返回的 content:// URI 无法用于文件系统扫描。
       if (dir.startsWith('content://')) {
-        _toast('请授予「所有文件访问」权限后重新选择文件夹');
+        _toast('该位置无法直接访问，请选择本地存储（如音乐、Download）下的文件夹');
         return;
       }
       await ref.read(scanFoldersProvider.notifier).addFolder(dir);

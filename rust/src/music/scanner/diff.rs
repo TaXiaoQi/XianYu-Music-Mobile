@@ -1,7 +1,7 @@
 use super::super::cue;
 use super::super::types::Song;
 use super::super::utils::{
-    descendant_like_patterns, is_cue_file_extension, is_supported_library_extension, normalize_path,
+    descendant_like_patterns, is_cue_file_extension, normalize_path,
 };
 use super::parser::{
     build_cue_track_song, enrich_album_groups, parse_song_from_file, preferred_parse_workers,

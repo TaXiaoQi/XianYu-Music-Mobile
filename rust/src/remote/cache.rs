@@ -11,19 +11,6 @@ use std::time::{Duration, SystemTime};
 pub(crate) const MAX_REMOTE_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const REMOTE_DOWNLOAD_ATTEMPTS: usize = 3;
 
-/// 远程下载进度通知器（移动端由调用方注入，桌面端为 Tauri 事件发射）。
-pub(crate) trait RemoteDownloadProgressSink: Send + Sync {
-    fn on_progress(
-        &self,
-        uri: &str,
-        downloaded: u64,
-        total: Option<u64>,
-        done: bool,
-        failed: bool,
-        message: Option<String>,
-    );
-}
-
 pub(crate) fn is_remote_uri(path: &str) -> bool {
     path.starts_with("remote://")
 }
@@ -129,20 +116,6 @@ pub(crate) fn clear_cache(cache_root: &Path) -> Result<RemoteCacheUsage, String>
     cache_usage(cache_root)
 }
 
-fn emit_download_progress(
-    sink: Option<&dyn RemoteDownloadProgressSink>,
-    remote_uri: &str,
-    downloaded: u64,
-    total: Option<u64>,
-    done: bool,
-    failed: bool,
-    message: Option<String>,
-) {
-    if let Some(sink) = sink {
-        sink.on_progress(remote_uri, downloaded, total, done, failed, message);
-    }
-}
-
 pub(crate) fn choose_remote_playback_source(
     remote_uri: &str,
     cached_path: Option<String>,
@@ -194,7 +167,6 @@ pub(crate) async fn cache_remote_file(
     remote_path: &str,
     remote_uri: &str,
     etag: Option<&str>,
-    sink: Option<&dyn RemoteDownloadProgressSink>,
 ) -> Result<String, String> {
     let cache_path = cache_root.join(cache_file_name(remote_uri, etag));
 
@@ -205,10 +177,7 @@ pub(crate) async fn cache_remote_file(
     let temp_path = cache_path.with_extension("download");
     let mut last_error = None;
     for attempt in 1..=REMOTE_DOWNLOAD_ATTEMPTS {
-        let result =
-            webdav::download_file_to_path(source, remote_path, &temp_path, |downloaded, total| {
-                emit_download_progress(sink, remote_uri, downloaded, total, false, false, None);
-            })
+        let result = webdav::download_file_to_path(source, remote_path, &temp_path, |_, _| {})
             .await;
 
         if result.is_ok() {
@@ -223,21 +192,16 @@ pub(crate) async fn cache_remote_file(
     }
 
     if let Some(error) = last_error {
-        emit_download_progress(sink, remote_uri, 0, None, true, true, Some(error.clone()));
         return Err(error);
     }
     if !temp_path.is_file() {
-        let error = "远程文件下载失败：未生成缓存文件".to_string();
-        emit_download_progress(sink, remote_uri, 0, None, true, true, Some(error.clone()));
-        return Err(error);
+        return Err("远程文件下载失败：未生成缓存文件".to_string());
     }
 
     fs::rename(&temp_path, &cache_path).map_err(|error| error.to_string())?;
     cleanup_cache(cache_root);
 
-    let cache_path_str = cache_path.to_string_lossy().into_owned();
-    emit_download_progress(sink, remote_uri, 1, Some(1), true, false, None);
-    Ok(cache_path_str)
+    Ok(cache_path.to_string_lossy().into_owned())
 }
 
 /// 确保远程文件已缓存，返回缓存路径并回写 `songs.cache_path`。
@@ -245,7 +209,6 @@ pub(crate) async fn ensure_cached_path(
     cache_root: &Path,
     db_conn: Arc<Mutex<rusqlite::Connection>>,
     remote_uri: &str,
-    sink: Option<&dyn RemoteDownloadProgressSink>,
 ) -> Result<String, String> {
     let (source, remote_path, etag, stored_remote_uri) = {
         let conn = db_conn.lock().map_err(|error| error.to_string())?;
@@ -253,7 +216,7 @@ pub(crate) async fn ensure_cached_path(
     };
     let normalized_uri = stored_remote_uri.unwrap_or_else(|| remote_uri.to_string());
     let cache_path_str =
-        cache_remote_file(cache_root, &source, &remote_path, &normalized_uri, etag.as_deref(), sink)
+        cache_remote_file(cache_root, &source, &remote_path, &normalized_uri, etag.as_deref())
             .await?;
     if let Ok(conn) = db_conn.lock() {
         let _ = update_song_cache_path(&conn, &normalized_uri, &cache_path_str);

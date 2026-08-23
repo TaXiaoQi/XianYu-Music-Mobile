@@ -63,6 +63,10 @@ pub fn seek_exclusive(time_secs: f64, is_playing: bool) {
     {
         android_aaudio::seek_exclusive(time_secs, is_playing);
     }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (time_secs, is_playing);
+    }
 }
 
 /// 设置用户音量（0.0–1.0）。
@@ -70,6 +74,22 @@ pub fn set_exclusive_volume(volume: f32) {
     #[cfg(target_os = "android")]
     {
         android_aaudio::set_exclusive_volume(volume);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = volume;
+    }
+}
+
+/// 运行时更新音量平衡（ReplayGain）目标增益，平滑渐变不中断播放。
+pub fn set_exclusive_volume_balance_gain(gain: f32) {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::set_exclusive_volume_balance_gain(gain);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = gain;
     }
 }
 

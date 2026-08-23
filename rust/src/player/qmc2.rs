@@ -635,6 +635,39 @@ fn is_valid_audio_header(bytes: &[u8]) -> bool {
     false
 }
 
+/// 按文件头 magic 识别真实音频格式，返回规范扩展名（小写）。
+/// 用于 QMC 解密后修正扩展名（如 .qmcflac → .flac）与解密结果校验。
+pub fn detect_audio_extension(header: &[u8]) -> Option<&'static str> {
+    if header.len() < 4 {
+        return None;
+    }
+    if &header[..3] == b"ID3" {
+        return Some("mp3");
+    }
+    if header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 {
+        return Some("mp3");
+    }
+    if &header[..4] == b"fLaC" {
+        return Some("flac");
+    }
+    if &header[..4] == b"RIFF" {
+        return Some("wav");
+    }
+    if &header[..4] == b"OggS" {
+        return Some("ogg");
+    }
+    if &header[..4] == b"FORM" {
+        return Some("aiff");
+    }
+    if header.len() >= 12 && &header[4..8] == b"ftyp" {
+        return Some("m4a");
+    }
+    if header.len() >= 4 && &header[..4] == b"MAC " {
+        return Some("ape");
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

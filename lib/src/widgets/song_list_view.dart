@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../library/library_provider.dart';
+import 'song_actions_sheet.dart';
 
-/// 通用歌曲列表：展示歌曲并支持点击播放。
-class SongsListView extends StatelessWidget {
+/// 通用歌曲列表：展示歌曲并支持点击播放、长按弹出操作菜单。
+class SongsListView extends ConsumerWidget {
   final List<Song> songs;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
   /// 列表内边距。全屏页可留出底部安全区，嵌在 shell 内的页面可避让底栏。
   final EdgeInsetsGeometry? padding;
   /// 需要高亮的关键词。非空时在标题/歌手/专辑中以主题色标出命中片段。
   final String? highlight;
+  /// 长按歌曲是否弹出操作菜单（收藏/添加到歌单/歌曲信息）。
+  final bool enableActions;
   const SongsListView({
     super.key,
     required this.songs,
     this.onPlay,
     this.padding,
     this.highlight,
+    this.enableActions = true,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (songs.isEmpty) {
       return const Center(child: Text('暂无歌曲'));
     }
@@ -51,6 +56,14 @@ class SongsListView extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           onTap: () => onPlay?.call(songs, i),
+          onLongPress: enableActions
+              ? () => showSongActionsSheet(
+                    context,
+                    ref: ref,
+                    item: s.toQueueItem(),
+                    onPlay: onPlay != null ? () => onPlay!(songs, i) : null,
+                  )
+              : null,
         );
       },
     );

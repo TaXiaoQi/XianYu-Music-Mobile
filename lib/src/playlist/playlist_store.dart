@@ -105,6 +105,82 @@ class PlaylistStore {
     return result;
   }
 
+  /// 新建空歌单。
+  Future<List<ImportedPlaylist>> createPlaylist(String name) async {
+    final all = await loadAll();
+    final result = [
+      ...all,
+      ImportedPlaylist(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name,
+        songs: const [],
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+    await saveAll(result);
+    return result;
+  }
+
+  /// 重命名歌单。
+  Future<List<ImportedPlaylist>> renamePlaylist(
+      String id, String name) async {
+    final all = await loadAll();
+    final result = all
+        .map((p) => p.id == id
+            ? ImportedPlaylist(
+                id: p.id,
+                name: name,
+                songs: p.songs,
+                importedAt: p.importedAt,
+              )
+            : p)
+        .toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 向歌单添加歌曲（按 path 去重）。
+  Future<List<ImportedPlaylist>> addSongsTo(
+      String id, List<ImportedSong> songs) async {
+    if (songs.isEmpty) return loadAll();
+    final all = await loadAll();
+    final result = all.map((p) {
+      if (p.id != id) return p;
+      final merged = <String, ImportedSong>{};
+      for (final s in p.songs) {
+        merged[s.path] = s;
+      }
+      for (final s in songs) {
+        merged[s.path] = s;
+      }
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: merged.values.toList(),
+        importedAt: p.importedAt,
+      );
+    }).toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 从歌单移除单曲（按 path 匹配）。
+  Future<List<ImportedPlaylist>> removeSong(
+      String id, String path) async {
+    final all = await loadAll();
+    final result = all.map((p) {
+      if (p.id != id) return p;
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: p.songs.where((s) => s.path != path).toList(),
+        importedAt: p.importedAt,
+      );
+    }).toList();
+    await saveAll(result);
+    return result;
+  }
+
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);

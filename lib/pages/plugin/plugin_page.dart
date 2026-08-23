@@ -9,7 +9,9 @@ import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
+import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/playlist/playlist_provider.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
@@ -27,6 +29,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(pluginManagerProvider);
+    final subscriptions = ref.watch(pluginSubscriptionsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -51,14 +54,23 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       ),
       body: state.loading
           ? const Center(child: CircularProgressIndicator())
-          : state.sources.isEmpty
+          : state.sources.isEmpty && subscriptions.isEmpty
               ? _EmptyState(onInstall: _showInstallSheet)
-              : ListView.separated(
+              : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
-                  itemCount: state.sources.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) =>
-                      _PluginCard(source: state.sources[index]),
+                  children: [
+                    if (subscriptions.isNotEmpty) ...[
+                      _SubscriptionSection(
+                        subscriptions: subscriptions,
+                        onReinstall: _installUrl,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    for (final source in state.sources) ...[
+                      _PluginCard(source: source),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
                 ),
     );
   }
@@ -69,8 +81,39 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       isScrollControlled: true,
       builder: (ctx) => _InstallSheet(
         onInstall: (script, name) => _install(script, name),
+        onInstallUrl: (url) => _installUrl(url),
       ),
     );
+  }
+
+  Future<void> _installUrl(String url) async {
+    if (url.trim().isEmpty) return;
+    setState(() => _installing = true);
+    try {
+      final result =
+          await ref.read(pluginManagerProvider.notifier).installFromUrl(url);
+      if (!mounted) return;
+      if (result.success) {
+        final summary = result.failCount > 0
+            ? '成功 ${result.names.length} 个，失败 ${result.failCount} 个'
+            : '成功 ${result.names.length} 个：${result.names.join('、')}';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('插件安装完成，$summary')));
+      } else {
+        final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('所有插件安装失败$detail')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is PluginEngineException ? e.message : e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('安装失败：$msg')),
+      );
+    } finally {
+      if (mounted) setState(() => _installing = false);
+    }
   }
 
   Future<void> _install(String script, String name) async {
@@ -221,6 +264,101 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   }
 }
 
+/// 订阅链接区块：展示已记录的订阅，点击重新导入，可删除。
+class _SubscriptionSection extends ConsumerWidget {
+  const _SubscriptionSection({
+    required this.subscriptions,
+    required this.onReinstall,
+  });
+
+  final List<PluginSubscription> subscriptions;
+  final Future<void> Function(String url) onReinstall;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.rss_feed, size: 16, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              '订阅链接 · ${subscriptions.length}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '随插件同步到云端，点击可重新导入最新版本',
+          style: TextStyle(fontSize: 11, color: scheme.outline),
+        ),
+        const SizedBox(height: 8),
+        for (final sub in subscriptions)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => onReinstall(sub.url),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(Icons.link,
+                            size: 18, color: scheme.primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sub.name,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              sub.url,
+                              style: TextStyle(
+                                  fontSize: 11, color: scheme.outline),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline,
+                            size: 20, color: scheme.outline),
+                        tooltip: '移除订阅',
+                        onPressed: () => ref
+                            .read(pluginSubscriptionsProvider.notifier)
+                            .remove(sub.id),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onInstall});
   final VoidCallback onInstall;
@@ -331,6 +469,14 @@ class _PluginCard extends ConsumerWidget {
                 ],
               ),
             ),
+            // 用户变量（仅 MusicFree 插件）
+            if (source.format == PluginFormat.musicfree)
+              IconButton(
+                icon: Icon(Icons.tune_outlined,
+                    size: 20, color: scheme.outline),
+                tooltip: '用户变量',
+                onPressed: () => _openUserVars(context, ref),
+              ),
             // 更新
             IconButton(
               icon: Icon(Icons.system_update_alt_outlined,
@@ -352,6 +498,14 @@ class _PluginCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _openUserVars(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _UserVarsSheet(source: source),
     );
   }
 
@@ -423,10 +577,14 @@ class _PluginCard extends ConsumerWidget {
   }
 }
 
-/// 安装方式选择：URL 或脚本粘贴。
+/// 安装方式选择：URL（单个脚本或插件集批量）或脚本粘贴。
 class _InstallSheet extends StatefulWidget {
-  const _InstallSheet({required this.onInstall});
+  const _InstallSheet({
+    required this.onInstall,
+    required this.onInstallUrl,
+  });
   final void Function(String script, String name) onInstall;
+  final Future<void> Function(String url) onInstallUrl;
 
   @override
   State<_InstallSheet> createState() => _InstallSheetState();
@@ -449,34 +607,10 @@ class _InstallSheetState extends State<_InstallSheet> {
     if (url.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final script = await _fetch(url);
-      if (script == null || script.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法获取插件脚本')));
-        return;
-      }
-      widget.onInstall(script, url);
+      await widget.onInstallUrl(url);
       if (mounted) Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<String?> _fetch(String url) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36');
-      final resp = await req.close().timeout(const Duration(seconds: 15));
-      if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      return await resp.transform(utf8.decoder).join();
-    } catch (_) {
-      return null;
-    } finally {
-      client.close();
     }
   }
 
@@ -499,7 +633,7 @@ class _InstallSheetState extends State<_InstallSheet> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
-              '支持 LX（落雪）与 MusicFree 格式音源插件',
+              '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）',
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
             const SizedBox(height: 16),
@@ -752,6 +886,264 @@ class _BackupImportSheetState extends State<_BackupImportSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 插件用户变量编辑弹层：加载定义 → 表单编辑 → 保存并重载插件。
+class _UserVarsSheet extends ConsumerStatefulWidget {
+  const _UserVarsSheet({required this.source});
+  final PluginSource source;
+
+  @override
+  ConsumerState<_UserVarsSheet> createState() => _UserVarsSheetState();
+}
+
+class _UserVarsSheetState extends ConsumerState<_UserVarsSheet> {
+  List<PluginUserVar> _vars = [];
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, String> _selectValues = {};
+  final Set<String> _visiblePasswords = {};
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final manager = ref.read(pluginManagerProvider.notifier);
+      final vars = await manager.getUserVars(widget.source.id);
+      if (!mounted) return;
+      if (vars.isEmpty) {
+        setState(() => _loading = false);
+        return;
+      }
+      final values = await PluginUserVarStore().getValues(widget.source.id);
+      for (final v in vars) {
+        final existing = values[v.name] ?? '';
+        if (v.isSelect) {
+          _selectValues[v.name] = existing.isNotEmpty
+              ? existing
+              : (v.defaultValue ?? (v.options.isNotEmpty ? v.options.first : ''));
+        } else {
+          _controllers[v.name] =
+              TextEditingController(text: existing.isNotEmpty ? existing : (v.defaultValue ?? ''));
+        }
+      }
+      setState(() {
+        _vars = vars;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    // 必填校验
+    for (final v in _vars) {
+      if (!v.required) continue;
+      final value = v.isSelect
+          ? (_selectValues[v.name] ?? '')
+          : (_controllers[v.name]?.text.trim() ?? '');
+      if (value.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('「${v.title ?? v.name}」为必填项')),
+        );
+        return;
+      }
+    }
+
+    setState(() => _saving = true);
+    final values = <String, String>{};
+    for (final v in _vars) {
+      if (v.isSelect) {
+        values[v.name] = _selectValues[v.name] ?? '';
+      } else {
+        values[v.name] = _controllers[v.name]?.text.trim() ?? '';
+      }
+    }
+    try {
+      await ref
+          .read(pluginManagerProvider.notifier)
+          .saveUserVars(widget.source.id, values);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存用户变量，开始生效')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败：$e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('用户变量 · ${widget.source.name}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                '保存后插件将重新加载并应用新的变量值',
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+              const SizedBox(height: 16),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_vars.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Column(
+                    children: [
+                      Icon(Icons.tune_outlined, size: 40, color: scheme.outline),
+                      const SizedBox(height: 12),
+                      Text('该插件未声明用户变量',
+                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _vars.length,
+                    itemBuilder: (ctx, i) => _buildField(ctx, _vars[i]),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: (_loading || _saving) ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildField(BuildContext context, PluginUserVar v) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = v.title ?? v.name;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              if (v.required)
+                const Text(' *', style: TextStyle(color: Color(0xFFEC4141), fontSize: 13.5)),
+              const Spacer(),
+              Text(v.name,
+                  style: TextStyle(fontSize: 11, color: scheme.outline)),
+            ],
+          ),
+          if (v.description != null && v.description!.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(v.description!,
+                style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+          ],
+          const SizedBox(height: 7),
+          if (v.isSelect)
+            DropdownButtonFormField<String>(
+              initialValue: _selectValues[v.name],
+              decoration: InputDecoration(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                hintText: v.placeholder,
+              ),
+              items: [
+                for (final opt in v.options)
+                  DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 14))),
+              ],
+              onChanged: (val) {
+                if (val != null) setState(() => _selectValues[v.name] = val);
+              },
+            )
+          else
+            TextField(
+              controller: _controllers[v.name],
+              obscureText: v.isPassword && !_visiblePasswords.contains(v.name),
+              decoration: InputDecoration(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                hintText: v.placeholder,
+                suffixIcon: v.isPassword
+                    ? IconButton(
+                        icon: Icon(
+                          _visiblePasswords.contains(v.name)
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() {
+                          _visiblePasswords.contains(v.name)
+                              ? _visiblePasswords.remove(v.name)
+                              : _visiblePasswords.add(v.name);
+                        }),
+                      )
+                    : null,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+        ],
       ),
     );
   }

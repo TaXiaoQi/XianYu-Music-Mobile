@@ -29,7 +29,6 @@ pub mod reverb;
 pub mod shaper;
 pub mod spatial;
 
-use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 
 // =========================================================================
@@ -522,7 +521,6 @@ impl SoundEffectSettings {
 // SoundEffectBlockProcessor（无 rodio / Tauri 依赖的批量处理核心）
 // =========================================================================
 
-#[frb(opaque)]
 pub struct SoundEffectBlockProcessor {
     sample_rate: u32,
     channels: u16,

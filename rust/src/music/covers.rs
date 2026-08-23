@@ -419,7 +419,7 @@ pub async fn get_song_cover_thumbnail(
         .await
         .map_err(|e| e.to_string())?;
     let source_path = if is_remote_uri(&path) {
-        ensure_cached_path(&cache_root, db_conn.clone(), &path, None).await?
+        ensure_cached_path(&cache_root, db_conn.clone(), &path).await?
     } else {
         path.clone()
     };
@@ -457,7 +457,7 @@ pub async fn get_song_cover(
         .await
         .map_err(|e| e.to_string())?;
     let source_path = if is_remote_uri(&path) {
-        ensure_cached_path(&cache_root, db_conn, &path, None).await?
+        ensure_cached_path(&cache_root, db_conn, &path).await?
     } else {
         path.clone()
     };

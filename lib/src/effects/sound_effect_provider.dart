@@ -525,6 +525,13 @@ class SoundEffectSettings {
         'eqGains': eqGains,
       };
 
+  /// 转换为 Rust EqualizerSettings 兼容 JSON（10 段 EQ，任一频带非 0 即启用）。
+  Map<String, dynamic> toEqualizerRustJson() => {
+        'enabled': eqGains.any((g) => g != 0),
+        'preamp': 0.0,
+        'gains': eqGains,
+      };
+
   factory SoundEffectSettings.fromJson(Map<String, dynamic> j) {
     final s = SoundEffectSettings(
       pitchShift: (j['pitchShift'] as num?)?.toDouble() ?? 100,

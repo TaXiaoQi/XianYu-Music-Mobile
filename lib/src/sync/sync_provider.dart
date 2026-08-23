@@ -16,6 +16,7 @@ import '../playlist/playlist_store.dart';
 import '../player/player_provider.dart' show QueueItem;
 import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_provider.dart';
+import '../plugin/plugin_subscriptions.dart';
 import '../rust/api.dart' as rust;
 
 /// 上传选项配置
@@ -500,14 +501,36 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _ref.read(pluginManagerProvider.notifier).refresh();
         sources = _ref.read(pluginManagerProvider).sources;
       }
+      // 订阅链接列表随插件一起上传（服务端整包替换）
+      final subs = _ref
+          .read(pluginSubscriptionsProvider)
+          .map((s) => s.toJson())
+          .toList();
       if (sources.isEmpty) {
-        state = state.copyWith(
-          pluginSync: state.pluginSync.copyWith(
-            syncing: false,
-            lastSummary: '本地暂无可上传的插件',
-            lastTime: DateTime.now(),
-          ),
-        );
+        if (subs.isNotEmpty) {
+          // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
+          try {
+            await _api.uploadPlugin({},
+                isFirst: true, subscriptions: subs);
+            state = state.copyWith(
+              pluginSync: state.pluginSync.copyWith(
+                syncing: false,
+                lastSummary: '已上传 ${subs.length} 个订阅链接',
+                lastTime: DateTime.now(),
+              ),
+            );
+          } catch (e) {
+            _setPluginError(e is AuthException ? e.message : '订阅上传失败: $e');
+          }
+        } else {
+          state = state.copyWith(
+            pluginSync: state.pluginSync.copyWith(
+              syncing: false,
+              lastSummary: '本地暂无可上传的插件',
+              lastTime: DateTime.now(),
+            ),
+          );
+        }
         return;
       }
       final dir = await _dataDir();
@@ -533,7 +556,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             'filePath': scriptPath,
             'script': _encodeRevBase64(script),
             'scriptEncoded': true,
-          }, isFirst: i == 0);
+          }, isFirst: i == 0, subscriptions: subs);
           uploaded++;
         } catch (e) {
           AppLogger.instance.log('sync', '插件 ${p.name} 上传失败: $e');
@@ -544,7 +567,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         pluginSync: state.pluginSync.copyWith(
           syncing: false,
           lastSummary: uploaded > 0
-              ? '已上传 $uploaded 个插件'
+              ? '已上传 $uploaded 个插件${subs.isNotEmpty ? '、${subs.length} 个订阅' : ''}'
               : '没有插件被上传',
           lastTime: DateTime.now(),
           errors: errors,
@@ -561,12 +584,30 @@ class SyncNotifier extends StateNotifier<SyncState> {
       pluginSync: state.pluginSync.copyWith(syncing: true, errors: []),
     );
     try {
-      final items = await _api.downloadPlugins();
+      final snapshot = await _api.downloadPluginSnapshot();
+
+      // 云端订阅链接合并进本地（即使云端无插件也要合并）
+      final cloudSubs = ((snapshot['subscriptions'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+      var mergedSubs = 0;
+      if (cloudSubs.isNotEmpty) {
+        mergedSubs = await _ref
+            .read(pluginSubscriptionsProvider.notifier)
+            .mergeFromCloud(cloudSubs);
+      }
+
+      final items = ((snapshot['plugins'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
       if (items.isEmpty) {
         state = state.copyWith(
           pluginSync: state.pluginSync.copyWith(
             syncing: false,
-            lastSummary: '云端暂无插件数据',
+            lastSummary: mergedSubs > 0
+                ? '已同步 $mergedSubs 个订阅链接'
+                : '云端暂无插件数据',
             lastTime: DateTime.now(),
           ),
         );
@@ -610,7 +651,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,
-          lastSummary: installed > 0 ? '已恢复 $installed 个插件' : '没有插件被恢复',
+          lastSummary: installed > 0
+              ? '已恢复 $installed 个插件${mergedSubs > 0 ? '、$mergedSubs 个订阅' : ''}'
+              : (mergedSubs > 0 ? '已同步 $mergedSubs 个订阅链接' : '没有插件被恢复'),
           lastTime: DateTime.now(),
           errors: errors,
         ),

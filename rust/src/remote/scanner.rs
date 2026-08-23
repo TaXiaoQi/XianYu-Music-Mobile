@@ -10,20 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-/// 远程同步进度通知器（移动端由调用方注入，桌面端为 Tauri 事件发射）。
-pub(crate) trait RemoteSyncProgressSink: Send + Sync {
-    fn on_progress(
-        &self,
-        source_id: &str,
-        phase: &str,
-        current: usize,
-        total: usize,
-        message: String,
-        done: bool,
-        failed: bool,
-    );
-}
-
 #[derive(Clone)]
 struct RemoteSongSnapshot {
     etag: Option<String>,
@@ -227,7 +213,7 @@ async fn cache_and_parse_remote_song(
 ) -> (Song, Option<String>) {
     let remote_uri = file.remote_uri(&source.id);
     let cache_path =
-        cache::cache_remote_file(cache_root, source, &file.remote_path, &remote_uri, file.etag.as_deref(), None)
+        cache::cache_remote_file(cache_root, source, &file.remote_path, &remote_uri, file.etag.as_deref())
             .await;
 
     match cache_path {
@@ -395,29 +381,6 @@ fn load_remote_song_snapshots(
     Ok(snapshots)
 }
 
-fn emit_sync_progress(
-    sink: Option<&dyn RemoteSyncProgressSink>,
-    source_id: &str,
-    phase: &str,
-    current: usize,
-    total: usize,
-    message: impl Into<String>,
-    done: bool,
-    failed: bool,
-) {
-    if let Some(sink) = sink {
-        sink.on_progress(
-            source_id,
-            phase,
-            current,
-            total,
-            message.into(),
-            done,
-            failed,
-        );
-    }
-}
-
 fn existing_remote_song_paths(
     conn: &rusqlite::Connection,
     source_id: &str,
@@ -460,26 +423,13 @@ pub(crate) async fn sync_source(
     cache_root: &Path,
     db_conn: Arc<Mutex<rusqlite::Connection>>,
     source: RemoteSourceCredentials,
-    sink: Option<Arc<dyn RemoteSyncProgressSink>>,
 ) -> Result<RemoteSyncResult, String> {
-    let sink_ref = sink.as_deref();
-    emit_sync_progress(
-        sink_ref,
-        &source.id,
-        "scanning",
-        0,
-        0,
-        "正在读取远程目录",
-        false,
-        false,
-    );
     let files = match webdav::collect_audio_files(&source).await {
         Ok(files) => files,
         Err(error) => {
             if let Ok(conn) = db_conn.lock() {
                 let _ = update_sync_status(&conn, &source.id, Some(&error));
             }
-            emit_sync_progress(sink_ref, &source.id, "error", 0, 0, error.clone(), true, true);
             return Err(error);
         }
     };
@@ -489,7 +439,6 @@ pub(crate) async fn sync_source(
             Ok(snapshots) => snapshots,
             Err(error) => {
                 let _ = update_sync_status(&conn, &source.id, Some(&error));
-                emit_sync_progress(sink_ref, &source.id, "error", 0, 0, error.clone(), true, true);
                 return Err(error);
             }
         }
@@ -497,19 +446,7 @@ pub(crate) async fn sync_source(
 
     let mut songs = Vec::with_capacity(files.len());
     let mut cache_updates = Vec::new();
-    let total = files.len();
-    for (index, file) in files.iter().enumerate() {
-        let current = index + 1;
-        emit_sync_progress(
-            sink_ref,
-            &source.id,
-            "parsing",
-            current,
-            total,
-            format!("正在解析 {}", file.name),
-            false,
-            false,
-        );
+    for file in files.iter() {
         let remote_uri = file.remote_uri(&source.id);
         if let Some(snapshot) = snapshots.get(&remote_uri) {
             if !remote_file_needs_refresh(Some(snapshot), file) {
@@ -526,16 +463,6 @@ pub(crate) async fn sync_source(
         songs.push(song);
     }
 
-    emit_sync_progress(
-        sink_ref,
-        &source.id,
-        "writing",
-        total,
-        total,
-        "正在写入音乐库",
-        false,
-        false,
-    );
     let write_result = (|| -> Result<(), String> {
         let mut conn = db_conn.lock().map_err(|error| error.to_string())?;
         let next_paths = songs
@@ -561,29 +488,9 @@ pub(crate) async fn sync_source(
         if let Ok(conn) = db_conn.lock() {
             let _ = update_sync_status(&conn, &source.id, Some(&error));
         }
-        emit_sync_progress(
-            sink_ref,
-            &source.id,
-            "error",
-            total,
-            total,
-            error.clone(),
-            true,
-            true,
-        );
         return Err(error);
     }
 
-    emit_sync_progress(
-        sink_ref,
-        &source.id,
-        "complete",
-        total,
-        total,
-        "同步完成",
-        true,
-        false,
-    );
     Ok(RemoteSyncResult {
         source_id: source.id,
         indexed_files: files.len(),

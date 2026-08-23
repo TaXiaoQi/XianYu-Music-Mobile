@@ -15,10 +15,7 @@ mod progress;
 #[path = "scanner/repository.rs"]
 mod repository;
 
-pub use orchestrator::{
-    find_first_song_recursive, group_songs_as_playlists, parse_audio_files_public,
-    parse_music_folder_internal, scan_folder_recursive, scan_single_directory_internal,
-};
+pub(crate) use orchestrator::{scan_folder_recursive, scan_single_directory_internal};
 pub(crate) use parser::parse_song_from_file;
 pub(crate) use repository::apply_scan_changes;
 

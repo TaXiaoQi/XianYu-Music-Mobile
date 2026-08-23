@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../player/player_provider.dart';
+import 'plugin_catalog.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 
@@ -11,7 +12,7 @@ class PluginSearchService {
 
   PluginSearchService(this.engine, this.sources);
 
-  /// 搜索所有已启用插件（LX 插件按声明音源逐个搜索）。
+  /// 搜索所有已启用插件（LX 按声明音源逐个搜索；MusicFree 走 search music）。
   /// 返回 (插件, 搜索结果) 列表。
   Future<List<(PluginSource, List<PluginSearchResult>)>> searchAll(
     String keyword, {
@@ -19,8 +20,17 @@ class PluginSearchService {
   }) async {
     final results = <(PluginSource, List<PluginSearchResult>)>[];
     final enabled = sources.where((s) => s.enabled).toList();
+    final catalog = PluginCatalogService(engine, sources);
     for (final source in enabled) {
-      if (source.format != PluginFormat.lx) continue;
+      if (source.format == PluginFormat.musicfree) {
+        try {
+          final items = await catalog.searchMusic(source, keyword, limit: limit);
+          if (items.isNotEmpty) results.add((source, items));
+        } catch (_) {
+          // 单个插件失败不影响其他
+        }
+        continue;
+      }
       final sourceKeys = source.sources.isEmpty
           ? <String>['default']
           : source.sources;
@@ -43,6 +53,9 @@ class PluginSearchService {
 
   /// 把插件搜索结果转成可播放的 [QueueItem]。
   QueueItem toQueueItem(PluginSource source, PluginSearchResult r) {
+    if (source.format == PluginFormat.musicfree) {
+      return PluginCatalogService.toQueueItem(source, r);
+    }
     final songJson = jsonEncode({
       'pluginId': source.id,
       'source': r.source,

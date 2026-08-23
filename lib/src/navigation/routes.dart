@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../pages/home/home_page.dart';
+import '../../pages/home/daily_recommend_page.dart';
+import '../../pages/home/top_lists_page.dart';
+import '../../pages/home/online_detail_page.dart';
 import '../../pages/library/library_page.dart';
 import '../../pages/effects/effects_page.dart';
 import '../../pages/search/search_page.dart';
@@ -17,6 +20,11 @@ import '../../pages/sync/sync_page.dart';
 import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../../pages/download/download_page.dart';
+import '../../pages/settings/batch_rename_page.dart';
+import '../../pages/remote/remote_library_page.dart';
+import '../../pages/tools/qmc_decrypt_page.dart';
+import '../../pages/wallpaper/wallpaper_center_page.dart';
+import '../../pages/recognize/recognize_page.dart';
 import 'animated_branch_container.dart';
 import 'shell.dart';
 
@@ -65,6 +73,11 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/search',
       builder: (context, state) => const SearchPage(),
+    ),
+    // 听歌识曲（从搜索页进入）。
+    GoRoute(
+      path: '/recognize',
+      builder: (context, state) => const RecognizePage(),
     ),
     // 播放页为全屏覆盖，不占底部导航。
     GoRoute(
@@ -119,6 +132,44 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/download',
       builder: (context, state) => const DownloadPage(),
+    ),
+    // 壁纸中心（从设置页进入）。
+    GoRoute(
+      path: '/wallpaper',
+      builder: (context, state) => const WallpaperCenterPage(),
+    ),
+    // 批量重命名（从设置页进入）。
+    GoRoute(
+      path: '/batch-rename',
+      builder: (context, state) => const BatchRenamePage(),
+    ),
+    // 远程音乐库 WebDAV 管理（从设置页进入）。
+    GoRoute(
+      path: '/remote-library',
+      builder: (context, state) => const RemoteLibraryPage(),
+    ),
+    // QMC 独立文件解密（从设置页进入）。
+    GoRoute(
+      path: '/qmc-decrypt',
+      builder: (context, state) => const QmcDecryptPage(),
+    ),
+    // 每日推荐（首页发现区进入）。
+    GoRoute(
+      path: '/home/daily',
+      builder: (context, state) => const DailyRecommendPage(),
+    ),
+    // 音源榜单（首页发现区进入）。
+    GoRoute(
+      path: '/home/toplists',
+      builder: (context, state) => const TopListsPage(),
+    ),
+    // 在线详情：歌手/专辑/歌单/榜单（参数经 extra 传递）。
+    GoRoute(
+      path: '/online-detail',
+      builder: (context, state) {
+        final args = state.extra as OnlineDetailArgs;
+        return OnlineDetailPage(args: args);
+      },
     ),
   ],
 );

@@ -25,7 +25,6 @@ use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -770,35 +769,6 @@ pub fn move_music_file(
     let normalized_old_path = normalize_path(&old_path);
     let normalized_new_path = normalize_path(&validated_dest.to_string_lossy());
     sync_moved_song_paths(conn, &[(normalized_old_path, normalized_new_path)])
-}
-
-pub fn show_in_folder(path: String) -> Result<(), String> {
-    let validated = path_validator::validate_path(&path, None)?;
-    let path_str = validated.to_string_lossy().to_string();
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("explorer")
-            .args(["/select,", &path_str])
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .args(["-R", &path_str])
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(parent) = validated.parent() {
-            Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .map_err(|e| format!("Failed to open folder: {}", e))?;
-        }
-    }
-    Ok(())
 }
 
 pub fn delete_music_file(path: String) -> Result<(), String> {

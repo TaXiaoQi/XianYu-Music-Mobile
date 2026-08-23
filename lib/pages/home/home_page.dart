@@ -8,6 +8,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/library_grid.dart';
+import 'discover_section.dart';
 
 /// 主界面：顶栏 / 搜索 / 封面轮播 / 音乐库网格 / 听过最多。
 class HomePage extends ConsumerWidget {
@@ -30,6 +31,10 @@ class HomePage extends ConsumerWidget {
                 _SearchBar(onTap: () => context.push('/search')),
                 const SizedBox(height: 22),
                 const CoverCarousel(),
+                const SizedBox(height: 26),
+                const _SectionHeader(title: '发现'),
+                const SizedBox(height: 12),
+                const DiscoverSection(),
                 const SizedBox(height: 26),
                 _SectionHeader(
                   title: '音乐库',

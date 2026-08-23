@@ -208,12 +208,13 @@ class DownloadManager extends StateNotifier<DownloadState> {
     state = state.copyWith(tasks: [task, ...state.tasks]);
 
     try {
-      final filePath = await _performDownload(item, quality, settings);
+      final (filePath, usedQuality) =
+          await _performDownload(item, quality, settings);
       final entry = DownloadHistoryEntry(
         songPath: item.path,
         filePath: filePath,
         fileName: fileNameFromPath(filePath),
-        quality: quality,
+        quality: usedQuality,
         downloadedAt: DateTime.now().millisecondsSinceEpoch,
         title: item.title,
         artist: item.artist,
@@ -230,7 +231,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  Future<String> _performDownload(
+  /// 返回 (目标路径, 实际命中的音质)。
+  Future<(String, String)> _performDownload(
       QueueItem item, String quality, AppSettings? settings) async {
     final songJson = item.onlineSongJson ?? item.onlineInfoJson;
     if (songJson == null || songJson.isEmpty) {
@@ -238,11 +240,21 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     final parsed = jsonDecode(songJson) as Map<String, dynamic>;
 
-    // 1. 解析直链
-    final url = parsed.containsKey('pluginId')
-        ? await _resolvePluginUrl(parsed, quality)
-        : await _resolveLxUrl(songJson, quality);
-    if (url.isEmpty) throw StateError('直链解析失败');
+    // 1. 解析直链：按音质候选链降级（与播放器一致），实际命中的音质用于
+    //    文件命名与历史记录。
+    var usedQuality = quality;
+    String? url;
+    for (final q in _qualityCandidates(quality)) {
+      final tried = parsed.containsKey('pluginId')
+          ? await _resolvePluginUrl(parsed, q)
+          : await _resolveLxUrl(songJson, q);
+      if (RegExp(r'^https?://').hasMatch(tried)) {
+        url = tried;
+        usedQuality = q;
+        break;
+      }
+    }
+    if (url == null) throw StateError('直链解析失败');
 
     // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理）
     final dir = await _downloadDir();
@@ -252,7 +264,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       artist: item.artist,
       album: item.album,
       url: url,
-      quality: quality,
+      quality: usedQuality,
       keepSourceFilename: false,
       fileNameStyle: 'artist-title',
       overwriteExisting: false,
@@ -271,13 +283,23 @@ class DownloadManager extends StateNotifier<DownloadState> {
       await _saveLyrics(item, destPath, parsed);
     }
 
-    return destPath;
+    return (destPath, usedQuality);
+  }
+
+  /// 音质阶梯（低 → 高），与播放器/设置页档位一致；候选链向下降级。
+  static const List<String> _qualityLadder = ['128k', '192k', '320k', 'flac'];
+
+  static List<String> _qualityCandidates(String preferred) {
+    final desc = _qualityLadder.reversed.toList();
+    final i = desc.indexOf(preferred);
+    return i < 0 ? [preferred, ...desc] : desc.sublist(i);
   }
 
   Future<String> _resolveLxUrl(String songJson, String quality) async {
     final resolved = await lxResolveUrl(
       songInfoJson: songJson,
       quality: quality,
+      dataDir: await _ref.read(appDataDirProvider.future),
     );
     if (resolved == 'null' || resolved.isEmpty) return '';
     return (jsonDecode(resolved)['url'] as String?) ?? '';

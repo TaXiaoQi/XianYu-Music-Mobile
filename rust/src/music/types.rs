@@ -190,13 +190,6 @@ pub struct AlbumCatalogItem {
     pub first_song_path: String,
 }
 
-#[derive(Serialize)]
-pub struct GeneratedFolder {
-    pub name: String,
-    pub path: String,
-    pub songs: Vec<Song>,
-}
-
 #[derive(Serialize, Clone, Debug)]
 pub struct FolderNode {
     pub name: String,

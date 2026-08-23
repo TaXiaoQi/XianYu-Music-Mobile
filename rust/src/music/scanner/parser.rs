@@ -1,10 +1,9 @@
 use super::super::cue::CueTrack;
 use super::super::tags::{extract_detail_metadata, read_tagged_file_from_path_for_scan};
 use super::super::types::Song;
-use super::super::utils::{is_supported_library_extension, normalize_path};
 use super::{
     build_album_key, fill_text_fields_from_tags, normalize_album_key_part, primary_artist_name,
-    split_artist_names, ScanOptions, UNKNOWN_ALBUM, UNKNOWN_ARTIST, VARIOUS_ARTISTS,
+    split_artist_names, UNKNOWN_ALBUM, UNKNOWN_ARTIST, VARIOUS_ARTISTS,
     VARIOUS_ARTISTS_THRESHOLD,
 };
 use lofty::file::FileType;
@@ -12,7 +11,7 @@ use lofty::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 use symphonia::core::codecs::CODEC_TYPE_NULL;
 use symphonia::core::formats::FormatOptions;
@@ -219,48 +218,6 @@ pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) ->
         comment,
         artist_avatar_path: None,
     })
-}
-
-pub(super) fn parse_audio_files_internal(paths: Vec<String>, options: ScanOptions) -> Vec<Song> {
-    let mut songs = Vec::new();
-    let mut seen_paths = HashSet::new();
-
-    for raw_path in paths {
-        let normalized_path = normalize_path(&raw_path);
-        if normalized_path.is_empty() || !seen_paths.insert(normalized_path.clone()) {
-            continue;
-        }
-
-        let path = PathBuf::from(&normalized_path);
-        if !path.is_file() {
-            continue;
-        }
-
-        let extension = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| ext.to_ascii_lowercase());
-
-        let Some(extension) = extension else {
-            continue;
-        };
-
-        if !options.is_ext_allowed(&extension) {
-            continue;
-        }
-
-        if let Some(song) = parse_song_from_file(&path, &normalized_path, &extension) {
-            if options.minimum_duration_seconds > 0
-                && song.duration < options.minimum_duration_seconds
-            {
-                continue;
-            }
-
-            songs.push(song);
-        }
-    }
-
-    songs
 }
 
 fn normalize_container(file_type: FileType) -> &'static str {

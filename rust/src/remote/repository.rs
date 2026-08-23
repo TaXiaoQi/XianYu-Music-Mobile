@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension};
 use std::sync::OnceLock;
 use uuid::Uuid;
 
-/// 密码安全存储抽象（桌面端为系统 Keychain，移动端由调用方注入）。
+/// 密码安全存储抽象（桌面端为系统 Keychain，移动端为 [`NoopSecretStore`]）。
 ///
 /// 移动端默认使用 [`NoopSecretStore`]：密码保留在数据库 `password` 字段，
 /// 不迁移到系统钥匙串，避免引入平台敏感依赖。
@@ -28,11 +28,6 @@ impl SecretStore for NoopSecretStore {
 }
 
 static SECRET_STORE: OnceLock<Box<dyn SecretStore>> = OnceLock::new();
-
-/// 注入密码存储实现；未注入时使用 [`NoopSecretStore`]。
-pub(crate) fn set_secret_store(store: Box<dyn SecretStore>) {
-    let _ = SECRET_STORE.set(store);
-}
 
 fn secret_store() -> &'static dyn SecretStore {
     SECRET_STORE.get_or_init(|| Box::new(NoopSecretStore)).as_ref()

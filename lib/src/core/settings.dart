@@ -49,6 +49,10 @@ class AppSettings {
     this.floatingNavBar = true,
     this.navBarPosition = NavBarPosition.bottom,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
+    this.usbExclusiveOutput = false,
+    this.volumeBalanceEnabled = false,
+    this.volumeBalanceGainOffsetDb = 0,
+    this.volumeBalancePreventClipping = true,
   });
 
   final double volume;
@@ -81,6 +85,20 @@ class AppSettings {
   /// 侧边栏展开方向：down 向下展开，up 向上展开。仅在侧边栏模式生效。
   final SideBarExpandDirection sideBarExpandDirection;
 
+  /// USB 独占输出（AAudio exclusive，bit-perfect 直达 USB DAC）。
+  /// 仅本地音乐生效；在线歌曲与失败场景自动回退普通播放。
+  final bool usbExclusiveOutput;
+
+  /// 音量平衡（ReplayGain 响度均衡）总开关。
+  /// 播放本地/缓存文件时按内置 ReplayGain 标签调整增益，使不同歌曲响度一致。
+  final bool volumeBalanceEnabled;
+
+  /// 音量平衡整体增益偏移（dB，-12 ~ 6）。
+  final double volumeBalanceGainOffsetDb;
+
+  /// 防削波破音保护：增益可能超出 0 dB 极限时自动压低；无峰值标签的正增益降级为不提升。
+  final bool volumeBalancePreventClipping;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -105,6 +123,10 @@ class AppSettings {
     bool? floatingNavBar,
     NavBarPosition? navBarPosition,
     SideBarExpandDirection? sideBarExpandDirection,
+    bool? usbExclusiveOutput,
+    bool? volumeBalanceEnabled,
+    double? volumeBalanceGainOffsetDb,
+    bool? volumeBalancePreventClipping,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -133,6 +155,12 @@ class AppSettings {
       navBarPosition: navBarPosition ?? this.navBarPosition,
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
+      usbExclusiveOutput: usbExclusiveOutput ?? this.usbExclusiveOutput,
+      volumeBalanceEnabled: volumeBalanceEnabled ?? this.volumeBalanceEnabled,
+      volumeBalanceGainOffsetDb:
+          volumeBalanceGainOffsetDb ?? this.volumeBalanceGainOffsetDb,
+      volumeBalancePreventClipping:
+          volumeBalancePreventClipping ?? this.volumeBalancePreventClipping,
     );
   }
 }
@@ -174,6 +202,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           (prefs.getString('sideBarExpandDirection') ?? 'down') == 'up'
               ? SideBarExpandDirection.up
               : SideBarExpandDirection.down,
+      usbExclusiveOutput: prefs.getBool('usbExclusiveOutput') ?? false,
+      volumeBalanceEnabled: prefs.getBool('volumeBalanceEnabled') ?? false,
+      volumeBalanceGainOffsetDb:
+          prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
+      volumeBalancePreventClipping:
+          prefs.getBool('volumeBalancePreventClipping') ?? true,
     );
   }
 
@@ -219,6 +253,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('navBarPosition', next.navBarPosition.name),
       prefs.setString(
           'sideBarExpandDirection', next.sideBarExpandDirection.name),
+      prefs.setBool('usbExclusiveOutput', next.usbExclusiveOutput),
+      prefs.setBool('volumeBalanceEnabled', next.volumeBalanceEnabled),
+      prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
+      prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
     ]);
   }
 
@@ -245,6 +283,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
+  Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));
+  Future<void> setVolumeBalanceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceEnabled: v));
+  Future<void> setVolumeBalanceGainOffsetDb(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceGainOffsetDb: v));
+  Future<void> setVolumeBalancePreventClipping(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalancePreventClipping: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

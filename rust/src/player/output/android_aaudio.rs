@@ -428,6 +428,7 @@ enum ExclusiveCommand {
     },
     Stop,
     SetVolume(f32),
+    SetVolumeBalanceGain(f32),
     SetEqualizer(EqualizerSettings),
     SetSoundEffect(SoundEffectSettings),
 }
@@ -485,11 +486,11 @@ pub fn start_exclusive_playback(
         .map_err(|e| e.to_string())?;
 
     // 等待初始化结果（3s 超时）
-    let (device_name, sample_rate, channels) = match init_rx.recv_timeout(Duration::from_secs(3)) {
+    let device_name = match init_rx.recv_timeout(Duration::from_secs(3)) {
         Ok(Ok((name, sr, ch))) => {
             progress.sample_rate.store(sr, Ordering::Relaxed);
             progress.channels.store(ch as u32, Ordering::Relaxed);
-            (name, sr, ch)
+            name
         }
         Ok(Err(e)) => {
             let _ = handle.join();
@@ -542,6 +543,15 @@ pub fn set_exclusive_volume(volume: f32) {
     if let Ok(guard) = instance().lock() {
         if let Some(playback) = guard.as_ref() {
             let _ = playback.tx.send(ExclusiveCommand::SetVolume(volume));
+        }
+    }
+}
+
+/// 运行时更新独占管线的音量平衡（ReplayGain）目标增益，平滑渐变不中断播放。
+pub fn set_exclusive_volume_balance_gain(gain: f32) {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::SetVolumeBalanceGain(gain));
         }
     }
 }
@@ -663,7 +673,7 @@ fn run_exclusive_playback(
     }
 
     // 5. 装配 DSP 链
-    let (mut normalizer, _normalizer_handle) =
+    let (mut normalizer, normalizer_handle) =
         VolumeNormalizer::new(request.volume_balance_gain, source_sample_rate, source_channels, 100);
 
     let eq_settings: EqualizerSettings = if request.equalizer_settings_json.is_empty() {
@@ -729,7 +739,6 @@ fn run_exclusive_playback(
     // 9. 轮询循环
     let timeout_ns: i64 = 20_000_000; // 20ms
     let bytes_per_sample = device_format.bytes_per_sample();
-    let frame_bytes = bytes_per_sample * stream_channels as usize;
 
     loop {
         // 检查命令
@@ -756,6 +765,10 @@ fn run_exclusive_playback(
             Ok(ExclusiveCommand::SetVolume(vol)) => {
                 user_volume.store(vol.to_bits(), Ordering::Relaxed);
             }
+            Ok(ExclusiveCommand::SetVolumeBalanceGain(gain)) => {
+                // ReplayGain 目标增益：Normalizer 内部 100ms 渐变防爆音。
+                normalizer_handle.set_target_gain(gain);
+            }
             Ok(ExclusiveCommand::SetEqualizer(settings)) => {
                 eq_handle.set_settings(settings);
             }
@@ -779,10 +792,7 @@ fn run_exclusive_playback(
         }
 
         // 读取一块样本
-        let frames_to_write = available.min(2048) as usize;
-        let samples_needed = frames_to_write * source_channels as usize;
-
-        let raw_block = match buffered.next_block() {
+        let block = match buffered.next_block() {
             Some(block) => block,
             None => {
                 // EOF
@@ -791,11 +801,6 @@ fn run_exclusive_playback(
         };
 
         // DSP 链处理
-        let block = if raw_block.len() >= samples_needed {
-            raw_block
-        } else {
-            raw_block
-        };
 
         let normalized = normalizer.process_block(&block);
         let eq_applied = equalizer.process_block(&normalized);

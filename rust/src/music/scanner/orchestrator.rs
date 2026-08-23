@@ -1,25 +1,20 @@
-use super::super::types::{FolderNode, GeneratedFolder, Song};
-use super::super::utils::{
-    descendant_like_patterns, is_supported_library_extension, normalize_path,
-};
+use super::super::types::{FolderNode, Song};
+use super::super::utils::{descendant_like_patterns, normalize_path};
 use super::diff::{collect_scan_diff, load_db_snapshot_for_folder};
-use super::parser::parse_audio_files_internal;
 use super::progress::{ScanProgressReporter, ScanProgressSink};
 use super::repository::apply_scan_changes;
 use super::ScanOptions;
 use rusqlite::{params, OptionalExtension};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use walkdir::WalkDir;
 
 /// 歌手头像保存器（移动端由调用方注入，桌面端为 covers 模块实现）。
 pub(crate) trait AvatarSaver: Send + Sync {
     fn save(&self, bytes: &[u8]) -> Option<String>;
 }
 
-pub fn scan_single_directory_internal(
+pub(crate) fn scan_single_directory_internal(
     folder_path: String,
     db_conn: Arc<Mutex<rusqlite::Connection>>,
     sink: Option<Arc<dyn ScanProgressSink>>,
@@ -96,7 +91,7 @@ pub fn scan_single_directory_internal(
     Ok(scan_diff.songs)
 }
 
-pub fn find_first_song_recursive(path: &Path, conn: &rusqlite::Connection) -> Option<String> {
+pub(crate) fn find_first_song_recursive(path: &Path, conn: &rusqlite::Connection) -> Option<String> {
     let path_str = normalize_path(&path.to_string_lossy());
     let (pattern_forward, pattern_back) = descendant_like_patterns(&path_str);
 
@@ -160,7 +155,7 @@ fn read_subdirectories(folder_path: &Path) -> Option<Vec<PathBuf>> {
     Some(subdirs)
 }
 
-pub fn scan_folder_recursive(
+pub(crate) fn scan_folder_recursive(
     folder_path: PathBuf,
     current_depth: u32,
     max_depth: u32,
@@ -205,71 +200,4 @@ pub fn scan_folder_recursive(
         },
         is_expanded: false,
     })
-}
-
-/// 解析指定音频文件路径并返回歌曲（不写库）。
-pub fn parse_audio_files_public(
-    paths: Vec<String>,
-    minimum_duration_seconds: Option<u32>,
-) -> Result<Vec<Song>, String> {
-    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
-    Ok(parse_audio_files_internal(paths, options))
-}
-
-/// 解析文件夹内所有受支持音频文件并按序返回歌曲（不写库）。
-pub fn parse_music_folder_internal(
-    folder_path: &str,
-    minimum_duration_seconds: Option<u32>,
-) -> Result<Vec<Song>, String> {
-    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
-
-    let root = Path::new(folder_path);
-    if !root.is_dir() || fs::read_dir(root).is_err() {
-        return Err("所选路径不是可读取的文件夹".to_string());
-    }
-
-    let mut paths: Vec<String> = WalkDir::new(root)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter_map(|entry| {
-            let extension = entry.path().extension()?.to_string_lossy().to_lowercase();
-            is_supported_library_extension(&extension)
-                .then(|| normalize_path(&entry.path().to_string_lossy()))
-        })
-        .collect();
-    paths.sort();
-    paths.dedup();
-
-    Ok(parse_audio_files_internal(paths, options))
-}
-
-/// 将扫描到的歌曲按父文件夹分组为播放列表。
-pub fn group_songs_as_playlists(songs: Vec<Song>) -> Vec<GeneratedFolder> {
-    let mut grouped: HashMap<PathBuf, Vec<Song>> = HashMap::new();
-    for song in songs {
-        let path = PathBuf::from(&song.path);
-        if let Some(parent) = path.parent() {
-            grouped.entry(parent.to_path_buf()).or_default().push(song);
-        }
-    }
-
-    let mut result = Vec::new();
-    for (folder_path, folder_songs) in grouped {
-        if folder_songs.is_empty() {
-            continue;
-        }
-
-        let folder_name = folder_path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未知文件夹".to_string());
-        result.push(GeneratedFolder {
-            name: folder_name,
-            path: folder_path.to_string_lossy().into_owned(),
-            songs: folder_songs,
-        });
-    }
-    result.sort_by(|left, right| left.name.cmp(&right.name));
-    result
 }

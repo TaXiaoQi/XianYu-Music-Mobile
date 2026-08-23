@@ -51,9 +51,9 @@ class AboutConfig {
     this.officialSiteText = '前往官网',
     this.updateEnabled = true,
     this.updateText = '检查更新',
-    this.projectUrl = '',
+    this.projectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Mobile',
     this.projectText = '开源地址',
-    this.referenceProjectUrl = '',
+    this.referenceProjectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
     this.referenceProjectText = '参考项目',
     this.joinGroupUrl = '',
     this.joinGroupText = '加入群组',
@@ -64,9 +64,12 @@ class AboutConfig {
         officialSiteText: (j['officialSiteText'] ?? '前往官网').toString(),
         updateEnabled: (j['updateEnabled'] as bool?) ?? true,
         updateText: (j['updateText'] ?? '检查更新').toString(),
-        projectUrl: (j['projectUrl'] ?? '').toString(),
+        projectUrl: (j['projectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Mobile')
+            .toString(),
         projectText: (j['projectText'] ?? '开源地址').toString(),
-        referenceProjectUrl: (j['referenceProjectUrl'] ?? '').toString(),
+        referenceProjectUrl:
+            (j['referenceProjectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Desktop')
+                .toString(),
         referenceProjectText: (j['referenceProjectText'] ?? '参考项目').toString(),
         joinGroupUrl: (j['joinGroupUrl'] ?? '').toString(),
         joinGroupText: (j['joinGroupText'] ?? '加入群组').toString(),

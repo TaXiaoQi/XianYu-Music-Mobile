@@ -98,6 +98,38 @@ class SettingsPage extends ConsumerWidget {
                 trailing: Text(settings?.onlineDefaultQuality ?? '320k'),
                 onTap: () => _pickQuality(context, ref, settings, isOnline: true),
               ),
+              _switchTile(
+                context,
+                icon: Icons.usb_outlined,
+                title: 'USB 独占输出 (Bit-perfect)',
+                subtitle: '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+                value: settings?.usbExclusiveOutput ?? false,
+                onChanged: (v) => notifier.setUsbExclusiveOutput(v),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.balance_outlined,
+                title: '音量平衡 (ReplayGain)',
+                subtitle: '按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量',
+                value: settings?.volumeBalanceEnabled ?? false,
+                onChanged: (v) => notifier.setVolumeBalanceEnabled(v),
+              ),
+              if (settings?.volumeBalanceEnabled ?? false) ...[
+                _tile(
+                  context,
+                  icon: Icons.tune_outlined,
+                  title: '整体增益偏移',
+                  trailing: _gainOffsetSlider(settings, notifier),
+                ),
+                _switchTile(
+                  context,
+                  icon: Icons.shield_outlined,
+                  title: '防削波破音保护',
+                  subtitle: '增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量',
+                  value: settings?.volumeBalancePreventClipping ?? true,
+                  onChanged: (v) => notifier.setVolumeBalancePreventClipping(v),
+                ),
+              ],
             ],
           ),
 
@@ -137,6 +169,13 @@ class SettingsPage extends ConsumerWidget {
                 title: '显示音质标识',
                 value: settings?.showQualityBadges ?? true,
                 onChanged: (v) => notifier.setShowQualityBadges(v),
+              ),
+              _tile(
+                context,
+                icon: Icons.cloud_outlined,
+                title: '远程音乐库 (WebDAV)',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/remote-library'),
               ),
             ],
           ),
@@ -202,6 +241,27 @@ class SettingsPage extends ConsumerWidget {
                 title: '我的歌单',
                 trailing: const SizedBox.shrink(),
                 onTap: () => context.push('/playlists'),
+              ),
+              _tile(
+                context,
+                icon: Icons.wallpaper_outlined,
+                title: '壁纸中心',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/wallpaper'),
+              ),
+              _tile(
+                context,
+                icon: Icons.lock_open_outlined,
+                title: 'QMC 文件解密',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/qmc-decrypt'),
+              ),
+              _tile(
+                context,
+                icon: Icons.drive_file_rename_outline,
+                title: '批量重命名',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/batch-rename'),
               ),
               _tile(
                 context,
@@ -280,10 +340,14 @@ class SettingsPage extends ConsumerWidget {
       {required IconData icon,
       required String title,
       required bool value,
-      required ValueChanged<bool> onChanged}) {
+      required ValueChanged<bool> onChanged,
+      String? subtitle}) {
     return SwitchListTile(
       secondary: Icon(icon),
       title: Text(title),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       value: value,
       onChanged: onChanged,
     );
@@ -346,6 +410,34 @@ class SettingsPage extends ConsumerWidget {
         value: s?.volume ?? 1.0,
         onChanged: (v) => n.setVolume(v),
       ),
+    );
+  }
+
+  /// 音量平衡整体增益偏移滑条（-12 ~ +6 dB）。
+  Widget _gainOffsetSlider(AppSettings? s, SettingsNotifier n) {
+    final db = s?.volumeBalanceGainOffsetDb ?? 0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 130,
+          child: Slider(
+            min: -12,
+            max: 6,
+            divisions: 18,
+            value: db.clamp(-12.0, 6.0),
+            onChanged: (v) => n.setVolumeBalanceGainOffsetDb(v),
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            '${db > 0 ? '+' : ''}${db.toStringAsFixed(0)} dB',
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontSize: 12.5),
+          ),
+        ),
+      ],
     );
   }
 

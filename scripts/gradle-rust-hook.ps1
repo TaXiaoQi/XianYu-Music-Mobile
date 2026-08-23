@@ -1,9 +1,10 @@
-#requires -version 5.1
-# 默认跳过自动重编 Rust（优先使用工程中已有 .so 产物），避免本地环境路径不匹配或时间戳误判
-exit 0
+﻿#requires -version 5.1
+# 默认跳过自动重编 Rust（优先使用工程中已有 .so 产物），避免本地环境路径不匹配或时间戳误判。
+# 与 build.gradle.kts 对齐：仅当显式设置 XIANMU_BUILD_RUST=1 时才真正执行（防止 .so 与
+# 重新生成的 Dart 绑定 funcId 失步，导致运行时 wire 调用错位、扫描等功能失效）。
+if ($env:XIANMU_BUILD_RUST -ne "1") { exit 0 }
 
 <#
-.SYNOPSIS
 .SYNOPSIS
   flutter run / flutter build 的 Rust 自动编译钩子（由 android/app/build.gradle.kts preBuild 调用）。
 
@@ -104,10 +105,13 @@ if ($needCodegen) {
         $pInfo = New-Object System.Diagnostics.ProcessStartInfo
         $pInfo.FileName = $codegenExe
         $pInfo.Arguments = "generate --rust-root `"$rustRoot`" --rust-output `"$rustOut`""
-        $pInfo.UseShellExecute = false
-        $pInfo.RedirectStandardOutput = true
-        $pInfo.RedirectStandardError = true
-        $pInfo.CreateNoWindow = true
+        # Push-Location 只改 PS 提供器位置，不改进程 CWD；codegen 需在项目根找到
+        # flutter_rust_bridge.yaml，必须显式指定工作目录。
+        $pInfo.WorkingDirectory = $realSource
+        $pInfo.UseShellExecute = $false
+        $pInfo.RedirectStandardOutput = $true
+        $pInfo.RedirectStandardError = $true
+        $pInfo.CreateNoWindow = $true
         $p = [System.Diagnostics.Process]::Start($pInfo)
         $stdout = $p.StandardOutput.ReadToEnd()
         $stderr = $p.StandardError.ReadToEnd()
@@ -129,15 +133,18 @@ if ($needSo) {
     # jniLibs。这里只编译，再手动拷贝唯一的最终产物 libxianyu_core.so。
     Push-Location (Join-Path $realSource "rust")
     try {
-        $cargoNdkExe = Join-Path $cargoBin "cargo-ndk.exe"
-        if (-not (Test-Path $cargoNdkExe)) { $cargoNdkExe = "cargo-ndk" }
+        # 新版 cargo-ndk 禁止直接执行 cargo-ndk.exe（报 "This binary may only be
+        # called via `cargo ndk`"），必须经 cargo 子命令机制转发。
+        $cargoExe = Join-Path $cargoBin "cargo.exe"
+        if (-not (Test-Path $cargoExe)) { $cargoExe = "cargo" }
         $pInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $pInfo.FileName = $cargoNdkExe
-        $pInfo.Arguments = "-t arm64-v8a build --release"
-        $pInfo.UseShellExecute = false
-        $pInfo.RedirectStandardOutput = true
-        $pInfo.RedirectStandardError = true
-        $pInfo.CreateNoWindow = true
+        $pInfo.FileName = $cargoExe
+        $pInfo.Arguments = "ndk -t arm64-v8a build --release"
+        $pInfo.WorkingDirectory = Join-Path $realSource "rust"
+        $pInfo.UseShellExecute = $false
+        $pInfo.RedirectStandardOutput = $true
+        $pInfo.RedirectStandardError = $true
+        $pInfo.CreateNoWindow = $true
         $p = [System.Diagnostics.Process]::Start($pInfo)
         $stdout = $p.StandardOutput.ReadToEnd()
         $stderr = $p.StandardError.ReadToEnd()

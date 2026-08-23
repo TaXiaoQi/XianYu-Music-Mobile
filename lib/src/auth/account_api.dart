@@ -69,7 +69,9 @@ class AccountApi {
 
   Future<AboutConfig> fetchAboutConfig() async {
     try {
-      final data = await _action('get_about_config', {}, fetchTimeoutMs: 8000);
+      // platform=mobile：服务端据此把开源地址换成本仓库、参考项目换成桌面端仓库
+      final data =
+          await _action('get_about_config', {'platform': 'mobile'}, fetchTimeoutMs: 8000);
       return AboutConfig.fromJson(data);
     } catch (_) {
       return const AboutConfig();
@@ -80,8 +82,8 @@ class AccountApi {
 
   Future<LatestVersion?> fetchServerUpdate() async {
     try {
-      final data =
-          await _action('get_latest_version', {}, fetchTimeoutMs: 15000);
+      final data = await _action('get_latest_version',
+        {'platform': 'mobile'}, fetchTimeoutMs: 15000);
       if (data['version'] == null) return null;
       return LatestVersion.fromJson(data);
     } catch (_) {
@@ -135,6 +137,7 @@ class AccountApi {
       'feedback_type': feedbackType,
       'platform': 'mobile',
       'app_version': appVersion,
+      'device_id': await _auth.deviceId(),
       if (errorLogs != null && errorLogs.isNotEmpty) 'error_logs': errorLogs,
       if (allLogs != null && allLogs.isNotEmpty) 'all_logs': allLogs,
       if (images != null && images.isNotEmpty) 'images': images,
@@ -166,6 +169,7 @@ class AccountApi {
       'ciyuanxi_id': ciyuanxiId,
       'nickname': nickname.trim(),
       'content': content.trim(),
+      'device_id': await _auth.deviceId(),
     });
     return (data['id'] as num?)?.toInt() ?? 0;
   }
@@ -178,6 +182,7 @@ class AccountApi {
     try {
       final data = await _action('get_my_feedback_notifications', {
         'ciyuanxi_id': ciyuanxiId,
+        'device_id': await _auth.deviceId(),
       }, fetchTimeoutMs: 15000);
       final list = (data['list'] as List?) ?? const [];
       return list
@@ -247,6 +252,7 @@ class AccountApi {
     }
     await _action('settings_sync_upload', {
       'user_id': ciyuanxiId,
+      'platform': 'mobile',
       'settings': settingsToSyncMap(settings),
     }, fetchTimeoutMs: 20000);
   }
@@ -259,6 +265,7 @@ class AccountApi {
     }
     final data = await _action('settings_sync_download', {
       'user_id': ciyuanxiId,
+      'platform': 'mobile',
     }, fetchTimeoutMs: 15000);
     final settings = data['settings'];
     if (settings is! Map<String, dynamic>) return null;
@@ -378,8 +385,12 @@ class AccountApi {
 
   // ─── 插件同步 ───────────────────────────────────────────
 
-  /// 上传单个插件到云端。
-  Future<void> uploadPlugin(Map<String, dynamic> plugin, {bool isFirst = false}) async {
+  /// 上传单个插件到云端（subscriptions 随每个请求整包替换云端订阅列表）。
+  Future<void> uploadPlugin(
+    Map<String, dynamic> plugin, {
+    bool isFirst = false,
+    List<Map<String, dynamic>>? subscriptions,
+  }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException('请先登录后再同步插件');
@@ -388,20 +399,96 @@ class AccountApi {
       'user_id': ciyuanxiId,
       'plugin': plugin,
       'is_first': isFirst,
+      'subscriptions': ?subscriptions,
     }, fetchTimeoutMs: 60000);
   }
 
-  /// 从云端下载插件列表。
-  Future<List<Map<String, dynamic>>> downloadPlugins() async {
+  /// 从云端下载插件同步快照（含 plugins 与 subscriptions）。
+  Future<Map<String, dynamic>> downloadPluginSnapshot() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException('请先登录后再同步插件');
     }
-    final data = await _action('plugin_sync_download', {'user_id': ciyuanxiId},
+    return _action('plugin_sync_download', {'user_id': ciyuanxiId},
         fetchTimeoutMs: 15000);
-    return ((data['plugins'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
+  }
+
+  // ─── 壁纸中心 ───────────────────────────────────────────
+
+  /// 壁纸列表原始字段映射（camelCase 优先、snake_case 兜底，
+  /// 与桌面端 WallpaperGallery 容错逻辑一致）。
+  static Map<String, dynamic> normalizeWallpaper(Map<dynamic, dynamic> w) => {
+        'id': (w['id'] as num?)?.toInt() ?? 0,
+        'title': (w['title'] as String?) ?? '',
+        'description': (w['description'] as String?) ?? '',
+        'imageUrl': (w['imageUrl'] ?? w['image_url'] ?? w['image'] ?? '')
+            as String,
+        'thumbnailUrl': (w['thumbnailUrl'] ??
+            w['thumbnail_url'] ??
+            w['imageUrl'] ??
+            w['image_url'] ??
+            w['image'] ??
+            '') as String,
+        'category': (w['category'] as String?) ?? '',
+        'status': (w['status'] as String?) ?? 'pending',
+        'uploaderId':
+            (w['uploaderId'] ?? w['uploader_id'] ?? w['ciyuanxi_id'] ?? '')
+                as String,
+        'uploaderNickname':
+            (w['uploaderNickname'] ?? w['uploaded_by_nickname'] ?? w['nickname'] ?? '')
+                as String,
+        'createdAt': (w['createdAt'] ?? w['created_at'] ?? '') as String,
+      };
+
+  /// 获取移动端壁纸广场列表（无需登录）。
+  Future<List<Map<String, dynamic>>> fetchWallpapers() async {
+    final data = await _auth.requestActionList(
+        'list_wallpapers', {'platform': 'mobile'},
+        fetchTimeoutMs: 15000);
+    final list = data is List ? data : const [];
+    return list
+        .whereType<Map>()
+        .map((m) => normalizeWallpaper(m.cast<String, dynamic>()))
         .toList();
+  }
+
+  /// 获取当前登录用户的上传列表（含审核状态）。
+  Future<List<Map<String, dynamic>>> fetchMyWallpapers() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException('请先登录账号后再查看我的上传');
+    }
+    final data = await _auth.requestActionList('my_wallpapers', {
+      'ciyuanxi_id': ciyuanxiId,
+      'platform': 'mobile',
+    }, fetchTimeoutMs: 15000);
+    final list = data is List ? data : const [];
+    return list
+        .whereType<Map>()
+        .map((m) => normalizeWallpaper(m.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// 上传壁纸（imageData 为 data URL base64 JPEG）。
+  Future<void> uploadWallpaper({
+    required String title,
+    required String description,
+    required String category,
+    required String imageData,
+  }) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException('请先登录账号后再上传壁纸');
+    }
+    await _action('upload_wallpaper', {
+      'ciyuanxi_id': ciyuanxiId,
+      'nickname': _auth.currentState.user?.nickname ?? '',
+      'title': title,
+      'description': description,
+      'category': category.trim().isEmpty ? '用户上传' : category.trim(),
+      'platform': 'mobile',
+      'image_data': imageData,
+    }, fetchTimeoutMs: 90000);
   }
 
   // ─── 排行榜 ─────────────────────────────────────────────

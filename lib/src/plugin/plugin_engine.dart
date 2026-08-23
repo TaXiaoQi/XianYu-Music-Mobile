@@ -16,6 +16,9 @@ class PluginEngine {
   final String dataDir;
   final PluginStore store;
 
+  /// 用户变量值提供器：懒加载 MusicFree 插件时按插件 ID 取已保存的值。
+  Future<Map<String, String>> Function(String pluginId)? userVarsProvider;
+
   /// 已就绪的插件 ID 集合（沙箱实例存在）。
   final Set<String> _ready = {};
 
@@ -215,7 +218,11 @@ class PluginEngine {
       final isLx = source.format == PluginFormat.lx;
       final info = isLx
           ? await loadLx(source.id, script, scriptInfo: parseLxScriptInfo(script))
-          : await loadMusicFree(source.id, script);
+          : await loadMusicFree(
+              source.id,
+              script,
+              userVars: await userVarsProvider?.call(source.id),
+            );
       if (info != null && info['id'] != null && info['id'] != source.id) {
         // 重新加载得到的 hash 与存储 ID 不一致时注册别名
         final newId = info['id'].toString();

@@ -15,6 +15,7 @@ import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
+import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import '../stats/listen_stats.dart';
 
@@ -152,6 +153,8 @@ class PlaybackState {
   final bool resolving;
   /// 当前播放错误信息（在线歌曲解析/播放失败时展示）。
   final String? error;
+  /// USB 独占输出（AAudio exclusive）播放中：EQ/音效 DSP 走 Rust 管线。
+  final bool usbExclusive;
   const PlaybackState({
     this.current,
     this.queue = const [],
@@ -162,6 +165,7 @@ class PlaybackState {
     this.playMode = 0,
     this.resolving = false,
     this.error,
+    this.usbExclusive = false,
   });
 
   PlaybackState copyWith({
@@ -174,6 +178,7 @@ class PlaybackState {
     int? playMode,
     bool? resolving,
     Object? error = _noChange,
+    bool? usbExclusive,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -185,6 +190,7 @@ class PlaybackState {
       playMode: playMode ?? this.playMode,
       resolving: resolving ?? this.resolving,
       error: error == _noChange ? this.error : error as String?,
+      usbExclusive: usbExclusive ?? this.usbExclusive,
     );
   }
 }
@@ -206,6 +212,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<Duration?>? _durSub;
   StreamSubscription<dynamic>? _stateSub;
   Timer? _listenTimer;
+  Timer? _exclusiveTimer;
+  Timer? _sfxSyncTimer;
   bool _manualPause = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   // 在线歌曲连续失败跳过计数（防环）。
@@ -256,8 +264,172 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 音效变速变调即时生效（just_audio 原生支持 speed/pitch）。
     _ref.listen(soundEffectProvider.select((s) => s.settings), (_, s) {
       _applyEffectSpeedPitch(s);
+      _syncExclusiveEffects(s);
     });
+    // 音量即时同步到独占管线。
+    _ref.listen(volumeProvider, (_, v) {
+      if (state.usbExclusive) {
+        try {
+          setUsbExclusiveVolume(volume: v);
+        } catch (_) {}
+      }
+    });
+    // 独占输出开关切换时，正在播放的本地曲目无缝切换管线。
+    _ref.listen(
+      settingsProvider.select((s) => s.valueOrNull?.usbExclusiveOutput ?? false),
+      (prev, next) {
+        if (prev != next) _onExclusiveSettingChanged(next);
+      },
+    );
+    // 音量平衡（ReplayGain）设置变化：重算当前曲目增益并即时应用。
+    _ref.listen(
+      settingsProvider.select((s) => (
+            s.valueOrNull?.volumeBalanceEnabled ?? false,
+            s.valueOrNull?.volumeBalanceGainOffsetDb ?? 0,
+            s.valueOrNull?.volumeBalancePreventClipping ?? true,
+          )),
+      (prev, next) {
+        if (prev != next) _onVolumeBalanceSettingChanged();
+      },
+    );
     await _restoreSession();
+  }
+
+  /// 独占输出开关切换：当前本地曲目从当前位置无缝换管线。
+  Future<void> _onExclusiveSettingChanged(bool enabled) async {
+    final item = state.current;
+    if (item == null || item.isOnline || _isRemotePath(item.path)) return;
+    final pos = state.position;
+    final playing = state.isPlaying;
+    if (enabled) {
+      if (state.usbExclusive) return;
+      final ok =
+          await _tryStartExclusive(item.path, startAtSecs: pos, isPlaying: playing);
+      if (ok) {
+        try {
+          await _player.stop();
+        } catch (_) {}
+        state = state.copyWith(isPlaying: playing);
+        _syncToSystemMediaSession();
+      }
+    } else {
+      if (!state.usbExclusive) return;
+      await _stopExclusive();
+      try {
+        await _updateRgGain(item.path);
+        await _player.setFilePath(item.path);
+        await _player.setVolume(_effectiveVolume());
+        await _player.seek(Duration(milliseconds: (pos * 1000).round()));
+        if (playing) {
+          await _player.play();
+        } else {
+          await _player.pause();
+        }
+        state = state.copyWith(isPlaying: playing);
+        _syncToSystemMediaSession();
+      } catch (_) {}
+    }
+  }
+
+  /// 启动 USB 独占播放（AAudio exclusive + Rust DSP 管线）。失败返回 false。
+  Future<bool> _tryStartExclusive(
+    String path, {
+    required double startAtSecs,
+    required bool isPlaying,
+  }) async {
+    try {
+      final sfx = _ref.read(soundEffectProvider).settings;
+      await startUsbExclusivePlayback(
+        path: path,
+        deviceId: -1,
+        volume: _ref.read(volumeProvider),
+        startTimeSecs: startAtSecs,
+        isPlaying: isPlaying,
+        volumeBalanceGain: _effectiveBalanceGain(),
+        equalizerSettingsJson: jsonEncode(sfx.toEqualizerRustJson()),
+        soundEffectSettingsJson: jsonEncode(sfx.toRustJson()),
+      );
+      state = state.copyWith(usbExclusive: true, isPlaying: isPlaying);
+      _startExclusivePolling();
+      _syncToSystemMediaSession();
+      return true;
+    } catch (e) {
+      state = state.copyWith(usbExclusive: false);
+      AppLogger.instance.log('exclusive', 'USB 独占输出启动失败，回退普通播放: $e');
+      return false;
+    }
+  }
+
+  /// 停止独占播放并释放设备。
+  Future<void> _stopExclusive() async {
+    _stopExclusivePolling();
+    try {
+      await stopUsbExclusivePlayback();
+    } catch (_) {}
+    if (state.usbExclusive) {
+      state = state.copyWith(usbExclusive: false);
+    }
+  }
+
+  /// 独占播放轮询：同步进度、检测自然播完。
+  void _startExclusivePolling() {
+    _stopExclusivePolling();
+    _exclusiveTimer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _pollExclusive(),
+    );
+  }
+
+  void _stopExclusivePolling() {
+    _exclusiveTimer?.cancel();
+    _exclusiveTimer = null;
+  }
+
+  Future<void> _pollExclusive() async {
+    if (!state.usbExclusive) return;
+    try {
+      final pos = await getUsbExclusivePositionSecs();
+      state = state.copyWith(position: pos);
+      _syncToSystemMediaSession();
+      _persistPositionDebounced();
+      final dur = state.duration;
+      if (dur > 0 && pos >= dur - 0.3) {
+        await _onExclusiveTrackEnd();
+      }
+    } catch (_) {}
+  }
+
+  /// 独占播放自然结束：释放设备后按播放模式衔接。
+  Future<void> _onExclusiveTrackEnd() async {
+    final ended = state.current;
+    if (ended != null) _reportBehavior(ended, 'complete', 0);
+    _flushPlayStats();
+    await _stopExclusive();
+    if (state.playMode == 1) {
+      await _playAt(state.queueIndex, manualPause: false);
+      return;
+    }
+    final next = _pickNextIndex();
+    if (next < 0) {
+      state = state.copyWith(isPlaying: false, position: 0);
+      _syncToSystemMediaSession();
+      return;
+    }
+    await _playAt(next, manualPause: false);
+  }
+
+  /// EQ/音效设置变化时同步到独占管线（50ms 防抖）。
+  void _syncExclusiveEffects(SoundEffectSettings s) {
+    if (!state.usbExclusive) return;
+    _sfxSyncTimer?.cancel();
+    _sfxSyncTimer = Timer(const Duration(milliseconds: 50), () async {
+      try {
+        await setUsbExclusiveEqualizer(
+            settingsJson: jsonEncode(s.toEqualizerRustJson()));
+        await setUsbExclusiveSoundEffect(
+            settingsJson: jsonEncode(s.toRustJson()));
+      } catch (_) {}
+    });
   }
 
   /// 将音效的倍速/变调应用到 just_audio。
@@ -356,11 +528,29 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _player.setVolume(vol);
 
       if (!currentItem.isOnline) {
-        try {
-          await _player.setFilePath(currentItem.path);
+        if (_isRemotePath(currentItem.path)) {
+          final cached = await _preloadRemote(currentItem);
+          await _updateRgGain(cached);
           await seek(pos);
-        } catch (e) {
-          AppLogger.instance.log('session', '本地曲目预加载失败: $e');
+          await _player.setVolume(_effectiveVolume());
+        } else {
+          await _updateRgGain(currentItem.path);
+          final useExclusive =
+              _ref.read(settingsProvider).valueOrNull?.usbExclusiveOutput ?? false;
+          var restored = false;
+          if (useExclusive) {
+            restored = await _tryStartExclusive(currentItem.path,
+                startAtSecs: pos, isPlaying: false);
+          }
+          if (!restored) {
+            try {
+              await _player.setFilePath(currentItem.path);
+              await seek(pos);
+            } catch (e) {
+              AppLogger.instance.log('session', '本地曲目预加载失败: $e');
+            }
+            await _player.setVolume(_effectiveVolume());
+          }
         }
       } else {
         _restoredOnlinePending = pos;
@@ -427,11 +617,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
     try {
       if (item.isOnline) {
+        await _stopExclusive();
         await _playOnline(item);
+      } else if (_isRemotePath(item.path)) {
+        await _stopExclusive();
+        _rgGain = 1.0;
+        await _playRemote(item);
       } else {
-        await _player.setFilePath(item.path);
-        await _player.setVolume(_ref.read(volumeProvider));
-        await _player.play();
+        await _updateRgGain(item.path);
+        final useExclusive =
+            _ref.read(settingsProvider).valueOrNull?.usbExclusiveOutput ?? false;
+        var started = false;
+        if (useExclusive) {
+          await _stopExclusive();
+          started = await _tryStartExclusive(item.path,
+              startAtSecs: 0, isPlaying: true);
+        }
+        if (!started) {
+          await _stopExclusive();
+          try {
+            await _player.stop();
+          } catch (_) {}
+          await _player.setFilePath(item.path);
+          await _player.setVolume(_effectiveVolume());
+          await _player.play();
+        }
       }
       _skipDepth = 0;
       state = state.copyWith(resolving: false, error: null);
@@ -522,6 +732,107 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   static bool _isPlayableUrl(String? url) =>
       url != null && RegExp(r'^https?://').hasMatch(url);
+
+  static bool _isRemotePath(String path) => path.startsWith('remote://');
+
+  // ==================== 音量平衡（ReplayGain 响度均衡） ====================
+
+  /// 当前曲目 ReplayGain 线性增益（1.0 = 不调整）。切歌/设置变化时重算。
+  double _rgGain = 1.0;
+
+  /// 普通管线（just_audio）实际音量 = 用户音量 × ReplayGain 增益。
+  double _effectiveVolume() =>
+      (_ref.read(volumeProvider) * _effectiveBalanceGain()).clamp(0.0, 4.0);
+
+  /// 当前应生效的音量平衡增益（设置关闭或在线歌曲为 1.0）。
+  double _effectiveBalanceGain() {
+    final s = _ref.read(settingsProvider).valueOrNull;
+    return (s?.volumeBalanceEnabled ?? false) ? _rgGain : 1.0;
+  }
+
+  /// 计算并更新当前曲目的 ReplayGain 增益。
+  /// 本地文件 / 远程缓存文件读标签；无标签或读取失败重置 1.0。
+  Future<void> _updateRgGain(String? path) async {
+    final s = _ref.read(settingsProvider).valueOrNull;
+    if (s?.volumeBalanceEnabled != true ||
+        path == null ||
+        path.isEmpty ||
+        path.startsWith('http')) {
+      _rgGain = 1.0;
+      return;
+    }
+    try {
+      _rgGain = await loudnessPlaybackGainForFile(
+        filePath: path,
+        gainOffsetDb: s?.volumeBalanceGainOffsetDb ?? 0,
+        preventClipping: s?.volumeBalancePreventClipping ?? true,
+      );
+    } catch (_) {
+      _rgGain = 1.0;
+    }
+  }
+
+  /// 音量平衡设置变化：重算当前曲目增益并按当前管线即时应用
+  /// （独占管线平滑渐变不中断；普通管线直接调整音量）。
+  Future<void> _onVolumeBalanceSettingChanged() async {
+    final item = state.current;
+    if (item == null) return;
+    if (item.isOnline) {
+      _rgGain = 1.0;
+    } else if (_isRemotePath(item.path)) {
+      try {
+        final plan = await RemoteLibraryService(_ref).playbackSource(item.path);
+        await _updateRgGain(plan.isCached ? plan.cachedPath : null);
+      } catch (_) {
+        _rgGain = 1.0;
+      }
+    } else {
+      await _updateRgGain(item.path);
+    }
+    if (state.usbExclusive) {
+      try {
+        await setUsbExclusiveVolumeBalanceGain(gain: _effectiveBalanceGain());
+      } catch (_) {}
+    } else if (!item.isOnline) {
+      try {
+        await _player.setVolume(_effectiveVolume());
+      } catch (_) {}
+    }
+  }
+
+  /// WebDAV 远程歌曲：缓存命中则本地播放，否则带 Basic Auth 流式播放。
+  Future<void> _playRemote(QueueItem item) async {
+    final service = RemoteLibraryService(_ref);
+    final plan = await service.playbackSource(item.path);
+    try {
+      await _player.stop();
+    } catch (_) {}
+    if (plan.isCached) {
+      await _player.setFilePath(plan.cachedPath!);
+      await _updateRgGain(plan.cachedPath);
+    } else {
+      if (!RegExp(r'^https?://').hasMatch(plan.url)) {
+        throw StateError('远程源配置缺失或已失效');
+      }
+      await _player.setUrl(plan.url, headers: plan.headers);
+      _rgGain = 1.0;
+    }
+    await _player.setVolume(_effectiveVolume());
+    await _player.play();
+  }
+
+  /// 会话恢复时预载远程歌曲，返回缓存文件路径（未缓存返回 null）。
+  Future<String?> _preloadRemote(QueueItem item) async {
+    try {
+      final service = RemoteLibraryService(_ref);
+      final plan = await service.playbackSource(item.path);
+      if (plan.isCached) {
+        await _player.setFilePath(plan.cachedPath!);
+        return plan.cachedPath;
+      }
+    } catch (_) {}
+    return null;
+  }
 
   Future<void> _startUrl(String url) async {
     await _player.setUrl(url);
@@ -666,6 +977,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final wasCurrent = index == state.queueIndex;
     queue.removeAt(index);
     if (queue.isEmpty) {
+      await _stopExclusive();
       await _player.stop();
       state = const PlaybackState();
       return;
@@ -709,6 +1021,23 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> toggle() async {
     if (state.current == null) return;
+    // USB 独占管线：seek(pos, isPlaying) 即暂停/恢复。
+    if (state.usbExclusive) {
+      if (state.isPlaying) {
+        _manualPause = true;
+        _flushPlayStats();
+        await seekUsbExclusive(timeSecs: state.position, isPlaying: false);
+        state = state.copyWith(isPlaying: false);
+      } else {
+        _manualPause = false;
+        _trackStartTime = DateTime.now();
+        await seekUsbExclusive(timeSecs: state.position, isPlaying: true);
+        state = state.copyWith(isPlaying: true);
+      }
+      _syncToSystemMediaSession();
+      _persistSession();
+      return;
+    }
     if (state.isPlaying) {
       _manualPause = true;
       _flushPlayStats();
@@ -732,6 +1061,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> seek(double secs) async {
     if (_restoredOnlinePending != null) {
       _restoredOnlinePending = secs;
+      state = state.copyWith(position: secs);
+      _syncToSystemMediaSession();
+      return;
+    }
+    if (state.usbExclusive) {
+      await seekUsbExclusive(timeSecs: secs, isPlaying: state.isPlaying);
       state = state.copyWith(position: secs);
       _syncToSystemMediaSession();
       return;
@@ -878,6 +1213,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> _resumeRestoredOnline(double pos) async {
     final item = state.current;
     if (item == null) return;
+    await _stopExclusive();
     state = state.copyWith(resolving: true, error: null);
     _syncToSystemMediaSession();
     try {
@@ -915,10 +1251,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   @override
   void dispose() {
     _listenTimer?.cancel();
+    _exclusiveTimer?.cancel();
+    _sfxSyncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
+    try {
+      stopUsbExclusivePlayback();
+    } catch (_) {}
     _player.dispose();
     super.dispose();
   }

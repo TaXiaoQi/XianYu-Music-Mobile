@@ -9,6 +9,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
@@ -469,6 +470,16 @@ class _TitleRow extends ConsumerWidget {
                 SnackBar(content: Text('开始下载：${current.title}')),
               );
             },
+          ),
+        if (current.isOnline)
+          IconButton(
+            icon: const Icon(Icons.mode_comment_outlined),
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => CommentSheet(songJson: current.onlineSongJson),
+            ),
           ),
       ],
     );

@@ -219,6 +219,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return (j['data'] as Map<String, dynamic>?) ?? const {};
   }
 
+  /// 同 [requestAction]，但 data 允许为任意 JSON（数组/对象），
+  /// 供壁纸列表等返回数组的接口使用。
+  Future<dynamic> requestActionList(
+      String action, Map<String, dynamic> body,
+      {int? fetchTimeoutMs}) async {
+    final dir = await _dataDir();
+    final finalBody = Map<String, dynamic>.from(body);
+    final token = _token;
+    if (token != null && token.isNotEmpty && !finalBody.containsKey('token')) {
+      finalBody['token'] = token;
+    }
+    final res = await authAuthedRequest(
+      dataDir: dir,
+      action: action,
+      bodyJson: jsonEncode(finalBody),
+      fetchTimeoutMs:
+          fetchTimeoutMs == null ? null : BigInt.from(fetchTimeoutMs),
+    );
+    final j = jsonDecode(res) as Map<String, dynamic>;
+    final code = (j['code'] as num?)?.toInt() ?? -1;
+    final msg = (j['msg'] as String?) ?? '';
+    if (_isSessionExpired(code, msg)) {
+      await _handleSessionExpired();
+    }
+    if (code != 200) {
+      throw AuthException(msg.isNotEmpty ? msg : '请求失败（code $code）');
+    }
+    return j['data'];
+  }
+
   /// 服务端在硬模式下统一返回的 token 失效文案。
   static final _sessionExpiredRe =
       RegExp(r'登录状态已失效|登录已过期|登录状态与账号不匹配');

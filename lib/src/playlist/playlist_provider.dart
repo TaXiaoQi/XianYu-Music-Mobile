@@ -52,6 +52,26 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  Future<void> create(String name) async {
+    final playlists = await _store.createPlaylist(name);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
+  Future<void> rename(String id, String name) async {
+    final playlists = await _store.renamePlaylist(id, name);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
+  Future<void> addSongs(String id, List<ImportedSong> songs) async {
+    final playlists = await _store.addSongsTo(id, songs);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
+  Future<void> removeSong(String id, String path) async {
+    final playlists = await _store.removeSong(id, path);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
   /// 播放歌单（从指定索引开始）。
   Future<void> play(ImportedPlaylist playlist, int index) async {
     final items = playlist.songs.map((s) => _toQueueItem(s)).toList();
