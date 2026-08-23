@@ -613,11 +613,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
         return;
       }
-      final dir = await _dataDir();
       final errors = <String>[];
       var installed = 0;
+      final pluginManager = _ref.read(pluginManagerProvider.notifier);
       for (final item in items) {
-        final name = (item['name'] as String?) ?? '未知插件';
+        final cloudName = (item['name'] as String?)?.trim() ?? '';
+        final name = cloudName.isNotEmpty ? cloudName : '未知插件';
         var script = (item['script'] as String?) ?? '';
         if (item['scriptEncoded'] == true && script.isNotEmpty) {
           try {
@@ -632,22 +633,24 @@ class SyncNotifier extends StateNotifier<SyncState> {
           continue;
         }
         try {
-          await rust.pluginInstallScript(
-            dataDir: dir,
-            script: script,
-            origin: 'cloud_sync',
+          // 恢复走 Dart PluginManager（与上传/插件页/在线播放同一套存储），
+          // 自动识别 Lx/MusicFree 格式，避免写进 Rust 侧孤立索引而不可见。
+          final version = (item['version'] as String?)?.trim() ?? '';
+          final source = await pluginManager.installFromScript(
+            script,
+            nameOverride: cloudName.isEmpty ? null : cloudName,
+            versionOverride: version.isEmpty ? null : version,
           );
-          final id = item['id'] as String?;
-          if (item['enabled'] == false && id != null && id.isNotEmpty) {
-            await rust.pluginSetEnabled(dataDir: dir, id: id, enabled: false);
+          // 云端标记停用的插件同步后保持停用
+          if (item['enabled'] == false && source.enabled) {
+            await pluginManager.toggleEnabled(source.id);
           }
           installed++;
         } catch (e) {
           AppLogger.instance.log('sync', '插件 $name 恢复失败: $e');
-          errors.add('插件 "$name" 恢复失败');
+          errors.add('插件 "$name" 恢复失败：$e');
         }
       }
-      await _ref.read(pluginManagerProvider.notifier).refresh();
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,

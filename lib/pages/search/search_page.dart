@@ -9,20 +9,115 @@ import '../../src/auth/account_api.dart';
 import '../../src/core/db_path.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/library/library_provider.dart';
-import '../../src/online/online_search_provider.dart';
+import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
-import '../../src/player/player_provider.dart';
+import '../../src/playlist/playlist_provider.dart';
+import '../../src/playlist/playlist_store.dart';
 import '../../src/rust/api.dart';
-import '../../src/navigation/shell.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
+import '../library/song_list_page.dart';
 
-/// 搜索页：本地曲库搜索 + 在线音源搜索 + 插件搜索。
+// ==================== 来源模型 ====================
+
+enum _SourceType { local, musicfree, lx }
+
+/// 单个可选搜索来源：插件音源（musicfree 单条 / lx 多平台拆分）或“本地”。
+class _SourceItem {
+  final String id;
+  final String name;
+  final _SourceType type;
+  final PluginSource? plugin;
+  final String? lxKey;
+
+  const _SourceItem({
+    required this.id,
+    required this.name,
+    required this.type,
+    this.plugin,
+    this.lxKey,
+  });
+
+  bool get isLocal => type == _SourceType.local;
+}
+
+/// LX 插件声明的合法音源 key 及展示名（与桌面端对齐）。
+const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg'};
+const _lxSourceNames = <String, String>{
+  'kw': '小蜗音乐',
+  'kg': '小枸音乐',
+  'tx': '小秋音乐',
+  'wy': '小芸音乐',
+  'mg': '小蜜音乐',
+};
+
+// ==================== 结果模型 ====================
+
+/// 单曲结果：本地歌曲或插件歌曲。
+class _TrackEntry {
+  final bool isLocal;
+  final Song? localSong;
+  final PluginSource? pluginSource;
+  final PluginSearchResult? pluginResult;
+
+  const _TrackEntry({
+    required this.isLocal,
+    this.localSong,
+    this.pluginSource,
+    this.pluginResult,
+  });
+}
+
+enum _CatalogKind { artist, album, playlist }
+
+/// 歌手/专辑/歌单结果：本地条目、在线导航或 LX 派生直放。
+class _CatalogItem {
+  final String kind; // artist | album | playlist
+  final String title;
+  final String subtitle;
+  final String? coverUrl;
+  final String sourceTag;
+  // 本地导航
+  final ArtistInfo? localArtist;
+  final AlbumInfo? localAlbum;
+  final ImportedPlaylist? localPlaylist;
+  // 在线插件（musicfree）导航到详情页
+  final PluginSource? onlinePlugin;
+  final Map<String, dynamic>? onlineRaw;
+  // LX 派生：直接从派生歌曲列表播放
+  final PluginSource? directSource;
+  final List<PluginSearchResult> directSongs;
+
+  _CatalogItem({
+    required this.kind,
+    required this.title,
+    this.subtitle = '',
+    this.coverUrl,
+    required this.sourceTag,
+    this.localArtist,
+    this.localAlbum,
+    this.localPlaylist,
+    this.onlinePlugin,
+    this.onlineRaw,
+    this.directSource,
+    List<PluginSearchResult>? directSongs,
+  }) : directSongs = directSongs ?? [];
+
+  bool get isLocalEntry =>
+      localArtist != null || localAlbum != null || localPlaylist != null;
+  bool get isDirectPlay => directSource != null && directSongs.isNotEmpty;
+}
+
+// ==================== 搜索页 ====================
+
+/// 搜索页：合并后的单一在线搜索页。顶部 4 个内容 tab（单曲/歌手/专辑/歌单），
+/// tab 下方为来源切换条；来源仅由插件音源构建，无插件时降级为“本地”索引音乐库。
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
 
@@ -34,19 +129,12 @@ class _SearchPageState extends ConsumerState<SearchPage>
     with SingleTickerProviderStateMixin, HidesShellChrome {
   final TextEditingController _ctrl = TextEditingController();
   late final TabController _tab;
-  List<Song> _results = const [];
-  bool _loading = false;
-  bool _searched = false;
+  String _activeQuery = '';
 
-  // 插件在线搜索结果（按插件分组）。
-  List<(PluginSource, List<PluginSearchResult>)> _pluginResults = const [];
+  List<_SourceItem> _sources = const [];
+  String _selectedSourceId = '';
 
   Timer? _debounce;
-  /// 递增序号：只接受最新一次查询的结果，避免慢查询覆盖新结果。
-  int _queryToken = 0;
-  /// 当前结果对应的查询词，用于高亮。防抖期间仍指向旧词，
-  /// 保证高亮与列表内容一致。
-  String _activeQuery = '';
 
   // 输入统计：1.5s 无新输入后批量上报新增字符数。
   int _pendingCharCount = 0;
@@ -56,23 +144,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
-    // 切换 Tab 时同步提示文案，并按需触发对应侧的搜索。
-    _tab.addListener(() {
-      if (_tab.indexIsChanging) return;
-      setState(() {});
-      final q = _ctrl.text.trim();
-      if (q.isEmpty) return;
-      if (_tab.index == 1) {
-        final online = ref.read(onlineSearchProvider);
-        // 在线侧尚未搜过该词时补一次，避免空白。
-        if (online.keyword != q) {
-          ref.read(onlineSearchProvider.notifier).search(q);
-        }
-      } else if (_tab.index == 2) {
-        _searchPlugin(q);
-      }
-    });
+    _tab = TabController(length: 4, vsync: this);
+    ref.listenManual(pluginManagerProvider, (_, _) => _refreshSources());
+    _refreshSources();
   }
 
   @override
@@ -84,11 +158,70 @@ class _SearchPageState extends ConsumerState<SearchPage>
     super.dispose();
   }
 
-  /// 输入变化：防抖 220ms 后自动搜索，边打字边出结果。
+  _SourceItem get _selected {
+    for (final s in _sources) {
+      if (s.id == _selectedSourceId) return s;
+    }
+    return _sources.isNotEmpty
+        ? _sources.first
+        : const _SourceItem(
+            id: 'local', name: '本地', type: _SourceType.local);
+  }
+
+  /// 从插件音源构建来源列表；无插件时返回“本地”。
+  void _refreshSources() {
+    final plugins = ref.read(pluginManagerProvider).sources;
+    final enabled = plugins.where((p) => p.enabled).toList();
+    final items = <_SourceItem>[];
+    for (final p in enabled) {
+      if (p.format == PluginFormat.musicfree) {
+        items.add(_SourceItem(
+            id: p.id, name: p.name, type: _SourceType.musicfree, plugin: p));
+      } else if (p.format == PluginFormat.lx) {
+        final lx = p.sources.where(_validLxSources.contains).toList();
+        if (lx.isEmpty) continue;
+        if (lx.length == 1) {
+          items.add(_SourceItem(
+              id: p.id,
+              name: p.name,
+              type: _SourceType.lx,
+              plugin: p,
+              lxKey: lx.first));
+        } else {
+          for (final key in lx) {
+            items.add(_SourceItem(
+                id: '${p.id}__$key',
+                name: _lxSourceNames[key] ?? key,
+                type: _SourceType.lx,
+                plugin: p,
+                lxKey: key));
+          }
+        }
+      }
+    }
+    final result = items.isEmpty
+        ? const [
+            _SourceItem(id: 'local', name: '本地', type: _SourceType.local)
+          ]
+        : items;
+    // 若不触发重建，列表不会更新；若当前选中项失效则落回第一项。
+    if (!mounted) return;
+    setState(() {
+      _sources = result;
+      if (result.every((s) => s.id != _selectedSourceId)) {
+        _selectedSourceId = result.first.id;
+      }
+    });
+  }
+
+  void _onSourceSelected(String id) {
+    if (id == _selectedSourceId) return;
+    setState(() => _selectedSourceId = id);
+    // 子 tab 通过 didUpdateWidget 感知来源变化并重搜（仅可见 tab）。
+  }
+
   void _onChanged(String keyword) {
-    // 立即刷新一次以更新清除按钮的显隐。
-    setState(() {});
-    _debounce?.cancel();
+    setState(() {}); // 更新清除按钮显隐。
 
     // 输入统计上报（1.5s 无新输入后批量上报新增字符数）。
     final len = keyword.length;
@@ -106,135 +239,50 @@ class _SearchPageState extends ConsumerState<SearchPage>
       });
     }
 
+    _debounce?.cancel();
     final q = keyword.trim();
     if (q.isEmpty) {
-      _queryToken++; // 作废在途请求
-      ref.read(onlineSearchProvider.notifier).clear();
-      setState(() {
-        _results = const [];
-        _pluginResults = const [];
-        _searched = false;
-        _loading = false;
-        _activeQuery = '';
-      });
+      _setActiveQuery('');
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 220), () {
-      // 本地搜索始终执行（切回本地 Tab 时结果已就绪）；
-      // 在线/插件搜索仅在当前处于对应 Tab 时触发，避免无谓的网络请求。
-      _search(q);
-      if (_tab.index == 1) {
-        ref.read(onlineSearchProvider.notifier).search(q);
-      } else if (_tab.index == 2) {
-        _searchPlugin(q);
-      }
+      _setActiveQuery(q);
     });
   }
 
-  Future<void> _search(String keyword) async {
-    final q = keyword.trim();
-    if (q.isEmpty) {
-      setState(() {
-        _results = const [];
-        _searched = false;
-        _activeQuery = '';
-      });
-      return;
-    }
-    final token = ++_queryToken;
-    setState(() {
-      _loading = true;
-      _searched = true;
-    });
-    try {
-      final dbPath = await ref.read(dbPathProvider.future);
-      final json = await searchLibrarySongs(
-          dbPath: dbPath, query: q, limit: BigInt.from(100));
-      final list = (jsonDecode(json) as List)
-          .map((e) => Song.fromJson(e as Map<String, dynamic>))
-          .toList();
-      // 已有更新的查询发出，丢弃这次结果。
-      if (!mounted || token != _queryToken) return;
-      setState(() {
-        _results = list;
-        _activeQuery = q;
-        _loading = false;
-      });
-      ref.read(accountApiProvider).reportSearch(q, 'local', list.length);
-    } catch (_) {
-      if (!mounted || token != _queryToken) return;
-      setState(() {
-        _results = const [];
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _searchPlugin(String q) async {
-    final pluginState = ref.read(pluginManagerProvider);
-    if (pluginState.sources.isEmpty) {
-      if (!mounted) return;
-      setState(() => _pluginResults = const []);
-      return;
-    }
-    final engine = await ref.read(pluginEngineProvider.future);
-    final service = PluginSearchService(engine, pluginState.sources);
-    final results = await service.searchAll(q);
+  void _setActiveQuery(String q) {
     if (!mounted) return;
-    setState(() => _pluginResults = results);
-    ref.read(accountApiProvider).reportSearch(q, 'online', results.length);
+    setState(() => _activeQuery = q);
   }
 
-  void _playPluginResult(PluginSource source, PluginSearchResult r) {
-    final engine = ref.read(pluginEngineProvider).valueOrNull;
-    if (engine == null) return;
-    final service =
-        PluginSearchService(engine, ref.read(pluginManagerProvider).sources);
-    final item = service.toQueueItem(source, r);
-    ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
+  void _clearInput() {
+    _debounce?.cancel();
+    _ctrl.clear();
+    _setActiveQuery('');
   }
 
-  void _downloadPluginResult(PluginSource source, PluginSearchResult r) {
-    final engine = ref.read(pluginEngineProvider).valueOrNull;
-    if (engine == null) return;
-    final service =
-        PluginSearchService(engine, ref.read(pluginManagerProvider).sources);
-    final item = service.toQueueItem(source, r);
-    ref.read(downloadProvider.notifier).download(item);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('开始下载：${item.title}')),
-    );
-  }
-
-  Widget _buildBody(ColorScheme scheme) {
-    if (!_searched) {
-      return Center(
-        child: Text(
-          '输入关键词搜索本地音乐',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
-      );
-    }
-    // 有旧结果时不整页替换为转圈，避免边打字边闪烁；
-    // 仅首次查询（无结果可展示）显示加载指示器。
-    if (_loading && _results.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_results.isEmpty) {
-      return const Center(child: Text('没有匹配的歌曲'));
-    }
-    return SongsListView(
-      songs: _results,
-      // 底部留出系统手势区高度，最后一项不贴边。
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 12,
+  Widget _buildSourceBar(ColorScheme scheme) {
+    return Container(
+      height: 48,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        children: [
+          for (final s in _sources)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _SourceChip(
+                label: s.name,
+                selected: s.id == _selected.id,
+                scheme: scheme,
+                onTap: () => _onSourceSelected(s.id),
+              ),
+            ),
+        ],
       ),
-      // 高亮当前已生效的查询词（而非输入框实时文本），与结果保持一致。
-      highlight: _activeQuery,
-      onPlay: (list, i) {
-        FocusScope.of(context).unfocus();
-        return ref.read(libraryProvider.notifier).playList(list, i);
-      },
     );
   }
 
@@ -243,9 +291,11 @@ class _SearchPageState extends ConsumerState<SearchPage>
     final scheme = Theme.of(context).colorScheme;
     final player = ref.watch(playerProvider);
     final hasSong = player.current != null;
+    final selected = _selected;
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
         title: TextField(
           controller: _ctrl,
           autofocus: true,
@@ -253,19 +303,11 @@ class _SearchPageState extends ConsumerState<SearchPage>
           onChanged: _onChanged,
           onSubmitted: (q) {
             FocusScope.of(context).unfocus();
-            _search(q);
-            if (_tab.index == 1) {
-              ref.read(onlineSearchProvider.notifier).search(q);
-            } else if (_tab.index == 2) {
-              _searchPlugin(q);
-            }
+            _debounce?.cancel();
+            _setActiveQuery(q.trim());
           },
           decoration: InputDecoration(
-            hintText: switch (_tab.index) {
-              0 => '搜索本地音乐',
-              1 => '搜索在线音乐',
-              _ => '搜索插件音乐',
-            },
+            hintText: '搜索音乐、歌手、专辑、歌单',
             border: InputBorder.none,
             suffixIcon: _ctrl.text.isEmpty
                 ? null
@@ -285,25 +327,48 @@ class _SearchPageState extends ConsumerState<SearchPage>
         bottom: TabBar(
           controller: _tab,
           tabs: const [
-            Tab(text: '本地'),
-            Tab(text: '在线'),
-            Tab(text: '插件'),
+            Tab(text: '单曲'),
+            Tab(text: '歌手'),
+            Tab(text: '专辑'),
+            Tab(text: '歌单'),
           ],
         ),
       ),
-      // 搜索页自带 MiniPlayerBar，确保搜索并播放时播放条 100% 出现
       body: Stack(
         children: [
-          TabBarView(
-            controller: _tab,
+          Column(
             children: [
-              _buildBody(scheme),
-              _OnlineSearchTab(highlight: _activeQuery),
-              _PluginSearchTab(
-                keyword: _activeQuery,
-                results: _pluginResults,
-                onPlay: _playPluginResult,
-                onDownload: _downloadPluginResult,
+              _buildSourceBar(scheme),
+              const Divider(height: 1),
+              Expanded(
+                child: TabBarView(
+                  controller: _tab,
+                  children: [
+                    _TrackTab(
+                      keyword: _activeQuery,
+                      source: selected,
+                      visible: _tab.index == 0,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.artist,
+                      keyword: _activeQuery,
+                      source: selected,
+                      visible: _tab.index == 1,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.album,
+                      keyword: _activeQuery,
+                      source: selected,
+                      visible: _tab.index == 2,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.playlist,
+                      keyword: _activeQuery,
+                      source: selected,
+                      visible: _tab.index == 3,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -318,519 +383,633 @@ class _SearchPageState extends ConsumerState<SearchPage>
       ),
     );
   }
+}
 
-  void _clearInput() {
-    _ctrl.clear();
-    _debounce?.cancel();
-    _queryToken++; // 作废在途请求
-    ref.read(onlineSearchProvider.notifier).clear();
-    setState(() {
-      _results = const [];
-      _pluginResults = const [];
-      _searched = false;
-      _loading = false;
-      _activeQuery = '';
-    });
+// ==================== 来源切换条 ====================
+
+class _SourceChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  const _SourceChip({
+    required this.label,
+    required this.selected,
+    required this.scheme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.10)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-/// 在线搜索结果页：音源切换 + 带封面时长的结果列表。
-class _OnlineSearchTab extends ConsumerWidget {
-  const _OnlineSearchTab({required this.highlight});
+// ==================== 单曲 tab ====================
 
-  final String highlight;
+class _TrackTab extends ConsumerStatefulWidget {
+  final String keyword;
+  final _SourceItem source;
+  final bool visible;
+
+  const _TrackTab({
+    required this.keyword,
+    required this.source,
+    required this.visible,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(onlineSearchProvider);
-    final scheme = Theme.of(context).colorScheme;
+  ConsumerState<_TrackTab> createState() => _TrackTabState();
+}
 
-    return Column(
-      children: [
-        // 音源切换条
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            children: [
-              for (final s in kOnlineSources)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(s.label),
-                    showCheckmark: false,
-                    // 去掉默认的垂直内边距，使 chip 自然高度与横向列表
-                    // 强制的 32px 一致，避免内部布局被压缩导致文字偏下。
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    selected: state.source == s.id,
-                    onSelected: (_) =>
-                        ref.read(onlineSearchProvider.notifier).setSource(s.id),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(child: _buildResults(context, ref, state, scheme)),
-      ],
+class _TrackTabState extends ConsumerState<_TrackTab>
+    with AutomaticKeepAliveClientMixin {
+  List<_TrackEntry> _results = const [];
+  bool _loading = false;
+  String _searchedHash = '';
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void didUpdateWidget(covariant _TrackTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.visible) return;
+    final q = widget.keyword.trim();
+    final hash = '${widget.source.id}|$q';
+    if (hash != _searchedHash) _search(q, hash);
+  }
+
+  List<PluginSource> _plugins() => ref.read(pluginManagerProvider).sources;
+
+  Future<void> _search(String q, String hash) async {
+    final src = widget.source;
+    setState(() {
+      _searchedHash = hash;
+      _loading = q.isNotEmpty;
+      if (q.isEmpty) _results = const [];
+    });
+    if (q.isEmpty) return;
+
+    final List<_TrackEntry> out = [];
+    try {
+      if (src.isLocal) {
+        final dbPath = await ref.read(dbPathProvider.future);
+        final json = await searchLibrarySongs(
+            dbPath: dbPath, query: q, limit: BigInt.from(100));
+        final list = (jsonDecode(json) as List)
+            .map((e) => Song.fromJson(e as Map<String, dynamic>))
+            .toList();
+        out.addAll(list.map((s) =>
+            _TrackEntry(isLocal: true, localSong: s)));
+        ref.read(accountApiProvider).reportSearch(q, 'local', list.length);
+      } else {
+        final engine = await ref.read(pluginEngineProvider.future);
+        List<PluginSearchResult> items;
+        if (src.type == _SourceType.musicfree) {
+          final catalog = PluginCatalogService(engine, _plugins());
+          items = await catalog.searchMusic(src.plugin!, q);
+        } else {
+          items = await engine.searchInPlugin(src.plugin!, src.lxKey!, q);
+        }
+        out.addAll(items.map((r) => _TrackEntry(
+            isLocal: false, pluginSource: src.plugin, pluginResult: r)));
+        ref.read(accountApiProvider).reportSearch(q, 'online', items.length);
+      }
+    } catch (_) {
+      // 单次失败保持空结果，由 UI 展示提示。
+    }
+    if (!mounted) return;
+    setState(() {
+      _results = out;
+      _loading = false;
+    });
+  }
+
+  void _play(int index) {
+    FocusScope.of(context).unfocus();
+    final e = _results[index];
+    if (e.isLocal) {
+      ref.read(libraryProvider.notifier).playList([e.localSong!], 0);
+      return;
+    }
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) return;
+    final service = PluginSearchService(engine, _plugins());
+    final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
+    ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
+  }
+
+  void _download(int index) {
+    final e = _results[index];
+    if (e.isLocal) return;
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) return;
+    final service = PluginSearchService(engine, _plugins());
+    final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
+    ref.read(downloadProvider.notifier).download(item);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('开始下载：${item.title}')),
     );
   }
 
-  Widget _buildResults(
-    BuildContext context,
-    WidgetRef ref,
-    OnlineSearchState state,
-    ColorScheme scheme,
-  ) {
-    if (state.keyword.isEmpty) {
-      return Center(
-        child: Text(
-          '输入关键词搜索在线音乐',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
-      );
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final scheme = Theme.of(context).colorScheme;
+    final q = widget.keyword.trim();
+
+    if (q.isEmpty) {
+      return _emptyHint('输入关键词搜索音乐', scheme, source: widget.source.name);
     }
-    // 有旧结果时不整页替换为转圈，避免切换音源时闪烁。
-    if (state.loading && state.results.isEmpty) {
+    if (_loading && _results.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (state.error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(state.error!, textAlign: TextAlign.center),
-        ),
-      );
-    }
-    if (state.results.isEmpty) {
-      return const Center(child: Text('该音源没有匹配结果'));
+    if (_results.isEmpty) {
+      return _emptyHint('没有找到相关歌曲', scheme, source: widget.source.name);
     }
 
+    final bottomInset = MediaQuery.of(context).padding.bottom + 92;
     return ListView.separated(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 82,
-      ),
-      itemCount: state.results.length,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      itemCount: _results.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
-        final t = state.results[i];
+        final e = _results[i];
+        if (e.isLocal) {
+          final s = e.localSong!;
+          return ListTile(
+            leading: SongCover(song: s),
+            title: highlightedText(s.title, q, scheme.primary, maxLines: 1),
+            subtitle: Text(
+              [s.artist, s.album, '本地']
+                  .where((x) => x.isNotEmpty)
+                  .join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            onTap: () => _play(i),
+          );
+        }
+        final r = e.pluginResult!;
         return ListTile(
-          leading: OnlineCover(url: t.coverUrl),
-          title: highlightedText(t.title, highlight, scheme.primary,
-              maxLines: 1),
-          subtitle: highlightedText(
-            t.album.isEmpty ? t.artist : '${t.artist} · ${t.album}',
-            highlight,
-            scheme.primary,
+          dense: true,
+          leading: r.img != null && r.img!.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    r.img!,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        _musicPlaceholder(scheme),
+                  ),
+                )
+              : _musicPlaceholder(scheme),
+          title: highlightedText(r.name, q, scheme.primary, maxLines: 1),
+          subtitle: Text(
+            [r.singer, r.albumName, widget.source.name]
+                .where((x) => x.isNotEmpty)
+                .join(' · '),
             maxLines: 1,
-          ),
-          trailing: Text(
-            t.interval.isEmpty ? '--:--' : t.interval,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
-          onTap: () {
-            FocusScope.of(context).unfocus();
-            ref.read(onlineSearchProvider.notifier).play(i);
-          },
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: Icon(Icons.download_outlined,
+                    size: 20, color: scheme.primary),
+                tooltip: '下载',
+                onPressed: () => _download(i),
+              ),
+              Text(
+                r.interval,
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+            ],
+          ),
+          onTap: () => _play(i),
         );
       },
     );
   }
 }
 
-/// 插件搜索结果页：单曲/歌手/专辑/歌单四类子 tab（对齐桌面搜索）。
-class _PluginSearchTab extends StatefulWidget {
-  const _PluginSearchTab({
+// ==================== 歌手 / 专辑 / 歌单 tab ====================
+
+class _CatalogTab extends ConsumerStatefulWidget {
+  final _CatalogKind kind;
+  final String keyword;
+  final _SourceItem source;
+  final bool visible;
+
+  const _CatalogTab({
+    required this.kind,
     required this.keyword,
-    required this.results,
-    required this.onPlay,
-    required this.onDownload,
+    required this.source,
+    required this.visible,
   });
 
-  final String keyword;
-  final List<(PluginSource, List<PluginSearchResult>)> results;
-  final void Function(PluginSource source, PluginSearchResult r) onPlay;
-  final void Function(PluginSource source, PluginSearchResult r) onDownload;
-
   @override
-  State<_PluginSearchTab> createState() => _PluginSearchTabState();
+  ConsumerState<_CatalogTab> createState() => _CatalogTabState();
 }
 
-class _PluginSearchTabState extends State<_PluginSearchTab>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  late final TabController _sub;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    _sub = TabController(length: 4, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _sub.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        TabBar(
-          controller: _sub,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          labelColor: scheme.primary,
-          tabs: const [
-            Tab(text: '单曲'),
-            Tab(text: '歌手'),
-            Tab(text: '专辑'),
-            Tab(text: '歌单'),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _sub,
-            children: [
-              _SongResults(
-                results: widget.results,
-                onPlay: widget.onPlay,
-                onDownload: widget.onDownload,
-              ),
-              _CatalogResults(
-                  keyword: widget.keyword, type: _CatalogType.artist),
-              _CatalogResults(
-                  keyword: widget.keyword, type: _CatalogType.album),
-              _CatalogResults(
-                  keyword: widget.keyword, type: _CatalogType.sheet),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 单曲结果：按插件分组展示。
-class _SongResults extends StatelessWidget {
-  const _SongResults({
-    required this.results,
-    required this.onPlay,
-    required this.onDownload,
-  });
-
-  final List<(PluginSource, List<PluginSearchResult>)> results;
-  final void Function(PluginSource source, PluginSearchResult r) onPlay;
-  final void Function(PluginSource source, PluginSearchResult r) onDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    if (results.isEmpty) {
-      return Center(
-        child: Text(
-          '没有匹配的插件歌曲',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
-      );
-    }
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 82,
-      ),
-      children: [
-        for (final (source, items) in results) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                Icon(Icons.music_note, size: 16, color: scheme.primary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    source.name,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Text(
-                  '${items.length} 首',
-                  style: TextStyle(fontSize: 12, color: scheme.outline),
-                ),
-              ],
-            ),
-          ),
-          for (final r in items)
-            _OnlineResultTile(
-              result: r,
-              onTap: () => onPlay(source, r),
-              onDownload: () => onDownload(source, r),
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-enum _CatalogType { artist, album, sheet }
-
-/// 歌手/专辑/歌单搜索结果（跨 MusicFree 插件）。
-class _CatalogResults extends ConsumerStatefulWidget {
-  const _CatalogResults({required this.keyword, required this.type});
-
-  final String keyword;
-  final _CatalogType type;
-
-  @override
-  ConsumerState<_CatalogResults> createState() => _CatalogResultsState();
-}
-
-class _CatalogResultsState extends ConsumerState<_CatalogResults>
+class _CatalogTabState extends ConsumerState<_CatalogTab>
     with AutomaticKeepAliveClientMixin {
-  List<Map<String, dynamic>> _items = const [];
+  List<_CatalogItem> _items = const [];
   bool _loading = false;
+  String _searchedHash = '';
 
   @override
   bool get wantKeepAlive => true;
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.keyword.trim().isNotEmpty) _search(widget.keyword);
-  }
+  String _kindName(_CatalogKind k) => switch (k) {
+        _CatalogKind.artist => '歌手',
+        _CatalogKind.album => '专辑',
+        _CatalogKind.playlist => '歌单',
+      };
 
   @override
-  void didUpdateWidget(covariant _CatalogResults oldWidget) {
+  void didUpdateWidget(covariant _CatalogTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.keyword != widget.keyword &&
-        widget.keyword.trim().isNotEmpty) {
-      _search(widget.keyword);
-    }
+    if (!widget.visible) return;
+    final q = widget.keyword.trim();
+    final hash = '${widget.source.id}|$q';
+    if (hash != _searchedHash) _search(q, hash);
   }
 
-  Future<void> _search(String keyword) async {
-    final q = keyword.trim();
-    if (q.isEmpty) return;
+  List<PluginSource> _plugins() => ref.read(pluginManagerProvider).sources;
+
+  Future<void> _search(String q, String hash) async {
+    final src = widget.source;
     setState(() {
-      _loading = true;
+      _searchedHash = hash;
+      _loading = q.isNotEmpty;
+      if (q.isEmpty) _items = const [];
     });
-    final engine = await ref.read(pluginEngineProvider.future);
-    final sources = ref.read(pluginManagerProvider).sources;
-    final catalog = PluginCatalogService(engine, sources);
-    final List<Map<String, dynamic>> items = [];
-    for (final source in catalog.musicFreeSources) {
-      try {
-        if (widget.type == _CatalogType.artist) {
-          final list = await catalog.searchArtists(source, q);
-          items.addAll(list.map((a) => {
-                '_kind': 'artist',
-                'id': a.id,
-                'name': a.name,
-                'avatar': a.avatarUrl,
-                'pluginId': source.id,
-                'raw': a.raw,
-              }));
-        } else if (widget.type == _CatalogType.album) {
-          final list = await catalog.searchAlbums(source, q);
-          items.addAll(list.map((a) => {
-                '_kind': 'album',
-                'id': a.id,
-                'name': a.name,
-                'artist': a.artist,
-                'cover': a.coverUrl,
-                'pluginId': source.id,
-                'raw': a.raw,
-              }));
+    if (q.isEmpty) return;
+
+    final List<_CatalogItem> out = [];
+    try {
+      if (src.isLocal) {
+        out.addAll(_searchLocal(q));
+      } else if (src.type == _SourceType.musicfree) {
+        out.addAll(await _searchMusicFree(q));
+      } else {
+        // LX 平台：单曲内派生出歌手/专辑；歌单无目录搜索能力。
+        if (widget.kind == _CatalogKind.playlist) {
+          out.clear();
         } else {
-          final list = await catalog.searchSheets(source, q);
-          items.addAll(list.map((s) => {
-                '_kind': 'sheet',
-                'id': s.id,
-                'name': s.title,
-                'artist': s.artist,
-                'cover': s.coverUrl,
-                'subtitle': s.subtitle,
-                'pluginId': source.id,
-                'raw': s.raw,
-              }));
+          out.addAll(await _searchLxDerive(q));
         }
-      } catch (_) {
-        // 单个插件失败不影响其他
       }
+    } catch (_) {
+      // 单次失败保持空结果。
     }
     if (!mounted) return;
     setState(() {
-      _items = items;
+      _items = out;
       _loading = false;
     });
   }
 
+  /// 本地库索引：按当前类型过滤歌手/专辑/歌单。
+  List<_CatalogItem> _searchLocal(String q) {
+    final lower = q.toLowerCase();
+    final tag = '本地';
+    final out = <_CatalogItem>[];
+    try {
+      switch (widget.kind) {
+        case _CatalogKind.artist:
+          final artists = ref.read(libraryProvider).artists;
+          for (final a in artists) {
+            if (a.name.toLowerCase().contains(lower)) {
+              out.add(_CatalogItem(
+                kind: 'artist',
+                title: a.name,
+                subtitle: '${a.count} 首',
+                sourceTag: tag,
+                localArtist: a,
+              ));
+            }
+          }
+        case _CatalogKind.album:
+          final albums = ref.read(libraryProvider).albums;
+          for (final a in albums) {
+            if (a.name.toLowerCase().contains(lower) ||
+                a.artist.toLowerCase().contains(lower)) {
+              out.add(_CatalogItem(
+                kind: 'album',
+                title: a.name,
+                subtitle: '${a.artist} · ${a.count} 首',
+                sourceTag: tag,
+                localAlbum: a,
+              ));
+            }
+          }
+        case _CatalogKind.playlist:
+          final playlists = ref.read(playlistManagerProvider).playlists;
+          for (final p in playlists) {
+            if (p.name.toLowerCase().contains(lower)) {
+              out.add(_CatalogItem(
+                kind: 'playlist',
+                title: p.name,
+                subtitle: '${p.songs.length} 首',
+                sourceTag: tag,
+                localPlaylist: p,
+              ));
+            }
+          }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  Future<List<_CatalogItem>> _searchMusicFree(String q) async {
+    final engine = await ref.read(pluginEngineProvider.future);
+    final source = widget.source;
+    final catalog = PluginCatalogService(engine, _plugins());
+    final out = <_CatalogItem>[];
+    final tag = source.name;
+    try {
+      switch (widget.kind) {
+        case _CatalogKind.artist:
+          final list = await catalog.searchArtists(source.plugin!, q);
+          for (final a in list) {
+            out.add(_CatalogItem(
+              kind: 'artist',
+              title: a.name,
+              coverUrl: a.avatarUrl,
+              sourceTag: tag,
+              onlinePlugin: source.plugin,
+              onlineRaw: a.raw,
+            ));
+          }
+        case _CatalogKind.album:
+          final list = await catalog.searchAlbums(source.plugin!, q);
+          for (final a in list) {
+            out.add(_CatalogItem(
+              kind: 'album',
+              title: a.name,
+              subtitle: a.artist,
+              coverUrl: a.coverUrl,
+              sourceTag: tag,
+              onlinePlugin: source.plugin,
+              onlineRaw: a.raw,
+            ));
+          }
+        case _CatalogKind.playlist:
+          final list = await catalog.searchSheets(source.plugin!, q);
+          for (final s in list) {
+            out.add(_CatalogItem(
+              kind: 'playlist',
+              title: s.title,
+              subtitle: s.subtitle,
+              coverUrl: s.coverUrl,
+              sourceTag: tag,
+              onlinePlugin: source.plugin,
+              onlineRaw: s.raw,
+            ));
+          }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /// LX 平台：复用单曲搜索结果按歌手/专辑去重派生。
+  Future<List<_CatalogItem>> _searchLxDerive(String q) async {
+    final engine = await ref.read(pluginEngineProvider.future);
+    final source = widget.source;
+    final songs = await engine
+        .searchInPlugin(source.plugin!, source.lxKey ?? '', q, limit: 60);
+    final isArtist = widget.kind == _CatalogKind.artist;
+    final map = <String, _CatalogItem>{};
+    for (final s in songs) {
+      final key = isArtist ? s.singer.trim() : s.albumName.trim();
+      if (key.isEmpty) continue;
+      final existing = map[key];
+      if (existing != null) {
+        existing.directSongs.add(s);
+        continue;
+      }
+      map[key] = _CatalogItem(
+        kind: isArtist ? 'artist' : 'album',
+        title: key,
+        subtitle: isArtist ? '' : s.singer,
+        coverUrl: s.img,
+        sourceTag: source.name,
+        directSource: source.plugin,
+        directSongs: [s],
+      );
+    }
+    return map.values.toList();
+  }
+
+  void _open(_CatalogItem item) {
+    FocusScope.of(context).unfocus();
+    if (item.localArtist != null) {
+      final a = item.localArtist!;
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => SongListPage(
+            title: a.name,
+            loader: () => ref.read(libraryProvider.notifier).songsByArtist(a.name),
+          ),
+        ),
+      );
+      return;
+    }
+    if (item.localAlbum != null) {
+      final a = item.localAlbum!;
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => SongListPage(
+            title: a.name,
+            loader: () => ref.read(libraryProvider.notifier).songsByAlbum(a.key),
+          ),
+        ),
+      );
+      return;
+    }
+    if (item.localPlaylist != null) {
+      ref
+          .read(playlistManagerProvider.notifier)
+          .play(item.localPlaylist!, 0);
+      return;
+    }
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) return;
+    // LX 派生：直接播放其歌曲列表。
+    if (item.isDirectPlay) {
+      final service = PluginSearchService(engine, _plugins());
+      final items = item.directSongs
+          .map((s) => service.toQueueItem(item.directSource!, s))
+          .toList();
+      ref.read(playerProvider.notifier).playQueue(items, startIndex: 0);
+      return;
+    }
+    // musicfree 在线条目：进入在线详情页。
+    context.push(
+      '/online-detail',
+      extra: OnlineDetailArgs(
+        type: switch (item.kind) {
+          'artist' => OnlineDetailType.artist,
+          'album' => OnlineDetailType.album,
+          _ => OnlineDetailType.playlist,
+        },
+        pluginId: item.onlinePlugin?.id ?? '',
+        title: item.title,
+        subtitle: item.subtitle,
+        coverUrl: item.coverUrl,
+        raw: item.onlineRaw ?? const {},
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
-    if (widget.keyword.trim().isEmpty) {
-      return Center(
-        child: Text(
-          '输入关键词搜索${switch (widget.type) {
-            _CatalogType.artist => '歌手',
-            _CatalogType.album => '专辑',
-            _CatalogType.sheet => '歌单',
-          }}',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
-      );
+    final q = widget.keyword.trim();
+    final name = _kindName(widget.kind);
+
+    if (q.isEmpty) {
+      return _emptyHint('输入关键词搜索$name', scheme, source: widget.source.name);
     }
     if (_loading && _items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty) {
-      return Center(
-        child: Text(
-          '没有匹配的${switch (widget.type) {
-            _CatalogType.artist => '歌手',
-            _CatalogType.album => '专辑',
-            _CatalogType.sheet => '歌单',
-          }}',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
-      );
+      return _emptyHint('没有找到相关$name', scheme, source: widget.source.name);
     }
+
+    final bottomInset = MediaQuery.of(context).padding.bottom + 92;
     return ListView.separated(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 82,
-      ),
+      padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _items.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final item = _items[i];
-        final kind = item['_kind'] as String;
-        final cover = item['cover'] as String? ?? item['avatar'] as String?;
+        final isArtist = item.kind == 'artist';
         return ListTile(
-          leading: OnlineCover(
-            url: cover,
-            size: 46,
-            radius: kind == 'artist' ? 23 : 8,
-          ),
-          title: Text(
-            (item['name'] as String? ?? '').isEmpty
-                ? '未知'
-                : item['name'] as String,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          leading: _catalogLeading(item, isArtist, scheme),
+          title: highlightedText(item.title, q, scheme.primary, maxLines: 1),
           subtitle: Text(
-            [
-              if ((item['artist'] as String? ?? '').isNotEmpty)
-                item['artist'] as String,
-              if ((item['subtitle'] as String? ?? '').isNotEmpty)
-                item['subtitle'] as String,
-              _pluginName(item['pluginId'] as String? ?? ''),
-            ].join(' · '),
+            [item.subtitle, item.sourceTag]
+                .where((x) => x.isNotEmpty)
+                .join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
-          onTap: () {
-            final pluginId = item['pluginId'] as String;
-            final raw =
-                (item['raw'] as Map).cast<String, dynamic>();
-            context.push('/online-detail', extra: OnlineDetailArgs(
-              type: switch (kind) {
-                'artist' => OnlineDetailType.artist,
-                'album' => OnlineDetailType.album,
-                _ => OnlineDetailType.playlist,
-              },
-              pluginId: pluginId,
-              title: item['name'] as String? ?? '',
-              subtitle: item['artist'] as String? ?? '',
-              coverUrl: cover,
-              raw: raw,
-            ));
-          },
+          trailing: Icon(Icons.chevron_right,
+              color: scheme.outline, size: 22),
+          onTap: () => _open(item),
         );
       },
     );
   }
 
-  String _pluginName(String id) {
-    final source = ref
-        .read(pluginManagerProvider)
-        .sources
-        .where((s) => s.id == id)
-        .firstOrNull;
-    return source?.name ?? '';
+  Widget _catalogLeading(_CatalogItem item, bool isArtist, ColorScheme scheme) {
+    if (item.localArtist != null) {
+      final name = item.localArtist!.name;
+      return CircleAvatar(
+        backgroundColor: scheme.primaryContainer,
+        child: Text(
+          name.isEmpty ? '?' : String.fromCharCode(name.runes.first),
+          style: TextStyle(color: scheme.onPrimaryContainer),
+        ),
+      );
+    }
+    if (item.localAlbum != null) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: scheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.album, size: 20),
+      );
+    }
+    if (item.localPlaylist != null) {
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.queue_music, size: 20),
+      );
+    }
+    return OnlineCover(
+      url: item.coverUrl,
+      size: 46,
+      radius: isArtist ? 23 : 8,
+    );
   }
 }
 
-class _OnlineResultTile extends StatelessWidget {
-  const _OnlineResultTile({
-    required this.result,
-    required this.onTap,
-    required this.onDownload,
-  });
-  final PluginSearchResult result;
-  final VoidCallback onTap;
-  final VoidCallback onDownload;
+// ==================== 公共组件 ====================
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      leading: result.img != null && result.img!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                result.img!,
-                width: 44,
-                height: 44,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _placeholder(scheme),
-              ),
-            )
-          : _placeholder(scheme),
-      title: Text(result.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${result.singer} · ${result.albumName}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(Icons.download_outlined, size: 20, color: scheme.primary),
-            tooltip: '下载',
-            onPressed: onDownload,
-          ),
-          Text(
-            result.interval,
-            style: TextStyle(fontSize: 12, color: scheme.outline),
-          ),
-        ],
-      ),
-      onTap: onTap,
-    );
-  }
+Widget _emptyHint(String message, ColorScheme scheme,
+    {required String source}) {
+  return Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.search_off, size: 40, color: scheme.outline),
+        const SizedBox(height: 12),
+        Text(message, style: TextStyle(color: scheme.onSurfaceVariant)),
+        const SizedBox(height: 4),
+        Text(
+          '结果来自 $source',
+          style: TextStyle(fontSize: 12, color: scheme.outline),
+        ),
+      ],
+    ),
+  );
+}
 
-  Widget _placeholder(ColorScheme scheme) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(Icons.music_note, color: scheme.outline, size: 20),
-    );
-  }
+Widget _musicPlaceholder(ColorScheme scheme) {
+  return Container(
+    width: 44,
+    height: 44,
+    decoration: BoxDecoration(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Icon(Icons.music_note, color: scheme.outline, size: 20),
+  );
 }
