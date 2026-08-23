@@ -1,14 +1,18 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/favorites/favorites_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
+import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 
-/// 听歌识曲页：麦克风采集 10 秒 → 酷狗指纹识别 → 结果列表。
+/// 听歌识曲页（桌面端风格）：居中麦克风圆钮 + 脉冲/旋转 / 波形条，
+/// 识别成功后展示匹配度、封面、收藏、加歌单与重新识别。
 class RecognizePage extends ConsumerStatefulWidget {
   const RecognizePage({super.key});
 
@@ -37,8 +41,11 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     super.dispose();
   }
 
+  bool get _active =>
+      _phase == _Phase.recording || _phase == _Phase.recognizing;
+
   Future<void> _start() async {
-    if (_phase == _Phase.recording || _phase == _Phase.recognizing) return;
+    if (_active) return;
     setState(() {
       _phase = _Phase.recording;
       _progress = 0;
@@ -66,7 +73,12 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       if (!mounted) return;
       setState(() {
         _phase = _Phase.idle;
-        _error = e.message;
+        // 用户主动停止识别，不展示错误。
+        if (e.message == '识别已取消') {
+          _error = null;
+        } else {
+          _error = e.message;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -79,11 +91,11 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   Future<void> _cancel() async {
     await _service.cancel();
-    // recordAndRecognize 会以「识别已取消」异常返回，由 _start 的 catch 处理状态
+    // recordAndRecognize 会以「识别已取消」异常返回，由 _start 的 catch 处理状态。
   }
 
-  /// 用 LX 协议播放识别结果（需要已安装支持 kg 音源的 LX 插件）。
-  Future<void> _play(RecognizeMatch m) async {
+  /// 把识别结果转成可播放/收藏/加歌单的队列项（LX 酷狗协议）。
+  QueueItem _toQueueItem(RecognizeMatch m) {
     final musicInfo = <String, dynamic>{
       'name': m.name,
       'singer': m.singer,
@@ -94,11 +106,12 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       'img': m.img,
       'hash': m.hash,
       'types': [
-        for (final e in m.types.entries) {'type': e.key, 'size': '', 'hash': (e.value as Map)['hash']},
+        for (final e in m.types.entries)
+          {'type': e.key, 'size': '', 'hash': (e.value as Map)['hash']},
       ],
       '_types': m.types,
     };
-    final item = QueueItem(
+    return QueueItem(
       path: 'lx://kg/${m.songmid}',
       title: m.name,
       artist: m.singer,
@@ -109,12 +122,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       coverUrl: m.img,
       source: 'kg',
     );
-    await ref.read(playerProvider.notifier).playQueue([item]);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在解析播放链接…'), duration: Duration(seconds: 1)),
-      );
-    }
   }
 
   String _bestQuality(RecognizeMatch m) {
@@ -124,39 +131,83 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     return '320k';
   }
 
+  Future<void> _play(RecognizeMatch m) async {
+    await ref
+        .read(playerProvider.notifier)
+        .playQueue([_toQueueItem(m)]);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('正在解析播放链接…'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+
+  void _toggleFavorite(RecognizeMatch m) {
+    ref.read(favoritesProvider.notifier).toggle(_toQueueItem(m));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ref.read(favoritesProvider).contains(_toQueueItem(m).path)
+            ? '已收藏'
+            : '已取消收藏'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  void _addToPlaylist(RecognizeMatch m) {
+    final item = _toQueueItem(m);
+    showAddToPlaylistSheet(context, ref, [importedSongFromQueueItem(item)]);
+  }
+
+  String get _statusText => switch (_phase) {
+        _Phase.recording =>
+          '正在聆听 ${(RecognizeService.maxSeconds * _progress).round()}s / ${RecognizeService.maxSeconds}s',
+        _Phase.recognizing => '识别中…',
+        _Phase.done => _matches.isEmpty ? '识别失败' : '识别到 ${_matches.length} 首匹配',
+        _Phase.idle => '点击麦克风开始识别',
+      };
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final player = ref.watch(playerProvider);
     final hasSong = player.current != null;
+    final success = _phase == _Phase.done && _matches.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('听歌识曲')),
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mic, size: 18, color: const Color(0xFFEC4141)),
+            const SizedBox(width: 8),
+            const Text('听歌识曲', style: TextStyle(fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-            children: [
-              _buildMicSection(scheme),
-              if (_error != null && _matches.isEmpty) ...[
-                const SizedBox(height: 20),
-                Center(
-                  child: Text(_error!,
-                      style:
-                          TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-                ),
-              ],
-              if (_matches.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text('识别结果（${_matches.length}）',
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 10),
-                for (final (i, m) in _matches.indexed)
-                  _MatchCard(match: m, rank: i + 1, onPlay: () => _play(m)),
-              ],
-            ],
-          ),
+          if (success)
+            _MatchListView(
+              matches: _matches,
+              onPlay: _play,
+              onFavorite: _toggleFavorite,
+              isFavorite: (m) =>
+                  ref.read(favoritesProvider).contains(_toQueueItem(m).path),
+              onAddToPlaylist: _addToPlaylist,
+              onRestart: () => setState(() => _phase = _Phase.idle),
+              onStart: _start,
+            )
+          else
+            _MicView(
+              phase: _phase,
+              active: _active,
+              pulse: _pulse,
+              statusText: _statusText,
+              error: !success ? _error : null,
+              onTap: _active ? _cancel : _start,
+              onRestart: () => setState(() => _phase = _Phase.idle),
+            ),
           if (hasSong)
             Positioned(
               left: 14,
@@ -168,151 +219,431 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       ),
     );
   }
+}
 
-  Widget _buildMicSection(ColorScheme scheme) {
-    final active =
-        _phase == _Phase.recording || _phase == _Phase.recognizing;
-    final statusText = switch (_phase) {
-      _Phase.recording => '正在聆听 ${(RecognizeService.maxSeconds * _progress).round()}s / ${RecognizeService.maxSeconds}s',
-      _Phase.recognizing => '正在识别…',
-      _Phase.done => _matches.isEmpty ? '未识别到结果' : '识别完成',
-      _Phase.idle => '点击按钮，靠近音源开始识别',
-    };
+// ==================== 麦克风主视图 ====================
 
-    return Column(
+class _MicView extends StatelessWidget {
+  const _MicView({
+    required this.phase,
+    required this.active,
+    required this.pulse,
+    required this.statusText,
+    required this.error,
+    required this.onTap,
+    required this.onRestart,
+  });
+
+  final _Phase phase;
+  final bool active;
+  final AnimationController pulse;
+  final String statusText;
+  final String? error;
+  final VoidCallback onTap;
+  final VoidCallback onRestart;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final primary = const Color(0xFFEC4141);
+    final recognizing = phase == _Phase.recognizing;
+    final failed = phase == _Phase.done && error != null && error!.isNotEmpty;
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+          24, MediaQuery.of(context).padding.top + 20, 24, 32),
       children: [
-        const SizedBox(height: 24),
+        // —— 麦克风圆钮 ——
         SizedBox(
-          width: 132,
-          height: 132,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // 进度环
-              if (active)
-                SizedBox(
-                  width: 132,
-                  height: 132,
-                  child: CircularProgressIndicator(
-                    value: _phase == _Phase.recording ? _progress : null,
-                    strokeWidth: 3,
-                    color: scheme.primary.withValues(alpha: 0.35),
-                  ),
-                ),
-              // 脉冲光环
-              if (active)
-                ScaleTransition(
-                  scale: Tween(begin: 0.92, end: 1.06).animate(
-                      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
-                  child: Container(
-                    width: 116,
-                    height: 116,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: scheme.primary.withValues(alpha: 0.10),
+          height: 96,
+          child: Center(
+            child: SizedBox(
+              width: 80,
+              height: 80,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // 脉冲环（录音中）
+                  if (active && !recognizing)
+                    ScaleTransition(
+                      scale: Tween(begin: 0.92, end: 1.08).animate(CurvedAnimation(
+                          parent: pulse, curve: Curves.easeInOut)),
+                      child: Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: primary.withValues(alpha: 0.18),
+                        ),
+                      ),
+                    ),
+                  Material(
+                    color: active && !recognizing ? primary : primary.withValues(alpha: 0.10),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: onTap,
+                      child: SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: Icon(
+                          recognizing
+                              ? Icons.mic_off
+                              : active
+                                  ? Icons.mic
+                                  : Icons.mic_none_rounded,
+                          color: active && !recognizing ? Colors.white : primary,
+                          size: 28,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              Material(
-                color: scheme.primary,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: active ? _cancel : _start,
-                  child: SizedBox(
-                    width: 92,
-                    height: 92,
-                    child: Icon(
-                      active
-                          ? Icons.stop_rounded
-                          : Icons.graphic_eq_rounded,
-                      color: Colors.white,
-                      size: 38,
-                    ),
-                  ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: 18),
-        Text(statusText,
-            style: TextStyle(
-                fontSize: 14,
-                color: active ? scheme.primary : scheme.onSurfaceVariant,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
-        const SizedBox(height: 6),
+
+        const SizedBox(height: 16),
         Text(
-          active ? '点击停止' : '识别外放中的音乐，需安装支持酷狗音源的插件后播放',
-          style: TextStyle(fontSize: 11.5, color: scheme.outline),
+          statusText,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+            color: active ? primary : scheme.onSurfaceVariant,
+          ),
+        ),
+
+        // —— 波形条（录音中）——
+        const SizedBox(height: 14),
+        if (phase == _Phase.recording)
+          const _Waveform(color: Color(0xFFEC4141))
+        else
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: scheme.outline.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+
+        // —— 错误提示 / 提示文案 ——
+        const SizedBox(height: 16),
+        if (failed && error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+          )
+        else if (failed)
+          const SizedBox.shrink()
+        else ...[
+          Text(
+            '识别外放中的音乐，请先播放音乐，再点击识别按钮',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11.5,
+              height: 1.6,
+              color: scheme.outline,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            active ? '点击停止' : '需安装支持酷狗音源的插件后播放',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: scheme.outline),
+          ),
+        ],
+
+        // —— 失败后重新识别 ——
+        if (failed && !active) ...[
+          const SizedBox(height: 24),
+          Center(
+            child: _ReRecognizeButton(onTap: onRestart),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 波形条：7 根红色竖条，模拟桌面端录音动画。
+class _Waveform extends StatefulWidget {
+  const _Waveform({required this.color});
+
+  final Color color;
+
+  @override
+  State<_Waveform> createState() => _WaveformState();
+}
+
+class _WaveformState extends State<_Waveform>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 850))
+        ..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        return SizedBox(
+          height: 28,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < 7; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 4,
+                    height: 8 +
+                        20 *
+                            (0.5 +
+                                0.5 *
+                                    math.sin(2 * math.pi * (_c.value + i / 7))),
+                    decoration: BoxDecoration(
+                      color: widget.color,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ==================== 匹配结果列表 ====================
+
+class _MatchListView extends StatelessWidget {
+  const _MatchListView({
+    required this.matches,
+    required this.onPlay,
+    required this.onFavorite,
+    required this.isFavorite,
+    required this.onAddToPlaylist,
+    required this.onRestart,
+    required this.onStart,
+  });
+
+  final List<RecognizeMatch> matches;
+  final void Function(RecognizeMatch) onPlay;
+  final void Function(RecognizeMatch) onFavorite;
+  final bool Function(RecognizeMatch) isFavorite;
+  final void Function(RecognizeMatch) onAddToPlaylist;
+  final VoidCallback onRestart;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        // 结果提示条
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: scheme.surfaceContainerHigh,
+          child: Text(
+            '识别到 ${matches.length} 首匹配',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.only(bottom: 24),
+            itemCount: matches.length + 1,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              if (index == matches.length) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: _ReRecognizeButton(onTap: onRestart),
+                );
+              }
+              final m = matches[index];
+              return _MatchRow(
+                match: m,
+                fav: isFavorite(m),
+                onPlay: () => onPlay(m),
+                onFavorite: () => onFavorite(m),
+                onAddToPlaylist: () => onAddToPlaylist(m),
+              );
+            },
+          ),
         ),
       ],
     );
   }
 }
 
-class _MatchCard extends StatelessWidget {
-  const _MatchCard({required this.match, required this.rank, required this.onPlay});
+class _MatchRow extends StatelessWidget {
+  const _MatchRow({
+    required this.match,
+    required this.fav,
+    required this.onPlay,
+    required this.onFavorite,
+    required this.onAddToPlaylist,
+  });
+
   final RecognizeMatch match;
-  final int rank;
+  final bool fav;
   final VoidCallback onPlay;
+  final VoidCallback onFavorite;
+  final VoidCallback onAddToPlaylist;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final confidencePercent = (match.confidence * 100).round();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: OnlineCover(
-            url: match.img,
-            size: 52,
-          ),
-        ),
-        title: Text(
-          match.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 2),
-            Text(
-              '${match.singer} · ${match.albumName}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 3),
-            Row(
+    final primary = const Color(0xFFEC4141);
+    final pct = (match.confidence * 100).round();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          // 匹配度
+          SizedBox(
+            width: 56,
+            child: Column(
               children: [
-                Text('相似度 $confidencePercent%',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: confidencePercent >= 80
-                            ? scheme.primary
-                            : scheme.outline)),
-                const SizedBox(width: 8),
-                if (match.interval != '00:00')
-                  Text(match.interval,
-                      style:
-                          TextStyle(fontSize: 11, color: scheme.outline)),
+                Text(
+                  '$pct%',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFEC4141),
+                  ),
+                ),
+                Text(
+                  '匹配度',
+                  style: TextStyle(
+                      fontSize: 9, color: scheme.onSurfaceVariant),
+                ),
               ],
             ),
-          ],
+          ),
+          const SizedBox(width: 8),
+          // 封面
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 52,
+              height: 52,
+              child: OnlineCover(url: match.img, size: 52),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 歌曲信息
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  match.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  [match.singer, match.albumName]
+                      .where((e) => e.isNotEmpty)
+                      .join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 11.5, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          // 操作按钮
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: Icon(Icons.play_circle_fill,
+                    size: 30, color: primary),
+                tooltip: '播放',
+                onPressed: onPlay,
+              ),
+              IconButton(
+                icon: Icon(
+                  fav ? Icons.favorite : Icons.favorite_border,
+                  size: 22,
+                  color: fav ? primary : scheme.onSurfaceVariant,
+                ),
+                tooltip: fav ? '已收藏' : '收藏',
+                onPressed: onFavorite,
+              ),
+              IconButton(
+                icon: Icon(Icons.playlist_add,
+                    size: 22, color: scheme.onSurfaceVariant),
+                tooltip: '添加到歌单',
+                onPressed: onAddToPlaylist,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReRecognizeButton extends StatelessWidget {
+  const _ReRecognizeButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEC4141).withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
         ),
-        trailing: IconButton(
-          icon: Icon(Icons.play_circle_fill, size: 34, color: scheme.primary),
-          onPressed: onPlay,
+        alignment: Alignment.center,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.refresh, size: 18, color: Color(0xFFEC4141)),
+            SizedBox(width: 6),
+            Text(
+              '重新识别',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFEC4141),
+              ),
+            ),
+          ],
         ),
       ),
     );

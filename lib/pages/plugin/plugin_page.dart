@@ -13,6 +13,7 @@ import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/playlist/playlist_provider.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
 class PluginPage extends ConsumerStatefulWidget {
@@ -76,10 +77,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   }
 
   void _showInstallSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _InstallSheet(
+    showSheetDialog<void>(
+      context,
+      (ctx) => _InstallSheet(
         onInstall: (script, name) => _install(script, name),
         onInstallUrl: (url) => _installUrl(url),
       ),
@@ -144,10 +144,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   }
 
   void _showBackupImportSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _BackupImportSheet(
+    showSheetDialog<void>(
+      context,
+      (ctx) => _BackupImportSheet(
         onImport: _importBackup,
       ),
     );
@@ -502,10 +501,9 @@ class _PluginCard extends ConsumerWidget {
   }
 
   Future<void> _openUserVars(BuildContext context, WidgetRef ref) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _UserVarsSheet(source: source),
+    await showSheetDialog<void>(
+      context,
+      (ctx) => _UserVarsSheet(source: source),
     );
   }
 

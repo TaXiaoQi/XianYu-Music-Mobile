@@ -5,6 +5,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/remote/remote_library_service.dart';
 import '../../src/widgets/mini_player_bar.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 远程音乐库管理页：WebDAV 源的添加/编辑/同步/删除与缓存管理。
 class RemoteLibraryPage extends ConsumerWidget {
@@ -142,13 +143,12 @@ class RemoteLibraryPage extends ConsumerWidget {
     );
   }
 
-  /// 添加/编辑远程源表单（底部弹层）。
+  /// 添加/编辑远程源表单（居中弹窗）。
   Future<void> _showSourceEditor(BuildContext context, WidgetRef ref,
       {RemoteSourceInfo? editing}) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _SourceEditorSheet(editing: editing),
+    return showSheetDialog<void>(
+      context,
+      (_) => _SourceEditorSheet(editing: editing),
     );
   }
 
@@ -303,10 +303,9 @@ class _SourceCard extends ConsumerWidget {
 
   Future<void> _onMenu(BuildContext context, WidgetRef ref, String action) async {
     if (action == 'edit') {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => _SourceEditorSheet(editing: source),
+      await showSheetDialog<void>(
+        context,
+        (_) => _SourceEditorSheet(editing: source),
       );
     } else if (action == 'remove') {
       final ok = await showDialog<bool>(

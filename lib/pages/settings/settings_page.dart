@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -363,9 +364,9 @@ class SettingsPage extends ConsumerWidget {
   Future<void> _pickNavBarPosition(
       BuildContext context, WidgetRef ref, AppSettings? s) async {
     final cur = s?.navBarPosition ?? NavBarPosition.bottom;
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      builder: (_) => _choiceSheet(context, const [
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
         _Choice('底部导航', NavBarPosition.bottom),
         _Choice('侧边悬浮', NavBarPosition.side),
       ], cur, labelOf: (v) => switch (v) {
@@ -384,9 +385,9 @@ class SettingsPage extends ConsumerWidget {
   Future<void> _pickSideBarExpandDirection(
       BuildContext context, WidgetRef ref, AppSettings? s) async {
     final cur = s?.sideBarExpandDirection ?? SideBarExpandDirection.down;
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      builder: (_) => _choiceSheet(context, const [
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
         _Choice('向下展开', SideBarExpandDirection.down),
         _Choice('向上展开', SideBarExpandDirection.up),
       ], cur, labelOf: (v) => switch (v) {
@@ -451,9 +452,9 @@ class SettingsPage extends ConsumerWidget {
   Future<void> _pickThemeMode(
       BuildContext context, WidgetRef ref, AppSettings? s) async {
     final cur = s?.themeMode ?? ThemeModePreference.system;
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      builder: (_) => _choiceSheet(context, const [
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
         _Choice('跟随系统', ThemeModePreference.system),
         _Choice('浅色', ThemeModePreference.light),
         _Choice('深色', ThemeModePreference.dark),
@@ -478,15 +479,10 @@ class SettingsPage extends ConsumerWidget {
       0xFFEC4141, 0xFFE64A2E, 0xFFFF8A00, 0xFF4CAF50, 0xFF2196F3,
       0xFF7C4DFF, 0xFF9C27B0, 0xFF795548, 0xFF607D8B, 0xFF000000,
     ];
-    final choice = await showModalBottomSheet<int>(
-      context: context,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: 16 + MediaQuery.of(ctx).padding.bottom + 80, // 给全局底部导航栏和安全区留出空间
-        ),
+    final choice = await showSheetDialog<int>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -534,9 +530,9 @@ class SettingsPage extends ConsumerWidget {
     final cur = isOnline
         ? s?.onlineDefaultQuality ?? '320k'
         : s?.downloadQuality ?? '320k';
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      builder: (_) => _choiceSheet(context, const [
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
         _Choice('128k', '128k'),
         _Choice('192k', '192k'),
         _Choice('320k', '320k'),
@@ -562,9 +558,9 @@ class SettingsPage extends ConsumerWidget {
       _Choice('30 秒', 30),
       _Choice('60 秒', 60),
     ];
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      builder: (_) => _choiceSheet(context, choices, cur, labelOf: (v) => switch (v) {
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, choices, cur, labelOf: (v) => switch (v) {
         0 => '不排除',
         10 => '10 秒',
         30 => '30 秒',
@@ -583,16 +579,10 @@ class SettingsPage extends ConsumerWidget {
       BuildContext context, WidgetRef ref, AppSettings? s) async {
     final cur = s?.downloadPath ?? '';
     final controller = TextEditingController(text: cur);
-    final action = await showModalBottomSheet<Object?>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-        ),
+    final action = await showSheetDialog<Object?>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -641,27 +631,20 @@ class SettingsPage extends ConsumerWidget {
 
   Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
       {required String Function(dynamic) labelOf}) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 80,
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final c in choices)
-              ListTile(
-                title: Text(labelOf(c.value)),
-                trailing: c.value == cur
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final c in choices)
+          ListTile(
+            title: Text(labelOf(c.value)),
+            trailing: c.value == cur
                     ? Icon(Icons.check,
                         color: Theme.of(context).colorScheme.primary)
                     : null,
-                selected: c.value == cur,
-                onTap: () => Navigator.pop(context, c),
-              ),
-          ],
-        ),
-      ),
+            selected: c.value == cur,
+            onTap: () => Navigator.pop(context, c),
+          ),
+      ],
     );
   }
 }

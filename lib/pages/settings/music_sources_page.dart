@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/navigation/shell.dart';
 import '../../src/plugins/plugin_provider.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 音源管理页：导入、启用停用、卸载音源插件。
 ///
@@ -307,10 +308,9 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage>
   }
 
   void _showImportSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => SafeArea(
+    showSheetDialog<void>(
+      context,
+      (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

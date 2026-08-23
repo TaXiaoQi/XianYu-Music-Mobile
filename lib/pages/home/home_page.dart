@@ -28,7 +28,10 @@ class HomePage extends ConsumerWidget {
               children: [
                 _TopBar(onSettings: () => context.go('/settings')),
                 const SizedBox(height: 16),
-                _SearchBar(onTap: () => context.push('/search')),
+                _SearchBar(
+                  onTap: () => context.push('/search'),
+                  onRecognize: () => context.push('/recognize'),
+                ),
                 const SizedBox(height: 22),
                 const CoverCarousel(),
                 const SizedBox(height: 26),
@@ -125,9 +128,10 @@ class _IconBtn extends StatelessWidget {
 }
 
 class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.onTap});
+  const _SearchBar({required this.onTap, required this.onRecognize});
 
   final VoidCallback onTap;
+  final VoidCallback onRecognize;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +144,7 @@ class _SearchBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         child: Container(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
@@ -149,11 +153,41 @@ class _SearchBar extends StatelessWidget {
             children: [
               Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
               const SizedBox(width: 10),
-              Text(
-                '搜索歌曲、歌手、专辑',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              Expanded(
+                child: Text(
+                  '搜索歌曲、歌手、专辑',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // 听歌识曲入口：搜索框内右侧
+              GestureDetector(
+                onTap: onRecognize,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4141).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.mic_none, size: 16, color: Color(0xFFEC4141)),
+                      SizedBox(width: 3),
+                      Text(
+                        '识曲',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFEC4141),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

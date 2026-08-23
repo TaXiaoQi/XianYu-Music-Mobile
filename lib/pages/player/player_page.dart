@@ -18,6 +18,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 正在播放页：现代毛玻璃风格。
 /// 封面大圆角浮于流光背景之上，支持点击封面在“封面模式”与“歌词模式”间平滑切换。
@@ -474,11 +475,9 @@ class _TitleRow extends ConsumerWidget {
         if (current.isOnline)
           IconButton(
             icon: const Icon(Icons.mode_comment_outlined),
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => CommentSheet(songJson: current.onlineSongJson),
+            onPressed: () => showSheetDialog<void>(
+              context,
+              (_) => CommentSheet(songJson: current.onlineSongJson),
             ),
           ),
       ],
@@ -611,11 +610,9 @@ class _Controls extends ConsumerWidget {
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。
   void _showQueueSheet(
       BuildContext context, WidgetRef ref, PlaybackState player) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _QueueSheet(player: player),
+    showSheetDialog<void>(
+      context,
+      (_) => _QueueSheet(player: player),
     );
   }
 }
@@ -1362,9 +1359,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
   static void _showFontSizeSheet(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetCtx) {
+    showSheetDialog<void>(
+      context,
+      (sheetCtx) {
         final notifier = ref.read(settingsProvider.notifier);
         var current =
             ref.read(settingsProvider).valueOrNull?.lyricFontSize ?? 1;
@@ -1434,9 +1431,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 歌词偏移校正面板（对应 MF SetLyricOffset）：-500ms ~ +500ms 滑杆。
   static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetCtx) {
+    showSheetDialog<void>(
+      context,
+      (sheetCtx) {
         final notifier = ref.read(settingsProvider.notifier);
         var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
         return SafeArea(

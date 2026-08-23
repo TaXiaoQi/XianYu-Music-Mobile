@@ -5,6 +5,7 @@ import '../download/download_provider.dart';
 import '../favorites/favorites_provider.dart';
 import '../player/player_provider.dart';
 import 'add_to_playlist_sheet.dart';
+import 'sheet_dialog.dart';
 import 'song_info_dialog.dart';
 
 /// 通用歌曲操作弹层：收藏 / 添加到歌单 / 歌曲信息 / 下载。
@@ -19,15 +20,13 @@ Future<void> showSongActionsSheet(
   final favorites = ref.read(favoritesProvider.notifier);
   final isFav = favorites.isFavorite(item.path);
 
-  await showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (ctx) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+  await showSheetDialog<void>(
+    context,
+    (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
               child: Text(
@@ -96,9 +95,8 @@ Future<void> showSongActionsSheet(
                 },
               ),
             const SizedBox(height: 8),
-          ],
-        ),
-      );
-    },
+        ],
+      ),
+    ),
   );
 }

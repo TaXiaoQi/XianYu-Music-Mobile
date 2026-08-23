@@ -18,6 +18,7 @@ import '../../src/plugin/plugin_search.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/rust/api.dart';
+import '../../src/search/search_history_store.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -129,29 +130,45 @@ class _SearchPageState extends ConsumerState<SearchPage>
     with SingleTickerProviderStateMixin, HidesShellChrome {
   final TextEditingController _ctrl = TextEditingController();
   late final TabController _tab;
-  String _activeQuery = '';
+
+  /// idle：默认空白页（搜索历史 + 大家都在搜）；results：搜索结果页。
+  _SearchMode _mode = _SearchMode.idle;
+  /// 已提交、用于驱动结果页的关键词。
+  String _searchedQuery = '';
+
+  bool get _inResults => _mode == _SearchMode.results;
 
   List<_SourceItem> _sources = const [];
   String _selectedSourceId = '';
-
-  Timer? _debounce;
 
   // 输入统计：1.5s 无新输入后批量上报新增字符数。
   int _pendingCharCount = 0;
   int _lastQueryLength = 0;
   Timer? _inputFlushTimer;
 
+  int _activeIndex = 0;
+
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 4, vsync: this);
+    // tab 由 TabController 内部驱动切换，父页面需监听其 index 变化并重建，
+    // 以把新的 visible 标记传给子 tab，否则切换后新 tab 不会发起搜索。
+    _tab.addListener(_onTabChanged);
     ref.listenManual(pluginManagerProvider, (_, _) => _refreshSources());
     _refreshSources();
   }
 
+  void _onTabChanged() {
+    final idx = _tab.index;
+    if (idx == _activeIndex || !mounted) return;
+    _activeIndex = idx;
+    setState(() {});
+  }
+
   @override
   void dispose() {
-    _debounce?.cancel();
+    _tab.removeListener(_onTabChanged);
     _inputFlushTimer?.cancel();
     _tab.dispose();
     _ctrl.dispose();
@@ -238,27 +255,28 @@ class _SearchPageState extends ConsumerState<SearchPage>
         }
       });
     }
+  }
 
-    _debounce?.cancel();
-    final q = keyword.trim();
-    if (q.isEmpty) {
-      _setActiveQuery('');
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 220), () {
-      _setActiveQuery(q);
+  /// 提交搜索：加入历史并切换到结果页（仅点击搜索按钮 / 键盘确认 / 点历史或热搜触发）。
+  void _submitSearch(String raw) {
+    final q = raw.trim();
+    if (q.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    if (_ctrl.text != q) _ctrl.text = q;
+    ref.read(searchHistoryProvider.notifier).add(q);
+    _tab.index = 0;
+    setState(() {
+      _searchedQuery = q;
+      _mode = _SearchMode.results;
     });
   }
 
-  void _setActiveQuery(String q) {
-    if (!mounted) return;
-    setState(() => _activeQuery = q);
-  }
-
   void _clearInput() {
-    _debounce?.cancel();
-    _ctrl.clear();
-    _setActiveQuery('');
+    if (_ctrl.text.isNotEmpty) _ctrl.clear();
+    setState(() {
+      _mode = _SearchMode.idle;
+      _searchedQuery = '';
+    });
   }
 
   Widget _buildSourceBar(ColorScheme scheme) {
@@ -301,15 +319,11 @@ class _SearchPageState extends ConsumerState<SearchPage>
           autofocus: true,
           textInputAction: TextInputAction.search,
           onChanged: _onChanged,
-          onSubmitted: (q) {
-            FocusScope.of(context).unfocus();
-            _debounce?.cancel();
-            _setActiveQuery(q.trim());
-          },
+          onSubmitted: (q) => _submitSearch(q),
           decoration: InputDecoration(
             hintText: '搜索音乐、歌手、专辑、歌单',
             border: InputBorder.none,
-            suffixIcon: _ctrl.text.isEmpty
+            suffixIcon: _ctrl.text.isEmpty && !_inResults
                 ? null
                 : IconButton(
                     icon: const Icon(Icons.clear, size: 20),
@@ -319,59 +333,68 @@ class _SearchPageState extends ConsumerState<SearchPage>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.graphic_eq_outlined, size: 22),
-            tooltip: '听歌识曲',
-            onPressed: () => context.push('/recognize'),
+            tooltip: '搜索',
+            icon: const Icon(Icons.search),
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFEC4141),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => _submitSearch(_ctrl.text),
           ),
         ],
-        bottom: TabBar(
-          controller: _tab,
-          tabs: const [
-            Tab(text: '单曲'),
-            Tab(text: '歌手'),
-            Tab(text: '专辑'),
-            Tab(text: '歌单'),
-          ],
-        ),
+        bottom: _inResults
+            ? TabBar(
+                controller: _tab,
+                tabs: const [
+                  Tab(text: '单曲'),
+                  Tab(text: '歌手'),
+                  Tab(text: '专辑'),
+                  Tab(text: '歌单'),
+                ],
+              )
+            : null,
       ),
       body: Stack(
         children: [
-          Column(
-            children: [
-              _buildSourceBar(scheme),
-              const Divider(height: 1),
-              Expanded(
-                child: TabBarView(
-                  controller: _tab,
-                  children: [
-                    _TrackTab(
-                      keyword: _activeQuery,
-                      source: selected,
-                      visible: _tab.index == 0,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.artist,
-                      keyword: _activeQuery,
-                      source: selected,
-                      visible: _tab.index == 1,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.album,
-                      keyword: _activeQuery,
-                      source: selected,
-                      visible: _tab.index == 2,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.playlist,
-                      keyword: _activeQuery,
-                      source: selected,
-                      visible: _tab.index == 3,
-                    ),
-                  ],
+          if (_inResults)
+            Column(
+              children: [
+                _buildSourceBar(scheme),
+                const Divider(height: 1),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tab,
+                    children: [
+                      _TrackTab(
+                        keyword: _searchedQuery,
+                        source: selected,
+                        visible: _tab.index == 0,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.artist,
+                        keyword: _searchedQuery,
+                        source: selected,
+                        visible: _tab.index == 1,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.album,
+                        keyword: _searchedQuery,
+                        source: selected,
+                        visible: _tab.index == 2,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.playlist,
+                        keyword: _searchedQuery,
+                        source: selected,
+                        visible: _tab.index == 3,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            )
+          else
+            _IdleBody(onSearch: _submitSearch),
           if (hasSong)
             Positioned(
               left: 14,
@@ -380,6 +403,253 @@ class _SearchPageState extends ConsumerState<SearchPage>
               child: const MiniPlayerBar(),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ==================== 默认页（搜索历史 + 大家都在搜） ====================
+
+enum _SearchMode { idle, results }
+
+/// 大家都在搜：聚合所有用户搜索数据（后端 get_hot_search）。
+final _hotSearchProvider = FutureProvider<List<HotSearchItem>>((ref) {
+  return ref.read(accountApiProvider).fetchHotSearch(limit: 10);
+});
+
+/// 默认空白页：上方搜索历史，下方"大家都在搜"；点击任一关键词即提交搜索。
+class _IdleBody extends ConsumerWidget {
+  const _IdleBody({required this.onSearch});
+
+  final void Function(String keyword) onSearch;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final history = ref.watch(searchHistoryProvider);
+    final hotAsync = ref.watch(_hotSearchProvider);
+    final hasMini = ref.watch(playerProvider).current != null;
+    final bottomInset =
+        MediaQuery.of(context).padding.bottom + (hasMini ? 92 : 24);
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16, 4, 16, bottomInset),
+      children: [
+        // —— 搜索历史 ——
+        Row(
+          children: [
+            Icon(Icons.history, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              '搜索历史',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            if (history.isNotEmpty)
+              InkWell(
+                onTap: () =>
+                    ref.read(searchHistoryProvider.notifier).clear(),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  child: Text(
+                    '清空',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (history.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              '暂无搜索历史',
+              style: TextStyle(fontSize: 13, color: scheme.outline),
+            ),
+          )
+        else
+          for (final kw in history) _HistoryTile(keyword: kw, onTap: onSearch),
+        const SizedBox(height: 24),
+
+        // —— 大家都在搜 ——
+        Row(
+          children: [
+            Icon(Icons.local_fire_department_outlined,
+                size: 18, color: const Color(0xFFEC4141)),
+            const SizedBox(width: 8),
+            Text(
+              '大家都在搜',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        hotAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+            ),
+          ),
+          error: (_, _) => _EmptyHotHint(scheme),
+          data: (list) => list.isEmpty
+              ? _EmptyHotHint(scheme)
+              : Column(
+                  children: [
+                    for (var i = 0; i < list.length; i++)
+                      _HotTile(
+                        index: i,
+                        item: list[i],
+                        onTap: onSearch,
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HistoryTile extends ConsumerWidget {
+  const _HistoryTile({required this.keyword, required this.onTap});
+
+  final String keyword;
+  final void Function(String keyword) onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => onTap(keyword),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                keyword,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 14, color: scheme.onSurface),
+              ),
+            ),
+            InkWell(
+              onTap: () => ref
+                  .read(searchHistoryProvider.notifier)
+                  .remove(keyword),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: scheme.outline,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HotTile extends ConsumerWidget {
+  const _HotTile({
+    required this.index,
+    required this.item,
+    required this.onTap,
+  });
+
+  final int index;
+  final HotSearchItem item;
+  final void Function(String keyword) onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    // 前三名高亮。
+    final hot = index < 3;
+    final color = hot
+        ? const Color(0xFFEC4141)
+        : scheme.onSurfaceVariant;
+    // 文本大小逐名递减，突出榜首。
+    final size = index == 0
+        ? 15.5
+        : index == 1
+            ? 15.0
+            : 14.5;
+    return InkWell(
+      onTap: () => onTap(item.keyword),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 26,
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                item.keyword,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: size,
+                  fontWeight: hot ? FontWeight.w600 : FontWeight.w400,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ),
+            Text(
+              '${item.count}人搜',
+              style: TextStyle(
+                  fontSize: 11, color: scheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyHotHint extends StatelessWidget {
+  const _EmptyHotHint(this.scheme);
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        '暂无热搜',
+        style: TextStyle(fontSize: 13, color: scheme.outline),
       ),
     );
   }
@@ -454,6 +724,16 @@ class _TrackTabState extends ConsumerState<_TrackTab>
 
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    // 进入结果页时子组件全新创建，需立即执行首次搜索。
+    if (widget.visible && widget.keyword.trim().isNotEmpty) {
+      final q = widget.keyword.trim();
+      _search(q, '${widget.source.id}|$q');
+    }
+  }
 
   @override
   void didUpdateWidget(covariant _TrackTab oldWidget) {
@@ -656,6 +936,16 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
         _CatalogKind.album => '专辑',
         _CatalogKind.playlist => '歌单',
       };
+
+  @override
+  void initState() {
+    super.initState();
+    // 进入结果页时子组件全新创建，需立即执行首次搜索。
+    if (widget.visible && widget.keyword.trim().isNotEmpty) {
+      final q = widget.keyword.trim();
+      _search(q, '${widget.source.id}|$q');
+    }
+  }
 
   @override
   void didUpdateWidget(covariant _CatalogTab oldWidget) {

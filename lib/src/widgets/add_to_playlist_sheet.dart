@@ -8,6 +8,7 @@ import '../player/player_provider.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../plugin/plugin_backup_import.dart';
+import 'sheet_dialog.dart';
 
 /// 把播放队列项转成歌单曲目（本地/在线通吃）。
 ImportedSong importedSongFromQueueItem(QueueItem item) {
@@ -64,18 +65,15 @@ Future<void> showAddToPlaylistSheet(
   await manager.refresh();
   if (!context.mounted) return;
 
-  await showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (context) {
-      return Consumer(
-        builder: (context, ref, _) {
-          final state = ref.watch(playlistManagerProvider);
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+  await showSheetDialog(
+    context,
+    (_) => Consumer(
+      builder: (context, ref, _) {
+        final state = ref.watch(playlistManagerProvider);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   child: Row(
@@ -154,11 +152,10 @@ Future<void> showAddToPlaylistSheet(
                   ),
                 ),
               ],
-            ),
-          );
-        },
-      );
-    },
+          ),
+        );
+      },
+    ),
   );
 }
 
@@ -198,10 +195,9 @@ Future<void> showPlaylistActionsSheet(
 ) async {
   final manager = ref.read(playlistManagerProvider.notifier);
   final scheme = Theme.of(context).colorScheme;
-  await showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
+  await showSheetDialog(
+    context,
+    (_) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

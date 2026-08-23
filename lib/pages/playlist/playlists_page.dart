@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 我的歌单：创建/重命名/删除歌单，查看与播放歌单内容（对齐桌面歌单体系）。
 class PlaylistsPage extends ConsumerWidget {
@@ -177,34 +178,33 @@ class _PlaylistCard extends ConsumerWidget {
 
   void _sheetActions(BuildContext context, PlaylistManager manager) {
     final scheme = Theme.of(context).colorScheme;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
-              title: const Text('重命名歌单'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _rename(context, manager);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: const Color(0xFFEC4141), size: 22),
-              title: const Text('删除歌单'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _confirmRemove(context, manager);
-              },
-            ),
-          ],
+    showSheetDialog<void>(
+        context,
+        (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
+                title: const Text('重命名歌单'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _rename(context, manager);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline,
+                    color: const Color(0xFFEC4141), size: 22),
+                title: const Text('删除歌单'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmRemove(context, manager);
+                },
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
   }
 
   Future<void> _rename(BuildContext context, PlaylistManager manager) async {

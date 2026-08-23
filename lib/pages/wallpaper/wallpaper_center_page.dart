@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
 class WallpaperCenterPage extends ConsumerStatefulWidget {
@@ -494,11 +495,9 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
       );
       return;
     }
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => const _WallpaperUploadSheet(),
+    final ok = await showSheetDialog<bool>(
+      context,
+      (_) => const _WallpaperUploadSheet(),
     );
     if (ok == true && mounted) {
       _tabRefresh();
