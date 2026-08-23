@@ -19,10 +19,14 @@ class DownloadPage extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     final active = state.tasks
-        .where((t) => t.status == DownloadStatus.downloading)
+        .where((t) =>
+            t.status == DownloadStatus.waiting ||
+            t.status == DownloadStatus.downloading)
         .toList();
     final finished = state.tasks
-        .where((t) => t.status != DownloadStatus.downloading)
+        .where((t) =>
+            t.status == DownloadStatus.done ||
+            t.status == DownloadStatus.failed)
         .toList();
 
     return HideShellChrome(
@@ -164,7 +168,9 @@ class _ActiveTaskTile extends StatelessWidget {
       ),
       title: Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${task.artist} · ${task.quality}',
+        task.status == DownloadStatus.waiting
+            ? '排队中 · ${task.quality}'
+            : '${task.artist} · ${task.quality}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

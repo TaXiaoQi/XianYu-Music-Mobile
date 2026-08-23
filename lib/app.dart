@@ -1,11 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/auth/account_api.dart';
 import 'src/navigation/routes.dart';
+import 'l10n/gen/app_localizations.dart';
 
 class XianYuApp extends ConsumerStatefulWidget {
   const XianYuApp({super.key});
@@ -77,15 +79,25 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     _ensureThemes(accent);
     final theme = _lightTheme!;
     final darkTheme = _darkTheme!;
+    final locale = _localeFor(settings?.language ?? AppLanguage.system);
+    final l10nDelegates = [
+      AppLocalizations.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ];
 
     // 启动页由 main.dart 的 AppWarmupRunner 统一负责（等待 rust 初始化完成）
     return init.hasValue
         ? MaterialApp.router(
-            title: '弦予音乐',
+            title: AppLocalizations.of(context).appTitle,
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,
             themeMode: themeMode,
+            locale: locale,
+            localizationsDelegates: l10nDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
           )
         : MaterialApp(
@@ -94,6 +106,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             theme: theme,
             darkTheme: darkTheme,
             themeMode: themeMode,
+            locale: locale,
+            localizationsDelegates: l10nDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: init.when(
               data: (_) => const SizedBox.shrink(),
               loading: () => const SizedBox.shrink(),
@@ -104,6 +119,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             ),
           );
   }
+
+  Locale? _localeFor(AppLanguage lang) => switch (lang) {
+        AppLanguage.system => null,
+        AppLanguage.zhCN => const Locale('zh'),
+        AppLanguage.zhTW => const Locale('zh', 'TW'),
+        AppLanguage.en => const Locale('en'),
+      };
 }
 
 class _InitErrorScreen extends StatelessWidget {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/audio/audio_devices.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -38,6 +40,13 @@ class SettingsPage extends ConsumerWidget {
                 title: '主题模式',
                 trailing: _themeLabel(settings),
                 onTap: () => _pickThemeMode(context, ref, settings),
+              ),
+              _tile(
+                context,
+                icon: Icons.language_outlined,
+                title: '语言',
+                trailing: Text(_languageLabel(settings?.language ?? AppLanguage.system)),
+                onTap: () => _pickLanguage(context, ref, settings),
               ),
               _tile(
                 context,
@@ -107,6 +116,39 @@ class SettingsPage extends ConsumerWidget {
               ),
               _switchTile(
                 context,
+                icon: Icons.mouse_outlined,
+                title: '双击播放歌曲',
+                subtitle: '开启后双击歌曲播放，关闭后单击播放',
+                value: (settings?.songClickAction ?? 'single') == 'double',
+                onChanged: (v) =>
+                    notifier.setSongClickAction(v ? 'double' : 'single'),
+              ),
+              _tile(
+                context,
+                icon: Icons.play_disabled_outlined,
+                title: '起播失败行为',
+                subtitle: '在线音源完全无法播放时的处理方式',
+                trailing: Text(_failureBehaviorLabel(settings?.onlineFailureBehavior ?? 'skip')),
+                onTap: () => _pickFailureBehavior(context, ref, settings),
+              ),
+              _tile(
+                context,
+                icon: Icons.vertical_align_bottom_outlined,
+                title: '音质回退行为',
+                subtitle: '默认音质播放失败时如何切换音质档位',
+                trailing: Text(_qualityFallbackLabel(settings?.onlineQualityFallbackBehavior ?? 'lower')),
+                onTap: () => _pickQualityFallback(context, ref, settings),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.swap_horiz_outlined,
+                title: '播放失败自动换源',
+                subtitle: '在线播放失败时自动在其他落雪音源搜索并播放同一首歌',
+                value: settings?.autoSwitchSourceOnFailure ?? false,
+                onChanged: (v) => notifier.setAutoSwitchSourceOnFailure(v),
+              ),
+              _switchTile(
+                context,
                 icon: Icons.usb_outlined,
                 title: 'USB 独占输出 (Bit-perfect)',
                 subtitle: '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
@@ -120,6 +162,14 @@ class SettingsPage extends ConsumerWidget {
                 subtitle: 'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
                 value: settings?.dsdNativePassthrough ?? false,
                 onChanged: (v) => notifier.setDsdNativePassthrough(v),
+              ),
+              _tile(
+                context,
+                icon: Icons.speaker_outlined,
+                title: '输出设备',
+                subtitle: 'USB 独占 / DSD 直出到所选设备，可查看设备支持格式',
+                trailing: Text(_outputDeviceLabel(settings?.usbExclusiveDeviceId ?? -1)),
+                onTap: () => _pickOutputDevice(context, ref),
               ),
               _switchTile(
                 context,
@@ -232,10 +282,61 @@ class SettingsPage extends ConsumerWidget {
               ),
               _tile(
                 context,
+                icon: Icons.speed_outlined,
+                title: '批量并发数',
+                trailing: Text('${settings?.downloadConcurrency ?? 3}'),
+                onTap: () => _pickConcurrency(context, ref, settings),
+              ),
+              _tile(
+                context,
+                icon: Icons.label_outline,
+                title: '文件名样式',
+                trailing: Text(
+                    _fileNameStyleLabel(settings?.downloadFileNameStyle ?? 'artist-title')),
+                onTap: () => _pickFileNameStyle(context, ref, settings),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.file_copy_outlined,
+                title: '覆盖同名文件',
+                subtitle: '关闭时同名文件自动追加序号，避免覆盖',
+                value: settings?.overwriteExisting ?? false,
+                onChanged: (v) => notifier.setOverwriteExisting(v),
+              ),
+              _tile(
+                context,
                 icon: Icons.download_done_outlined,
                 title: '下载管理',
                 trailing: const SizedBox.shrink(),
                 onTap: () => context.push('/download'),
+              ),
+            ],
+          ),
+
+          _sectionHeader(context, '下载后嵌入'),
+          _CardGroup(
+            children: [
+              _switchTile(
+                context,
+                icon: Icons.info_outline,
+                title: '嵌入元数据',
+                value: settings?.embedDownloadMetadata ?? true,
+                onChanged: (v) => notifier.setEmbedDownloadMetadata(v),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.lyrics_outlined,
+                title: '嵌入歌词',
+                subtitle: '需同时开启「同时下载歌词」',
+                value: settings?.embedDownloadLyrics ?? false,
+                onChanged: (v) => notifier.setEmbedDownloadLyrics(v),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.image_outlined,
+                title: '嵌入封面',
+                value: settings?.embedDownloadCover ?? true,
+                onChanged: (v) => notifier.setEmbedDownloadCover(v),
               ),
             ],
           ),
@@ -429,6 +530,32 @@ class SettingsPage extends ConsumerWidget {
     });
   }
 
+  String _languageLabel(AppLanguage v) => switch (v) {
+        AppLanguage.system => '跟随系统',
+        AppLanguage.zhCN => '简体中文',
+        AppLanguage.zhTW => '繁體中文',
+        AppLanguage.en => 'English',
+      };
+
+  Future<void> _pickLanguage(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.language ?? AppLanguage.system;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
+        _Choice('跟随系统', AppLanguage.system),
+        _Choice('简体中文', AppLanguage.zhCN),
+        _Choice('繁體中文', AppLanguage.zhTW),
+        _Choice('English', AppLanguage.en),
+      ], cur, labelOf: (v) => _languageLabel(v as AppLanguage)),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setLanguage(choice.value as AppLanguage);
+    }
+  }
+
   Widget _volumeSlider(AppSettings? s, SettingsNotifier n,
       {required bool locked}) {
     return SizedBox(
@@ -573,6 +700,196 @@ class SettingsPage extends ConsumerWidget {
       } else {
         await n.setDownloadQuality(choice.value as String);
       }
+    }
+  }
+
+  String _failureBehaviorLabel(String v) => switch (v) {
+        'stop' => '停止播放',
+        _ => '跳到下一首',
+      };
+
+  String _qualityFallbackLabel(String v) => switch (v) {
+        'pause' => '暂停',
+        'higher' => '播放更高音质',
+        _ => '播放更低音质',
+      };
+
+  /// 选择在线歌曲起播失败行为（skip / stop）。
+  Future<void> _pickFailureBehavior(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.onlineFailureBehavior ?? 'skip';
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
+        _Choice('跳到下一首', 'skip'),
+        _Choice('停止播放', 'stop'),
+      ], cur, labelOf: (v) => _failureBehaviorLabel(v as String)),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setOnlineFailureBehavior(choice.value as String);
+    }
+  }
+
+  /// 选择在线默认音质播放失败时的音质回退行为（pause / lower / higher）。
+  Future<void> _pickQualityFallback(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.onlineQualityFallbackBehavior ?? 'lower';
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
+        _Choice('暂停', 'pause'),
+        _Choice('播放更低音质', 'lower'),
+        _Choice('播放更高音质', 'higher'),
+      ], cur, labelOf: (v) => _qualityFallbackLabel(v as String)),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setOnlineQualityFallbackBehavior(choice.value as String);
+    }
+  }
+
+  String _outputDeviceLabel(int id) => id == -1 ? '默认设备' : '设备 #$id';
+
+  /// 设备支持格式副标题，如「采样率 44.1k · 立体声」。
+  String? _deviceFormatSubtitle(AudioOutputDevice? d) {
+    if (d == null) return null;
+    final rates = d.sampleRates
+        .map((r) => r >= 1000 ? '${(r / 1000).toStringAsFixed(1)}kHz' : '$r Hz')
+        .join('/');
+    final chans = d.channelCounts
+        .map((c) => c == 1
+            ? '单声道'
+            : c == 2
+                ? '立体声'
+                : '${c}ch')
+        .join('/');
+    final parts = <String>[
+      if (rates.isNotEmpty) '采样率 $rates',
+      if (chans.isNotEmpty) chans,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  Future<void> _pickOutputDevice(BuildContext context, WidgetRef ref) async {
+    final scheme = Theme.of(context).colorScheme;
+    final supported = defaultTargetPlatform == TargetPlatform.android;
+    final devices = await listOutputDevices();
+    if (!context.mounted) return;
+    final current =
+        ref.read(settingsProvider).valueOrNull?.usbExclusiveDeviceId ?? -1;
+    final byId = {for (final d in devices) d.id: d};
+
+    final choice = await showSheetDialog<int>(
+      context,
+      (dialogContext) {
+        final list = <(String, int)>[
+          ('系统默认设备', -1),
+          for (final d in devices) (d.displayName, d.id),
+        ];
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+                child: Text('输出设备',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+              if (!supported || devices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    !supported
+                        ? '仅 Android 支持设备枚举'
+                        : '未检测到可用的输出设备',
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final (label, id) in list)
+                        ListTile(
+                          dense: true,
+                          selected: current == id,
+                          title: Text(label),
+                          subtitle: id == -1
+                              ? null
+                              : Text(_deviceFormatSubtitle(byId[id]) ?? '',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: scheme.onSurfaceVariant)),
+                          trailing: current == id
+                              ? Icon(Icons.check,
+                                  color: scheme.primary, size: 20)
+                              : null,
+                          onTap: () => Navigator.pop(dialogContext, id),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setUsbExclusiveDeviceId(choice);
+    }
+  }
+
+  String _fileNameStyleLabel(String v) => switch (v) {
+        'title-artist' => '标题 - 歌手',
+        'title-artist-album' => '标题 - 歌手 - 专辑',
+        _ => '歌手 - 标题',
+      };
+
+  Future<void> _pickConcurrency(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = (s?.downloadConcurrency ?? 3).clamp(1, 5);
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
+        _Choice('1', 1),
+        _Choice('2', 2),
+        _Choice('3', 3),
+        _Choice('4', 4),
+        _Choice('5', 5),
+      ], cur, labelOf: (v) => '${v as int}'),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setDownloadConcurrency(choice.value as int);
+    }
+  }
+
+  Future<void> _pickFileNameStyle(
+      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    final cur = s?.downloadFileNameStyle ?? 'artist-title';
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(context, const [
+        _Choice('歌手 - 标题', 'artist-title'),
+        _Choice('标题 - 歌手', 'title-artist'),
+        _Choice('标题 - 歌手 - 专辑', 'title-artist-album'),
+      ], cur, labelOf: (v) => _fileNameStyleLabel(v as String)),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setDownloadFileNameStyle(choice.value as String);
     }
   }
 

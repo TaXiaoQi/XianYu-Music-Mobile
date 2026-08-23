@@ -1,5 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../lyrics/lyric_font.dart';
 
 /// 主题模式
 enum ThemeModePreference {
@@ -18,6 +22,14 @@ enum NavBarPosition {
 enum SideBarExpandDirection {
   down,
   up,
+}
+
+/// 应用界面语言（system 跟随系统，zhCN 简体，zhTW 繁体，en 英文）。
+enum AppLanguage {
+  system,
+  zhCN,
+  zhTW,
+  en,
 }
 
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
@@ -40,9 +52,18 @@ class AppSettings {
     this.downloadPath = '',
     this.downloadQuality = '320k',
     this.downloadLyrics = true,
+    this.downloadConcurrency = 3,
+    this.overwriteExisting = false,
+    this.downloadFileNameStyle = 'artist-title',
+    this.embedDownloadMetadata = true,
+    this.embedDownloadLyrics = false,
+    this.embedDownloadCover = true,
     this.organizeRule = '{Artist}/{Album}/{Title}',
     this.lyricFontSize = 1,
     this.lyricOffsetMs = 0,
+    this.showLyricsRomaji = false,
+    this.lyricFontName = '',
+    this.lyricFontPath = '',
     this.liquidGlass = true,
     this.playerLiquidGlass = true,
     this.scanFormats = kSupportedScanFormats,
@@ -54,6 +75,12 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
+    this.onlineFailureBehavior = 'skip',
+    this.onlineQualityFallbackBehavior = 'lower',
+    this.autoSwitchSourceOnFailure = false,
+    this.usbExclusiveDeviceId = -1,
+    this.songClickAction = 'single',
+    this.language = AppLanguage.system,
   });
 
   final double volume;
@@ -66,10 +93,39 @@ class AppSettings {
   final String onlineDefaultQuality;
   final int libraryMinDurationSeconds;
   final bool showLyricsTranslation;
+
+  /// 歌词显示罗马音（音源提供 romaji 时使用）。
+  final bool showLyricsRomaji;
+
+  /// 自定义歌词字体名（FontLoader 注册后的 family，空则用系统字体）。
+  final String lyricFontName;
+
+  /// 自定义歌词字体文件路径（用于卸载/重新加载）。
+  final String lyricFontPath;
+
   final bool enableWordEffect;
   final String downloadPath;
   final String downloadQuality;
   final bool downloadLyrics;
+
+  /// 批量下载同时进行数（1-5），超出部分排队等待。
+  final int downloadConcurrency;
+
+  /// 同名目标文件已存在时是否覆盖（否则自动追加序号改名）。
+  final bool overwriteExisting;
+
+  /// 下载文件名样式：artist-title / title-artist / title-artist-album。
+  final String downloadFileNameStyle;
+
+  /// 下载后是否把标题/歌手/专辑等元数据写入音频文件 tag。
+  final bool embedDownloadMetadata;
+
+  /// 下载后是否把歌词嵌入音频文件 tag（需同时开启下载歌词）。
+  final bool embedDownloadLyrics;
+
+  /// 下载后是否把封面嵌入音频文件 tag。
+  final bool embedDownloadCover;
+
   final String organizeRule;
   final int lyricFontSize;
   final int lyricOffsetMs;
@@ -104,6 +160,25 @@ class AppSettings {
   /// 防削波破音保护：增益可能超出 0 dB 极限时自动压低；无峰值标签的正增益降级为不提升。
   final bool volumeBalancePreventClipping;
 
+  /// 在线歌曲起播失败时的行为：skip 跳到下一首 / stop 停止播放。
+  final String onlineFailureBehavior;
+
+  /// 在线歌曲默认音质播放失败时的音质回退：
+  /// pause 严格不回退 / lower 向下降级 / higher 向上升级。
+  final String onlineQualityFallbackBehavior;
+
+  /// 在线播放失败时自动切换其他落雪音源播放同一首歌（仅在线歌曲生效）。
+  final bool autoSwitchSourceOnFailure;
+
+  /// USB 独占输出所选目标设备 ID（AAudio setDeviceId）。-1 = 系统默认设备。
+  final int usbExclusiveDeviceId;
+
+  /// 歌曲播放触发方式：single 单击播放 / double 双击播放。
+  final String songClickAction;
+
+  /// 应用界面语言。
+  final AppLanguage language;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -115,10 +190,19 @@ class AppSettings {
     String? onlineDefaultQuality,
     int? libraryMinDurationSeconds,
     bool? showLyricsTranslation,
+    bool? showLyricsRomaji,
+    String? lyricFontName,
+    String? lyricFontPath,
     bool? enableWordEffect,
     String? downloadPath,
     String? downloadQuality,
     bool? downloadLyrics,
+    int? downloadConcurrency,
+    bool? overwriteExisting,
+    String? downloadFileNameStyle,
+    bool? embedDownloadMetadata,
+    bool? embedDownloadLyrics,
+    bool? embedDownloadCover,
     String? organizeRule,
     int? lyricFontSize,
     int? lyricOffsetMs,
@@ -133,6 +217,12 @@ class AppSettings {
     bool? volumeBalanceEnabled,
     double? volumeBalanceGainOffsetDb,
     bool? volumeBalancePreventClipping,
+    String? onlineFailureBehavior,
+    String? onlineQualityFallbackBehavior,
+    bool? autoSwitchSourceOnFailure,
+    int? usbExclusiveDeviceId,
+    String? songClickAction,
+    AppLanguage? language,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -147,10 +237,21 @@ class AppSettings {
           libraryMinDurationSeconds ?? this.libraryMinDurationSeconds,
       showLyricsTranslation:
           showLyricsTranslation ?? this.showLyricsTranslation,
+      showLyricsRomaji: showLyricsRomaji ?? this.showLyricsRomaji,
+      lyricFontName: lyricFontName ?? this.lyricFontName,
+      lyricFontPath: lyricFontPath ?? this.lyricFontPath,
       enableWordEffect: enableWordEffect ?? this.enableWordEffect,
       downloadPath: downloadPath ?? this.downloadPath,
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadLyrics: downloadLyrics ?? this.downloadLyrics,
+      downloadConcurrency: downloadConcurrency ?? this.downloadConcurrency,
+      overwriteExisting: overwriteExisting ?? this.overwriteExisting,
+      downloadFileNameStyle:
+          downloadFileNameStyle ?? this.downloadFileNameStyle,
+      embedDownloadMetadata:
+          embedDownloadMetadata ?? this.embedDownloadMetadata,
+      embedDownloadLyrics: embedDownloadLyrics ?? this.embedDownloadLyrics,
+      embedDownloadCover: embedDownloadCover ?? this.embedDownloadCover,
       organizeRule: organizeRule ?? this.organizeRule,
       lyricFontSize: lyricFontSize ?? this.lyricFontSize,
       lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
@@ -169,6 +270,15 @@ class AppSettings {
           volumeBalanceGainOffsetDb ?? this.volumeBalanceGainOffsetDb,
       volumeBalancePreventClipping:
           volumeBalancePreventClipping ?? this.volumeBalancePreventClipping,
+      onlineFailureBehavior:
+          onlineFailureBehavior ?? this.onlineFailureBehavior,
+      onlineQualityFallbackBehavior:
+          onlineQualityFallbackBehavior ?? this.onlineQualityFallbackBehavior,
+      autoSwitchSourceOnFailure:
+          autoSwitchSourceOnFailure ?? this.autoSwitchSourceOnFailure,
+      usbExclusiveDeviceId: usbExclusiveDeviceId ?? this.usbExclusiveDeviceId,
+      songClickAction: songClickAction ?? this.songClickAction,
+      language: language ?? this.language,
     );
   }
 }
@@ -177,6 +287,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   @override
   Future<AppSettings> build() async {
     final prefs = await _prefs();
+    // 启动时重新注册已保存的自定义歌词字体（fire-and-forget，失败静默）。
+    final savedName = prefs.getString('lyricFontName') ?? '';
+    final savedPath = prefs.getString('lyricFontPath') ?? '';
+    unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
       playMode: prefs.getInt('playMode') ?? 0,
@@ -191,10 +305,21 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getInt('libraryMinDurationSeconds') ?? 0,
       showLyricsTranslation:
           prefs.getBool('showLyricsTranslation') ?? true,
+      showLyricsRomaji: prefs.getBool('showLyricsRomaji') ?? false,
+      lyricFontName: prefs.getString('lyricFontName') ?? '',
+      lyricFontPath: prefs.getString('lyricFontPath') ?? '',
       enableWordEffect: prefs.getBool('enableWordEffect') ?? true,
       downloadPath: prefs.getString('downloadPath') ?? '',
       downloadQuality: prefs.getString('downloadQuality') ?? '320k',
       downloadLyrics: prefs.getBool('downloadLyrics') ?? true,
+      downloadConcurrency: prefs.getInt('downloadConcurrency') ?? 3,
+      overwriteExisting: prefs.getBool('overwriteExisting') ?? false,
+      downloadFileNameStyle:
+          prefs.getString('downloadFileNameStyle') ?? 'artist-title',
+      embedDownloadMetadata:
+          prefs.getBool('embedDownloadMetadata') ?? true,
+      embedDownloadLyrics: prefs.getBool('embedDownloadLyrics') ?? false,
+      embedDownloadCover: prefs.getBool('embedDownloadCover') ?? true,
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
@@ -217,8 +342,24 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
+      onlineFailureBehavior:
+          prefs.getString('onlineFailureBehavior') ?? 'skip',
+      onlineQualityFallbackBehavior:
+          prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
+      autoSwitchSourceOnFailure:
+          prefs.getBool('autoSwitchSourceOnFailure') ?? false,
+      usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
+      songClickAction: prefs.getString('songClickAction') ?? 'single',
+      language: _langFromString(prefs.getString('language') ?? 'system'),
     );
   }
+
+  AppLanguage _langFromString(String v) => switch (v) {
+        'zhTW' => AppLanguage.zhTW,
+        'en' => AppLanguage.en,
+        'zhCN' => AppLanguage.zhCN,
+        _ => AppLanguage.system,
+      };
 
   ThemeModePreference _themeFromInt(int v) {
     switch (v) {
@@ -248,10 +389,20 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt(
           'libraryMinDurationSeconds', next.libraryMinDurationSeconds),
       prefs.setBool('showLyricsTranslation', next.showLyricsTranslation),
+      prefs.setBool('showLyricsRomaji', next.showLyricsRomaji),
+      prefs.setString('lyricFontName', next.lyricFontName),
+      prefs.setString('lyricFontPath', next.lyricFontPath),
       prefs.setBool('enableWordEffect', next.enableWordEffect),
       prefs.setString('downloadPath', next.downloadPath),
       prefs.setString('downloadQuality', next.downloadQuality),
       prefs.setBool('downloadLyrics', next.downloadLyrics),
+      prefs.setInt('downloadConcurrency', next.downloadConcurrency),
+      prefs.setBool('overwriteExisting', next.overwriteExisting),
+      prefs.setString(
+          'downloadFileNameStyle', next.downloadFileNameStyle),
+      prefs.setBool('embedDownloadMetadata', next.embedDownloadMetadata),
+      prefs.setBool('embedDownloadLyrics', next.embedDownloadLyrics),
+      prefs.setBool('embedDownloadCover', next.embedDownloadCover),
       prefs.setString('organizeRule', next.organizeRule),
       prefs.setInt('lyricFontSize', next.lyricFontSize),
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
@@ -267,6 +418,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('volumeBalanceEnabled', next.volumeBalanceEnabled),
       prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
       prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
+      prefs.setString('onlineFailureBehavior', next.onlineFailureBehavior),
+      prefs.setString('onlineQualityFallbackBehavior', next.onlineQualityFallbackBehavior),
+      prefs.setBool('autoSwitchSourceOnFailure', next.autoSwitchSourceOnFailure),
+      prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
+      prefs.setString('songClickAction', next.songClickAction),
+      prefs.setString('language', next.language.name),
     ]);
   }
 
@@ -280,10 +437,19 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setOnlineDefaultQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineDefaultQuality: q));
   Future<void> setLibraryMinDurationSeconds(int s) => _save((state.valueOrNull ?? const AppSettings()).copyWith(libraryMinDurationSeconds: s));
   Future<void> setShowLyricsTranslation(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showLyricsTranslation: v));
+  Future<void> setShowLyricsRomaji(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showLyricsRomaji: v));
+  Future<void> setLyricFontName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontName: v));
+  Future<void> setLyricFontPath(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontPath: v));
   Future<void> setEnableWordEffect(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enableWordEffect: v));
   Future<void> setDownloadPath(String p) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadPath: p));
   Future<void> setDownloadQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQuality: q));
   Future<void> setDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyrics: v));
+  Future<void> setDownloadConcurrency(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadConcurrency: v));
+  Future<void> setOverwriteExisting(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(overwriteExisting: v));
+  Future<void> setDownloadFileNameStyle(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadFileNameStyle: v));
+  Future<void> setEmbedDownloadMetadata(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadMetadata: v));
+  Future<void> setEmbedDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadLyrics: v));
+  Future<void> setEmbedDownloadCover(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadCover: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
   Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
@@ -298,6 +464,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setVolumeBalanceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceEnabled: v));
   Future<void> setVolumeBalanceGainOffsetDb(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceGainOffsetDb: v));
   Future<void> setVolumeBalancePreventClipping(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalancePreventClipping: v));
+  Future<void> setOnlineFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineFailureBehavior: v));
+  Future<void> setOnlineQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineQualityFallbackBehavior: v));
+  Future<void> setAutoSwitchSourceOnFailure(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(autoSwitchSourceOnFailure: v));
+  Future<void> setUsbExclusiveDeviceId(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveDeviceId: v));
+  Future<void> setSongClickAction(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(songClickAction: v));
+  Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

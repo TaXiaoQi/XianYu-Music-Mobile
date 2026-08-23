@@ -13,6 +13,7 @@ import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
+import '../online/online_search_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
 import '../remote/remote_library_service.dart';
@@ -218,6 +219,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   // 在线歌曲连续失败跳过计数（防环）。
   int _skipDepth = 0;
+  // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
+  final Set<String> _failedSources = {};
+  String? _switchCtxKey;
 
   double? _restoredOnlinePending;
   DateTime? _trackStartTime;
@@ -339,9 +343,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }) async {
     try {
       final sfx = _ref.read(soundEffectProvider).settings;
+      final settings = _ref.read(settingsProvider).valueOrNull;
       await startUsbExclusivePlayback(
         path: path,
-        deviceId: -1,
+        deviceId: settings?.usbExclusiveDeviceId ?? -1,
         volume: _ref.read(volumeProvider),
         startTimeSecs: startAtSecs,
         isPlaying: isPlaying,
@@ -655,16 +660,28 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
     } catch (e) {
       state = state.copyWith(isPlaying: false, resolving: false);
-      // 在线歌曲失败自动跳下一首（防环：跳过数不超过队列长度）。
+      // 在线歌曲：先尝试自动切换其他音源，避免直接跳过/停止。
       if (item.isOnline && _skipDepth < state.queue.length) {
-        _skipDepth++;
-        final next = _pickNextIndex();
-        if (next >= 0 && next != index) {
-          await _playAt(next, manualPause: true);
-          return;
+        final switched = await _autoSwitchSource(item);
+        if (switched) return;
+      }
+      // 在线歌曲失败处理（防环：跳过数不超过队列长度）。
+      if (item.isOnline && _skipDepth < state.queue.length) {
+        final behavior = _ref
+                .read(settingsProvider)
+                .valueOrNull
+                ?.onlineFailureBehavior ??
+            'skip';
+        if (behavior == 'skip') {
+          _skipDepth++;
+          final next = _pickNextIndex();
+          if (next >= 0 && next != index) {
+            await _playAt(next, manualPause: true);
+            return;
+          }
         }
       }
-      // 无下一首可跳时透出错误信息。
+      // 无下一首可跳（或 stop 行为）时透出错误信息。
       if (item.isOnline) {
         state = state.copyWith(
             error: e is PluginEngineException
@@ -681,9 +698,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final json = item.onlineSongJson;
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final s0 = _ref.read(settingsProvider).valueOrNull;
+      final fb0 = s0?.onlineQualityFallbackBehavior ?? 'lower';
       final candidates = _qualityCandidates(item.onlineQuality ??
-          _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ??
-          '320k');
+          s0?.onlineDefaultQuality ?? '320k', fb0);
 
       // 插件音源：引擎逐档解析；全档失败时带上 LX 源信息走 lx 解析兜底。
       if (songJson.containsKey('pluginId')) {
@@ -728,12 +746,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
   ];
 
-  /// 音质候选链：首选优先，其后向下降级（对齐桌面端 resolveOnlinePlayQuality
-  /// 的 'lower' 行为）。首选不在阶梯内时先试首选再全阶梯降级。
-  static List<String> _qualityCandidates(String preferred) {
-    final desc = _qualityLadder.reversed.toList();
-    final i = desc.indexOf(preferred);
-    return i < 0 ? [preferred, ...desc] : desc.sublist(i);
+  /// 音质候选链（对齐桌面端 resolveOnlinePlayQuality）。
+  /// - [preferred] 首选音质，[fallback] 回退行为：pause 严格不回退（仅首选）/ lower 向下降级 / higher 向上升级。
+  static List<String> _qualityCandidates(
+    String preferred, [
+    String fallback = 'lower',
+  ]) {
+    final avail = _qualityLadder;
+    final result = <String>[];
+    if (avail.contains(preferred)) result.add(preferred);
+    final idx = avail.indexOf(preferred);
+    if (idx != -1) {
+      if (fallback == 'higher') {
+        for (var i = idx + 1; i < avail.length; i++) {
+          result.add(avail[i]);
+        }
+      } else if (fallback == 'lower') {
+        for (var i = idx - 1; i >= 0; i--) {
+          result.add(avail[i]);
+        }
+      }
+    }
+    // pause：严格只试首选一次，失败交给起播失败行为处理。
+    if (fallback == 'pause') return result.isNotEmpty ? result : [preferred];
+    if (result.isEmpty && avail.isNotEmpty) result.add(avail.first);
+    return result;
   }
 
   static bool _isPlayableUrl(String? url) =>
@@ -916,9 +953,119 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<String?> _resolveOnlineUrl(QueueItem item) async {
     final infoJson = item.onlineInfoJson;
     if (infoJson == null) return null;
-    final preferred =
-        _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
-    return _tryLxResolve(infoJson, _qualityCandidates(preferred));
+    final s = _ref.read(settingsProvider).valueOrNull;
+    final preferred = s?.onlineDefaultQuality ?? '320k';
+    final fb = s?.onlineQualityFallbackBehavior ?? 'lower';
+    return _tryLxResolve(infoJson, _qualityCandidates(preferred, fb));
+  }
+
+  /// 在线歌曲起播失败时自动切换到其他落雪音源（同一首歌、另一平台）。
+  /// 通过公共音源搜索同名曲目并解析直链播放；返回 true 表示已换源成功。
+  Future<bool> _autoSwitchSource(QueueItem item) async {
+    final settings = _ref.read(settingsProvider).valueOrNull;
+    if (!(settings?.autoSwitchSourceOnFailure ?? false)) return false;
+
+    final infoJson = item.onlineInfoJson ?? item.onlineSongJson;
+    if (infoJson == null || infoJson.isEmpty) return false;
+    var info = <String, dynamic>{};
+    try {
+      info = jsonDecode(infoJson) as Map<String, dynamic>;
+    } catch (_) {
+      return false;
+    }
+    final curSource = (info['source'] as String?) ?? item.source;
+    if (curSource == null || curSource.isEmpty) return false;
+
+    // 换源上下文按歌曲（标题+歌手）隔离，避免残留到下一首。
+    final key = '${item.title}|${item.artist}';
+    if (_switchCtxKey != key) {
+      _switchCtxKey = key;
+      _failedSources.clear();
+    }
+    _failedSources.add(curSource);
+    if (item.title.trim().isEmpty) return false;
+
+    final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
+    final preferred = settings?.onlineDefaultQuality ?? '320k';
+
+    for (final src in kOnlineSources) {
+      if (_failedSources.contains(src.id)) continue;
+      final raw = await _searchAlternative(item, src.id);
+      if (raw == null) {
+        _failedSources.add(src.id);
+        continue;
+      }
+      final newItem = OnlineTrack.fromJson(raw).toQueueItem();
+      final url = await _tryLxResolve(
+        jsonEncode(raw),
+        _qualityCandidates(preferred, fb),
+      );
+      if (url == null) {
+        _failedSources.add(src.id);
+        continue;
+      }
+      // 更新当前队列项为该音源，再播放。
+      final idx = state.queueIndex;
+      final queue = [...state.queue];
+      if (idx >= 0 && idx < queue.length) queue[idx] = newItem;
+      state = state.copyWith(
+        queue: queue,
+        current: newItem,
+        isPlaying: false,
+        resolving: true,
+        position: 0,
+        duration: newItem.durationMs / 1000.0,
+        error: null,
+      );
+      _syncToSystemMediaSession();
+      try {
+        await _startUrl(url);
+      } catch (_) {
+        _failedSources.add(src.id);
+        continue;
+      }
+      _skipDepth = 0;
+      state = state.copyWith(resolving: false, error: null);
+      _reportBehavior(newItem, 'play', 0);
+      _trackStartTime = DateTime.now();
+      _syncToSystemMediaSession();
+      return true;
+    }
+    return false;
+  }
+
+  /// 在指定音源搜索与当前歌曲同名的曲目，返回第一个匹配的原始搜索项；无匹配返回 null。
+  Future<Map<String, dynamic>?> _searchAlternative(
+    QueueItem item,
+    String source,
+  ) async {
+    try {
+      final q = item.artist.trim().isEmpty
+          ? item.title.trim()
+          : '${item.title.trim()} ${item.artist.trim()}';
+      final res = await lxSearch(source: source, keyword: q, limit: 10);
+      final list = (jsonDecode(res) as List).cast<Map<String, dynamic>>();
+      for (final raw in list) {
+        if (_matchOnlineTitle(item.title, OnlineTrack.fromJson(raw).title)) {
+          return raw;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 标题归一化匹配（去空格/标点/大小写后比较；长度≥3 允许互相包含）。
+  static bool _matchOnlineTitle(String a, String b) {
+    String norm(String s) => s
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\-_（）()【】\[\].、，,·/\\+&]'), '');
+    final na = norm(a);
+    final nb = norm(b);
+    if (na == nb) return true;
+    if (na.length >= 3 && nb.length >= 3) {
+      return na.contains(nb) || nb.contains(na);
+    }
+    return false;
   }
 
   /// 通过插件引擎解析播放直链。

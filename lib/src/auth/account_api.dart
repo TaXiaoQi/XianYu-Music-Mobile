@@ -317,6 +317,35 @@ class AccountApi {
         .toList();
   }
 
+  // ─── 播放历史同步 ───────────────────────────────────────
+
+  /// 上传播放历史到云端。
+  Future<int> uploadHistory(List<Map<String, dynamic>> history) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException('请先登录后再同步播放历史');
+    }
+    final data = await _action('history_sync_upload', {
+      'user_id': ciyuanxiId,
+      'history': history,
+    }, fetchTimeoutMs: 30000);
+    return (data['history_count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// 从云端下载播放历史。
+  Future<List<Map<String, dynamic>>> downloadHistory() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException('请先登录后再同步播放历史');
+    }
+    final data = await _action('history_sync_download', {
+      'user_id': ciyuanxiId,
+    }, fetchTimeoutMs: 15000);
+    return ((data['history'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
   // ─── 歌单同步 ───────────────────────────────────────────
 
   /// 删除云端歌单。

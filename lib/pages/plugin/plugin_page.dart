@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
+import '../../src/plugin/plugin_preferences.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
@@ -26,6 +27,20 @@ class PluginPage extends ConsumerStatefulWidget {
 class _PluginPageState extends ConsumerState<PluginPage> {
   bool _installing = false;
   bool _checkingUpdates = false;
+  bool _savingAutoUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAutoUpdatePref();
+  }
+
+  Future<void> _loadAutoUpdatePref() async {
+    final enabled = await PluginPreferences.getAutoUpdateOnStartup();
+    if (mounted) setState(() => _autoUpdateOnStartup = enabled);
+  }
+
+  bool _autoUpdateOnStartup = false;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +51,11 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       appBar: AppBar(
         title: const Text('插件'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: '插件设置',
+            onPressed: _showPluginSettingsSheet,
+          ),
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
             tooltip: '导入备份歌单',
@@ -82,6 +102,58 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       (ctx) => _InstallSheet(
         onInstall: (script, name) => _install(script, name),
         onInstallUrl: (url) => _installUrl(url),
+      ),
+    );
+  }
+
+  Future<void> _showPluginSettingsSheet() async {
+    await showSheetDialog<void>(
+      context,
+      (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('插件设置',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                '管理插件的自动化行为',
+                style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('启动时自动更新',
+                    style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+                subtitle: const Text('应用启动后静默检查并安装所有已启用插件的最新版本；被标记"跳过版本检查"的插件除外'),
+                value: _autoUpdateOnStartup,
+                onChanged: _savingAutoUpdate
+                    ? null
+                    : (val) async {
+                        setSheetState(() => _savingAutoUpdate = true);
+                        await PluginPreferences.setAutoUpdateOnStartup(val);
+                        if (mounted) {
+                          setState(() => _autoUpdateOnStartup = val);
+                        }
+                        setSheetState(() => _savingAutoUpdate = false);
+                      },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('完成'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -483,6 +555,38 @@ class _PluginCard extends ConsumerWidget {
               tooltip: '检查更新',
               onPressed: () => _checkUpdate(context, ref),
             ),
+            // 更多：脚本编辑 / 跳过检查 / 重新加载
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, size: 20, color: scheme.outline),
+              tooltip: '更多',
+              onSelected: (action) {
+                switch (action) {
+                  case 'skip':
+                    _toggleSkipUpdate(context, ref);
+                    break;
+                  case 'script':
+                    _openScriptEditor(context, ref);
+                    break;
+                  case 'reload':
+                    _confirmReload(context, ref);
+                    break;
+                }
+              },
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'skip',
+                  child: Text('跳过版本检查'),
+                ),
+                const PopupMenuItem(
+                  value: 'script',
+                  child: Text('编辑脚本'),
+                ),
+                const PopupMenuItem(
+                  value: 'reload',
+                  child: Text('重新加载'),
+                ),
+              ],
+            ),
             // 卸载
             IconButton(
               icon: Icon(Icons.delete_outline, size: 20, color: scheme.outline),
@@ -551,6 +655,29 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
+  Future<void> _openScriptEditor(BuildContext context, WidgetRef ref) async {
+    await showSheetDialog<void>(
+      context,
+      (ctx) => _ScriptEditorSheet(source: source),
+    );
+  }
+
+  Future<void> _toggleSkipUpdate(BuildContext context, WidgetRef ref) async {
+    final current = await PluginPreferences.getSkipUpdateCheck(source.id);
+    await PluginPreferences.setSkipUpdateCheck(source.id, !current);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(!current ? '「${source.name}」将跳过版本检查' : '「${source.name}」已恢复版本检查')),
+    );
+  }
+
+  Future<void> _confirmReload(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await ref.read(pluginManagerProvider.notifier).reload(source.id);
+    messenger.showSnackBar(SnackBar(
+        content: Text(ok ? '「${source.name}」已重新加载' : '「${source.name}」加载失败')));
+  }
+
   void _confirmRemove(BuildContext context, PluginManager manager) {
     showDialog<void>(
       context: context,
@@ -570,6 +697,142 @@ class _PluginCard extends ConsumerWidget {
             child: const Text('卸载'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 插件脚本编辑器：查看/修改插件 JS 脚本，保存后重新加载生效。
+class _ScriptEditorSheet extends ConsumerStatefulWidget {
+  const _ScriptEditorSheet({required this.source});
+  final PluginSource source;
+
+  @override
+  ConsumerState<_ScriptEditorSheet> createState() => _ScriptEditorSheetState();
+}
+
+class _ScriptEditorSheetState extends ConsumerState<_ScriptEditorSheet> {
+  final _ctrl = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final script = await engine.store.readScript(widget.source.id);
+      if (!mounted) return;
+      _ctrl.text = script ?? '';
+      setState(() => _loading = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving || _loading) return;
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(pluginManagerProvider.notifier)
+          .updateScript(widget.source.id, _ctrl.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('脚本已保存并重新加载')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败：$e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.72,
+            maxWidth: 420,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('编辑脚本 · ${widget.source.name}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                '保存后将校验并重新加载插件；脚本语法错误会阻止保存',
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: TextField(
+                    controller: _ctrl,
+                    maxLines: null,
+                    expands: true,
+                    enabled: !_loading,
+                    keyboardType: TextInputType.multiline,
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 12.5, height: 1.5),
+                    decoration: const InputDecoration(
+                      hintText: '// 插件 JS 脚本',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: (_loading || _saving) ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

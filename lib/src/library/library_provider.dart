@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
+import '../plugin/plugin_backup_import.dart';
+import '../playlist/playlist_provider.dart';
 import '../rust/api.dart';
 
 /// 曲库歌曲（小而美：仅保留播放/展示所需字段）。
@@ -322,6 +324,35 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     await _ref
         .read(playerProvider.notifier)
         .playQueue(items, startIndex: index);
+  }
+
+  /// 将文件夹下的歌曲导入为一个歌单（名称默认取文件夹名）。
+  Future<int> importFolderAsPlaylist(String path, {String? name}) async {
+    final songs = await songsByFolder(path);
+    if (songs.isEmpty) return 0;
+    final folderName = path.split(RegExp(r'[\\/]')).last;
+    final playlistName = (name == null || name.trim().isEmpty)
+        ? folderName
+        : name.trim();
+    final pm = _ref.read(playlistManagerProvider.notifier);
+    // 创建歌单（新歌单被追加为最后一个），取其 id 后写入歌曲。
+    await pm.create(playlistName);
+    final created =
+        _ref.read(playlistManagerProvider).playlists;
+    if (created.isEmpty) return 0;
+    final id = created.last.id;
+    final imported = songs
+        .map((s) => ImportedSong(
+              title: s.title,
+              artist: s.artist,
+              album: s.album,
+              duration: s.duration,
+              localPath: s.path,
+              path: s.path,
+            ))
+        .toList();
+    await pm.addSongs(id, imported);
+    return songs.length;
   }
 }
 

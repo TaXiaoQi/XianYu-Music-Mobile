@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # 国际化：本地化代理 + intl 复数/日期格式化
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+
   # flutter_rust_bridge 运行时依赖
   flutter_rust_bridge: ^2.12.0
 
@@ -105,6 +110,8 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # 本地化：由 l10n.yaml + lib/l10n/*.arb 自动生成绑定
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

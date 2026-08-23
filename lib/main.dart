@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
+import 'src/core/app_logger.dart';
 import 'src/core/rust_init.dart';
+import 'src/plugin/plugin_updates.dart';
 import 'pages/account/account_page.dart';
 import 'pages/effects/effects_page.dart';
 import 'pages/favorites/favorites_page.dart';
@@ -150,13 +152,21 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner>
     Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
       _fadeController.forward().then((_) {
-        if (mounted) {
-          setState(() {
-            _warmedUp = true;
-          });
-        }
+        if (!mounted) return;
+        setState(() {
+          _warmedUp = true;
+        });
+        _runStartupPluginAutoUpdate();
       });
     });
+  }
+
+  void _runStartupPluginAutoUpdate() {
+    // _runStartupPluginAutoUpdate 在 warmup 完成后调用，此时 context 有效。
+    runPluginAutoUpdateOnStartup(
+      ProviderScope.containerOf(context),
+      (message) => AppLogger.instance.log('plugin', message),
+    );
   }
 
   void _startProgressSimulation() {

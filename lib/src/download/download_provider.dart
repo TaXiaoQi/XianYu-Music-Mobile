@@ -13,7 +13,7 @@ import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 
 /// 下载任务状态。
-enum DownloadStatus { downloading, done, failed }
+enum DownloadStatus { waiting, downloading, done, failed }
 
 /// 单个下载任务（在线歌曲）。
 class DownloadTask {
@@ -151,6 +151,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   final Ref _ref;
 
+  /// 并发下载调度：等待队列 + 当前活动数。
+  final List<DownloadTask> _pending = [];
+  int _active = 0;
+
   Future<void> _loadHistory() async {
     try {
       final dataDir = await _ref.read(appDataDirProvider.future);
@@ -182,11 +186,13 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return dir.path;
   }
 
-  /// 下载在线歌曲（插件音源或 lx:// 音源）。
+  /// 下载在线歌曲（插件音源或 lx:// 音源）。受并发上限控制，超出排队。
   Future<void> download(QueueItem item) async {
     if (!item.isOnline) return;
     if (state.tasks.any((t) =>
-        t.songPath == item.path && t.status == DownloadStatus.downloading)) {
+        t.songPath == item.path &&
+        (t.status == DownloadStatus.waiting ||
+            t.status == DownloadStatus.downloading))) {
       return;
     }
 
@@ -203,37 +209,68 @@ class DownloadManager extends StateNotifier<DownloadState> {
       source: item.source,
       onlineSongJson: item.onlineSongJson,
       onlineInfoJson: item.onlineInfoJson,
+      status: DownloadStatus.waiting,
       startedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    state = state.copyWith(tasks: [task, ...state.tasks]);
+    state = state.copyWith(
+        tasks: [task, ...state.tasks.where((t) => t.songPath != item.path)]);
+    _pending.add(task);
+    _drain();
+  }
 
+  /// 按并发上限派发等待队列中的任务。
+  void _drain() {
+    final settings = _ref.read(settingsProvider).valueOrNull;
+    final limit = (settings?.downloadConcurrency ?? 3).clamp(1, 5);
+    while (_active < limit && _pending.isNotEmpty) {
+      final task = _pending.removeAt(0);
+      _active++;
+      _updateTask(task.songPath, status: DownloadStatus.downloading);
+      _execute(task);
+    }
+  }
+
+  Future<void> _execute(DownloadTask task) async {
     try {
       final (filePath, usedQuality) =
-          await _performDownload(item, quality, settings);
+          await _performDownload(task, _ref.read(settingsProvider).valueOrNull);
       final entry = DownloadHistoryEntry(
-        songPath: item.path,
+        songPath: task.songPath,
         filePath: filePath,
         fileName: fileNameFromPath(filePath),
         quality: usedQuality,
         downloadedAt: DateTime.now().millisecondsSinceEpoch,
-        title: item.title,
-        artist: item.artist,
+        title: task.title,
+        artist: task.artist,
       );
       await _recordHistory(entry);
-      _updateTask(item.path, status: DownloadStatus.done, filePath: filePath);
+      _updateTask(task.songPath, status: DownloadStatus.done, filePath: filePath);
     } catch (e) {
       _updateTask(
-          item.path,
+          task.songPath,
           status: DownloadStatus.failed,
           error: e is PluginEngineException
               ? e.message
               : '下载失败：${e.toString()}');
+    } finally {
+      _active--;
+      _drain();
     }
   }
 
   /// 返回 (目标路径, 实际命中的音质)。
   Future<(String, String)> _performDownload(
-      QueueItem item, String quality, AppSettings? settings) async {
+      DownloadTask task, AppSettings? settings) async {
+    final item = QueueItem(
+      path: task.songPath,
+      title: task.title,
+      artist: task.artist,
+      album: task.album,
+      coverUrl: task.coverUrl,
+      source: task.source,
+      onlineSongJson: task.onlineSongJson,
+      onlineInfoJson: task.onlineInfoJson,
+    );
     final songJson = item.onlineSongJson ?? item.onlineInfoJson;
     if (songJson == null || songJson.isEmpty) {
       throw StateError('在线歌曲信息缺失');
@@ -242,9 +279,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     // 1. 解析直链：按音质候选链降级（与播放器一致），实际命中的音质用于
     //    文件命名与历史记录。
-    var usedQuality = quality;
+    var usedQuality = task.quality;
     String? url;
-    for (final q in _qualityCandidates(quality)) {
+    for (final q in _qualityCandidates(task.quality)) {
       final tried = parsed.containsKey('pluginId')
           ? await _resolvePluginUrl(parsed, q)
           : await _resolveLxUrl(songJson, q);
@@ -256,7 +293,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     if (url == null) throw StateError('直链解析失败');
 
-    // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理）
+    // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理；移动端不转码，
+    //    文件即直链源格式）。
     final dir = await _downloadDir();
     final destPath = await resolveDownloadFullPath(
       directory: dir,
@@ -266,8 +304,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
       url: url,
       quality: usedQuality,
       keepSourceFilename: false,
-      fileNameStyle: 'artist-title',
-      overwriteExisting: false,
+      fileNameStyle: settings?.downloadFileNameStyle ?? 'artist-title',
+      overwriteExisting: settings?.overwriteExisting ?? false,
     );
 
     // 3. 流式下载
@@ -278,12 +316,71 @@ class DownloadManager extends StateNotifier<DownloadState> {
       headersJson: '{}',
     );
 
-    // 4. 收尾：可选下载歌词
-    if (settings?.downloadLyrics ?? true) {
-      await _saveLyrics(item, destPath, parsed);
+    // 4. 收尾：可选歌词（独立文件）与嵌入元数据/歌词/封面
+    final wantLyrics = settings?.downloadLyrics ?? true;
+    if (wantLyrics || (settings?.embedDownloadLyrics ?? false)) {
+      await _finalizeExtras(item, destPath, parsed, settings);
     }
 
     return (destPath, usedQuality);
+  }
+
+  /// 下载收尾：保存独立歌词文件，并按设置嵌入元数据/歌词/封面到 tag。
+  Future<void> _finalizeExtras(
+      QueueItem item, String filePath, Map<String, dynamic> parsed,
+      AppSettings? settings) async {
+    try {
+      final embedMetadata = settings?.embedDownloadMetadata ?? true;
+      final embedLyrics = settings?.embedDownloadLyrics ?? false;
+      final embedCover = settings?.embedDownloadCover ?? true;
+      final saveLyricsFile = settings?.downloadLyrics ?? true;
+
+      if (!embedMetadata && !embedLyrics && !embedCover && !saveLyricsFile) {
+        return;
+      }
+
+      // 歌词文本：独立文件保存或嵌入 tag 都需要。
+      String? lyricsText;
+      if (saveLyricsFile || embedLyrics) {
+        if (parsed.containsKey('pluginId')) {
+          lyricsText = await _fetchPluginLyric(parsed);
+        } else {
+          final source = item.source ?? parsed['source'] ?? '';
+          if (source.isNotEmpty) {
+            lyricsText = await _fetchLxLyric(source, item.onlineInfoJson ?? '');
+          }
+        }
+        lyricsText ??= '';
+      }
+
+      final dot = filePath.lastIndexOf('.');
+      final base = dot == -1 ? filePath : filePath.substring(0, dot);
+      final request = jsonEncode({
+        'lyricsText':
+            (saveLyricsFile && lyricsText != null && lyricsText.isNotEmpty)
+                ? lyricsText
+                : null,
+        'lyricsPath': '$base.lrc',
+        'coverUrl': embedCover ? item.coverUrl : null,
+        'coverPath': '$base.cover',
+        'metadata': embedMetadata
+            ? {
+                'filePath': filePath,
+                'title': item.title.isEmpty ? null : item.title,
+                'artist': item.artist.isEmpty ? null : item.artist,
+                'album': item.album.isEmpty ? null : item.album,
+                if (embedLyrics &&
+                    lyricsText != null &&
+                    lyricsText.isNotEmpty)
+                  'lyrics': lyricsText,
+              }
+            : null,
+        'embedCover': embedCover,
+      });
+      await finalizeDownloadExtras(requestJson: request);
+    } catch (_) {
+      // 收尾（歌词/封面/嵌入）失败不影响下载本身
+    }
   }
 
   /// 音质阶梯（低 → 高），与播放器/设置页档位一致（对齐桌面端 rank 排序）；候选链向下降级。
@@ -323,36 +420,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final result =
         await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
     return result?['url'] ?? '';
-  }
-
-  Future<void> _saveLyrics(
-      QueueItem item, String filePath, Map<String, dynamic> parsed) async {
-    try {
-      String? text;
-      if (parsed.containsKey('pluginId')) {
-        text = await _fetchPluginLyric(parsed);
-      } else {
-        final source = item.source ?? parsed['source'] ?? '';
-        if (source.isNotEmpty) {
-          text = await _fetchLxLyric(source, item.onlineInfoJson ?? '');
-        }
-      }
-      if (text == null || text.isEmpty) return;
-
-      final dot = filePath.lastIndexOf('.');
-      final base = dot == -1 ? filePath : filePath.substring(0, dot);
-      final request = jsonEncode({
-        'lyricsText': text,
-        'lyricsPath': '$base.lrc',
-        'coverUrl': null,
-        'coverPath': null,
-        'metadata': null,
-        'embedCover': false,
-      });
-      await finalizeDownloadExtras(requestJson: request);
-    } catch (_) {
-      // 歌词保存失败不影响下载本身
-    }
   }
 
   Future<String?> _fetchLxLyric(String source, String songInfoJson) async {
@@ -432,11 +499,13 @@ class DownloadManager extends StateNotifier<DownloadState> {
     state = state.copyWith(history: const []);
   }
 
-  /// 清除已结束的任务（成功/失败），保留进行中。
+  /// 清除已结束的任务（成功/失败），保留进行中与排队中。
   void clearFinishedTasks() {
     state = state.copyWith(
         tasks: state.tasks
-            .where((t) => t.status == DownloadStatus.downloading)
+            .where((t) =>
+                t.status == DownloadStatus.waiting ||
+                t.status == DownloadStatus.downloading)
             .toList());
   }
 }

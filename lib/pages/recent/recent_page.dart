@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/song_list_view.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
 class RecentPage extends ConsumerWidget {
@@ -89,7 +90,7 @@ class RecentPage extends ConsumerWidget {
   }
 }
 
-class _RecentTile extends StatelessWidget {
+class _RecentTile extends ConsumerWidget {
   const _RecentTile({
     required this.entry,
     required this.onPlay,
@@ -101,34 +102,40 @@ class _RecentTile extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final item = entry.toQueueItem();
     final title = item?.title ?? _titleFromPath(entry.songPath);
     final artist = item?.artist ?? '';
 
-    return ListTile(
-      leading: CoverImage(
-        songPath: entry.songPath,
-        networkUrl: item?.coverUrl,
-        width: 44,
-        height: 44,
-        radius: 8,
-        icon: Icons.music_note,
+    return songRowPlayGesture(
+      context,
+      ref,
+      ListTile(
+        leading: CoverImage(
+          songPath: entry.songPath,
+          networkUrl: item?.coverUrl,
+          width: 44,
+          height: 44,
+          radius: 8,
+          icon: Icons.music_note,
+        ),
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          artist.isEmpty
+              ? _timeText(entry.playedAt)
+              : '$artist · ${_timeText(entry.playedAt)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.close, size: 18, color: scheme.outline),
+          tooltip: '移除',
+          onPressed: onRemove,
+        ),
       ),
-      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        artist.isEmpty ? _timeText(entry.playedAt) : '$artist · ${_timeText(entry.playedAt)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-      ),
-      trailing: IconButton(
-        icon: Icon(Icons.close, size: 18, color: scheme.outline),
-        tooltip: '移除',
-        onPressed: onRemove,
-      ),
-      onTap: onPlay,
+      onPlay: onPlay,
     );
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/effects/sound_effect_provider.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/sheet_dialog.dart';
 
 /// 音效页：EQ / 变速变调 / 混响 / 空间音效 / 高级音效。
 class EffectsPage extends ConsumerWidget {
@@ -112,6 +113,9 @@ class _EqSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final customPresets =
+        ref.watch(soundEffectProvider).customEqPresets;
+    final manager = ref.read(soundEffectProvider.notifier);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -121,19 +125,59 @@ class _EqSection extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActionChip(
+                  avatar: Icon(Icons.add, size: 18, color: scheme.primary),
+                  label: const Text('保存'),
+                  onPressed: () => _savePreset(context, manager),
+                ),
+              ),
               for (final p in eqPresets)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
                     label: Text(p.name),
-                    selected: _isPresetActive(settings, p),
+                    selected: _isPresetActive(settings, p.gains),
                     onSelected: (_) => notifier.applyEqPreset(p.name),
                   ),
                 ),
+              if (customPresets.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _dividerDot(context),
+                ),
+                for (final p in customPresets)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onLongPress: () => _editPreset(context, manager, p.name),
+                      child: ChoiceChip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.person_pin, size: 14),
+                            const SizedBox(width: 4),
+                            Text(p.name),
+                          ],
+                        ),
+                        selected: _isPresetActive(settings, p.gains),
+                        onSelected: (_) =>
+                            manager.applyCustomEqPreset(p.name),
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 2, 16, 6),
+          child: Text(
+            customPresets.isEmpty ? '长按自定义预设可重命名或删除' : '预设 · 点按应用 · 长按编辑',
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+        ),
         SizedBox(
           height: 180,
           child: ListView(
@@ -174,12 +218,167 @@ class _EqSection extends ConsumerWidget {
     );
   }
 
-  bool _isPresetActive(SoundEffectSettings s, EqPreset p) {
-    if (s.eqGains.length != p.gains.length) return false;
+  Widget _dividerDot(BuildContext context) => Center(
+        child: Container(
+          width: 1,
+          height: 20,
+          color: Theme.of(context)
+              .colorScheme
+              .onSurfaceVariant
+              .withValues(alpha: 0.3),
+        ),
+      );
+
+  bool _isPresetActive(SoundEffectSettings s, List<double> gains) {
+    if (s.eqGains.length != gains.length) return false;
     for (var i = 0; i < s.eqGains.length; i++) {
-      if ((s.eqGains[i] - p.gains[i]).abs() > 0.01) return false;
+      if ((s.eqGains[i] - gains[i]).abs() > 0.01) return false;
     }
     return true;
+  }
+
+  Future<void> _savePreset(BuildContext context, SoundEffectManager manager) async {
+    final scheme = Theme.of(context).colorScheme;
+    final controller = TextEditingController();
+    final name = await showSheetDialog<String>(
+      context,
+      (dialogContext) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('保存均衡器预设', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('将当前 EQ 增益保存为自定义预设，同名将覆盖',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '预设名称',
+                hintText: '例如：我的流行',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext, controller.text.trim());
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (name != null && name.isNotEmpty) {
+      await manager.saveCustomEqPreset(name);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已保存预设「$name」'), duration: const Duration(seconds: 1)),
+        );
+      }
+    }
+  }
+
+  Future<void> _editPreset(
+      BuildContext context, SoundEffectManager manager, String name) async {
+    final scheme = Theme.of(context).colorScheme;
+    final action = await showSheetDialog<String>(
+      context,
+      (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text('预设「$name」',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            dense: true,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.drive_file_rename_outline),
+            title: const Text('重命名'),
+            onTap: () => Navigator.pop(dialogContext, 'rename'),
+          ),
+          ListTile(
+            leading: Icon(Icons.delete_outline, color: scheme.error),
+            title: Text('删除', style: TextStyle(color: scheme.error)),
+            onTap: () => Navigator.pop(dialogContext, 'delete'),
+          ),
+        ],
+      ),
+    );
+    if (action == 'rename') {
+      if (!context.mounted) return;
+      final controller = TextEditingController(text: name);
+      final newName = await showSheetDialog<String>(
+        context,
+        (dialogContext) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('重命名预设',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: '预设名称',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (v) =>
+                    Navigator.pop(dialogContext, v.trim()),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.pop(dialogContext, controller.text.trim()),
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      controller.dispose();
+      if (newName != null && newName.isNotEmpty) {
+        await manager.renameCustomEqPreset(name, newName);
+      }
+    } else if (action == 'delete') {
+      await manager.deleteCustomEqPreset(name);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已删除预设「$name」'), duration: const Duration(seconds: 1)),
+        );
+      }
+    }
   }
 }
 

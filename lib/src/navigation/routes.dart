@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../l10n/gen/app_localizations.dart';
+
 import '../../pages/home/home_page.dart';
 import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
@@ -194,3 +196,14 @@ const bottomNavItems = [
   BottomNavItem('音效', Icons.graphic_eq, '/effects'),
   BottomNavItem('设置', Icons.settings, '/settings'),
 ];
+
+/// 底栏/侧栏导航项标题（跟随当前本地化语言）。
+String navTitle(BuildContext context, BottomNavItem item) {
+  final l = AppLocalizations.of(context);
+  return switch (item.location) {
+    '/home' => l.navHome,
+    '/library' => l.navLibrary,
+    '/effects' => l.navEffects,
+    _ => l.navSettings,
+  };
+}

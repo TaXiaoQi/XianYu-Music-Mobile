@@ -763,7 +763,7 @@ class _NavTab extends StatelessWidget {
             Icon(item.icon, size: 22, color: color),
             const SizedBox(height: 3),
             Text(
-              item.title,
+              navTitle(context, item),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
@@ -1193,7 +1193,7 @@ class _SideNavTab extends StatelessWidget {
               Icon(item.icon, size: 22, color: color),
               const SizedBox(height: 4),
               Text(
-                item.title,
+                navTitle(context, item),
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,

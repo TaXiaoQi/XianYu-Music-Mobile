@@ -14,6 +14,7 @@ import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/cover_image.dart';
@@ -33,6 +34,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   /// 是否显示歌词视图
   bool _showLyrics = false;
 
+  /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
+  bool _lyricsViewHasRomaji = false;
+
   @override
   Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
@@ -51,7 +55,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final settings = ref.watch(settingsProvider).valueOrNull;
     final fontSizeIdx = settings?.lyricFontSize ?? 1;
     final showTranslation = settings?.showLyricsTranslation ?? true;
+    final showRomaji = settings?.showLyricsRomaji ?? false;
     final offsetMs = settings?.lyricOffsetMs ?? 0;
+    final hasRomaji = _lyricsViewHasRomaji;
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -120,6 +126,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                 _showLyrics = false;
                               });
                             },
+                            onRomajiAvailable: (has) {
+                              if (_lyricsViewHasRomaji != has) {
+                                setState(() => _lyricsViewHasRomaji = has);
+                              }
+                            },
                           ),
                         ),
                       ),
@@ -145,14 +156,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     child: _LyricSettingsRail(
                       fontSizeIdx: fontSizeIdx,
                       showTranslation: showTranslation,
+                      showRomaji: showRomaji,
                       offsetMs: offsetMs,
                       hasTranslation: true,
+                      hasRomaji: hasRomaji,
                       onFontSize: () =>
                           _LyricsViewState._showFontSizeSheet(context, ref),
                       onToggleTranslation: () {
                         ref
                             .read(settingsProvider.notifier)
                             .setShowLyricsTranslation(!showTranslation);
+                      },
+                      onToggleRomaji: () {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setShowLyricsRomaji(!showRomaji);
                       },
                       onOffset: () =>
                           _LyricsViewState._showOffsetSheet(context, ref),
@@ -662,6 +680,7 @@ class _LyricLineItem {
   final int endTimeMs;
   final String text;
   final String? translation;
+  final String? romaji;
   final List<_LyricWordItem> words;
 
   const _LyricLineItem({
@@ -669,6 +688,7 @@ class _LyricLineItem {
     this.endTimeMs = 0,
     required this.text,
     this.translation,
+    this.romaji,
     this.words = const [],
   });
 }
@@ -685,6 +705,7 @@ class _LyricsView extends ConsumerStatefulWidget {
     required this.isPlaying,
     required this.visible,
     required this.onTap,
+    required this.onRomajiAvailable,
   });
 
   final QueueItem? current;
@@ -692,6 +713,7 @@ class _LyricsView extends ConsumerStatefulWidget {
   final bool isPlaying; // 是否正在播放（驱动逐帧插值时钟）
   final bool visible; // 歌词视图是否可见（不可见时停帧省电）
   final VoidCallback onTap;
+  final ValueChanged<bool> onRomajiAvailable;
 
   @override
   ConsumerState<_LyricsView> createState() => _LyricsViewState();
@@ -721,7 +743,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   // 歌词样式设置（build 中从 settingsProvider 同步，供非 build 路径读取）。
   int _fontSizeIdx = 1;
   bool _showTranslation = true;
+  bool _showRomaji = false;
   int _offsetMs = 0;
+
+  /// 是否有任一行含罗马音（供设置栏罗马音按钮的可用态判断）。
+  bool _hasRomaji = false;
 
   /// 逐字卡拉OK时钟（等价桌面端 rAF 驱动 setCurrentTime）。
   late final Ticker _ticker;
@@ -1002,6 +1028,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             final rawTrans = (item['translation'] as String?);
             final translation = rawTrans != null ? _cleanLyricText(rawTrans) : null;
 
+            final rawRomaji = (item['romaji'] as String?)?.trim();
+            final romaji =
+                (rawRomaji != null && rawRomaji.isNotEmpty) ? rawRomaji : null;
+
             // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
             final words = <_LyricWordItem>[];
             final rawWords = item['words'] as List?;
@@ -1030,6 +1060,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                 translation: (translation != null && translation.isNotEmpty)
                     ? translation
                     : null,
+                romaji: romaji,
                 words: words,
               ));
             }
@@ -1041,6 +1072,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             _lines = _normalizeBoundaries(lines);
             _loading = false;
           });
+          _reportRomaji();
           _autoScrollToActiveLine();
           return;
         }
@@ -1051,6 +1083,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           _lines = [];
           _loading = false;
         });
+        _reportRomaji();
       }
     } catch (_) {
       if (mounted) {
@@ -1058,7 +1091,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           _lines = [];
           _loading = false;
         });
+        _reportRomaji();
       }
+    }
+  }
+
+  /// 汇总当前歌词是否含罗马音并上报给宿主页（驱动设置栏罗马音按钮可用态）。
+  void _reportRomaji() {
+    final has = _lines.any((l) => l.romaji != null && l.romaji!.isNotEmpty);
+    if (has != _hasRomaji) {
+      _hasRomaji = has;
+      widget.onRomajiAvailable(has);
     }
   }
 
@@ -1125,6 +1168,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         endTimeMs: endMs.round(),
         text: line.text,
         translation: line.translation,
+        romaji: line.romaji,
         words: words,
       ));
     }
@@ -1170,12 +1214,16 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final settings = ref.watch(settingsProvider).valueOrNull;
     _fontSizeIdx = settings?.lyricFontSize ?? 1;
     _showTranslation = settings?.showLyricsTranslation ?? true;
+    _showRomaji = settings?.showLyricsRomaji ?? false;
     _offsetMs = settings?.lyricOffsetMs ?? 0;
+    final lyricFontFamily =
+        (settings?.lyricFontName ?? '').isNotEmpty ? settings!.lyricFontName : null;
 
     // 档位 → 字号（对应 MF fontSizeMap 的小/标准/大/特大）。
     final inactiveFont = [14.0, 15.5, 17.0, 19.0][_fontSizeIdx];
     final activeFont = inactiveFont + 2.5;
     final transFont = inactiveFont - 2;
+    final romajiFont = inactiveFont - 1.5;
 
     final curMs = ((_displayPos - _offsetMs / 1000.0) * 1000).toInt();
 
@@ -1252,6 +1300,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                           _displayPos - _offsetMs / 1000.0,
                           scheme,
                           activeFont,
+                          lyricFontFamily,
                         ),
                     ],
                   )
@@ -1269,12 +1318,34 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                               ? const Color(0xFFEC4141)
                               : scheme.onSurface.withValues(alpha: 0.45),
                       height: 1.4,
+                      fontFamily: lyricFontFamily,
                     ),
                     child: Text(
                       line.text,
                       textAlign: TextAlign.center,
                     ),
                   ),
+                if (_showRomaji &&
+                    line.romaji != null &&
+                    line.romaji!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    line.romaji!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isActive ? romajiFont + 1 : romajiFont,
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isDragging
+                          ? Colors.white.withValues(alpha: 0.75)
+                          : isPrimaryColor
+                              ? const Color(0xFFEC4141).withValues(alpha: 0.75)
+                              : scheme.onSurface.withValues(alpha: 0.32),
+                      height: 1.2,
+                      fontFamily: lyricFontFamily,
+                    ),
+                  ),
+                ],
                 if (_showTranslation &&
                     line.translation != null &&
                     line.translation!.isNotEmpty) ...[
@@ -1421,6 +1492,31 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     );
                   },
                 ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                // 自定义字体导入
+                Row(
+                  children: [
+                    Icon(Icons.font_download_outlined,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.outline),
+                    const SizedBox(width: 8),
+                    const Text('自定义歌词字体',
+                        style: TextStyle(
+                            fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    _FontImportAction(sheetCtx: sheetCtx),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '支持 .ttf / .otf 字体文件，导入后立即应用到歌词',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1429,13 +1525,20 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     );
   }
 
-  /// 歌词偏移校正面板（对应 MF SetLyricOffset）：-500ms ~ +500ms 滑杆。
+  /// 歌词偏移校正面板：粗调滑杆(-500~+500, 10ms) + 细调按钮(1/5/10/100ms)，
+  /// 拖蓝/暂停时点按微调可精确定位，满足“偏移步进细化”。
   static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
     showSheetDialog<void>(
       context,
       (sheetCtx) {
         final notifier = ref.read(settingsProvider.notifier);
         var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
+
+        void apply(int v, StateSetter setSheetState) {
+          setSheetState(() => value = v);
+          notifier.setLyricOffsetMs(v);
+        }
+
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
@@ -1460,8 +1563,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                 ),
                 StatefulBuilder(
                   builder: (ctx, setSheetState) {
+                    final scheme = Theme.of(ctx).colorScheme;
                     return Column(
                       children: [
+                        // 当前偏移值
                         Text(
                           value > 0
                               ? '提前 ${value}ms'
@@ -1470,20 +1575,37 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                                   : '无偏移',
                           style: TextStyle(
                             fontSize: 13,
-                            color:
-                                Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
+                        // 粗调滑杆（10ms 步进）
                         Slider(
                           value: value.toDouble(),
                           min: -500,
                           max: 500,
                           divisions: 100,
                           label: '${value}ms',
-                          onChanged: (v) {
-                            setSheetState(() => value = v.round());
-                            notifier.setLyricOffsetMs(v.round());
-                          },
+                          onChanged: (v) => apply(v.round(), setSheetState),
+                        ),
+                        // 细调按钮行（1 / 5 / 10 / 100ms 步进）
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _offsetStepChip(ctx, '-100', scheme, () =>
+                                apply((value - 100).clamp(-500, 500), setSheetState)),
+                            _offsetStepChip(ctx, '-10', scheme, () =>
+                                apply((value - 10).clamp(-500, 500), setSheetState)),
+                            _offsetStepChip(ctx, '-1', scheme, () =>
+                                apply((value - 1).clamp(-500, 500), setSheetState)),
+                            _offsetStepChip(ctx, '+1', scheme, () =>
+                                apply((value + 1).clamp(-500, 500), setSheetState)),
+                            _offsetStepChip(ctx, '+10', scheme, () =>
+                                apply((value + 10).clamp(-500, 500), setSheetState)),
+                            _offsetStepChip(ctx, '+100', scheme, () =>
+                                apply((value + 100).clamp(-500, 500), setSheetState)),
+                          ],
                         ),
                       ],
                     );
@@ -1497,12 +1619,41 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     );
   }
 
+  /// 偏移细调小按钮。
+  static Widget _offsetStepChip(
+    BuildContext ctx,
+    String label,
+    ColorScheme scheme,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 渲染单个词/字的卡拉OK漫过染色高光
   Widget _buildKaraokeWordWidget(
     _LyricWordItem word,
     double position,
     ColorScheme scheme,
     double fontSize,
+    String? fontFamily,
   ) {
     final duration = math.max(0.001, word.end - word.start);
     final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
@@ -1514,6 +1665,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       fontSize: fontSize,
       fontWeight: FontWeight.w700,
       height: 1.4,
+      fontFamily: fontFamily,
     );
 
     if (progress <= 0) {
@@ -1613,19 +1765,25 @@ class _LyricSettingsRail extends StatefulWidget {
   const _LyricSettingsRail({
     required this.fontSizeIdx,
     required this.showTranslation,
+    required this.showRomaji,
     required this.offsetMs,
     required this.hasTranslation,
+    required this.hasRomaji,
     required this.onFontSize,
     required this.onToggleTranslation,
+    required this.onToggleRomaji,
     required this.onOffset,
   });
 
   final int fontSizeIdx;
   final bool showTranslation;
+  final bool showRomaji;
   final int offsetMs;
   final bool hasTranslation;
+  final bool hasRomaji;
   final VoidCallback onFontSize;
   final VoidCallback onToggleTranslation;
+  final VoidCallback onToggleRomaji;
   final VoidCallback onOffset;
 
   @override
@@ -1724,7 +1882,15 @@ class _LyricSettingsRailState extends State<_LyricSettingsRail> {
                             onTap: widget.onToggleTranslation,
                           ),
 
-                          // (3) 时间偏移校正按钮
+                          // (3) 罗马音开关按钮
+                          _RailIconButton(
+                            icon: Icons.abc_rounded,
+                            active: widget.showRomaji && widget.hasRomaji,
+                            disabled: !widget.hasRomaji,
+                            onTap: widget.onToggleRomaji,
+                          ),
+
+                          // (4) 时间偏移校正按钮
                           _RailIconButton(
                             icon: Icons.av_timer_rounded,
                             active: widget.offsetMs != 0,
@@ -1744,7 +1910,71 @@ class _LyricSettingsRailState extends State<_LyricSettingsRail> {
   }
 }
 
-/// 侧边栏按钮图标样式
+/// 自定义歌词字体的导入 / 恢复默认按钮（字号面板内）。
+class _FontImportAction extends ConsumerWidget {
+  const _FontImportAction({required this.sheetCtx});
+  final BuildContext sheetCtx;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fontName = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.lyricFontName ?? ''));
+    final hasFont = fontName.isNotEmpty;
+
+    if (!hasFont) {
+      return TextButton.icon(
+        onPressed: () async {
+          try {
+            final imported = await LyricFontManager.importCustomFont(
+              onApplied: (name, path) async {
+                final n = ref.read(settingsProvider.notifier);
+                await n.setLyricFontPath(path);
+                await n.setLyricFontName(name);
+              },
+            );
+            if (imported == null) return;
+            if (context.mounted) {
+              ScaffoldMessenger.of(sheetCtx)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(const SnackBar(content: Text('已应用自定义歌词字体')));
+            }
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(sheetCtx)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(content: Text('字体导入失败：$e')));
+            }
+          }
+        },
+        icon: const Icon(Icons.file_open_outlined, size: 18),
+        label: const Text('选择字体'),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '已应用',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        TextButton.icon(
+          onPressed: () async {
+            final n = ref.read(settingsProvider.notifier);
+            await n.setLyricFontName('');
+            await n.setLyricFontPath('');
+          },
+          icon: const Icon(Icons.refresh, size: 16),
+          label: const Text('恢复默认'),
+        ),
+      ],
+    );
+  }
+}
+
 class _RailIconButton extends StatelessWidget {
   const _RailIconButton({
     required this.icon,

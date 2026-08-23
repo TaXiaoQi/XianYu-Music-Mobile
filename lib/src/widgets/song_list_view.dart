@@ -1,8 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/settings.dart';
 import '../library/library_provider.dart';
 import 'song_actions_sheet.dart';
+
+/// 歌曲行的播放点击手势：按「单击/双击播放」设置决定触发方式。
+///
+/// - 单击模式：`onTap` 触发 [onPlay]（此时调用方应把行的 onTap 置空，由本组件承担播放）。
+/// - 双击模式：`onDoubleTap` 触发 [onPlay]，单击不做任何事（避免误触播放）。
+class SongRowPlayGesture extends ConsumerWidget {
+  final Widget child;
+  final VoidCallback? onPlay;
+  final bool enabled;
+  const SongRowPlayGesture({
+    super.key,
+    required this.child,
+    this.onPlay,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!enabled || onPlay == null) return child;
+    final single =
+        (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
+            'single';
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: single ? onPlay : null,
+      onDoubleTap: single ? null : onPlay,
+      child: child,
+    );
+  }
+}
+
+/// 歌曲行的播放点击手势（见 [SongRowPlayGesture] 的说明）：
+/// 供 favorite/recent 等非共享列表复用，避免重复读取设置。
+Widget songRowPlayGesture(
+  BuildContext context,
+  WidgetRef ref,
+  Widget child, {
+  VoidCallback? onPlay,
+  bool enabled = true,
+}) {
+  if (!enabled || onPlay == null) return child;
+  final single =
+      (ref.read(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
+          'single';
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: single ? onPlay : null,
+    onDoubleTap: single ? null : onPlay,
+    child: child,
+  );
+}
 
 /// 通用歌曲列表：展示歌曲并支持点击播放、长按弹出操作菜单。
 class SongsListView extends ConsumerWidget {
@@ -35,35 +87,38 @@ class SongsListView extends ConsumerWidget {
       itemBuilder: (context, i) {
         final s = songs[i];
         final hlColor = Theme.of(context).colorScheme.primary;
-        return ListTile(
-          leading: SongCover(song: s),
-          title: highlightedText(
-            s.title,
-            highlight,
-            hlColor,
-            maxLines: 1,
+        return SongRowPlayGesture(
+          onPlay: onPlay != null ? () => onPlay!(songs, i) : null,
+          child: ListTile(
+            leading: SongCover(song: s),
+            title: highlightedText(
+              s.title,
+              highlight,
+              hlColor,
+              maxLines: 1,
+            ),
+            subtitle: highlightedText(
+              '${s.artist} · ${s.album}',
+              highlight,
+              hlColor,
+              maxLines: 1,
+            ),
+            trailing: Text(
+              _fmt(s.duration),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            onLongPress: enableActions
+                ? () => showSongActionsSheet(
+                      context,
+                      ref: ref,
+                      item: s.toQueueItem(),
+                      onPlay:
+                          onPlay != null ? () => onPlay!(songs, i) : null,
+                    )
+                : null,
           ),
-          subtitle: highlightedText(
-            '${s.artist} · ${s.album}',
-            highlight,
-            hlColor,
-            maxLines: 1,
-          ),
-          trailing: Text(
-            _fmt(s.duration),
-            style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-          onTap: () => onPlay?.call(songs, i),
-          onLongPress: enableActions
-              ? () => showSongActionsSheet(
-                    context,
-                    ref: ref,
-                    item: s.toQueueItem(),
-                    onPlay: onPlay != null ? () => onPlay!(songs, i) : null,
-                  )
-              : null,
         );
       },
     );

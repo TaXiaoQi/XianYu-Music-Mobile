@@ -719,6 +719,14 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 syncState.uploadConfig.copyWith(settings: val),
               ),
             ),
+            _SwitchTile(
+              title: '播放历史',
+              subtitle: '同步最近播放记录',
+              value: syncState.uploadConfig.history,
+              onChanged: (val) => syncNotifier.updateUploadConfig(
+                syncState.uploadConfig.copyWith(history: val),
+              ),
+            ),
           ],
         ),
 
@@ -750,6 +758,12 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
               state: syncState.settingsSync,
               onUpload: syncNotifier.syncSettingsUpload,
               onDownload: syncNotifier.syncSettingsDownload,
+            ),
+            _SyncActionTile(
+              title: '历史同步',
+              state: syncState.historySync,
+              onUpload: syncNotifier.syncHistoryUpload,
+              onDownload: syncNotifier.syncHistoryDownload,
             ),
           ],
         ),

@@ -611,9 +611,29 @@ class SoundEffectSettings {
   }
 }
 
+/// 用户自定义 EQ 预设。
+class CustomEqPreset {
+  final String name;
+  final List<double> gains;
+  const CustomEqPreset(this.name, this.gains);
+
+  Map<String, dynamic> toJson() => {'name': name, 'gains': gains};
+
+  factory CustomEqPreset.fromJson(Map<String, dynamic> j) => CustomEqPreset(
+        j['name'] as String? ?? '未命名',
+        (j['gains'] as List? ?? const [])
+            .map((e) => (e as num).toDouble())
+            .toList(),
+      );
+}
+
 class SoundEffectState {
   final SoundEffectSettings settings;
-  const SoundEffectState({required this.settings});
+  final List<CustomEqPreset> customEqPresets;
+  const SoundEffectState({
+    required this.settings,
+    this.customEqPresets = const [],
+  });
 }
 
 class SoundEffectManager extends StateNotifier<SoundEffectState> {
@@ -628,19 +648,48 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_key);
       if (raw != null && raw.isNotEmpty) {
-        final s = SoundEffectSettings.fromJson(
-            jsonDecode(raw) as Map<String, dynamic>);
-        state = SoundEffectState(settings: s);
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        // 新版为 { settings, customEqPresets } 包装；兼容旧版扁平 settings。
+        final settingsRaw = decoded.containsKey('settings')
+            ? decoded['settings'] as Map<String, dynamic>
+            : decoded;
+        final s = SoundEffectSettings.fromJson(settingsRaw);
+        final customs = (decoded['customEqPresets'] as List? ?? const [])
+            .map((e) => CustomEqPreset.fromJson(e as Map<String, dynamic>))
+            .toList();
+        state = SoundEffectState(settings: s, customEqPresets: customs);
       }
     } catch (_) {}
   }
 
-  Future<void> _update(SoundEffectSettings next) async {
-    state = SoundEffectState(settings: next);
+  Future<void> _update(
+    SoundEffectSettings next, {
+    List<CustomEqPreset>? customEqPresets,
+  }) async {
+    state = SoundEffectState(
+      settings: next,
+      customEqPresets: customEqPresets ?? state.customEqPresets,
+    );
+    await _persist();
+  }
+
+  Future<void> _persist() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_key, jsonEncode(next.toJson()));
+      await prefs.setString(
+        _key,
+        jsonEncode({
+          'settings': state.settings.toJson(),
+          'customEqPresets':
+              state.customEqPresets.map((p) => p.toJson()).toList(),
+        }),
+      );
     } catch (_) {}
+  }
+
+  Future<void> _mutateCustom(List<CustomEqPreset> list) async {
+    state = SoundEffectState(settings: state.settings, customEqPresets: list);
+    await _persist();
   }
 
   Future<void> set(SoundEffectSettings s) => _update(s);
@@ -654,7 +703,47 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
   Future<void> applyEqPreset(String name) async {
     final preset = eqPresets.where((p) => p.name == name).toList();
     if (preset.isEmpty) return;
-    await _update(state.settings.copyWith(eqGains: preset.first.gains));
+    await _update(state.settings.copyWith(eqGains: [...preset.first.gains]));
+  }
+
+  /// 保存当前 EQ 增益为自定义预设；同名则覆盖。
+  Future<void> saveCustomEqPreset(String name) async {
+    final g = name.trim();
+    if (g.isEmpty) return;
+    final preset = CustomEqPreset(g, [...state.settings.eqGains]);
+    final list = [...state.customEqPresets];
+    final idx = list.indexWhere((p) => p.name == g);
+    if (idx >= 0) {
+      list[idx] = preset;
+    } else {
+      list.add(preset);
+    }
+    await _mutateCustom(list);
+  }
+
+  /// 重命名（编辑）自定义预设。
+  Future<void> renameCustomEqPreset(String oldName, String newName) async {
+    final g = newName.trim();
+    if (g.isEmpty || g == oldName) return;
+    final list = [...state.customEqPresets];
+    final idx = list.indexWhere((p) => p.name == oldName);
+    if (idx < 0) return;
+    list[idx] = CustomEqPreset(g, list[idx].gains);
+    await _mutateCustom(list);
+  }
+
+  /// 删除自定义预设。
+  Future<void> deleteCustomEqPreset(String name) async {
+    await _mutateCustom(
+        state.customEqPresets.where((p) => p.name != name).toList());
+  }
+
+  /// 应用自定义预设到 EQ 增益。
+  Future<void> applyCustomEqPreset(String name) async {
+    final preset =
+        state.customEqPresets.where((p) => p.name == name).toList();
+    if (preset.isEmpty) return;
+    await _update(state.settings.copyWith(eqGains: [...preset.first.gains]));
   }
 
   Future<void> resetEq() async {

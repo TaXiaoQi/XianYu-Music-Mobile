@@ -17,6 +17,7 @@ import '../player/player_provider.dart' show QueueItem;
 import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_subscriptions.dart';
+import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
 
 /// 上传选项配置
@@ -25,12 +26,14 @@ class UploadConfig {
   final bool favorites;
   final bool plugins;
   final bool settings;
+  final bool history;
 
   const UploadConfig({
     this.playlists = true,
     this.favorites = true,
     this.plugins = true,
     this.settings = true,
+    this.history = true,
   });
 
   UploadConfig copyWith({
@@ -38,12 +41,14 @@ class UploadConfig {
     bool? favorites,
     bool? plugins,
     bool? settings,
+    bool? history,
   }) {
     return UploadConfig(
       playlists: playlists ?? this.playlists,
       favorites: favorites ?? this.favorites,
       plugins: plugins ?? this.plugins,
       settings: settings ?? this.settings,
+      history: history ?? this.history,
     );
   }
 
@@ -52,6 +57,7 @@ class UploadConfig {
         'favorites': favorites,
         'plugins': plugins,
         'settings': settings,
+        'history': history,
       };
 
   factory UploadConfig.fromJson(Map<String, dynamic> j) => UploadConfig(
@@ -59,6 +65,7 @@ class UploadConfig {
         favorites: j['favorites'] as bool? ?? true,
         plugins: j['plugins'] as bool? ?? true,
         settings: j['settings'] as bool? ?? true,
+        history: j['history'] as bool? ?? true,
       );
 }
 
@@ -123,6 +130,7 @@ class SyncState {
   final SyncItemState favoritesSync;
   final SyncItemState pluginSync;
   final SyncItemState settingsSync;
+  final SyncItemState historySync;
 
   const SyncState({
     this.uploadConfig = const UploadConfig(),
@@ -131,6 +139,7 @@ class SyncState {
     this.favoritesSync = const SyncItemState(),
     this.pluginSync = const SyncItemState(),
     this.settingsSync = const SyncItemState(),
+    this.historySync = const SyncItemState(),
   });
 
   SyncState copyWith({
@@ -140,6 +149,7 @@ class SyncState {
     SyncItemState? favoritesSync,
     SyncItemState? pluginSync,
     SyncItemState? settingsSync,
+    SyncItemState? historySync,
   }) {
     return SyncState(
       uploadConfig: uploadConfig ?? this.uploadConfig,
@@ -148,6 +158,7 @@ class SyncState {
       favoritesSync: favoritesSync ?? this.favoritesSync,
       pluginSync: pluginSync ?? this.pluginSync,
       settingsSync: settingsSync ?? this.settingsSync,
+      historySync: historySync ?? this.historySync,
     );
   }
 }
@@ -743,6 +754,100 @@ class SyncNotifier extends StateNotifier<SyncState> {
   void _setSettingsError(String err) {
     state = state.copyWith(
       settingsSync: state.settingsSync.copyWith(
+        syncing: false,
+        errors: [err],
+      ),
+    );
+  }
+
+  // ==================== 播放历史同步 ====================
+
+  Future<void> syncHistoryUpload() async {
+    state = state.copyWith(
+      historySync: state.historySync.copyWith(syncing: true, errors: []),
+    );
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final json = await rust.statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(200));
+      final list = (jsonDecode(json) as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+      if (list.isEmpty) {
+        state = state.copyWith(
+          historySync: state.historySync.copyWith(
+            syncing: false,
+            lastSummary: '本地暂无播放历史',
+            lastTime: DateTime.now(),
+          ),
+        );
+        return;
+      }
+      final payload = list
+          .map((e) => {
+                'songPath': e['songPath'] ?? '',
+                'playedAt': (e['playedAt'] as num?)?.toInt() ?? 0,
+              })
+          .where((e) => (e['songPath'] as String).isNotEmpty)
+          .toList();
+      final count = await _api.uploadHistory(payload);
+      state = state.copyWith(
+        historySync: state.historySync.copyWith(
+          syncing: false,
+          lastSummary: '已上传 $count 条播放记录',
+          lastTime: DateTime.now(),
+          errors: [],
+        ),
+      );
+    } catch (e) {
+      AppLogger.instance.log('sync', '播放历史上传失败: $e');
+      _setHistoryError(e is AuthException ? e.message : '上传失败: $e');
+    }
+  }
+
+  Future<void> syncHistoryDownload() async {
+    state = state.copyWith(
+      historySync: state.historySync.copyWith(syncing: true, errors: []),
+    );
+    try {
+      final history = await _api.downloadHistory();
+      if (history.isEmpty) {
+        state = state.copyWith(
+          historySync: state.historySync.copyWith(
+            syncing: false,
+            lastSummary: '云端暂无播放历史',
+            lastTime: DateTime.now(),
+          ),
+        );
+        return;
+      }
+      // 云端按时间倒序，写回本地最近播放历史。
+      final dbPath = await _ref.read(dbPathProvider.future);
+      var added = 0;
+      for (final item in history) {
+        final path = (item['songPath'] as String?)?.trim() ?? '';
+        if (path.isEmpty) continue;
+        await rust.statsAddToHistory(dbPath: dbPath, songPath: path);
+        added++;
+      }
+      // 刷新最近播放列表，使新写入的历史立即可见。
+      await _ref.read(recentProvider.notifier).refresh();
+      state = state.copyWith(
+        historySync: state.historySync.copyWith(
+          syncing: false,
+          lastSummary: '已恢复 $added 条播放历史',
+          lastTime: DateTime.now(),
+          errors: [],
+        ),
+      );
+    } catch (e) {
+      AppLogger.instance.log('sync', '播放历史下载失败: $e');
+      _setHistoryError(e is AuthException ? e.message : '下载失败: $e');
+    }
+  }
+
+  void _setHistoryError(String err) {
+    state = state.copyWith(
+      historySync: state.historySync.copyWith(
         syncing: false,
         errors: [err],
       ),

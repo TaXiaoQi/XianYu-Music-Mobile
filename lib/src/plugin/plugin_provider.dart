@@ -314,6 +314,24 @@ class PluginManager extends StateNotifier<PluginListState> {
     return info != null;
   }
 
+  /// 覆盖编辑插件脚本。脚本校验通过后整体替换，脚本内容变化则替换为新条目。
+  Future<void> updateScript(String oldId, String newScript) async {
+    final oldSource = state.sources.where((s) => s.id == oldId).toList();
+    if (oldSource.isEmpty) throw PluginEngineException('插件不存在');
+    final engine = await _getEngine();
+    final newSource = await installFromScript(
+      newScript,
+      nameOverride: oldSource.first.name,
+    );
+    if (newSource.id == oldId) return; // 内容未变化，无需替换
+    // 卸载旧插件并移除旧条目
+    await engine.destroy(oldId);
+    await engine.store.deleteScript(oldId);
+    final list = state.sources.where((s) => s.id != oldId).toList();
+    await engine.store.saveSources(list);
+    state = PluginListState(sources: list);
+  }
+
   /// 获取插件的用户变量定义（触发懒加载读取 metadata）。
   Future<List<PluginUserVar>> getUserVars(String pluginId) async {
     final engine = await _getEngine();

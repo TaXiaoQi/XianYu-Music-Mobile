@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
+import 'plugin_preferences.dart';
 import 'plugin_provider.dart';
 
 /// 插件更新检查结果。
@@ -83,6 +85,10 @@ class PluginUpdateService {
   /// 检查单个插件是否有可用更新。
   Future<PluginUpdateCheckResult?> checkPluginUpdate(
       PluginSource source) async {
+    // 该插件已标记"跳过版本检查"，直接不检查。
+    if (await PluginPreferences.getSkipUpdateCheck(source.id)) {
+      return null;
+    }
     String? updateUrl;
 
     if (source.format == PluginFormat.musicfree) {
@@ -185,6 +191,24 @@ class PluginUpdateService {
     return results;
   }
 
+  /// 静默批量检查并安装可用更新（供"启动自动更新"调用）。
+  /// 跳过已标记"跳过版本检查"的插件，单个失败不中断。
+  Future<int> checkAndInstallAll() async {
+    var installed = 0;
+    for (final source in manager.sources) {
+      if (!source.enabled) continue;
+      try {
+        final result = await checkPluginUpdate(source);
+        if (result == null || !result.hasUpdate) continue;
+        final outcome = await performPluginUpdate(source, result);
+        if (outcome.success) installed++;
+      } catch (_) {
+        // 跳过失败项
+      }
+    }
+    return installed;
+  }
+
   Future<String?> _fetchScript(String url) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);
@@ -201,5 +225,25 @@ class PluginUpdateService {
     } finally {
       client.close();
     }
+  }
+}
+
+/// 启动时自动更新插件（fire-and-forget，失败静默）。
+/// 仅在全局开关开启且本地存在已安装插件时执行，更新后写入日志。
+Future<void> runPluginAutoUpdateOnStartup(
+    ProviderContainer container, void Function(String message)? log) async {
+  try {
+    if (!await PluginPreferences.getAutoUpdateOnStartup()) return;
+    final engine = await container.read(pluginEngineProvider.future);
+    final service = PluginUpdateService(
+      engine,
+      container.read(pluginManagerProvider.notifier),
+    );
+    final installed = await service.checkAndInstallAll();
+    if (installed > 0 && log != null) {
+      log('启动自动更新：已更新 $installed 个插件');
+    }
+  } catch (_) {
+    // 启动静默自动更新失败不打扰用户
   }
 }

@@ -7,6 +7,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
 
 /// 收藏页：单曲 / 歌单 / 专辑三 tab（对齐桌面）。
@@ -245,7 +246,7 @@ class _CollectionsTab extends ConsumerWidget {
   }
 }
 
-class _FavoriteTile extends StatelessWidget {
+class _FavoriteTile extends ConsumerWidget {
   const _FavoriteTile({
     required this.entry,
     required this.onPlay,
@@ -257,30 +258,36 @@ class _FavoriteTile extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: CoverImage(
-        songPath: entry.path,
-        networkUrl: entry.coverUrl,
-        width: 44,
-        height: 44,
-        radius: 8,
-        icon: Icons.music_note,
+    return songRowPlayGesture(
+      context,
+      ref,
+      ListTile(
+        leading: CoverImage(
+          songPath: entry.path,
+          networkUrl: entry.coverUrl,
+          width: 44,
+          height: 44,
+          radius: 8,
+          icon: Icons.music_note,
+        ),
+        title: Text(entry.title,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          entry.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.favorite,
+              size: 20, color: const Color(0xFFEC4141)),
+          tooltip: '取消收藏',
+          onPressed: onRemove,
+        ),
       ),
-      title: Text(entry.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        entry.artist,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-      ),
-      trailing: IconButton(
-        icon: Icon(Icons.favorite, size: 20, color: const Color(0xFFEC4141)),
-        tooltip: '取消收藏',
-        onPressed: onRemove,
-      ),
-      onTap: onPlay,
+      onPlay: onPlay,
     );
   }
 }

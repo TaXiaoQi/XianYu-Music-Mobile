@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/song_list_view.dart';
 
 /// 每日推荐页：日期徽章 + 播放全部/换一批 + 推荐歌曲列表。
 class DailyRecommendPage extends ConsumerStatefulWidget {
@@ -180,45 +181,55 @@ class _RecommendList extends ConsumerWidget {
       separatorBuilder: (_, _) => SizedBox(height: 4),
       itemBuilder: (context, i) {
         final item = state.items[i];
-        return ListTile(
-          dense: true,
-          leading: OnlineCover(url: item.coverUrl, size: 46),
-          title: Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 1),
-              Text(
-                item.artist.isEmpty ? item.album : '${item.artist} · ${item.album}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-              if (item.reason.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    item.reason,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: scheme.primary),
-                  ),
-                ),
-            ],
-          ),
-          trailing: item.durationMs > 0
-              ? Text(
-                  '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
+        return songRowPlayGesture(
+          context,
+          ref,
+          ListTile(
+            dense: true,
+            leading: OnlineCover(url: item.coverUrl, size: 46),
+            title: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 14.5, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 1),
+                Text(
+                  item.artist.isEmpty
+                      ? item.album
+                      : '${item.artist} · ${item.album}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 12, color: scheme.onSurfaceVariant),
-                )
-              : null,
-          onTap: () => ref.read(dailyRecommendProvider.notifier).play(i),
+                ),
+                if (item.reason.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(
+                      item.reason,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 10.5, color: scheme.primary),
+                    ),
+                  ),
+              ],
+            ),
+            trailing: item.durationMs > 0
+                ? Text(
+                    '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant),
+                  )
+                : null,
+          ),
+          onPlay: () =>
+              ref.read(dailyRecommendProvider.notifier).play(i),
         );
       },
     );

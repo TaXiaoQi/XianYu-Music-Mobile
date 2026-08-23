@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/playlist/playlist_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../favorites/favorites_page.dart';
+import '../playlist/playlists_page.dart';
 import '../recent/recent_page.dart';
 import 'song_list_page.dart';
 
@@ -291,6 +294,22 @@ class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
                 ),
               ),
             ),
+
+            // 歌单 0：【我的歌单】（导入歌单、文件夹导入入口）
+            _buildPlaylistItemTile(
+              context,
+              title: '我的歌单',
+              subtitle:
+                  '${ref.watch(playlistManagerProvider).playlists.length} 个歌单',
+              icon: Icons.queue_music_rounded,
+              gradient: const [Color(0xFF8342FF), Color(0xFF00C6FF)],
+              onTap: () {
+                Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(builder: (_) => const PlaylistsPage()),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
 
             // 歌单 1：【❤️ 我喜欢的音乐】（标准列表项视图）
             _buildPlaylistItemTile(
@@ -604,21 +623,104 @@ class _AllSongsTab extends ConsumerStatefulWidget {
 class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   String _query = '';
 
+  /// 排序方式；null 表示保持库默认顺序。
+  _SongSort _sort = _SongSort.none;
+  bool _hideDuplicates = false;
+
+  List<Song> _applySort(List<Song> list) {
+    final copy = [...list];
+    switch (_sort) {
+      case _SongSort.title:
+        copy.sort((a, b) => a.title.compareTo(b.title));
+      case _SongSort.artist:
+        copy.sort((a, b) {
+          final c = a.artist.compareTo(b.artist);
+          return c != 0 ? c : a.title.compareTo(b.title);
+        });
+      case _SongSort.album:
+        copy.sort((a, b) {
+          final c = a.album.compareTo(b.album);
+          return c != 0 ? c : a.title.compareTo(b.title);
+        });
+      case _SongSort.addedAt:
+      case _SongSort.none:
+        break;
+    }
+    return copy;
+  }
+
+  List<Song> _filter(List<Song> list) {
+    List<Song> result = list;
+    if (_query.isNotEmpty) {
+      result = result
+          .where((s) =>
+              s.title.toLowerCase().contains(_query) ||
+              s.artist.toLowerCase().contains(_query) ||
+              s.album.toLowerCase().contains(_query))
+          .toList();
+    }
+    if (_hideDuplicates) {
+      final seen = <String, String>{};
+      result = result.where((s) {
+        final key = '${s.title.toLowerCase()}|${s.artist.toLowerCase()}';
+        if (seen.containsKey(key)) return false;
+        seen[key] = s.path;
+        return true;
+      }).toList();
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    final songs = _query.isEmpty
-        ? lib.songs
-        : lib.songs
-            .where((s) =>
-                s.title.toLowerCase().contains(_query) ||
-                s.artist.toLowerCase().contains(_query) ||
-                s.album.toLowerCase().contains(_query))
-            .toList();
+    final songs = _applySort(_filter(lib.songs));
+    final scheme = Theme.of(context).colorScheme;
+
     return Column(
       children: [
+        // 工具栏：排序 / 去重 / 统计
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: DropdownButton<_SongSort>(
+                  value: _sort,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: _SongSort.none, child: Text('默认排序')),
+                    DropdownMenuItem(value: _SongSort.title, child: Text('按标题')),
+                    DropdownMenuItem(value: _SongSort.artist, child: Text('按歌手')),
+                    DropdownMenuItem(value: _SongSort.album, child: Text('按专辑')),
+                    DropdownMenuItem(value: _SongSort.addedAt, child: Text('按添加时间')),
+                  ],
+                  onChanged: (v) => setState(() => _sort = v ?? _SongSort.none),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Tooltip(
+                message: _hideDuplicates ? '已隐藏重复歌曲' : '隐藏重复歌曲',
+                child: IconButton(
+                  icon: Icon(
+                    _hideDuplicates ? Icons.flip_to_front : Icons.flip_to_back,
+                    color: _hideDuplicates ? scheme.primary : null,
+                  ),
+                  onPressed: () =>
+                      setState(() => _hideDuplicates = !_hideDuplicates),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.bar_chart),
+                tooltip: '曲库统计',
+                onPressed: () => _showStats(context, lib),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
           child: TextField(
             onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
             decoration: InputDecoration(
@@ -644,6 +746,87 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                 ),
         ),
       ],
+    );
+  }
+
+  void _showStats(BuildContext context, LibraryState lib) {
+    final total = lib.songs.length;
+    final durationMs =
+        lib.songs.fold<int>(0, (sum, s) => sum + s.duration * 1000);
+    final formatMap = <String, int>{};
+    for (final s in lib.songs) {
+      final f = s.format.isEmpty ? '未知' : s.format.toUpperCase();
+      formatMap[f] = (formatMap[f] ?? 0) + 1;
+    }
+    final formats = formatMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    showSheetDialog<void>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('曲库统计',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 14),
+            _StatRow(label: '歌曲总数', value: '$total 首'),
+            _StatRow(label: '总时长', value: _fmtDuration(durationMs)),
+            _StatRow(label: '歌手', value: '${lib.artists.length} 位'),
+            _StatRow(label: '专辑', value: '${lib.albums.length} 张'),
+            _StatRow(label: '文件夹', value: '${lib.folders.length} 个'),
+            if (formats.isNotEmpty) ...[
+              const Divider(height: 20),
+              for (final f in formats)
+                _StatRow(label: f.key, value: '${f.value} 首'),
+            ],
+            const SizedBox(height: 8),
+            Icon(TextDirection.ltr == TextDirection.ltr ? Icons.info_outline : Icons.info_outline,
+              size: 14, color: Theme.of(ctx).colorScheme.outline),
+            const SizedBox(height: 4),
+            Text('统计基于本地曲库', style: TextStyle(fontSize: 11, color: Theme.of(ctx).colorScheme.outline)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtDuration(int ms) {
+    final sec = (ms / 1000).round();
+    final h = sec ~/ 3600;
+    final m = (sec % 3600) ~/ 60;
+    if (h > 0) return '$h 小时 $m 分钟';
+    return '$m 分钟';
+  }
+}
+
+enum _SongSort { none, title, artist, album, addedAt }
+
+class _StatRow extends StatelessWidget {
+  const _StatRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13.5)),
+          Text(
+            value,
+            style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.primary),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -772,6 +955,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
             );
           }
         },
+        onImport: () => _importAsPlaylist(n),
       ));
       if (isExpanded && n.children.isNotEmpty) {
         _buildNodes(context, n.children, out);
@@ -780,6 +964,24 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
   }
 
   bool _scanning = false;
+
+  Future<void> _importAsPlaylist(FolderNodeData node) async {
+    final count = await ref
+        .read(libraryProvider.notifier)
+        .importFolderAsPlaylist(node.path);
+    if (!mounted) return;
+    final name = node.name.isNotEmpty ? node.name : node.path.split('/').last;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          count > 0
+              ? '已将 $count 首歌曲导入到歌单「$name」'
+              : '「$name」下没有可导入的歌曲',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   Future<void> _onRefresh() async {
     if (_scanning) return;
@@ -847,12 +1049,14 @@ class _FolderTile extends StatelessWidget {
   final bool isExpanded;
   final VoidCallback onToggle;
   final VoidCallback onOpen;
+  final VoidCallback onImport;
   const _FolderTile({
     required this.node,
     required this.hasChildren,
     required this.isExpanded,
     required this.onToggle,
     required this.onOpen,
+    required this.onImport,
   });
 
   @override
@@ -883,6 +1087,20 @@ class _FolderTile extends StatelessWidget {
             ),
           if (node.songCount > 0)
             IconButton(icon: const Icon(Icons.play_arrow), onPressed: onOpen),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: '更多',
+            onSelected: (action) {
+              if (action == 'import') onImport();
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: 'import',
+                enabled: node.songCount > 0,
+                child: const Text('导入为歌单'),
+              ),
+            ],
+          ),
         ],
       ),
       onTap: hasChildren ? onToggle : onOpen,

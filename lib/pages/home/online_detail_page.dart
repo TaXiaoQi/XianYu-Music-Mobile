@@ -11,6 +11,7 @@ import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
+import '../../src/widgets/song_list_view.dart';
 
 enum OnlineDetailType { artist, album, playlist, toplist }
 
@@ -327,40 +328,48 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             );
           }
           final r = _songs[i];
-          return ListTile(
-            dense: true,
-            leading: OnlineCover(url: r.img, size: 44),
-            title: Text(
-              r.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              r.singer.isEmpty ? r.albumName : '${r.singer} · ${r.albumName}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.download_outlined,
-                      size: 20, color: scheme.primary),
-                  tooltip: '下载',
-                  onPressed: () => _download(i),
-                ),
-                if (r.interval.isNotEmpty)
-                  Text(
-                    r.interval,
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+          return songRowPlayGesture(
+            context,
+            ref,
+            ListTile(
+              dense: true,
+              leading: OnlineCover(url: r.img, size: 44),
+              title: Text(
+                r.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 14.5, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                r.singer.isEmpty
+                    ? r.albumName
+                    : '${r.singer} · ${r.albumName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.download_outlined,
+                        size: 20, color: scheme.primary),
+                    tooltip: '下载',
+                    onPressed: () => _download(i),
                   ),
-              ],
+                  if (r.interval.isNotEmpty)
+                    Text(
+                      r.interval,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                ],
+              ),
+              onLongPress: () => _songActions(i),
             ),
-            onTap: () => _play(i),
-            onLongPress: () => _songActions(i),
+            onPlay: () => _play(i),
           );
         },
       ),
