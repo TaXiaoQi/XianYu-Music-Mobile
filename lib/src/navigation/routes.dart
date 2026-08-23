@@ -21,6 +21,7 @@ import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../../pages/download/download_page.dart';
 import '../../pages/settings/batch_rename_page.dart';
+import '../../pages/settings/scan_folders_page.dart';
 import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
@@ -142,6 +143,11 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/batch-rename',
       builder: (context, state) => const BatchRenamePage(),
+    ),
+    // 扫描文件夹（从设置页进入）。
+    GoRoute(
+      path: '/scan-folders',
+      builder: (context, state) => const ScanFoldersPage(),
     ),
     // 远程音乐库 WebDAV 管理（从设置页进入）。
     GoRoute(

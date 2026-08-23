@@ -158,6 +158,13 @@ class SettingsPage extends ConsumerWidget {
             children: [
               _tile(
                 context,
+                icon: Icons.create_new_folder_outlined,
+                title: '扫描文件夹',
+                trailing: const SizedBox.shrink(),
+                onTap: () => context.push('/scan-folders'),
+              ),
+              _tile(
+                context,
                 icon: Icons.timer_outlined,
                 title: '排除短音频（秒）',
                 trailing: Text('${settings?.libraryMinDurationSeconds ?? 0}'),
