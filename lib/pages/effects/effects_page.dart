@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/effects/sound_effect_provider.dart';
+import '../../src/player/player_provider.dart';
 
 /// 音效页：EQ / 变速变调 / 混响 / 空间音效 / 高级音效。
 class EffectsPage extends ConsumerWidget {
@@ -12,37 +13,76 @@ class EffectsPage extends ConsumerWidget {
     final settings = ref.watch(soundEffectProvider).settings;
     final notifier = ref.read(soundEffectProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+    final locked = ref.watch(playerProvider).usbExclusive;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('音效'),
         actions: [
           TextButton.icon(
-            onPressed: () => notifier.resetAll(),
+            onPressed: locked ? null : () => notifier.resetAll(),
             icon: const Icon(Icons.restart_alt, size: 18),
             label: const Text('重置'),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 150),
+      body: Column(
         children: [
-          _sectionHeader(context, '均衡器'),
-          _EqSection(settings: settings, notifier: notifier),
-          _sectionHeader(context, '变速变调'),
-          _PitchRateSection(settings: settings, notifier: notifier),
-          _sectionHeader(context, '混响'),
-          _ReverbSection(settings: settings, notifier: notifier),
-          _sectionHeader(context, '空间音效'),
-          _SpatialSection(settings: settings, notifier: notifier),
-          _sectionHeader(context, '高级音效'),
-          _AdvancedSection(settings: settings, notifier: notifier),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
+          if (locked)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline,
+                      size: 16, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bit-perfect / DSD 直出中，音效已锁定',
+                      style: TextStyle(fontSize: 13, color: scheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: IgnorePointer(
+              ignoring: locked,
+              child: Opacity(
+                opacity: locked ? 0.5 : 1.0,
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: 150),
+                  children: [
+                    _sectionHeader(context, '均衡器'),
+                    _EqSection(settings: settings, notifier: notifier),
+                    _sectionHeader(context, '变速变调'),
+                    _PitchRateSection(settings: settings, notifier: notifier),
+                    _sectionHeader(context, '混响'),
+                    _ReverbSection(settings: settings, notifier: notifier),
+                    _sectionHeader(context, '空间音效'),
+                    _SpatialSection(settings: settings, notifier: notifier),
+                    _sectionHeader(context, '高级音效'),
+                    _AdvancedSection(settings: settings, notifier: notifier),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。',
+                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],

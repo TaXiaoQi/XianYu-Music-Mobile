@@ -28,7 +28,8 @@ pub(crate) fn i64_to_bool(v: Option<i64>) -> bool {
 }
 
 pub const SUPPORTED_LIBRARY_EXTENSIONS: &[&str] = &[
-    "aac", "aif", "aiff", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "wav",
+    "aac", "aif", "aiff", "dff", "dsf", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg",
+    "wav",
 ];
 
 pub const CUE_FILE_EXTENSIONS: &[&str] = &["cue"];

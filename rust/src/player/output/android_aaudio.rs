@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 use crate::player::buffered_source::{BlockProducer, BufferedSource};
+use crate::player::dsd_dop::{parse_dsd_info, DopStreamSource};
 use crate::player::equalizer::{Equalizer, EqualizerHandle, EqualizerSettings};
 use crate::player::loudness::VolumeNormalizer;
 use crate::player::sound_effect::{SoundEffectBlockProcessor, SoundEffectSettings};
@@ -34,6 +35,7 @@ const AAUDIO_SHARING_MODE_SHARED: i32 = 1;
 const AAUDIO_FORMAT_INVALID: i32 = 0;
 const AAUDIO_FORMAT_PCM_I16: i32 = 1;
 const AAUDIO_FORMAT_PCM_FLOAT: i32 = 2;
+const AAUDIO_FORMAT_PCM_I24_PACKED: i32 = 3;
 const AAUDIO_PERFORMANCE_MODE_LOW_LATENCY: i32 = 4;
 const AAUDIO_DIRECTION_OUTPUT: i32 = 0;
 
@@ -179,6 +181,7 @@ impl AAudioLib {
 enum DeviceFormat {
     Float32,
     Int16,
+    I24Packed,
 }
 
 impl DeviceFormat {
@@ -186,6 +189,7 @@ impl DeviceFormat {
         match self {
             Self::Float32 => AAUDIO_FORMAT_PCM_FLOAT,
             Self::Int16 => AAUDIO_FORMAT_PCM_I16,
+            Self::I24Packed => AAUDIO_FORMAT_PCM_I24_PACKED,
         }
     }
 
@@ -193,6 +197,7 @@ impl DeviceFormat {
         match self {
             Self::Float32 => 4,
             Self::Int16 => 2,
+            Self::I24Packed => 3,
         }
     }
 }
@@ -643,6 +648,12 @@ fn run_exclusive_playback(
         }
     };
 
+    // 1.5 DSD（dsf/dff）走原生 DoP 直出：绕过解码器与 DSP，逐帧打包 24-bit。
+    if is_dsd_path(&request.path) {
+        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress);
+        return;
+    }
+
     // 2. 打开 symphonia 解码器
     let decoder = match SymphoniaDecoder::open(&request.path) {
         Ok(d) => d,
@@ -732,6 +743,7 @@ fn run_exclusive_playback(
         match device_format {
             DeviceFormat::Float32 => 32,
             DeviceFormat::Int16 => 16,
+            DeviceFormat::I24Packed => 24,
         }
     );
     let _ = init_tx.send(Ok((device_name, stream_sample_rate, stream_channels)));
@@ -852,6 +864,163 @@ fn run_exclusive_playback(
     }
 
     // 10. 清理
+    unsafe {
+        (lib.stream_request_stop)(stream);
+        (lib.stream_close)(stream);
+    }
+}
+
+/// 是否为 DSD 容器文件（dsf/dff）。
+fn is_dsd_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".dsf") || lower.ends_with(".dff") || lower.ends_with(".dsd")
+}
+
+/// DSD 原生 DoP 直出：读 1-bit DSD 流按 DoP 1.0 打包成 24-bit 帧，
+/// 直接写入支持 DoP 的 DSD-DAC（AAudio 独占 I24），绕过音量/EQ/音效 DSP。
+fn run_dsd_passthrough(
+    request: super::ExclusivePlayRequest,
+    lib: AAudioLib,
+    cmd_rx: Receiver<ExclusiveCommand>,
+    init_tx: SyncSender<Result<(String, u32, u16), String>>,
+    progress: Arc<ExclusiveProgress>,
+) {
+    let dsd = match parse_dsd_info(&request.path) {
+        Ok(info) => info,
+        Err(e) => {
+            let _ = init_tx.send(Err(format!("DSD 头解析失败: {e}")));
+            return;
+        }
+    };
+    if dsd.is_dst {
+        let _ = init_tx.send(Err("DST 压缩 DSD 暂不支持直出，请转未压缩 DSD 后再试".to_string()));
+        return;
+    }
+    let dop_rate = match crate::player::dsd_dop::dop_pcm_rate(dsd.dsd_rate) {
+        Some(r) => r,
+        None => {
+            let _ = init_tx.send(Err(format!("DSD 采样率 {} 不适用于 DoP 打包", dsd.dsd_rate)));
+            return;
+        }
+    };
+    let channels = dsd.channels.max(1);
+
+    // 打开 DoP DAC：仅尝试 24-bit packed 独占流。
+    let (stream, stream_rate, stream_channels) = match unsafe {
+        try_open_stream(&lib, request.device_id, dop_rate, channels, DeviceFormat::I24Packed)
+    } {
+        Ok(s) => {
+            let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
+            let actual_channels = unsafe { (lib.stream_get_channel_count)(s) } as u16;
+            (s, actual_rate, actual_channels)
+        }
+        Err(e) => {
+            let _ = init_tx.send(Err(format!("无法打开 DoP 音频流（{dop_rate}Hz/24bit 独占）: {e}")));
+            return;
+        }
+    };
+
+    let mut dop = match DopStreamSource::open(&request.path, &dsd) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = init_tx.send(Err(format!("打开 DSD 数据区失败: {e}")));
+            unsafe { (lib.stream_close)(stream) };
+            return;
+        }
+    };
+
+    progress.sample_rate.store(dop_rate, Ordering::Relaxed);
+    progress.channels.store(stream_channels as u32, Ordering::Relaxed);
+    progress.samples_played.store(
+        (request.start_time_secs * dop_rate as f64 * stream_channels as f64) as u64,
+        Ordering::Relaxed,
+    );
+
+    if request.start_time_secs > 0.0 {
+        let target = (request.start_time_secs * dop_rate as f64) as u64;
+        let _ = dop.seek_to_frame(target);
+    }
+
+    let start_result = unsafe { (lib.stream_request_start)(stream) };
+    if start_result != AAUDIO_OK {
+        let msg = unsafe { lib.result_text(start_result) };
+        let _ = init_tx.send(Err(format!("AAudio 启动失败: {msg}")));
+        unsafe { (lib.stream_close)(stream) };
+        return;
+    }
+
+    let device_name = format!(
+        "DSD {}/DoP ({}Hz, {}ch, 24bit)",
+        dsd.dsd_rate, stream_rate, stream_channels
+    );
+    let _ = init_tx.send(Ok((device_name, stream_rate, stream_channels)));
+
+    let timeout_ns: i64 = 20_000_000; // 20ms
+    let mut is_paused = !request.is_playing;
+
+    loop {
+        match cmd_rx.try_recv() {
+            Ok(ExclusiveCommand::Stop) => break,
+            Ok(ExclusiveCommand::Seek { time_secs, is_playing: play }) => {
+                let _ = unsafe { (lib.stream_request_pause)(stream) };
+                let target = (time_secs * dop_rate as f64) as u64;
+                let _ = dop.seek_to_frame(target);
+                is_paused = !play;
+                progress.samples_played.store(
+                    (time_secs * dop_rate as f64 * stream_channels as f64) as u64,
+                    Ordering::Relaxed,
+                );
+                let _ = if play {
+                    unsafe { (lib.stream_request_start)(stream) }
+                } else {
+                    AAUDIO_OK
+                };
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => break,
+        }
+
+        if is_paused {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        let available = unsafe { (lib.stream_get_available_frames)(stream) };
+        if available <= 0 {
+            thread::sleep(Duration::from_millis(5));
+            continue;
+        }
+
+        let max_frames = (available as usize).min(4096);
+        let mut dop_buf: Vec<u8> = Vec::with_capacity(max_frames * stream_channels as usize * 3);
+        let produced = match dop.next_frames(&mut dop_buf, max_frames) {
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        if produced == 0 {
+            // EOF
+            break;
+        }
+        progress
+            .samples_played
+            .fetch_add(produced as u64 * stream_channels as u64, Ordering::Relaxed);
+
+        let written = unsafe {
+            (lib.stream_write)(
+                stream,
+                dop_buf.as_ptr() as *const std::os::raw::c_void,
+                produced as i32,
+                timeout_ns,
+            )
+        };
+        if written < 0 {
+            break;
+        }
+        if written < produced as i64 {
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     unsafe {
         (lib.stream_request_stop)(stream);
         (lib.stream_close)(stream);

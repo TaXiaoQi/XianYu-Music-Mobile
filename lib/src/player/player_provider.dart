@@ -625,8 +625,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _playRemote(item);
       } else {
         await _updateRgGain(item.path);
+        final s = _ref.read(settingsProvider).valueOrNull;
+        final isDsd = _isDsdPath(item.path);
         final useExclusive =
-            _ref.read(settingsProvider).valueOrNull?.usbExclusiveOutput ?? false;
+            (s?.usbExclusiveOutput ?? false) ||
+                (isDsd && (s?.dsdNativePassthrough ?? false));
         var started = false;
         if (useExclusive) {
           await _stopExclusive();
@@ -719,8 +722,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _startUrl(url);
   }
 
-  /// 音质阶梯（低 → 高），与设置页可选档位一致。
-  static const List<String> _qualityLadder = ['128k', '192k', '320k', 'flac'];
+  /// 音质阶梯（低 → 高），与设置页可选档位一致（对齐桌面端 rank 排序）。
+  static const List<String> _qualityLadder = [
+    'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
+    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+  ];
 
   /// 音质候选链：首选优先，其后向下降级（对齐桌面端 resolveOnlinePlayQuality
   /// 的 'lower' 行为）。首选不在阶梯内时先试首选再全阶梯降级。
@@ -734,6 +740,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       url != null && RegExp(r'^https?://').hasMatch(url);
 
   static bool _isRemotePath(String path) => path.startsWith('remote://');
+
+  /// 是否为 DSD 容器文件（dsf/dff/dsd），走原生 DoP 直出。
+  static bool _isDsdPath(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.dsf') ||
+        lower.endsWith('.dff') ||
+        lower.endsWith('.dsd');
+  }
 
   // ==================== 音量平衡（ReplayGain 响度均衡） ====================
 

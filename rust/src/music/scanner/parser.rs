@@ -261,6 +261,27 @@ fn normalize_codec(short_name: &str) -> String {
 }
 
 fn detect_audio_identity(path: &Path, ext: &str) -> AudioIdentity {
+    // DSD（dsf/dff）：symphonia 不识别，改用自带头解析。
+    if matches!(ext.to_ascii_lowercase().as_str(), "dsf" | "dff") {
+        if let Ok(info) = crate::player::dsd_dop::parse_dsd_info(&path.to_string_lossy()) {
+            let container = match info.format {
+                crate::player::dsd_dop::DsdFormat::Dsf => "dsf".to_string(),
+                crate::player::dsd_dop::DsdFormat::Dff => "dff".to_string(),
+            };
+            return AudioIdentity {
+                container: Some(container),
+                codec: Some("dsd".to_string()),
+                duration_seconds: Some(info.duration_seconds()),
+                sample_rate: Some(info.dsd_rate),
+                bit_depth: Some(1),
+            };
+        }
+        return AudioIdentity {
+            container: Some(normalize_container_from_extension(ext)),
+            ..Default::default()
+        };
+    }
+
     let file = match File::open(path) {
         Ok(file) => file,
         Err(_) => {

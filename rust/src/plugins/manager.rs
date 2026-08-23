@@ -452,8 +452,11 @@ fn pick_qualities(plugin: &PluginInfo, source: &str, preferred: &str) -> Vec<Str
     if declared.iter().any(|q| q == preferred) || declared.is_empty() {
         out.push(preferred.to_string());
     }
-    // 常见档位从高到低补齐，仅保留插件声明过的。
-    for q in ["320k", "128k"] {
+    // 常见档位从高到低补齐，仅保留插件声明过的（对齐桌面端 12 档 rank 排序）。
+    for q in [
+        "master", "atmos_plus", "atmos", "dolby", "vinyl", "hires", "flac24bit", "flac",
+        "320k", "192k", "128k", "mgg",
+    ] {
         if q != preferred && declared.iter().any(|d| d == q) {
             out.push(q.to_string());
         }

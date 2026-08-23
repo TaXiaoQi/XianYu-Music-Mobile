@@ -1,3 +1,4 @@
+pub mod dsd_dop;
 pub mod spectrum;
 pub mod qmc2;
 pub mod equalizer;

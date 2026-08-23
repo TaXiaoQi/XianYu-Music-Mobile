@@ -286,8 +286,11 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return (destPath, usedQuality);
   }
 
-  /// 音质阶梯（低 → 高），与播放器/设置页档位一致；候选链向下降级。
-  static const List<String> _qualityLadder = ['128k', '192k', '320k', 'flac'];
+  /// 音质阶梯（低 → 高），与播放器/设置页档位一致（对齐桌面端 rank 排序）；候选链向下降级。
+  static const List<String> _qualityLadder = [
+    'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
+    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+  ];
 
   static List<String> _qualityCandidates(String preferred) {
     final desc = _qualityLadder.reversed.toList();

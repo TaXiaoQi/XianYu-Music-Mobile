@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../src/core/settings.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
@@ -14,6 +15,7 @@ class SettingsPage extends ConsumerWidget {
     final settings = ref.watch(settingsProvider).valueOrNull;
     final notifier = ref.read(settingsProvider.notifier);
     final auth = ref.watch(authProvider);
+    final exclusivePlaying = ref.watch(playerProvider).usbExclusive;
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -89,8 +91,12 @@ class SettingsPage extends ConsumerWidget {
               _tile(
                 context,
                 icon: Icons.volume_up_outlined,
-                title: '音量',
-                trailing: _volumeSlider(settings, notifier),
+                title: exclusivePlaying ? '音量（直出已锁定）' : '音量',
+                trailing: _volumeSlider(settings, notifier,
+                    locked: exclusivePlaying),
+                subtitle: exclusivePlaying
+                    ? 'Bit-perfect / DSD 直出中，音量由 DAC 控制'
+                    : null,
               ),
               _tile(
                 context,
@@ -106,6 +112,14 @@ class SettingsPage extends ConsumerWidget {
                 subtitle: '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
                 value: settings?.usbExclusiveOutput ?? false,
                 onChanged: (v) => notifier.setUsbExclusiveOutput(v),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.graphic_eq_outlined,
+                title: 'DSD 原生直出',
+                subtitle: 'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+                value: settings?.dsdNativePassthrough ?? false,
+                onChanged: (v) => notifier.setDsdNativePassthrough(v),
               ),
               _switchTile(
                 context,
@@ -328,10 +342,14 @@ class SettingsPage extends ConsumerWidget {
       {required IconData icon,
       required String title,
       required Widget trailing,
-      VoidCallback? onTap}) {
+      VoidCallback? onTap,
+      String? subtitle}) {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       trailing: onTap == null
           ? trailing
           : Row(mainAxisSize: MainAxisSize.min, children: [
@@ -411,12 +429,13 @@ class SettingsPage extends ConsumerWidget {
     });
   }
 
-  Widget _volumeSlider(AppSettings? s, SettingsNotifier n) {
+  Widget _volumeSlider(AppSettings? s, SettingsNotifier n,
+      {required bool locked}) {
     return SizedBox(
       width: 120,
       child: Slider(
         value: s?.volume ?? 1.0,
-        onChanged: (v) => n.setVolume(v),
+        onChanged: locked ? null : (v) => n.setVolume(v),
       ),
     );
   }
@@ -533,10 +552,18 @@ class SettingsPage extends ConsumerWidget {
     final choice = await showSheetDialog<_Choice>(
       context,
       (_) => _choiceSheet(context, const [
-        _Choice('128k', '128k'),
-        _Choice('192k', '192k'),
-        _Choice('320k', '320k'),
-        _Choice('标准无损', 'flac'),
+        _Choice('低清 (96k)', 'mgg'),
+        _Choice('普通', '128k'),
+        _Choice('中等', '192k'),
+        _Choice('HQ', '320k'),
+        _Choice('SQ (无损)', 'flac'),
+        _Choice('Hi-Res', 'flac24bit'),
+        _Choice('高解析度', 'hires'),
+        _Choice('黑胶', 'vinyl'),
+        _Choice('杜比全景声', 'dolby'),
+        _Choice('臻品音质', 'atmos'),
+        _Choice('臻品全景声', 'atmos_plus'),
+        _Choice('臻品母带', 'master'),
       ], cur, labelOf: (v) => v as String),
     );
     if (choice != null) {
