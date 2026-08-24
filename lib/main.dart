@@ -1,28 +1,15 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
 import 'src/core/app_logger.dart';
 import 'src/core/rust_init.dart';
 import 'src/plugin/plugin_updates.dart';
-import 'l10n/gen/app_localizations.dart';
-import 'pages/account/account_page.dart';
-import 'pages/effects/effects_page.dart';
-import 'pages/favorites/favorites_page.dart';
-import 'pages/home/home_page.dart';
-import 'pages/library/library_page.dart';
-import 'pages/player/player_page.dart';
-import 'pages/recent/recent_page.dart';
-import 'pages/search/search_page.dart';
-import 'pages/settings/music_sources_page.dart';
-import 'pages/settings/scan_folders_page.dart';
-import 'pages/settings/settings_page.dart';
-import 'pages/settings/toolbar_settings_page.dart';
 import 'src/auth/account_api.dart';
 import 'src/player/player_provider.dart';
 
@@ -31,28 +18,12 @@ Future<void> main() async {
   final container = ProviderContainer();
   _installErrorReporting(container);
 
-  // 预热液态玻璃 shader，避免首次显示时卡顿。
-  try {
-    await LiquidGlassWidgets.initialize();
-  } catch (_) {
-    // 忽略：液态玻璃为可选视觉增强，不可用时降级即可。
-  }
+  // 尽早触发 rust 初始化（与首帧渲染并行），缩短「打开→可交互」的等待。
+  container.read(rustInitProvider);
 
-  // 初始化系统 MediaSession / 控制中心音频服务
-  try {
-    audioHandler = await AudioService.init(
-      builder: () => XianYuAudioHandler(),
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'cc.xymusic.mobile.channel.audio',
-        androidNotificationChannelName: '弦予音乐播放控制',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
-        androidNotificationIcon: 'mipmap/ic_launcher',
-      ),
-    );
-  } catch (_) {
-    // 忽略：桌面端或不支持环境静默回退
-  }
+  // 液态玻璃 shader 预热改为后台，不再 await 阻塞首帧（秒开优先，预热随后完成）。
+  // 液态玻璃为可选视觉增强，不可用时降级即可，不影响主功能。
+  unawaited(LiquidGlassWidgets.initialize().catchError((Object _) {}));
 
   runApp(
     LiquidGlassWidgets.wrap(
@@ -63,6 +34,30 @@ Future<void> main() async {
           child: XianYuApp(),
         ),
       ),
+    ),
+  );
+
+  // 总体首帧计时（从 main 开始）
+  final t0 = Stopwatch()..start();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    debugPrint('[startup] first frame rendered in ${t0.elapsedMilliseconds}ms (from main)');
+  });
+
+  // 后台初始化系统 MediaSession / 控制中心音频服务，不阻塞首帧。
+  // audioHandler 全链路已做空值保护（audioHandler?.xxx），init 完成前可安全降级。
+  unawaited(
+    AudioService.init(
+      builder: () => XianYuAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'cc.xymusic.mobile.channel.audio',
+        androidNotificationChannelName: '弦予音乐播放控制',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+      ),
+    ).then(
+      (h) => audioHandler = h,
+      onError: (Object _, StackTrace _) {},
     ),
   );
 }
@@ -104,7 +99,13 @@ void _installErrorReporting(ProviderContainer container) {
   };
 }
 
-/// 应用程序路由与关键页面预热器（含全屏精致 Splash / Warmup 加载屏）
+/// 轻量启动器：等待 rust 初始化完成后触发启动插件自动更新。
+///
+/// 原先的离屏「12 页预热沙盒」已在 Impeller 渲染器下判为多余：Impeller 引擎启动时
+/// 即预编译自身 shader 集，不再有 Skia 时代"首次进入画面卡"的运行时编译卡顿；
+/// 而该沙盒会在首帧后立刻于主线程全量构建 12 个页面，正好在用户刚看到首页时抢占
+/// CPU/GPU，造成"打开后呆滞"的观感。冷启动实测（release 冷启 ≈3s，其中引擎占大头）
+/// 也指向：不要拿启动帧做重活，因此这里移除沙盒，换取"点开即响应"。
 class AppWarmupRunner extends ConsumerStatefulWidget {
   const AppWarmupRunner({super.key, required this.child});
 
@@ -115,43 +116,17 @@ class AppWarmupRunner extends ConsumerStatefulWidget {
 }
 
 class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
-  bool _warmedUp = false;
-  bool _minTimeElapsed = false;
-
   @override
   void initState() {
     super.initState();
 
-    // rust 初始化完成（无论成功/失败）后尝试结束预热
+    // rust 初始化完成（无论成功/失败）即触发启动插件自动更新。
     ref.listenManual(rustInitProvider, (prev, next) {
-      if (next.hasValue || next.hasError) _tryFinish();
+      if (next.hasValue || next.hasError) _runStartupPluginAutoUpdate();
     });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 预留足够时间预热所有离屏 Widget、Shader 和渲染管线 (约 800ms)
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) {
-          setState(() {
-            _minTimeElapsed = true;
-          });
-          _tryFinish();
-        }
-      });
-    });
-  }
-
-  void _tryFinish() {
-    if (!mounted || _warmedUp || !_minTimeElapsed) return;
-    final init = ref.read(rustInitProvider);
-    if (!init.hasValue && !init.hasError) return;
-    setState(() {
-      _warmedUp = true;
-    });
-    _runStartupPluginAutoUpdate();
   }
 
   void _runStartupPluginAutoUpdate() {
-    // _runStartupPluginAutoUpdate 在 warmup 完成后调用，此时 context 有效。
     runPluginAutoUpdateOnStartup(
       ProviderScope.containerOf(context),
       (message) => AppLogger.instance.log('plugin', message),
@@ -159,71 +134,5 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 该 Stack 位于 MaterialApp 之上，无 Directionality 祖先，需显式提供文本方向
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: Stack(
-        children: [
-          widget.child,
-
-          // 离屏预热沙盒（隐藏在全屏加载页后）
-          // 页面在 MaterialApp 之外渲染，需提供完整应用上下文（Directionality/MediaQuery/Theme/Localizations）
-          if (!_warmedUp)
-            Positioned.fill(
-              child: TickerMode(
-                enabled: true,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.001,
-                    child: MaterialApp(
-                      debugShowCheckedModeBanner: false,
-                      // 预热沙盒会构建全部页面，需与真实应用一致提供本地化，
-                      // 否则依赖 Localizations 的页面在预热即崩溃。
-                      localizationsDelegates: const [
-                        AppLocalizations.delegate,
-                        GlobalMaterialLocalizations.delegate,
-                        GlobalWidgetsLocalizations.delegate,
-                        GlobalCupertinoLocalizations.delegate,
-                      ],
-                      supportedLocales: AppLocalizations.supportedLocales,
-                      home: Scaffold(
-                        body: SingleChildScrollView(
-                          physics: const NeverScrollableScrollPhysics(),
-                          child: SizedBox(
-                            width: 400,
-                            height: 800,
-                            child: Stack(
-                              children: const [
-                                HomePage(),
-                                LibraryPage(),
-                                PlayerPage(),
-                                AccountPage(),
-                                SettingsPage(),
-                                FavoritesPage(),
-                                RecentPage(),
-                                SearchPage(),
-                                EffectsPage(),
-                                MusicSourcesPage(),
-                                ScanFoldersPage(),
-                                ToolbarSettingsPage(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => widget.child;
 }

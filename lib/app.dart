@@ -20,6 +20,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
   int? _cachedAccent;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
+  bool _loggedHomeFirstFrame = false;
 
   @override
   void initState() {
@@ -87,7 +88,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       GlobalCupertinoLocalizations.delegate,
     ];
 
-    // 启动页由 main.dart 的 AppWarmupRunner 统一负责（等待 rust 初始化完成）。
+    // 首页（真实 router）首个帧渲染完成埋点
+    if (init.hasValue && !_loggedHomeFirstFrame) {
+      _loggedHomeFirstFrame = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        debugPrint('[startup] home first frame rendered');
+      });
+    }
+
+    // 冷启动「首页优先」：只在 rust 初始化【报错】时才拦下显示重试页；加载中、
+    // 成功都立刻挂起真实路由（初始 /home 首帧即渲染），不再整屏空白等待 rust。
+    // rust 在 main() 里已提前与首帧并行初始化，首页的数据访问大多走异步
+    // FutureProvider（加载态显示转圈/空态），不会因未就绪而崩溃。
     //
     // key 关键：语言切换会改变 locale。若仍复用同一个 MaterialApp.router 实例做
     // 增量 locale 重建，会与 go_router 各分支 Navigator 的瞬态重建竞态，命中
@@ -95,10 +107,23 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     // 现场表现为切换语言黑屏。改用随 locale 变化的 key 强制整体重挂载：旧子树
     //（含全部 Navigator）整体销毁、新子树（回到初始路由 /home）干净重建，不做
     // 增量路由 reconfigure，从而彻底规避该竞态。语言切换重挂载一次开销可接受。
-    return init.hasValue
-        ? MaterialApp.router(
+    return init.hasError
+        ? MaterialApp(
+            title: '弦予音乐',
+            debugShowCheckedModeBanner: false,
+            theme: theme,
+            darkTheme: darkTheme,
+            themeMode: themeMode,
+            locale: locale,
+            localizationsDelegates: l10nDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: _InitErrorScreen(
+              error: init.error!,
+              onRetry: () => ref.invalidate(rustInitProvider),
+            ),
+          )
+        : MaterialApp.router(
             key: ValueKey('app-${locale ?? const Locale('system')}'),
-            // XianYuApp 的 context 位于 MaterialApp 之上、无 Localizations 祖先，
             // 必须用可空版 Localizations.of（生成的 AppLocalizations.of 内含 !，会空指针崩溃）。
             title: Localizations.of<AppLocalizations>(context, AppLocalizations)
                     ?.appTitle ??
@@ -111,24 +136,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             localizationsDelegates: l10nDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
-          )
-        : MaterialApp(
-            title: '弦予音乐',
-            debugShowCheckedModeBanner: false,
-            theme: theme,
-            darkTheme: darkTheme,
-            themeMode: themeMode,
-            locale: locale,
-            localizationsDelegates: l10nDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: init.when(
-              data: (_) => const SizedBox.shrink(),
-              loading: () => const SizedBox.shrink(),
-              error: (e, _) => _InitErrorScreen(
-                error: e,
-                onRetry: () => ref.invalidate(rustInitProvider),
-              ),
-            ),
           );
   }
 

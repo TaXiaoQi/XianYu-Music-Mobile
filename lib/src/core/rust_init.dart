@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../rust/frb_generated.dart' as frb;
@@ -8,5 +9,8 @@ import '../rust/frb_generated.dart' as frb;
 /// 按平台加载正确的库名：Android `libxianyu_core.so`、Windows `xianyu_core.dll`
 /// 等。手动传裸名 `xianyu_core` 会导致 Android 下 dlopen 失败。
 final rustInitProvider = FutureProvider<void>((ref) async {
+  final sw = Stopwatch()..start();
+  debugPrint('[startup] rust init begin');
   await frb.RustLib.init(forceSameCodegenVersion: false);
+  debugPrint('[startup] rust init done in ${sw.elapsedMilliseconds}ms');
 });

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 自适应图标：前景层 ic_launcher_foreground 本身在 tool/regen_icon.dart 里
-     已内置 20% 安全内边距（内容占画布 60%，配合圆形遮罩不裁边），无需再套
-     16% inset 二次缩放——否则 logo 被双重缩小，桌面上看着偏小。 -->
+<!-- 正常图标：前景直接铺 source.jpg 白底方框（logo 居中），背景同为白色，
+     无缝呈现一个标准白底图标。源图 logo 自带充足内边距，无需 inset 二次缩放。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/ic_launcher_background"/>
   <foreground android:drawable="@drawable/ic_launcher_foreground"/>
