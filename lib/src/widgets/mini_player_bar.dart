@@ -142,7 +142,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
-          : _frostedSurface(content),
+          : _frostedSurface(context, content),
     );
   }
 
@@ -153,12 +153,20 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       // 高 58，圆角取一半成胶囊。
       shape: const LiquidRoundedRectangle(borderRadius: 29),
       settings: liquidGlassSettings(isDark),
+      quality: GlassQuality.premium,
       child: SizedBox(height: 58, child: content),
     );
   }
 
   /// 毛玻璃表面：液态玻璃关闭时使用。
-  Widget _frostedSurface(Widget content) {
+  Widget _frostedSurface(BuildContext context, Widget content) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.white.withValues(alpha: 0.52);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.40);
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
@@ -166,12 +174,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         child: Container(
           height: 58,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: bg,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
+                color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
                 blurRadius: 26,
                 offset: const Offset(0, 8),
               ),

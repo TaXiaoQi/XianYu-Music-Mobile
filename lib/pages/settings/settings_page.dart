@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/user_avatar.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
@@ -18,15 +19,15 @@ class SettingsPage extends ConsumerWidget {
     (
       '偏好',
       [
-        _CategoryEntry('常规', Icons.tune, '语言、导航栏', '/settings/general'),
-        _CategoryEntry('外观', Icons.palette_outlined, '主题、主题色、液态玻璃、歌词', '/settings/appearance'),
-        _CategoryEntry('播放', Icons.play_circle_outline, '音量、双击播放、音量平衡', '/settings/playback'),
+        _CategoryEntry('常规', Icons.tune, '语言、反馈、存储', '/settings/general'),
+        _CategoryEntry('外观', Icons.palette_outlined, '主题、主题色、液态玻璃、导航栏、歌词', '/settings/appearance'),
+        _CategoryEntry('播放', Icons.play_circle_outline, '音量、双击播放、在线音质、输出', '/settings/playback'),
       ],
     ),
     (
       '在线与音源',
       [
-        _CategoryEntry('音源', Icons.library_music_outlined, '默认音质、回退策略、输出设备、直出', '/settings/sources'),
+        _CategoryEntry('音源', Icons.library_music_outlined, '插件管理：导入、启用、卸载', '/music-sources'),
         _CategoryEntry('下载', Icons.download_outlined, '音质、路径、并发、嵌入', '/settings/download'),
       ],
     ),
@@ -53,26 +54,37 @@ class SettingsPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          150 + MediaQuery.of(context).padding.bottom,
-        ),
+      body: Stack(
         children: [
-          _AccountCard(
-            auth: auth,
-            onTap: () => context.push('/account'),
+          // 内容列表：顶部预留顶栏高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              GlassTopBar.height(context),
+              16,
+              150 + MediaQuery.of(context).padding.bottom,
+            ),
+            children: [
+              _AccountCard(
+                auth: auth,
+                onTap: () => context.push('/account'),
+              ),
+              for (final (header, entries) in _groups) ...[
+                _sectionHeader(context, header),
+                _CardGroup(children: [
+                  for (var i = 0; i < entries.length; i++)
+                    _CategoryTile(entry: entries[i]),
+                ]),
+              ],
+            ],
           ),
-          for (final (header, entries) in _groups) ...[
-            _sectionHeader(context, header),
-            _CardGroup(children: [
-              for (var i = 0; i < entries.length; i++)
-                _CategoryTile(entry: entries[i]),
-            ]),
-          ],
+          // 顶栏高斯模糊毛玻璃。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(title: const Text('设置')),
+          ),
         ],
       ),
     );

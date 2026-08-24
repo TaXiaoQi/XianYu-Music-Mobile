@@ -414,6 +414,7 @@ class _GlassControlCard extends ConsumerWidget {
       return AdaptiveGlass(
         shape: const LiquidRoundedRectangle(borderRadius: 26),
         settings: liquidGlassSettings(isDark),
+        quality: GlassQuality.premium,
         child: content,
       );
     }

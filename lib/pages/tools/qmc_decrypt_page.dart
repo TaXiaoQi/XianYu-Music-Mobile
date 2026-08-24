@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/mini_player_bar.dart';
@@ -121,6 +122,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('QMC 文件解密')),
       body: Stack(
         children: [
@@ -243,7 +245,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 4),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(

@@ -8,8 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../core/app_colors.dart';
 import '../core/app_logger.dart';
+import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
@@ -41,7 +41,8 @@ final navBarInsetProvider = Provider<double>((ref) {
 LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
       glassColor: isDark
           ? const Color.fromARGB(10, 255, 255, 255)
-          : const Color.fromARGB(32, 255, 255, 255),
+          // 亮色：提高玻璃白度，避免 premium 折射把底色压成深/黑（默认太透明的老问题）。
+          : const Color.fromARGB(130, 255, 255, 255),
       blur: isDark ? 6.5 : 5.0,
       thickness: 22,
       refractiveIndex: 1.38,
@@ -495,44 +496,95 @@ class _FixedChrome extends StatelessWidget {
 }
 
 /// 固定式底栏：贴合屏幕底部，含安全区内边距。
-class _FixedNavBar extends StatelessWidget {
+class _FixedNavBar extends ConsumerWidget {
   const _FixedNavBar({required this.index, required this.onSelect});
 
   final int index;
   final ValueChanged<int> onSelect;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final frosted =
+        ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
+            true;
+    final liquid =
+        ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            false;
+    final haptic = hapticStrengthFromInt(
+      ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
+    );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: appCardColor(context),
-        border: Border(
-          top: BorderSide(
-            color: scheme.onSurface.withValues(alpha: 0.08),
+    // 固定底栏内容（与材质设置无关，共用布局）。
+    final bar = SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 64,
+        // 与悬浮底栏一致：左右留边，避免最外侧 tab 的选中色块贴屏幕边缘。
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              for (var i = 0; i < bottomNavItems.length; i++)
+                Expanded(
+                  child: _NavTab(
+                    item: bottomNavItems[i],
+                    selected: i == index,
+                    onTap: () {
+                      triggerHaptic(haptic);
+                      onSelect(i);
+                    },
+                  ),
+                ),
+            ],
           ),
         ),
       ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 58,
-          // 与悬浮底栏一致：左右留边，避免最外侧 tab 的选中色块贴屏幕边缘。
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                for (var i = 0; i < bottomNavItems.length; i++)
-                  Expanded(
-                    child: _NavTab(
-                      item: bottomNavItems[i],
-                      selected: i == index,
-                      onTap: () => onSelect(i),
-                    ),
-                  ),
-              ],
+    );
+
+    // 液态玻璃（固定底栏）：与悬浮底栏同一套材质，折射 + 高光。
+    if (liquid) {
+      return AdaptiveGlass(
+        shape: const LiquidRoundedRectangle(borderRadius: 26),
+        settings: liquidGlassSettings(isDark),
+        quality: GlassQuality.premium,
+        child: bar,
+      );
+    }
+
+    if (!frosted) {
+      // 关闭毛玻璃：纯色底栏。
+      return Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
+          border: Border(
+            top: BorderSide(
+              color: scheme.onSurface.withValues(alpha: 0.08),
             ),
+          ),
+        ),
+        child: bar,
+      );
+    }
+
+    // 毛玻璃：半透明白/暗 + BackdropFilter 高斯模糊（安卓原生磨砂质感）。
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          color: isDark
+              ? const Color(0xCC222222)
+              : const Color(0xD9F7F7F9),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 1,
+                color: scheme.onSurface.withValues(alpha: 0.08),
+              ),
+              bar,
+            ],
           ),
         ),
       ),
@@ -674,6 +726,9 @@ class _LiquidNavBar extends ConsumerWidget {
     final liquid =
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true;
+    final haptic = hapticStrengthFromInt(
+      ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
+    );
 
     // 水平留 10px：选中色块占满整个 Expanded 宽度，不加内边距的话
     // 最左/最右 tab 的色块会顶到胶囊两端，被玻璃圆角边界裁切。
@@ -686,7 +741,10 @@ class _LiquidNavBar extends ConsumerWidget {
               child: _NavTab(
                 item: bottomNavItems[i],
                 selected: i == index,
-                onTap: () => onSelect(i),
+                onTap: () {
+                  triggerHaptic(haptic);
+                  onSelect(i);
+                },
               ),
             ),
         ],
@@ -694,7 +752,7 @@ class _LiquidNavBar extends ConsumerWidget {
     );
 
     if (liquid) return _liquidGlass(context, tabs);
-    return _frostedGlass(tabs);
+    return _frostedGlass(context, tabs);
   }
 
   /// 液态玻璃：shader 折射 + 高光，胶囊形状。
@@ -705,25 +763,36 @@ class _LiquidNavBar extends ConsumerWidget {
       // 不能用 LiquidOval：那是真椭圆，宽高比大时两端会被压成尖角。
       shape: const LiquidRoundedRectangle(borderRadius: 30),
       settings: liquidGlassSettings(isDark),
-      child: SizedBox(height: 60, child: tabs),
+      // premium：真液态玻璃 shader（折射 + 镜面高光 + 色差），
+      // 而非 standard 的轻量 2D 模糊（毛玻璃观感）。
+      quality: GlassQuality.premium,
+      child: SizedBox(height: 70, child: tabs),
     );
   }
 
   /// 毛玻璃：轻量回退方案。
-  Widget _frostedGlass(Widget tabs) {
+  Widget _frostedGlass(BuildContext context, Widget tabs) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 主题感知：亮色下应为白底磨砂玻璃，暗色下为深色玻璃。
+    final bg = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.white.withValues(alpha: 0.52);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.40);
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
         child: Container(
-          height: 60,
+          height: 70,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.07),
+            color: bg,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.18),
                 blurRadius: 26,
                 offset: const Offset(0, 8),
               ),
@@ -1117,6 +1186,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           panelWidget = AdaptiveGlass(
             shape: const LiquidRoundedRectangle(borderRadius: 24),
             settings: liquidGlassSettings(isDark),
+            quality: GlassQuality.premium,
             child: SizedBox(width: panelWidth, child: panelBody),
           );
         } else {

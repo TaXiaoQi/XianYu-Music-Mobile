@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
 /// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
@@ -170,7 +171,7 @@ class _WallpaperCard extends StatelessWidget {
     return Material(
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      color: appCardColor(context),
       child: InkWell(
         onTap: () => _openPreview(context),
         child: Column(
@@ -694,7 +695,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
             child: Container(
               height: 160,
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: _picked == null

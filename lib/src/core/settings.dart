@@ -64,8 +64,11 @@ class AppSettings {
     this.showLyricsRomaji = false,
     this.lyricFontName = '',
     this.lyricFontPath = '',
-    this.liquidGlass = true,
+    this.liquidGlass = false,
     this.playerLiquidGlass = true,
+    this.frostedGlass = true,
+    this.hapticStrength = 1,
+    this.streamCacheSizeMB = 500,
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = true,
     this.navBarPosition = NavBarPosition.bottom,
@@ -132,6 +135,14 @@ class AppSettings {
   final int lyricOffsetMs;
   final bool liquidGlass;
   final bool playerLiquidGlass;
+
+  /// 安卓原生毛玻璃材质：顶栏与固定底栏使用 BackdropFilter 高斯模糊磨砂。false 时回退纯色。
+  final bool frostedGlass;
+  /// 触觉反馈力度：0=轻，1=正常，2=重。
+  final int hapticStrength;
+  /// 在线播放流式缓存上限（MB）。
+  final int streamCacheSizeMB;
+
   final List<String> scanFormats;
 
   /// 底栏样式：true 为悬浮毛玻璃胶囊，false 为固定式底栏。
@@ -212,6 +223,9 @@ class AppSettings {
     int? lyricOffsetMs,
     bool? liquidGlass,
     bool? playerLiquidGlass,
+    bool? frostedGlass,
+    int? hapticStrength,
+    int? streamCacheSizeMB,
     List<String>? scanFormats,
     bool? floatingNavBar,
     NavBarPosition? navBarPosition,
@@ -262,6 +276,9 @@ class AppSettings {
       lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
+      frostedGlass: frostedGlass ?? this.frostedGlass,
+      hapticStrength: hapticStrength ?? this.hapticStrength,
+      streamCacheSizeMB: streamCacheSizeMB ?? this.streamCacheSizeMB,
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       navBarPosition: navBarPosition ?? this.navBarPosition,
@@ -297,6 +314,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     final savedName = prefs.getString('lyricFontName') ?? '';
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
+    // 液态玻璃 与 毛玻璃材质 二选一（互斥）：毛玻璃（顶栏+底栏高斯模糊）优先。
+    final liquidGlass = prefs.getBool('liquidGlass') ?? false;
+    final frostedGlass =
+        (prefs.getBool('frostedGlass') ?? true) && !liquidGlass;
+
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
       playMode: prefs.getInt('playMode') ?? 0,
@@ -329,8 +351,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
-      liquidGlass: prefs.getBool('liquidGlass') ?? true,
+      liquidGlass: liquidGlass,
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
+      frostedGlass: frostedGlass,
+      hapticStrength: prefs.getInt('hapticStrength') ?? 1,
+      streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
       floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
       navBarPosition:
@@ -415,6 +440,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
       prefs.setBool('liquidGlass', next.liquidGlass),
       prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
+      prefs.setBool('frostedGlass', next.frostedGlass),
+      prefs.setInt('hapticStrength', next.hapticStrength),
+      prefs.setInt('streamCacheSizeMB', next.streamCacheSizeMB),
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
       prefs.setString('navBarPosition', next.navBarPosition.name),
@@ -462,8 +490,21 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
   Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
-  Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(liquidGlass: v));
-  Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerLiquidGlass: v));
+  Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(liquidGlass: v, frostedGlass: v ? false : null));
+  Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(frostedGlass: v, liquidGlass: v ? false : null));
+  Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(playerLiquidGlass: v));
+  Future<void> setHapticStrength(int v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(hapticStrength: v));
+  Future<void> setStreamCacheSizeMB(int v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(streamCacheSizeMB: v));
   Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));

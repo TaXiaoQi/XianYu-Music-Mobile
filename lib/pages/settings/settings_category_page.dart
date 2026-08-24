@@ -7,11 +7,11 @@ import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/audio/audio_devices.dart';
+import '../../src/rust/api.dart' as frb;
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
   general,
-  sources,
   appearance,
   playback,
   download,
@@ -20,7 +20,6 @@ enum SettingsCategory {
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
-        'sources' => SettingsCategory.sources,
         'appearance' => SettingsCategory.appearance,
         'playback' => SettingsCategory.playback,
         'download' => SettingsCategory.download,
@@ -32,7 +31,6 @@ enum SettingsCategory {
 
   String get title => switch (this) {
         SettingsCategory.general => '常规',
-        SettingsCategory.sources => '音源',
         SettingsCategory.appearance => '外观',
         SettingsCategory.playback => '播放',
         SettingsCategory.download => '下载',
@@ -103,8 +101,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     switch (category) {
       case SettingsCategory.general:
         return _general(context, ref, settings, notifier);
-      case SettingsCategory.sources:
-        return _sources(context, ref, settings, notifier);
       case SettingsCategory.appearance:
         return _appearance(context, ref, settings, notifier);
       case SettingsCategory.playback:
@@ -124,7 +120,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   List<Widget> _general(BuildContext context, WidgetRef ref, AppSettings? s,
       SettingsNotifier n) {
     return [
-      _sectionHeader(context, '语言与导航'),
+      _sectionHeader(context, '语言'),
       _CardGroup(
         children: [
           _tile(
@@ -134,6 +130,94 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: Text(_languageLabel(s?.language ?? AppLanguage.system)),
             onTap: () => _pickLanguage(context, ref, s),
           ),
+        ],
+      ),
+      _sectionHeader(context, '反馈'),
+      _CardGroup(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '触觉反馈力度',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '点击底部导航等操作的手感震动强度',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('轻')),
+                    ButtonSegment(value: 1, label: Text('正常')),
+                    ButtonSegment(value: 2, label: Text('重')),
+                  ],
+                  selected: {s?.hapticStrength ?? 1},
+                  onSelectionChanged: (v) => n.setHapticStrength(v.first),
+                  showSelectedIcon: false,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      _sectionHeader(context, '存储空间'),
+      const _StorageSettingsGroup(),
+    ];
+  }
+
+  // ---- 外观 ----
+  List<Widget> _appearance(BuildContext context, WidgetRef ref, AppSettings? s,
+      SettingsNotifier n) {
+    return [
+      _sectionHeader(context, '主题'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.palette_outlined,
+            title: '主题模式',
+            trailing: _themeLabel(s),
+            onTap: () => _pickThemeMode(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.color_lens_outlined,
+            title: '主题色',
+            trailing: _ColorDot(color: Color(s?.accentColor ?? 0xFFEC4141)),
+            onTap: () => _pickAccentColor(context, ref, s),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.blur_on_outlined,
+            title: '毛玻璃材质',
+            subtitle: '顶栏与底栏使用安卓原生高斯模糊磨砂',
+            value: s?.frostedGlass ?? true,
+            onChanged: (v) => n.setFrostedGlass(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.gradient_outlined,
+            title: '液态玻璃',
+            subtitle: '悬浮导航 shader 折射光影，与毛玻璃二选一',
+            value: s?.liquidGlass ?? false,
+            onChanged: (v) => n.setLiquidGlass(v),
+          ),
+        ],
+      ),
+      // 导航栏与底栏样式：由「常规」页迁入外观。
+      _sectionHeader(context, '导航栏与底栏'),
+      _CardGroup(
+        children: [
           _tile(
             context,
             icon: Icons.navigation_outlined,
@@ -166,116 +250,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               }),
               onTap: () => _pickSideBarExpandDirection(context, ref, s),
             ),
-        ],
-      ),
-    ];
-  }
-
-  // ---- 音源 ----
-  List<Widget> _sources(
-      BuildContext context, WidgetRef ref, AppSettings? s, SettingsNotifier n) {
-    return [
-      _sectionHeader(context, '在线音质'),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.high_quality_outlined,
-            title: '在线默认音质',
-            trailing: Text(s?.onlineDefaultQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, s, isOnline: true),
-          ),
-          _tile(
-            context,
-            icon: Icons.play_disabled_outlined,
-            title: '起播失败行为',
-            subtitle: '在线音源完全无法播放时的处理方式',
-            trailing:
-                Text(_failureBehaviorLabel(s?.onlineFailureBehavior ?? 'skip')),
-            onTap: () => _pickFailureBehavior(context, ref, s),
-          ),
-          _tile(
-            context,
-            icon: Icons.vertical_align_bottom_outlined,
-            title: '音质回退行为',
-            subtitle: '默认音质播放失败时如何切换音质档位',
-            trailing: Text(
-                _qualityFallbackLabel(s?.onlineQualityFallbackBehavior ?? 'lower')),
-            onTap: () => _pickQualityFallback(context, ref, s),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.swap_horiz_outlined,
-            title: '播放失败自动换源',
-            subtitle: '在线播放失败时自动在其他落雪音源搜索并播放同一首歌',
-            value: s?.autoSwitchSourceOnFailure ?? false,
-            onChanged: (v) => n.setAutoSwitchSourceOnFailure(v),
-          ),
-        ],
-      ),
-      _sectionHeader(context, '输出'),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.speaker_outlined,
-            title: '输出设备',
-            subtitle: 'USB 独占 / DSD 直出到所选设备，可查看设备支持格式',
-            trailing:
-                Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
-            onTap: () => _pickOutputDevice(context, ref),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.usb_outlined,
-            title: 'USB 独占输出 (Bit-perfect)',
-            subtitle:
-                '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
-            value: s?.usbExclusiveOutput ?? false,
-            onChanged: (v) => n.setUsbExclusiveOutput(v),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.graphic_eq_outlined,
-            title: 'DSD 原生直出',
-            subtitle:
-                'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
-            value: s?.dsdNativePassthrough ?? false,
-            onChanged: (v) => n.setDsdNativePassthrough(v),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  // ---- 外观 ----
-  List<Widget> _appearance(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n) {
-    return [
-      _sectionHeader(context, '主题'),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.palette_outlined,
-            title: '主题模式',
-            trailing: _themeLabel(s),
-            onTap: () => _pickThemeMode(context, ref, s),
-          ),
-          _tile(
-            context,
-            icon: Icons.color_lens_outlined,
-            title: '主题色',
-            trailing: _ColorDot(color: Color(s?.accentColor ?? 0xFFEC4141)),
-            onTap: () => _pickAccentColor(context, ref, s),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.blur_on_outlined,
-            title: '晶莹液态玻璃 (Liquid Glass)',
-            value: s?.liquidGlass ?? true,
-            onChanged: (v) => n.setLiquidGlass(v),
-          ),
         ],
       ),
       _sectionHeader(context, '歌词显示'),
@@ -352,6 +326,76 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               onChanged: (v) => n.setVolumeBalancePreventClipping(v),
             ),
           ],
+        ],
+      ),
+      // 以下两组原属「音源」页，随重构并入播放页，与桌面端播放设置对齐。
+      _sectionHeader(context, '在线音质'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.high_quality_outlined,
+            title: '在线默认音质',
+            trailing: Text(s?.onlineDefaultQuality ?? '320k'),
+            onTap: () => _pickQuality(context, ref, s, isOnline: true),
+          ),
+          _tile(
+            context,
+            icon: Icons.play_disabled_outlined,
+            title: '起播失败行为',
+            subtitle: '在线音源完全无法播放时的处理方式',
+            trailing:
+                Text(_failureBehaviorLabel(s?.onlineFailureBehavior ?? 'skip')),
+            onTap: () => _pickFailureBehavior(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.vertical_align_bottom_outlined,
+            title: '音质回退行为',
+            subtitle: '默认音质播放失败时如何切换音质档位',
+            trailing:
+                Text(_qualityFallbackLabel(s?.onlineQualityFallbackBehavior ?? 'lower')),
+            onTap: () => _pickQualityFallback(context, ref, s),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.swap_horiz_outlined,
+            title: '播放失败自动换源',
+            subtitle: '在线播放失败时自动在其他落雪音源搜索并播放同一首歌',
+            value: s?.autoSwitchSourceOnFailure ?? false,
+            onChanged: (v) => n.setAutoSwitchSourceOnFailure(v),
+          ),
+        ],
+      ),
+      _sectionHeader(context, '输出'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.speaker_outlined,
+            title: '输出设备',
+            subtitle: 'USB 独占 / DSD 直出到所选设备，可查看设备支持格式',
+            trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
+            onTap: () => _pickOutputDevice(context, ref),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.usb_outlined,
+            title: 'USB 独占输出 (Bit-perfect)',
+            subtitle:
+                '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+            value: s?.usbExclusiveOutput ?? false,
+            onChanged: (v) => n.setUsbExclusiveOutput(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.graphic_eq_outlined,
+            title: 'DSD 原生直出',
+            subtitle:
+                'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+            value: s?.dsdNativePassthrough ?? false,
+            onChanged: (v) => n.setDsdNativePassthrough(v),
+          ),
         ],
       ),
     ];
@@ -1200,4 +1244,144 @@ class _Choice {
   final String label;
   final dynamic value;
   const _Choice(this.label, this.value);
+}
+
+/// 常规 → 存储空间：与桌面端 SettingsGeneral 对齐的在线播放流式缓存管理。
+class _StorageSettingsGroup extends ConsumerStatefulWidget {
+  const _StorageSettingsGroup();
+
+  @override
+  ConsumerState<_StorageSettingsGroup> createState() =>
+      _StorageSettingsGroupState();
+}
+
+class _StorageSettingsGroupState
+    extends ConsumerState<_StorageSettingsGroup> {
+  static const _kMinMB = 1;
+  static const _kMaxMB = 10240;
+
+  int? _currentBytes;
+  int? _maxBytes;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final c = await frb.streamCacheCurrentBytes();
+      final m = await frb.streamCacheMaxBytes();
+      if (!mounted) return;
+      setState(() {
+        _currentBytes = c.toInt();
+        _maxBytes = m.toInt();
+      });
+    } catch (_) {
+      // 后端未就绪时静默。
+    }
+  }
+
+  static String _fmtBytes(int b) {
+    if (b < 1024) return '$b B';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB';
+    if (b < 1024 * 1024 * 1024) {
+      return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(b / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Future<void> _pickLimit() async {
+    final s = ref.read(settingsProvider).valueOrNull;
+    final notifier = ref.read(settingsProvider.notifier);
+    final controller =
+        TextEditingController(text: (s?.streamCacheSizeMB ?? 500).toString());
+    var chosen = 0;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('播放缓存上限'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入 1 - 10240 MB',
+            suffixText: ' MB',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(controller.text.trim());
+              chosen = (v ?? 500).clamp(_kMinMB, _kMaxMB);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (chosen <= 0) return;
+    await notifier.setStreamCacheSizeMB(chosen);
+    await frb.setStreamCacheMaxSizeBytes(
+      bytes: BigInt.from(chosen * 1024 * 1024),
+    );
+    await _refresh();
+  }
+
+  Future<void> _clear() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await frb.clearStreamCache();
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(settingsProvider).valueOrNull;
+    final limitMB = s?.streamCacheSizeMB ?? 500;
+    final cur = _currentBytes;
+    final max = _maxBytes ?? limitMB * 1024 * 1024;
+    final scheme = Theme.of(context).colorScheme;
+    return _CardGroup(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.sd_storage_outlined),
+          title: const Text('播放缓存上限'),
+          subtitle: const Text('在线播放的临时音源文件最大缓存量'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text('$limitMB MB',
+                style: TextStyle(color: scheme.onSurfaceVariant)),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+          ]),
+          onTap: _pickLimit,
+        ),
+        ListTile(
+          leading: const Icon(Icons.cleaning_services_outlined),
+          title: const Text('清理在线播放缓存'),
+          subtitle: Text(
+            cur == null
+                ? '读取中…'
+                : '当前 ${_fmtBytes(cur)} / 上限 ${_fmtBytes(max)}',
+          ),
+          trailing: TextButton(
+            onPressed: (cur ?? 0) == 0 ? null : _clear,
+            child: Text(_busy ? '清理中…' : '清理'),
+          ),
+        ),
+      ],
+    );
+  }
 }

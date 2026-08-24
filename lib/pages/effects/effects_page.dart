@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/effects/sound_effect_provider.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
 /// 音效页：EQ / 变速变调 / 混响 / 空间音效 / 高级音效。
@@ -17,73 +18,82 @@ class EffectsPage extends ConsumerWidget {
     final locked = ref.watch(playerProvider).usbExclusive;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('音效'),
-        actions: [
-          TextButton.icon(
-            onPressed: locked ? null : () => notifier.resetAll(),
-            icon: const Icon(Icons.restart_alt, size: 18),
-            label: const Text('重置'),
-          ),
-        ],
-      ),
-      body: Column(
+      body: Stack(
         children: [
-          if (locked)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: scheme.primary.withValues(alpha: 0.35)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+          IgnorePointer(
+            ignoring: locked,
+            child: Opacity(
+              opacity: locked ? 0.5 : 1.0,
+              child: ListView(
+                // 顶部预留顶栏高度：静止时内容位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
+                padding: EdgeInsets.only(
+                    top: GlassTopBar.height(context), bottom: 150),
                 children: [
-                  Icon(Icons.lock_outline,
-                      size: 16, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  if (locked)
+                    Container(
+                      width: double.infinity,
+                      margin:
+                          const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: scheme.primary.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock_outline,
+                              size: 16, color: scheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Bit-perfect / DSD 直出中，音效已锁定',
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.primary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  _sectionHeader(context, '均衡器'),
+                  _EqSection(settings: settings, notifier: notifier),
+                  _sectionHeader(context, '变速变调'),
+                  _PitchRateSection(settings: settings, notifier: notifier),
+                  _sectionHeader(context, '混响'),
+                  _ReverbSection(settings: settings, notifier: notifier),
+                  _sectionHeader(context, '空间音效'),
+                  _SpatialSection(settings: settings, notifier: notifier),
+                  _sectionHeader(context, '高级音效'),
+                  _AdvancedSection(settings: settings, notifier: notifier),
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'Bit-perfect / DSD 直出中，音效已锁定',
-                      style: TextStyle(fontSize: 13, color: scheme.primary),
+                      '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。',
+                      style: TextStyle(fontSize: 12, color: scheme.outline),
                     ),
                   ),
                 ],
               ),
             ),
-          Expanded(
-            child: IgnorePointer(
-              ignoring: locked,
-              child: Opacity(
-                opacity: locked ? 0.5 : 1.0,
-                child: ListView(
-                  padding: const EdgeInsets.only(bottom: 150),
-                  children: [
-                    _sectionHeader(context, '均衡器'),
-                    _EqSection(settings: settings, notifier: notifier),
-                    _sectionHeader(context, '变速变调'),
-                    _PitchRateSection(settings: settings, notifier: notifier),
-                    _sectionHeader(context, '混响'),
-                    _ReverbSection(settings: settings, notifier: notifier),
-                    _sectionHeader(context, '空间音效'),
-                    _SpatialSection(settings: settings, notifier: notifier),
-                    _sectionHeader(context, '高级音效'),
-                    _AdvancedSection(settings: settings, notifier: notifier),
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。',
-                        style: TextStyle(fontSize: 12, color: scheme.outline),
-                      ),
-                    ),
-                  ],
+          ),
+          // 顶栏高斯模糊毛玻璃。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              title: const Text('音效'),
+              actions: [
+                TextButton.icon(
+                  onPressed: locked ? null : () => notifier.resetAll(),
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('重置'),
                 ),
-              ),
+              ],
             ),
           ),
         ],

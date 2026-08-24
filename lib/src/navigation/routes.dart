@@ -14,6 +14,7 @@ import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/settings/settings_category_page.dart';
+import '../../pages/settings/music_sources_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/feedback/feedback_page.dart';
@@ -102,6 +103,11 @@ final appRouter = GoRouter(
           state.pathParameters['category'] ?? 'general',
         ),
       ),
+    ),
+    // 音源插件管理页（从设置页「音源」进入）。
+    GoRoute(
+      path: '/music-sources',
+      builder: (context, state) => const MusicSourcesPage(),
     ),
     // 意见反馈页（从设置页进入）。
     GoRoute(

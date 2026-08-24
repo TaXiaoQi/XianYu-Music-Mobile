@@ -51,13 +51,28 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
       },
     );
+    // 红色 seed 派生出的 tertiary 是橄榄/棕褐色系，页面用它会整片泛褐。
+    // 统一把 tertiary 修正为与主色一致的红系，保证「选红色就是红色」。
+    final lightScheme = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.light,
+    );
     _lightTheme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: seed,
-        brightness: Brightness.light,
+      colorScheme: lightScheme.copyWith(
+        tertiary: lightScheme.primary,
+        onTertiary: lightScheme.onPrimary,
+        tertiaryContainer: lightScheme.primaryContainer,
+        onTertiaryContainer: lightScheme.onPrimaryContainer,
       ),
       // 统一页面底色与控件底色（对齐设置页规范）。
       scaffoldBackgroundColor: const Color(0xFFF4F4F6),
+      // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFFF4F4F6),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       cardTheme: const CardThemeData(
         color: Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
@@ -78,9 +93,21 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceContainer: const Color(0xFF2c2c2c),
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
+        // 暗色下同样把偏棕褐的 tertiary 统一为红系。
+        tertiary: darkBase.primary,
+        onTertiary: darkBase.onPrimary,
+        tertiaryContainer: darkBase.primaryContainer,
+        onTertiaryContainer: darkBase.onPrimaryContainer,
       ),
       // 统一页面底色与控件底色（对齐设置页规范）。
       scaffoldBackgroundColor: const Color(0xFF222222),
+      // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF222222),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       cardTheme: const CardThemeData(
         color: Color(0xFF303030),
         surfaceTintColor: Colors.transparent,

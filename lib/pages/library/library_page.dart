@@ -7,6 +7,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../favorites/favorites_page.dart';
@@ -49,46 +50,66 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
 
+    final tabBar = TabBar(
+      controller: _tab,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      tabs: const [
+        Tab(text: '歌单'),
+        Tab(text: '全部'),
+        Tab(text: '歌手'),
+        Tab(text: '专辑'),
+        Tab(text: '文件夹'),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(
-        title: const Text('音乐库'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(libraryProvider.notifier).load(),
+      body: Stack(
+        children: [
+          // 内容主体：顶部避让顶栏（含 TabBar 高度），Loading/错误态与 TabBarView 均在毛玻璃顶栏下方。
+          Padding(
+            padding: EdgeInsets.only(
+              top: GlassTopBar.height(context, bottom: tabBar),
+            ),
+            child: lib.loading
+                ? const Center(child: CircularProgressIndicator())
+                : lib.error != null
+                    ? _ErrorView(
+                        message: lib.error!,
+                        onRetry: () =>
+                            ref.read(libraryProvider.notifier).load(),
+                      )
+                    : TabBarView(
+                        controller: _tab,
+                        children: [
+                          _PlaylistsTab(),
+                          _AllSongsTab(),
+                          _ArtistsTab(),
+                          _AlbumsTab(),
+                          _FoldersTab(),
+                        ],
+                      ),
+          ),
+          // 顶栏高斯模糊毛玻璃（含歌单/全部/歌手/专辑/文件夹 TabBar）。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              title: const Text('音乐库'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () =>
+                      ref.read(libraryProvider.notifier).load(),
+                ),
+              ],
+              bottom: tabBar,
+            ),
           ),
         ],
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(text: '歌单'),
-            Tab(text: '全部'),
-            Tab(text: '歌手'),
-            Tab(text: '专辑'),
-            Tab(text: '文件夹'),
-          ],
-        ),
       ),
-      body: lib.loading
-          ? const Center(child: CircularProgressIndicator())
-          : lib.error != null
-              ? _ErrorView(
-                  message: lib.error!,
-                  onRetry: () => ref.read(libraryProvider.notifier).load(),
-                )
-              : TabBarView(
-                  controller: _tab,
-                  children: [
-                    _PlaylistsTab(),
-                    _AllSongsTab(),
-                    _ArtistsTab(),
-                    _AlbumsTab(),
-                    _FoldersTab(),
-                  ],
-                ),
     );
   }
 }

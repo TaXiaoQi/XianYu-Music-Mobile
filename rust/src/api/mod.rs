@@ -1019,3 +1019,28 @@ pub async fn recognize_with_pcm(pcm: Vec<u8>) -> Result<String, String> {
     let resp = crate::recognize::recognize_with_pcm(pcm).await?;
     serde_json::to_string(&resp).map_err(|e| e.to_string())
 }
+
+// =========================================================================
+// 在线播放流式缓存（常规 → 存储空间）
+// 与桌面端 SettingsGeneral 的「存储空间」分组对齐。
+// =========================================================================
+
+/// 设置在线播放缓存上限（字节）。
+pub fn set_stream_cache_max_size_bytes(bytes: u64) {
+    crate::player::stream_cache::set_max_cache_size(bytes);
+}
+
+/// 当前在线播放缓存占用（字节）。
+pub fn stream_cache_current_bytes() -> u64 {
+    crate::player::stream_cache::current_cache_size()
+}
+
+/// 在线播放缓存上限（字节）。
+pub fn stream_cache_max_bytes() -> u64 {
+    crate::player::stream_cache::max_cache_size()
+}
+
+/// 清空在线播放缓存。
+pub fn clear_stream_cache() {
+    crate::player::stream_cache::clear_all();
+}

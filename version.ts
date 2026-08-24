@@ -8,4 +8,4 @@
  *
  * 前端代码需读取版本号时，统一由同步脚本写入生成，不要直接改 account_api.dart 的 appVersion。
  */
-export const APP_VERSION = '1.0.0-bate3';
+export const APP_VERSION = '1.0.0-bate4';

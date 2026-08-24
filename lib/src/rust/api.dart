@@ -785,6 +785,22 @@ Future<void> cancelRecognizeSystemAudio() =>
 Future<String> recognizeWithPcm({required List<int> pcm}) =>
     RustLib.instance.api.crateApiRecognizeWithPcm(pcm: pcm);
 
+/// 设置在线播放缓存上限（字节）。
+Future<void> setStreamCacheMaxSizeBytes({required BigInt bytes}) =>
+    RustLib.instance.api.crateApiSetStreamCacheMaxSizeBytes(bytes: bytes);
+
+/// 当前在线播放缓存占用（字节）。
+Future<BigInt> streamCacheCurrentBytes() =>
+    RustLib.instance.api.crateApiStreamCacheCurrentBytes();
+
+/// 在线播放缓存上限（字节）。
+Future<BigInt> streamCacheMaxBytes() =>
+    RustLib.instance.api.crateApiStreamCacheMaxBytes();
+
+/// 清空在线播放缓存。
+Future<void> clearStreamCache() =>
+    RustLib.instance.api.crateApiClearStreamCache();
+
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {
   final String? baseUrl;
