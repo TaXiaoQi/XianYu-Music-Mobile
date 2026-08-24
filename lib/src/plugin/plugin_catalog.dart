@@ -575,6 +575,7 @@ PluginSearchResult mfItemToSearchResult(
     interval: interval,
     img: _extractCover(item),
     songId: item['id'],
+    rawData: Map<String, dynamic>.from(item),
   );
 }
 

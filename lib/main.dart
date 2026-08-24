@@ -4,12 +4,14 @@ import 'dart:ui';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
 import 'src/core/app_logger.dart';
 import 'src/core/rust_init.dart';
 import 'src/plugin/plugin_updates.dart';
+import 'l10n/gen/app_localizations.dart';
 import 'pages/account/account_page.dart';
 import 'pages/effects/effects_page.dart';
 import 'pages/favorites/favorites_page.dart';
@@ -67,23 +69,38 @@ Future<void> main() async {
 }
 
 /// 全局错误上报（fire-and-forget，失败静默），与桌面端 main.ts 对齐。
+///
+/// 除上报远端外，同时写入本地诊断日志（AppLogger 常驻环形缓冲，
+/// 开启「问题诊断」后导出的 txt 会包含崩溃堆栈），便于本地排查。
 void _installErrorReporting(ProviderContainer container) {
   FlutterError.onError = (details) {
+    final msg = details.exceptionAsString();
+    final stack = details.stack?.toString() ?? '';
+    AppLogger.instance
+        .log('fatal', '未捕获异常: $msg\n$stack');
     FlutterError.presentError(details);
-    container.read(accountApiProvider).reportError(
-          errorType: 'flutter',
-          errorMessage: details.exceptionAsString(),
-          errorStack: details.stack?.toString() ?? '',
-          page: 'global',
-        );
+    try {
+      container.read(accountApiProvider).reportError(
+            errorType: 'flutter',
+            errorMessage: msg,
+            errorStack: stack,
+            page: 'global',
+          );
+    } catch (_) {
+      // 上报失败静默，不影响主流程。
+    }
   };
   PlatformDispatcher.instance.onError = (error, stack) {
-    container.read(accountApiProvider).reportError(
-          errorType: 'platform',
-          errorMessage: error.toString(),
-          errorStack: stack.toString(),
-          page: 'global',
-        );
+    AppLogger.instance
+        .log('fatal', '平台异常: $error\n$stack');
+    try {
+      container.read(accountApiProvider).reportError(
+            errorType: 'platform',
+            errorMessage: error.toString(),
+            errorStack: stack.toString(),
+            page: 'global',
+          );
+    } catch (_) {}
     return true;
   };
 }
@@ -208,6 +225,15 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner>
                     opacity: 0.001,
                     child: MaterialApp(
                       debugShowCheckedModeBanner: false,
+                      // 预热沙盒会构建全部页面，需与真实应用一致提供本地化，
+                      // 否则依赖 Localizations 的页面在预热即崩溃。
+                      localizationsDelegates: const [
+                        AppLocalizations.delegate,
+                        GlobalMaterialLocalizations.delegate,
+                        GlobalWidgetsLocalizations.delegate,
+                        GlobalCupertinoLocalizations.delegate,
+                      ],
+                      supportedLocales: AppLocalizations.supportedLocales,
                       home: Scaffold(
                         body: SingleChildScrollView(
                           physics: const NeverScrollableScrollPhysics(),

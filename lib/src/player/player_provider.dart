@@ -1084,18 +1084,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (source.isEmpty) return null;
 
       if (format == 'musicfree') {
-        // MusicFree 插件：调用 getMusicUrl(musicItem, quality)
-        final response = await engine.call(
-          source.first.id,
-          'getMusicUrl',
-          [musicInfo, quality],
+        // MusicFree 插件：调用 getMediaSource(musicItem, quality)，内部做音质降级映射。
+        return await engine.getMusicFreeUrl(
+          source.first,
+          musicInfo,
+          preferred: quality,
         );
-        if (response is String && response.isNotEmpty) return response;
-        if (response is Map) {
-          final url = (response['url'] ?? response['link']) as String?;
-          if (url != null && url.isNotEmpty) return url;
-        }
-        return null;
       }
 
       final result =

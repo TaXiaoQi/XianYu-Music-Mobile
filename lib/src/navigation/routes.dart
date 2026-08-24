@@ -198,12 +198,14 @@ const bottomNavItems = [
 ];
 
 /// 底栏/侧栏导航项标题（跟随当前本地化语言）。
+/// 用可空版 Localizations.of：生成的 AppLocalizations.of 内含 !，在无
+/// Localizations 祖先的 context（如预热沙盒）调用会空指针崩溃。
 String navTitle(BuildContext context, BottomNavItem item) {
-  final l = AppLocalizations.of(context);
+  final l = Localizations.of<AppLocalizations>(context, AppLocalizations);
   return switch (item.location) {
-    '/home' => l.navHome,
-    '/library' => l.navLibrary,
-    '/effects' => l.navEffects,
-    _ => l.navSettings,
+    '/home' => l?.navHome ?? '主界面',
+    '/library' => l?.navLibrary ?? '音乐库',
+    '/effects' => l?.navEffects ?? '音效',
+    _ => l?.navSettings ?? '设置',
   };
 }

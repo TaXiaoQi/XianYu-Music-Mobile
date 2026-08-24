@@ -90,7 +90,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     // 启动页由 main.dart 的 AppWarmupRunner 统一负责（等待 rust 初始化完成）
     return init.hasValue
         ? MaterialApp.router(
-            title: AppLocalizations.of(context).appTitle,
+            // XianYuApp 的 context 位于 MaterialApp 之上、无 Localizations 祖先，
+            // 必须用可空版 Localizations.of（生成的 AppLocalizations.of 内含 !，会空指针崩溃）。
+            title: Localizations.of<AppLocalizations>(context, AppLocalizations)
+                    ?.appTitle ??
+                '弦予音乐',
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,

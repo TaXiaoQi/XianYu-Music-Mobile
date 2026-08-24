@@ -235,6 +235,9 @@ class PluginSearchResult {
   final String? copyrightId;
   final List<Map<String, dynamic>> types;
   final Map<String, dynamic>? lxTypes;
+  /// MusicFree 插件搜索返回的原始条目（含 title/artist/id 及平台私有字段）。
+  /// 播放直链解析 getMediaSource 需透传该原始对象，仅补充 platform。
+  final Map<String, dynamic>? rawData;
 
   PluginSearchResult({
     required this.name,
@@ -252,6 +255,7 @@ class PluginSearchResult {
     this.copyrightId,
     this.types = const [],
     this.lxTypes,
+    this.rawData,
   });
 
   Map<String, dynamic> toJson() => {
@@ -270,6 +274,7 @@ class PluginSearchResult {
         'copyrightId': copyrightId,
         'types': types,
         '_types': lxTypes,
+        'rawData': rawData,
       };
 
   factory PluginSearchResult.fromJson(Map<String, dynamic> json) =>
@@ -293,6 +298,9 @@ class PluginSearchResult {
             const [],
         lxTypes: json['_types'] is Map
             ? (json['_types'] as Map).cast<String, dynamic>()
+            : null,
+        rawData: json['rawData'] is Map
+            ? (json['rawData'] as Map).cast<String, dynamic>()
             : null,
       );
 }

@@ -410,12 +410,23 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final pluginId = songJson['pluginId'] as String?;
     final sourceKey = songJson['source'] as String? ?? '';
     final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
+    final format = songJson['format'] as String? ?? 'lx';
     if (pluginId == null || pluginId.isEmpty) throw StateError('插件信息缺失');
 
     final engine = await _ref.read(pluginEngineProvider.future);
     final sources = await engine.store.loadSources();
     final source = sources.where((s) => s.id == pluginId).toList();
     if (source.isEmpty) throw StateError('插件未启用');
+
+    if (format == 'musicfree') {
+      // MusicFree 插件：getMediaSource + 内部音质降级映射。
+      return await engine.getMusicFreeUrl(
+            source.first,
+            musicInfo,
+            preferred: quality,
+          ) ??
+          '';
+    }
 
     final result =
         await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);

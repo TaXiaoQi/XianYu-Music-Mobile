@@ -259,6 +259,7 @@ class PluginEngine {
             'action': action,
             'info': {
               'type': data['type'],
+              'quality': data['type'],
               'musicInfo': data['musicInfo'],
             },
           }
@@ -278,6 +279,192 @@ class PluginEngine {
       }
       return null;
     }
+  }
+
+  // ==================== MusicFree 播放直链 ====================
+
+  /// 音质阶梯（低 → 高，对应 12 档 rank）。第 5 档（flac）起为无损。
+  static const List<String> _qualityLadder = [
+    'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
+    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+  ];
+
+  /// 常见插件音质别名 → 统一 12 档键（对齐桌面 normalizeQualityKey）。
+  static const Map<String, String> _qualityAliases = {
+    '96k': 'mgg', 'ogg96': 'mgg', 'mgg': 'mgg',
+    '128': '128k', '128k': '128k',
+    '192': '192k', '192k': '192k', 'ogg192': '192k',
+    '320': '320k', '320k': '320k', 'ogg320': '320k', 'exhigh': '320k',
+    'flac': 'flac', 'sq': 'flac', 'super': 'flac', 'lossless': 'flac',
+    'flac24': 'flac24bit', '24bit': 'flac24bit', '24bits': 'flac24bit',
+    '24_bit': 'flac24bit', 'flac24bit': 'flac24bit',
+    'hires': 'hires', 'hi-res': 'hires', 'hi_res': 'hires', 'hr': 'hires',
+    'vinyl': 'vinyl', 'dolby': 'dolby', 'atmos': 'atmos',
+    'galaxy': 'atmos', 'atmosplus': 'atmos_plus', 'atmos_plus': 'atmos_plus',
+    'atmos+': 'atmos_plus', 'galaxy51': 'atmos_plus', 'master': 'master',
+  };
+
+  static String? _normalizeQualityKey(dynamic raw) {
+    if (raw is! String) return null;
+    final normalized =
+        raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '').replaceAll('-', '_');
+    if (normalized.isEmpty) return null;
+    return _qualityLadder.contains(normalized) ? normalized : _qualityAliases[normalized];
+  }
+
+  /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）。
+  static String _qualityKeyToPluginString(String q) => q == 'mgg' ? '96k' : q;
+
+  static bool _isLossless(String q) =>
+      _qualityLadder.indexOf(q) >= _qualityLadder.indexOf('flac');
+
+  /// 内部键 → 旧式 MF 三档音质（对齐桌面 qualityKeyToMfQuality）。
+  static String _qualityKeyToMfQuality(String q) {
+    final rank = _qualityLadder.indexOf(q);
+    if (rank < 0) return 'standard';
+    if (rank >= 4) return 'lossless'; // 320k 及以上 → lossless 档
+    if (rank >= 3) return 'high'; // 320k → high
+    return 'standard';
+  }
+
+  /// 构建 MusicFree 音质候选（对齐桌面 buildNativePluginQualityPairs + 三档映射）。
+  ///
+  /// [declaredKeys] 为插件 supportedQualities 归一化后的原生键集合（可能为空）。
+  /// 原生键插件按 12 档降级（lower/higher/pause）依次尝试；旧三档插件走 standard/high/lossless。
+  static List<String> _musicFreeQualityCandidates(
+    String preferred,
+    String fallback,
+    Set<String> declaredKeys,
+  ) {
+    final ladderDesc = _qualityLadder.reversed.toList();
+    final base = ladderDesc;
+
+    if (declaredKeys.isNotEmpty && _qualityLadder.contains(preferred)) {
+      // 原生键插件：按降级方向生成候选（含无损档补充 'super'），仅保留声明过的键。
+      final candidates = <String>[];
+      final seen = <String>{};
+      void add(String qk) {
+        final pluginQ = _qualityKeyToPluginString(qk);
+        if (seen.add(pluginQ)) candidates.add(pluginQ);
+        if (_isLossless(qk) && seen.add('super')) candidates.add('super');
+      }
+
+      if (fallback == 'pause') {
+        add(preferred);
+      } else if (fallback == 'higher') {
+        final start = _qualityLadder.indexOf(preferred);
+        for (var i = start; i < _qualityLadder.length; i++) {
+          add(_qualityLadder[i]);
+        }
+      } else {
+        final start = base.indexOf(preferred);
+        final end = start == -1 ? base.length : start + 1;
+        for (var i = 0; i < end; i++) {
+          add(base[i]);
+        }
+      }
+      final filtered = candidates.where(declaredKeys.contains).toList();
+      if (filtered.isNotEmpty) return filtered;
+      // 声明键无一匹配时退回候选链首档，避免完全空候选。
+      return candidates.take(1).toList();
+    }
+
+    // 旧三档插件：首选映射 + 向下降级链。
+    final mf = _qualityKeyToMfQuality(preferred);
+    switch (fallback) {
+      case 'higher':
+        if (mf == 'standard') return ['standard', 'high', 'lossless'];
+        if (mf == 'high') return ['high', 'lossless'];
+        return ['lossless'];
+      case 'pause':
+        return [mf];
+      default: // lower
+        if (mf == 'lossless') return ['lossless', 'high', 'standard'];
+        if (mf == 'high') return ['high', 'standard'];
+        return ['standard'];
+    }
+  }
+
+  /// 解析 MusicFree 插件播放直链。
+  ///
+  /// 与桌面端 pluginGetMusicInfo 对齐：优先传原生音质键，其次 standard/high/lossless；
+  /// 参考包内同时带 url/headers。musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
+  Future<String?> getMusicFreeUrl(
+    PluginSource source,
+    Map<String, dynamic> songInfo, {
+    String preferred = '320k',
+    String fallback = 'lower',
+  }) async {
+    await ensureLoaded(source);
+    final meta = metadataOf(source.id);
+    final declaredRaw = meta?['supportedQualities'];
+    final declaredKeys = <String>{};
+    if (declaredRaw is List) {
+      for (final dq in declaredRaw) {
+        final norm = _normalizeQualityKey(dq);
+        if (norm != null) declaredKeys.add(norm);
+      }
+    }
+
+    // 优先透传搜索返回的原始条目（对齐桌面 getMediaSource(item.rawData, pluginName)），
+    // 仅补充 platform 与常见字段别名，避免丢 title/artist/id 导致解析失败。
+    final raw = songInfo['rawData'];
+    final musicItem = raw is Map<String, dynamic>
+        ? Map<String, dynamic>.from(raw)
+        : Map<String, dynamic>.from(songInfo);
+    if (musicItem['platform'] == null) {
+      musicItem['platform'] = source.name;
+    }
+    // 字段别名兜底：插件常读 title/artist/id，归一化字段可能在 raw 之外。
+    if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
+      musicItem['title'] = songInfo['name'];
+    }
+    if (!musicItem.containsKey('artist') && songInfo.containsKey('singer')) {
+      musicItem['artist'] = songInfo['singer'];
+    }
+    if (!musicItem.containsKey('id') &&
+        (((musicItem['id'] as dynamic)?.toString() ?? '').isEmpty) &&
+        songInfo.containsKey('songmid')) {
+      musicItem['id'] = songInfo['songmid'];
+    }
+    if (!musicItem.containsKey('songmid') && songInfo.containsKey('songmid')) {
+      musicItem['songmid'] = songInfo['songmid'];
+    }
+
+    final tryQs = _musicFreeQualityCandidates(preferred, fallback, declaredKeys);
+    for (final q in tryQs) {
+      try {
+        final response = await call(
+          source.id,
+          'getMediaSource',
+          [musicItem, q],
+        );
+        final url = _extractMfPlayableUrl(response);
+        if (url != null) return url;
+      } catch (_) {
+        // 单档失败继续下一档
+      }
+    }
+    return null;
+  }
+
+  static String? _extractMfPlayableUrl(dynamic response) {
+    if (response == null) return null;
+    if (response is String) {
+      return response.isNotEmpty &&
+              response.length <= 2048 &&
+              RegExp(r'^https?:').hasMatch(response)
+          ? response
+          : null;
+    }
+    if (response is Map) {
+      final obj = response.cast<String, dynamic>();
+      final url = (obj['url'] ?? obj['link'] ?? obj['playUrl']) as String?;
+      if (url != null && url.isNotEmpty && url.length <= 2048 && RegExp(r'^https?:').hasMatch(url)) {
+        return url;
+      }
+    }
+    return null;
   }
 
   /// 解析歌曲播放直链。
