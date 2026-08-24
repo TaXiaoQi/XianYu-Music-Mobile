@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/settings.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -49,24 +51,30 @@ final appRouter = GoRouter(
         );
       },
       branches: [
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/home',
-            builder: (context, state) => const HomePage(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/mine',
-            builder: (context, state) => const MinePage(),
-          ),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/effects',
-            builder: (context, state) => const EffectsPage(),
-          ),
-        ]),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/home',
+              builder: (context, state) => const HomePage(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/mine',
+              builder: (context, state) => const MinePage(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/effects',
+              builder: (context, state) => const EffectsPage(),
+            ),
+          ],
+        ),
       ],
     ),
     // 设置页（从「我的」页菜单与首页顶栏进入，二级推入页）。
@@ -75,16 +83,12 @@ final appRouter = GoRouter(
       builder: (context, state) => const SettingsPage(),
     ),
     // 搜索页（从主页搜索栏进入）。
-    GoRoute(
-      path: '/search',
-      builder: (context, state) => const SearchPage(),
-    ),
+    GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
     // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
     GoRoute(
       path: '/library',
       builder: (context, state) => LibraryPage(
-        initialTab:
-            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        initialTab: int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
       ),
     ),
     // 听歌识曲（从搜索页进入）。
@@ -93,15 +97,48 @@ final appRouter = GoRouter(
       builder: (context, state) => const RecognizePage(),
     ),
     // 播放页为全屏覆盖，不占底部导航。
+    // 开启预测返回时用 MaterialPage 命中主题 PredictiveBackPageTransitionsBuilder，
+    // 边缘侧滑可实时预览下层页面（与 PiliNara 全页面原生转场一致）；
+    // 关闭预测返回时保留纵向滑动转场：从底部滑入 / 向底部收回。
     GoRoute(
       path: '/player',
-      builder: (context, state) => const PlayerPage(),
+      pageBuilder: (context, state) {
+        final predictiveBack =
+            ProviderScope.containerOf(context, listen: false)
+                .read(settingsProvider)
+                .valueOrNull
+                ?.enablePredictiveBack ??
+            true;
+        if (predictiveBack) {
+          return MaterialPage<void>(
+            key: state.pageKey,
+            child: const PlayerPage(),
+          );
+        }
+        return CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: const Duration(milliseconds: 320),
+          reverseTransitionDuration: const Duration(milliseconds: 320),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            );
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            );
+          },
+          child: const PlayerPage(),
+        );
+      },
     ),
     // 账号页（从「我的」页进入）。
-    GoRoute(
-      path: '/account',
-      builder: (context, state) => const AccountPage(),
-    ),
+    GoRoute(path: '/account', builder: (context, state) => const AccountPage()),
     // 设置分类详情页（从设置导航页进入）。压在根 Navigator 上，
     // 避免 StatefulShellBranch 嵌套 Navigator 导致预测返回动画失效。
     GoRoute(
@@ -118,25 +155,16 @@ final appRouter = GoRouter(
       builder: (context, state) => const FeedbackPage(),
     ),
     // 关于页（从设置页进入）。
-    GoRoute(
-      path: '/about',
-      builder: (context, state) => const AboutPage(),
-    ),
+    GoRoute(path: '/about', builder: (context, state) => const AboutPage()),
     // 听歌排行榜（从设置页进入）。
     GoRoute(
       path: '/leaderboard',
       builder: (context, state) => const LeaderboardPage(),
     ),
     // 同步与备份（从设置页进入）。
-    GoRoute(
-      path: '/sync',
-      builder: (context, state) => const SyncPage(),
-    ),
+    GoRoute(path: '/sync', builder: (context, state) => const SyncPage()),
     // 插件管理（从设置页进入）。
-    GoRoute(
-      path: '/plugin',
-      builder: (context, state) => const PluginPage(),
-    ),
+    GoRoute(path: '/plugin', builder: (context, state) => const PluginPage()),
     // 我的歌单（从设置页进入）。
     GoRoute(
       path: '/playlists',
@@ -151,14 +179,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/favorites',
       builder: (context, state) => FavoritesPage(
-        initialTab:
-            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        initialTab: int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
       ),
     ),
-    GoRoute(
-      path: '/recent',
-      builder: (context, state) => const RecentPage(),
-    ),
+    GoRoute(path: '/recent', builder: (context, state) => const RecentPage()),
     // 下载管理（从设置页进入）。
     GoRoute(
       path: '/download',

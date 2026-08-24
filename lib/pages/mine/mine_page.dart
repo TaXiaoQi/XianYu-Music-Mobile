@@ -22,7 +22,7 @@ import '../playlist/playlists_page.dart' show PlaylistDetailPage;
 /// 「我的」页：搜索条 + 账号区 + 快捷入口四宫格（参考魅族音乐我的页布局）。
 ///
 /// 音乐库、歌单、收藏等曲库浏览统一从快捷入口与首页网格分流进入；
-/// 设置入口位于右上角菜单（底栏已无设置 Tab）。
+/// 设置入口位于右上角（底栏已无设置 Tab）。
 class MinePage extends ConsumerWidget {
   const MinePage({super.key});
 
@@ -59,95 +59,15 @@ class MinePage extends ConsumerWidget {
               title: const Text('我的'),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.menu_rounded),
-                  tooltip: '更多',
-                  onPressed: () => _showMenuSheet(context, ref),
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: '设置',
+                  onPressed: () => context.push('/settings'),
                 ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  /// 右上角菜单：设置 / 刷新音乐库 / 同步与备份 / 意见反馈 / 关于。
-  void _showMenuSheet(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-
-    showSheetDialog<void>(
-      context,
-      (ctx) {
-        // 弹窗压在根 Navigator 上，必须用弹窗自身的 ctx 关闭。
-        Widget item({
-          required IconData icon,
-          required String title,
-          required VoidCallback onTap,
-        }) {
-          return ListTile(
-            leading: Icon(icon, color: scheme.primary, size: 22),
-            title: Text(title),
-            onTap: () {
-              Navigator.pop(ctx);
-              onTap();
-            },
-          );
-        }
-
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
-                child: Text(
-                  '更多',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              item(
-                icon: Icons.settings_outlined,
-                title: '设置',
-                onTap: () => context.push('/settings'),
-              ),
-              item(
-                icon: Icons.refresh,
-                title: '刷新音乐库',
-                onTap: () {
-                  ref.read(libraryProvider.notifier).load();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('正在刷新音乐库'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-              ),
-              item(
-                icon: Icons.sync_rounded,
-                title: '同步与备份',
-                onTap: () => context.push('/sync'),
-              ),
-              item(
-                icon: Icons.feedback_outlined,
-                title: '意见反馈',
-                onTap: () => context.push('/feedback'),
-              ),
-              item(
-                icon: Icons.info_outline,
-                title: '关于',
-                onTap: () => context.push('/about'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -232,8 +152,11 @@ class _AccountArea extends ConsumerWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.music_note_rounded,
-                        color: Colors.white, size: 22),
+                    const Icon(
+                      Icons.music_note_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                     const SizedBox(width: 10),
                     Text(
                       '登录弦予音乐账号',
@@ -251,10 +174,7 @@ class _AccountArea extends ConsumerWidget {
           const SizedBox(height: 10),
           Text(
             '登录后同步你的歌单与设置',
-            style: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
       );
@@ -294,14 +214,18 @@ class _AccountArea extends ConsumerWidget {
                     Text(
                       user.nickname.isEmpty ? '未命名用户' : user.nickname,
                       style: const TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w600),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
                     Text(
                       '管理账号与安全',
                       style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -322,7 +246,10 @@ class _AccountArea extends ConsumerWidget {
       child: Text(
         char,
         style: TextStyle(
-            fontSize: 22, fontWeight: FontWeight.bold, color: scheme.onPrimary),
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          color: scheme.onPrimary,
+        ),
       ),
     );
   }
@@ -335,14 +262,21 @@ class _QuickEntries extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final favCount = ref.watch(favoritesProvider.select((s) => s.entries.length));
-    final recentCount = ref.watch(recentProvider.select((s) => s.entries.length));
+    final favCount = ref.watch(
+      favoritesProvider.select((s) => s.entries.length),
+    );
+    final recentCount = ref.watch(
+      recentProvider.select((s) => s.entries.length),
+    );
     final localCount = ref.watch(libraryProvider.select((s) => s.songs.length));
     final dl = ref.watch(downloadProvider);
-    final dlCount = dl.tasks
-            .where((t) =>
-                t.status == DownloadStatus.waiting ||
-                t.status == DownloadStatus.downloading)
+    final dlCount =
+        dl.tasks
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.waiting ||
+                  t.status == DownloadStatus.downloading,
+            )
             .length +
         dl.history.length;
 
@@ -367,14 +301,15 @@ class _QuickEntries extends ConsumerWidget {
                     color: scheme.primary.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
-                  child:
-                      Icon(icon, color: scheme.primary, size: 24),
+                  child: Icon(icon, color: scheme.primary, size: 24),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   label,
                   style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -436,11 +371,7 @@ class _QuickEntries extends ConsumerWidget {
 
 /// 分区头：左「标题 数量」，右操作（自建歌单带「新建」，收藏分区无）。
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    required this.count,
-    this.action,
-  });
+  const _SectionHeader({required this.title, required this.count, this.action});
 
   final String title;
   final int count;
@@ -460,8 +391,7 @@ class _SectionHeader extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             '$count',
-            style: TextStyle(
-                fontSize: 13, color: scheme.onSurfaceVariant),
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
           ),
           const Spacer(),
           ?action,
@@ -483,13 +413,15 @@ class _CardGroup extends StatelessWidget {
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
       if (i != children.length - 1) {
-        items.add(Divider(
-          height: 1,
-          indent: 82,
-          endIndent: 12,
-          thickness: 0.5,
-          color: scheme.onSurface.withValues(alpha: 0.06),
-        ));
+        items.add(
+          Divider(
+            height: 1,
+            indent: 82,
+            endIndent: 12,
+            thickness: 0.5,
+            color: scheme.onSurface.withValues(alpha: 0.06),
+          ),
+        );
       }
     }
 
@@ -527,31 +459,37 @@ class _MyPlaylistsSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
               minimumSize: const Size(0, 32),
               side: BorderSide(
-                  color: scheme.outlineVariant.withValues(alpha: 0.6)),
+                color: scheme.outlineVariant.withValues(alpha: 0.6),
+              ),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999)),
+                borderRadius: BorderRadius.circular(999),
+              ),
             ),
           ),
         ),
-        _CardGroup(children: [
-          for (final playlist in state.playlists)
-            _PlaylistRow(playlist: playlist),
-          _ImportPlaylistRow(),
-        ]),
+        _CardGroup(
+          children: [
+            for (final playlist in state.playlists)
+              _PlaylistRow(playlist: playlist),
+            _ImportPlaylistRow(),
+          ],
+        ),
         const SizedBox(height: 24),
       ],
     );
   }
 
   Future<void> _promptCreate(
-      BuildContext context, PlaylistManager manager) async {
+    BuildContext context,
+    PlaylistManager manager,
+  ) async {
     final name = await _promptPlaylistName(context, '新建歌单');
     if (name == null || name.trim().isEmpty) return;
     await manager.create(name.trim());
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已创建歌单「${name.trim()}」')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('已创建歌单「${name.trim()}」')));
   }
 }
 
@@ -594,9 +532,11 @@ class _PlaylistRow extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return InkWell(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => PlaylistDetailPage(playlistId: playlist.id),
-      )),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PlaylistDetailPage(playlistId: playlist.id),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
         child: Row(
@@ -616,13 +556,17 @@ class _PlaylistRow extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '共${playlist.songs.length}首歌',
                     style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -650,20 +594,25 @@ class _PlaylistRow extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading:
-                  Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
+              leading: Icon(
+                Icons.edit_outlined,
+                color: scheme.primary,
+                size: 22,
+              ),
               title: const Text('重命名歌单'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final name =
-                    await _promptPlaylistName(context, '重命名歌单');
+                final name = await _promptPlaylistName(context, '重命名歌单');
                 if (name == null || name.trim().isEmpty) return;
                 await manager.rename(playlist.id, name.trim());
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: const Color(0xFFEC4141), size: 22),
+              leading: Icon(
+                Icons.delete_outline,
+                color: const Color(0xFFEC4141),
+                size: 22,
+              ),
               title: const Text('删除歌单'),
               onTap: () {
                 Navigator.pop(ctx);
@@ -742,13 +691,14 @@ class _ImportPlaylistRow extends StatelessWidget {
                   Text(
                     '备份文件 / 本地文件夹 / 云端导入',
                     style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded,
-                size: 20, color: scheme.outline),
+            Icon(Icons.chevron_right_rounded, size: 20, color: scheme.outline),
           ],
         ),
       ),
@@ -759,10 +709,7 @@ class _ImportPlaylistRow extends StatelessWidget {
 /// 收藏分区（收藏歌单 / 收藏专辑）：头部无操作按钮，条目点击进在线详情。
 /// 无收藏时整个分区隐藏（对齐 QQ 音乐）。
 class _FavoriteCollectionsSection extends ConsumerWidget {
-  const _FavoriteCollectionsSection({
-    required this.kind,
-    required this.title,
-  });
+  const _FavoriteCollectionsSection({required this.kind, required this.title});
 
   /// collection kind：playlist | album。
   final String kind;
@@ -778,9 +725,9 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(title: title, count: items.length),
-        _CardGroup(children: [
-          for (final c in items) _CollectionRow(collection: c),
-        ]),
+        _CardGroup(
+          children: [for (final c in items) _CollectionRow(collection: c)],
+        ),
         const SizedBox(height: 24),
       ],
     );
@@ -826,26 +773,32 @@ class _CollectionRow extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     [
-                      if (collection.subtitle.isNotEmpty)
-                        collection.subtitle,
+                      if (collection.subtitle.isNotEmpty) collection.subtitle,
                       _pluginName(ref, collection.pluginId),
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.favorite,
-                  size: 20, color: Color(0xFFEC4141)),
+              icon: const Icon(
+                Icons.favorite,
+                size: 20,
+                color: Color(0xFFEC4141),
+              ),
               tooltip: '取消收藏',
               onPressed: () => ref
                   .read(favoritesProvider.notifier)

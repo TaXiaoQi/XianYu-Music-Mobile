@@ -66,122 +66,202 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         colorScheme: bgScheme,
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
-      child: Scaffold(
-        backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-          // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
-          _BlurredCoverBackground(current: current),
-          SafeArea(
-            child: Stack(
-              children: [
-                Column(
+      child: _DragDismissSheet(
+        child: Scaffold(
+          backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
+              _BlurredCoverBackground(current: current),
+              SafeArea(
+                child: Stack(
                   children: [
-                    // 顶栏
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
-                          Expanded(
-                            child: Text(
-                              _showLyrics ? '歌词' : '正在播放',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white.withValues(alpha: 0.9)),
-                            ),
-                          ),
-                          // 右侧留位 48px 占位，保持标题居中
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                    ),
-                    // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
-                    if (!_showLyrics) ...[
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _showLyrics = true;
-                          });
-                        },
-                        child: _BigCover(current: current),
-                      ),
-                      const Spacer(),
-                    ] else ...[
-                      Expanded(
-                        child: ClipRect(
-                          child: _LyricsView(
-                            current: current,
-                            position: player.position,
-                            isPlaying: player.isPlaying,
-                            visible: _showLyrics,
-                            onTap: () {
-                              setState(() {
-                                _showLyrics = false;
-                              });
-                            },
-                            onRomajiAvailable: (has) {
-                              if (_lyricsViewHasRomaji != has) {
-                                setState(() => _lyricsViewHasRomaji = has);
-                              }
-                            },
+                    Column(
+                      children: [
+                        // 顶栏
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 28,
+                                ),
+                                onPressed: () => Navigator.of(context).pop(),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  _showLyrics ? '歌词' : '正在播放',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                  ),
+                                ),
+                              ),
+                              // 右侧留位 48px 占位，保持标题居中
+                              const SizedBox(width: 48),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    // 毛玻璃控制卡
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                      child: _GlassControlCard(
-                        player: player,
-                        notifier: notifier,
-                        current: current,
-                      ),
+                        // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
+                        if (!_showLyrics) ...[
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _showLyrics = true;
+                              });
+                            },
+                            child: _BigCover(current: current),
+                          ),
+                          const Spacer(),
+                        ] else ...[
+                          Expanded(
+                            child: ClipRect(
+                              child: _LyricsView(
+                                current: current,
+                                position: player.position,
+                                isPlaying: player.isPlaying,
+                                visible: _showLyrics,
+                                onTap: () {
+                                  setState(() {
+                                    _showLyrics = false;
+                                  });
+                                },
+                                onRomajiAvailable: (has) {
+                                  if (_lyricsViewHasRomaji != has) {
+                                    setState(() => _lyricsViewHasRomaji = has);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        // 毛玻璃控制卡
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                          child: _GlassControlCard(
+                            player: player,
+                            notifier: notifier,
+                            current: current,
+                          ),
+                        ),
+                      ],
                     ),
+
+                    // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（与左侧下拉图标/居中标题在同一水平线）
+                    if (_showLyrics)
+                      Positioned(
+                        top: 4,
+                        right: 12,
+                        child: _LyricSettingsRail(
+                          fontSizeIdx: fontSizeIdx,
+                          showTranslation: showTranslation,
+                          showRomaji: showRomaji,
+                          offsetMs: offsetMs,
+                          hasTranslation: true,
+                          hasRomaji: hasRomaji,
+                          onFontSize: () =>
+                              _LyricsViewState._showFontSizeSheet(context, ref),
+                          onToggleTranslation: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setShowLyricsTranslation(!showTranslation);
+                          },
+                          onToggleRomaji: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setShowLyricsRomaji(!showRomaji);
+                          },
+                          onOffset: () =>
+                              _LyricsViewState._showOffsetSheet(context, ref),
+                        ),
+                      ),
                   ],
                 ),
-
-                // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（与左侧下拉图标/居中标题在同一水平线）
-                if (_showLyrics)
-                  Positioned(
-                    top: 4,
-                    right: 12,
-                    child: _LyricSettingsRail(
-                      fontSizeIdx: fontSizeIdx,
-                      showTranslation: showTranslation,
-                      showRomaji: showRomaji,
-                      offsetMs: offsetMs,
-                      hasTranslation: true,
-                      hasRomaji: hasRomaji,
-                      onFontSize: () =>
-                          _LyricsViewState._showFontSizeSheet(context, ref),
-                      onToggleTranslation: () {
-                        ref
-                            .read(settingsProvider.notifier)
-                            .setShowLyricsTranslation(!showTranslation);
-                      },
-                      onToggleRomaji: () {
-                        ref
-                            .read(settingsProvider.notifier)
-                            .setShowLyricsRomaji(!showRomaji);
-                      },
-                      onOffset: () =>
-                          _LyricsViewState._showOffsetSheet(context, ref),
-                    ),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// 播放页下拉收回手势：向下拖拽整页跟手位移，松手超过阈值或快速下甩
+/// 即关闭页面（关闭时由路由的下滑转场从当前位置继续收到底部），
+/// 否则弹回原位。歌词列表等内部纵向滚动手势由滚动视图优先接管。
+class _DragDismissSheet extends StatefulWidget {
+  const _DragDismissSheet({required this.child});
+  final Widget child;
+
+  @override
+  State<_DragDismissSheet> createState() => _DragDismissSheetState();
+}
+
+class _DragDismissSheetState extends State<_DragDismissSheet>
+    with SingleTickerProviderStateMixin {
+  static const _dismissDistance = 110.0;
+  static const _dismissVelocity = 700.0;
+
+  double _dragY = 0;
+  AnimationController? _settle;
+
+  @override
+  void dispose() {
+    _settle?.dispose();
+    super.dispose();
+  }
+
+  void _settleBack() {
+    _settle?.dispose();
+    _settle = null;
+    if (!mounted || _dragY <= 0) return;
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _settle = controller;
+    final tween = Tween<double>(begin: _dragY, end: 0);
+    controller.addListener(() {
+      if (!mounted) return;
+      setState(() => _dragY = tween.transform(controller.value));
+    });
+    controller.forward();
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    if (_settle != null) {
+      _settle!.dispose();
+      _settle = null;
+    }
+    final y = (_dragY + details.delta.dy).clamp(0.0, 4000.0);
+    if (y != _dragY) setState(() => _dragY = y);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    if (_dragY > _dismissDistance ||
+        details.velocity.pixelsPerSecond.dy > _dismissVelocity) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _settleBack();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onVerticalDragUpdate: _onDragUpdate,
+      onVerticalDragEnd: _onDragEnd,
+      onVerticalDragCancel: _settleBack,
+      child: Transform.translate(
+        offset: Offset(0, _dragY),
+        child: widget.child,
       ),
     );
   }
@@ -284,10 +364,10 @@ class _AmbientBackground extends StatelessWidget {
   }
 
   Widget _blob(Color color, double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      );
+    width: size,
+    height: size,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+  );
 }
 
 /// 大封面：本地/在线封面，无封面时回退渐变占位。
@@ -331,7 +411,7 @@ class _BigCover extends StatelessWidget {
                   radius: 31,
                   gradient: [
                     scheme.primary,
-                    scheme.primary.withValues(alpha: 0.72)
+                    scheme.primary.withValues(alpha: 0.72),
                   ],
                 ),
         ),
@@ -349,8 +429,11 @@ class _BigCover extends StatelessWidget {
           colors: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
         ),
       ),
-      child: Icon(Icons.music_note,
-          size: size * 0.34, color: Colors.white.withValues(alpha: 0.92)),
+      child: Icon(
+        Icons.music_note,
+        size: size * 0.34,
+        color: Colors.white.withValues(alpha: 0.92),
+      ),
     );
   }
 }
@@ -370,8 +453,10 @@ class _GlassControlCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final playerLiquid = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.playerLiquidGlass)) ??
+    final playerLiquid =
+        ref.watch(
+          settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
+        ) ??
         true;
 
     final content = Padding(
@@ -389,14 +474,12 @@ class _GlassControlCard extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(Icons.error_outline,
-                          size: 15, color: scheme.error),
+                      Icon(Icons.error_outline, size: 15, color: scheme.error),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           player.error!,
-                          style:
-                              TextStyle(fontSize: 12, color: scheme.error),
+                          style: TextStyle(fontSize: 12, color: scheme.error),
                         ),
                       ),
                     ],
@@ -432,7 +515,8 @@ class _GlassControlCard extends ConsumerWidget {
             color: glassColor,
             borderRadius: BorderRadius.circular(26),
             border: Border.all(
-                color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5)),
+              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+            ),
           ),
           child: content,
         ),
@@ -449,8 +533,9 @@ class _TitleRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isFav = ref.watch(favoritesProvider).contains(current.path);
-    final currentQuality =
-        ref.watch(playerProvider.select((s) => s.currentQuality));
+    final currentQuality = ref.watch(
+      playerProvider.select((s) => s.currentQuality),
+    );
     return Row(
       children: [
         Expanded(
@@ -462,9 +547,10 @@ class _TitleRow extends ConsumerWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(height: 3),
               Text(
@@ -488,7 +574,8 @@ class _TitleRow extends ConsumerWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
-                  color: (currentQuality != null &&
+                  color:
+                      (currentQuality != null &&
                           isLosslessQuality(currentQuality))
                       ? scheme.primary
                       : Color(0xFFEC4141).withValues(alpha: 0.9),
@@ -501,17 +588,16 @@ class _TitleRow extends ConsumerWidget {
             isFav ? Icons.favorite : Icons.favorite_border,
             color: isFav ? scheme.primary : null,
           ),
-          onPressed: () =>
-              ref.read(favoritesProvider.notifier).toggle(current),
+          onPressed: () => ref.read(favoritesProvider.notifier).toggle(current),
         ),
         if (current.isOnline)
           IconButton(
             icon: const Icon(Icons.download_outlined),
             onPressed: () {
               ref.read(downloadProvider.notifier).download(current);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('开始下载：${current.title}')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('开始下载：${current.title}')));
             },
           ),
         if (current.isOnline)
@@ -614,8 +700,9 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                 if (opts.isEmpty) {
                   return const Center(child: Text('暂无可切换音质'));
                 }
-                final cur = ref
-                    .watch(playerProvider.select((s) => s.currentQuality));
+                final cur = ref.watch(
+                  playerProvider.select((s) => s.currentQuality),
+                );
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   itemCount: opts.length,
@@ -630,9 +717,7 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                             ? Icons.check_circle
                             : Icons.radio_button_unchecked,
                         size: 20,
-                        color: active
-                            ? scheme.primary
-                            : Colors.grey.shade400,
+                        color: active ? scheme.primary : Colors.grey.shade400,
                       ),
                       onTap: active
                           ? null
@@ -642,11 +727,13 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                               Navigator.of(ctx).pop();
                               ScaffoldMessenger.of(ctx)
                                 ..hideCurrentSnackBar()
-                                ..showSnackBar(SnackBar(
-                                  content: Text(ok
-                                      ? '已切换为${_qualityLabel(q)}'
-                                      : '音质切换失败'),
-                                ));
+                                ..showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      ok ? '已切换为${_qualityLabel(q)}' : '音质切换失败',
+                                    ),
+                                  ),
+                                );
                             },
                     );
                   },
@@ -698,12 +785,14 @@ class _ProgressBar extends ConsumerWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_fmt(player.position),
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
-              Text(_fmt(dur),
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
+              Text(
+                _fmt(player.position),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+              Text(
+                _fmt(dur),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
             ],
           ),
         ),
@@ -726,8 +815,7 @@ class _Controls extends ConsumerWidget {
       children: [
         IconButton(
           iconSize: 21,
-          icon: Icon(icons[player.playMode],
-              color: scheme.onSurfaceVariant),
+          icon: Icon(icons[player.playMode], color: scheme.onSurfaceVariant),
           onPressed: notifier.cyclePlayMode,
         ),
         IconButton(
@@ -784,11 +872,11 @@ class _Controls extends ConsumerWidget {
 
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。
   void _showQueueSheet(
-      BuildContext context, WidgetRef ref, PlaybackState player) {
-    showSheetDialog<void>(
-      context,
-      (_) => _QueueSheet(player: player),
-    );
+    BuildContext context,
+    WidgetRef ref,
+    PlaybackState player,
+  ) {
+    showSheetDialog<void>(context, (_) => _QueueSheet(player: player));
   }
 }
 
@@ -800,9 +888,12 @@ String _cleanLyricText(String raw) {
 
   // 1. 过滤元数据控制头 [ar:xx], [ti:xx], [al:xx], [by:xx], [offset:xx], [kuwo:xx], [kugou:xx], [hash:xx] 等
   text = text.replaceAll(
-      RegExp(r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
-          caseSensitive: false),
-      '');
+    RegExp(
+      r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
+      caseSensitive: false,
+    ),
+    '',
+  );
 
   // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳 (如 (1234,500,0) 或 (1234,500))
   text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
@@ -1150,7 +1241,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       if (jsonStr.isNotEmpty && jsonStr != 'null') {
         final map = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-        final rawLines = (map['displayLines'] as List?) ??
+        final rawLines =
+            (map['displayLines'] as List?) ??
             (map['display_lines'] as List?) ??
             (map['lines'] as List?) ??
             [];
@@ -1183,11 +1275,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             final text = _cleanLyricText(rawText);
 
             final rawTrans = (item['translation'] as String?);
-            final translation = rawTrans != null ? _cleanLyricText(rawTrans) : null;
+            final translation = rawTrans != null
+                ? _cleanLyricText(rawTrans)
+                : null;
 
             final rawRomaji = (item['romaji'] as String?)?.trim();
-            final romaji =
-                (rawRomaji != null && rawRomaji.isNotEmpty) ? rawRomaji : null;
+            final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
+                ? rawRomaji
+                : null;
 
             // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
             final words = <_LyricWordItem>[];
@@ -1199,27 +1294,27 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
                   final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
                   if (wText.isNotEmpty) {
-                    words.add(_LyricWordItem(
-                      text: wText,
-                      start: wStart,
-                      end: wEnd,
-                    ));
+                    words.add(
+                      _LyricWordItem(text: wText, start: wStart, end: wEnd),
+                    );
                   }
                 }
               }
             }
 
             if (text.isNotEmpty) {
-              lines.add(_LyricLineItem(
-                timeMs: (timeSec * 1000).toInt(),
-                endTimeMs: (endTimeSec * 1000).round(),
-                text: text,
-                translation: (translation != null && translation.isNotEmpty)
-                    ? translation
-                    : null,
-                romaji: romaji,
-                words: words,
-              ));
+              lines.add(
+                _LyricLineItem(
+                  timeMs: (timeSec * 1000).toInt(),
+                  endTimeMs: (endTimeSec * 1000).round(),
+                  text: text,
+                  translation: (translation != null && translation.isNotEmpty)
+                      ? translation
+                      : null,
+                  romaji: romaji,
+                  words: words,
+                ),
+              );
             }
           }
         }
@@ -1272,8 +1367,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
       final startMs = line.timeMs.toDouble();
-      final nextStartMs =
-          i + 1 < lines.length ? lines[i + 1].timeMs.toDouble() : double.infinity;
+      final nextStartMs = i + 1 < lines.length
+          ? lines[i + 1].timeMs.toDouble()
+          : double.infinity;
 
       var endMs = line.endTimeMs.toDouble();
       if (endMs <= startMs) {
@@ -1305,29 +1401,35 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         if (chars.length > 1) {
           final durMs = (wEndMs - wStartMs) / chars.length;
           for (var c = 0; c < chars.length; c++) {
-            words.add(_LyricWordItem(
-              text: String.fromCharCode(chars[c]),
-              start: (wStartMs + durMs * c) / 1000.0,
-              end: (wStartMs + durMs * (c + 1)) / 1000.0,
-            ));
+            words.add(
+              _LyricWordItem(
+                text: String.fromCharCode(chars[c]),
+                start: (wStartMs + durMs * c) / 1000.0,
+                end: (wStartMs + durMs * (c + 1)) / 1000.0,
+              ),
+            );
           }
         } else {
-          words.add(_LyricWordItem(
-            text: w.text,
-            start: wStartMs / 1000.0,
-            end: wEndMs / 1000.0,
-          ));
+          words.add(
+            _LyricWordItem(
+              text: w.text,
+              start: wStartMs / 1000.0,
+              end: wEndMs / 1000.0,
+            ),
+          );
         }
       }
 
-      result.add(_LyricLineItem(
-        timeMs: line.timeMs,
-        endTimeMs: endMs.round(),
-        text: line.text,
-        translation: line.translation,
-        romaji: line.romaji,
-        words: words,
-      ));
+      result.add(
+        _LyricLineItem(
+          timeMs: line.timeMs,
+          endTimeMs: endMs.round(),
+          text: line.text,
+          translation: line.translation,
+          romaji: line.romaji,
+          words: words,
+        ),
+      );
     }
     return result;
   }
@@ -1352,7 +1454,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
     // 计算实际滚动的目标 Offset（使高亮行尽量靠近视图中央）
     final maxScroll = _scrollCtrl.position.maxScrollExtent;
-    final itemRatio = activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1);
+    final itemRatio =
+        activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1);
     final targetOffset = maxScroll * itemRatio;
 
     _scrollCtrl.animateTo(
@@ -1373,8 +1476,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _showTranslation = settings?.showLyricsTranslation ?? true;
     _showRomaji = settings?.showLyricsRomaji ?? false;
     _offsetMs = settings?.lyricOffsetMs ?? 0;
-    final lyricFontFamily =
-        (settings?.lyricFontName ?? '').isNotEmpty ? settings!.lyricFontName : null;
+    final lyricFontFamily = (settings?.lyricFontName ?? '').isNotEmpty
+        ? settings!.lyricFontName
+        : null;
 
     // 档位 → 字号（对应 MF fontSizeMap 的小/标准/大/特大）。
     final inactiveFont = [14.0, 15.5, 17.0, 19.0][_fontSizeIdx];
@@ -1395,16 +1499,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
     Widget content;
     if (_loading) {
-      content = const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
+      content = const Center(child: CircularProgressIndicator(strokeWidth: 2));
     } else if (_lines.isEmpty) {
       content = Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lyrics_outlined,
-                size: 40, color: scheme.onSurface.withValues(alpha: 0.35)),
+            Icon(
+              Icons.lyrics_outlined,
+              size: 40,
+              color: scheme.onSurface.withValues(alpha: 0.35),
+            ),
             const SizedBox(height: 10),
             Text(
               '暂无歌词',
@@ -1439,94 +1544,93 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             final isPrimaryColor = isActive;
             final isDragging = idx == _draggingIndex;
 
-          return _MeasuredLine(
-            index: idx,
-            onMeasured: _onLineMeasured,
-            child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              children: [
-                // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
-                if (isActive && line.words.isNotEmpty)
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final w in line.words)
-                        _buildKaraokeWordWidget(
-                          w,
-                          _displayPos - _offsetMs / 1000.0,
-                          scheme,
-                          activeFont,
-                          lyricFontFamily,
-                        ),
-                    ],
-                  )
-                else
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 220),
-                    style: TextStyle(
-                      fontSize: isActive ? activeFont : inactiveFont,
-                      fontWeight:
-                          isActive ? FontWeight.w700 : FontWeight.w500,
-                      // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）
-                      color: isDragging
-                          ? Colors.white
-                          : isPrimaryColor
+            return _MeasuredLine(
+              index: idx,
+              onMeasured: _onLineMeasured,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Column(
+                  children: [
+                    // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
+                    if (isActive && line.words.isNotEmpty)
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        children: [
+                          for (final w in line.words)
+                            _buildKaraokeWordWidget(
+                              w,
+                              _displayPos - _offsetMs / 1000.0,
+                              scheme,
+                              activeFont,
+                              lyricFontFamily,
+                            ),
+                        ],
+                      )
+                    else
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 220),
+                        style: TextStyle(
+                          fontSize: isActive ? activeFont : inactiveFont,
+                          fontWeight: isActive
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）
+                          color: isDragging
+                              ? Colors.white
+                              : isPrimaryColor
                               ? const Color(0xFFEC4141)
                               : scheme.onSurface.withValues(alpha: 0.45),
-                      height: 1.4,
-                      fontFamily: lyricFontFamily,
-                    ),
-                    child: Text(
-                      line.text,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                if (_showRomaji &&
-                    line.romaji != null &&
-                    line.romaji!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    line.romaji!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: isActive ? romajiFont + 1 : romajiFont,
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.w400,
-                      color: isDragging
-                          ? Colors.white.withValues(alpha: 0.75)
-                          : isPrimaryColor
+                          height: 1.4,
+                          fontFamily: lyricFontFamily,
+                        ),
+                        child: Text(line.text, textAlign: TextAlign.center),
+                      ),
+                    if (_showRomaji &&
+                        line.romaji != null &&
+                        line.romaji!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        line.romaji!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isActive ? romajiFont + 1 : romajiFont,
+                          fontWeight: isActive
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: isDragging
+                              ? Colors.white.withValues(alpha: 0.75)
+                              : isPrimaryColor
                               ? const Color(0xFFEC4141).withValues(alpha: 0.75)
                               : scheme.onSurface.withValues(alpha: 0.32),
-                      height: 1.2,
-                      fontFamily: lyricFontFamily,
-                    ),
-                  ),
-                ],
-                if (_showTranslation &&
-                    line.translation != null &&
-                    line.translation!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    line.translation!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize:
-                          isActive ? transFont + 1.5 : transFont,
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.w400,
-                      color: isDragging
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : isPrimaryColor
+                          height: 1.2,
+                          fontFamily: lyricFontFamily,
+                        ),
+                      ),
+                    ],
+                    if (_showTranslation &&
+                        line.translation != null &&
+                        line.translation!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        line.translation!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isActive ? transFont + 1.5 : transFont,
+                          fontWeight: isActive
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: isDragging
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : isPrimaryColor
                               ? const Color(0xFFEC4141).withValues(alpha: 0.8)
                               : scheme.onSurface.withValues(alpha: 0.35),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          );
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
           },
         ),
       );
@@ -1550,7 +1654,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   // 时间胶囊
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(10),
@@ -1560,9 +1666,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.87),
-                        fontFeatures: const [
-                          FontFeature.tabularFigures()
-                        ],
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ),
@@ -1587,193 +1691,236 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
   static void _showFontSizeSheet(BuildContext context, WidgetRef ref) {
-    showSheetDialog<void>(
-      context,
-      (sheetCtx) {
-        final notifier = ref.read(settingsProvider.notifier);
-        var current =
-            ref.read(settingsProvider).valueOrNull?.lyricFontSize ?? 1;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('歌词字号',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                StatefulBuilder(
-                  builder: (ctx, setSheetState) {
-                    return Row(
-                      children: [
-                        ...List.generate(4, (i) {
-                          final labels = ['小', '标准', '大', '特大'];
-                          return Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setSheetState(() => current = i);
-                                notifier.setLyricFontSize(i);
-                              },
-                              child: Container(
-                                alignment: Alignment.center,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                                margin: const EdgeInsets.only(right: 8),
-                                decoration: BoxDecoration(
+    showSheetDialog<void>(context, (sheetCtx) {
+      final notifier = ref.read(settingsProvider.notifier);
+      var current = ref.read(settingsProvider).valueOrNull?.lyricFontSize ?? 1;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '歌词字号',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              StatefulBuilder(
+                builder: (ctx, setSheetState) {
+                  return Row(
+                    children: [
+                      ...List.generate(4, (i) {
+                        final labels = ['小', '标准', '大', '特大'];
+                        return Expanded(
+                          child: InkWell(
+                            onTap: () {
+                              setSheetState(() => current = i);
+                              notifier.setLyricFontSize(i);
+                            },
+                            child: Container(
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: current == i
+                                    ? const Color(
+                                        0xFFEC4141,
+                                      ).withValues(alpha: 0.14)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                labels[i],
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: current == i
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                   color: current == i
                                       ? const Color(0xFFEC4141)
-                                          .withValues(alpha: 0.14)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  labels[i],
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: current == i
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: current == i
-                                        ? const Color(0xFFEC4141)
-                                        : Theme.of(ctx)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                  ),
+                                      : Theme.of(
+                                          ctx,
+                                        ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
-                          );
-                        }),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
-                // 自定义字体导入
-                Row(
-                  children: [
-                    Icon(Icons.font_download_outlined,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.outline),
-                    const SizedBox(width: 8),
-                    const Text('自定义歌词字体',
-                        style: TextStyle(
-                            fontSize: 13.5, fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    _FontImportAction(sheetCtx: sheetCtx),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '支持 .ttf / .otf 字体文件，导入后立即应用到歌词',
-                  style: TextStyle(
-                    fontSize: 11,
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              // 自定义字体导入
+              Row(
+                children: [
+                  Icon(
+                    Icons.font_download_outlined,
+                    size: 18,
                     color: Theme.of(context).colorScheme.outline,
                   ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '自定义歌词字体',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  _FontImportAction(sheetCtx: sheetCtx),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '支持 .ttf / .otf 字体文件，导入后立即应用到歌词',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.outline,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   /// 歌词偏移校正面板：粗调滑杆(-500~+500, 10ms) + 细调按钮(1/5/10/100ms)，
   /// 拖蓝/暂停时点按微调可精确定位，满足“偏移步进细化”。
   static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
-    showSheetDialog<void>(
-      context,
-      (sheetCtx) {
-        final notifier = ref.read(settingsProvider.notifier);
-        var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
+    showSheetDialog<void>(context, (sheetCtx) {
+      final notifier = ref.read(settingsProvider.notifier);
+      var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
 
-        void apply(int v, StateSetter setSheetState) {
-          setSheetState(() => value = v);
-          notifier.setLyricOffsetMs(v);
-        }
+      void apply(int v, StateSetter setSheetState) {
+        setSheetState(() => value = v);
+        notifier.setLyricOffsetMs(v);
+      }
 
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('歌词偏移',
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '歌词偏移',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      notifier.setLyricOffsetMs(0);
+                      Navigator.of(sheetCtx).pop();
+                    },
+                    child: const Text('重置'),
+                  ),
+                ],
+              ),
+              StatefulBuilder(
+                builder: (ctx, setSheetState) {
+                  final scheme = Theme.of(ctx).colorScheme;
+                  return Column(
+                    children: [
+                      // 当前偏移值
+                      Text(
+                        value > 0
+                            ? '提前 ${value}ms'
+                            : value < 0
+                            ? '延后 ${-value}ms'
+                            : '无偏移',
                         style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                    TextButton(
-                      onPressed: () {
-                        notifier.setLyricOffsetMs(0);
-                        Navigator.of(sheetCtx).pop();
-                      },
-                      child: const Text('重置'),
-                    ),
-                  ],
-                ),
-                StatefulBuilder(
-                  builder: (ctx, setSheetState) {
-                    final scheme = Theme.of(ctx).colorScheme;
-                    return Column(
-                      children: [
-                        // 当前偏移值
-                        Text(
-                          value > 0
-                              ? '提前 ${value}ms'
-                              : value < 0
-                                  ? '延后 ${-value}ms'
-                                  : '无偏移',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.onSurfaceVariant,
+                          fontSize: 13,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      // 粗调滑杆（10ms 步进）
+                      Slider(
+                        value: value.toDouble(),
+                        min: -500,
+                        max: 500,
+                        divisions: 100,
+                        label: '${value}ms',
+                        onChanged: (v) => apply(v.round(), setSheetState),
+                      ),
+                      // 细调按钮行（1 / 5 / 10 / 100ms 步进）
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _offsetStepChip(
+                            ctx,
+                            '-100',
+                            scheme,
+                            () => apply(
+                              (value - 100).clamp(-500, 500),
+                              setSheetState,
+                            ),
                           ),
-                        ),
-                        // 粗调滑杆（10ms 步进）
-                        Slider(
-                          value: value.toDouble(),
-                          min: -500,
-                          max: 500,
-                          divisions: 100,
-                          label: '${value}ms',
-                          onChanged: (v) => apply(v.round(), setSheetState),
-                        ),
-                        // 细调按钮行（1 / 5 / 10 / 100ms 步进）
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _offsetStepChip(ctx, '-100', scheme, () =>
-                                apply((value - 100).clamp(-500, 500), setSheetState)),
-                            _offsetStepChip(ctx, '-10', scheme, () =>
-                                apply((value - 10).clamp(-500, 500), setSheetState)),
-                            _offsetStepChip(ctx, '-1', scheme, () =>
-                                apply((value - 1).clamp(-500, 500), setSheetState)),
-                            _offsetStepChip(ctx, '+1', scheme, () =>
-                                apply((value + 1).clamp(-500, 500), setSheetState)),
-                            _offsetStepChip(ctx, '+10', scheme, () =>
-                                apply((value + 10).clamp(-500, 500), setSheetState)),
-                            _offsetStepChip(ctx, '+100', scheme, () =>
-                                apply((value + 100).clamp(-500, 500), setSheetState)),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
+                          _offsetStepChip(
+                            ctx,
+                            '-10',
+                            scheme,
+                            () => apply(
+                              (value - 10).clamp(-500, 500),
+                              setSheetState,
+                            ),
+                          ),
+                          _offsetStepChip(
+                            ctx,
+                            '-1',
+                            scheme,
+                            () => apply(
+                              (value - 1).clamp(-500, 500),
+                              setSheetState,
+                            ),
+                          ),
+                          _offsetStepChip(
+                            ctx,
+                            '+1',
+                            scheme,
+                            () => apply(
+                              (value + 1).clamp(-500, 500),
+                              setSheetState,
+                            ),
+                          ),
+                          _offsetStepChip(
+                            ctx,
+                            '+10',
+                            scheme,
+                            () => apply(
+                              (value + 10).clamp(-500, 500),
+                              setSheetState,
+                            ),
+                          ),
+                          _offsetStepChip(
+                            ctx,
+                            '+100',
+                            scheme,
+                            () => apply(
+                              (value + 100).clamp(-500, 500),
+                              setSheetState,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   /// 偏移细调小按钮。
@@ -1826,17 +1973,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     );
 
     if (progress <= 0) {
-      return Text(
-        word.text,
-        style: style.copyWith(color: inactiveColor),
-      );
+      return Text(word.text, style: style.copyWith(color: inactiveColor));
     }
 
     if (progress >= 1.0) {
-      return Text(
-        word.text,
-        style: style.copyWith(color: activeColor),
-      );
+      return Text(word.text, style: style.copyWith(color: activeColor));
     }
 
     // 正在唱当前词：渐变染色漫过 (ShaderMask)。
@@ -1849,10 +1990,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           stops: [progress, featherEnd],
         ).createShader(bounds);
       },
-      child: Text(
-        word.text,
-        style: style.copyWith(color: Colors.white),
-      ),
+      child: Text(word.text, style: style.copyWith(color: Colors.white)),
     );
   }
 }
@@ -2034,7 +2172,8 @@ class _LyricSettingsRailState extends State<_LyricSettingsRail> {
                           // (2) 翻译开关按钮
                           _RailIconButton(
                             icon: Icons.translate_rounded,
-                            active: widget.showTranslation && widget.hasTranslation,
+                            active:
+                                widget.showTranslation && widget.hasTranslation,
                             disabled: !widget.hasTranslation,
                             onTap: widget.onToggleTranslation,
                           ),
@@ -2074,8 +2213,9 @@ class _FontImportAction extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final fontName = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.lyricFontName ?? ''));
+    final fontName = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.lyricFontName ?? ''),
+    );
     final hasFont = fontName.isNotEmpty;
 
     if (!hasFont) {
@@ -2205,17 +2345,22 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
               Text(
                 '播放队列',
                 style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(width: 8),
               Text(
                 '${queue.length} 首',
-                style: TextStyle(
-                    fontSize: 12, color: scheme.onSurfaceVariant),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const Spacer(),
               IconButton(
-                icon: Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant),
+                icon: Icon(
+                  Icons.close,
+                  size: 20,
+                  color: scheme.onSurfaceVariant,
+                ),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -2249,10 +2394,16 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                   child: ListTile(
                     dense: true,
                     leading: isCurrent
-                        ? Icon(Icons.graphic_eq,
-                            size: 18, color: const Color(0xFFEC4141))
-                        : Icon(Icons.music_note,
-                            size: 18, color: scheme.outline),
+                        ? Icon(
+                            Icons.graphic_eq,
+                            size: 18,
+                            color: const Color(0xFFEC4141),
+                          )
+                        : Icon(
+                            Icons.music_note,
+                            size: 18,
+                            color: scheme.outline,
+                          ),
                     title: Text(
                       item.title,
                       maxLines: 1,
@@ -2262,8 +2413,9 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                         color: isCurrent
                             ? const Color(0xFFEC4141)
                             : scheme.onSurface,
-                        fontWeight:
-                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: isCurrent
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                     subtitle: Text(
@@ -2271,19 +2423,27 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: Icon(Icons.drag_handle,
-                              size: 18, color: scheme.outline),
+                          icon: Icon(
+                            Icons.drag_handle,
+                            size: 18,
+                            color: scheme.outline,
+                          ),
                           onPressed: null,
                         ),
                         IconButton(
-                          icon: Icon(Icons.close,
-                              size: 18, color: scheme.outline),
+                          icon: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: scheme.outline,
+                          ),
                           onPressed: () => ref
                               .read(playerProvider.notifier)
                               .removeFromQueue(index),
@@ -2292,9 +2452,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                     ),
                     onTap: () {
                       Navigator.of(context).pop();
-                      ref
-                          .read(playerProvider.notifier)
-                          .playQueueItem(index);
+                      ref.read(playerProvider.notifier).playQueueItem(index);
                     },
                   ),
                 );

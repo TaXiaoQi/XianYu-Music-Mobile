@@ -128,7 +128,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    _ensureThemes(accent, settings?.enablePredictiveBack ?? false);
+    _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
     final theme = _lightTheme!;
     final darkTheme = _darkTheme!;
     final locale = _localeFor(settings?.language ?? AppLanguage.system);
