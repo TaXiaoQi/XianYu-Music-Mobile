@@ -6,8 +6,10 @@ plugins {
 
 android {
     namespace = "com.example.xianyu_music_mobile"
-    // file_picker 依赖的 flutter_plugin_android_lifecycle 要求 compileSdk >= 36
-    compileSdk = 36
+    // file_picker 依赖的 flutter_plugin_android_lifecycle 要求 compileSdk >= 36；
+    // 37：Honor/MagicOS ROM 按 targetSdk 分层下发预测返回进度事件，
+    // targetSdk=36 时真手指手势进度恒为 0（页面不跟手），37 正常（对齐 PiliNara）
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,7 +23,8 @@ android {
         // You can update these values to match your application needs.
         // For more information, see https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // 见 compileSdk 注释：预测返回进度需要 targetSdk 37
+        targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         // 仅打包 arm64：与发布脚本一致（等价 --target-platform android-arm64），

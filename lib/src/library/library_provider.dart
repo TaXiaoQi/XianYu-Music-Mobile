@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -59,6 +60,7 @@ class Song {
         artist: artist,
         album: album,
         durationMs: duration * 1000,
+        coverPath: coverThumbPath,
       );
 }
 
@@ -494,6 +496,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   /// 播放任意歌曲列表。
   Future<void> playList(List<Song> songs, int index) async {
     if (songs.isEmpty) return;
+    debugPrint('[play] playList ${songs.length} 首 index=$index');
     await _playList(songs, index);
   }
 

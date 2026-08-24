@@ -61,10 +61,13 @@ Future<void> main() async {
         artDownscaleHeight: 512,
         androidNotificationClickStartsActivity: true,
       ),
-    ).then(
-      (h) => audioHandler = h,
-      onError: (Object _, StackTrace _) {},
-    ),
+    ).then((h) {
+      audioHandler = h;
+      // PlayerNotifier 通常先于 init 创建（首帧即触发 playerProvider），
+      // 构造时 bindNotifier 落空——此处补绑，控制中心按键才能生效。
+      final notifier = activePlayerNotifier;
+      if (notifier != null) h.bindNotifier(notifier);
+    }, onError: (Object _, StackTrace _) {}),
   );
 }
 

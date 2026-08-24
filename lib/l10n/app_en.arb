@@ -4,7 +4,7 @@
   "appTagline": "Clean local & online music player",
 
   "navHome": "Home",
-  "navLibrary": "Library",
+  "navLibrary": "Local",
   "navMine": "Mine",
   "navEffects": "Effects",
   "navSearch": "Search",
@@ -33,7 +33,7 @@
   "homeGridHistory": "History",
   "homeTopList": "Most played",
 
-  "libraryTitle": "Library",
+  "libraryTitle": "Local",
   "libraryAllSongs": "All songs",
   "libraryAlbums": "Albums",
   "libraryArtists": "Artists",

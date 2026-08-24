@@ -536,7 +536,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         ),
         const SizedBox(height: 10),
         Text(
-          '将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入音乐库扫描目录。',
+          '将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。',
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         if (_importing) ...[

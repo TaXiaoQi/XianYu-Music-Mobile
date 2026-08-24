@@ -47,7 +47,7 @@ Future<void> showSongActionsSheet(
             ),
             ListTile(
               leading: Icon(isFav ? Icons.favorite : Icons.favorite_border,
-                  color: const Color(0xFFEC4141), size: 22),
+                  color: scheme.primary, size: 22),
               title: Text(isFav ? '取消收藏' : '收藏'),
               onTap: () {
                 Navigator.pop(ctx);

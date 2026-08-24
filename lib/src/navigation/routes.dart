@@ -28,7 +28,6 @@ import '../../pages/playlist/playlists_page.dart';
 import '../../pages/playlist/playlist_import_page.dart';
 import '../../pages/download/download_page.dart';
 import '../../pages/settings/batch_rename_page.dart';
-import '../../pages/settings/scan_folders_page.dart';
 import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
@@ -104,10 +103,10 @@ final appRouter = GoRouter(
       path: '/player',
       pageBuilder: (context, state) {
         final predictiveBack =
-            ProviderScope.containerOf(context, listen: false)
-                .read(settingsProvider)
-                .valueOrNull
-                ?.enablePredictiveBack ??
+            ProviderScope.containerOf(
+              context,
+              listen: false,
+            ).read(settingsProvider).valueOrNull?.enablePredictiveBack ??
             true;
         if (predictiveBack) {
           return MaterialPage<void>(
@@ -198,11 +197,7 @@ final appRouter = GoRouter(
       path: '/batch-rename',
       builder: (context, state) => const BatchRenamePage(),
     ),
-    // 扫描文件夹（从设置页进入）。
-    GoRoute(
-      path: '/scan-folders',
-      builder: (context, state) => const ScanFoldersPage(),
-    ),
+    // 扫描目录管理已合并到本地库「文件夹」页（/library?tab=3），原独立页已删除。
     // 远程音乐库 WebDAV 管理（从设置页进入）。
     GoRoute(
       path: '/remote-library',

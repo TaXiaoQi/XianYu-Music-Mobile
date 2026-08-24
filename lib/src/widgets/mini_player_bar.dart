@@ -210,7 +210,10 @@ class _RotatingDisc extends StatelessWidget {
       width: 46,
       height: 46,
       child: CustomPaint(
-        painter: _RingPainter(progress: progress),
+        painter: _RingPainter(
+          progress: progress,
+          color: Theme.of(context).colorScheme.primary,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(3),
           child: ClipOval(
@@ -236,9 +239,9 @@ class _RotatingDisc extends StatelessWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  const _RingPainter({required this.progress});
-
+  const _RingPainter({required this.progress, required this.color});
   final double progress;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -255,7 +258,7 @@ class _RingPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = stroke
         ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFEC4141);
+        ..color = color;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
         -math.pi / 2,
@@ -268,5 +271,5 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }

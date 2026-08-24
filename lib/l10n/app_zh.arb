@@ -4,7 +4,7 @@
   "appTagline": "纯净本地 · 在线音乐播放器",
 
   "navHome": "首页",
-  "navLibrary": "音乐库",
+  "navLibrary": "本地",
   "navMine": "我的",
   "navEffects": "音效",
   "navSearch": "搜索",
@@ -33,7 +33,7 @@
   "homeGridHistory": "播放历史",
   "homeTopList": "最多播放",
 
-  "libraryTitle": "音乐库",
+  "libraryTitle": "本地",
   "libraryAllSongs": "全部歌曲",
   "libraryAlbums": "专辑",
   "libraryArtists": "歌手",

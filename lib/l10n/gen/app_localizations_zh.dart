@@ -18,7 +18,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navHome => '首页';
 
   @override
-  String get navLibrary => '音乐库';
+  String get navLibrary => '本地';
 
   @override
   String get navMine => '我的';
@@ -96,7 +96,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeTopList => '最多播放';
 
   @override
-  String get libraryTitle => '音乐库';
+  String get libraryTitle => '本地';
 
   @override
   String get libraryAllSongs => '全部歌曲';
@@ -334,7 +334,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get navHome => '首頁';
 
   @override
-  String get navLibrary => '音樂庫';
+  String get navLibrary => '本地';
 
   @override
   String get navMine => '我的';
@@ -412,7 +412,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get homeTopList => '最多播放';
 
   @override
-  String get libraryTitle => '音樂庫';
+  String get libraryTitle => '本地';
 
   @override
   String get libraryAllSongs => '全部歌曲';

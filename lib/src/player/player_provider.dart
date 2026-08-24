@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart' as as_pkg;
@@ -9,12 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
 import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
+import '../favorites/favorites_provider.dart';
 import '../library/saf_channel.dart';
 import '../online/online_search_provider.dart';
 import '../plugin/plugin_engine.dart';
@@ -27,6 +30,13 @@ import 'online_quality_probe.dart';
 /// 全局系统控制中心 AudioHandler 句柄
 XianYuAudioHandler? audioHandler;
 
+/// 最近创建的播放控制器（playerProvider 为全局单例）。
+///
+/// AudioService.init 是后台异步初始化，PlayerNotifier 构造时 audioHandler
+/// 可能仍为 null 导致 bindNotifier 落空（控制中心按键全部失效）；
+/// 此处留存全局引用，init 完成后在 main 中补绑。
+PlayerNotifier? activePlayerNotifier;
+
 /// 系统控制中心（MediaSession / Notification）与 Flutter 播放状态的双向桥梁
 class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler {
   PlayerNotifier? _notifier;
@@ -37,6 +47,17 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
 
   /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
   void syncMediaItem(QueueItem item, double durationSecs) {
+    // 封面：在线歌曲用网络 URL；本地歌曲用缩略图文件路径（file:// URI）。
+    Uri? artUri;
+    final url = item.coverUrl;
+    if (url != null && url.isNotEmpty) {
+      artUri = Uri.tryParse(url);
+    } else {
+      final local = item.coverPath;
+      if (local != null && local.isNotEmpty) {
+        artUri = Uri.file(local);
+      }
+    }
     mediaItem.add(
       as_pkg.MediaItem(
         id: item.path,
@@ -44,9 +65,7 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
         title: item.title,
         artist: item.artist.isEmpty ? '未知歌手' : item.artist,
         duration: Duration(milliseconds: (durationSecs * 1000).round()),
-        artUri: (item.coverUrl != null && item.coverUrl!.isNotEmpty)
-            ? Uri.tryParse(item.coverUrl!)
-            : null,
+        artUri: artUri,
       ),
     );
   }
@@ -56,20 +75,40 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     required bool isPlaying,
     required double positionSecs,
     required double durationSecs,
+    required bool isFavorite,
+    required int playMode,
   }) {
     playbackState.add(
       as_pkg.PlaybackState(
         controls: [
+          as_pkg.MediaControl(
+            // 0.18.x 的 androidIcon 必须带 "drawable/" 前缀：
+            // Android 端 getResourceId 按 "/" split 后取 parts[1]，
+            // 缺前缀会抛 ArrayIndexOutOfBoundsException 导致整个媒体卡片不显示。
+            androidIcon: isFavorite
+                ? 'drawable/ic_notif_favorite_filled'
+                : 'drawable/ic_notif_favorite',
+            label: isFavorite ? '取消收藏' : '收藏',
+            action: as_pkg.MediaAction.custom,
+            customAction: const as_pkg.CustomMediaAction(name: 'toggleFavorite'),
+          ),
           as_pkg.MediaControl.skipToPrevious,
           if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
           as_pkg.MediaControl.skipToNext,
+          as_pkg.MediaControl(
+            androidIcon: _playModeIcon(playMode),
+            label: _playModeLabel(playMode),
+            action: as_pkg.MediaAction.custom,
+            customAction: const as_pkg.CustomMediaAction(name: 'cyclePlayMode'),
+          ),
         ],
         systemActions: const {
           as_pkg.MediaAction.seek,
           as_pkg.MediaAction.seekForward,
           as_pkg.MediaAction.seekBackward,
         },
-        androidCompactActionIndices: const [0, 1, 2],
+        // 紧凑视图（锁屏/折叠态）仍只显示 上一首/播放/下一首。
+        androidCompactActionIndices: const [1, 2, 3],
         processingState: as_pkg.AudioProcessingState.ready,
         playing: isPlaying,
         updatePosition: Duration(milliseconds: (positionSecs * 1000).round()),
@@ -79,35 +118,51 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     );
   }
 
+  /// 播放顺序(0 列表循环 / 1 单曲循环 / 2 随机)对应的控制中心图标。
+  /// 注意 androidIcon 必须带 "drawable/" 前缀（见上）。
+  String _playModeIcon(int mode) => switch (mode) {
+        1 => 'drawable/ic_notif_mode_repeat_one',
+        2 => 'drawable/ic_notif_mode_shuffle',
+        _ => 'drawable/ic_notif_mode_repeat',
+      };
+
+  /// 播放顺序对应的控制中心无障碍标签。
+  String _playModeLabel(int mode) => switch (mode) {
+        1 => '单曲循环',
+        2 => '随机播放',
+        _ => '列表循环',
+      };
+
+  /// 控制中心自定义按键（收藏 / 播放顺序）。
   @override
-  Future<void> play() async {
-    await _notifier?.toggle();
+  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+    switch (name) {
+      case 'toggleFavorite':
+        await _notifier?.toggleFavoriteFromSystem();
+      case 'cyclePlayMode':
+        await _notifier?.cyclePlayMode();
+    }
   }
 
   @override
-  Future<void> pause() async {
-    await _notifier?.toggle();
-  }
+  Future<void> play() => _notifier?.resumeFromSystem() ?? Future.value();
 
   @override
-  Future<void> skipToNext() async {
-    await _notifier?.next();
-  }
+  Future<void> pause() => _notifier?.pauseFromSystem() ?? Future.value();
 
   @override
-  Future<void> skipToPrevious() async {
-    await _notifier?.previous();
-  }
+  Future<void> skipToNext() => _notifier?.next() ?? Future.value();
 
   @override
-  Future<void> seek(Duration position) async {
-    await _notifier?.seek(position.inMilliseconds / 1000.0);
-  }
+  Future<void> skipToPrevious() => _notifier?.previous() ?? Future.value();
 
   @override
-  Future<void> stop() async {
-    await _notifier?.toggle();
-  }
+  Future<void> seek(Duration position) =>
+      _notifier?.seek(position.inMilliseconds / 1000.0) ?? Future.value();
+
+  /// 用户划掉通知/停止服务：只暂停，不得在暂停态误触发播放。
+  @override
+  Future<void> stop() => _notifier?.pauseFromSystem() ?? Future.value();
 }
 
 /// 播放中的单曲信息（小而美：仅保留 UI 需要的最小字段）。
@@ -123,6 +178,8 @@ class QueueItem {
   final String? onlineQuality;
   /// 在线歌曲封面 URL（在线歌曲优先展示，本地歌曲为空）。
   final String? coverUrl;
+  /// 本地歌曲封面缩略图文件路径（通知栏/锁屏封面，file:// URI 用）。
+  final String? coverPath;
   /// 在线歌曲音源 key（如 kw/kg/tx/wy），用于歌词抓取。
   final String? source;
   /// 在线歌曲信息 JSON（歌词抓取用，LyricSongInfo 格式）。
@@ -136,6 +193,7 @@ class QueueItem {
     this.onlineSongJson,
     this.onlineQuality,
     this.coverUrl,
+    this.coverPath,
     this.source,
     this.onlineInfoJson,
   });
@@ -144,6 +202,20 @@ class QueueItem {
       path.startsWith('lx://') ||
       path.startsWith('plugin://') ||
       onlineInfoJson != null;
+
+  QueueItem copyWith({String? coverPath}) => QueueItem(
+        path: path,
+        title: title,
+        artist: artist,
+        album: album,
+        durationMs: durationMs,
+        onlineSongJson: onlineSongJson,
+        onlineQuality: onlineQuality,
+        coverUrl: coverUrl,
+        coverPath: coverPath ?? this.coverPath,
+        source: source,
+        onlineInfoJson: onlineInfoJson,
+      );
 }
 
 class PlaybackState {
@@ -222,6 +294,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     with WidgetsBindingObserver {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
     WidgetsBinding.instance.addObserver(this);
+    // AudioService.init 后台异步完成：先全局注册，init 完成后由 main 补绑。
+    activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
     _init();
   }
@@ -249,6 +323,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // SAF 本地歌曲恢复会话时的待恢复进度：点击播放时再物化文件并从该位置续播。
   double? _restoredLocalPending;
   DateTime? _trackStartTime;
+  /// 通知栏封面路径缓存（歌曲 path → 缩略图路径；空串 = 无封面）。
+  final Map<String, String> _notifCoverCache = {};
+  /// 进程内是否已请求过通知权限（Android 13+ 媒体通知必需）。
+  bool _notifPermissionAsked = false;
 
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
@@ -293,6 +371,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _ref.listen(soundEffectProvider.select((s) => s.settings), (_, s) {
       _applyEffectSpeedPitch(s);
       _syncExclusiveEffects(s);
+    });
+    // 收藏在应用内变化时刷新通知栏「收藏」图标。
+    _ref.listen(favoritesProvider, (_, _) {
+      _syncToSystemMediaSession();
     });
     // 音量即时同步到独占管线。
     _ref.listen(volumeProvider, (_, v) {
@@ -489,13 +571,60 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   void _syncToSystemMediaSession() {
     final cur = state.current;
     if (cur != null) {
-      audioHandler?.syncMediaItem(cur, state.duration);
+      // 本地歌曲未携带封面字段时，用已解析的通知栏封面缓存兜底。
+      var item = cur;
+      if (!cur.isOnline &&
+          (cur.coverUrl == null || cur.coverUrl!.isEmpty) &&
+          (cur.coverPath == null || cur.coverPath!.isEmpty)) {
+        final cached = _notifCoverCache[cur.path];
+        if (cached != null && cached.isNotEmpty) {
+          item = cur.copyWith(coverPath: cached);
+        }
+      }
+      audioHandler?.syncMediaItem(item, state.duration);
       audioHandler?.syncPlaybackState(
         isPlaying: state.isPlaying,
         positionSecs: state.position,
         durationSecs: state.duration,
+        isFavorite: _ref.read(favoritesProvider).contains(cur.path),
+        playMode: state.playMode,
       );
     }
+  }
+
+  /// 通知栏/锁屏封面兜底：本地歌曲播放时查曲库缩略图（含 SAF 自愈），
+  /// 结果缓存（空串 = 无封面，同样缓存防重复查询）。
+  Future<void> _resolveNotificationCover(QueueItem item) async {
+    if (item.isOnline) return;
+    if (item.coverUrl?.isNotEmpty == true) return;
+    if (item.coverPath?.isNotEmpty == true) return;
+    if (_notifCoverCache.containsKey(item.path)) return;
+    _notifCoverCache[item.path] = '';
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+      var p = await getSongCoverThumbnail(
+        dbPath: dbPath,
+        cacheRoot: cacheRoot,
+        path: item.path,
+      );
+      if (p.isEmpty && SafChannel.isSafPath(item.path)) {
+        // SAF 歌曲缓存未命中时经 fd 自愈提取一次（顺带回写数据库）。
+        final healed =
+            await SafChannel.extractCoverToCache(item.path, cacheRoot);
+        if (healed.isNotEmpty) {
+          p = await getSongCoverThumbnail(
+            dbPath: dbPath,
+            cacheRoot: cacheRoot,
+            path: item.path,
+          );
+        }
+      }
+      _notifCoverCache[item.path] = p;
+      if (p.isNotEmpty && state.current?.path == item.path) {
+        _syncToSystemMediaSession();
+      }
+    } catch (_) {}
   }
 
   Future<void> _restoreSession() async {
@@ -531,6 +660,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             album: meta['album'] as String? ?? '',
             durationMs: (meta['durationMs'] as num?)?.toInt() ?? 0,
             coverUrl: meta['coverUrl'] as String?,
+            coverPath: meta['coverPath'] as String?,
             source: meta['source'] as String?,
             onlineSongJson: meta['onlineSongJson'] as String?,
             onlineQuality: meta['onlineQuality'] as String?,
@@ -625,8 +755,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
   }
 
+  /// 进程内只请求一次通知权限（用户拒绝后下次冷启动播放时再问，标准做法）。
+  Future<void> _ensureNotificationPermission() async {
+    if (_notifPermissionAsked) return;
+    _notifPermissionAsked = true;
+    if (!Platform.isAndroid) return;
+    try {
+      final status = await Permission.notification.status;
+      if (!status.isGranted) await Permission.notification.request();
+    } catch (_) {}
+  }
+
   Future<void> playQueue(List<QueueItem> items, {int startIndex = 0}) async {
     if (items.isEmpty) return;
+    debugPrint('[play] playQueue ${items.length} 首 startIndex=$startIndex');
     _shuffleHistory.clear();
     _shuffleFuture.clear();
     state = state.copyWith(
@@ -634,13 +776,22 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       queueIndex: startIndex,
       current: items[startIndex],
     );
-    await _playAt(startIndex, manualPause: true);
+    try {
+      await _playAt(startIndex, manualPause: true);
+    } catch (e, st) {
+      // 手势调用点不 await 异步错误，此处兜底捕获避免整链静默中断。
+      debugPrint('[play] playQueue 异常: $e\n$st');
+      state = state.copyWith(isPlaying: false, resolving: false);
+    }
   }
 
   Future<void> _playAt(int index,
       {required bool manualPause, double startAtSecs = 0}) async {
     if (index < 0 || index >= state.queue.length) return;
 
+    debugPrint('[play] _playAt index=$index path=${state.queue[index].path}');
+    // 首次播放时申请通知权限（Android 13+ 未授权则媒体通知被系统静默拦截）。
+    unawaited(_ensureNotificationPermission());
     _flushPlayStats();
 
     _manualPause = manualPause;
@@ -714,6 +865,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _recordHistory(item);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
+      // 本地歌曲通知栏封面兜底（异步，不阻塞起播）。
+      unawaited(_resolveNotificationCover(item));
     } catch (e) {
       state = state.copyWith(isPlaying: false, resolving: false);
       // 在线歌曲：先尝试自动切换其他音源，避免直接跳过/停止。
@@ -743,6 +896,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             error: e is PluginEngineException
                 ? e.message
                 : '播放失败：${e.toString()}');
+      } else {
+        // 本地歌曲失败同样透出：静默失败会让用户以为「点击没反应」。
+        debugPrint('[play] 本地播放失败 path=${item.path} error=$e');
+        state = state.copyWith(
+            error: e is PluginEngineException
+                ? e.message
+                : '本地播放失败：${e.toString()}');
       }
       _syncToSystemMediaSession();
     }
@@ -1363,6 +1523,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _playAt(index, manualPause: true);
   }
 
+  /// 系统控制中心「收藏」键：切换当前歌曲收藏并刷新通知栏图标。
+  Future<void> toggleFavoriteFromSystem() async {
+    final item = state.current;
+    if (item == null) return;
+    await _ref.read(favoritesProvider.notifier).toggle(item);
+    _syncToSystemMediaSession();
+  }
+
+  /// 系统控制中心「播放」键：仅暂停中生效（复用 toggle 的全部分支逻辑）。
+  Future<void> resumeFromSystem() async {
+    if (state.isPlaying) return;
+    await toggle();
+  }
+
+  /// 系统控制中心「暂停 / 停止」键：仅播放中生效。
+  Future<void> pauseFromSystem() async {
+    if (!state.isPlaying) return;
+    await toggle();
+  }
+
   Future<void> toggle() async {
     if (state.current == null) return;
     // USB 独占管线：seek(pos, isPlaying) 即暂停/恢复。
@@ -1456,6 +1636,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _shuffleHistory.clear();
     _shuffleFuture.clear();
     await _ref.read(settingsProvider.notifier).setPlayMode(next);
+    // 控制中心右侧「播放顺序」图标需要随模式刷新。
+    _syncToSystemMediaSession();
   }
 
   Future<void> _onTrackEnd() async {
@@ -1538,6 +1720,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'album': q.album,
           'durationMs': q.durationMs,
           'coverUrl': q.coverUrl,
+          'coverPath': q.coverPath,
           'source': q.source,
           'onlineSongJson': q.onlineSongJson,
           'onlineQuality': q.onlineQuality,

@@ -120,7 +120,7 @@ abstract class AppLocalizations {
   /// No description provided for @navLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'音乐库'**
+  /// **'本地'**
   String get navLibrary;
 
   /// No description provided for @navMine.
@@ -276,7 +276,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryTitle.
   ///
   /// In zh, this message translates to:
-  /// **'音乐库'**
+  /// **'本地'**
   String get libraryTitle;
 
   /// No description provided for @libraryAllSongs.

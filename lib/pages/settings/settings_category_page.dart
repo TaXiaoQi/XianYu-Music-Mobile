@@ -20,24 +20,24 @@ enum SettingsCategory {
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
-        'appearance' => SettingsCategory.appearance,
-        'playback' => SettingsCategory.playback,
-        'download' => SettingsCategory.download,
-        'library' => SettingsCategory.library,
-        'toolbox' => SettingsCategory.toolbox,
-        'advanced' => SettingsCategory.advanced,
-        _ => SettingsCategory.general,
-      };
+    'appearance' => SettingsCategory.appearance,
+    'playback' => SettingsCategory.playback,
+    'download' => SettingsCategory.download,
+    'library' => SettingsCategory.library,
+    'toolbox' => SettingsCategory.toolbox,
+    'advanced' => SettingsCategory.advanced,
+    _ => SettingsCategory.general,
+  };
 
   String get title => switch (this) {
-        SettingsCategory.general => '常规',
-        SettingsCategory.appearance => '外观',
-        SettingsCategory.playback => '播放',
-        SettingsCategory.download => '下载',
-        SettingsCategory.library => '音乐库',
-        SettingsCategory.toolbox => '工具箱',
-        SettingsCategory.advanced => '高级设置',
-      };
+    SettingsCategory.general => '常规',
+    SettingsCategory.appearance => '外观',
+    SettingsCategory.playback => '播放',
+    SettingsCategory.download => '下载',
+    SettingsCategory.library => '本地',
+    SettingsCategory.toolbox => '工具箱',
+    SettingsCategory.advanced => '高级设置',
+  };
 }
 
 /// 设置页背景底色（浅白，与纯白卡片区分）。
@@ -117,8 +117,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 常规 ----
-  List<Widget> _general(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n) {
+  List<Widget> _general(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
     return [
       _sectionHeader(context, '语言'),
       _CardGroup(
@@ -149,9 +153,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                   '点击底部导航等操作的手感震动强度',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -176,8 +178,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 外观 ----
-  List<Widget> _appearance(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n) {
+  List<Widget> _appearance(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
     return [
       _sectionHeader(context, '主题'),
       _CardGroup(
@@ -195,6 +201,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             title: '主题色',
             trailing: _ColorDot(color: Color(s?.accentColor ?? 0xFFEC4141)),
             onTap: () => _pickAccentColor(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.wallpaper_outlined,
+            title: '壁纸中心',
+            subtitle: '自定义背景与动态壁纸',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/wallpaper'),
           ),
           _switchTile(
             context,
@@ -242,9 +256,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               context,
               icon: Icons.swap_vert_outlined,
               title: '侧边栏展开方向',
-              trailing:
-                  Text(switch (s?.sideBarExpandDirection ??
-                      SideBarExpandDirection.down) {
+              trailing: Text(switch (s?.sideBarExpandDirection ??
+                  SideBarExpandDirection.down) {
                 SideBarExpandDirection.down => '向下展开',
                 SideBarExpandDirection.up => '向上展开',
               }),
@@ -275,8 +288,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 播放 ----
-  List<Widget> _playback(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n, bool exclusivePlaying) {
+  List<Widget> _playback(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+    bool exclusivePlaying,
+  ) {
     return [
       _sectionHeader(context, '播放'),
       _CardGroup(
@@ -286,8 +304,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.volume_up_outlined,
             title: exclusivePlaying ? '音量（直出已锁定）' : '音量',
             trailing: _volumeSlider(s, n, locked: exclusivePlaying),
-            subtitle:
-                exclusivePlaying ? 'Bit-perfect / DSD 直出中，音量由 DAC 控制' : null,
+            subtitle: exclusivePlaying
+                ? 'Bit-perfect / DSD 直出中，音量由 DAC 控制'
+                : null,
           ),
           _switchTile(
             context,
@@ -344,8 +363,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.play_disabled_outlined,
             title: '起播失败行为',
             subtitle: '在线音源完全无法播放时的处理方式',
-            trailing:
-                Text(_failureBehaviorLabel(s?.onlineFailureBehavior ?? 'skip')),
+            trailing: Text(
+              _failureBehaviorLabel(s?.onlineFailureBehavior ?? 'skip'),
+            ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
           _tile(
@@ -353,8 +373,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.vertical_align_bottom_outlined,
             title: '音质回退行为',
             subtitle: '默认音质播放失败时如何切换音质档位',
-            trailing:
-                Text(_qualityFallbackLabel(s?.onlineQualityFallbackBehavior ?? 'lower')),
+            trailing: Text(
+              _qualityFallbackLabel(
+                s?.onlineQualityFallbackBehavior ?? 'lower',
+              ),
+            ),
             onTap: () => _pickQualityFallback(context, ref, s),
           ),
           _switchTile(
@@ -402,8 +425,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 下载 ----
-  List<Widget> _download(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n) {
+  List<Widget> _download(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
     return [
       _sectionHeader(context, '下载'),
       _CardGroup(
@@ -443,7 +470,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.label_outline,
             title: '文件名样式',
             trailing: Text(
-                _fileNameStyleLabel(s?.downloadFileNameStyle ?? 'artist-title')),
+              _fileNameStyleLabel(s?.downloadFileNameStyle ?? 'artist-title'),
+            ),
             onTap: () => _pickFileNameStyle(context, ref, s),
           ),
           _switchTile(
@@ -493,27 +521,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ];
   }
 
-  // ---- 音乐库 ----
-  List<Widget> _library(BuildContext context, WidgetRef ref, AppSettings? s,
-      SettingsNotifier n) {
+  // ---- 本地 ----
+  // 扫描目录管理与排除短音频已合并到本地库「文件夹」页（魅族扫描歌曲风格）。
+  List<Widget> _library(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
     return [
-      _sectionHeader(context, '扫描'),
+      _sectionHeader(context, '本地'),
       _CardGroup(
         children: [
-          _tile(
-            context,
-            icon: Icons.create_new_folder_outlined,
-            title: '扫描文件夹',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/scan-folders'),
-          ),
-          _tile(
-            context,
-            icon: Icons.timer_outlined,
-            title: '排除短音频（秒）',
-            trailing: Text('${s?.libraryMinDurationSeconds ?? 0}'),
-            onTap: () => _pickMinDuration(context, ref, s),
-          ),
           _switchTile(
             context,
             icon: Icons.verified_outlined,
@@ -534,47 +553,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 工具箱 ----
-  // 插件扩展（音源）已迁至设置页「在线与音源」分组。
+  // 壁纸中心迁至外观设置；同步与备份迁至高级设置；QMC 解密 / 批量重命名 /
+  // 我的歌单入口已移除（我的歌单在「我的」页歌单分区直达）。
   List<Widget> _toolbox(BuildContext context) {
     return [
-      _sectionHeader(context, '数据与扩展'),
+      _sectionHeader(context, '小工具'),
       _CardGroup(
         children: [
-          _tile(
-            context,
-            icon: Icons.cloud_sync_outlined,
-            title: '同步与备份',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/sync'),
-          ),
-          _tile(
-            context,
-            icon: Icons.queue_music_outlined,
-            title: '我的歌单',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/playlists'),
-          ),
-          _tile(
-            context,
-            icon: Icons.wallpaper_outlined,
-            title: '壁纸中心',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/wallpaper'),
-          ),
-          _tile(
-            context,
-            icon: Icons.lock_open_outlined,
-            title: 'QMC 文件解密',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/qmc-decrypt'),
-          ),
-          _tile(
-            context,
-            icon: Icons.drive_file_rename_outline,
-            title: '批量重命名',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/batch-rename'),
-          ),
           _tile(
             context,
             icon: Icons.leaderboard_outlined,
@@ -589,8 +574,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
   // ---- 高级设置 ----
   List<Widget> _advanced(
-      BuildContext context, AppSettings? s, SettingsNotifier n) {
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
     return [
+      _sectionHeader(context, '数据'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.cloud_sync_outlined,
+            title: '同步与备份',
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/sync'),
+          ),
+        ],
+      ),
       _sectionHeader(context, '系统'),
       _CardGroup(
         children: [
@@ -622,23 +622,25 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   // ============ 通用 UI 部件 ============
 
   Widget _sectionHeader(BuildContext context, String title) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 
-  Widget _tile(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required Widget trailing,
-      VoidCallback? onTap,
-      String? subtitle}) {
+  Widget _tile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required Widget trailing,
+    VoidCallback? onTap,
+    String? subtitle,
+  }) {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
@@ -647,22 +649,30 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       trailing: onTap == null
           ? trailing
-          : Row(mainAxisSize: MainAxisSize.min, children: [
-              trailing,
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right,
-                  size: 18, color: Theme.of(context).colorScheme.outline),
-            ]),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                trailing,
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ],
+            ),
       onTap: onTap,
     );
   }
 
-  Widget _switchTile(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required bool value,
-      required ValueChanged<bool> onChanged,
-      String? subtitle}) {
+  Widget _switchTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    String? subtitle,
+  }) {
     return SwitchListTile(
       secondary: Icon(icon),
       title: Text(title),
@@ -683,14 +693,17 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   String _languageLabel(AppLanguage v) => switch (v) {
-        AppLanguage.system => '跟随系统',
-        AppLanguage.zhCN => '简体中文',
-        AppLanguage.zhTW => '繁體中文',
-        AppLanguage.en => 'English',
-      };
+    AppLanguage.system => '跟随系统',
+    AppLanguage.zhCN => '简体中文',
+    AppLanguage.zhTW => '繁體中文',
+    AppLanguage.en => 'English',
+  };
 
-  Widget _volumeSlider(AppSettings? s, SettingsNotifier n,
-      {required bool locked}) {
+  Widget _volumeSlider(
+    AppSettings? s,
+    SettingsNotifier n, {
+    required bool locked,
+  }) {
     return SizedBox(
       width: 120,
       child: Slider(
@@ -728,15 +741,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   String _failureBehaviorLabel(String v) => switch (v) {
-        'stop' => '停止播放',
-        _ => '跳到下一首',
-      };
+    'stop' => '停止播放',
+    _ => '跳到下一首',
+  };
 
   String _qualityFallbackLabel(String v) => switch (v) {
-        'pause' => '暂停',
-        'higher' => '播放更高音质',
-        _ => '播放更低音质',
-      };
+    'pause' => '暂停',
+    'higher' => '播放更高音质',
+    _ => '播放更低音质',
+  };
 
   String _outputDeviceLabel(int id) => id == -1 ? '默认设备' : '设备 #$id';
 
@@ -746,11 +759,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         .map((r) => r >= 1000 ? '${(r / 1000).toStringAsFixed(1)}kHz' : '$r Hz')
         .join('/');
     final chans = d.channelCounts
-        .map((c) => c == 1
-            ? '单声道'
-            : c == 2
-                ? '立体声'
-                : '${c}ch')
+        .map(
+          (c) => c == 1
+              ? '单声道'
+              : c == 2
+              ? '立体声'
+              : '${c}ch',
+        )
         .join('/');
     final parts = <String>[
       if (rates.isNotEmpty) '采样率 $rates',
@@ -760,26 +775,34 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   String _fileNameStyleLabel(String v) => switch (v) {
-        'title-artist' => '标题 - 歌手',
-        'title-artist-album' => '标题 - 歌手 - 专辑',
-        _ => '歌手 - 标题',
-      };
+    'title-artist' => '标题 - 歌手',
+    'title-artist-album' => '标题 - 歌手 - 专辑',
+    _ => '歌手 - 标题',
+  };
 
   // ============ 各类选择器 ============
 
   Future<void> _pickNavBarPosition(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.navBarPosition ?? NavBarPosition.bottom;
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('底部导航', NavBarPosition.bottom),
-        _Choice('侧边悬浮', NavBarPosition.side),
-      ], cur, labelOf: (v) => switch (v) {
-        NavBarPosition.bottom => '底部导航',
-        NavBarPosition.side => '侧边悬浮',
-        _ => '底部导航',
-      }),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('底部导航', NavBarPosition.bottom),
+          _Choice('侧边悬浮', NavBarPosition.side),
+        ],
+        cur,
+        labelOf: (v) => switch (v) {
+          NavBarPosition.bottom => '底部导航',
+          NavBarPosition.side => '侧边悬浮',
+          _ => '底部导航',
+        },
+      ),
     );
     if (choice != null) {
       await ref
@@ -789,18 +812,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickSideBarExpandDirection(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.sideBarExpandDirection ?? SideBarExpandDirection.down;
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('向下展开', SideBarExpandDirection.down),
-        _Choice('向上展开', SideBarExpandDirection.up),
-      ], cur, labelOf: (v) => switch (v) {
-        SideBarExpandDirection.down => '向下展开',
-        SideBarExpandDirection.up => '向上展开',
-        _ => '向下展开',
-      }),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('向下展开', SideBarExpandDirection.down),
+          _Choice('向上展开', SideBarExpandDirection.up),
+        ],
+        cur,
+        labelOf: (v) => switch (v) {
+          SideBarExpandDirection.down => '向下展开',
+          SideBarExpandDirection.up => '向上展开',
+          _ => '向下展开',
+        },
+      ),
     );
     if (choice != null) {
       await ref
@@ -810,16 +841,24 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickLanguage(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.language ?? AppLanguage.system;
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('跟随系统', AppLanguage.system),
-        _Choice('简体中文', AppLanguage.zhCN),
-        _Choice('繁體中文', AppLanguage.zhTW),
-        _Choice('English', AppLanguage.en),
-      ], cur, labelOf: (v) => _languageLabel(v as AppLanguage)),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('跟随系统', AppLanguage.system),
+          _Choice('简体中文', AppLanguage.zhCN),
+          _Choice('繁體中文', AppLanguage.zhTW),
+          _Choice('English', AppLanguage.en),
+        ],
+        cur,
+        labelOf: (v) => _languageLabel(v as AppLanguage),
+      ),
     );
     if (choice != null) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -832,20 +871,28 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickThemeMode(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.themeMode ?? ThemeModePreference.system;
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('跟随系统', ThemeModePreference.system),
-        _Choice('浅色', ThemeModePreference.light),
-        _Choice('深色', ThemeModePreference.dark),
-      ], cur, labelOf: (v) => switch (v) {
-        ThemeModePreference.system => '跟随系统',
-        ThemeModePreference.light => '浅色',
-        ThemeModePreference.dark => '深色',
-        _ => '跟随系统',
-      }),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('跟随系统', ThemeModePreference.system),
+          _Choice('浅色', ThemeModePreference.light),
+          _Choice('深色', ThemeModePreference.dark),
+        ],
+        cur,
+        labelOf: (v) => switch (v) {
+          ThemeModePreference.system => '跟随系统',
+          ThemeModePreference.light => '浅色',
+          ThemeModePreference.dark => '深色',
+          _ => '跟随系统',
+        },
+      ),
     );
     if (choice != null) {
       await ref
@@ -855,80 +902,50 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickAccentColor(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.accentColor ?? 0xFFEC4141;
-    const colors = [
-      0xFFEC4141, 0xFFE64A2E, 0xFFFF8A00, 0xFF4CAF50, 0xFF2196F3,
-      0xFF7C4DFF, 0xFF9C27B0, 0xFF795548, 0xFF607D8B, 0xFF000000,
-    ];
     final choice = await showSheetDialog<int>(
       context,
-      (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('主题色', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final c in colors)
-                  InkWell(
-                    onTap: () => Navigator.pop(context, c),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Color(c),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: c == cur
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.transparent,
-                          width: 3,
-                        ),
-                      ),
-                      child: c == cur
-                          ? const Icon(Icons.check,
-                              color: Colors.white, size: 20)
-                          : null,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      (ctx) => _AccentColorSheet(current: cur),
     );
     if (choice != null) {
       await ref.read(settingsProvider.notifier).setAccentColor(choice);
     }
   }
 
-  Future<void> _pickQuality(BuildContext context, WidgetRef ref,
-      AppSettings? s, {required bool isOnline}) async {
+  Future<void> _pickQuality(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s, {
+    required bool isOnline,
+  }) async {
     final cur = isOnline
         ? s?.onlineDefaultQuality ?? '320k'
         : s?.downloadQuality ?? '320k';
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('低清 (96k)', 'mgg'),
-        _Choice('普通', '128k'),
-        _Choice('中等', '192k'),
-        _Choice('HQ', '320k'),
-        _Choice('SQ (无损)', 'flac'),
-        _Choice('Hi-Res', 'flac24bit'),
-        _Choice('高解析度', 'hires'),
-        _Choice('黑胶', 'vinyl'),
-        _Choice('杜比全景声', 'dolby'),
-        _Choice('臻品音质', 'atmos'),
-        _Choice('臻品全景声', 'atmos_plus'),
-        _Choice('臻品母带', 'master'),
-      ], cur, labelOf: (v) => v as String),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('低清 (96k)', 'mgg'),
+          _Choice('普通', '128k'),
+          _Choice('中等', '192k'),
+          _Choice('HQ', '320k'),
+          _Choice('SQ (无损)', 'flac'),
+          _Choice('Hi-Res', 'flac24bit'),
+          _Choice('高解析度', 'hires'),
+          _Choice('黑胶', 'vinyl'),
+          _Choice('杜比全景声', 'dolby'),
+          _Choice('臻品音质', 'atmos'),
+          _Choice('臻品全景声', 'atmos_plus'),
+          _Choice('臻品母带', 'master'),
+        ],
+        cur,
+        labelOf: (v) => v as String,
+      ),
     );
     if (choice != null) {
       final n = ref.read(settingsProvider.notifier);
@@ -941,14 +958,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickFailureBehavior(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.onlineFailureBehavior ?? 'skip';
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('跳到下一首', 'skip'),
-        _Choice('停止播放', 'stop'),
-      ], cur, labelOf: (v) => _failureBehaviorLabel(v as String)),
+      (_) => _choiceSheet(
+        context,
+        const [_Choice('跳到下一首', 'skip'), _Choice('停止播放', 'stop')],
+        cur,
+        labelOf: (v) => _failureBehaviorLabel(v as String),
+      ),
     );
     if (choice != null) {
       await ref
@@ -958,15 +980,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickQualityFallback(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.onlineQualityFallbackBehavior ?? 'lower';
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('暂停', 'pause'),
-        _Choice('播放更低音质', 'lower'),
-        _Choice('播放更高音质', 'higher'),
-      ], cur, labelOf: (v) => _qualityFallbackLabel(v as String)),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('暂停', 'pause'),
+          _Choice('播放更低音质', 'lower'),
+          _Choice('播放更高音质', 'higher'),
+        ],
+        cur,
+        labelOf: (v) => _qualityFallbackLabel(v as String),
+      ),
     );
     if (choice != null) {
       await ref
@@ -984,85 +1014,94 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ref.read(settingsProvider).valueOrNull?.usbExclusiveDeviceId ?? -1;
     final byId = {for (final d in devices) d.id: d};
 
-    final choice = await showSheetDialog<int>(
-      context,
-      (dialogContext) {
-        final list = <(String, int)>[
-          ('系统默认设备', -1),
-          for (final d in devices) (d.displayName, d.id),
-        ];
-        return ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 440),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
-                child: Text('输出设备',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+    final choice = await showSheetDialog<int>(context, (dialogContext) {
+      final list = <(String, int)>[
+        ('系统默认设备', -1),
+        for (final d in devices) (d.displayName, d.id),
+      ];
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 440),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+              child: Text(
+                '输出设备',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              if (!supported || devices.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    !supported
-                        ? '仅 Android 支持设备枚举'
-                        : '未检测到可用的输出设备',
-                    style: TextStyle(
-                        fontSize: 13, color: scheme.onSurfaceVariant),
-                  ),
-                )
-              else
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final (label, id) in list)
-                        ListTile(
-                          dense: true,
-                          selected: current == id,
-                          title: Text(label),
-                          subtitle: id == -1
-                              ? null
-                              : Text(_deviceFormatSubtitle(byId[id]) ?? '',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant)),
-                          trailing: current == id
-                              ? Icon(Icons.check,
-                                  color: scheme.primary, size: 20)
-                              : null,
-                          onTap: () => Navigator.pop(dialogContext, id),
-                        ),
-                    ],
+            ),
+            if (!supported || devices.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  !supported ? '仅 Android 支持设备枚举' : '未检测到可用的输出设备',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
-            ],
-          ),
-        );
-      },
-    );
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final (label, id) in list)
+                      ListTile(
+                        dense: true,
+                        selected: current == id,
+                        title: Text(label),
+                        subtitle: id == -1
+                            ? null
+                            : Text(
+                                _deviceFormatSubtitle(byId[id]) ?? '',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                        trailing: current == id
+                            ? Icon(Icons.check, color: scheme.primary, size: 20)
+                            : null,
+                        onTap: () => Navigator.pop(dialogContext, id),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    });
     if (choice != null) {
-      await ref
-          .read(settingsProvider.notifier)
-          .setUsbExclusiveDeviceId(choice);
+      await ref.read(settingsProvider.notifier).setUsbExclusiveDeviceId(choice);
     }
   }
 
   Future<void> _pickConcurrency(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = (s?.downloadConcurrency ?? 3).clamp(1, 5);
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('1', 1),
-        _Choice('2', 2),
-        _Choice('3', 3),
-        _Choice('4', 4),
-        _Choice('5', 5),
-      ], cur, labelOf: (v) => '${v as int}'),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('1', 1),
+          _Choice('2', 2),
+          _Choice('3', 3),
+          _Choice('4', 4),
+          _Choice('5', 5),
+        ],
+        cur,
+        labelOf: (v) => '${v as int}',
+      ),
     );
     if (choice != null) {
       await ref
@@ -1072,15 +1111,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Future<void> _pickFileNameStyle(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.downloadFileNameStyle ?? 'artist-title';
     final choice = await showSheetDialog<_Choice>(
       context,
-      (_) => _choiceSheet(context, const [
-        _Choice('歌手 - 标题', 'artist-title'),
-        _Choice('标题 - 歌手', 'title-artist'),
-        _Choice('标题 - 歌手 - 专辑', 'title-artist-album'),
-      ], cur, labelOf: (v) => _fileNameStyleLabel(v as String)),
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('歌手 - 标题', 'artist-title'),
+          _Choice('标题 - 歌手', 'title-artist'),
+          _Choice('标题 - 歌手 - 专辑', 'title-artist-album'),
+        ],
+        cur,
+        labelOf: (v) => _fileNameStyleLabel(v as String),
+      ),
     );
     if (choice != null) {
       await ref
@@ -1089,34 +1136,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
-  Future<void> _pickMinDuration(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
-    final cur = s?.libraryMinDurationSeconds ?? 0;
-    final choices = const [
-      _Choice('不排除', 0),
-      _Choice('10 秒', 10),
-      _Choice('30 秒', 30),
-      _Choice('60 秒', 60),
-    ];
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(context, choices, cur, labelOf: (v) => switch (v) {
-        0 => '不排除',
-        10 => '10 秒',
-        30 => '30 秒',
-        60 => '60 秒',
-        _ => '$v 秒',
-      }),
-    );
-    if (choice != null) {
-      await ref
-          .read(settingsProvider.notifier)
-          .setLibraryMinDurationSeconds(choice.value as int);
-    }
-  }
-
   Future<void> _pickDownloadPath(
-      BuildContext context, WidgetRef ref, AppSettings? s) async {
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
     final cur = s?.downloadPath ?? '';
     final controller = TextEditingController(text: cur);
     final action = await showSheetDialog<Object?>(
@@ -1127,13 +1151,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('下载路径',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('下载路径', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
               '留空使用默认下载目录',
               style: TextStyle(
-                  fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.outline,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1168,8 +1193,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     await ref.read(settingsProvider.notifier).setDownloadPath(path);
   }
 
-  Widget _choiceSheet(BuildContext context, List<_Choice> choices, Object? cur,
-      {required String Function(dynamic) labelOf}) {
+  Widget _choiceSheet(
+    BuildContext context,
+    List<_Choice> choices,
+    Object? cur, {
+    required String Function(dynamic) labelOf,
+  }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1177,8 +1206,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ListTile(
             title: Text(labelOf(c.value)),
             trailing: c.value == cur
-                ? Icon(Icons.check,
-                    color: Theme.of(context).colorScheme.primary)
+                ? Icon(
+                    Icons.check,
+                    color: Theme.of(context).colorScheme.primary,
+                  )
                 : null,
             selected: c.value == cur,
             onTap: () => Navigator.pop(context, c),
@@ -1234,6 +1265,398 @@ class _ColorDot extends StatelessWidget {
   }
 }
 
+/// 主题色选择弹层：桌面端同款 8 色预设网格 + 自定义 HSV 调色盘。
+/// 预设点击即选中关闭；自定义区支持 SV 二维取色板、色相条与 Hex 输入。
+class _AccentColorSheet extends StatefulWidget {
+  const _AccentColorSheet({required this.current});
+  final int current;
+
+  @override
+  State<_AccentColorSheet> createState() => _AccentColorSheetState();
+}
+
+class _AccentColorSheetState extends State<_AccentColorSheet> {
+  late HSVColor _hsv;
+  final _hexCtrl = TextEditingController();
+  bool _hexError = false;
+
+  static const _presets = <int, String>{
+    0xFFEC4141: '经典红',
+    0xFFF9735B: '珊瑚',
+    0xFFF59E0B: '琥珀',
+    0xFF22C55E: '翡翠',
+    0xFF06B6D4: '青绿',
+    0xFF3B82F6: '湖蓝',
+    0xFF8B5CF6: '鸢尾紫',
+    0xFFEC4899: '蔷薇',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(Color(widget.current));
+    _syncHex();
+  }
+
+  @override
+  void dispose() {
+    _hexCtrl.dispose();
+    super.dispose();
+  }
+
+  Color get _color => _hsv.toColor();
+
+  void _syncHex() {
+    _hexCtrl.text = _colorToHex(_color);
+  }
+
+  static String _colorToHex(Color c) =>
+      '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+  void _update(HSVColor hsv) {
+    setState(() {
+      _hsv = hsv;
+      _hexError = false;
+      _syncHex();
+    });
+  }
+
+  void _commitHex() {
+    final text = _hexCtrl.text.trim().replaceFirst('#', '');
+    if (text.length != 6 || int.tryParse(text, radix: 16) == null) {
+      setState(() => _hexError = true);
+      return;
+    }
+    final value = int.parse('FF$text', radix: 16);
+    setState(() {
+      _hsv = HSVColor.fromColor(Color(value));
+      _hexError = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('主题色', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 14),
+            // 预设网格（学桌面端：色块 + 名称，四列两行）
+            GridView.count(
+              crossAxisCount: 4,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.5,
+              children: [
+                for (final entry in _presets.entries)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => Navigator.pop(context, entry.key),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: widget.current == entry.key
+                              ? scheme.primary
+                              : scheme.outlineVariant.withValues(alpha: 0.6),
+                          width: widget.current == entry.key ? 2 : 1,
+                        ),
+                        color: widget.current == entry.key
+                            ? scheme.primary.withValues(alpha: 0.08)
+                            : null,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: Color(entry.key),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.15),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                            child: widget.current == entry.key
+                                ? const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 16,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            entry.value,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(child: Divider(color: scheme.outlineVariant)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '自定义颜色',
+                    style: TextStyle(fontSize: 12, color: scheme.outline),
+                  ),
+                ),
+                Expanded(child: Divider(color: scheme.outlineVariant)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _HsvPicker(hsv: _hsv, onChanged: _update),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _color,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _hexCtrl,
+                    enabled: true,
+                    maxLength: 7,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      letterSpacing: 1,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      counterText: '',
+                      labelText: 'Hex',
+                      hintText: '#EC4141',
+                      errorText: _hexError ? '格式应为 #RRGGBB' : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _commitHex,
+                    onSubmitted: (_) => _commitHex(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, _color.toARGB32()),
+                  child: const Text('应用'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// HSV 调色盘：饱和度/明度二维取色板 + 色相条，均支持拖拽与点击取色。
+class _HsvPicker extends StatelessWidget {
+  const _HsvPicker({required this.hsv, required this.onChanged});
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+
+  HSVColor _fromSvBox(Offset local, Size size) {
+    final s = (local.dx / size.width).clamp(0.0, 1.0);
+    final v = 1.0 - (local.dy / size.height).clamp(0.0, 1.0);
+    return HSVColor.fromAHSV(1, hsv.hue, s, v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final thumbColor = Colors.white;
+    return Column(
+      children: [
+        // SV 二维取色板：横向白色→纯色，纵向透明→黑色
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, 150);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanDown: (d) => onChanged(_fromSvBox(d.localPosition, size)),
+              onPanUpdate: (d) => onChanged(_fromSvBox(d.localPosition, size)),
+              child: Container(
+                width: size.width,
+                height: size.height,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: CustomPaint(
+                  painter: _SvBoxPainter(
+                    baseColor: hsv.withSaturation(1).withValue(1).toColor(),
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: (hsv.saturation * size.width).clamp(
+                          0.0,
+                          size.width - 22,
+                        ),
+                        top: ((1 - hsv.value) * size.height).clamp(
+                          0.0,
+                          size.height - 22,
+                        ),
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: hsv.toColor(),
+                            border: Border.all(color: thumbColor, width: 2.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+        // 色相条
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanDown: (d) => _setHue(d.localPosition.dx / width),
+              onPanUpdate: (d) => _setHue(d.localPosition.dx / width),
+              child: Container(
+                height: 26,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  children: [
+                    const _HueRainbow(),
+                    Positioned(
+                      left: (hsv.hue / 360 * width).clamp(0.0, width - 18),
+                      top: -3,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        margin: const EdgeInsets.all(4.5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: hsv.withSaturation(1).withValue(1).toColor(),
+                          border: Border.all(color: thumbColor, width: 2.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _setHue(double ratio) {
+    final h = (ratio.clamp(0.0, 1.0)) * 360;
+    onChanged(HSVColor.fromAHSV(1, h, hsv.saturation, hsv.value));
+  }
+}
+
+/// SV 取色板底色：左白右纯色线性渐变叠加上黑下透明线性渐变。
+class _SvBoxPainter extends CustomPainter {
+  _SvBoxPainter({required this.baseColor});
+  final Color baseColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final horizontal = LinearGradient(
+      colors: [Colors.white, baseColor],
+    ).createShader(rect);
+    final vertical = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Colors.transparent, Colors.black],
+    ).createShader(rect);
+    canvas.drawRect(rect, Paint()..shader = horizontal);
+    canvas.drawRect(rect, Paint()..shader = vertical);
+  }
+
+  @override
+  bool shouldRepaint(_SvBoxPainter old) => old.baseColor != baseColor;
+}
+
+/// 色相彩虹条。
+class _HueRainbow extends StatelessWidget {
+  const _HueRainbow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFFFF0000),
+            Color(0xFFFFFF00),
+            Color(0xFF00FF00),
+            Color(0xFF00FFFF),
+            Color(0xFF0000FF),
+            Color(0xFFFF00FF),
+            Color(0xFFFF0000),
+          ],
+        ),
+      ),
+      child: SizedBox.expand(),
+    );
+  }
+}
+
 class _Choice {
   final String label;
   final dynamic value;
@@ -1249,8 +1672,7 @@ class _StorageSettingsGroup extends ConsumerStatefulWidget {
       _StorageSettingsGroupState();
 }
 
-class _StorageSettingsGroupState
-    extends ConsumerState<_StorageSettingsGroup> {
+class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
   static const _kMinMB = 1;
   static const _kMaxMB = 10240;
 
@@ -1290,8 +1712,9 @@ class _StorageSettingsGroupState
   Future<void> _pickLimit() async {
     final s = ref.read(settingsProvider).valueOrNull;
     final notifier = ref.read(settingsProvider.notifier);
-    final controller =
-        TextEditingController(text: (s?.streamCacheSizeMB ?? 500).toString());
+    final controller = TextEditingController(
+      text: (s?.streamCacheSizeMB ?? 500).toString(),
+    );
     var chosen = 0;
     await showDialog<void>(
       context: context,
@@ -1354,12 +1777,17 @@ class _StorageSettingsGroupState
           leading: const Icon(Icons.sd_storage_outlined),
           title: const Text('播放缓存上限'),
           subtitle: const Text('在线播放的临时音源文件最大缓存量'),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text('$limitMB MB',
-                style: TextStyle(color: scheme.onSurfaceVariant)),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 18, color: scheme.outline),
-          ]),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$limitMB MB',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+            ],
+          ),
           onTap: _pickLimit,
         ),
         ListTile(

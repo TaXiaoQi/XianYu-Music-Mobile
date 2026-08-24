@@ -24,7 +24,7 @@ class CoverImage extends ConsumerStatefulWidget {
     this.width = 48,
     this.height = 48,
     this.radius = 12,
-    this.gradient = const [Color(0xFFEC4141), Color(0xFFFF8A5C)],
+    this.gradient,
     this.icon = Icons.music_note,
     this.placeholder,
   });
@@ -40,7 +40,9 @@ class CoverImage extends ConsumerStatefulWidget {
   final double width;
   final double height;
   final double radius;
-  final List<Color> gradient;
+
+  /// 占位渐变；null 时跟随主题色（primary → 深化 primary）。
+  final List<Color>? gradient;
   final IconData icon;
 
   /// 自定义占位（如全屏背景需要无图标占位）；null 时用默认渐变+图标。
@@ -189,12 +191,15 @@ class _CoverImageState extends ConsumerState<CoverImage> {
 
   Widget _placeholder() {
     if (widget.placeholder != null) return widget.placeholder!;
+    final scheme = Theme.of(context).colorScheme;
+    final colors = widget.gradient ??
+        [scheme.primary, Color.lerp(scheme.primary, Colors.black, 0.35)!];
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: widget.gradient,
+          colors: colors,
         ),
       ),
       child: Center(

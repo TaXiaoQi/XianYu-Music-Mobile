@@ -29,8 +29,18 @@ class SongRowPlayGesture extends ConsumerWidget {
             'single';
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: single ? onPlay : null,
-      onDoubleTap: single ? null : onPlay,
+      onTap: single
+          ? () {
+              debugPrint('[play] onTap fired');
+              onPlay!();
+            }
+          : null,
+      onDoubleTap: single
+          ? null
+          : () {
+              debugPrint('[play] onDoubleTap fired');
+              onPlay!();
+            },
       child: child,
     );
   }

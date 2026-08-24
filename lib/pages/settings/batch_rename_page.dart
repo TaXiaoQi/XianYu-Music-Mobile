@@ -166,7 +166,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
                   color: scheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           if (folders.isEmpty)
-            Text('音乐库还没有文件夹，请先在音乐库添加文件夹',
+            Text('本地还没有文件夹，请先在「本地 → 文件夹」页添加扫描目录',
                 style: TextStyle(fontSize: 12, color: scheme.outline))
           else
             Wrap(

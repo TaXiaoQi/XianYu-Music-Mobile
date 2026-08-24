@@ -32,6 +32,59 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     });
   }
 
+  /// 精确主题色 ColorScheme：primary/tertiary 家族直接取用户所选颜色。
+  ///
+  /// fromSeed 的 tonal palette 会把高饱和色（如红 EC4141）压成低饱和粉调
+  /// （暗色 primary ≈ #FFB4AB），导致「选红色出来粉色」。此处仅借用 fromSeed
+  /// 的中性色板（surface/outline/error），强调色家族全部精确覆盖：
+  /// - primary：亮色用原色；暗色下过暗时保色相提亮到可辨
+  /// - secondary：同色相降饱和派生，避免界面出现两种不相干的颜色
+  ColorScheme _schemeWithExactAccent(
+      {required Color accent, required Brightness brightness}) {
+    final dark = brightness == Brightness.dark;
+    final base =
+        ColorScheme.fromSeed(seedColor: accent, brightness: brightness);
+    final hsl = HSLColor.fromColor(accent);
+    var primary = accent;
+    if (dark && hsl.lightness < 0.4) {
+      primary = hsl.withLightness(0.5).toColor();
+    }
+    Color onOf(Color c) => c.computeLuminance() > 0.55
+        ? const Color(0xFF1F1F1F)
+        : Colors.white;
+    final primaryContainer = dark
+        ? Color.lerp(primary, Colors.black, 0.55)!
+        : Color.lerp(primary, Colors.white, 0.85)!;
+    final onPrimaryContainer = dark
+        ? Color.lerp(primary, Colors.white, 0.8)!
+        : Color.lerp(primary, Colors.black, 0.45)!;
+    final secondary = hsl
+        .withSaturation((hsl.saturation * 0.45).clamp(0.0, 1.0))
+        .toColor();
+    final secondaryContainer = dark
+        ? Color.lerp(secondary, Colors.black, 0.5)!
+        : Color.lerp(secondary, Colors.white, 0.85)!;
+    final onSecondaryContainer = dark
+        ? Color.lerp(secondary, Colors.white, 0.75)!
+        : Color.lerp(secondary, Colors.black, 0.4)!;
+    return base.copyWith(
+      primary: primary,
+      onPrimary: onOf(primary),
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: onPrimaryContainer,
+      // 亮色 inversePrimary 应等于暗色 primary（原色），反之亦然。
+      inversePrimary: dark ? onPrimaryContainer : primary,
+      secondary: secondary,
+      onSecondary: onOf(secondary),
+      secondaryContainer: secondaryContainer,
+      onSecondaryContainer: onSecondaryContainer,
+      tertiary: primary,
+      onTertiary: onOf(primary),
+      tertiaryContainer: primaryContainer,
+      onTertiaryContainer: onPrimaryContainer,
+    );
+  }
+
   void _ensureThemes(int accent, bool predictiveBack) {
     if (_cachedAccent == accent &&
         _cachedPredictiveBack == predictiveBack &&
@@ -51,19 +104,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
       },
     );
-    // 红色 seed 派生出的 tertiary 是橄榄/棕褐色系，页面用它会整片泛褐。
-    // 统一把 tertiary 修正为与主色一致的红系，保证「选红色就是红色」。
-    final lightScheme = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.light,
-    );
+    final lightScheme =
+        _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
     _lightTheme = ThemeData(
-      colorScheme: lightScheme.copyWith(
-        tertiary: lightScheme.primary,
-        onTertiary: lightScheme.onPrimary,
-        tertiaryContainer: lightScheme.primaryContainer,
-        onTertiaryContainer: lightScheme.onPrimaryContainer,
-      ),
+      colorScheme: lightScheme,
       // 统一页面底色与控件底色（对齐设置页规范）。
       scaffoldBackgroundColor: const Color(0xFFF4F4F6),
       // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
@@ -81,23 +125,16 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
-    final darkBase = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.dark,
-    );
+    final darkScheme =
+        _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
     _darkTheme = ThemeData(
-      colorScheme: darkBase.copyWith(
+      colorScheme: darkScheme.copyWith(
         surface: const Color(0xFF262626),
         surfaceContainerLowest: const Color(0xFF1f1f1f),
         surfaceContainerLow: const Color(0xFF262626),
         surfaceContainer: const Color(0xFF2c2c2c),
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
-        // 暗色下同样把偏棕褐的 tertiary 统一为红系。
-        tertiary: darkBase.primary,
-        onTertiary: darkBase.onPrimary,
-        tertiaryContainer: darkBase.primaryContainer,
-        onTertiaryContainer: darkBase.onPrimaryContainer,
       ),
       // 统一页面底色与控件底色（对齐设置页规范）。
       scaffoldBackgroundColor: const Color(0xFF222222),

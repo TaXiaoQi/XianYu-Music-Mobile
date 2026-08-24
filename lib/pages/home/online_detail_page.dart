@@ -524,7 +524,7 @@ class _Header extends StatelessWidget {
                           icon: Icon(
                             isFavorite ? Icons.favorite : Icons.favorite_border,
                             size: 18,
-                            color: const Color(0xFFEC4141),
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           style: IconButton.styleFrom(
                             minimumSize: const Size(38, 34),

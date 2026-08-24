@@ -117,6 +117,61 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   }
 }
 
+/// 预测返回诊断探针（只记录，不弹页面）：对比触屏与鼠标注入手势的
+/// progress 数值与触点位移，定位 ROM 是否对触屏源手势下发 0 进度。
+class _BackGestureProbe with WidgetsBindingObserver {
+  int _updates = 0;
+  double _maxProgress = 0;
+  double _lastProgress = 0;
+  Offset? _lastTouch;
+  final List<String> _samples = [];
+
+  void _reset() {
+    _updates = 0;
+    _maxProgress = 0;
+    _lastProgress = 0;
+    _lastTouch = null;
+    _samples.clear();
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent event) {
+    _reset();
+    debugPrint(
+      '[back-probe] start button=${event.isButtonEvent} '
+      'touch=${event.touchOffset} edge=${event.swipeEdge.name}',
+    );
+    return true;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent event) {
+    _updates++;
+    _lastProgress = event.progress;
+    _lastTouch = event.touchOffset;
+    if (event.progress > _maxProgress) _maxProgress = event.progress;
+    // 采样：前 3 条 + 之后每 10 条，避免刷屏又能看出进度曲线。
+    if (_updates <= 3 || _updates % 10 == 0) {
+      _samples.add('n=$_updates p=${event.progress.toStringAsFixed(3)} '
+          'x=${event.touchOffset?.dx.toStringAsFixed(0)}');
+    }
+  }
+
+  void _finish(String phase) {
+    debugPrint(
+      '[back-probe] $phase updates=$_updates maxP=${_maxProgress.toStringAsFixed(3)} '
+      'lastP=${_lastProgress.toStringAsFixed(3)} lastTouch=$_lastTouch '
+      'samples: ${_samples.join(' | ')}',
+    );
+  }
+
+  @override
+  void handleCommitBackGesture() => _finish('COMMIT');
+
+  @override
+  void handleCancelBackGesture() => _finish('CANCEL');
+}
+
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -130,14 +185,14 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   DateTime? _lastBackTime;
 
-  /// 上次记录的返回状态（诊断日志去重，build 频繁防刷屏）。
-  bool? _lastLoggedSubPage;
-
   bool _notificationsChecked = false;
+
+  final _BackGestureProbe _backProbe = _BackGestureProbe();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(_backProbe);
     // 启动自动同步调度器（每分钟 tick，到点才同步）。
     ref.read(autoSyncProvider).start();
     // 首帧后检查公告/反馈完成通知，避免与启动动画冲突。
@@ -152,19 +207,18 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_backProbe);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
     final hiddenCount = ref.watch(navBarHiddenProvider);
     // 只要有页面请求隐藏底栏（说明在二级页面，如音源管理/扫描文件夹/歌曲列表等）
     // 或者 GoRouter 栈深 > 1，就 100% 处于二级页面。
     final isSubPage = hiddenCount > 0 || GoRouter.of(context).canPop();
-
-    // 诊断日志：返回状态变化时记录。
-    if (isSubPage != _lastLoggedSubPage) {
-      _lastLoggedSubPage = isSubPage;
-      AppLogger.instance
-          .log('shell', '返回状态 isSubPage=$isSubPage (hidden=$hiddenCount)');
-    }
 
     // 动态 canPop（预测返回友好）：
     //

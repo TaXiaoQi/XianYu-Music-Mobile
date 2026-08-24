@@ -133,7 +133,6 @@ class _NowPlayingCard extends StatelessWidget {
               height: double.infinity,
               radius: 0,
               icon: Icons.album,
-              gradient: const [Color(0xFFEC4141), Color(0xFF3A6CF5)],
             ),
             const DecoratedBox(
               decoration: BoxDecoration(
@@ -215,13 +214,13 @@ class _StatsCard extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEC4141).withValues(alpha: 0.15),
+                  color: scheme.primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.insights,
                   size: 18,
-                  color: Color(0xFFEC4141),
+                  color: scheme.primary,
                 ),
               ),
               const SizedBox(width: 8),
@@ -309,7 +308,8 @@ class _SubStatItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: const Color(0xFFEC4141)),
+        Icon(icon,
+            size: 16, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 6),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +380,7 @@ class _PlayingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFEC4141),
+        color: Theme.of(context).colorScheme.primary,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -453,7 +453,9 @@ class _Dots extends StatelessWidget {
             width: i == index ? 18 : 6,
             height: 6,
             decoration: BoxDecoration(
-              color: i == index ? const Color(0xFFEC4141) : Colors.white38,
+              color: i == index
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white38,
               borderRadius: BorderRadius.circular(6),
             ),
           ),

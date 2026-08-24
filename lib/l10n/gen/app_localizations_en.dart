@@ -18,7 +18,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navHome => 'Home';
 
   @override
-  String get navLibrary => 'Library';
+  String get navLibrary => 'Local';
 
   @override
   String get navMine => 'Mine';
@@ -96,7 +96,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeTopList => 'Most played';
 
   @override
-  String get libraryTitle => 'Library';
+  String get libraryTitle => 'Local';
 
   @override
   String get libraryAllSongs => 'All songs';

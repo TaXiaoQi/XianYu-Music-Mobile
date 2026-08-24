@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Android 13+：媒体控制通知需运行时申请通知权限，否则系统静默拦截 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 听歌识曲：麦克风录音 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
@@ -17,7 +19,14 @@
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
-        
+
+        <!-- 关闭 Impeller 渲染器（参考 PiliNara）：Impeller 的损伤追踪问题会导致
+             预测返回手势期间页面只出现圆角而不跟随手指（手势进度事件已到达
+             框架、动画控制器已更新，但重绘不生效），回退 Skia 后正常 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
+
         <!-- audio_service 后台媒体前台服务支持 -->
         <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
