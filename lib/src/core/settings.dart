@@ -80,7 +80,7 @@ class AppSettings {
     this.autoSwitchSourceOnFailure = false,
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
-    this.enablePredictiveBack = false,
+    this.enablePredictiveBack = true,
     this.language = AppLanguage.system,
   });
 
@@ -356,7 +356,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('autoSwitchSourceOnFailure') ?? false,
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
-      enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,
+      enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? true,
       language: _langFromString(prefs.getString('language') ?? 'system'),
     );
   }

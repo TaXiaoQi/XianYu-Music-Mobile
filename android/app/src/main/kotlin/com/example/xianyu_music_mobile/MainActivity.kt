@@ -7,13 +7,13 @@ import android.media.AudioManager
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContracts
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
 
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
     private val SAF_CHANNEL = "xianyu/saf"
 

@@ -51,9 +51,15 @@ Future<void> main() async {
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'cc.xymusic.mobile.channel.audio',
         androidNotificationChannelName: '弦予音乐播放控制',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
-        androidNotificationIcon: 'mipmap/ic_launcher',
+        // 常驻媒体通知（暂停也在锁屏/通知栏可恢复），需要在通知栏显示为普通
+        // 媒体卡片而非 ongoing 前台。audio_service 断言 ongoing 必须搭配
+        // stopForegroundOnPause，故两者同为 false 以得到持久播放岛。
+        androidNotificationOngoing: false,
+        androidStopForegroundOnPause: false,
+        androidNotificationIcon: 'drawable/ic_notification',
+        artDownscaleWidth: 512,
+        artDownscaleHeight: 512,
+        androidNotificationClickStartsActivity: true,
       ),
     ).then(
       (h) => audioHandler = h,

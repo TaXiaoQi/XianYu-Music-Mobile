@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -163,61 +164,78 @@ class _AppShellState extends ConsumerState<AppShell> {
           .log('shell', '返回状态 isSubPage=$isSubPage (hidden=$hiddenCount)');
     }
 
-    return PopScope(
-      // 恒为 false：让栈顶 route 的 popDisposition 永远是 doNotPop。
-      //
-      // 若按二级页面动态放开（true），在部分系统的预测性返回下引擎会把
-      // 返回判定为 bubble（栈顶无 PopEntry 拦截且不可 pop），系统直接
-      // finish 回桌面——Flutter 层零感知（诊断日志无 [back]、无 pop 记录），
-      // 这正是用户遇到的「返回直接回桌面」。恒 false 后系统永远把返回
-      // 交给 Flutter，由 onPopInvokedWithResult 统一手动分发；
-      // 代价是预测性返回手势没有页面预览动画，正确性优先。
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        final router = GoRouter.of(context);
-        AppLogger.instance.log('back',
-            'onPopInvoked tab=$index hidden=$hiddenCount routerCanPop=${router.canPop()}');
-
-        // 1. 二级页面（go_router 子路由或直接 push 到 root navigator 的
-        //    页面都在 root 栈上，router.canPop 均为 true）：弹栈返回。
-        if (router.canPop()) {
-          AppLogger.instance.log('back', '手动 pop 二级页面');
-          router.pop();
-          return;
-        }
-
-        // 2. 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
-        if (index != 0) {
-          AppLogger.instance.log('back', '切回主界面 tab');
-          widget.navigationShell.goBranch(0);
-          return;
-        }
-
-        // 3. 如果已经在“主界面” Tab 根节点，提示“再按一次退出应用”
-        final now = DateTime.now();
-        if (_lastBackTime == null ||
-            now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
-          _lastBackTime = now;
-          AppLogger.instance.log('back', '提示再按一次退出');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('再按一次退出应用'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-          return;
-        }
-
-        // 4. 2秒内再次触发系统返回，顺畅退出程序
-        AppLogger.instance.log('back', 'SystemNavigator.pop 退出应用');
-        SystemNavigator.pop();
+    // 动态 canPop（预测返回友好）：
+    //
+    // - 二级页面（go_router 子路由 / push 到 root navigator 的页面，root 栈深 > 1）
+    //   isSubPage=true → canPop=true，系统把手势交给 Flutter，由
+    //   PredictiveBackPageTransitionsBuilder 自绘过渡，预测返回显示真实内容预览；
+    // - 真正根节点 isSubPage=false → canPop=false，回到下方式手动分发
+    //   （切 tab / 再按一次退出等）。
+    //
+    // 关键前提：二级页面必须压在 ROOT navigator 上（routes.dart 已如此），
+    // 使 GoRouter.canPop() 如实反映"root 栈里有可弹的真实页面"；若仍压在
+    // 分支内部 Navigator，canPop 会失真并触发「返回直接回桌面」的历史 bug。
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      // 鼠标/外接设备的侧键「返回」（PiliNara BackDetector 同款语义），
+      // 走与系统返回一致的分发，保证桌面扩展屏/外接鼠标下体验一致。
+      onPointerDown: (PointerDownEvent e) {
+        if (e.buttons == kBackMouseButton) _handleBack();
       },
-      child: _ShellScaffold(
-        navigationShell: widget.navigationShell,
-        index: index,
+      child: PopScope(
+        canPop: isSubPage,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _handleBack();
+        },
+        child: _ShellScaffold(
+          navigationShell: widget.navigationShell,
+          index: index,
+        ),
       ),
     );
+  }
+
+  /// 根节点返回分发：二级页弹栈 → 切回主界面 Tab → 双击退出。
+  /// 同时被系统返回与鼠标侧键触发，避免两处重复实现。
+  void _handleBack() {
+    final router = GoRouter.of(context);
+    AppLogger.instance.log('back',
+        'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}');
+
+    // 1. 二级页面（go_router 子路由或直接 push 到 root navigator 的
+    //    页面都在 root 栈上，router.canPop 均为 true）：弹栈返回。
+    if (router.canPop()) {
+      AppLogger.instance.log('back', '手动 pop 二级页面');
+      router.pop();
+      return;
+    }
+
+    // 2. 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
+    if (widget.navigationShell.currentIndex != 0) {
+      AppLogger.instance.log('back', '切回主界面 tab');
+      widget.navigationShell.goBranch(0);
+      return;
+    }
+
+    // 3. 如果已经在“主界面” Tab 根节点，提示“再按一次退出应用”
+    final now = DateTime.now();
+    if (_lastBackTime == null ||
+        now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
+      _lastBackTime = now;
+      AppLogger.instance.log('back', '提示再按一次退出');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('再按一次退出应用'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // 4. 2秒内再次触发系统返回，顺畅退出程序
+    AppLogger.instance.log('back', 'SystemNavigator.pop 退出应用');
+    SystemNavigator.pop();
   }
 }
 
