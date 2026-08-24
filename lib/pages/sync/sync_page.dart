@@ -124,20 +124,20 @@ class _SyncPageState extends ConsumerState<SyncPage> {
   Future<void> _importBackup() async {
     if (_backupBusy) return;
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
-      if (res == null || res.files.isEmpty) return;
-      final file = res.files.first;
+      if (files.isEmpty) return;
+      final file = files.first;
 
       String content = '';
       final path = file.path ?? '';
       if (path.isNotEmpty && File(path).existsSync()) {
         content = await File(path).readAsString();
       } else {
-        final bytes = file.bytes;
-        if (bytes == null || bytes.isEmpty) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) {
           _toast('无法读取所选文件');
           return;
         }
@@ -307,18 +307,18 @@ class _SyncPageState extends ConsumerState<SyncPage> {
   Future<void> _importStats() async {
     if (_statsBusy) return;
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
-      if (res == null || res.files.isEmpty) return;
-      final file = res.files.first;
+      if (files.isEmpty) return;
+      final file = files.first;
 
       // Android content URI 只有 bytes，先落到临时文件供 Rust 读取。
       String path = file.path ?? '';
       if (path.isEmpty || !File(path).existsSync()) {
-        final bytes = file.bytes;
-        if (bytes == null || bytes.isEmpty) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) {
           _toast('无法读取所选文件');
           return;
         }

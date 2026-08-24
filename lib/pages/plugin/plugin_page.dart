@@ -996,12 +996,12 @@ class _BackupImportSheetState extends State<_BackupImportSheet> {
 
   Future<void> _pickLocalFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json', 'txt'],
       );
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.single.path;
+      if (files.isEmpty) return;
+      final path = files.single.path;
       if (path == null) return;
       final file = File(path);
       final content = await file.readAsString();

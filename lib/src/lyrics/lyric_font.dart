@@ -21,14 +21,13 @@ class LyricFontManager {
   static Future<String?> importCustomFont({
     required Future<void> Function(String name, String path) onApplied,
   }) async {
-    final res = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: allowedExtensions,
-      allowMultiple: false,
     );
-    if (res == null || res.files.isEmpty) return null;
+    if (files.isEmpty) return null;
 
-    final file = res.files.first;
+    final file = files.first;
     final ext = file.name.contains('.')
         ? file.name.split('.').last.toLowerCase()
         : '';
@@ -46,7 +45,7 @@ class LyricFontManager {
     final name = _safeFileName(file.name);
     final dest = File('${dir.path}/$name');
 
-    final bytes = file.bytes ?? File(file.path!).readAsBytesSync();
+    final bytes = await file.readAsBytes();
     await dest.writeAsBytes(bytes, flush: true);
 
     final family = '$_familyPrefix${DateTime.now().millisecondsSinceEpoch}';

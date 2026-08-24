@@ -65,15 +65,14 @@ dependencies:
   crypto: ^3.0.0
 
   # 文件夹选择与存储权限（本地音乐扫描）
-  file_picker: ^8.1.0
+  # file_picker 12.x 与 share_plus 13.x 均依赖 win32 ^6，版本协调；
+  # 且 share_plus 13.x 已迁移到 Flutter Built-in Kotlin，消除 KGP 警告。
+  file_picker: ^12.0.0
   permission_handler: ^11.3.0
   liquid_glass_widgets: ^0.30.1
 
   # 诊断日志分享（Android 系统分享面板）
-  # 保持在 11.x：13.x 依赖 win32 ^6，与 file_picker 8.x 的 win32 ^5.5 冲突，
-  # 且 Dart 会编译跨平台实现（file_picker_windows.dart 依赖 win32 5 API），
-  # 无法用 dependency_overrides 强制共享 6 而同时不破坏编译。
-  share_plus: ^11.1.0
+  share_plus: ^13.3.0
   record: ^7.1.1
 
 dev_dependencies:

@@ -36,11 +36,11 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage>
   Future<void> _importFromFile() async {
     setState(() => _importing = true);
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['js'],
       );
-      final path = picked?.files.single.path;
+      final path = files.isEmpty ? null : files.single.path;
       if (path == null) return; // 用户取消
 
       final name =

@@ -87,9 +87,17 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       GlobalCupertinoLocalizations.delegate,
     ];
 
-    // 启动页由 main.dart 的 AppWarmupRunner 统一负责（等待 rust 初始化完成）
+    // 启动页由 main.dart 的 AppWarmupRunner 统一负责（等待 rust 初始化完成）。
+    //
+    // key 关键：语言切换会改变 locale。若仍复用同一个 MaterialApp.router 实例做
+    // 增量 locale 重建，会与 go_router 各分支 Navigator 的瞬态重建竞态，命中
+    // navigator._debugLocked 断言并报“popped the last page”（flutter#141315），
+    // 现场表现为切换语言黑屏。改用随 locale 变化的 key 强制整体重挂载：旧子树
+    //（含全部 Navigator）整体销毁、新子树（回到初始路由 /home）干净重建，不做
+    // 增量路由 reconfigure，从而彻底规避该竞态。语言切换重挂载一次开销可接受。
     return init.hasValue
         ? MaterialApp.router(
+            key: ValueKey('app-${locale ?? const Locale('system')}'),
             // XianYuApp 的 context 位于 MaterialApp 之上、无 Localizations 祖先，
             // 必须用可空版 Localizations.of（生成的 AppLocalizations.of 内含 !，会空指针崩溃）。
             title: Localizations.of<AppLocalizations>(context, AppLocalizations)

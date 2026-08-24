@@ -47,20 +47,19 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
 
   Future<void> _pickAndDecrypt() async {
     if (_busy) return;
-    final res = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.any,
-      allowMultiple: true,
     );
-    if (res == null || res.files.isEmpty) return;
+    if (files.isEmpty) return;
 
     // content URI 场景：file_picker 已复制到缓存（path 可用）；无 path 时落盘字节。
     final dir = await getTemporaryDirectory();
     final items = <_DecryptResult>[];
-    for (final f in res.files) {
+    for (final f in files) {
       String? path = f.path;
       if (path == null || path.isEmpty || !File(path).existsSync()) {
-        final bytes = f.bytes;
-        if (bytes == null || bytes.isEmpty) continue;
+        final bytes = await f.readAsBytes();
+        if (bytes.isEmpty) continue;
         final safeName = f.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
         final tmp = File('${dir.path}/$safeName');
         await tmp.writeAsBytes(bytes);

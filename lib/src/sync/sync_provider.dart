@@ -212,15 +212,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
   /// 导入本地备份文件（支持 BakaMusic / MusicFree / 洛雪及软件应用备份）
   Future<String> importLocalBackupFile() async {
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json', 'txt'],
       );
-      if (res == null || res.files.isEmpty) return '未选择文件';
-      final file = res.files.first;
+      if (files.isEmpty) return '未选择文件';
+      final file = files.first;
       String jsonContent = '';
-      if (file.bytes != null && file.bytes!.isNotEmpty) {
-        jsonContent = utf8.decode(file.bytes!);
+      final bytes = await file.readAsBytes();
+      if (bytes.isNotEmpty) {
+        jsonContent = utf8.decode(bytes);
       } else if (file.path != null && file.path!.isNotEmpty) {
         final ioFile = File(file.path!);
         if (await ioFile.exists()) {

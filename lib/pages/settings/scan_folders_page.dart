@@ -56,7 +56,7 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
         _toast('未授予存储权限，无法扫描本地文件夹');
         return;
       }
-      final dir = await FilePicker.platform.getDirectoryPath();
+      final dir = await FilePicker.getDirectoryPath();
       if (dir == null) return; // 用户取消
       // SAF 返回的 content:// URI 无法用于文件系统扫描。
       if (dir.startsWith('content://')) {
