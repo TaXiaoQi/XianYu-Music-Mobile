@@ -8,6 +8,7 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../playlist/playlist_provider.dart';
 import '../rust/api.dart';
+import 'saf_channel.dart';
 
 /// 曲库歌曲（小而美：仅保留播放/展示所需字段）。
 class Song {
@@ -242,13 +243,12 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     final errors = <String>[];
     for (final folder in folders) {
       try {
-        final songsJson = await scanMusicFolder(
-          dbPath: dbPath,
-          folderPath: folder,
-          minimumDurationSeconds: minDuration > 0 ? minDuration : null,
-          allowedFormats: allowed,
+        total += await _scanFolder(
+          dbPath,
+          folder,
+          allowed,
+          minDuration,
         );
-        total += (jsonDecode(songsJson) as List).length;
       } catch (e) {
         // 单个目录失败不阻断其它目录，但记录错误以便暴露给用户。
         errors.add('$folder: $e');
@@ -260,6 +260,65 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       throw Exception('扫描失败：${errors.first}');
     }
     return total;
+  }
+
+  /// 扫描单个目录：SAF tree 走 Android 侧枚举+fd 解析，普通路径走原路径扫描。
+  Future<int> _scanFolder(
+    String dbPath,
+    String folder,
+    List<String> allowed,
+    int minDuration,
+  ) async {
+    if (SafChannel.isSafTree(folder)) {
+      return _scanSafTree(dbPath, folder, allowed, minDuration);
+    }
+    final songsJson = await scanMusicFolder(
+      dbPath: dbPath,
+      folderPath: folder,
+      minimumDurationSeconds: minDuration > 0 ? minDuration : null,
+      allowedFormats: allowed,
+    );
+    return (jsonDecode(songsJson) as List).length;
+  }
+
+  /// SAF 扫描：Android 侧递归枚举白名单音频 → 逐个 openFd 交给 Rust 解析 →
+  /// 批量增量入库。
+  Future<int> _scanSafTree(
+    String dbPath,
+    String treeUri,
+    List<String> allowed,
+    int minDuration,
+  ) async {
+    final files = await SafChannel.listAudioTree(treeUri, allowed);
+    if (files.isEmpty) return 0;
+    // song 主键为 `{tree}/document/{docId}`，增量快照用同构的根路径匹配。
+    final folderKey = SafChannel.treeRootPath(treeUri);
+    final songs = <Map<String, dynamic>>[];
+    for (final f in files) {
+      final fd = await SafChannel.openFd(treeUri, f.docId);
+      if (fd < 0) continue;
+      final path = SafChannel.songPath(treeUri, f.docId);
+      String? songJson;
+      try {
+        songJson = await parseAudioFromFdAndroid(
+          fd: fd,
+          fileName: f.name,
+          pathKey: path,
+          format: f.ext,
+        );
+      } finally {
+        await SafChannel.closeFd(fd);
+      }
+      songs.add(jsonDecode(songJson));
+    }
+    if (songs.isEmpty) return 0;
+    await scanSafSongsCommit(
+      dbPath: dbPath,
+      folderKey: folderKey,
+      songsJson: jsonEncode(songs),
+      minimumDurationSeconds: minDuration > 0 ? minDuration : null,
+    );
+    return songs.length;
   }
 
   /// 按歌手取歌曲列表。

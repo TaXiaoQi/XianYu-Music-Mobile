@@ -386,6 +386,35 @@ pub fn scan_music_folder(
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
+/// Android SAF：从一个已被 Android 侧通过 ContentResolver 打开的 fd 解析单个音频，
+/// 返回曲库 [`Song`] JSON。读取走 `/proc/self/fd/<fd>`，解析逻辑与路径扫描完全一致。
+pub fn parse_audio_from_fd_android(
+    fd: i32,
+    file_name: String,
+    path_key: String,
+    format: String,
+) -> Result<String, String> {
+    let song = crate::music::scanner::parse_song_from_fd(fd, &file_name, &path_key, &format)
+        .ok_or_else(|| format!("无法解析音频（fd={fd}）"))?;
+    serde_json::to_string(&song).map_err(|e| e.to_string())
+}
+
+/// Android SAF：把一批已解析歌曲增量提交到 `folder_key`（SAF tree documentId）名下。
+/// 复用桌面同款增量 diff，保证新增/变更/删除在库内一致。
+pub fn scan_saf_songs_commit(
+    db_path: String,
+    folder_key: String,
+    songs_json: String,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<String, String> {
+    let songs: Vec<crate::music::types::Song> =
+        serde_json::from_str(&songs_json).map_err(|e| e.to_string())?;
+    let mut conn = open_scan_conn(&db_path)?;
+    let options = crate::music::scanner::ScanOptions::new(minimum_duration_seconds, None);
+    crate::music::scanner::commit_saf_scan_songs(&mut conn, &folder_key, songs, &options)?;
+    Ok("ok".to_string())
+}
+
 // =========================================================================
 // WebDAV 远程源管理（第七批）
 // =========================================================================

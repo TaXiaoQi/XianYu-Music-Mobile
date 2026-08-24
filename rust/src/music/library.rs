@@ -8,6 +8,7 @@ use super::utils::{
 };
 use rusqlite::Connection;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -840,16 +841,157 @@ pub fn get_library_hierarchy(conn: &Connection) -> Result<Vec<FolderNode>, Strin
         .filter_map(|r| r.ok())
         .collect();
 
-    let mut tree = Vec::new();
+    // SAF 根（content:// tree）无法用文件系统 read_dir 构建层级，改为按歌曲
+    // path（`{tree}/document/{docId}`）在内存中聚合出目录树。
+    let has_saf_root = roots.iter().any(|r| r.starts_with("content://"));
+    let all_song_paths: Vec<String> = if has_saf_root {
+        let mut s = conn
+            .prepare("SELECT path FROM songs")
+            .map_err(|e| e.to_string())?;
+        let rows = s
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect::<Vec<_>>();
+        rows
+    } else {
+        Vec::new()
+    };
 
+    let mut tree = Vec::new();
     for root in roots {
-        let root_path = PathBuf::from(&root);
-        if let Some(root_node) = scan_folder_recursive(root_path.clone(), 0, 1, conn) {
-            tree.push(root_node);
+        if root.starts_with("content://") {
+            if let Some(node) = build_saf_folder_tree(&root, &all_song_paths) {
+                tree.push(node);
+            }
+        } else {
+            let root_path = PathBuf::from(&root);
+            if let Some(root_node) = scan_folder_recursive(root_path.clone(), 0, 1, conn) {
+                tree.push(root_node);
+            }
         }
     }
 
     Ok(tree)
+}
+
+/// SAF 树的中间聚合节点（按目录组织，songs 为该目录下的直接文件）。
+struct SafDirNode {
+    name: String,
+    path: String,
+    songs: Vec<String>,
+    children: BTreeMap<String, SafDirNode>,
+}
+
+/// 对单个 `content://` tree 根，从全部歌曲 path 聚合出完整目录树。
+/// 根节点 path = `{tree}/document/{rootDocId}`，以便后代路径匹配命中全部歌曲。
+fn build_saf_folder_tree(root: &str, all_song_paths: &[String]) -> Option<FolderNode> {
+    let tree_uri = root.trim_end_matches('/');
+    let root_doc_id = saf_tree_root_doc_id(tree_uri)?;
+    let root_node_path = format!("{tree_uri}/document/{root_doc_id}");
+    let prefix = format!("{root_node_path}/");
+
+    let mut dir_root = SafDirNode {
+        name: saf_tree_label(&root_doc_id),
+        path: root_node_path,
+        songs: Vec::new(),
+        children: BTreeMap::new(),
+    };
+
+    for song_path in all_song_paths {
+        let relative = match song_path.strip_prefix(&prefix) {
+            Some(rel) if !rel.is_empty() => rel,
+            _ => continue,
+        };
+        // split_last 返回 (末段=文件名, 其余=[目录...])，目录才是要展开的段。
+        let parts: Vec<&str> = relative.split('/').collect();
+        let (_file, dirs) = match parts.split_last() {
+            Some(v) => v,
+            None => continue,
+        };
+        let mut cur = &mut dir_root;
+        for seg in dirs {
+            let seg_name = (*seg).to_string();
+            cur = cur
+                .children
+                .entry(seg_name.clone())
+                .or_insert_with(|| SafDirNode {
+                    name: seg_name.clone(),
+                    path: format!("{}/{}", cur.path, seg_name),
+                    songs: Vec::new(),
+                    children: BTreeMap::new(),
+                });
+        }
+        cur.songs.push(song_path.clone());
+    }
+
+    if dir_root.songs.is_empty() && dir_root.children.is_empty() {
+        return None;
+    }
+    Some(saf_dir_to_node(&dir_root))
+}
+
+/// 把聚合目录转成 [`FolderNode`]，song_count = 子树直接/间接歌曲总数。
+fn saf_dir_to_node(node: &SafDirNode) -> FolderNode {
+    let mut song_count = node.songs.len();
+    let mut cover_song_path = node.songs.first().cloned();
+    let children = node
+        .children
+        .values()
+        .map(saf_dir_to_node)
+        .collect::<Vec<_>>();
+    for child in &children {
+        song_count += child.song_count;
+        if cover_song_path.is_none() {
+            cover_song_path = child.cover_song_path.clone();
+        }
+    }
+    FolderNode {
+        name: node.name.clone(),
+        path: node.path.clone(),
+        children,
+        child_count: node.children.len(),
+        children_loaded: true,
+        song_count,
+        cover_song_path,
+        is_expanded: false,
+    }
+}
+
+/// 取 tree URI 的根 documentId（末段，解码百分号）。
+fn saf_tree_root_doc_id(tree_uri: &str) -> Option<String> {
+    let last = tree_uri.rsplit('/').next()?;
+    Some(percent_decode(last))
+}
+
+/// 根目录显示名：取根 documentId 去掉「卷名:」前缀后的最后一段。
+fn saf_tree_label(root_doc_id: &str) -> String {
+    let base = root_doc_id.rsplit('/').next().unwrap_or(root_doc_id);
+    match base.split_once(':') {
+        Some((_, label)) if !label.trim().is_empty() => label.to_string(),
+        _ => base.to_string(),
+    }
+}
+
+/// 极简百分号解码（RFC 3986），源为 SAF URI 的字符编码。
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 pub fn get_folder_children(

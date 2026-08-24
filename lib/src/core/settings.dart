@@ -80,6 +80,7 @@ class AppSettings {
     this.autoSwitchSourceOnFailure = false,
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
+    this.enablePredictiveBack = false,
     this.language = AppLanguage.system,
   });
 
@@ -176,6 +177,9 @@ class AppSettings {
   /// 歌曲播放触发方式：single 单击播放 / double 双击播放。
   final String songClickAction;
 
+  /// 是否启用安卓系统预测返回动画（Android 13+ 手势导航下生效）。
+  final bool enablePredictiveBack;
+
   /// 应用界面语言。
   final AppLanguage language;
 
@@ -222,6 +226,7 @@ class AppSettings {
     bool? autoSwitchSourceOnFailure,
     int? usbExclusiveDeviceId,
     String? songClickAction,
+    bool? enablePredictiveBack,
     AppLanguage? language,
   }) {
     return AppSettings(
@@ -278,6 +283,7 @@ class AppSettings {
           autoSwitchSourceOnFailure ?? this.autoSwitchSourceOnFailure,
       usbExclusiveDeviceId: usbExclusiveDeviceId ?? this.usbExclusiveDeviceId,
       songClickAction: songClickAction ?? this.songClickAction,
+      enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
       language: language ?? this.language,
     );
   }
@@ -350,6 +356,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('autoSwitchSourceOnFailure') ?? false,
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
+      enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,
       language: _langFromString(prefs.getString('language') ?? 'system'),
     );
   }
@@ -423,6 +430,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('autoSwitchSourceOnFailure', next.autoSwitchSourceOnFailure),
       prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
       prefs.setString('songClickAction', next.songClickAction),
+      prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
       prefs.setString('language', next.language.name),
     ]);
   }
@@ -431,6 +439,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setPlayMode(int m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playMode: m));
   Future<void> setLastTab(int t) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lastTab: t));
   Future<void> setKeepScreenOn(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepScreenOn: v));
+  Future<void> setEnablePredictiveBack(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enablePredictiveBack: v));
   Future<void> setThemeMode(ThemeModePreference m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(themeMode: m));
   Future<void> setAccentColor(int c) => _save((state.valueOrNull ?? const AppSettings()).copyWith(accentColor: c));
   Future<void> setShowQualityBadges(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showQualityBadges: v));

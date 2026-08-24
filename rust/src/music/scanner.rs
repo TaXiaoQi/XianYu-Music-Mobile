@@ -16,12 +16,53 @@ mod progress;
 mod repository;
 
 pub(crate) use orchestrator::{scan_folder_recursive, scan_single_directory_internal};
-pub(crate) use parser::parse_song_from_file;
+pub(crate) use parser::{parse_song_from_file, parse_song_from_fd};
 pub(crate) use repository::apply_scan_changes;
 
 pub(super) const VARIOUS_ARTISTS: &str = "Various Artists";
 pub(super) const VARIOUS_ARTISTS_THRESHOLD: usize = 5;
 pub(super) const PROGRESS_EMIT_INTERVAL_MS: u64 = 200;
+
+/// Android SAF：Android 侧用 Documents 枚举目录并把每个音频文件打开为 fd，
+/// 逐个解析成 Song 后在此做增量入库（按 folder_key 前缀）。复用 diff/repository，
+/// 使"新增/变更/删除"与桌面路径扫描保持同样的库内一致性。
+pub(crate) fn commit_saf_scan_songs(
+    conn: &mut rusqlite::Connection,
+    folder_key: &str,
+    songs: Vec<Song>,
+    options: &ScanOptions,
+) -> Result<(), String> {
+    let snapshot = diff::load_db_snapshot_for_folder(conn, folder_key)?;
+    let current: HashSet<String> = songs.iter().map(|s| s.path.clone()).collect();
+
+    let mut to_add = Vec::new();
+    let mut to_update = Vec::new();
+    for song in songs {
+        if options.minimum_duration_seconds > 0
+            && song.duration > 0
+            && song.duration < options.minimum_duration_seconds
+        {
+            continue;
+        }
+        match snapshot.get(&song.path) {
+            Some(db) => {
+                let changed = db.file_modified_at != song.file_modified_at.map(|v| v as i64)
+                    || db.file_size != song.file_size as i64;
+                if changed {
+                    to_update.push(song);
+                }
+            }
+            None => to_add.push(song),
+        }
+    }
+    let to_delete: Vec<String> = snapshot
+        .keys()
+        .filter(|path| !current.contains(*path))
+        .cloned()
+        .collect();
+
+    repository::apply_scan_changes(conn, &to_add, &to_update, &to_delete, None)
+}
 pub(super) const DB_PROGRESS_BATCH: usize = 100;
 
 pub(super) const UNKNOWN_ARTIST: &str = "未知歌手";

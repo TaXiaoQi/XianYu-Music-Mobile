@@ -13,6 +13,7 @@ import '../../pages/search/search_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
+import '../../pages/settings/settings_category_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/feedback/feedback_page.dart';
@@ -91,6 +92,16 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/account',
       builder: (context, state) => const AccountPage(),
+    ),
+    // 设置分类详情页（从设置导航页进入）。压在根 Navigator 上，
+    // 避免 StatefulShellBranch 嵌套 Navigator 导致预测返回动画失效。
+    GoRoute(
+      path: '/settings/:category',
+      builder: (context, state) => SettingsCategoryPage(
+        category: SettingsCategory.fromPath(
+          state.pathParameters['category'] ?? 'general',
+        ),
+      ),
     ),
     // 意见反馈页（从设置页进入）。
     GoRoute(

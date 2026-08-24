@@ -93,7 +93,27 @@ pub(super) fn song_identity_missing(song: &Song) -> bool {
             .unwrap_or(true)
 }
 
+/// 解析单个音频文件为曲库 [`Song`]。
+/// - `path`：实际用于读取的路径（桌面为真实路径；Android SAF 下为 `/proc/self/fd/N`）
+/// - `semantic_name`：用于派生 name/title 的人类可读文件名（fd 路径本身无名）
+/// - `path_str`：作为库里 Song.path 主键的稳定字符串
 pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) -> Option<Song> {
+    let semantic = path.to_string_lossy().into_owned();
+    parse_song_inner(path, &semantic, path_str, format)
+}
+
+/// Android SAF 场景：从已被 Android 侧打开的 fd 解析（读取走 `/proc/self/fd/N`）。
+pub(crate) fn parse_song_from_fd(
+    fd: i32,
+    semantic_name: &str,
+    path_str: &str,
+    format: &str,
+) -> Option<Song> {
+    let read = std::path::PathBuf::from(format!("/proc/self/fd/{}", fd));
+    parse_song_inner(&read, semantic_name, path_str, format)
+}
+
+fn parse_song_inner(path: &Path, semantic_name: &str, path_str: &str, format: &str) -> Option<Song> {
     let mut artist = String::from("未知歌手");
     let mut album = String::from("未知专辑");
     let mut album_artist = String::new();
@@ -175,7 +195,11 @@ pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) ->
         bitrate = derive_bitrate_kbps(file_size, duration);
     }
     if title.trim().is_empty() {
-        title = path.file_stem()?.to_string_lossy().to_string();
+        title = Path::new(semantic_name)
+            .file_stem()
+            .map(|value| value.to_string_lossy().into_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| semantic_name.to_string());
     }
     if album_artist.trim().is_empty() {
         album_artist = artist.clone();
@@ -187,7 +211,10 @@ pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) ->
     Some(Song {
         id: None,
         artist_avatar_bytes,
-        name: path.file_name()?.to_string_lossy().to_string(),
+        name: Path::new(semantic_name)
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_else(|| semantic_name.to_string()),
         path: path_str.to_string(),
         title,
         artist,

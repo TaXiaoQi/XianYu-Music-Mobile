@@ -1026,7 +1026,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加音乐目录，\n然后在此下拉刷新开始扫描',
+                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加一个音乐目录\n（系统会弹出授权，允许后即可扫描），\n然后在此下拉刷新开始扫描',
                         textAlign: TextAlign.center,
                       ),
                     ),

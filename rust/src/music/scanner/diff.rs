@@ -21,8 +21,8 @@ use walkdir::WalkDir;
 
 pub(super) struct DbSongSnapshot {
     pub(super) song: Song,
-    pub(super) file_modified_at: Option<i64>,
-    pub(super) file_size: i64,
+    pub(crate) file_modified_at: Option<i64>,
+    pub(crate) file_size: i64,
 }
 
 pub(super) struct ScanDiff {

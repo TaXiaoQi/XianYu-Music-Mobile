@@ -1,8 +1,12 @@
 package com.example.xianyu_music_mobile
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.result.contract.ActivityResultContracts
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -11,6 +15,18 @@ import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "xianyu/audio_devices"
+    private val SAF_CHANNEL = "xianyu/saf"
+
+    private lateinit var saf: SafEngine
+    private lateinit var treeLauncher: androidx.activity.result.ActivityResultLauncher<Intent>
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        saf = SafEngine(this)
+        treeLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { res -> saf.onTreeResult(res?.data?.data) }
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -18,6 +34,35 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "listOutputDevices" -> result.success(listOutputDevices())
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SAF_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "chooseFolderTree" -> {
+                        saf.pendingTreeResult = result
+                        treeLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                    }
+                    "persistPermission" -> {
+                        saf.persistPermission(call.argument("uri") as String)
+                        result.success(null)
+                    }
+                    "listAudioTree" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        val exts = (call.argument<List<*>>("extensions") ?: emptyList())
+                            .map { it.toString() }
+                        result.success(saf.listAudioTree(uri, exts))
+                    }
+                    "openFd" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        val docId = call.argument<String>("docId") ?: ""
+                        result.success(saf.openFd(uri, docId))
+                    }
+                    "closeFd" -> {
+                        saf.closeFd((call.argument<Int>("fd")) ?: -1)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

@@ -245,6 +245,34 @@ Future<String> scanMusicFolder({
   allowedFormats: allowedFormats,
 );
 
+/// Android SAF：从一个已被 Android 侧通过 ContentResolver 打开的 fd 解析单个音频，
+/// 返回曲库 [`Song`] JSON。读取走 `/proc/self/fd/<fd>`，解析逻辑与路径扫描完全一致。
+Future<String> parseAudioFromFdAndroid({
+  required int fd,
+  required String fileName,
+  required String pathKey,
+  required String format,
+}) => RustLib.instance.api.crateApiParseAudioFromFdAndroid(
+  fd: fd,
+  fileName: fileName,
+  pathKey: pathKey,
+  format: format,
+);
+
+/// Android SAF：把一批已解析歌曲增量提交到 `folder_key`（SAF tree documentId）名下。
+/// 复用桌面同款增量 diff，保证新增/变更/删除在库内一致。
+Future<String> scanSafSongsCommit({
+  required String dbPath,
+  required String folderKey,
+  required String songsJson,
+  int? minimumDurationSeconds,
+}) => RustLib.instance.api.crateApiScanSafSongsCommit(
+  dbPath: dbPath,
+  folderKey: folderKey,
+  songsJson: songsJson,
+  minimumDurationSeconds: minimumDurationSeconds,
+);
+
 /// 列出全部远程源（返回 [`RemoteSource`] 数组 JSON）。
 Future<String> listRemoteSources({required String dbPath}) =>
     RustLib.instance.api.crateApiListRemoteSources(dbPath: dbPath);

@@ -15,6 +15,7 @@ import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/lyric_font.dart';
+import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/cover_image.dart';
@@ -447,6 +448,8 @@ class _TitleRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isFav = ref.watch(favoritesProvider).contains(current.path);
+    final currentQuality =
+        ref.watch(playerProvider.select((s) => s.currentQuality));
     return Row(
       children: [
         Expanded(
@@ -472,6 +475,26 @@ class _TitleRow extends ConsumerWidget {
             ],
           ),
         ),
+        if (current.isOnline)
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => _showQualitySheet(context, ref),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Text(
+                _qualityLabel(currentQuality),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: (currentQuality != null &&
+                          isLosslessQuality(currentQuality))
+                      ? scheme.primary
+                      : Color(0xFFEC4141).withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+          ),
         IconButton(
           icon: Icon(
             isFav ? Icons.favorite : Icons.favorite_border,
@@ -499,6 +522,139 @@ class _TitleRow extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 打开音质选择弹窗（触发全量探测真实可用档位）。
+void _showQualitySheet(BuildContext context, WidgetRef ref) {
+  final notifier = ref.read(playerProvider.notifier);
+  showSheetDialog<void>(context, (_) => _QualitySheet(notifier: notifier));
+}
+
+/// 把 12 档内部键转成菜单/按钮上的人类可读标签。
+String _qualityLabel(String? q) {
+  if (q == null || q.isEmpty) return 'HQ';
+  switch (q) {
+    case 'mgg':
+      return 'MGG';
+    case '128k':
+      return '128K';
+    case '192k':
+      return '192K';
+    case '320k':
+      return '320K';
+    case 'flac':
+      return 'FLAC';
+    case 'flac24bit':
+      return 'FLAC24';
+    case 'hires':
+      return 'Hi-Res';
+    case 'vinyl':
+      return '黑胶';
+    case 'dolby':
+      return '杜比';
+    case 'atmos':
+      return 'Atmos';
+    case 'atmos_plus':
+      return 'Atmos+';
+    case 'master':
+      return 'Master';
+    default:
+      return q.toUpperCase();
+  }
+}
+
+/// 音质选择弹窗：探测并展示当前在线歌曲的真实可用档位，点选即切换。
+class _QualitySheet extends ConsumerStatefulWidget {
+  const _QualitySheet({required this.notifier});
+
+  final PlayerNotifier notifier;
+
+  @override
+  ConsumerState<_QualitySheet> createState() => _QualitySheetState();
+}
+
+class _QualitySheetState extends ConsumerState<_QualitySheet> {
+  Future<List<String>>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.notifier.qualityOptions();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 360,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              '音质选择',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<String>>(
+              future: _future,
+              builder: (ctx, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  );
+                }
+                final opts = snap.data ?? const <String>[];
+                if (opts.isEmpty) {
+                  return const Center(child: Text('暂无可切换音质'));
+                }
+                final cur = ref
+                    .watch(playerProvider.select((s) => s.currentQuality));
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: opts.length,
+                  itemBuilder: (ctx, i) {
+                    final q = opts[i];
+                    final active = q == cur;
+                    return ListTile(
+                      dense: true,
+                      title: Text(_qualityLabel(q)),
+                      trailing: Icon(
+                        active
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        size: 20,
+                        color: active
+                            ? scheme.primary
+                            : Colors.grey.shade400,
+                      ),
+                      onTap: active
+                          ? null
+                          : () async {
+                              final ok = await widget.notifier.switchQuality(q);
+                              if (!ctx.mounted) return;
+                              Navigator.of(ctx).pop();
+                              ScaffoldMessenger.of(ctx)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(SnackBar(
+                                  content: Text(ok
+                                      ? '已切换为${_qualityLabel(q)}'
+                                      : '音质切换失败'),
+                                ));
+                            },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

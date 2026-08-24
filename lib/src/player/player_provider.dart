@@ -19,6 +19,7 @@ import '../plugin/plugin_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import '../stats/listen_stats.dart';
+import 'online_quality_probe.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
 XianYuAudioHandler? audioHandler;
@@ -156,6 +157,12 @@ class PlaybackState {
   final String? error;
   /// USB 独占输出（AAudio exclusive）播放中：EQ/音效 DSP 走 Rust 管线。
   final bool usbExclusive;
+  /// 当前在线歌曲实际播放音质（降级校验后）。
+  final String? currentQuality;
+  /// 当前在线歌曲已探测到的真实可用档位（高 → 低，不含虚高档）。
+  final List<String> availableQualities;
+  /// 当前在线歌曲是否仍在后台探测可用档位（音质菜单可显示加载态）。
+  final bool qualityMenuProbing;
   const PlaybackState({
     this.current,
     this.queue = const [],
@@ -167,6 +174,9 @@ class PlaybackState {
     this.resolving = false,
     this.error,
     this.usbExclusive = false,
+    this.currentQuality,
+    this.availableQualities = const [],
+    this.qualityMenuProbing = false,
   });
 
   PlaybackState copyWith({
@@ -180,6 +190,9 @@ class PlaybackState {
     bool? resolving,
     Object? error = _noChange,
     bool? usbExclusive,
+    String? currentQuality,
+    List<String>? availableQualities,
+    bool? qualityMenuProbing,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -192,6 +205,10 @@ class PlaybackState {
       resolving: resolving ?? this.resolving,
       error: error == _noChange ? this.error : error as String?,
       usbExclusive: usbExclusive ?? this.usbExclusive,
+      currentQuality: currentQuality ?? this.currentQuality,
+      availableQualities: availableQualities ?? this.availableQualities,
+      qualityMenuProbing:
+          qualityMenuProbing ?? this.qualityMenuProbing,
     );
   }
 }
@@ -208,6 +225,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   final Ref _ref;
   final AudioPlayer _player = AudioPlayer();
+  /// 当前在线歌曲的共享探针 key，切歌时用于失效上一首的探测。
+  String? _activeProbeKey;
   final Random _rand = Random();
   StreamSubscription<Duration?>? _posSub;
   StreamSubscription<Duration?>? _durSub;
@@ -321,7 +340,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _stopExclusive();
       try {
         await _updateRgGain(item.path);
-        await _player.setFilePath(item.path);
+        await _setLocalSource(item.path);
         await _player.setVolume(_effectiveVolume());
         await _player.seek(Duration(milliseconds: (pos * 1000).round()));
         if (playing) {
@@ -610,6 +629,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _manualPause = manualPause;
     _restoredOnlinePending = null;
     final item = state.queue[index];
+    // 切到不同歌曲时失效上一首的共享探针，避免残留探测与串歌缓存。
+    final prev = state.current;
+    if (_activeProbeKey != null && (prev == null || prev.path != item.path)) {
+      onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
+      _activeProbeKey = null;
+    }
     state = state.copyWith(
       queueIndex: index,
       current: item,
@@ -646,7 +671,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           try {
             await _player.stop();
           } catch (_) {}
-          await _player.setFilePath(item.path);
+          await _setLocalSource(item.path);
           await _player.setVolume(_effectiveVolume());
           await _player.play();
         }
@@ -700,18 +725,52 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final songJson = jsonDecode(json) as Map<String, dynamic>;
       final s0 = _ref.read(settingsProvider).valueOrNull;
       final fb0 = s0?.onlineQualityFallbackBehavior ?? 'lower';
-      final candidates = _qualityCandidates(item.onlineQuality ??
-          s0?.onlineDefaultQuality ?? '320k', fb0);
+      final preferred = item.onlineQuality ??
+          s0?.onlineDefaultQuality ??
+          '320k';
+      final candidates = _qualityCandidates(preferred, fb0);
 
-      // 插件音源：引擎逐档解析；全档失败时带上 LX 源信息走 lx 解析兜底。
-      if (songJson.containsKey('pluginId')) {
-        for (final quality in candidates) {
-          final url = await _resolvePluginUrl(songJson, quality);
-          if (_isPlayableUrl(url)) {
-            await _startUrl(url!);
-            return;
-          }
-        }
+      // 共享探测：同歌一轮，起播优先、档位菜单/下载复用。
+      final key = _songProbeKey(songJson, item);
+      final probe = onlineQualityProbeRegistry.ensure(
+          key, _buildResolveCallback(songJson, item));
+      _activeProbeKey = key;
+
+      final start = await probe.startBest(preferred, candidates);
+      if (start != null) {
+        await _startUrl(start.url);
+        state = state.copyWith(currentQuality: start.quality);
+        _refreshQualityMenuState(probe);
+        return;
+      }
+      throw StateError('直链解析失败');
+    }
+    // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
+    final url = await _resolveOnlineUrl(item);
+    if (url == null) throw StateError('无法获取播放链接');
+    await _startUrl(url);
+  }
+
+  /// 歌曲级探测 key：隔离不同歌曲且共享同一首歌的多路调用。
+  String _songProbeKey(Map<String, dynamic> songJson, QueueItem item) {
+    final pid = songJson['pluginId'];
+    final src = songJson['source'];
+    final mid = songJson['songmid'] ?? songJson['id'];
+    if (pid != null) {
+      return 'plugin:$pid:${mid ?? songJson['title'] ?? item.title}';
+    }
+    return 'lx:$src:${mid ?? item.title}';
+  }
+
+  /// 构造单档解析回调：插件音源逐档优先，同档插件失败立即用 LX 兜底；
+  /// 纯 LX 音源直接走 LX 单档解析。
+  Future<String?> Function(String) _buildResolveCallback(
+      Map<String, dynamic> songJson, QueueItem item) {
+    final hasPlugin = songJson.containsKey('pluginId');
+    return (String q) async {
+      if (hasPlugin) {
+        final u = await _resolvePluginUrl(songJson, q);
+        if (_isPlayableUrl(u)) return u;
         final musicInfo =
             songJson['musicInfo'] as Map<String, dynamic>? ?? {};
         final fallbackInfo = <String, dynamic>{
@@ -719,25 +778,108 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             'source': songJson['source'],
           ...musicInfo,
         };
-        final fallback = await _tryLxResolve(
-            jsonEncode(fallbackInfo), candidates);
-        if (fallback != null) {
-          await _startUrl(fallback);
-          return;
-        }
-        throw StateError('插件直链解析失败');
+        final lx = await _lxResolveQuality(jsonEncode(fallbackInfo), q);
+        if (_isPlayableUrl(lx)) return lx;
+        return null;
       }
+      return _lxResolveQuality(jsonEncode(songJson), q);
+    };
+  }
 
-      // LX 在线歌曲：lx 解析（已导入插件优先 → 公共 API），多音质降级。
-      final url = await _tryLxResolve(json, candidates);
-      if (url == null) throw StateError('直链解析失败');
-      await _startUrl(url);
-      return;
+  /// 单档 LX 直链解析（已导入插件优先 → 公共 API）。
+  Future<String?> _lxResolveQuality(
+      String songInfoJson, String quality) async {
+    try {
+      final dataDir = await _ref.read(appDataDirProvider.future);
+      final resolved = await lxResolveUrl(
+        songInfoJson: songInfoJson,
+        quality: quality,
+        dataDir: dataDir,
+      );
+      if (resolved == 'null' || resolved.isEmpty) return null;
+      final url =
+          (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
+      return _isPlayableUrl(url) ? url : null;
+    } catch (_) {
+      return null;
     }
-    // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
-    final url = await _resolveOnlineUrl(item);
-    if (url == null) throw StateError('无法获取播放链接');
-    await _startUrl(url);
+  }
+
+  /// 把探针的最新可用档位同步到 UI 状态（音质按钮/菜单）。
+  void _refreshQualityMenuState(SongQualityProbe probe) {
+    state = state.copyWith(
+      availableQualities: probe.availableQualities,
+      qualityMenuProbing: probe.probing,
+    );
+  }
+
+  /// 切换当前在线歌曲播放音质：复用共享探针，命中即重播。
+  Future<bool> switchQuality(String quality) async {
+    final item = state.current;
+    if (item == null || !item.isOnline) return false;
+    final json = item.onlineSongJson;
+    if (json == null || json.isEmpty) return false;
+    try {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final key = _songProbeKey(songJson, item);
+      final probe = onlineQualityProbeRegistry
+          .ensure(key, _buildResolveCallback(songJson, item));
+      _activeProbeKey = key;
+      state = state.copyWith(resolving: true);
+      final res = await probe.probe(quality);
+      if (res == null || res.url.isEmpty) {
+        state = state.copyWith(resolving: false);
+        return false;
+      }
+      await _startUrl(res.url);
+      state = state.copyWith(
+        resolving: false,
+        currentQuality: res.quality,
+        availableQualities: probe.availableQualities,
+        qualityMenuProbing: probe.probing,
+      );
+      return true;
+    } catch (_) {
+      state = state.copyWith(resolving: false);
+      return false;
+    }
+  }
+
+  /// 获取当前在线歌曲的真实可用档位（触发无损档全量探测，供音质菜单展示）。
+  ///
+  /// 复用共享探针做受控并发探测与降级校验，返回按高 → 低排序的可用档。
+  Future<List<String>> qualityOptions() async {
+    final item = state.current;
+    final json = item?.onlineSongJson;
+    if (json == null || json.isEmpty) return const [];
+    try {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final key = _songProbeKey(songJson, item!);
+      final probe = onlineQualityProbeRegistry
+          .ensure(key, _buildResolveCallback(songJson, item));
+      _activeProbeKey = key;
+      state = state.copyWith(qualityMenuProbing: true);
+
+      // 探测无损及以上档位，最低端 128k 作为可播兜底档。
+      final targets = <String>[];
+      for (final q in kQualityLadder.reversed.toList()) {
+        if (isLosslessQuality(q) || q == '128k') targets.add(q);
+      }
+      await Future.wait(targets.map(probe.probe).toList());
+
+      final opts = <String>{...probe.availableQualities};
+      if (state.currentQuality != null) opts.add(state.currentQuality!);
+      final ordered =
+          kQualityLadder.reversed.where(opts.contains).toList();
+      state = state.copyWith(
+        availableQualities: ordered,
+        qualityMenuProbing: false,
+      );
+      return ordered;
+    } catch (_) {
+      state = state.copyWith(qualityMenuProbing: false);
+      return state.availableQualities;
+    }
   }
 
   /// 音质阶梯（低 → 高），与设置页可选档位一致（对齐桌面端 rank 排序）。
@@ -803,6 +945,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 计算并更新当前曲目的 ReplayGain 增益。
   /// 本地文件 / 远程缓存文件读标签；无标签或读取失败重置 1.0。
+  /// 加载本地曲目音源：SAF/媒体库的 `content://` 文档路径交给 just_audio 以
+  /// UriAudioSource 播放（EzzProvider 支持 content scheme），普通路径走文件。
+  Future<Duration?> _setLocalSource(String path) async {
+    if (path.startsWith('content://')) {
+      return _player.setUrl(path);
+    }
+    return _player.setFilePath(path);
+  }
+
   Future<void> _updateRgGain(String? path) async {
     final s = _ref.read(settingsProvider).valueOrNull;
     if (s?.volumeBalanceEnabled != true ||

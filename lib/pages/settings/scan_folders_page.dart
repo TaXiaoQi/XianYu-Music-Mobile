@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
 
@@ -51,6 +52,15 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
   Future<void> _addFolder() async {
     setState(() => _adding = true);
     try {
+      // Android：走存储访问框架（SAF），用户选目录树即完成授权，无需额外存储权限。
+      if (Platform.isAndroid) {
+        final treeUri = await SafChannel.chooseFolderTree();
+        if (treeUri == null) return; // 用户取消
+        await SafChannel.persistPermission(treeUri);
+        await ref.read(scanFoldersProvider.notifier).addFolder(treeUri);
+        _toast('已添加扫描目录');
+        return;
+      }
       final granted = await _ensureStoragePermission();
       if (!granted) {
         _toast('未授予存储权限，无法扫描本地文件夹');
@@ -58,7 +68,7 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
       }
       final dir = await FilePicker.getDirectoryPath();
       if (dir == null) return; // 用户取消
-      // SAF 返回的 content:// URI 无法用于文件系统扫描。
+      // SAF 返回的 content:// URI 无法用于文件系统扫描（桌面几乎不会出现）。
       if (dir.startsWith('content://')) {
         _toast('该位置无法直接访问，请选择本地存储（如音乐、Download）下的文件夹');
         return;
@@ -138,7 +148,7 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
                     Text(
-                      '点击右下角「添加目录」选择本地音乐文件夹，\n然后到「音乐库 → 文件夹」下拉刷新开始扫描',
+                      '点击右下角「添加目录」，在系统弹出框中选择要扫描的\n音乐文件夹并允许访问，然后到「音乐库 → 文件夹」\n下拉刷新开始扫描',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 13, color: scheme.onSurfaceVariant),

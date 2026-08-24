@@ -18,6 +18,7 @@ class XianYuApp extends ConsumerStatefulWidget {
 
 class _XianYuAppState extends ConsumerState<XianYuApp> {
   int? _cachedAccent;
+  bool? _cachedPredictiveBack;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
@@ -31,13 +32,22 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     });
   }
 
-  void _ensureThemes(int accent) {
-    if (_cachedAccent == accent && _lightTheme != null) return;
+  void _ensureThemes(int accent, bool predictiveBack) {
+    if (_cachedAccent == accent &&
+        _cachedPredictiveBack == predictiveBack &&
+        _lightTheme != null) {
+      return;
+    }
     _cachedAccent = accent;
+    _cachedPredictiveBack = predictiveBack;
     final seed = Color(accent);
+    // 安卓官方切换特效（缩放）始终使用 Zoom 转场；仅在开启预测返回时叠加
+    // PredictiveBackPageTransitionsBuilder 手势动画（Android 13+ 手势导航下生效）。
     final pageTransitions = PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: const PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.android: predictiveBack
+            ? const PredictiveBackPageTransitionsBuilder()
+            : const ZoomPageTransitionsBuilder(),
         TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
       },
     );
@@ -77,7 +87,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    _ensureThemes(accent);
+    _ensureThemes(accent, settings?.enablePredictiveBack ?? false);
     final theme = _lightTheme!;
     final darkTheme = _darkTheme!;
     final locale = _localeFor(settings?.language ?? AppLanguage.system);
