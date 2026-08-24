@@ -5,12 +5,16 @@ import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
@@ -18,6 +22,24 @@ class MainActivity : AudioServiceActivity() {
     private val REQ_CHOOSE_TREE = 1001
 
     private lateinit var saf: SafEngine
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // SAF 枚举/复制都是重 I/O，必须离开主线程，否则扫描与切歌时整个 UI 冻结。
+    private val safExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    /** 在 SAF 后台线程执行重 I/O，结果回传主线程（MethodChannel.Result 要求主线程回调）。 */
+    private fun safAsync(result: MethodChannel.Result, block: () -> Any?) {
+        safExecutor.execute {
+            try {
+                val value = block()
+                mainHandler.post { result.success(value) }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    result.error("saf_error", e.message ?: "unknown", null)
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
@@ -44,7 +66,7 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "chooseFolderTree" -> {
-                        saf.pendingTreeResult = result
+                        SafEngine.pendingTreeResult = result
                         startActivityForResult(
                             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_CHOOSE_TREE)
                     }
@@ -52,20 +74,51 @@ class MainActivity : AudioServiceActivity() {
                         saf.persistPermission(call.argument<String>("uri") ?: "")
                         result.success(null)
                     }
+                    "isTreePersisted" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        safAsync(result) { saf.isTreePersisted(uri) }
+                    }
+                    "isTreeAvailable" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        safAsync(result) { saf.isTreeAvailable(uri) }
+                    }
+                    "releasePermission" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        safAsync(result) {
+                            saf.releasePermission(uri)
+                            null
+                        }
+                    }
+                    "friendlyTreeName" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        safAsync(result) { saf.friendlyTreeName(uri) }
+                    }
+                    "listMediaAudioFolders" -> {
+                        safAsync(result) { saf.listMediaAudioFolders() }
+                    }
                     "listAudioTree" -> {
                         val uri = call.argument<String>("uri") ?: ""
                         val exts = (call.argument<List<*>>("extensions") ?: emptyList<Any>())
                             .map { it.toString() }
-                        result.success(saf.listAudioTree(uri, exts))
+                        safAsync(result) { saf.listAudioTree(uri, exts) }
                     }
                     "openFd" -> {
                         val uri = call.argument<String>("uri") ?: ""
                         val docId = call.argument<String>("docId") ?: ""
-                        result.success(saf.openFd(uri, docId))
+                        safAsync(result) { saf.openFd(uri, docId) }
                     }
                     "closeFd" -> {
-                        saf.closeFd((call.argument<Int>("fd")) ?: -1)
-                        result.success(null)
+                        val fd = (call.argument<Int>("fd")) ?: -1
+                        safAsync(result) {
+                            saf.closeFd(fd)
+                            null
+                        }
+                    }
+                    "copyTreeDocToInternal" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        val docId = call.argument<String>("docId") ?: ""
+                        val destDir = call.argument<String>("destDir") ?: ""
+                        safAsync(result) { saf.copyTreeDocToInternal(uri, docId, destDir) }
                     }
                     else -> result.notImplemented()
                 }

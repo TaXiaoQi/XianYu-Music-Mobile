@@ -399,6 +399,42 @@ pub fn parse_audio_from_fd_android(
     serde_json::to_string(&song).map_err(|e| e.to_string())
 }
 
+/// Android SAF：从已物化到应用内部存储的真实文件路径解析单个音频。
+///
+/// 解析逻辑与路径扫描完全一致，`path_key` 仍为稳定的 SAF content URI，作为
+/// 曲库 [`Song`].path 主键；`file_name` 用于派生展示用 name/title。
+/// 相比读取 `/proc/self/fd/{fd}`，真实路径读取在部分机型/提供方下更可靠。
+pub fn parse_audio_from_path_android(
+    file_path: String,
+    file_name: String,
+    path_key: String,
+    format: String,
+) -> Result<String, String> {
+    let path = std::path::Path::new(&file_path);
+    let song = crate::music::scanner::parse_song_from_file_with_name(path, &file_name, &path_key, &format)
+        .ok_or_else(|| format!("无法解析音频（file={file_path}）"))?;
+    serde_json::to_string(&song).map_err(|e| e.to_string())
+}
+
+/// Android SAF：从物化后的真实文件路径提取内嵌封面，缓存别名按 `source_key`（content URI）。
+pub fn extract_song_cover_thumbnail_from_path(
+    cache_root: String,
+    source_key: String,
+    real_path: String,
+) -> Result<String, String> {
+    let cache_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    std::thread::spawn(move || {
+        crate::music::covers::get_or_create_thumbnail_from_path(
+            &source_key,
+            std::path::Path::new(&real_path),
+            &cache_dir,
+        )
+    })
+    .join()
+    .map_err(|_| "缩略图生成线程异常".to_string())?
+    .ok_or_else(|| "无内嵌封面".to_string())
+}
+
 /// Android SAF：把一批已解析歌曲增量提交到 `folder_key`（SAF tree documentId）名下。
 /// 复用桌面同款增量 diff，保证新增/变更/删除在库内一致。
 pub fn scan_saf_songs_commit(
@@ -667,6 +703,24 @@ pub async fn get_song_cover_thumbnail(
         path,
     )
     .await
+}
+
+/// 扫描 SAF 歌曲时从已打开的 fd 提取内嵌封面并写入封面缓存。
+///
+/// 读文件走 `/proc/self/fd/{fd}`，按 content URI 路径哈希写别名，使列表展示时
+/// `get_song_cover_thumbnail` 能直接命中缓存而无需再读 content URI。返回缓存路径。
+pub fn extract_song_cover_thumbnail_from_fd(
+    cache_root: String,
+    path: String,
+    fd: i32,
+) -> Result<String, String> {
+    let cache_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    std::thread::spawn(move || {
+        crate::music::covers::get_or_create_thumbnail_from_fd(&path, fd, &cache_dir)
+    })
+    .join()
+    .map_err(|_| "缩略图生成线程异常".to_string())?
+    .ok_or_else(|| "无内嵌封面".to_string())
 }
 
 // =========================================================================

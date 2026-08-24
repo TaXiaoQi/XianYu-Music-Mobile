@@ -3,14 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
-import '../../src/auth/auth_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
-import '../../src/widgets/user_avatar.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
 ///
-/// 分类参考桌面版导航（账号/常规/音源/外观/播放/下载/音乐库/工具箱/高级设置/关于），
-/// 桌面歌词、快捷按键等移动端无对应项故未列出。
+/// 分类参考桌面版导航（常规/音源/外观/播放/下载/音乐库/工具箱/高级设置/关于），
+/// 账号入口在「我的」页，桌面歌词、快捷按键等移动端无对应项故未列出。
+/// 本页为二级推入页（从「我的」页菜单与首页顶栏进入）。
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
@@ -27,7 +26,7 @@ class SettingsPage extends ConsumerWidget {
     (
       '在线与音源',
       [
-        _CategoryEntry('音源', Icons.library_music_outlined, '插件管理：导入、启用、卸载', '/music-sources'),
+        _CategoryEntry('音源', Icons.library_music_outlined, '插件音源：导入、启用、更新、卸载', '/plugin'),
         _CategoryEntry('下载', Icons.download_outlined, '音质、路径、并发、嵌入', '/settings/download'),
       ],
     ),
@@ -35,7 +34,7 @@ class SettingsPage extends ConsumerWidget {
       '曲库',
       [
         _CategoryEntry('音乐库', Icons.album_outlined, '扫描文件夹、短音频、远程库', '/settings/library'),
-        _CategoryEntry('工具箱', Icons.handyman_outlined, '插件、歌单、壁纸、解密、重命名', '/settings/toolbox'),
+        _CategoryEntry('工具箱', Icons.handyman_outlined, '歌单、壁纸、解密、重命名', '/settings/toolbox'),
       ],
     ),
     (
@@ -50,25 +49,20 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
-
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       body: Stack(
         children: [
           // 内容列表：顶部预留顶栏高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
+          // 底部避让：二级页底栏隐藏，仅迷你播放条悬浮在距底 18px 处（高 58）。
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
               GlassTopBar.height(context),
               16,
-              150 + MediaQuery.of(context).padding.bottom,
+              92 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
-              _AccountCard(
-                auth: auth,
-                onTap: () => context.push('/account'),
-              ),
               for (final (header, entries) in _groups) ...[
                 _sectionHeader(context, header),
                 _CardGroup(children: [
@@ -78,12 +72,15 @@ class SettingsPage extends ConsumerWidget {
               ],
             ],
           ),
-          // 顶栏高斯模糊毛玻璃。
+          // 顶栏高斯模糊毛玻璃（二级页带返回按钮）。
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: GlassTopBar(title: const Text('设置')),
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: const Text('设置'),
+            ),
           ),
         ],
       ),
@@ -125,92 +122,6 @@ class _CategoryTile extends StatelessWidget {
       trailing: Icon(Icons.chevron_right,
           size: 18, color: Theme.of(context).colorScheme.outline),
       onTap: () => context.push(entry.path),
-    );
-  }
-}
-
-/// 设置页账号卡片：登录时显示头像+昵称，未登录时显示登录引导。
-class _AccountCard extends StatelessWidget {
-  const _AccountCard({required this.auth, required this.onTap});
-  final AuthState auth;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final user = auth.user;
-    final loggedIn = auth.isLoggedIn && user != null;
-    return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: scheme.primary,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: loggedIn
-                    ? (user.avatar != null && user.avatar!.isNotEmpty
-                        ? UserAvatarImage(
-                            avatar: user.avatar,
-                            fallback: _fallback(scheme, user.nickname),
-                          )
-                        : _fallback(scheme, user.nickname))
-                    : Icon(Icons.person, color: scheme.onPrimary, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      loggedIn
-                          ? (user.nickname.isEmpty ? '未命名用户' : user.nickname)
-                          : '未登录',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      loggedIn
-                          ? '点击管理账号与安全'
-                          : '登录后同步你的音乐与设置',
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: scheme.outline),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _fallback(ColorScheme scheme, String nickname) {
-    final char = nickname.isEmpty
-        ? '?'
-        : String.fromCharCode(nickname.runes.first);
-    return Center(
-      child: Text(
-        char,
-        style: TextStyle(
-            fontSize: 20, fontWeight: FontWeight.bold, color: scheme.onPrimary),
-      ),
     );
   }
 }

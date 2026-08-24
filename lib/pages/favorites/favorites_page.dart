@@ -13,7 +13,10 @@ import '../../src/core/app_colors.dart';
 
 /// 收藏页：单曲 / 歌单 / 专辑三 tab（对齐桌面）。
 class FavoritesPage extends ConsumerStatefulWidget {
-  const FavoritesPage({super.key});
+  const FavoritesPage({super.key, this.initialTab = 0});
+
+  /// 初始 Tab：0 单曲 / 1 歌单 / 2 专辑（「我的」页收藏歌单/专辑直达）。
+  final int initialTab;
 
   @override
   ConsumerState<FavoritesPage> createState() => _FavoritesPageState();
@@ -27,6 +30,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    _tab.index = widget.initialTab.clamp(0, 2);
   }
 
   @override

@@ -534,6 +534,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 工具箱 ----
+  // 插件扩展（音源）已迁至设置页「在线与音源」分组。
   List<Widget> _toolbox(BuildContext context) {
     return [
       _sectionHeader(context, '数据与扩展'),
@@ -545,13 +546,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             title: '同步与备份',
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/sync'),
-          ),
-          _tile(
-            context,
-            icon: Icons.extension_outlined,
-            title: '插件扩展',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/plugin'),
           ),
           _tile(
             context,

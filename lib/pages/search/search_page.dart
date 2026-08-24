@@ -20,6 +20,7 @@ import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
+import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -1232,25 +1233,24 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
 
   Widget _catalogLeading(_CatalogItem item, bool isArtist, ColorScheme scheme) {
     if (item.localArtist != null) {
-      final name = item.localArtist!.name;
-      return CircleAvatar(
-        backgroundColor: scheme.primaryContainer,
-        child: Text(
-          name.isEmpty ? '?' : String.fromCharCode(name.runes.first),
-          style: TextStyle(color: scheme.onPrimaryContainer),
-        ),
+      final a = item.localArtist!;
+      return CoverImage(
+        songPath: a.firstSongPath,
+        width: 44,
+        height: 44,
+        radius: 22,
+        icon: Icons.person,
+        placeholder: _letterLeading(a.name, scheme),
       );
     }
     if (item.localAlbum != null) {
-      return Container(
+      final a = item.localAlbum!;
+      return CoverImage(
+        songPath: a.firstSongPath,
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          color: scheme.tertiaryContainer,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        alignment: Alignment.center,
-        child: const Icon(Icons.album, size: 20),
+        radius: 6,
+        icon: Icons.album,
       );
     }
     if (item.localPlaylist != null) {
@@ -1303,5 +1303,21 @@ Widget _musicPlaceholder(BuildContext context, ColorScheme scheme) {
       borderRadius: BorderRadius.circular(6),
     ),
     child: Icon(Icons.music_note, color: scheme.outline, size: 20),
+  );
+}
+
+/// 本地歌手无封面时的字母头像占位。
+Widget _letterLeading(String name, ColorScheme scheme) {
+  return DecoratedBox(
+    decoration: BoxDecoration(
+      color: scheme.primaryContainer,
+      shape: BoxShape.circle,
+    ),
+    child: Center(
+      child: Text(
+        name.isEmpty ? '?' : String.fromCharCode(name.runes.first),
+        style: TextStyle(color: scheme.onPrimaryContainer),
+      ),
+    ),
   );
 }

@@ -1,12 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
-import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_preferences.dart';
@@ -14,7 +9,6 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
-import '../../src/playlist/playlist_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
@@ -51,17 +45,12 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
-        title: const Text('插件'),
+        title: const Text('音源'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: '插件设置',
             onPressed: _showPluginSettingsSheet,
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download_outlined),
-            tooltip: '导入备份歌单',
-            onPressed: _showBackupImportSheet,
           ),
           IconButton(
             icon: const Icon(Icons.system_update_alt_outlined),
@@ -217,100 +206,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     return PluginUpdateService(engine, ref.read(pluginManagerProvider.notifier));
   }
 
-  void _showBackupImportSheet() {
-    showSheetDialog<void>(
-      context,
-      (ctx) => _BackupImportSheet(
-        onImport: _importBackup,
-      ),
-    );
-  }
-
-  Future<void> _importBackup(String jsonContent) async {
-    if (jsonContent.trim().isEmpty) return;
-    try {
-      final sources = ref.read(pluginManagerProvider).sources;
-      final prepared = preparePluginBackupImport(jsonContent, sources);
-      final playlists = await ref
-          .read(playlistManagerProvider.notifier)
-          .addFromBackup(prepared);
-      if (!mounted) return;
-      await _showBackupResult(prepared, playlists.length);
-    } on FormatException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：${e.message}')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
-      );
-    }
-  }
-
-  Future<void> _showBackupResult(
-      PreparedPluginBackupImport prepared, int createdCount) async {
-    final versionNote = describeBackupVersion(prepared);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('导入完成'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$versionNote\n'
-                '新增 $createdCount 个歌单，'
-                '成功导入 ${prepared.importedSongCount} 首歌曲，'
-                '${prepared.failures.length} 首未导入。',
-                style: const TextStyle(fontSize: 14),
-              ),
-              if (prepared.missingPlugins.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('缺失插件：',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(ctx).colorScheme.error)),
-                const SizedBox(height: 4),
-                for (final missing in prepared.missingPlugins)
-                  Text(
-                    '· ${missing.platform}（${missing.songCount} 首）',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                  ),
-              ],
-              if (prepared.associations.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('关联插件：',
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                for (final assoc in prepared.associations)
-                  Text(
-                    '· ${assoc.pluginName} → ${assoc.platform}（${assoc.songCount} 首）',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                  ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('好的'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _checkAllUpdates() async {
     setState(() => _checkingUpdates = true);
     try {
@@ -445,17 +340,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.extension_outlined, size: 56, color: scheme.outline),
           const SizedBox(height: 12),
-          Text('还没有安装插件', style: TextStyle(color: scheme.onSurfaceVariant)),
+          Text('还没有安装音源插件',
+              style: TextStyle(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Text(
-            '支持 LX / MusicFree 格式音源插件',
+            '支持 LX / MusicFree 格式音源插件，在线搜索与播放需要音源支持',
             style: TextStyle(fontSize: 12, color: scheme.outline),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onInstall,
             icon: const Icon(Icons.add),
-            label: const Text('安装插件'),
+            label: const Text('安装音源'),
           ),
         ],
       ),
@@ -965,185 +861,6 @@ class _InstallSheetState extends State<_InstallSheet> {
                     Navigator.pop(context);
                   },
                   child: const Text('安装'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 备份歌单导入：URL 或 JSON 粘贴。
-class _BackupImportSheet extends StatefulWidget {
-  const _BackupImportSheet({required this.onImport});
-  final void Function(String jsonContent) onImport;
-
-  @override
-  State<_BackupImportSheet> createState() => _BackupImportSheetState();
-}
-
-class _BackupImportSheetState extends State<_BackupImportSheet> {
-  final _urlCtrl = TextEditingController();
-  final _jsonCtrl = TextEditingController();
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _urlCtrl.dispose();
-    _jsonCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickLocalFile() async {
-    try {
-      final files = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'txt'],
-      );
-      if (files.isEmpty) return;
-      final path = files.single.path;
-      if (path == null) return;
-      final file = File(path);
-      final content = await file.readAsString();
-      widget.onImport(content);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('读取文件失败：$e')),
-      );
-    }
-  }
-
-  Future<void> _importFromUrl() async {
-    final url = _urlCtrl.text.trim();
-    if (url.isEmpty) return;
-    setState(() => _loading = true);
-    try {
-      final content = await _fetch(url);
-      if (content == null || content.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法获取备份文件')));
-        return;
-      }
-      widget.onImport(content);
-      if (mounted) Navigator.pop(context);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<String?> _fetch(String url) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36');
-      final resp = await req.close().timeout(const Duration(seconds: 20));
-      if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      return await resp.transform(utf8.decoder).join();
-    } catch (_) {
-      return null;
-    } finally {
-      client.close();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('导入备份歌单',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(
-              '支持 BakaMusic / MusicFree / 洛雪音乐导出的备份 JSON',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _urlCtrl,
-              decoration: const InputDecoration(
-                labelText: '备份文件 URL',
-                hintText: 'https://example.com/backup.json',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              keyboardType: TextInputType.url,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _pickLocalFile,
-                  icon: const Icon(Icons.folder_open, size: 18),
-                  label: const Text('选择本地文件'),
-                ),
-                const Spacer(),
-                FilledButton.icon(
-                  onPressed: _loading ? null : _importFromUrl,
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download, size: 18),
-                  label: const Text('从 URL 导入'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: Divider(color: scheme.outlineVariant)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('或粘贴 JSON 内容',
-                      style: TextStyle(fontSize: 12, color: scheme.outline)),
-                ),
-                Expanded(child: Divider(color: scheme.outlineVariant)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _jsonCtrl,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: '粘贴备份 JSON…',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () {
-                    widget.onImport(_jsonCtrl.text);
-                    Navigator.pop(context);
-                  },
-                  child: const Text('导入'),
                 ),
               ],
             ),

@@ -113,6 +113,16 @@ pub(crate) fn parse_song_from_fd(
     parse_song_inner(&read, semantic_name, path_str, format)
 }
 
+/// Android SAF 场景：从已物化到内部存储的真实路径解析（`path_str` 仍为稳定 content URI）。
+pub(crate) fn parse_song_from_file_with_name(
+    path: &Path,
+    semantic_name: &str,
+    path_str: &str,
+    format: &str,
+) -> Option<Song> {
+    parse_song_inner(path, semantic_name, path_str, format)
+}
+
 fn parse_song_inner(path: &Path, semantic_name: &str, path_str: &str, format: &str) -> Option<Song> {
     let mut artist = String::from("未知歌手");
     let mut album = String::from("未知专辑");

@@ -7,12 +7,15 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../auth/account_api.dart';
 import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
+import '../library/saf_channel.dart';
 import '../online/online_search_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
@@ -243,6 +246,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   String? _switchCtxKey;
 
   double? _restoredOnlinePending;
+  // SAF 本地歌曲恢复会话时的待恢复进度：点击播放时再物化文件并从该位置续播。
+  double? _restoredLocalPending;
   DateTime? _trackStartTime;
 
   final List<String> _shuffleHistory = [];
@@ -324,10 +329,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (item == null || item.isOnline || _isRemotePath(item.path)) return;
     final pos = state.position;
     final playing = state.isPlaying;
+    // SAF content:// 先物化为本地真实文件，独占管线无法消费树文档 URI。
+    var target = item.path;
+    if (SafChannel.isSafPath(target)) {
+      final tmp = await getTemporaryDirectory();
+      target = await SafChannel.ensureLocalPlaybackCopy(
+          target, p.join(tmp.path, 'saf_playback'));
+    }
     if (enabled) {
       if (state.usbExclusive) return;
       final ok =
-          await _tryStartExclusive(item.path, startAtSecs: pos, isPlaying: playing);
+          await _tryStartExclusive(target, startAtSecs: pos, isPlaying: playing);
       if (ok) {
         try {
           await _player.stop();
@@ -339,8 +351,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (!state.usbExclusive) return;
       await _stopExclusive();
       try {
-        await _updateRgGain(item.path);
-        await _setLocalSource(item.path);
+        await _updateRgGain(target);
+        await _setLocalSource(target);
         await _player.setVolume(_effectiveVolume());
         await _player.seek(Duration(milliseconds: (pos * 1000).round()));
         if (playing) {
@@ -557,6 +569,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           await _updateRgGain(cached);
           await seek(pos);
           await _player.setVolume(_effectiveVolume());
+        } else if (SafChannel.isSafPath(currentItem.path)) {
+          // SAF 歌曲不做启动预载（大文件复制会拖慢启动，且 setFilePath 无法
+          // 消费 content://）；记录待恢复进度，点击播放时再物化并续播。
+          _restoredLocalPending = pos;
         } else {
           await _updateRgGain(currentItem.path);
           final useExclusive =
@@ -621,13 +637,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _playAt(startIndex, manualPause: true);
   }
 
-  Future<void> _playAt(int index, {required bool manualPause}) async {
+  Future<void> _playAt(int index,
+      {required bool manualPause, double startAtSecs = 0}) async {
     if (index < 0 || index >= state.queue.length) return;
 
     _flushPlayStats();
 
     _manualPause = manualPause;
     _restoredOnlinePending = null;
+    _restoredLocalPending = null;
     final item = state.queue[index];
     // 切到不同歌曲时失效上一首的共享探针，避免残留探测与串歌缓存。
     final prev = state.current;
@@ -654,24 +672,37 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _rgGain = 1.0;
         await _playRemote(item);
       } else {
-        await _updateRgGain(item.path);
+        // SAF content:// 路径先物化为本地真实文件，独占/音量平衡/普通播放统一
+        // 使用真实路径（Rust/ExoPlayer 均无法直接消费树文档 URI）。
+        var target = item.path;
+        if (SafChannel.isSafPath(target)) {
+          final tmp = await getTemporaryDirectory();
+          target = await SafChannel.ensureLocalPlaybackCopy(
+              target, p.join(tmp.path, 'saf_playback'));
+        }
+        await _updateRgGain(target);
         final s = _ref.read(settingsProvider).valueOrNull;
-        final isDsd = _isDsdPath(item.path);
+        final isDsd = _isDsdPath(target);
         final useExclusive =
             (s?.usbExclusiveOutput ?? false) ||
                 (isDsd && (s?.dsdNativePassthrough ?? false));
         var started = false;
         if (useExclusive) {
           await _stopExclusive();
-          started = await _tryStartExclusive(item.path,
-              startAtSecs: 0, isPlaying: true);
+          started = await _tryStartExclusive(target,
+              startAtSecs: startAtSecs, isPlaying: true);
         }
         if (!started) {
           await _stopExclusive();
           try {
             await _player.stop();
           } catch (_) {}
-          await _setLocalSource(item.path);
+          await _setLocalSource(target);
+          if (startAtSecs > 0) {
+            try {
+              await seek(startAtSecs);
+            } catch (_) {}
+          }
           await _player.setVolume(_effectiveVolume());
           await _player.play();
         }
@@ -945,13 +976,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 计算并更新当前曲目的 ReplayGain 增益。
   /// 本地文件 / 远程缓存文件读标签；无标签或读取失败重置 1.0。
-  /// 加载本地曲目音源：SAF/媒体库的 `content://` 文档路径交给 just_audio 以
-  /// UriAudioSource 播放（EzzProvider 支持 content scheme），普通路径走文件。
+  /// 加载本地曲目音源：SAF 的 `content://` 页先物化为本地真实文件再交给
+  /// just_audio 播放（content 树文档 URI 播放不可靠），普通路径直接走文件。
   Future<Duration?> _setLocalSource(String path) async {
+    var target = path;
     if (path.startsWith('content://')) {
-      return _player.setUrl(path);
+      final tmp = await getTemporaryDirectory();
+      target = await SafChannel.ensureLocalPlaybackCopy(
+          path, p.join(tmp.path, 'saf_playback'));
     }
-    return _player.setFilePath(path);
+    if (target.startsWith('content://')) {
+      // 物化失败时回退直接以 content URI 交给 just_audio。
+      return _player.setUrl(target);
+    }
+    return _player.setFilePath(target);
   }
 
   Future<void> _updateRgGain(String? path) async {
@@ -1357,6 +1395,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _resumeRestoredOnline(pendingPos);
         _persistSession();
         return;
+      }
+      final pendingLocalPos = _restoredLocalPending;
+      if (pendingLocalPos != null) {
+        _restoredLocalPending = null;
+        final idx = state.queueIndex;
+        if (idx >= 0 && idx < state.queue.length) {
+          await _playAt(idx, manualPause: false, startAtSecs: pendingLocalPos);
+          _persistSession();
+          return;
+        }
       }
       await _player.play();
     }

@@ -114,7 +114,7 @@ abstract class AppLocalizations {
   /// No description provided for @navHome.
   ///
   /// In zh, this message translates to:
-  /// **'主界面'**
+  /// **'首页'**
   String get navHome;
 
   /// No description provided for @navLibrary.
@@ -122,6 +122,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'音乐库'**
   String get navLibrary;
+
+  /// No description provided for @navMine.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的'**
+  String get navMine;
 
   /// No description provided for @navEffects.
   ///

@@ -3,8 +3,9 @@
   "appTitle": "闲鱼音乐",
   "appTagline": "纯净本地 · 在线音乐播放器",
 
-  "navHome": "主界面",
+  "navHome": "首页",
   "navLibrary": "音乐库",
+  "navMine": "我的",
   "navEffects": "音效",
   "navSearch": "搜索",
   "navSettings": "设置",

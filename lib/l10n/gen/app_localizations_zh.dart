@@ -15,10 +15,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appTagline => '纯净本地 · 在线音乐播放器';
 
   @override
-  String get navHome => '主界面';
+  String get navHome => '首页';
 
   @override
   String get navLibrary => '音乐库';
+
+  @override
+  String get navMine => '我的';
 
   @override
   String get navEffects => '音效';
@@ -328,10 +331,13 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get appTagline => '純淨本地 · 線上音樂播放器';
 
   @override
-  String get navHome => '主介面';
+  String get navHome => '首頁';
 
   @override
   String get navLibrary => '音樂庫';
+
+  @override
+  String get navMine => '我的';
 
   @override
   String get navEffects => '音效';

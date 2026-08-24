@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../library/library_provider.dart';
+import 'cover_image.dart';
 import 'song_actions_sheet.dart';
 
 /// 歌曲行的播放点击手势：按「单击/双击播放」设置决定触发方式。
@@ -189,16 +190,12 @@ class SongCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return CoverImage(
+      songPath: song.path,
+      thumbPath: song.coverThumbPath,
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      alignment: Alignment.center,
-      child: Icon(Icons.music_note,
-          size: 20, color: Theme.of(context).colorScheme.onPrimaryContainer),
+      radius: 6,
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
@@ -43,7 +44,7 @@ class PlaylistsPage extends ConsumerWidget {
                           style: TextStyle(color: scheme.onSurfaceVariant)),
                       const SizedBox(height: 4),
                       Text(
-                        '点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可在「插件」页导入备份文件',
+                        '点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 12, color: scheme.outline),
                       ),
@@ -52,6 +53,12 @@ class PlaylistsPage extends ConsumerWidget {
                         onPressed: () => _promptCreate(context, manager),
                         icon: const Icon(Icons.add, size: 18),
                         label: const Text('新建歌单'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () => context.push('/playlist-import'),
+                        icon: const Icon(Icons.file_download_outlined, size: 16),
+                        label: const Text('导入歌单'),
                       ),
                     ],
                   ),

@@ -16,7 +16,7 @@ mod progress;
 mod repository;
 
 pub(crate) use orchestrator::{scan_folder_recursive, scan_single_directory_internal};
-pub(crate) use parser::{parse_song_from_file, parse_song_from_fd};
+pub(crate) use parser::{parse_song_from_file, parse_song_from_file_with_name, parse_song_from_fd};
 pub(crate) use repository::apply_scan_changes;
 
 pub(super) const VARIOUS_ARTISTS: &str = "Various Artists";

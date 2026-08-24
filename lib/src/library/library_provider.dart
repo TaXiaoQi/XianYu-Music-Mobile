@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -9,6 +12,14 @@ import '../plugin/plugin_backup_import.dart';
 import '../playlist/playlist_provider.dart';
 import '../rust/api.dart';
 import 'saf_channel.dart';
+
+/// 扫描目录的授权已失效（清除数据/系统撤销/存储卡拔出等），需要用户重新授权。
+class FolderUnauthorizedException implements Exception {
+  final String folder;
+  const FolderUnauthorizedException(this.folder);
+  @override
+  String toString() => '「$folder」授权已失效，请重新授权';
+}
 
 /// 曲库歌曲（小而美：仅保留播放/展示所需字段）。
 class Song {
@@ -57,11 +68,14 @@ class ArtistInfo {
   final String name;
   final int count;
   final String? avatarPath;
+  /// 该歌手任一歌曲路径，用于展示歌手封面（内嵌封面）。
+  final String firstSongPath;
   const ArtistInfo({
     required this.id,
     required this.name,
     required this.count,
     this.avatarPath,
+    this.firstSongPath = '',
   });
 
   // Rust ArtistCatalogItem 为 snake_case，兼容 camelCase。
@@ -70,6 +84,8 @@ class ArtistInfo {
         name: j['name'] as String? ?? '',
         count: (j['count'] as num?)?.toInt() ?? 0,
         avatarPath: (j['avatar_path'] ?? j['avatarPath']) as String?,
+        firstSongPath:
+            ((j['first_song_path'] ?? j['firstSongPath']) as String?) ?? '',
       );
 }
 
@@ -136,6 +152,8 @@ class LibraryState {
   final List<FolderNodeData> folderRoot;
   final bool loading;
   final String? error;
+  /// 授权已失效的 SAF 扫描目录（重新授权后旧曲库数据可直接复活，无需重扫）。
+  final List<String> unauthorizedFolders;
   const LibraryState({
     this.songs = const [],
     this.folders = const [],
@@ -144,6 +162,7 @@ class LibraryState {
     this.folderRoot = const [],
     this.loading = true,
     this.error,
+    this.unauthorizedFolders = const [],
   });
 
   LibraryState copyWith({
@@ -154,6 +173,7 @@ class LibraryState {
     List<FolderNodeData>? folderRoot,
     bool? loading,
     String? error,
+    List<String>? unauthorizedFolders,
   }) {
     return LibraryState(
       songs: songs ?? this.songs,
@@ -163,6 +183,7 @@ class LibraryState {
       folderRoot: folderRoot ?? this.folderRoot,
       loading: loading ?? this.loading,
       error: error ?? this.error,
+      unauthorizedFolders: unauthorizedFolders ?? this.unauthorizedFolders,
     );
   }
 }
@@ -183,13 +204,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       final artistsJson = await getLibraryArtistCatalog(dbPath: dbPath);
       final albumsJson = await getLibraryAlbumCatalog(dbPath: dbPath);
       final treeJson = await getLibraryHierarchy(dbPath: dbPath);
+      final folders = (jsonDecode(foldersJson) as List)
+          .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
+          .where((p) => p.isNotEmpty)
+          .toList();
       state = LibraryState(
         songs: _parseSongs(songsJson),
         // getLibraryFolders 返回 [{path, song_count}, ...]，取出 path。
-        folders: (jsonDecode(foldersJson) as List)
-            .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
-            .where((p) => p.isNotEmpty)
-            .toList(),
+        folders: folders,
         artists: (jsonDecode(artistsJson) as List)
             .map((e) => ArtistInfo.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -201,9 +223,31 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
             .toList(),
         loading: false,
       );
+      // 启动即探测 SAF 目录授权状态（清除数据/系统撤销后失效的目录
+      // 需要用户感知并重新授权，否则表现为「扫描到 0 首」的静默失败）。
+      await checkSafFolderAuthorization();
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
+  }
+
+  /// 探测全部 SAF 扫描目录的授权状态，把失效目录记入
+  /// [LibraryState.unauthorizedFolders] 供 UI 展示重新授权引导。
+  Future<void> checkSafFolderAuthorization() async {
+    final safFolders =
+        state.folders.where((f) => SafChannel.isSafTree(f)).toList();
+    if (safFolders.isEmpty) {
+      // 目录全被移除时清掉遗留的失效记录，避免横幅残留。
+      if (state.unauthorizedFolders.isNotEmpty) {
+        state = state.copyWith(unauthorizedFolders: const []);
+      }
+      return;
+    }
+    final lost = <String>[];
+    for (final f in safFolders) {
+      if (!await SafChannel.isTreeAvailable(f)) lost.add(f);
+    }
+    state = state.copyWith(unauthorizedFolders: lost);
   }
 
   List<Song> _parseSongs(String json) => (jsonDecode(json) as List)
@@ -239,6 +283,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         .where((p) => p.isNotEmpty)
         .toList();
 
+    // 每次全量扫描前清理上一轮 SAF 物化副本，避免磁盘堆积。
+    final tmp = await getTemporaryDirectory();
+    final safScanRoot = p.join(tmp.path, 'saf_scan');
+    SafChannel.clearScannedCopiesRoot(safScanRoot);
+
     var total = 0;
     final errors = <String>[];
     for (final folder in folders) {
@@ -249,6 +298,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           allowed,
           minDuration,
         );
+      } on FolderUnauthorizedException catch (e) {
+        // 授权失效单独归类：load() 内的授权探测会把它写入
+        // unauthorizedFolders 驱动 UI 的重新授权引导。
+        errors.add(e.toString());
       } catch (e) {
         // 单个目录失败不阻断其它目录，但记录错误以便暴露给用户。
         errors.add('$folder: $e');
@@ -281,35 +334,101 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     return (jsonDecode(songsJson) as List).length;
   }
 
-  /// SAF 扫描：Android 侧递归枚举白名单音频 → 逐个 openFd 交给 Rust 解析 →
-  /// 批量增量入库。
+  /// SAF 扫描：Android 侧递归枚举白名单音频 → fd 直读解析元数据并提取内嵌
+  /// 封面（全程零复制）→ 仅 fd 解析失败的文件临时物化一份带扩展名的真实
+  /// 文件重解析（用完即删，兜底部分机型 /proc/self/fd 读取限制）→ 批量增量入库。
   Future<int> _scanSafTree(
     String dbPath,
     String treeUri,
     List<String> allowed,
     int minDuration,
   ) async {
+    // 授权失效（清除数据/系统撤销/存储卡拔出）时显式失败，
+    // 不再表现为「扫到 0 首」的静默成功。
+    if (!await SafChannel.isTreeAvailable(treeUri)) {
+      throw FolderUnauthorizedException(
+          await SafChannel.friendlyTreeName(treeUri));
+    }
     final files = await SafChannel.listAudioTree(treeUri, allowed);
     if (files.isEmpty) return 0;
     // song 主键为 `{tree}/document/{docId}`，增量快照用同构的根路径匹配。
     final folderKey = SafChannel.treeRootPath(treeUri);
     final songs = <Map<String, dynamic>>[];
+    final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+    final tmp = await getTemporaryDirectory();
+    final scanDir = p.join(tmp.path, 'saf_scan');
+
     for (final f in files) {
+      final path = SafChannel.songPath(treeUri, f.docId);
       final fd = await SafChannel.openFd(treeUri, f.docId);
       if (fd < 0) continue;
-      final path = SafChannel.songPath(treeUri, f.docId);
-      String? songJson;
       try {
-        songJson = await parseAudioFromFdAndroid(
-          fd: fd,
-          fileName: f.name,
-          pathKey: path,
-          format: f.ext,
-        );
+        var parsed = <String, dynamic>{};
+        var fdOk = false;
+        try {
+          final songJson = await parseAudioFromFdAndroid(
+            fd: fd,
+            fileName: f.name,
+            pathKey: path,
+            format: f.ext,
+          );
+          parsed = jsonDecode(songJson) as Map<String, dynamic>;
+          // duration=0 意味着标签/属性完全没读到（fd 读取失败的典型特征）。
+          fdOk = (parsed['duration'] as num? ?? 0) > 0;
+        } catch (_) {
+          fdOk = false;
+        }
+
+        String? coverPath;
+        if (fdOk) {
+          try {
+            coverPath = await extractSongCoverThumbnailFromFd(
+              cacheRoot: cacheRoot,
+              path: path,
+              fd: fd,
+            );
+          } catch (_) {}
+        } else {
+          // fd 解析失败：临时物化（保留扩展名，Rust 的 WAV/MP3 补救解析
+          // 依赖扩展名）重解析并提取封面，随后立即删除，不占磁盘。
+          final localCopy = await SafChannel.copyTreeDocToInternal(
+              treeUri, f.docId, scanDir);
+          if (localCopy.isNotEmpty && File(localCopy).existsSync()) {
+            try {
+              final songJson = await parseAudioFromPathAndroid(
+                filePath: localCopy,
+                fileName: f.name,
+                pathKey: path,
+                format: f.ext,
+              );
+              final reparsed = jsonDecode(songJson) as Map<String, dynamic>;
+              if ((reparsed['duration'] as num? ?? 0) > 0) {
+                parsed = reparsed;
+              }
+              try {
+                coverPath = await extractSongCoverThumbnailFromPath(
+                  cacheRoot: cacheRoot,
+                  sourceKey: path,
+                  realPath: localCopy,
+                );
+              } catch (_) {}
+            } catch (_) {} finally {
+              try {
+                final file = File(localCopy);
+                if (file.existsSync()) file.deleteSync();
+              } catch (_) {}
+            }
+          }
+        }
+        if (parsed.isEmpty) continue;
+        // 扫描期即回写封面路径，入库后列表/歌手/专辑可直接命中，无需懒提取。
+        if (coverPath != null && coverPath.isNotEmpty) {
+          parsed['cover_thumb_path'] = coverPath;
+        }
+        songs.add(parsed);
       } finally {
         await SafChannel.closeFd(fd);
       }
-      songs.add(jsonDecode(songJson));
     }
     if (songs.isEmpty) return 0;
     await scanSafSongsCommit(
@@ -418,6 +537,3 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>(
   (ref) => LibraryNotifier(ref),
 );
-
-/// 音乐库页当前 Tab（0 歌单 / 1 全部 / 2 歌手 / 3 专辑 / 4 文件夹），供主页网格跳转。
-final libraryTabProvider = StateProvider<int>((ref) => 0);

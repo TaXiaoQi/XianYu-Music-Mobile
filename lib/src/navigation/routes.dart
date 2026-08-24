@@ -8,13 +8,13 @@ import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
 import '../../pages/home/online_detail_page.dart';
 import '../../pages/library/library_page.dart';
+import '../../pages/mine/mine_page.dart';
 import '../../pages/effects/effects_page.dart';
 import '../../pages/search/search_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/settings/settings_category_page.dart';
-import '../../pages/settings/music_sources_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/feedback/feedback_page.dart';
@@ -23,6 +23,7 @@ import '../../pages/leaderboard/leaderboard_page.dart';
 import '../../pages/sync/sync_page.dart';
 import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
+import '../../pages/playlist/playlist_import_page.dart';
 import '../../pages/download/download_page.dart';
 import '../../pages/settings/batch_rename_page.dart';
 import '../../pages/settings/scan_folders_page.dart';
@@ -56,8 +57,8 @@ final appRouter = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-            path: '/library',
-            builder: (context, state) => const LibraryPage(),
+            path: '/mine',
+            builder: (context, state) => const MinePage(),
           ),
         ]),
         StatefulShellBranch(routes: [
@@ -66,18 +67,25 @@ final appRouter = GoRouter(
             builder: (context, state) => const EffectsPage(),
           ),
         ]),
-        StatefulShellBranch(routes: [
-          GoRoute(
-            path: '/settings',
-            builder: (context, state) => const SettingsPage(),
-          ),
-        ]),
       ],
+    ),
+    // 设置页（从「我的」页菜单与首页顶栏进入，二级推入页）。
+    GoRoute(
+      path: '/settings',
+      builder: (context, state) => const SettingsPage(),
     ),
     // 搜索页（从主页搜索栏进入）。
     GoRoute(
       path: '/search',
       builder: (context, state) => const SearchPage(),
+    ),
+    // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
+    GoRoute(
+      path: '/library',
+      builder: (context, state) => LibraryPage(
+        initialTab:
+            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      ),
     ),
     // 听歌识曲（从搜索页进入）。
     GoRoute(
@@ -89,7 +97,7 @@ final appRouter = GoRouter(
       path: '/player',
       builder: (context, state) => const PlayerPage(),
     ),
-    // 账号页（从设置页进入）。
+    // 账号页（从「我的」页进入）。
     GoRoute(
       path: '/account',
       builder: (context, state) => const AccountPage(),
@@ -103,11 +111,6 @@ final appRouter = GoRouter(
           state.pathParameters['category'] ?? 'general',
         ),
       ),
-    ),
-    // 音源插件管理页（从设置页「音源」进入）。
-    GoRoute(
-      path: '/music-sources',
-      builder: (context, state) => const MusicSourcesPage(),
     ),
     // 意见反馈页（从设置页进入）。
     GoRoute(
@@ -139,10 +142,18 @@ final appRouter = GoRouter(
       path: '/playlists',
       builder: (context, state) => const PlaylistsPage(),
     ),
-    // 收藏 / 最近（主页网格进入）。
+    // 导入歌单（从「我的」页进入）：备份文件 / 本地文件 / 云端导入。
+    GoRoute(
+      path: '/playlist-import',
+      builder: (context, state) => const PlaylistImportPage(),
+    ),
+    // 收藏 / 最近（主页网格与「我的」页进入）。收藏页 tab=0 单曲 / 1 歌单 / 2 专辑。
     GoRoute(
       path: '/favorites',
-      builder: (context, state) => const FavoritesPage(),
+      builder: (context, state) => FavoritesPage(
+        initialTab:
+            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      ),
     ),
     GoRoute(
       path: '/recent',
@@ -208,10 +219,9 @@ class BottomNavItem {
 }
 
 const bottomNavItems = [
-  BottomNavItem('主界面', Icons.home, '/home'),
-  BottomNavItem('音乐库', Icons.library_music, '/library'),
+  BottomNavItem('首页', Icons.home, '/home'),
+  BottomNavItem('我的', Icons.person_outline_rounded, '/mine'),
   BottomNavItem('音效', Icons.graphic_eq, '/effects'),
-  BottomNavItem('设置', Icons.settings, '/settings'),
 ];
 
 /// 底栏/侧栏导航项标题（跟随当前本地化语言）。
@@ -220,9 +230,8 @@ const bottomNavItems = [
 String navTitle(BuildContext context, BottomNavItem item) {
   final l = Localizations.of<AppLocalizations>(context, AppLocalizations);
   return switch (item.location) {
-    '/home' => l?.navHome ?? '主界面',
-    '/library' => l?.navLibrary ?? '音乐库',
-    '/effects' => l?.navEffects ?? '音效',
-    _ => l?.navSettings ?? '设置',
+    '/home' => l?.navHome ?? '首页',
+    '/mine' => l?.navMine ?? '我的',
+    _ => l?.navEffects ?? '音效',
   };
 }

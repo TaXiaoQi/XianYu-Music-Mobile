@@ -342,6 +342,78 @@ pub fn get_or_create_thumbnail(path: &Path, cache_dir: &Path) -> Option<String> 
     None
 }
 
+/// 通用别名封面提取：从 [read_path] 读取音频标签中的内嵌封面，但缓存别名按
+/// [source_key]（稳定主键，如 SAF content URI）哈希。
+///
+/// 这样扫描阶段产出的缩略图，能在播放/列表展示时按同一 source_key 命中，
+/// 避免运行时再去读无法直接以文件路径访问的 content URI。
+fn get_or_create_thumbnail_aliased(
+    source_key: &str,
+    read_path: &Path,
+    cache_dir: &Path,
+) -> Option<String> {
+    let source_hash = generate_source_hash(Path::new(source_key));
+    let alias_path = thumbnail_alias_path(cache_dir, &source_hash);
+
+    if let Some(existing) = resolve_alias_target(cache_dir, &alias_path) {
+        return Some(existing);
+    }
+
+    if let Ok(tagged_file) = read_tagged_file_from_path(read_path) {
+        if let Some(pic) = find_embedded_picture(&tagged_file) {
+            let shared_hash = generate_content_hash(pic.data());
+            let cache_path =
+                cache_dir.join(format!("{}.jpg", thumbnail_cache_stem(&shared_hash)));
+
+            if is_cached_cover_valid(&cache_path) {
+                let _ = persist_alias_target(&alias_path, &cache_path);
+                return Some(cache_path.to_string_lossy().into_owned());
+            }
+            if cache_path.exists() {
+                let _ = fs::remove_file(&cache_path);
+            }
+
+            if let Ok(img) = image::load_from_memory(pic.data()) {
+                let resized = img.resize(
+                    THUMBNAIL_EDGE_PX,
+                    THUMBNAIL_EDGE_PX,
+                    image::imageops::FilterType::Triangle,
+                );
+                let persisted =
+                    persist_image_atomically(&resized, ImageFormat::Jpeg, &cache_path)?;
+                let _ = persist_alias_target(&alias_path, &cache_path);
+                return Some(persisted);
+            }
+        }
+    }
+    None
+}
+
+/// 扫描 SAF 音频时从已打开的 `content://` fd 提取内嵌封面并写入封面缓存。
+///
+/// 读文件走 `/proc/self/fd/{fd}`，别名按 `source_path`（content URI）哈希，
+/// 与播放/列表时 `get_song_cover_thumbnail` 按同路径查找所命中的别名一致。
+pub fn get_or_create_thumbnail_from_fd(
+    source_path: &str,
+    fd: i32,
+    cache_dir: &Path,
+) -> Option<String> {
+    let fd_path = format!("/proc/self/fd/{fd}");
+    get_or_create_thumbnail_aliased(source_path, Path::new(&fd_path), cache_dir)
+}
+
+/// 扫描 SAF 音频时从物化到应用内部存储的真实文件路径提取封面。
+///
+/// 别名仍按 `source_key`（content URI）哈希，与展示路径一致；读取走稳定真实路径，
+/// 比 `/proc/self/fd/{fd}` 更可靠，适用于复制成功后统一走路径式解析的场景。
+pub fn get_or_create_thumbnail_from_path(
+    source_key: &str,
+    real_path: &Path,
+    cache_dir: &Path,
+) -> Option<String> {
+    get_or_create_thumbnail_aliased(source_key, real_path, cache_dir)
+}
+
 pub fn get_or_create_full_cover(path: &Path, cache_dir: &Path) -> Option<String> {
     let source_hash = generate_source_hash(path);
     let alias_path = full_cover_alias_path(cache_dir, &source_hash);

@@ -7,49 +7,70 @@ import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
-import '../../src/widgets/library_grid.dart';
+import '../../src/widgets/glass_appbar.dart';
 import 'discover_section.dart';
 
-/// 主界面：顶栏 / 搜索 / 封面轮播 / 音乐库网格 / 听过最多。
+/// 首页：顶栏（标题+搜索框）/ 封面轮播 / 发现 / 听过最多。
+///
+/// 顶栏为毛玻璃固定条，扩展至搜索框下；设置入口在「我的」页右上角菜单。
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final searchBar = _SearchBarBottom(
+      onTap: () => context.push('/search'),
+      onRecognize: () => context.push('/recognize'),
+    );
+
     return Scaffold(
       body: Stack(
         children: [
           const _AmbientBackground(),
-          SafeArea(
-            child: ListView(
-              // 悬浮底栏需页面自行避让，固定底栏由 Scaffold 处理。
-              padding: EdgeInsets.fromLTRB(
-                  18, 8, 18, ref.watch(navBarInsetProvider) + 24),
-              children: [
-                _TopBar(onSettings: () => context.go('/settings')),
-                const SizedBox(height: 16),
-                _SearchBar(
-                  onTap: () => context.push('/search'),
-                  onRecognize: () => context.push('/recognize'),
+          // 内容主体：顶部避让扩展后的顶栏（标题行+搜索框）。
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+                18, GlassTopBar.height(context, bottom: searchBar), 18, ref.watch(navBarInsetProvider) + 24),
+            children: const [
+              SizedBox(height: 14),
+              CoverCarousel(),
+              SizedBox(height: 26),
+              _SectionHeader(title: '发现'),
+              SizedBox(height: 12),
+              DiscoverSection(),
+              SizedBox(height: 26),
+              _SectionHeader(title: '听过最多'),
+              SizedBox(height: 14),
+              _MostPlayedList(),
+            ],
+          ),
+          // 顶栏：状态栏+「弦予音乐」标题+搜索框，滚动内容从其下方穿过被毛玻璃模糊。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              title: const Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: '弦予'),
+                    TextSpan(
+                      text: '音乐',
+                      style: TextStyle(
+                        color: Color(0xFFEC4141),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 22),
-                const CoverCarousel(),
-                const SizedBox(height: 26),
-                const _SectionHeader(title: '发现'),
-                const SizedBox(height: 12),
-                const DiscoverSection(),
-                const SizedBox(height: 26),
-                _SectionHeader(
-                  title: '音乐库',
-                  onMore: () => context.go('/library'),
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
                 ),
-                const SizedBox(height: 14),
-                const LibraryGrid(),
-                const SizedBox(height: 26),
-                const _SectionHeader(title: '听过最多'),
-                const SizedBox(height: 14),
-                const _MostPlayedList(),
-              ],
+              ),
+              titleSpacing: 18,
+              bottom: searchBar,
             ),
           ),
         ],
@@ -58,71 +79,21 @@ class HomePage extends ConsumerWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onSettings});
+/// 顶栏搜索框扩展区（PreferredSizeWidget 以便 GlassTopBar 计算 height）。
+class _SearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
+  const _SearchBarBottom({required this.onTap, required this.onRecognize});
 
-  final VoidCallback onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(
-          child: Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(text: '弦予'),
-                TextSpan(
-                  text: '音乐',
-                  style: TextStyle(
-                    color: Color(0xFFEC4141),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        _IconBtn(
-          icon: Icons.settings_outlined,
-          tooltip: '设置',
-          onTap: onSettings,
-        ),
-      ],
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  const _IconBtn({required this.icon, required this.onTap, this.tooltip});
-
-  final IconData icon;
   final VoidCallback onTap;
-  final String? tooltip;
+  final VoidCallback onRecognize;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(58);
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip ?? '',
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.06),
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: SizedBox(
-            width: 38,
-            height: 38,
-            child: Icon(icon, size: 20, color: scheme.onSurface),
-          ),
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+      child: _SearchBar(onTap: onTap, onRecognize: onRecognize),
     );
   }
 }
@@ -199,46 +170,15 @@ class _SearchBar extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, this.onMore});
+  const _SectionHeader({required this.title});
 
   final String title;
-  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
-        ),
-        if (onMore != null)
-          InkWell(
-            onTap: onMore,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Row(
-                children: [
-                  Text(
-                    '全部',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
+    return Text(
+      title,
+      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
     );
   }
 }

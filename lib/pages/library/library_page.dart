@@ -1,23 +1,22 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
-import '../../src/navigation/shell.dart';
-import '../../src/playlist/playlist_provider.dart';
 import '../../src/widgets/cover_image.dart';
-import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
-import '../favorites/favorites_page.dart';
-import '../playlist/playlists_page.dart';
-import '../recent/recent_page.dart';
+import '../settings/scan_folders_page.dart';
 import 'song_list_page.dart';
 import '../../src/core/app_colors.dart';
 
+/// 音乐库：全部 / 歌手 / 专辑 / 文件夹（从「我的」页进入的二级页面）。
+///
+/// 歌单与收藏入口已分流到「我的」页；本页专注本地曲库浏览。
 class LibraryPage extends ConsumerStatefulWidget {
-  const LibraryPage({super.key});
+  const LibraryPage({super.key, this.initialTab = 0});
+
+  /// 初始 Tab：0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
+  final int initialTab;
 
   @override
   ConsumerState<LibraryPage> createState() => _LibraryPageState();
@@ -30,14 +29,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
-    _tab.index = ref.read(libraryTabProvider).clamp(0, 4);
-    ref.listenManual(libraryTabProvider, (prev, next) {
-      final target = next.clamp(0, 4);
-      if (next != prev && _tab.index != target) {
-        _tab.animateTo(target);
-      }
-    });
+    _tab = TabController(length: 4, vsync: this);
+    _tab.index = widget.initialTab.clamp(0, 3);
   }
 
   @override
@@ -55,7 +48,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       isScrollable: true,
       tabAlignment: TabAlignment.start,
       tabs: const [
-        Tab(text: '歌单'),
         Tab(text: '全部'),
         Tab(text: '歌手'),
         Tab(text: '专辑'),
@@ -65,51 +57,32 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      body: Stack(
-        children: [
-          // 内容主体：顶部避让顶栏（含 TabBar 高度），Loading/错误态与 TabBarView 均在毛玻璃顶栏下方。
-          Padding(
-            padding: EdgeInsets.only(
-              top: GlassTopBar.height(context, bottom: tabBar),
-            ),
-            child: lib.loading
-                ? const Center(child: CircularProgressIndicator())
-                : lib.error != null
-                    ? _ErrorView(
-                        message: lib.error!,
-                        onRetry: () =>
-                            ref.read(libraryProvider.notifier).load(),
-                      )
-                    : TabBarView(
-                        controller: _tab,
-                        children: [
-                          _PlaylistsTab(),
-                          _AllSongsTab(),
-                          _ArtistsTab(),
-                          _AlbumsTab(),
-                          _FoldersTab(),
-                        ],
-                      ),
-          ),
-          // 顶栏高斯模糊毛玻璃（含歌单/全部/歌手/专辑/文件夹 TabBar）。
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              title: const Text('音乐库'),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: () =>
-                      ref.read(libraryProvider.notifier).load(),
-                ),
-              ],
-              bottom: tabBar,
-            ),
+      appBar: AppBar(
+        title: const Text('音乐库'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => ref.read(libraryProvider.notifier).load(),
           ),
         ],
+        bottom: tabBar,
       ),
+      body: lib.loading
+          ? const Center(child: CircularProgressIndicator())
+          : lib.error != null
+              ? _ErrorView(
+                  message: lib.error!,
+                  onRetry: () => ref.read(libraryProvider.notifier).load(),
+                )
+              : TabBarView(
+                  controller: _tab,
+                  children: [
+                    _AllSongsTab(),
+                    _ArtistsTab(),
+                    _AlbumsTab(),
+                    _FoldersTab(),
+                  ],
+                ),
     );
   }
 }
@@ -133,505 +106,6 @@ class _ErrorView extends StatelessWidget {
             label: const Text('重试'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// 【歌单】Tab（内置智能歌单 + 我喜欢的音乐大卡片 + 收藏展开）
-class _PlaylistsTab extends ConsumerStatefulWidget {
-  @override
-  ConsumerState<_PlaylistsTab> createState() => _PlaylistsTabState();
-}
-
-class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
-  bool _isFavExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final favPaths = ref.watch(favoritesProvider);
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final bottomInset = ref.watch(navBarInsetProvider) + 24;
-
-    return FutureBuilder<List<Song>>(
-      key: ValueKey(favPaths.entries.length),
-      future: ref
-          .read(libraryProvider.notifier)
-          .songsByPaths(favPaths.entries.map((e) => e.path).toList()),
-      builder: (context, snap) {
-        final favSongs = snap.data ?? const <Song>[];
-        final isLoadingFav = snap.connectionState != ConnectionState.done;
-
-        return ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset),
-          children: [
-            // 核心高亮卡片：【❤️ 我喜欢的音乐】
-            _buildFavHeroCard(
-              context,
-              favCount: favPaths.entries.length,
-              favSongs: favSongs,
-              isLoading: isLoadingFav,
-            ),
-            // 嵌入展示【我喜欢的音乐】歌曲列表（平滑高度+透明度展开折叠过渡）
-            AnimatedCrossFade(
-              duration: const Duration(milliseconds: 300),
-              firstCurve: Curves.easeInOutCubic,
-              secondCurve: Curves.easeInOutCubic,
-              crossFadeState: _isFavExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: const SizedBox(width: double.infinity),
-              secondChild: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '我喜欢的音乐 (${favSongs.length})',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => setState(() => _isFavExpanded = false),
-                        icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-                        label: const Text('收起'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (isLoadingFav)
-                    const Padding(
-                      padding: EdgeInsets.all(24.0),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (favSongs.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: appCardColor(context),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Text('暂无收藏的歌曲，点击爱心即可将歌曲加入收藏'),
-                    )
-                  else
-                    Container(
-                      decoration: BoxDecoration(
-                        color: appCardColor(context),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: favSongs.length,
-                          separatorBuilder: (_, _) => Divider(
-                            height: 1,
-                            color: colorScheme.outlineVariant.withValues(alpha: 0.2),
-                          ),
-                          itemBuilder: (context, i) {
-                            final song = favSongs[i];
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 4,
-                              ),
-                              leading: CoverImage(
-                                songPath: song.path,
-                                width: 44,
-                                height: 44,
-                                radius: 8,
-                              ),
-                              title: Text(
-                                song.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              subtitle: Text(
-                                '${song.artist} · ${song.album}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.favorite,
-                                      color: Colors.redAccent,
-                                      size: 20,
-                                    ),
-                                    tooltip: '取消收藏',
-                                    onPressed: () {
-                                      ref
-                                          .read(favoritesProvider.notifier)
-                                          .remove(song.path);
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.play_arrow_rounded),
-                                    onPressed: () {
-                                      ref
-                                          .read(libraryProvider.notifier)
-                                          .playList(favSongs, i);
-                                    },
-                                  ),
-                                ],
-                              ),
-                              onTap: () {
-                                ref
-                                    .read(libraryProvider.notifier)
-                                    .playList(favSongs, i);
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-
-            // 智能与系统歌单分组标题
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 12, bottom: 12),
-              child: Text(
-                '快捷智能歌单',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-
-            // 歌单 0：【我的歌单】（导入歌单、文件夹导入入口）
-            _buildPlaylistItemTile(
-              context,
-              title: '我的歌单',
-              subtitle:
-                  '${ref.watch(playlistManagerProvider).playlists.length} 个歌单',
-              icon: Icons.queue_music_rounded,
-              gradient: const [Color(0xFF8342FF), Color(0xFF00C6FF)],
-              onTap: () {
-                Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute(builder: (_) => const PlaylistsPage()),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            // 歌单 1：【❤️ 我喜欢的音乐】（标准列表项视图）
-            _buildPlaylistItemTile(
-              context,
-              title: '我喜欢的音乐',
-              subtitle: '${favPaths.entries.length} 首歌曲',
-              icon: Icons.favorite_rounded,
-              gradient: const [Color(0xFFFF416C), Color(0xFFFF4B2B)],
-              onTap: () {
-                Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute(builder: (_) => const FavoritesPage()),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            // 歌单 2：【最近播放】
-            _buildPlaylistItemTile(
-              context,
-              title: '最近播放',
-              subtitle: '查看最近播放历史',
-              icon: Icons.history_rounded,
-              gradient: const [Color(0xFF3AC2A6), Color(0xFFFFB347)],
-              onTap: () {
-                Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute(builder: (_) => const RecentPage()),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-
-            // 歌单 3：【全部本地音乐】
-            _buildPlaylistItemTile(
-              context,
-              title: '全部本地音乐',
-              subtitle: '${ref.watch(libraryProvider).songs.length} 首歌曲',
-              icon: Icons.library_music_rounded,
-              gradient: const [Color(0xFF5B8DEF), Color(0xFF00C6FF)],
-              onTap: () {
-                ref.read(libraryTabProvider.notifier).state = 1;
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 流光毛玻璃【我喜欢的音乐】Hero 大卡片
-  Widget _buildFavHeroCard(
-    BuildContext context, {
-    required int favCount,
-    required List<Song> favSongs,
-    required bool isLoading,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFF416C),
-            Color(0xFFFF4B2B),
-            Color(0xFF8A2387),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF416C).withValues(alpha: 0.35),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2),
-                width: 1.5,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 封面卡片 preview 或 Icon
-                    if (favSongs.isNotEmpty)
-                      CoverImage(
-                        songPath: favSongs.first.path,
-                        width: 72,
-                        height: 72,
-                        radius: 16,
-                      )
-                    else
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(
-                          Icons.favorite_rounded,
-                          size: 38,
-                          color: Colors.white,
-                        ),
-                      ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          const Text(
-                            '我喜欢的音乐',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            isLoading ? '加载中...' : '包含 $favCount 首歌曲',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    // 一键全量顺序播放
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: favSongs.isEmpty
-                            ? null
-                            : () {
-                                ref
-                                    .read(libraryProvider.notifier)
-                                    .playList(favSongs, 0);
-                              },
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black87,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                        label: const Text(
-                          '播放全部',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // 随机播放
-                    IconButton.filledTonal(
-                      onPressed: favSongs.isEmpty
-                          ? null
-                          : () {
-                              final shuffled = List<Song>.from(favSongs)
-                                ..shuffle();
-                              ref
-                                  .read(libraryProvider.notifier)
-                                  .playList(shuffled, 0);
-                            },
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.all(12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      icon: const Icon(Icons.shuffle_rounded, size: 20),
-                      tooltip: '随机播放',
-                    ),
-                    const SizedBox(width: 8),
-                    // 展开/收起内嵌列表
-                    IconButton.filledTonal(
-                      onPressed: () {
-                        setState(() => _isFavExpanded = !_isFavExpanded);
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.all(12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      icon: Icon(
-                        _isFavExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 20,
-                      ),
-                      tooltip: _isFavExpanded ? '收起列表' : '展开列表',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 标准歌单列表项
-  Widget _buildPlaylistItemTile(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required List<Color> gradient,
-    required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: gradient,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colorScheme.outline,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -762,7 +236,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               : SongsListView(
                   songs: songs,
                   padding: EdgeInsets.only(
-                    bottom: ref.watch(navBarInsetProvider) + 24,
+                    bottom: 92 + MediaQuery.of(context).padding.bottom,
                   ),
                   onPlay: (list, i) =>
                       ref.read(libraryProvider.notifier).playList(list, i),
@@ -861,19 +335,20 @@ class _ArtistsTab extends ConsumerWidget {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
     if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
     return ListView.separated(
-      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
+      padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
       itemCount: artists.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final a = artists[i];
+        final scheme = Theme.of(context).colorScheme;
         return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Text(
-              a.name.isEmpty ? '?' : String.fromCharCode(a.name.runes.first),
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimaryContainer),
-            ),
+          leading: CoverImage(
+            songPath: a.firstSongPath,
+            width: 44,
+            height: 44,
+            radius: 22,
+            icon: Icons.person,
+            placeholder: _letterAvatar(context, a.name, scheme),
           ),
           title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text('${a.count} 首'),
@@ -893,6 +368,22 @@ class _ArtistsTab extends ConsumerWidget {
   }
 }
 
+/// 歌手无封面时的字母头像占位。
+Widget _letterAvatar(BuildContext context, String name, ColorScheme scheme) {
+  return DecoratedBox(
+    decoration: BoxDecoration(
+      color: scheme.primaryContainer,
+      shape: BoxShape.circle,
+    ),
+    child: Center(
+      child: Text(
+        name.isEmpty ? '?' : String.fromCharCode(name.runes.first),
+        style: TextStyle(color: scheme.onPrimaryContainer),
+      ),
+    ),
+  );
+}
+
 /// 专辑目录。
 class _AlbumsTab extends ConsumerWidget {
   @override
@@ -900,21 +391,18 @@ class _AlbumsTab extends ConsumerWidget {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
     if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
     return ListView.separated(
-      padding: EdgeInsets.only(bottom: ref.watch(navBarInsetProvider) + 24),
+      padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
       itemCount: albums.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final a = albums[i];
         return ListTile(
-          leading: Container(
+          leading: CoverImage(
+            songPath: a.firstSongPath,
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(Icons.album, size: 20),
+            radius: 6,
+            icon: Icons.album,
           ),
           title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
@@ -1031,10 +519,12 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
   @override
   Widget build(BuildContext context) {
     final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
+    final lost = ref.watch(
+        libraryProvider.select((s) => s.unauthorizedFolders));
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
     final bottomPadding = EdgeInsets.only(
-      bottom: ref.watch(navBarInsetProvider) + 24,
+      bottom: 92 + MediaQuery.of(context).padding.bottom,
     );
     return RefreshIndicator(
       onRefresh: _onRefresh,
@@ -1043,13 +533,14 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               padding: bottomPadding,
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
+                if (lost.isNotEmpty) _UnauthorizedBanner(lost: lost),
                 SizedBox(
                   height: MediaQuery.of(context).size.height * 0.5,
                   child: const Center(
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加一个音乐目录\n（系统会弹出授权，允许后即可扫描），\n然后在此下拉刷新开始扫描',
+                        '暂无文件夹\n请先在「设置 → 扫描文件夹」添加一个音乐目录\n（仅首次添加需要授权），\n然后在此下拉刷新开始扫描',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -1060,8 +551,58 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
           : ListView(
               padding: bottomPadding,
               physics: const AlwaysScrollableScrollPhysics(),
-              children: tiles,
+              children: [
+                if (lost.isNotEmpty) _UnauthorizedBanner(lost: lost),
+                ...tiles,
+              ],
             ),
+    );
+  }
+}
+
+/// 授权失效目录的警示横幅：点击跳转扫描文件夹页重新授权。
+///
+/// 重新授权选回同一目录时 tree URI 不变，旧曲库数据直接复活，无需重扫。
+class _UnauthorizedBanner extends StatelessWidget {
+  final List<String> lost;
+  const _UnauthorizedBanner({required this.lost});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Material(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute(
+              builder: (_) => const ScanFoldersPage(),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.folder_off, size: 20, color: scheme.onErrorContainer),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${lost.length} 个目录授权已失效，点击重新授权',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onErrorContainer,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 18, color: scheme.onErrorContainer),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

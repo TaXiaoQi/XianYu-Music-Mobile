@@ -24,20 +24,21 @@ final appDataDirProvider = FutureProvider<String>((ref) async {
   return await _resolveAppDataDir();
 });
 
-/// 封面缓存根目录（系统临时缓存目录）。
+/// 封面缓存根目录（应用数据目录下的持久目录）。
 ///
-/// 封面缩略图可随时从音频标签重新提取，放系统缓存目录让 Android
-/// 在存储紧张时自动回收；顺带清理旧版本遗留在应用数据目录下的
-/// 封面缓存，避免成为永不回收的孤儿文件。
+/// SAF 歌曲的封面无法在扫描之外重新提取（Rust 打不开 content:// 路径），
+/// 因此封面缓存必须放持久目录，绝不能放系统临时目录（Android 会随时清空
+/// cache，清掉后 SAF 歌曲封面将永久丢失）。顺带清理旧版本遗留的临时方案
+/// 目录（应用数据目录下的 `covers` 与系统临时目录根）。
 final coverCacheRootProvider = FutureProvider<String>((ref) async {
-  final legacy = Directory(
-    p.join(await _resolveAppDataDir(), 'covers'),
-  );
+  final appData = await _resolveAppDataDir();
+  final legacy = Directory(p.join(appData, 'covers'));
   if (legacy.existsSync()) {
     try {
       legacy.deleteSync(recursive: true);
     } catch (_) {/* 清理失败不影响运行 */}
   }
-  final tmp = await getTemporaryDirectory();
-  return tmp.path;
+  final root = Directory(p.join(appData, 'cover_cache'));
+  if (!root.existsSync()) root.createSync(recursive: true);
+  return root.path;
 });

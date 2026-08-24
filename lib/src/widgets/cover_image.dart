@@ -6,18 +6,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../library/saf_channel.dart';
 import '../online/cover_proxy.dart';
 import '../rust/api.dart';
 
 /// 封面加载组件。
 ///
 /// 传入 [networkUrl] 时加载在线封面（带磁盘缓存）；
-/// 否则经 Rust 缩略图接口取本地封面。两者均失败时回退渐变占位。
+/// 传入 [thumbPath]（扫描期回写的缓存路径）时直接展示；
+/// 否则经 Rust 缩略图接口取本地封面。全部失败时回退渐变占位。
 class CoverImage extends ConsumerStatefulWidget {
   const CoverImage({
     super.key,
     required this.songPath,
     this.networkUrl,
+    this.thumbPath,
     this.width = 48,
     this.height = 48,
     this.radius = 12,
@@ -30,6 +33,10 @@ class CoverImage extends ConsumerStatefulWidget {
 
   /// 在线封面 URL；非空时优先使用，跳过本地提取。
   final String? networkUrl;
+
+  /// 已知缩略图路径（如 songs.cover_thumb_path）；文件存在时直接展示，
+  /// 跳过 Rust 提取，列表滚动时零额外开销。
+  final String? thumbPath;
   final double width;
   final double height;
   final double radius;
@@ -62,7 +69,8 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   void didUpdateWidget(CoverImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.songPath != widget.songPath ||
-        oldWidget.networkUrl != widget.networkUrl) {
+        oldWidget.networkUrl != widget.networkUrl ||
+        oldWidget.thumbPath != widget.thumbPath) {
       _path = null;
       _proxied = null;
       _load();
@@ -93,6 +101,13 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   Future<void> _load() async {
     // 在线封面直接走网络，无需 Rust 本地提取。
     if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) return;
+    // 已知缩略图（扫描期回写）直接展示，避免列表滚动时逐行触发 Rust 查询。
+    final direct = widget.thumbPath;
+    if (direct != null && direct.isNotEmpty && File(direct).existsSync()) {
+      _cache[widget.songPath] = direct;
+      if (mounted) setState(() => _path = direct);
+      return;
+    }
     final cached = _cache[widget.songPath];
     if (cached != null) {
       if (mounted) setState(() => _path = cached.isEmpty ? null : cached);
@@ -101,11 +116,24 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     try {
       final dbPath = await ref.read(dbPathProvider.future);
       final cacheRoot = await ref.read(coverCacheRootProvider.future);
-      final p = await getSongCoverThumbnail(
+      var p = await getSongCoverThumbnail(
         dbPath: dbPath,
         cacheRoot: cacheRoot,
         path: widget.songPath,
       );
+      if (p.isEmpty && SafChannel.isSafPath(widget.songPath)) {
+        // SAF 歌曲缓存未命中时无法从 content:// 路径重新提取，
+        // 经 fd 自愈提取一次后重查（顺带回写数据库）。
+        final healed = await SafChannel.extractCoverToCache(
+            widget.songPath, cacheRoot);
+        if (healed.isNotEmpty) {
+          p = await getSongCoverThumbnail(
+            dbPath: dbPath,
+            cacheRoot: cacheRoot,
+            path: widget.songPath,
+          );
+        }
+      }
       _cache[widget.songPath] = p;
       if (mounted) setState(() => _path = p.isEmpty ? null : p);
     } catch (_) {

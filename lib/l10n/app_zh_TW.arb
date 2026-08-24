@@ -3,8 +3,9 @@
   "appTitle": "閒魚音樂",
   "appTagline": "純淨本地 · 線上音樂播放器",
 
-  "navHome": "主介面",
+  "navHome": "首頁",
   "navLibrary": "音樂庫",
+  "navMine": "我的",
   "navEffects": "音效",
   "navSearch": "搜尋",
   "navSettings": "設定",
