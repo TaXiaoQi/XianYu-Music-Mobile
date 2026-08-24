@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/online_cover.dart';
@@ -24,6 +25,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
     final async = ref.watch(dailyRecommendProvider);
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('每日推荐'),
         leading: IconButton(

@@ -13,6 +13,7 @@ import '../favorites/favorites_page.dart';
 import '../playlist/playlists_page.dart';
 import '../recent/recent_page.dart';
 import 'song_list_page.dart';
+import '../../src/core/app_colors.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -49,6 +50,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final lib = ref.watch(libraryProvider);
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('音乐库'),
         actions: [
@@ -190,7 +192,7 @@ class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
                       padding: const EdgeInsets.all(24),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainer,
+                        color: appCardColor(context),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: const Text('暂无收藏的歌曲，点击爱心即可将歌曲加入收藏'),
@@ -198,7 +200,7 @@ class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
                   else
                     Container(
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerLow,
+                        color: appCardColor(context),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -551,7 +553,7 @@ class _PlaylistsTabState extends ConsumerState<_PlaylistsTab> {
     final colorScheme = theme.colorScheme;
 
     return Material(
-      color: colorScheme.surfaceContainerLow,
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,

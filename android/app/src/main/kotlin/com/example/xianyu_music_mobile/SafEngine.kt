@@ -108,13 +108,14 @@ class SafEngine(private val context: Context) {
         val treeUri = Uri.parse(treeUriStr)
         val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
         val pfd = resolver.openFileDescriptor(docUri, "r") ?: return -1
-        val fd = pfd.fileDescriptor.fd
+        val fd = pfd.fd
         openFds.append(fd, pfd)
         return fd
     }
 
     fun closeFd(fd: Int) {
-        openFds.remove(fd)?.close()
+        val pfd = openFds.get(fd)
         openFds.delete(fd)
+        pfd?.close()
     }
 }

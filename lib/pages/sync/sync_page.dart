@@ -12,6 +12,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/backup/app_backup.dart';
 import '../../src/core/db_path.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/rust/api.dart';
 import '../../src/sync/auto_sync.dart';
@@ -418,6 +419,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     final config = _config;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('同步与备份')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -426,7 +428,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -518,7 +520,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -555,7 +557,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(

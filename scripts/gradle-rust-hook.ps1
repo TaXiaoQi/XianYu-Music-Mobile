@@ -1,8 +1,11 @@
 ﻿#requires -version 5.1
-# 默认跳过自动重编 Rust（优先使用工程中已有 .so 产物），避免本地环境路径不匹配或时间戳误判。
-# 与 build.gradle.kts 对齐：仅当显式设置 XIANMU_BUILD_RUST=1 时才真正执行（防止 .so 与
-# 重新生成的 Dart 绑定 funcId 失步，导致运行时 wire 调用错位、扫描等功能失效）。
-if ($env:XIANMU_BUILD_RUST -ne "1") { exit 0 }
+# 默认自动审查并重新编译 Rust 后端（与桌面端 tauri dev 行为一致）：
+# - 普通 `flutter run` / `flutter build apk` 都会在 gradle preBuild 阶段调用本钩子；
+# - 无 Rust 变更时内部 1 秒静默放行，不拖慢日常构建；
+# - 有变更时自动重编 .so（和必要时重新生成 Dart 绑定）。
+# 如需完全跳过自动重编（直接使用工程中已有 .so），设置 XIANMU_SKIP_RUST=1。
+#（XIANMU_BUILD_RUST=1 已不再需要，保留仅为兼容旧调用方。）
+if ($env:XIANMU_SKIP_RUST -eq "1") { exit 0 }
 
 <#
 .SYNOPSIS

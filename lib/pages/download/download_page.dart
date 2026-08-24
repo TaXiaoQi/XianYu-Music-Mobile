@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -31,6 +32,7 @@ class DownloadPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
+        backgroundColor: appSurfaceBg(context),
         appBar: AppBar(
           title: const Text('下载管理'),
           actions: [

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../library/library_provider.dart';
+import '../core/app_colors.dart';
 
 /// 音乐库网格：2 列方块卡，渐变图标块，6 入口。
 class LibraryGrid extends ConsumerWidget {
@@ -21,7 +22,7 @@ class LibraryGrid extends ConsumerWidget {
       required VoidCallback onTap,
     }) {
       return Material(
-        color: scheme.surfaceContainer,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
           onTap: onTap,

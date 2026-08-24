@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
+import '../../src/core/app_colors.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
@@ -158,6 +159,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('意见反馈'),
         bottom: TabBar(
@@ -194,7 +196,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -299,7 +301,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   errorBuilder: (_, _, _) => Container(
                     width: 80,
                     height: 80,
-                    color: scheme.surfaceContainerHighest,
+                    color: appCardColor(context),
                     child: Icon(Icons.broken_image,
                         color: scheme.outline),
                   ),
@@ -331,7 +333,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: scheme.outlineVariant),
               ),
@@ -447,7 +449,7 @@ class _FeedbackCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surfaceContainerHigh,
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
@@ -496,7 +498,7 @@ class _FeedbackCard extends StatelessWidget {
                         errorBuilder: (_, _, _) => Container(
                           width: 56,
                           height: 56,
-                          color: scheme.surfaceContainerHighest,
+                          color: appCardColor(context),
                         ),
                       ),
                     ),
@@ -592,7 +594,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
                           errorBuilder: (_, _, _) => Container(
                             width: 90,
                             height: 90,
-                            color: scheme.surfaceContainerHighest,
+                            color: appCardColor(context),
                             child: Icon(Icons.broken_image,
                                 color: scheme.outline),
                           ),

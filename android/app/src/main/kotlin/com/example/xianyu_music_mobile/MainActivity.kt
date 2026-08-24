@@ -6,7 +6,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.DocumentsContract
-import androidx.activity.result.contract.ActivityResultContracts
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,16 +15,20 @@ import org.json.JSONObject
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
     private val SAF_CHANNEL = "xianyu/saf"
+    private val REQ_CHOOSE_TREE = 1001
 
     private lateinit var saf: SafEngine
-    private lateinit var treeLauncher: androidx.activity.result.ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
-        treeLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { res -> saf.onTreeResult(res?.data?.data) }
         super.onCreate(savedInstanceState)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_CHOOSE_TREE) {
+            saf.onTreeResult(data?.data)
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -42,15 +45,16 @@ class MainActivity : AudioServiceActivity() {
                 when (call.method) {
                     "chooseFolderTree" -> {
                         saf.pendingTreeResult = result
-                        treeLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                        startActivityForResult(
+                            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_CHOOSE_TREE)
                     }
                     "persistPermission" -> {
-                        saf.persistPermission(call.argument("uri") as String)
+                        saf.persistPermission(call.argument<String>("uri") ?: "")
                         result.success(null)
                     }
                     "listAudioTree" -> {
                         val uri = call.argument<String>("uri") ?: ""
-                        val exts = (call.argument<List<*>>("extensions") ?: emptyList())
+                        val exts = (call.argument<List<*>>("extensions") ?: emptyList<Any>())
                             .map { it.toString() }
                         result.success(saf.listAudioTree(uri, exts))
                     }

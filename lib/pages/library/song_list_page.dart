@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/core/app_colors.dart';
 
 /// 歌曲列表详情页：用于歌手/专辑/文件夹的下钻浏览。
 class SongListPage extends ConsumerWidget {
@@ -15,6 +16,7 @@ class SongListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return HideShellChrome(
       child: Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: Text(title)),
       body: FutureBuilder<List<Song>>(
         future: loader(),

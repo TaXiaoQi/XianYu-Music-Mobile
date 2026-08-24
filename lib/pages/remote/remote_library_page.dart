@@ -6,6 +6,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/remote/remote_library_service.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/core/app_colors.dart';
 
 /// 远程音乐库管理页：WebDAV 源的添加/编辑/同步/删除与缓存管理。
 class RemoteLibraryPage extends ConsumerWidget {
@@ -17,6 +18,7 @@ class RemoteLibraryPage extends ConsumerWidget {
     final state = ref.watch(remoteLibraryProvider);
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('远程音乐库 (WebDAV)')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSourceEditor(context, ref),
@@ -36,7 +38,7 @@ class RemoteLibraryPage extends ConsumerWidget {
                 ),
               ),
               if (state.sources.isEmpty && !state.loading)
-                _buildEmptyHint(scheme)
+                _buildEmptyHint(context, scheme)
               else
                 for (final source in state.sources)
                   _SourceCard(source: source),
@@ -59,10 +61,10 @@ class RemoteLibraryPage extends ConsumerWidget {
   static bool _hasPlayerSong(WidgetRef ref) =>
       ref.watch(playerProvider.select((s) => s.current != null));
 
-  Widget _buildEmptyHint(ColorScheme scheme) => Container(
+  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme) => Container(
         padding: const EdgeInsets.symmetric(vertical: 36),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
+          color: appCardColor(context),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -84,11 +86,10 @@ class RemoteLibraryPage extends ConsumerWidget {
 
   Widget _buildCacheCard(
       BuildContext context, WidgetRef ref, RemoteLibraryState state) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -189,7 +190,7 @@ class _SourceCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(

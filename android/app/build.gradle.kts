@@ -78,10 +78,8 @@ tasks.configureEach {
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 tasks.register("rustHook") {
     doLast {
-        if (System.getenv("XIANMU_BUILD_RUST") != "1") {
-            logger.lifecycle("默认跳过 Rust 自动重编钩子（若需触发重编请设置 XIANMU_BUILD_RUST=1）")
-            return@doLast
-        }
+        // 默认自动审查并编译 Rust 后端（与桌面端 tauri dev 行为一致：有变更才编译，
+        // 无变更时钩子内部 1 秒静默放行）。如需完全跳过，设置 XIANMU_SKIP_RUST=1。
         if (isWindows) {
             val proc = ProcessBuilder(
                 "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",

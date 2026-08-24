@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -312,6 +313,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
     final selected = _selected;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
@@ -868,10 +870,10 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     height: 44,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) =>
-                        _musicPlaceholder(scheme),
+                        _musicPlaceholder(context, scheme),
                   ),
                 )
-              : _musicPlaceholder(scheme),
+              : _musicPlaceholder(context, scheme),
           title: highlightedText(r.name, q, scheme.primary, maxLines: 1),
           subtitle: Text(
             [r.singer, r.albumName, widget.source.name]
@@ -1292,12 +1294,12 @@ Widget _emptyHint(String message, ColorScheme scheme,
   );
 }
 
-Widget _musicPlaceholder(ColorScheme scheme) {
+Widget _musicPlaceholder(BuildContext context, ColorScheme scheme) {
   return Container(
     width: 44,
     height: 44,
     decoration: BoxDecoration(
-      color: scheme.surfaceContainerHighest,
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(6),
     ),
     child: Icon(Icons.music_note, color: scheme.outline, size: 20),

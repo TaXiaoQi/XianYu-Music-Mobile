@@ -5,6 +5,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/core/app_colors.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
 class RecentPage extends ConsumerWidget {
@@ -18,6 +19,7 @@ class RecentPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
+        backgroundColor: appSurfaceBg(context),
         appBar: AppBar(
           title: const Text('最近播放'),
           actions: [

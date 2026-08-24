@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import '../core/app_colors.dart';
 import '../core/app_logger.dart';
 import '../core/settings.dart';
 import '../notifications/notification_service.dart';
@@ -503,13 +504,10 @@ class _FixedNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark
-            ? scheme.surfaceContainer
-            : scheme.surface,
+        color: appCardColor(context),
         border: Border(
           top: BorderSide(
             color: scheme.onSurface.withValues(alpha: 0.08),

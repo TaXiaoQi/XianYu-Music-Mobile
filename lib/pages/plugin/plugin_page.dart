@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
@@ -48,6 +49,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('插件'),
         actions: [
@@ -371,7 +373,7 @@ class _SubscriptionSection extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: scheme.surfaceContainerHigh,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
@@ -471,7 +473,7 @@ class _PluginCard extends ConsumerWidget {
     final manager = ref.read(pluginManagerProvider.notifier);
 
     return Material(
-      color: scheme.surfaceContainerHigh,
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
@@ -788,7 +790,7 @@ class _ScriptEditorSheetState extends ConsumerState<_ScriptEditorSheet> {
               Flexible(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLow,
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: scheme.outlineVariant),
                   ),

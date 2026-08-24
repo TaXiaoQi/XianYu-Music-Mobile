@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
@@ -462,7 +463,7 @@ class _MatchListView extends StatelessWidget {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: scheme.surfaceContainerHigh,
+          color: appCardColor(context),
           child: Text(
             '识别到 ${matches.length} 首匹配',
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

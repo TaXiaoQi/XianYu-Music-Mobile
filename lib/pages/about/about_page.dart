@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/server_models.dart';
+import '../../src/core/app_colors.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
 class AboutPage extends ConsumerStatefulWidget {
@@ -134,6 +135,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         (icon: Icons.book_outlined, label: _config.referenceProjectText, url: _config.referenceProjectUrl),
     ];
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('关于')),
       body: ListView(
         padding: const EdgeInsets.all(24),
@@ -202,7 +204,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(

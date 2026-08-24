@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/widgets/user_avatar.dart';
-import 'settings_category_page.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
 ///
@@ -52,7 +52,7 @@ class SettingsPage extends ConsumerWidget {
     final auth = ref.watch(authProvider);
 
     return Scaffold(
-      backgroundColor: settingsSurfaceBg(context),
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -129,7 +129,7 @@ class _AccountCard extends StatelessWidget {
     final user = auth.user;
     final loggedIn = auth.isLoggedIn && user != null;
     return Material(
-      color: settingsCardColor(context),
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -228,7 +228,7 @@ class _CardGroup extends StatelessWidget {
     }
 
     return Material(
-      color: settingsCardColor(context),
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: Column(children: items),

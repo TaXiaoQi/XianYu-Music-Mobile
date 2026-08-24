@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -224,6 +225,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final isArtist = a.type == OnlineDetailType.artist;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         leading: IconButton(

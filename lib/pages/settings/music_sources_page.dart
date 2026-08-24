@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugins/plugin_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -126,6 +127,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('音源管理'),
         actions: [

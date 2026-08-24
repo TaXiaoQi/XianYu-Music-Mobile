@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/stats/listen_stats.dart';
@@ -85,6 +86,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
     final loggedIn = auth.isLoggedIn;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('听歌排行榜')),
       body: Column(
         children: [
@@ -104,7 +106,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                 Container(
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh,
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
@@ -137,7 +139,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
           height: 56,
           margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh,
+            color: appCardColor(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: _skeletonRow(scheme),
@@ -212,7 +214,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
@@ -221,7 +223,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               shape: BoxShape.circle,
             ),
           ),
@@ -235,7 +237,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 120,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -244,7 +246,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 80,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -323,7 +325,7 @@ class _LeaderboardRow extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.08)
             : (highlight
                 ? scheme.primary.withValues(alpha: 0.04)
-                : scheme.surfaceContainerHigh),
+                : appCardColor(context)),
         borderRadius: BorderRadius.circular(12),
         border: isMe
             ? Border.all(color: scheme.primary.withValues(alpha: 0.3))
@@ -407,7 +409,7 @@ class _RankBadge extends StatelessWidget {
       1 => (const Color(0xFFFFA500), Colors.white),
       2 => (const Color(0xFFA8A8A8), Colors.white),
       3 => (const Color(0xFFA0522D), Colors.white),
-      _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
+      _ => (appCardColor(context), scheme.onSurfaceVariant),
     };
     return Container(
       width: 28,
@@ -452,16 +454,16 @@ class _Avatar extends StatelessWidget {
         child: avatar.isNotEmpty
             ? UserAvatarImage(
                 avatar: avatar,
-                fallback: _fallback(scheme, char),
+                fallback: _fallback(context, scheme, char),
               )
-            : _fallback(scheme, char),
+            : _fallback(context, scheme, char),
       ),
     );
   }
 
-  Widget _fallback(ColorScheme scheme, String char) {
+  Widget _fallback(BuildContext context, ColorScheme scheme, String char) {
     return Container(
-      color: scheme.surfaceContainerHighest,
+      color: appCardColor(context),
       alignment: Alignment.center,
       child: Text(
         char,
@@ -498,7 +500,7 @@ class _LoginRow extends StatelessWidget {
                 height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
+                  color: appCardColor(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('—',
@@ -512,7 +514,7 @@ class _LoginRow extends StatelessWidget {
                 child: Container(
                   width: 36,
                   height: 36,
-                  color: scheme.surfaceContainerHighest,
+                  color: appCardColor(context),
                   alignment: Alignment.center,
                   child: Text('未',
                       style: TextStyle(

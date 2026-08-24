@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/plugin/plugin_comments.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_provider.dart';
@@ -215,7 +216,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -454,8 +455,7 @@ class _CommentTile extends StatelessWidget {
                             margin: const EdgeInsets.only(top: 8),
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: scheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.35),
+                              color: appCardColor(context),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -556,7 +556,7 @@ class _Avatar extends StatelessWidget {
     if (url == null || url!.isEmpty) {
       return CircleAvatar(
         radius: size / 2,
-        backgroundColor: scheme.surfaceContainerHighest,
+        backgroundColor: appCardColor(context),
         child: Icon(Icons.person, size: size * 0.55, color: scheme.onSurfaceVariant),
       );
     }
@@ -568,7 +568,7 @@ class _Avatar extends StatelessWidget {
         fit: BoxFit.cover,
         errorWidget: (_, _, _) => CircleAvatar(
           radius: size / 2,
-          backgroundColor: scheme.surfaceContainerHighest,
+          backgroundColor: appCardColor(context),
           child: Icon(Icons.person,
               size: size * 0.55, color: scheme.onSurfaceVariant),
         ),

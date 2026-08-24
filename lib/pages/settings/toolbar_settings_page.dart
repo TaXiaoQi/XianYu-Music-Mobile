@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 
@@ -47,7 +48,7 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
               _section(context, '悬浮与特效', [
                 _GlassSwitchTile(
                   icon: Icons.blur_on,
-                  title: '导航栏液态玻璃',
+                  title: '液态玻璃',
                   subtitle: '导航栏与迷你播放条使用 shader 折射与动态光影',
                   value: settings?.liquidGlass ?? true,
                   onChanged: (v) => notifier.setLiquidGlass(v),
@@ -104,7 +105,7 @@ class _AmbientBackground extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Container(color: scheme.surface),
+          Container(color: appSurfaceBg(context)),
           Positioned(
             top: -90,
             right: -70,

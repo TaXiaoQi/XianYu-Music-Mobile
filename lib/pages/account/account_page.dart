@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/sync/sync_provider.dart';
 import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
@@ -276,7 +277,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Container(
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(12),
             ),
             padding: const EdgeInsets.all(4),
@@ -998,14 +999,11 @@ class _ProfileHeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       decoration: BoxDecoration(
-        color: isDark
-            ? scheme.surfaceContainerHigh
-            : scheme.surfaceContainerLow,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: scheme.outlineVariant.withValues(alpha: 0.3),
@@ -1227,7 +1225,6 @@ class _GlassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
@@ -1247,9 +1244,7 @@ class _GlassCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark
-            ? scheme.surfaceContainer
-            : scheme.surfaceContainerLow,
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: scheme.outlineVariant.withValues(alpha: 0.3),
@@ -1476,10 +1471,8 @@ class _AmbientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return IgnorePointer(
-      child: Container(color: scheme.surface),
+      child: Container(color: appSurfaceBg(context)),
     );
   }
 }
@@ -1595,7 +1588,7 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

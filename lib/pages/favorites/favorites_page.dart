@@ -9,6 +9,7 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
+import '../../src/core/app_colors.dart';
 
 /// 收藏页：单曲 / 歌单 / 专辑三 tab（对齐桌面）。
 class FavoritesPage extends ConsumerStatefulWidget {
@@ -41,6 +42,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 
     return HideShellChrome(
       child: Scaffold(
+        backgroundColor: appSurfaceBg(context),
         appBar: AppBar(
           title: const Text('收藏'),
           actions: [

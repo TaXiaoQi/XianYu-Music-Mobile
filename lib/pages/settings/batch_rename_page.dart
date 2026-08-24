@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/rust/api.dart';
@@ -152,6 +153,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     final folders = ref.watch(libraryProvider).folders;
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('批量重命名')),
       body: ListView(
         padding: const EdgeInsets.all(16),

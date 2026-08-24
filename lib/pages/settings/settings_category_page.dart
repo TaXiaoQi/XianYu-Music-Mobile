@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -44,16 +45,10 @@ enum SettingsCategory {
 /// 设置页背景底色（浅白，与纯白卡片区分）。
 ///
 /// 亮色：淡灰白 #F4F4F6，暗色：#222。
-Color settingsSurfaceBg(BuildContext context) {
-  final dark = Theme.of(context).brightness == Brightness.dark;
-  return dark ? const Color(0xFF222222) : const Color(0xFFF4F4F6);
-}
+Color settingsSurfaceBg(BuildContext context) => appSurfaceBg(context);
 
 /// 设置卡片纯白底色。
-Color settingsCardColor(BuildContext context) {
-  final dark = Theme.of(context).brightness == Brightness.dark;
-  return dark ? const Color(0xFF303030) : const Color(0xFFFFFFFF);
-}
+Color settingsCardColor(BuildContext context) => appCardColor(context);
 
 /// 设置详情页：浅白底 + 纯白卡片，展示单个分类下的全部设置项。
 class SettingsCategoryPage extends ConsumerStatefulWidget {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -114,6 +115,7 @@ class _ScanFoldersPageState extends ConsumerState<ScanFoldersPage>
     final foldersAsync = ref.watch(scanFoldersProvider);
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('扫描文件夹')),
       floatingActionButton: Padding(
         // 上移避让二级页面下沉的迷你播放条（高 58 + 距底 18 + 间隙 12）。

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/core/app_colors.dart';
 
 /// 弹出人机验证弹窗，返回验证通过的 payload；取消返回 null。
 Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
@@ -132,7 +133,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

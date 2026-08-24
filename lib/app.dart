@@ -56,6 +56,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         seedColor: seed,
         brightness: Brightness.light,
       ),
+      // 统一页面底色与控件底色（对齐设置页规范）。
+      scaffoldBackgroundColor: const Color(0xFFF4F4F6),
+      cardTheme: const CardThemeData(
+        color: Color(0xFFFFFFFF),
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(backgroundColor: Color(0xFFFFFFFF)),
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
@@ -72,6 +79,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
+      // 统一页面底色与控件底色（对齐设置页规范）。
+      scaffoldBackgroundColor: const Color(0xFF222222),
+      cardTheme: const CardThemeData(
+        color: Color(0xFF303030),
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF303030)),
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );

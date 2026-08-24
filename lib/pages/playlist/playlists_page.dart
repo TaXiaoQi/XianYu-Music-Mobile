@@ -5,6 +5,7 @@ import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/core/app_colors.dart';
 
 /// 我的歌单：创建/重命名/删除歌单，查看与播放歌单内容（对齐桌面歌单体系）。
 class PlaylistsPage extends ConsumerWidget {
@@ -17,6 +18,7 @@ class PlaylistsPage extends ConsumerWidget {
     final manager = ref.read(playlistManagerProvider.notifier);
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: const Text('我的歌单'),
         actions: [
@@ -113,7 +115,7 @@ class _PlaylistCard extends ConsumerWidget {
     final manager = ref.read(playlistManagerProvider.notifier);
 
     return Material(
-      color: scheme.surfaceContainerHigh,
+      color: appCardColor(context),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -254,12 +256,14 @@ class PlaylistDetailPage extends ConsumerWidget {
 
     if (playlist == null) {
       return Scaffold(
+        backgroundColor: appSurfaceBg(context),
         appBar: AppBar(title: const Text('歌单')),
         body: const Center(child: Text('歌单已不存在')),
       );
     }
 
     return Scaffold(
+      backgroundColor: appSurfaceBg(context),
       appBar: AppBar(
         title: Text(playlist.name),
         actions: [

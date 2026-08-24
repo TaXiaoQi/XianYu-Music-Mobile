@@ -213,6 +213,12 @@ fn push_sample_bytes(buf: &mut Vec<u8>, sample: f32, fmt: DeviceFormat) {
             let val = (clamped * 32767.0) as i16;
             buf.extend_from_slice(&val.to_le_bytes());
         }
+        DeviceFormat::I24Packed => {
+            // 24 位定点（DoP / 24-bit PCM 直出）：f32 → i32 定点，取低 3 字节 LE。
+            let val = (clamped * 8388607.0) as i32;
+            let bytes = val.to_le_bytes();
+            buf.extend_from_slice(&bytes[..3]);
+        }
     }
 }
 
@@ -976,6 +982,11 @@ fn run_dsd_passthrough(
                     AAUDIO_OK
                 };
             }
+            // DSD 直出下音量、增益、EQ 与音效均被绕过，命令直接忽略。
+            Ok(ExclusiveCommand::SetVolume(_))
+            | Ok(ExclusiveCommand::SetVolumeBalanceGain(_))
+            | Ok(ExclusiveCommand::SetEqualizer(_))
+            | Ok(ExclusiveCommand::SetSoundEffect(_)) => {}
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
         }
