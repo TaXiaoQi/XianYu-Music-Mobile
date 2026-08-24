@@ -70,7 +70,10 @@ dependencies:
   liquid_glass_widgets: ^0.30.1
 
   # 诊断日志分享（Android 系统分享面板）
-  share_plus: ^11.0.0
+  # 保持在 11.x：13.x 依赖 win32 ^6，与 file_picker 8.x 的 win32 ^5.5 冲突，
+  # 且 Dart 会编译跨平台实现（file_picker_windows.dart 依赖 win32 5 API），
+  # 无法用 dependency_overrides 强制共享 6 而同时不破坏编译。
+  share_plus: ^11.1.0
   record: ^7.1.1
 
 dev_dependencies:

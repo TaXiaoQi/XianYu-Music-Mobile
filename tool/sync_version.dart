@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print  // CLI 工具，print 为预期输出
+//
 // 版本号同步脚本（参考桌面端 scripts/sync-version.js）
 //
 // 从项目根 version.ts 读取 APP_VERSION 作为唯一版本号源头，同步到：

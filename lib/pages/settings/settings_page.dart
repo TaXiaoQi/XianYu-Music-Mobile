@@ -550,9 +550,16 @@ class SettingsPage extends ConsumerWidget {
       ], cur, labelOf: (v) => _languageLabel(v as AppLanguage)),
     );
     if (choice != null) {
-      await ref
-          .read(settingsProvider.notifier)
-          .setLanguage(choice.value as AppLanguage);
+      // 语言变更会令 MaterialApp.router 基于新 Localizations 整体重建全部路由。
+      // 若在底部弹窗 pop 转场尚未结束时立即应用，会与根 Navigator 的销毁竞态，
+      // 命中 navigator._debugLocked 断言（go_router + 运行时 locale 变更的已知
+      // 缺陷，见 flutter#141315）。故先等弹窗转场走完再应用，并用 mounted 守卫。
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (context.mounted) {
+        await ref
+            .read(settingsProvider.notifier)
+            .setLanguage(choice.value as AppLanguage);
+      }
     }
   }
 
