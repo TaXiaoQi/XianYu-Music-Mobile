@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/plugin/plugin_backup_file.dart';
 import '../../src/plugin/plugin_backup_import.dart';
@@ -104,12 +105,40 @@ class _BackupImportTab extends ConsumerStatefulWidget {
 class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
   bool _loading = false;
 
-  Future<void> _import(String jsonContent) async {
-    if (jsonContent.trim().isEmpty || _loading) return;
+  Future<void> _importFile(String path, String name) async {
+    if (path.isEmpty || _loading) return;
     setState(() => _loading = true);
     try {
+      final bytes = await File(path).readAsBytes();
+      final lowerName = name.toLowerCase();
+      final isPlaylist = lowerName.endsWith('.m3u') ||
+          lowerName.endsWith('.m3u8') ||
+          lowerName.endsWith('.txt');
+
       final sources = ref.read(pluginManagerProvider).sources;
-      final prepared = preparePluginBackupImport(jsonContent, sources);
+      PreparedPluginBackupImport prepared;
+      if (isPlaylist) {
+        final content = utf8.decode(bytes, allowMalformed: true);
+        try {
+          prepared = preparePlaylistFileImport(
+            content,
+            name,
+            localSongs: _localSongRefs(),
+          );
+        } on FormatException {
+          // .txt 可能是 JSON 备份：播放列表解析失败时回退 JSON 解析。
+          if (lowerName.endsWith('.txt')) {
+            prepared = preparePluginBackupImport(
+                extractBackupJsonBytes(bytes, name), sources);
+          } else {
+            rethrow;
+          }
+        }
+      } else {
+        final jsonContent = extractBackupJsonBytes(bytes, name);
+        prepared = preparePluginBackupImport(jsonContent, sources);
+      }
+
       final playlists = await ref
           .read(playlistManagerProvider.notifier)
           .addFromBackup(prepared);
@@ -124,6 +153,19 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// 本地曲库歌曲引用（供 M3U/TXT 导入时把跨设备失效路径匹配回本地）。
+  List<LocalSongRef> _localSongRefs() {
+    final library = ref.read(libraryProvider);
+    return library.songs
+        .map((s) => (
+              path: s.path,
+              title: s.title,
+              artist: s.artist,
+              duration: s.duration,
+            ))
+        .toList();
   }
 
   void _toast(String msg) {
@@ -196,15 +238,13 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['json', 'txt', 'zip', 'lxmc'],
+        allowedExtensions: ['json', 'txt', 'zip', 'lxmc', 'm3u', 'm3u8'],
       );
       if (files.isEmpty) return;
       final file = files.single;
       final path = file.path;
       if (path == null) return;
-      final content =
-          extractBackupJsonBytes(await File(path).readAsBytes(), file.name);
-      await _import(content);
+      await _importFile(path, file.name);
     } catch (e) {
       if (!mounted) return;
       _toast('读取文件失败：$e');
@@ -218,8 +258,9 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          '支持 BakaMusic / MusicFree / 洛雪音乐导出的备份（JSON、ZIP、lxmc），'
-          '自动匹配已安装音源插件，本地文件路径的歌曲直接作为本地歌曲导入。',
+          '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 '
+          'M3U/M3U8 播放列表、椒盐音乐 TXT 导出，自动匹配已安装音源插件，'
+          '本地路径歌曲匹配本地曲库导入。',
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),

@@ -17,6 +17,7 @@ import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/effects/sound_effect_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
@@ -1828,6 +1829,9 @@ class _ProgressBar extends ConsumerWidget {
     // 不影响上层（顶层已另用 copyWith 免除 position 联动）。
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = player.duration <= 0 ? 1.0 : player.duration;
+    final lyricsEnabled = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+    );
     return Column(
       children: [
         SliderTheme(
@@ -1856,15 +1860,77 @@ class _ProgressBar extends ConsumerWidget {
                 _fmt(position),
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
-              Text(
-                _fmt(dur),
-                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _fmt(dur),
+                    style:
+                        TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    iconSize: 16,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 26, minHeight: 26),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: lyricsEnabled ? '关闭悬浮歌词' : '开启悬浮歌词',
+                    icon: Icon(
+                      lyricsEnabled ? Icons.lyrics : Icons.lyrics_outlined,
+                      color: lyricsEnabled
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
+                    ),
+                    onPressed: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _toggleFloatingLyrics(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) async {
+    final n = ref.read(settingsProvider.notifier);
+    if (enabled) {
+      await n.setFloatingLyricsEnabled(false);
+      return;
+    }
+    final granted = await FloatingLyricsController.isPermissionGranted();
+    if (!granted) {
+      if (!context.mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('悬浮歌词需要悬浮窗权限'),
+          content: const Text(
+              '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('去授权'),
+            ),
+          ],
+        ),
+      );
+      if (go == true) {
+        await FloatingLyricsController.openPermissionSettings();
+        await n.setFloatingLyricsEnabled(true);
+      }
+      return;
+    }
+    await n.setFloatingLyricsEnabled(true);
   }
 }
 

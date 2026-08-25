@@ -63,6 +63,8 @@ class LyricsOverlayService : Service() {
     private var hideWhenPaused = false
     private var hideInLandscape = false
     private var widthPercent = 92
+    private var useLyricFont = false
+    private var lyricFontPath = ""
     private var locked = false
     private var xPos = 0
     private var yPos = 96
@@ -153,10 +155,10 @@ class LyricsOverlayService : Service() {
 
     fun resetPosition() {
         xPos = 0
-        yPos = dp(96)
+        yPos = 96
         layoutParams?.let { params ->
             params.x = 0
-            params.y = dp(96)
+            params.y = 96
             rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
         }
     }
@@ -337,6 +339,8 @@ class LyricsOverlayService : Service() {
             hideWhenPaused = o.optBoolean("hideWhenPaused", false)
             hideInLandscape = o.optBoolean("hideInLandscape", false)
             widthPercent = o.optInt("widthPercent", 92).coerceIn(40, 100)
+            useLyricFont = o.optBoolean("useLyricFont", false)
+            lyricFontPath = o.optString("lyricFontPath", "")
             locked = o.optBoolean("locked", false)
             xPos = o.optInt("x", 0)
             yPos = o.optInt("y", 96)
@@ -357,6 +361,9 @@ class LyricsOverlayService : Service() {
             showTranslation,
             showRomanization,
             showBackground,
+        )
+        lyricView?.applyFont(
+            if (useLyricFont) lyricFontPath else ""
         )
         lyricView?.setLyrics(parseLyrics(lyricsJson))
         lyricView?.setPlayback(positionMs, playing)

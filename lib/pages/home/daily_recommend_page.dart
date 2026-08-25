@@ -184,65 +184,69 @@ class _RecommendList extends ConsumerWidget {
       separatorBuilder: (_, _) => SizedBox(height: 4),
       itemBuilder: (context, i) {
         final item = state.items[i];
-        final g = songRowPlay(
-          ref,
-          onPlay: () {
-            launchFlyCover(
-              context,
-              coverSize: 46,
-              centerVertically: true,
-              networkUrl: item.coverUrl,
-              radius: 8,
+        return Builder(
+          builder: (rowContext) {
+            final g = songRowPlay(
+              ref,
+              onPlay: () {
+                launchFlyCover(
+                  rowContext,
+                  coverSize: 46,
+                  centerVertically: true,
+                  networkUrl: item.coverUrl,
+                  radius: 8,
+                );
+                ref.read(dailyRecommendProvider.notifier).play(i);
+              },
             );
-            ref.read(dailyRecommendProvider.notifier).play(i);
-          },
-        );
-        return g.wrap(
-          ListTile(
-            dense: true,
-            leading: OnlineCover(url: item.coverUrl, size: 46),
-            onTap: g.onTap,
-            title: Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 14.5, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 1),
-                Text(
-                  item.artist.isEmpty
-                      ? item.album
-                      : '${item.artist} · ${item.album}',
+            return g.wrap(
+              ListTile(
+                dense: true,
+                leading: OnlineCover(url: item.coverUrl, size: 46),
+                onTap: g.onTap,
+                title: Text(
+                  item.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: const TextStyle(
+                      fontSize: 14.5, fontWeight: FontWeight.w600),
                 ),
-                if (item.reason.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      item.reason,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 1),
+                    Text(
+                      item.artist.isEmpty
+                          ? item.album
+                          : '${item.artist} · ${item.album}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 10.5, color: scheme.primary),
+                          fontSize: 12, color: scheme.onSurfaceVariant),
                     ),
-                  ),
-              ],
-            ),
-            trailing: item.durationMs > 0
-                ? Text(
-                    '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
-                  )
-                : null,
-          ),
+                    if (item.reason.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          item.reason,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 10.5, color: scheme.primary),
+                        ),
+                      ),
+                  ],
+                ),
+                trailing: item.durationMs > 0
+                    ? Text(
+                        '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant),
+                      )
+                    : null,
+              ),
+            );
+          },
         );
       },
     );

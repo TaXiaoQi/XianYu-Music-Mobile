@@ -150,60 +150,66 @@ class SongsListView extends ConsumerWidget {
       itemBuilder: (context, i) {
         final s = songs[i];
         final hlColor = Theme.of(context).colorScheme.primary;
-        final play = onPlay != null
-            ? () {
-                launchFlyCover(
-                  context,
-                  coverSize: m.songCover,
-                  vPad: m.vPad,
-                  songPath: s.path,
-                  thumbPath: s.coverThumbPath,
-                  radius: m.songRadius,
-                );
-                onPlay!(songs, i);
-              }
-            : null;
-        final row = CoverRow(
-          cover: SongCover(song: s, size: m.songCover),
-          title: highlightedText(
-            s.title,
-            highlight,
-            hlColor,
-            style: TextStyle(
-                fontSize: m.titleSize, fontWeight: FontWeight.w600),
-            maxLines: 1,
-          ),
-          subtitle: highlightedText(
-            '${s.artist} · ${s.album}',
-            highlight,
-            hlColor,
-            style: TextStyle(
-              fontSize: m.subtitleSize,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            maxLines: 1,
-          ),
-          verticalPadding: m.vPad,
-          trailing: Text(
-            _fmt(s.duration),
-            style: TextStyle(
-                fontSize: m.subtitleSize,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-          // 双击模式挂空回调：单击仍有水波纹反馈，起播交给外层 onDoubleTap。
-          onTap: play == null ? null : (single ? play : () {}),
-          onLongPress: enableActions
-              ? () => showSongActionsSheet(
-                    context,
-                    ref: ref,
-                    item: s.toQueueItem(),
-                    onPlay: play,
-                  )
-              : null,
+        // Builder 提供行自身 context：itemBuilder 的 context 的 findRenderObject
+        // 返回 RenderSliverList，飞封面拿不到行的 RenderBox。
+        return Builder(
+          builder: (rowContext) {
+            final play = onPlay != null
+                ? () {
+                    launchFlyCover(
+                      rowContext,
+                      coverSize: m.songCover,
+                      vPad: m.vPad,
+                      songPath: s.path,
+                      thumbPath: s.coverThumbPath,
+                      radius: m.songRadius,
+                    );
+                    onPlay!(songs, i);
+                  }
+                : null;
+            final row = CoverRow(
+              cover: SongCover(song: s, size: m.songCover),
+              title: highlightedText(
+                s.title,
+                highlight,
+                hlColor,
+                style: TextStyle(
+                    fontSize: m.titleSize, fontWeight: FontWeight.w600),
+                maxLines: 1,
+              ),
+              subtitle: highlightedText(
+                '${s.artist} · ${s.album}',
+                highlight,
+                hlColor,
+                style: TextStyle(
+                  fontSize: m.subtitleSize,
+                  color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+              ),
+              verticalPadding: m.vPad,
+              trailing: Text(
+                _fmt(s.duration),
+                style: TextStyle(
+                    fontSize: m.subtitleSize,
+                    color: Theme.of(rowContext).colorScheme.onSurfaceVariant),
+              ),
+              // 双击模式挂空回调：单击仍有水波纹反馈，起播交给外层 onDoubleTap。
+              onTap: play == null ? null : (single ? play : () {}),
+              onLongPress: enableActions
+                  ? () => showSongActionsSheet(
+                        rowContext,
+                        ref: ref,
+                        item: s.toQueueItem(),
+                        onPlay: play,
+                      )
+                  : null,
+            );
+            return !single && play != null
+                ? GestureDetector(onDoubleTap: play, child: row)
+                : row;
+          },
         );
-        return !single && play != null
-            ? GestureDetector(onDoubleTap: play, child: row)
-            : row;
       },
     );
   }

@@ -329,88 +329,123 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.floatingLyricsEnabled ?? false,
             onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
           ),
-          if (s?.floatingLyricsEnabled ?? false) ...[
-            _tile(
-              context,
-              icon: Icons.palette_outlined,
-              title: '文字颜色',
-              trailing: _floatingLyricsColorPicker(s, n),
-            ),
-            _tile(
-              context,
-              icon: Icons.opacity_outlined,
-              title: '不透明度',
-              trailing: _floatingLyricsOpacitySlider(s, n),
-            ),
-            _tile(
-              context,
-              icon: Icons.text_fields_outlined,
-              title: '字号',
-              trailing: _floatingLyricsFontSlider(s, n),
-            ),
-            _tile(
-              context,
-              icon: Icons.subtitles_outlined,
-              title: '副行字号',
-              trailing: _floatingLyricsSecondarySlider(s, n),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.translate_outlined,
-              title: '显示翻译',
-              value: s?.floatingLyricsShowTranslation ?? true,
-              onChanged: (v) => n.setFloatingLyricsShowTranslation(v),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.spellcheck_outlined,
-              title: '显示罗马音',
-              value: s?.floatingLyricsShowRomanization ?? false,
-              onChanged: (v) => n.setFloatingLyricsShowRomanization(v),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.queue_music_outlined,
-              title: '显示背景歌词',
-              value: s?.floatingLyricsShowBackground ?? true,
-              onChanged: (v) => n.setFloatingLyricsShowBackground(v),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.pause_outlined,
-              title: '暂停时隐藏',
-              value: s?.floatingLyricsHideWhenPaused ?? false,
-              onChanged: (v) => n.setFloatingLyricsHideWhenPaused(v),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.screen_lock_landscape_outlined,
-              title: '横屏时隐藏',
-              value: s?.floatingLyricsHideInLandscape ?? false,
-              onChanged: (v) => n.setFloatingLyricsHideInLandscape(v),
-            ),
-            _tile(
-              context,
-              icon: Icons.width_full_outlined,
-              title: '宽度',
-              trailing: _floatingLyricsWidthSlider(s, n),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.lock_outline,
-              title: '锁定位置',
-              subtitle: '锁定后不可拖动，通知栏解锁',
-              value: s?.floatingLyricsLocked ?? false,
-              onChanged: (v) => n.setFloatingLyricsLocked(v),
-            ),
-            _tile(
-              context,
-              icon: Icons.center_focus_strong_outlined,
-              title: '重置位置',
-              trailing: const SizedBox.shrink(),
-              onTap: () => _resetFloatingLyricsPosition(),
-            ),
-          ],
+          // 以下设置项始终显示，未开启时置灰（与 RwaS 一致）。
+          _tile(
+            context,
+            icon: Icons.palette_outlined,
+            title: '文字颜色',
+            trailing: _floatingLyricsColorPicker(context, s, n),
+          ),
+          _tile(
+            context,
+            icon: Icons.opacity_outlined,
+            title: '不透明度',
+            trailing: _floatingLyricsOpacitySlider(s, n),
+          ),
+          _tile(
+            context,
+            icon: Icons.text_fields_outlined,
+            title: '字号',
+            trailing: _floatingLyricsFontSlider(s, n),
+          ),
+          _tile(
+            context,
+            icon: Icons.subtitles_outlined,
+            title: '副行字号',
+            trailing: _floatingLyricsSecondarySlider(s, n),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.font_download_outlined,
+            title: '使用歌词字体',
+            subtitle: '应用播放页设置的自定义歌词字体',
+            value: s?.floatingLyricsUseLyricFont ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsUseLyricFont(v)
+                : null,
+          ),
+          _switchTile(
+            context,
+            icon: Icons.translate_outlined,
+            title: '显示翻译',
+            value: s?.floatingLyricsShowTranslation ?? true,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsShowTranslation(v)
+                : null,
+          ),
+          _switchTile(
+            context,
+            icon: Icons.spellcheck_outlined,
+            title: '显示罗马音',
+            value: s?.floatingLyricsShowRomanization ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsShowRomanization(v)
+                : null,
+          ),
+          _switchTile(
+            context,
+            icon: Icons.queue_music_outlined,
+            title: '显示背景歌词',
+            value: s?.floatingLyricsShowBackground ?? true,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsShowBackground(v)
+                : null,
+          ),
+          _switchTile(
+            context,
+            icon: Icons.pause_outlined,
+            title: '暂停时隐藏',
+            value: s?.floatingLyricsHideWhenPaused ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsHideWhenPaused(v)
+                : null,
+          ),
+          _switchTile(
+            context,
+            icon: Icons.screen_lock_landscape_outlined,
+            title: '横屏时隐藏',
+            value: s?.floatingLyricsHideInLandscape ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsHideInLandscape(v)
+                : null,
+          ),
+          _tile(
+            context,
+            icon: Icons.width_full_outlined,
+            title: '宽度',
+            trailing: _floatingLyricsWidthSlider(s, n),
+          ),
+          _tile(
+            context,
+            icon: Icons.swap_horiz_outlined,
+            title: '水平位置',
+            trailing: _floatingLyricsXSlider(context, s, n),
+          ),
+          _tile(
+            context,
+            icon: Icons.swap_vert_outlined,
+            title: '垂直位置',
+            trailing: _floatingLyricsYSlider(context, s, n),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.lock_outline,
+            title: '锁定位置',
+            subtitle: '锁定后不可拖动，通知栏解锁',
+            value: s?.floatingLyricsLocked ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsLocked(v)
+                : null,
+          ),
+          _tile(
+            context,
+            icon: Icons.center_focus_strong_outlined,
+            title: '重置位置',
+            trailing: const SizedBox.shrink(),
+            onTap: (s?.floatingLyricsEnabled ?? false)
+                ? () => _resetFloatingLyricsPosition()
+                : null,
+          ),
         ],
       ),
     ];
@@ -759,7 +794,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     required IconData icon,
     required String title,
     required bool value,
-    required ValueChanged<bool> onChanged,
+    ValueChanged<bool>? onChanged,
     String? subtitle,
   }) {
     return SwitchListTile(
@@ -879,14 +914,21 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
-  Widget _floatingLyricsColorPicker(AppSettings? s, SettingsNotifier n) {
+  Widget _floatingLyricsColorPicker(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final current = s?.floatingLyricsTextColor ?? 0xFFFFFFFF;
+    final scheme = Theme.of(context).colorScheme;
+    final isCustom = !FloatingLyricsController.quickColors.contains(current);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final c in FloatingLyricsController.quickColors)
           GestureDetector(
-            onTap: () => n.setFloatingLyricsTextColor(c),
+            onTap: enabled ? () => n.setFloatingLyricsTextColor(c) : null,
             child: Container(
               width: 22,
               height: 22,
@@ -896,15 +938,56 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: current == c
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outlineVariant,
+                      ? scheme.primary
+                      : scheme.outlineVariant,
                   width: current == c ? 2.5 : 1,
                 ),
               ),
             ),
           ),
+        // 自定义颜色入口：已选自定义色时显示该色，否则显示「+」。
+        GestureDetector(
+          onTap: enabled ? () => _pickFloatingLyricsColor(context, ref, s) : null,
+          child: Container(
+            width: 22,
+            height: 22,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: isCustom ? Color(current) : Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isCustom ? scheme.primary : scheme.outlineVariant,
+                width: isCustom ? 2.5 : 1,
+              ),
+            ),
+            child: isCustom
+                ? null
+                : Icon(Icons.add, size: 14, color: scheme.outline),
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _pickFloatingLyricsColor(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.floatingLyricsTextColor ?? 0xFFFFFFFF;
+    final choice = await showSheetDialog<int>(
+      context,
+      (ctx) => _AccentColorSheet(
+        current: cur,
+        title: '歌词文字颜色',
+        presets: _AccentColorSheet.lyricPresets,
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setFloatingLyricsTextColor(choice);
+    }
   }
 
   Widget _floatingLyricsOpacitySlider(AppSettings? s, SettingsNotifier n) {
@@ -912,10 +995,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return SizedBox(
       width: 120,
       child: CommittedSlider(
-        min: 20,
+        min: 35,
         max: 100,
-        divisions: 16,
+        divisions: 13,
         value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
         onCommit: (x) => n.setFloatingLyricsOpacity(x.round()),
       ),
     );
@@ -926,10 +1010,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return SizedBox(
       width: 120,
       child: CommittedSlider(
-        min: 60,
-        max: 200,
+        min: 80,
+        max: 220,
         divisions: 28,
         value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
         onCommit: (x) => n.setFloatingLyricsFontScale(x.round()),
       ),
     );
@@ -940,10 +1025,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return SizedBox(
       width: 120,
       child: CommittedSlider(
-        min: 60,
-        max: 200,
-        divisions: 28,
+        min: 70,
+        max: 180,
+        divisions: 22,
         value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
         onCommit: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
       ),
     );
@@ -958,7 +1044,69 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         max: 100,
         divisions: 12,
         value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
         onCommit: (x) => n.setFloatingLyricsWidthPercent(x.round()),
+      ),
+    );
+  }
+
+  /// 水平位置微调：-100~100 映射到原生可拖范围（物理像素），与原生 clamp 一致。
+  Widget _floatingLyricsXSlider(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final screenW = MediaQuery.of(context).size.width * dpr;
+    final widthPercent = (s?.floatingLyricsWidthPercent ?? 92) / 100;
+    final overlayW =
+        (screenW * widthPercent).clamp(180.0 * dpr, screenW - 12 * dpr);
+    final maxX = (screenW / 2 - overlayW / 2).clamp(0.0, double.infinity);
+    final x = (s?.floatingLyricsX ?? 0).toDouble();
+    final v = maxX <= 0 ? 0.0 : (x / maxX * 100).clamp(-100.0, 100.0);
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: -100,
+        max: 100,
+        divisions: 40,
+        value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
+        onCommit: (val) {
+          final px = (val / 100 * maxX).round();
+          n.setFloatingLyricsPosition(px, s?.floatingLyricsY ?? 96);
+        },
+      ),
+    );
+  }
+
+  /// 垂直位置微调：0~100 映射到状态栏下到屏幕底的可拖范围（物理像素）。
+  Widget _floatingLyricsYSlider(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final screenH = MediaQuery.of(context).size.height * dpr;
+    final statusBar = MediaQuery.of(context).padding.top * dpr;
+    final overlayH = 150.0 * dpr;
+    final minY = -statusBar;
+    final maxY = (screenH - overlayH).clamp(0.0, double.infinity);
+    final y = (s?.floatingLyricsY ?? 96).toDouble();
+    final v =
+        maxY <= minY ? 0.0 : ((y - minY) / (maxY - minY) * 100).clamp(0.0, 100.0);
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: 0,
+        max: 100,
+        divisions: 40,
+        value: v,
+        enabled: s?.floatingLyricsEnabled ?? false,
+        onCommit: (val) {
+          final px = (minY + val / 100 * (maxY - minY)).round();
+          n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, px);
+        },
       ),
     );
   }
@@ -1656,22 +1804,20 @@ class _ColorDot extends StatelessWidget {
   }
 }
 
-/// 主题色选择弹层：桌面端同款 8 色预设网格 + 自定义 HSV 调色盘。
+/// 颜色选择弹层：预设色网格 + 自定义 HSV 调色盘。
 /// 预设点击即选中关闭；自定义区支持 SV 二维取色板、色相条与 Hex 输入。
+/// 主题色与悬浮歌词颜色共用，通过 [title]/[presets] 区分。
 class _AccentColorSheet extends StatefulWidget {
-  const _AccentColorSheet({required this.current});
+  const _AccentColorSheet({
+    required this.current,
+    this.title = '主题色',
+    this.presets = _defaultPresets,
+  });
   final int current;
+  final String title;
+  final Map<int, String> presets;
 
-  @override
-  State<_AccentColorSheet> createState() => _AccentColorSheetState();
-}
-
-class _AccentColorSheetState extends State<_AccentColorSheet> {
-  late HSVColor _hsv;
-  final _hexCtrl = TextEditingController();
-  bool _hexError = false;
-
-  static const _presets = <int, String>{
+  static const _defaultPresets = <int, String>{
     0xFFEC4141: '经典红',
     0xFFF9735B: '珊瑚',
     0xFFF59E0B: '琥珀',
@@ -1681,6 +1827,26 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
     0xFF8B5CF6: '鸢尾紫',
     0xFFEC4899: '蔷薇',
   };
+
+  /// 与 RawS-Music DesktopLyricService.QUICK_COLORS 一致的歌词颜色预设。
+  static const lyricPresets = <int, String>{
+    0xFFFFFFFF: '纯白',
+    0xFFBFBFBF: '银灰',
+    0xFF91CDFF: '天蓝',
+    0xFFA6EBCB: '薄荷',
+    0xFFB388FF: '淡紫',
+    0xFFFFBCD6: '粉红',
+    0xFFFFE096: '暖黄',
+  };
+
+  @override
+  State<_AccentColorSheet> createState() => _AccentColorSheetState();
+}
+
+class _AccentColorSheetState extends State<_AccentColorSheet> {
+  late HSVColor _hsv;
+  final _hexCtrl = TextEditingController();
+  bool _hexError = false;
 
   @override
   void initState() {
@@ -1740,7 +1906,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('主题色', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
             // 预设网格（学桌面端：色块 + 名称，四列两行）
             GridView.count(
@@ -1751,7 +1917,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
               crossAxisSpacing: 10,
               childAspectRatio: 1.5,
               children: [
-                for (final entry in _presets.entries)
+                for (final entry in widget.presets.entries)
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => Navigator.pop(context, entry.key),

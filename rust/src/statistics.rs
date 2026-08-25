@@ -2663,6 +2663,8 @@ pub struct ListenDurations {
     pub weekly: i64,
     /// 累计听歌时长（秒）
     pub total: i64,
+    /// 今日听歌首数（daily_stats 当日 play_count）
+    pub today_play_count: i64,
 }
 
 /// 获取三个周期的听歌时长（日/周/总），用于排行榜分周期上报
@@ -2696,10 +2698,21 @@ pub fn get_listen_durations(conn: &rusqlite::Connection) -> Result<ListenDuratio
         )
         .unwrap_or(0);
 
+    // 今日首数：从 daily_stats 表取今天的 play_count
+    let today_count: i64 = conn
+        .query_row(
+            "SELECT COALESCE(play_count, 0) FROM daily_stats
+             WHERE date = strftime('%Y-%m-%d', 'now', 'localtime')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
     Ok(ListenDurations {
         daily: daily_ms / 1000,
         weekly: weekly_ms / 1000,
         total: total_ms / 1000,
+        today_play_count: today_count,
     })
 }
 

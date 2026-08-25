@@ -155,6 +155,8 @@ class PluginManager extends StateNotifier<PluginListState> {
       importedAt: DateTime.now().millisecondsSinceEpoch,
       enabled: true,
       sources: sources,
+      // 新插件追加到末尾（对齐桌面端：未拖拽排序的插件保持安装顺序）
+      sortOrder: state.sources.length,
     );
 
     final list = [...state.sources, source];
@@ -301,6 +303,24 @@ class PluginManager extends StateNotifier<PluginListState> {
     await engine.destroy(id);
     await engine.store.deleteScript(id);
     final list = state.sources.where((s) => s.id != id).toList();
+    await engine.store.saveSources(list);
+    state = PluginListState(sources: list);
+  }
+
+  /// 按用户拖拽后的顺序重排插件：重写所有插件的 sortOrder 并持久化
+  /// （对齐桌面端 reorderPlugins）。[orderedIds] 为调整后的完整列表顺序。
+  Future<void> reorder(List<String> orderedIds) async {
+    final engine = await _getEngine();
+    final current = state.sources;
+    final idToIndex = <String, int>{
+      for (var i = 0; i < orderedIds.length; i++) orderedIds[i]: i,
+    };
+    final remapped = current
+        .map((s) => idToIndex.containsKey(s.id)
+            ? s.copyWith(sortOrder: idToIndex[s.id]!)
+            : s)
+        .toList();
+    final list = sortPluginSources(remapped);
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
   }

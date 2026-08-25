@@ -480,22 +480,24 @@ class _MatchListView extends StatelessWidget {
                 );
               }
               final m = matches[index];
-              return _MatchRow(
-                match: m,
-                fav: isFavorite(m),
-                onPlay: () {
-                  launchFlyCover(
-                    context,
-                    coverSize: 52,
-                    horizontalPad: 76,
-                    vPad: 10,
-                    networkUrl: m.img,
-                    radius: 8,
-                  );
-                  onPlay(m);
-                },
-                onFavorite: () => onFavorite(m),
-                onAddToPlaylist: () => onAddToPlaylist(m),
+              return Builder(
+                builder: (rowContext) => _MatchRow(
+                  match: m,
+                  fav: isFavorite(m),
+                  onPlay: () {
+                    launchFlyCover(
+                      rowContext,
+                      coverSize: 52,
+                      horizontalPad: 76,
+                      vPad: 10,
+                      networkUrl: m.img,
+                      radius: 8,
+                    );
+                    onPlay(m);
+                  },
+                  onFavorite: () => onFavorite(m),
+                  onAddToPlaylist: () => onAddToPlaylist(m),
+                ),
               );
             },
           ),

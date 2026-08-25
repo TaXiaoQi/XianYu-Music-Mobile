@@ -67,6 +67,9 @@ class ListenStatsData {
   }
 }
 
+/// 云端累计听歌总时长（秒），登录后由后台同步填充（跨端同步，不阻塞本地展示）。
+final serverTotalDurationProvider = StateProvider<int>((ref) => 0);
+
 final listenStatsProvider = FutureProvider<ListenStatsData>((ref) async {
   final dbPath = await ref.read(dbPathProvider.future);
 
@@ -74,46 +77,40 @@ final listenStatsProvider = FutureProvider<ListenStatsData>((ref) async {
   int todaySecs = 0;
   int todayCount = 0;
 
-  // 1. 取日/周/总听歌时长（秒）
+  // 1. 取日/周/总听歌时长（秒）+ 今日听歌首数（本地快速查询）
   try {
     final durationsJson = await statsGetListenDurations(dbPath: dbPath);
     final dj = jsonDecode(durationsJson) as Map<String, dynamic>;
     totalSecs = (dj['total'] as num?)?.toInt() ?? 0;
     todaySecs = (dj['daily'] as num?)?.toInt() ?? 0;
+    todayCount = (dj['today_play_count'] as num?)?.toInt() ?? 0;
   } catch (_) {}
 
-  // 2. 取今日听歌首数
-  try {
-    final behaviorJson = await statsGetBehaviorStats(
-      dbPath: dbPath,
-      timeRangeJson: '{"type":"Days7"}',
-    );
-    final bj = jsonDecode(behaviorJson) as Map<String, dynamic>;
-    final dailyList = (bj['daily_trend'] as List? ?? const []);
-    if (dailyList.isNotEmpty) {
-      final last = dailyList.last as Map<String, dynamic>;
-      todayCount = (last['play_count'] as num?)?.toInt() ?? 0;
-    }
-  } catch (_) {}
-
-  // 3. 登录账号：先把本设备累计时长上报到账号（服务端按 MAX 合并），
-  //    再拉取账号累计总时长覆盖本地，实现桌面端/移动端跨端同步。
-  //    今日时长/首数保持本地（服务端仅回传累计总时长与唯一歌曲数）。
+  // 2. 登录账号：后台上报并拉取云端累计总时长（不阻塞本地展示）。
+  //    服务端按 MAX 合并，实现桌面端/移动端跨端同步；今日时长/首数保持本地。
   final auth = ref.watch(authProvider);
   if (auth.isLoggedIn) {
-    try {
-      final api = ref.read(accountApiProvider);
-      await api.reportListenStats({
-        'total': totalSecs,
-        'daily': todaySecs,
-      });
-      final server = await api.fetchListenStats();
-      final serverTotal = (server['total_duration'] as num?)?.toInt() ?? 0;
-      if (serverTotal > 0) totalSecs = serverTotal;
-    } catch (_) {
-      // 网络失败时沿用本地数据。
-    }
+    Future(() async {
+      try {
+        final api = ref.read(accountApiProvider);
+        await api.reportListenStats({
+          'total': totalSecs,
+          'daily': todaySecs,
+        });
+        final server = await api.fetchListenStats();
+        final serverTotal = (server['total_duration'] as num?)?.toInt() ?? 0;
+        if (serverTotal > 0) {
+          ref.read(serverTotalDurationProvider.notifier).state = serverTotal;
+        }
+      } catch (_) {
+        // 网络失败时沿用本地数据。
+      }
+    });
   }
+
+  // 3. 合并已同步的云端累计总时长（仅登录态、云端更长时覆盖本地）。
+  final serverTotal = auth.isLoggedIn ? ref.watch(serverTotalDurationProvider) : 0;
+  if (serverTotal > totalSecs) totalSecs = serverTotal;
 
   return ListenStatsData(
     totalSeconds: totalSecs,

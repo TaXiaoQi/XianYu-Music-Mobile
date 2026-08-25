@@ -78,8 +78,10 @@ void launchFlyCover(
   String? thumbPath,
   double radius = 6,
 }) {
-  final box = context.findRenderObject() as RenderBox?;
-  if (box == null || !box.hasSize) return;
+  final ro = context.findRenderObject();
+  debugPrint('[fly] findRenderObject => ${ro.runtimeType}');
+  if (ro is! RenderBox || !ro.hasSize) return;
+  final box = ro;
   final topLeft = box.localToGlobal(Offset.zero);
   final dy = centerVertically ? (box.size.height - coverSize) / 2 : vPad;
   FlyingCover.instance.launch(

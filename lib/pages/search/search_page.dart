@@ -9,6 +9,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/download/download_provider.dart';
+import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -194,7 +195,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
   /// 从插件音源构建来源列表；无插件时返回“本地”。
   void _refreshSources() {
     final plugins = ref.read(pluginManagerProvider).sources;
-    final enabled = plugins.where((p) => p.enabled).toList();
+    // 按用户拖拽排序展示（插件管理页顺序），未排序项用安装顺序兜底
+    final enabled = sortPluginSources(plugins.where((p) => p.enabled).toList());
     final items = <_SourceItem>[];
     for (final p in enabled) {
       if (p.format == PluginFormat.musicfree) {
@@ -285,24 +287,23 @@ class _SearchPageState extends ConsumerState<SearchPage>
     });
   }
 
-  Widget _buildSourceBar(ColorScheme scheme) {
-    return Container(
-      height: 48,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+  Widget _buildSourceBar() {
+    return SizedBox(
+      height: 46,
       child: ListView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         children: [
           for (final s in _sources)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: _SourceChip(
-                label: s.name,
+              child: ChoiceChip(
+                label: Text(s.name),
+                showCheckmark: false,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 selected: s.id == _selected.id,
-                scheme: scheme,
-                onTap: () => _onSourceSelected(s.id),
+                onSelected: (_) => _onSourceSelected(s.id),
               ),
             ),
         ],
@@ -343,8 +344,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
             child: inResults
                 ? Column(
                     children: [
-                      _buildSourceBar(scheme),
-                      const Divider(height: 1),
+                      _buildSourceBar(),
                       Expanded(
                         child: TabBarView(
                           controller: _tab,
@@ -671,50 +671,6 @@ class _EmptyHotHint extends StatelessWidget {
   }
 }
 
-// ==================== 来源切换条 ====================
-
-class _SourceChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final ColorScheme scheme;
-  final VoidCallback onTap;
-
-  const _SourceChip({
-    required this.label,
-    required this.selected,
-    required this.scheme,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? scheme.primary.withValues(alpha: 0.10)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: selected ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ==================== 单曲 tab ====================
 
 class _TrackTab extends ConsumerStatefulWidget {
@@ -807,16 +763,20 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   }
 
   void _play(int index) {
+    debugPrint('[search] _play called index=$index');
     FocusScope.of(context).unfocus();
     final e = _results[index];
     if (e.isLocal) {
+      debugPrint('[search] _play local song');
       ref.read(libraryProvider.notifier).playList([e.localSong!], 0);
       return;
     }
     final engine = ref.read(pluginEngineProvider).valueOrNull;
+    debugPrint('[search] _play engine=${engine == null ? 'NULL' : 'ok'}');
     if (engine == null) return;
     final service = PluginSearchService(engine, _plugins());
     final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
+    debugPrint('[search] _play item=${item.title} path=${item.path}');
     ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
   }
 
@@ -831,12 +791,31 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     showXianYuToast(context, '开始下载：${item.title}');
   }
 
+  void _toggleFavorite(int index) {
+    final item = _queueItem(index);
+    if (item == null) return;
+    final wasFav = ref.read(favoritesProvider).contains(item.path);
+    ref.read(favoritesProvider.notifier).toggle(item);
+    showXianYuToast(
+        context, wasFav ? '已取消收藏：${item.title}' : '已收藏：${item.title}');
+  }
+
+  QueueItem? _queueItem(int index) {
+    final e = _results[index];
+    if (e.isLocal) return null;
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) return null;
+    return PluginSearchService(engine, _plugins())
+        .toQueueItem(e.pluginSource!, e.pluginResult!);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
     final q = widget.keyword.trim();
     final m = ListMetrics.ofRef(ref);
+    final favorites = ref.watch(favoritesProvider);
 
     if (q.isEmpty) {
       return _emptyHint('输入关键词搜索音乐', scheme, source: widget.source.name);
@@ -856,14 +835,49 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         final e = _results[i];
         if (e.isLocal) {
           final s = e.localSong!;
-          return CoverRow(
-            cover: SongCover(song: s, size: m.songCover),
-            title: highlightedText(s.title, q, scheme.primary,
+          return Builder(
+            builder: (rowContext) => CoverRow(
+              cover: SongCover(song: s, size: m.songCover),
+              title: highlightedText(s.title, q, scheme.primary,
+                  maxLines: 1,
+                  style: TextStyle(
+                      fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                [s.artist, s.album, '本地']
+                    .where((x) => x.isNotEmpty)
+                    .join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+              ),
+              verticalPadding: m.vPad,
+              onTap: () {
+                launchFlyCover(
+                  rowContext,
+                  coverSize: m.songCover,
+                  vPad: m.vPad,
+                  songPath: s.path,
+                  thumbPath: s.coverThumbPath,
+                  radius: m.songRadius,
+                );
+                _play(i);
+              },
+            ),
+          );
+        }
+        final r = e.pluginResult!;
+        final item = _queueItem(i);
+        final isFav = item != null && favorites.contains(item.path);
+        return Builder(
+          builder: (rowContext) => CoverRow(
+            cover: OnlineCover(url: r.img, size: m.songCover, radius: m.songRadius),
+            title: highlightedText(r.name, q, scheme.primary,
                 maxLines: 1,
                 style: TextStyle(
                     fontSize: m.titleSize, fontWeight: FontWeight.w600)),
             subtitle: Text(
-              [s.artist, s.album, '本地']
+              [r.singer, r.albumName, widget.source.name]
                   .where((x) => x.isNotEmpty)
                   .join(' · '),
               maxLines: 1,
@@ -872,61 +886,46 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                   fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
             ),
             verticalPadding: m.vPad,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isFav ? Icons.favorite : Icons.favorite_border,
+                    size: 20,
+                    color: isFav ? scheme.primary : scheme.onSurfaceVariant,
+                  ),
+                  tooltip: '收藏',
+                  onPressed: () => _toggleFavorite(i),
+                ),
+                IconButton(
+                  icon: Icon(Icons.download_outlined,
+                      size: 20, color: scheme.primary),
+                  tooltip: '下载',
+                  onPressed: () => _download(i),
+                ),
+                Text(
+                  r.interval,
+                  style: TextStyle(fontSize: m.subtitleSize, color: scheme.outline),
+                ),
+              ],
+            ),
             onTap: () {
-              launchFlyCover(
-                context,
-                coverSize: m.songCover,
-                vPad: m.vPad,
-                songPath: s.path,
-                thumbPath: s.coverThumbPath,
-                radius: m.songRadius,
-              );
+              debugPrint('[search] online row onTap i=$i');
+              try {
+                launchFlyCover(
+                  rowContext,
+                  coverSize: m.songCover,
+                  vPad: m.vPad,
+                  networkUrl: r.img,
+                  radius: m.songRadius,
+                );
+              } catch (e, st) {
+                debugPrint('[search] launchFlyCover ERROR: $e\n$st');
+              }
               _play(i);
             },
-          );
-        }
-        final r = e.pluginResult!;
-        return CoverRow(
-          cover: OnlineCover(url: r.img, size: m.songCover, radius: m.songRadius),
-          title: highlightedText(r.name, q, scheme.primary,
-              maxLines: 1,
-              style: TextStyle(
-                  fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-          subtitle: Text(
-            [r.singer, r.albumName, widget.source.name]
-                .where((x) => x.isNotEmpty)
-                .join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
-          verticalPadding: m.vPad,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: Icon(Icons.download_outlined,
-                    size: 20, color: scheme.primary),
-                tooltip: '下载',
-                onPressed: () => _download(i),
-              ),
-              Text(
-                r.interval,
-                style: TextStyle(fontSize: m.subtitleSize, color: scheme.outline),
-              ),
-            ],
-          ),
-          onTap: () {
-            launchFlyCover(
-              context,
-              coverSize: m.songCover,
-              vPad: m.vPad,
-              networkUrl: r.img,
-              radius: m.songRadius,
-            );
-            _play(i);
-          },
         );
       },
     );

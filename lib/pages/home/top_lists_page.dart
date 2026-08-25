@@ -36,7 +36,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     setState(() => _checking = true);
     final engine = await ref.read(pluginEngineProvider.future);
     final sources =
-        ref.read(pluginManagerProvider).sources.where((s) => s.enabled).toList();
+        sortPluginSources(ref.read(pluginManagerProvider).sources.where((s) => s.enabled).toList());
     final catalog = PluginCatalogService(engine, sources);
     final supported = <PluginSource>[];
     for (final s in catalog.musicFreeSources) {

@@ -5,9 +5,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import java.io.File
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -94,6 +96,26 @@ class LyricsOverlayView(context: Context) : View(context) {
         this.showTranslation = showTranslation
         this.showRomanization = showRomanization
         this.showBackground = showBackground
+        invalidate()
+    }
+
+    /** 应用自定义歌词字体（空路径回退默认粗体），移植自 RawS resolveLyricTypeface。 */
+    fun applyFont(path: String) {
+        val typeface = if (path.isBlank() || !File(path).isFile) {
+            Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        } else {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    Typeface.Builder(File(path)).build()
+                } else {
+                    @Suppress("DEPRECATION")
+                    Typeface.createFromFile(path)
+                }
+            }.getOrElse { Typeface.create(Typeface.DEFAULT, Typeface.BOLD) }
+        }
+        basePaint.typeface = typeface
+        highlightPaint.typeface = typeface
+        secondaryPaint.typeface = typeface
         invalidate()
     }
 

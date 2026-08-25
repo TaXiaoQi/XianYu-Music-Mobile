@@ -25,6 +25,8 @@ class PluginSource {
   bool enabled;
   final List<String> sources;
   final bool isBuiltin;
+  /// 用户自定义排序权重（数值越小越靠前），对齐桌面端 sortOrder。
+  final int? sortOrder;
 
   PluginSource({
     required this.id,
@@ -38,12 +40,15 @@ class PluginSource {
     this.enabled = true,
     this.sources = const [],
     this.isBuiltin = false,
+    this.sortOrder,
   });
 
   PluginSource copyWith({
     bool? enabled,
     String? version,
     List<String>? sources,
+    int? sortOrder,
+    bool clearSortOrder = false,
   }) {
     return PluginSource(
       id: id,
@@ -57,6 +62,7 @@ class PluginSource {
       enabled: enabled ?? this.enabled,
       sources: sources ?? this.sources,
       isBuiltin: isBuiltin,
+      sortOrder: clearSortOrder ? null : (sortOrder ?? this.sortOrder),
     );
   }
 
@@ -72,6 +78,7 @@ class PluginSource {
         'enabled': enabled,
         'sources': sources,
         'isBuiltin': isBuiltin,
+        'sortOrder': sortOrder,
       };
 
   factory PluginSource.fromJson(Map<String, dynamic> json) => PluginSource(
@@ -86,7 +93,23 @@ class PluginSource {
         enabled: json['enabled'] as bool? ?? true,
         sources: (json['sources'] as List?)?.cast<String>() ?? const [],
         isBuiltin: json['isBuiltin'] as bool? ?? false,
+        sortOrder: (json['sortOrder'] as num?)?.toInt(),
       );
+}
+
+/// 按用户自定义 sortOrder 稳定排序（数值越小越靠前；未排序项以原数组顺序兜底）。
+/// 与桌面端 sortPlugins 保持一致，供插件页/搜索页/音源榜单页复用。
+List<PluginSource> sortPluginSources(List<PluginSource> sources) {
+  final indexed = <(PluginSource, int)>[];
+  for (var i = 0; i < sources.length; i++) {
+    indexed.add((sources[i], i));
+  }
+  indexed.sort((x, y) {
+    final cmp = (x.$1.sortOrder ?? 0).compareTo(y.$1.sortOrder ?? 0);
+    if (cmp != 0) return cmp;
+    return x.$2.compareTo(y.$2);
+  });
+  return indexed.map((e) => e.$1).toList();
 }
 
 /// 引擎日志条目（Rust 侧 EngineLog，camelCase）。

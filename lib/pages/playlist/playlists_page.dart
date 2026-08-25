@@ -499,43 +499,47 @@ class _PlaylistSongs extends ConsumerWidget {
       itemCount: playlist.songs.length,
       itemBuilder: (context, index) {
         final song = playlist.songs[index];
-        final g = songRowPlay(ref, onPlay: () {
-          launchFlyCover(
-            context,
-            coverSize: m.songCover,
-            vPad: m.vPad,
-            networkUrl: song.coverUrl,
-            radius: m.songRadius,
-          );
-          manager.play(playlist, index);
-        });
-        return g.wrap(
-          CoverRow(
-            cover: OnlineCover(
-                url: song.coverUrl, size: m.songCover, radius: m.songRadius),
-            onTap: g.onTap,
-            verticalPadding: m.vPad,
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: m.titleSize, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '${song.artist} · ${song.album}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-            ),
-            trailing: IconButton(
-              icon: Icon(Icons.close,
-                  size: 18, color: scheme.outline),
-              tooltip: '从歌单移除',
-              onPressed: () => onRemove(index),
-            ),
-          ),
+        return Builder(
+          builder: (rowContext) {
+            final g = songRowPlay(ref, onPlay: () {
+              launchFlyCover(
+                rowContext,
+                coverSize: m.songCover,
+                vPad: m.vPad,
+                networkUrl: song.coverUrl,
+                radius: m.songRadius,
+              );
+              manager.play(playlist, index);
+            });
+            return g.wrap(
+              CoverRow(
+                cover: OnlineCover(
+                    url: song.coverUrl, size: m.songCover, radius: m.songRadius),
+                onTap: g.onTap,
+                verticalPadding: m.vPad,
+                title: Text(
+                  song.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: m.titleSize, fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${song.artist} · ${song.album}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                ),
+                trailing: IconButton(
+                  icon: Icon(Icons.close,
+                      size: 18, color: scheme.outline),
+                  tooltip: '从歌单移除',
+                  onPressed: () => onRemove(index),
+                ),
+              ),
+            );
+          },
         );
       },
     );

@@ -198,6 +198,20 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     showXianYuToast(context, '开始下载：${item.title}');
   }
 
+  QueueItem? _queueItem(int index) {
+    final source = _source;
+    if (source == null) return null;
+    return PluginCatalogService.toQueueItem(source, _songs[index]);
+  }
+
+  void _toggleFavorite(int index) {
+    final item = _queueItem(index);
+    if (item == null) return;
+    final wasFav = ref.read(favoritesProvider).contains(item.path);
+    ref.read(favoritesProvider.notifier).toggle(item);
+    showXianYuToast(context, wasFav ? '已取消收藏：${item.title}' : '已收藏：${item.title}');
+  }
+
   void _toggleCollectionFavorite() {
     final a = widget.args;
     ref.read(favoritesProvider.notifier).toggleCollection(
@@ -230,6 +244,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final artistTab = isArtist && _tab != null
         ? TabBar(
             controller: _tab,
+            labelColor: scheme.primary,
+            unselectedLabelColor: scheme.onSurfaceVariant,
+            indicatorColor: scheme.primary,
+            indicatorSize: TabBarIndicatorSize.label,
+            dividerColor: Colors.transparent,
             tabs: const [
               Tab(text: '歌曲'),
               Tab(text: '专辑'),
@@ -243,9 +262,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(
-              top: GlassTopBar.height(context, bottom: artistTab),
-            ),
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
             child: Column(
               children: [
                 _Header(
@@ -272,6 +289,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                       ? null
                       : () => _toggleCollectionFavorite(),
                 ),
+                // 歌手 tab 位于头像下方（参考桌面端 ArtistDetailHeader）。
+                if (artistTab != null) ...[
+                  const SizedBox(height: 2),
+                  artistTab,
+                ],
                 Expanded(
                   child: isArtist && _tab != null
                       ? TabBarView(
@@ -297,7 +319,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                 onPressed: () => context.pop(),
               ),
               title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              bottom: artistTab,
             ),
           ),
           // 底部迷你播放条：与收藏/最近/下载等列表页一致，有曲目时承载当前播放。
@@ -316,6 +337,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   Widget _buildSongList() {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
+    final favorites = ref.watch(favoritesProvider);
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -359,57 +381,72 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             );
           }
           final r = _songs[i];
-          final g = songRowPlay(ref, onPlay: () {
-            launchFlyCover(
-              context,
-              coverSize: m.songCover,
-              vPad: m.vPad,
-              networkUrl: r.img,
-              radius: m.songRadius,
-            );
-            _play(i);
-          });
-          return g.wrap(
-            CoverRow(
-              cover: OnlineCover(
-                  url: r.img, size: m.songCover, radius: m.songRadius),
-              onTap: g.onTap,
-              onLongPress: () => _songActions(i),
-              verticalPadding: m.vPad,
-              title: Text(
-                r.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: m.titleSize, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                r.singer.isEmpty ? r.albumName : '${r.singer} · ${r.albumName}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: m.subtitleSize,
-                    color: scheme.onSurfaceVariant),
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.download_outlined,
-                        size: 20, color: scheme.primary),
-                    tooltip: '下载',
-                    onPressed: () => _download(i),
+          final item = _queueItem(i);
+          final isFav = item != null && favorites.contains(item.path);
+          return Builder(
+            builder: (rowContext) {
+              final g = songRowPlay(ref, onPlay: () {
+                launchFlyCover(
+                  rowContext,
+                  coverSize: m.songCover,
+                  vPad: m.vPad,
+                  networkUrl: r.img,
+                  radius: m.songRadius,
+                );
+                _play(i);
+              });
+              return g.wrap(
+                CoverRow(
+                  cover: OnlineCover(
+                      url: r.img, size: m.songCover, radius: m.songRadius),
+                  onTap: g.onTap,
+                  onLongPress: () => _songActions(i),
+                  verticalPadding: m.vPad,
+                  title: Text(
+                    r.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
                   ),
-                  if (r.interval.isNotEmpty)
-                    Text(
-                      r.interval,
-                      style: TextStyle(
-                          fontSize: m.subtitleSize,
-                          color: scheme.onSurfaceVariant),
-                    ),
-                ],
-              ),
-            ),
+                  subtitle: Text(
+                    r.singer.isEmpty ? r.albumName : '${r.singer} · ${r.albumName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: m.subtitleSize,
+                        color: scheme.onSurfaceVariant),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border,
+                          size: 20,
+                          color: isFav ? scheme.primary : scheme.onSurfaceVariant,
+                        ),
+                        tooltip: '收藏',
+                        onPressed: () => _toggleFavorite(i),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.download_outlined,
+                            size: 20, color: scheme.primary),
+                        tooltip: '下载',
+                        onPressed: () => _download(i),
+                      ),
+                      if (r.interval.isNotEmpty)
+                        Text(
+                          r.interval,
+                          style: TextStyle(
+                              fontSize: m.subtitleSize,
+                              color: scheme.onSurfaceVariant),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),

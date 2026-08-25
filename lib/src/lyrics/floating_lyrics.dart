@@ -143,6 +143,8 @@ class FloatingLyricsController {
         'hideWhenPaused': s.floatingLyricsHideWhenPaused,
         'hideInLandscape': s.floatingLyricsHideInLandscape,
         'widthPercent': s.floatingLyricsWidthPercent,
+        'useLyricFont': s.floatingLyricsUseLyricFont,
+        'lyricFontPath': s.lyricFontPath,
         'locked': s.floatingLyricsLocked,
         'x': s.floatingLyricsX,
         'y': s.floatingLyricsY,

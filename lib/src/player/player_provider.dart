@@ -82,6 +82,9 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     playbackState.add(
       as_pkg.PlaybackState(
         controls: [
+          as_pkg.MediaControl.skipToPrevious,
+          if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
+          as_pkg.MediaControl.skipToNext,
           as_pkg.MediaControl(
             // 0.18.x 的 androidIcon 必须带 "drawable/" 前缀：
             // Android 端 getResourceId 按 "/" split 后取 parts[1]，
@@ -93,9 +96,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
             action: as_pkg.MediaAction.custom,
             customAction: const as_pkg.CustomMediaAction(name: 'toggleFavorite'),
           ),
-          as_pkg.MediaControl.skipToPrevious,
-          if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
-          as_pkg.MediaControl.skipToNext,
           as_pkg.MediaControl(
             androidIcon: _playModeIcon(playMode),
             label: _playModeLabel(playMode),
@@ -109,7 +109,10 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           as_pkg.MediaAction.seekBackward,
         },
         // 紧凑视图（锁屏/折叠态）仍只显示 上一首/播放/下一首。
-        androidCompactActionIndices: const [1, 2, 3],
+        // 注意：华为 EMUI 上 setShowActionsInCompactView 引用非 0 起始索引
+        // 会抛 IndexOutOfBoundsException: Index: 3, Size: 3，故把三个基础
+        // 控制排到 [0,1,2] 并让紧凑视图引用 0 起始索引。
+        androidCompactActionIndices: const [0, 1, 2],
         processingState: as_pkg.AudioProcessingState.ready,
         playing: isPlaying,
         updatePosition: Duration(milliseconds: (positionSecs * 1000).round()),

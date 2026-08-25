@@ -1,6 +1,10 @@
-import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/plugin/plugin_engine.dart';
@@ -183,22 +187,129 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         ),
                       )
                     else
-                      for (final source in filtered) ...[
-                        _PluginCard(source: source),
-                        const SizedBox(height: 8),
-                      ],
+                      ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        padding: EdgeInsets.zero,
+                        itemCount: filtered.length,
+                        onReorderItem: _onReorder,
+                        itemBuilder: (context, i) {
+                          final source = filtered[i];
+                          return Padding(
+                            key: ValueKey(source.id),
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _PluginCard(
+                              source: source,
+                              // 搜索过滤时不参与排序，隐藏拖拽把手
+                              handle: _query.isEmpty
+                                  ? ReorderableDragStartListener(
+                                      index: i,
+                                      child: Icon(Icons.drag_indicator,
+                                          size: 20, color: scheme.outline),
+                                    )
+                                  : null,
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
     );
   }
 
+  /// 拖拽排序结束：把调整后的完整插件顺序持久化到 sortOrder。
+  /// 此时 [newIndex] 已由框架处理移除后的下标修正（无需再 -1）。
+  /// 仅在未搜索过滤时生效（把手已隐藏）。
+  void _onReorder(int oldIndex, int newIndex) {
+    if (_query.trim().isNotEmpty) return;
+    final full =
+        List<PluginSource>.from(ref.read(pluginManagerProvider).sources);
+    if (newIndex < 0 || newIndex >= full.length || newIndex == oldIndex) {
+      return;
+    }
+    final moved = full.removeAt(oldIndex);
+    full.insert(newIndex, moved);
+    ref
+        .read(pluginManagerProvider.notifier)
+        .reorder(full.map((e) => e.id).toList());
+  }
+
+  /// 安装插件：先选择安装方式（本地文件 / 在线链接）。
   void _showInstallSheet() {
     showSheetDialog<void>(
       context,
-      (ctx) => _InstallSheet(
-        onInstall: (script, name) => _install(script, name),
-        onInstallUrl: (url) => _installUrl(url),
+      (ctx) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('安装插件',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              '支持 LX（落雪）与 MusicFree 格式音源插件',
+              style: TextStyle(
+                  fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
+            ),
+            const SizedBox(height: 14),
+            _InstallOption(
+              icon: Icons.folder_open_outlined,
+              title: '本地文件',
+              subtitle: '选择本地的插件脚本（.js / .txt）',
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickLocalPlugin();
+              },
+            ),
+            const SizedBox(height: 10),
+            _InstallOption(
+              icon: Icons.cloud_download_outlined,
+              title: '在线链接',
+              subtitle: '输入 URL 安装，支持单个插件或插件集（JSON）批量',
+              onTap: () {
+                Navigator.pop(ctx);
+                _showUrlInstallSheet();
+              },
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// 本地文件安装：选择插件脚本并逐个安装。
+  Future<void> _pickLocalPlugin() async {
+    if (_installing) return;
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['js', 'txt'],
+    );
+    if (files.isEmpty) return;
+    for (final f in files) {
+      if (!mounted) return;
+      try {
+        final bytes = await f.readAsBytes();
+        if (!mounted) return;
+        if (bytes.isEmpty) {
+          showXianYuToast(context, '读取「${f.name}」失败或文件为空');
+          continue;
+        }
+        final script = utf8.decode(bytes, allowMalformed: true);
+        await _install(script, f.name.isNotEmpty ? f.name : '本地插件');
+      } catch (e) {
+        if (!mounted) return;
+        showXianYuToast(context, '读取「${f.name}」失败：$e');
+      }
+    }
+  }
+
+  /// 在线链接安装：弹出 URL 输入弹窗。
+  Future<void> _showUrlInstallSheet() async {
+    await showSheetDialog<void>(
+      context,
+      (ctx) => _UrlInstallSheet(onInstallUrl: (url) => _installUrl(url)),
     );
   }
 
@@ -453,8 +564,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _PluginCard extends ConsumerWidget {
-  const _PluginCard({required this.source});
+  const _PluginCard({required this.source, this.handle});
   final PluginSource source;
+  /// 排列在卡片最前面的拖拽排序把手（null 时不展示）。
+  final Widget? handle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -488,9 +601,14 @@ class _PluginCard extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 第一行：图标 + 插件名称/版本 + 开关
+            // 第一行：拖拽把手 + 图标 + 插件名称/版本 + 开关
             Row(
               children: [
+                // 拖拽排序把手（排在最前面）
+                if (handle != null) ...[
+                  handle!,
+                  const SizedBox(width: 2),
+                ],
                 // 图标
                 Container(
                   width: 40,
@@ -836,28 +954,22 @@ class _PluginDetailSheet extends ConsumerWidget {
   }
 }
 
-/// 安装方式选择：URL（单个脚本或插件集批量）或脚本粘贴。
-class _InstallSheet extends StatefulWidget {
-  const _InstallSheet({
-    required this.onInstall,
-    required this.onInstallUrl,
-  });
-  final void Function(String script, String name) onInstall;
+/// 在线链接安装弹窗：输入 URL 安装（单个插件或插件集批量）。
+class _UrlInstallSheet extends StatefulWidget {
+  const _UrlInstallSheet({required this.onInstallUrl});
   final Future<void> Function(String url) onInstallUrl;
 
   @override
-  State<_InstallSheet> createState() => _InstallSheetState();
+  State<_UrlInstallSheet> createState() => _UrlInstallSheetState();
 }
 
-class _InstallSheetState extends State<_InstallSheet> {
+class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   final _urlCtrl = TextEditingController();
-  final _scriptCtrl = TextEditingController();
   bool _loading = false;
 
   @override
   void dispose() {
     _urlCtrl.dispose();
-    _scriptCtrl.dispose();
     super.dispose();
   }
 
@@ -888,7 +1000,7 @@ class _InstallSheetState extends State<_InstallSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('安装插件',
+            const Text('在线链接安装',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
@@ -898,6 +1010,7 @@ class _InstallSheetState extends State<_InstallSheet> {
             const SizedBox(height: 16),
             TextField(
               controller: _urlCtrl,
+              autofocus: true,
               decoration: const InputDecoration(
                 labelText: '插件 URL',
                 hintText: 'https://example.com/plugin.js',
@@ -905,46 +1018,7 @@ class _InstallSheetState extends State<_InstallSheet> {
                 isDense: true,
               ),
               keyboardType: TextInputType.url,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FilledButton.icon(
-                  onPressed: _loading ? null : _installFromUrl,
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download, size: 18),
-                  label: const Text('从 URL 安装'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Divider(color: scheme.outlineVariant),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('或粘贴脚本内容',
-                      style: TextStyle(fontSize: 12, color: scheme.outline)),
-                ),
-                Expanded(child: Divider(color: scheme.outlineVariant)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _scriptCtrl,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                hintText: '粘贴插件 JS 脚本…',
-                border: OutlineInputBorder(),
-              ),
+              onSubmitted: (_) => _installFromUrl(),
             ),
             const SizedBox(height: 12),
             Row(
@@ -955,16 +1029,80 @@ class _InstallSheetState extends State<_InstallSheet> {
                   child: const Text('取消'),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () {
-                    widget.onInstall(_scriptCtrl.text, '粘贴脚本');
-                    Navigator.pop(context);
-                  },
-                  child: const Text('安装'),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _installFromUrl,
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download, size: 18),
+                  label: const Text('安装'),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 安装方式选项卡片：图标 + 标题 + 副标题。
+class _InstallOption extends StatelessWidget {
+  const _InstallOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: appCardColor(context),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 20, color: scheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: scheme.outline),
+            ],
+          ),
         ),
       ),
     );
