@@ -21,6 +21,7 @@ import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/plugin/plugin_provider.dart';
 import '../../src/share/share_service.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
@@ -424,9 +425,11 @@ class _TraditionalPlayerLayoutState
         // 封面取较紧凑尺寸，使上方信息条（歌名/作者/收藏）与中部的歌词预览
         // 都能留出空间，不会撑出屏幕。
         final coverSize = math.min(
-          cons.maxWidth * 0.72,
-          cons.maxHeight * 0.5,
+          cons.maxWidth * 0.85,
+          cons.maxHeight * 0.6,
         );
+        // 封面居中后的左右缩进：歌名/收藏/歌词以封面左右边缘为基准对齐。
+        final hInset = (cons.maxWidth - coverSize) / 2;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -441,14 +444,18 @@ class _TraditionalPlayerLayoutState
             ),
             // 歌名/作者/收藏信息条：与封面拉开，整体下放
             const SizedBox(height: 30),
-            _buildCaption(context),
-            // 中部剩余空间：3 行歌词预览居中对齐
-            // （歌词与歌名/作者分离，位于底部控件与顶部歌名之间的居中位置）
+            _buildCaption(context, inset: hInset),
+            // 中部剩余空间：3 行歌词预览，左对齐歌名/封面左边
+            // （歌词与歌名/作者分离，位于底部控件与顶部歌名之间的位置）
             Expanded(
-              child: Center(
-                child: _LyricPreview(
-                  current: widget.current,
-                  position: widget.player.position,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: hInset),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _LyricPreview(
+                    current: widget.current,
+                    position: widget.player.position,
+                  ),
                 ),
               ),
             ),
@@ -459,12 +466,13 @@ class _TraditionalPlayerLayoutState
   }
 
   /// 封面下方的信息条：左边歌名/作者（分开于歌词，不再内嵌歌词预览），右边收藏按钮。
-  Widget _buildCaption(BuildContext context) {
+  /// [inset] 与封面居中后的左右缩进一致，使歌名左缘与封面左边、收藏右缘与封面右边对齐。
+  Widget _buildCaption(BuildContext context, {required double inset}) {
     final c = widget.current;
     final isFav = c != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: EdgeInsets.symmetric(horizontal: inset),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -2247,38 +2255,49 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     try {
       String jsonStr = '';
 
-      if (item.isOnline && item.source != null && item.onlineInfoJson != null) {
-        // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词 (kw/kg/tx/wy/mg)
-        final rawResultStr = await fetchLyricFromSource(
-          source: item.source!,
-          songInfoJson: item.onlineInfoJson!,
-        );
+      if (item.isOnline) {
+        // (A) 插件来源：通过插件 getLyric 拉歌词（与下载流程同款，处理
+        // MusicFree 插件的 lxlyric/lyric/翻译/罗马音）。插件歌曲的直链信息
+        // 存在 onlineSongJson（含 pluginId/source/musicInfo），播放页此前只
+        // 认 onlineInfoJson 才导致插件歌词拉不到。
+        final pluginText = await _fetchPluginLyric(item);
+        if (pluginText.trim().isNotEmpty) {
+          jsonStr = await parseLyrics(rawLyrics: pluginText);
+        } else if (item.source != null && item.onlineInfoJson != null) {
+          // (B) 内置 lx 音源：通过 Rust 接口在线抓取指定音源的歌词
+          // (kw/kg/tx/wy/mg)。
+          final rawResultStr = await fetchLyricFromSource(
+            source: item.source!,
+            songInfoJson: item.onlineInfoJson!,
+          );
 
-        if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
-          String lyricsToParse = '';
+          if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
+            String lyricsToParse = '';
 
-          // 提取 LyricResult JSON 对象中的真实歌词正文 (lxlyric > lyric)
-          try {
-            final lyricObj = jsonDecode(rawResultStr) as Map<String, dynamic>;
-            final lxlyric = lyricObj['lxlyric'] as String? ?? '';
-            final lyric = lyricObj['lyric'] as String? ?? '';
-            final tlyric = lyricObj['tlyric'] as String? ?? '';
+            // 提取 LyricResult JSON 对象中的真实歌词正文 (lxlyric > lyric)
+            try {
+              final lyricObj =
+                  jsonDecode(rawResultStr) as Map<String, dynamic>;
+              final lxlyric = lyricObj['lxlyric'] as String? ?? '';
+              final lyric = lyricObj['lyric'] as String? ?? '';
+              final tlyric = lyricObj['tlyric'] as String? ?? '';
 
-            if (lxlyric.trim().isNotEmpty) {
-              lyricsToParse = lxlyric;
-            } else if (lyric.trim().isNotEmpty) {
-              if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
-                lyricsToParse = '$lyric\n$tlyric';
-              } else {
-                lyricsToParse = lyric;
+              if (lxlyric.trim().isNotEmpty) {
+                lyricsToParse = lxlyric;
+              } else if (lyric.trim().isNotEmpty) {
+                if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
+                  lyricsToParse = '$lyric\n$tlyric';
+                } else {
+                  lyricsToParse = lyric;
+                }
               }
+            } catch (_) {
+              lyricsToParse = rawResultStr;
             }
-          } catch (_) {
-            lyricsToParse = rawResultStr;
-          }
 
-          if (lyricsToParse.trim().isNotEmpty) {
-            jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+            if (lyricsToParse.trim().isNotEmpty) {
+              jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+            }
           }
         }
       } else {
@@ -2316,6 +2335,41 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         });
         _reportRomaji();
       }
+    }
+  }
+
+  /// 从在线插件拉取当前播放曲目的歌词正文（LRC/逐字/翻译/罗马音）。
+  ///
+  /// 播放队列项 `onlineSongJson` 含 `pluginId/source/musicInfo`；非插件来源或
+  /// 拉取失败返回空串，调用方据此回退到内置 lx 音源抓取。
+  Future<String> _fetchPluginLyric(QueueItem item) async {
+    final online = item.onlineSongJson;
+    if (online == null || online.isEmpty) return '';
+    Map<String, dynamic> parsed;
+    try {
+      parsed = jsonDecode(online) as Map<String, dynamic>;
+    } catch (_) {
+      return '';
+    }
+    final pluginId = parsed['pluginId'] as String?;
+    if (pluginId == null || pluginId.isEmpty) return '';
+    final sourceKey = parsed['source'] as String? ?? '';
+    final musicInfo = parsed['musicInfo'] as Map<String, dynamic>? ?? {};
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final sources = await engine.store.loadSources();
+      final matches = sources.where((s) => s.id == pluginId).toList();
+      if (matches.isEmpty) return '';
+      final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
+      if (lyric == null) return '';
+      return (lyric['lxlyric'] ??
+              lyric['yrc'] ??
+              lyric['qrc'] ??
+              lyric['eslrc'] ??
+              lyric['lyric']) as String? ??
+          '';
+    } catch (_) {
+      return '';
     }
   }
 

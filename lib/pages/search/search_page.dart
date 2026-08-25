@@ -24,6 +24,7 @@ import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
@@ -413,6 +414,12 @@ class _SearchPageState extends ConsumerState<SearchPage>
               ],
               bottom: tabBar,
             ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: const MiniPlayerBar(),
           ),
         ],
       ),

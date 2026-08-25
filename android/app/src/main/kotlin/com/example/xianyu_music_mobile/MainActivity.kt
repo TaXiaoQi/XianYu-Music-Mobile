@@ -49,23 +49,25 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
-        processDeepLink(intent)
+        // 冷启动：Flutter 的 MethodChannel handler 尚未注册，若此时走 onDeepLink
+        // 派发，消息会被引擎丢弃且 pendingDeepLink 已被清空，深链彻底丢失。
+        // 只暂存链接，交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
+        processDeepLink(intent, dispatch = false)
     }
 
     /** singleTop 复用已启动 Activity 时的深链回调。 */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        processDeepLink(intent)
+        // 热启动：Flutter handler 已就绪，直接走 onDeepLink 事件派发。
+        processDeepLink(intent, dispatch = true)
     }
 
-    private fun processDeepLink(intent: Intent?) {
+    private fun processDeepLink(intent: Intent?, dispatch: Boolean) {
         val data = intent?.data ?: return
         if (data.scheme != "xianyu") return
         pendingDeepLink = data.toString()
-        // 引擎与 Flutter 的 handler 未就绪时（冷启动 onCreate 阶段）不派发，
-        // 交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
-        dispatchIfReady()
+        if (dispatch) dispatchIfReady()
     }
 
     /** 引擎就绪（warm start / onNewIntent）时走事件通道主动派发。 */
