@@ -14,6 +14,7 @@ Future<bool> showChangePasswordDialog(
 ) {
   return showDialog<bool>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangePasswordDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -234,6 +235,7 @@ Future<bool> showBindEmailDialog(
 ) {
   return showDialog<bool>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => BindEmailDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -427,6 +429,7 @@ Future<String?> showChangeNicknameDialog(
 ) {
   return showDialog<String>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangeNicknameDialog(notifier: notifier),
   );
@@ -536,6 +539,7 @@ Future<bool> showChangeCiyuanxiDialog(
 ) {
   return showDialog<bool>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangeCiyuanxiDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -687,6 +691,7 @@ Future<bool> showDeleteAccountDialog(
 ) {
   return showDialog<bool>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => DeleteAccountDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -792,6 +797,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
   Future<bool?> _showConfirm() {
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('确认注销账号'),
@@ -917,6 +923,7 @@ Future<bool> showForgotPasswordDialog(
 ) {
   return showDialog<bool>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ForgotPasswordDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -1141,6 +1148,138 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
               : const Text('重置密码'),
         ),
       ],
+    );
+  }
+}
+
+/// 资料修改前置确认弹窗（对齐桌面端「更换头像/修改昵称提示」）：
+/// 进入修改界面或选择头像前，先检测剩余机会并弹窗提示次数限制与审核规则。
+/// 被拦截（blocked=true）时仅提供「关闭」按钮并返回 false；正常时取消返回 false，继续返回 true。
+Future<bool> showProfileEditGate(
+  BuildContext context, {
+  required String title,
+  required String desc,
+  required String confirmText,
+  String note = '',
+  bool blocked = false,
+}) {
+  return showDialog<bool>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
+    builder: (_) => ProfileEditGateDialog(
+      title: title,
+      desc: desc,
+      confirmText: confirmText,
+      note: note,
+      blocked: blocked,
+    ),
+  ).then((v) => v ?? false);
+}
+
+/// 前置确认弹窗内容（圆形图标 + 标题 + 说明 + 可选提示条 + 按钮）。
+class ProfileEditGateDialog extends StatelessWidget {
+  const ProfileEditGateDialog({
+    super.key,
+    required this.title,
+    required this.desc,
+    required this.confirmText,
+    this.note = '',
+    this.blocked = false,
+  });
+
+  final String title;
+  final String desc;
+  final String confirmText;
+  final String note;
+  final bool blocked;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                blocked ? Icons.block : Icons.rate_review_outlined,
+                size: 24,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              desc,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            if (note.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 15, color: const Color(0xFFB45309)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        note,
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFFB45309)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                if (!blocked) ...[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('取消'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, !blocked),
+                    child: Text(blocked ? '关闭' : confirmText),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

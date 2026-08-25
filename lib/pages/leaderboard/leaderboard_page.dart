@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +8,8 @@ import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
-import '../../src/stats/listen_stats.dart';
+import '../../src/core/db_path.dart';
+import '../../src/rust/api.dart';
 import '../../src/widgets/user_avatar.dart';
 
 /// 听歌排行榜：日榜/周榜/总榜切换，Top 列表 + 底部个人排名。
@@ -43,7 +46,21 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
       _error = false;
     });
     try {
-      final durations = await ref.read(listenStatsProvider).getDurations();
+      // 听歌时长取自数据库（日/周/总，与桌面端 getListenDurations 对齐），
+      // 播放器落库后据此上报，保证排行榜与首页统计一致。
+      Map<String, int> durations;
+      try {
+        final dbPath = await ref.read(dbPathProvider.future);
+        final dj = jsonDecode(await statsGetListenDurations(dbPath: dbPath))
+            as Map<String, dynamic>;
+        durations = {
+          'daily': (dj['daily'] as num?)?.toInt() ?? 0,
+          'weekly': (dj['weekly'] as num?)?.toInt() ?? 0,
+          'total': (dj['total'] as num?)?.toInt() ?? 0,
+        };
+      } catch (_) {
+        durations = {'daily': 0, 'weekly': 0, 'total': 0};
+      }
       if (!mounted || requestId != _requestId) return;
       final data = await ref
           .read(accountApiProvider)

@@ -157,6 +157,7 @@ class RemoteLibraryPage extends ConsumerWidget {
       {required String title, required String message}) {
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: Text(title),
         content: Text(message),
@@ -311,6 +312,7 @@ class _SourceCard extends ConsumerWidget {
     } else if (action == 'remove') {
       final ok = await showDialog<bool>(
         context: context,
+        useRootNavigator: true,
         builder: (ctx) => AlertDialog(
           title: const Text('删除远程源'),
           content: Text(

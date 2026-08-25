@@ -84,6 +84,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   void _confirmClear(BuildContext context, FavoritesManager notifier) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('清空收藏'),
         content: const Text('确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。'),
@@ -266,9 +267,8 @@ class _FavoriteTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return songRowPlayGesture(
-      context,
-      ref,
+    final g = songRowPlay(ref, onPlay: onPlay);
+    return g.wrap(
       ListTile(
         leading: CoverImage(
           songPath: entry.path,
@@ -278,6 +278,7 @@ class _FavoriteTile extends ConsumerWidget {
           radius: 8,
           icon: Icons.music_note,
         ),
+        onTap: g.onTap,
         title: Text(entry.title,
             maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
@@ -293,7 +294,6 @@ class _FavoriteTile extends ConsumerWidget {
           onPressed: onRemove,
         ),
       ),
-      onPlay: onPlay,
     );
   }
 }

@@ -183,12 +183,15 @@ class _RecommendList extends ConsumerWidget {
       separatorBuilder: (_, _) => SizedBox(height: 4),
       itemBuilder: (context, i) {
         final item = state.items[i];
-        return songRowPlayGesture(
-          context,
+        final g = songRowPlay(
           ref,
+          onPlay: () => ref.read(dailyRecommendProvider.notifier).play(i),
+        );
+        return g.wrap(
           ListTile(
             dense: true,
             leading: OnlineCover(url: item.coverUrl, size: 46),
+            onTap: g.onTap,
             title: Text(
               item.title,
               maxLines: 1,
@@ -230,8 +233,6 @@ class _RecommendList extends ConsumerWidget {
                   )
                 : null,
           ),
-          onPlay: () =>
-              ref.read(dailyRecommendProvider.notifier).play(i),
         );
       },
     );

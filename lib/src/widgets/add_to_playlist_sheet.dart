@@ -165,6 +165,7 @@ Future<String?> _promptName(BuildContext context, String title,
   final ctrl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
+    useRootNavigator: true,
     builder: (context) => AlertDialog(
       title: Text(title, style: const TextStyle(fontSize: 16)),
       content: TextField(
@@ -225,6 +226,7 @@ Future<void> showPlaylistActionsSheet(
             onTap: () async {
               final ok = await showDialog<bool>(
                 context: context,
+                useRootNavigator: true,
                 builder: (context) => AlertDialog(
                   title: const Text('删除歌单',
                       style: TextStyle(fontSize: 16)),

@@ -94,6 +94,7 @@ class DownloadPage extends ConsumerWidget {
   void _confirmClear(BuildContext context, DownloadManager notifier) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('清空下载记录'),
         content: const Text('确定要清空全部下载记录吗？（不会删除已下载的文件）'),

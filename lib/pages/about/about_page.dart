@@ -68,6 +68,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   Future<void> _showUpdateDialog(LatestVersion latest) async {
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('发现新版本'),

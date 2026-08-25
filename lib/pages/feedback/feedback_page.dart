@@ -412,6 +412,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   void _showFeedbackDetail(FeedbackItem item) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => _FeedbackDetailDialog(item: item),
     );
   }
@@ -619,6 +620,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
   void _showImageViewer(BuildContext context, String url) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.black,
         child: Stack(

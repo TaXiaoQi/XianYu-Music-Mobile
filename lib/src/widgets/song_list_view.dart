@@ -6,65 +6,111 @@ import '../library/library_provider.dart';
 import 'cover_image.dart';
 import 'song_actions_sheet.dart';
 
-/// 歌曲行的播放点击手势：按「单击/双击播放」设置决定触发方式。
+/// 歌曲行起播手势装配结果，配合 [songRowPlay] 使用：
 ///
-/// - 单击模式：`onTap` 触发 [onPlay]（此时调用方应把行的 onTap 置空，由本组件承担播放）。
-/// - 双击模式：`onDoubleTap` 触发 [onPlay]，单击不做任何事（避免误触播放）。
-class SongRowPlayGesture extends ConsumerWidget {
-  final Widget child;
-  final VoidCallback? onPlay;
-  final bool enabled;
-  const SongRowPlayGesture({
-    super.key,
-    required this.child,
-    this.onPlay,
-    this.enabled = true,
-  });
+/// ```dart
+/// final g = songRowPlay(ref, onPlay: () => play(i));
+/// return g.wrap(ListTile(onTap: g.onTap, ...));
+/// ```
+class SongRowPlay {
+  const SongRowPlay._(this.onTap, this.onDoubleTap);
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!enabled || onPlay == null) return child;
-    final single =
-        (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
-            'single';
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: single
-          ? () {
-              debugPrint('[play] onTap fired');
-              onPlay!();
-            }
-          : null,
-      onDoubleTap: single
-          ? null
-          : () {
-              debugPrint('[play] onDoubleTap fired');
-              onPlay!();
-            },
-      child: child,
-    );
-  }
+  /// 挂到行自身（ListTile.onTap）：
+  /// - 单击模式：起播回调，点击即水波纹 + 播放；
+  /// - 双击模式：空回调，单击仍有水波纹反馈（延迟约 300ms 等待双击窗口结束）。
+  final GestureTapCallback? onTap;
+
+  /// 双击模式的起播回调；非 null 时 [wrap] 会把行包进双击识别器。
+  final GestureTapCallback? onDoubleTap;
+
+  /// 双击模式下包裹行本体；单击模式原样返回。
+  Widget wrap(Widget child) => onDoubleTap == null
+      ? child
+      : GestureDetector(onDoubleTap: onDoubleTap, child: child);
 }
 
-/// 歌曲行的播放点击手势（见 [SongRowPlayGesture] 的说明）：
-/// 供 favorite/recent 等非共享列表复用，避免重复读取设置。
-Widget songRowPlayGesture(
-  BuildContext context,
-  WidgetRef ref,
-  Widget child, {
-  VoidCallback? onPlay,
-  bool enabled = true,
-}) {
-  if (!enabled || onPlay == null) return child;
+/// 按设置装配歌曲行起播手势（单击/双击播放）。
+///
+/// 起播必须挂到行自身 onTap：带 onLongPress 的 ListTile 的 InkWell 会注册
+/// 自己的 Tap 识别器，且在手势竞技场清扫中作为内层成员必胜——外层
+/// GestureDetector 的 onTap 永远被拒绝（曾表现为「点行有水波纹高亮但
+/// 不起播」）。双击模式用外层 onDoubleTap 包裹则不受影响：DoubleTap
+/// 识别器自行 hold/解析竞技场，内层竞争无法否决它。
+SongRowPlay songRowPlay(WidgetRef ref, {VoidCallback? onPlay}) {
+  if (onPlay == null) return const SongRowPlay._(null, null);
   final single =
       (ref.read(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
           'single';
-  return GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: single ? onPlay : null,
-    onDoubleTap: single ? null : onPlay,
-    child: child,
-  );
+  return single
+      ? SongRowPlay._(onPlay, null)
+      : SongRowPlay._(() {}, onPlay);
+}
+
+/// 大封面列表行：封面、标题、副标题、尾部控件的横向排布。
+///
+/// 不用 ListTile：其 leading/trailing 高度被钳制在 56px
+/// （ListTile.maxIconHeightConstraint），80px 以上的封面会被压扁且行高
+/// 不跟随封面增长；本组件行高由封面完整撑开，内边距可调。
+class CoverRow extends StatelessWidget {
+  const CoverRow({
+    super.key,
+    required this.cover,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.onLongPress,
+    this.horizontalPadding = 16,
+    this.verticalPadding = 8,
+    this.gap = 12,
+  });
+
+  final Widget cover;
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? trailing;
+  final GestureTapCallback? onTap;
+  final GestureLongPressCallback? onLongPress;
+  final double horizontalPadding;
+  final double verticalPadding;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: verticalPadding,
+        ),
+        child: Row(
+          children: [
+            cover,
+            SizedBox(width: gap),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  title,
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    subtitle!,
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 通用歌曲列表：展示歌曲并支持点击播放、长按弹出操作菜单。
@@ -91,46 +137,56 @@ class SongsListView extends ConsumerWidget {
     if (songs.isEmpty) {
       return const Center(child: Text('暂无歌曲'));
     }
-    return ListView.separated(
+    // watch：设置页切换单击/双击后列表自动换模式。
+    final single =
+        (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
+            'single';
+    return ListView.builder(
       padding: padding,
       itemCount: songs.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final s = songs[i];
         final hlColor = Theme.of(context).colorScheme.primary;
-        return SongRowPlayGesture(
-          onPlay: onPlay != null ? () => onPlay!(songs, i) : null,
-          child: ListTile(
-            leading: SongCover(song: s),
-            title: highlightedText(
-              s.title,
-              highlight,
-              hlColor,
-              maxLines: 1,
-            ),
-            subtitle: highlightedText(
-              '${s.artist} · ${s.album}',
-              highlight,
-              hlColor,
-              maxLines: 1,
-            ),
-            trailing: Text(
-              _fmt(s.duration),
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            onLongPress: enableActions
-                ? () => showSongActionsSheet(
-                      context,
-                      ref: ref,
-                      item: s.toQueueItem(),
-                      onPlay:
-                          onPlay != null ? () => onPlay!(songs, i) : null,
-                    )
-                : null,
+        final play = onPlay != null ? () => onPlay!(songs, i) : null;
+        final row = CoverRow(
+          cover: SongCover(song: s),
+          title: highlightedText(
+            s.title,
+            highlight,
+            hlColor,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            maxLines: 1,
           ),
+          subtitle: highlightedText(
+            '${s.artist} · ${s.album}',
+            highlight,
+            hlColor,
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            maxLines: 1,
+          ),
+          trailing: Text(
+            _fmt(s.duration),
+            style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          // 双击模式挂空回调：单击仍有水波纹反馈，起播交给外层 onDoubleTap。
+          onTap: play == null ? null : (single ? play : () {}),
+          onLongPress: enableActions
+              ? () => showSongActionsSheet(
+                    context,
+                    ref: ref,
+                    item: s.toQueueItem(),
+                    onPlay: play,
+                  )
+              : null,
         );
+        return !single && play != null
+            ? GestureDetector(onDoubleTap: play, child: row)
+            : row;
       },
     );
   }
@@ -152,17 +208,20 @@ Widget highlightedText(
   Color highlightColor, {
   int? maxLines,
   TextOverflow overflow = TextOverflow.ellipsis,
+  TextStyle? style,
 }) {
   final kw = keyword?.trim() ?? '';
   if (kw.isEmpty || source.isEmpty) {
-    return Text(source, maxLines: maxLines, overflow: overflow);
+    return Text(source,
+        style: style, maxLines: maxLines, overflow: overflow);
   }
 
   final lowerSource = source.toLowerCase();
   final lowerKw = kw.toLowerCase();
   // 无命中时走普通文本。
   if (!lowerSource.contains(lowerKw)) {
-    return Text(source, maxLines: maxLines, overflow: overflow);
+    return Text(source,
+        style: style, maxLines: maxLines, overflow: overflow);
   }
 
   final spans = <TextSpan>[];
@@ -188,24 +247,32 @@ Widget highlightedText(
   }
 
   return Text.rich(
-    TextSpan(children: spans),
+    TextSpan(children: spans, style: style),
     maxLines: maxLines,
     overflow: overflow,
   );
 }
 
 class SongCover extends StatelessWidget {
-  const SongCover({super.key, required this.song});
+  const SongCover({super.key, required this.song, this.size = 80, this.radius});
+
   final Song song;
+
+  /// 封面边长；紧凑场景（如搜索结果行）传较小值。
+  final double size;
+
+  /// 圆角；null 时按尺寸缩放（80→12，40→6）。
+  final double? radius;
 
   @override
   Widget build(BuildContext context) {
+    final r = radius ?? (size >= 60 ? 12.0 : 6.0);
     return CoverImage(
       songPath: song.path,
       thumbPath: song.coverThumbPath,
-      width: 40,
-      height: 40,
-      radius: 6,
+      width: size,
+      height: size,
+      radius: r,
     );
   }
 }

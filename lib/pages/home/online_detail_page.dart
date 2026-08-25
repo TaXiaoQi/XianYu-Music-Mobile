@@ -330,12 +330,12 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             );
           }
           final r = _songs[i];
-          return songRowPlayGesture(
-            context,
-            ref,
+          final g = songRowPlay(ref, onPlay: () => _play(i));
+          return g.wrap(
             ListTile(
               dense: true,
               leading: OnlineCover(url: r.img, size: 44),
+              onTap: g.onTap,
               title: Text(
                 r.name,
                 maxLines: 1,
@@ -371,7 +371,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               ),
               onLongPress: () => _songActions(i),
             ),
-            onPlay: () => _play(i),
           );
         },
       ),

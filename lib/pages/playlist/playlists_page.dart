@@ -89,6 +89,7 @@ Future<String?> _promptName(BuildContext context, String title) {
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
+    useRootNavigator: true,
     builder: (ctx) => AlertDialog(
       title: Text(title),
       content: TextField(
@@ -225,6 +226,7 @@ class _PlaylistCard extends ConsumerWidget {
   void _confirmRemove(BuildContext context, PlaylistManager manager) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('删除歌单'),
         content: Text('确定要删除「${playlist.name}」吗？'),

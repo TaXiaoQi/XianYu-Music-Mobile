@@ -528,6 +528,7 @@ class _PluginCard extends ConsumerWidget {
     }
     final confirmed = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('发现新版本'),
         content: Text(
@@ -579,6 +580,7 @@ class _PluginCard extends ConsumerWidget {
   void _confirmRemove(BuildContext context, PluginManager manager) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('卸载插件'),
         content: Text('确定要卸载「${source.name}」吗？'),

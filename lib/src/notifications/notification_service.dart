@@ -71,6 +71,7 @@ class NotificationService {
       BuildContext context, Announcement ann) async {
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: ann.title,
@@ -97,6 +98,7 @@ class NotificationService {
         '$reasonLabel：${reason.isEmpty ? '（无说明）' : reason}';
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: isRejected ? '反馈已被拒绝' : '反馈处理完成',
@@ -125,6 +127,7 @@ class NotificationService {
         '修改原因：${notice.reason.isEmpty ? '（未填写）' : notice.reason}';
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: '昵称已被修改',
@@ -230,6 +233,7 @@ class _NotificationDialog extends StatelessWidget {
   void _showImageViewer(BuildContext context, String url) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.black,
         child: Stack(

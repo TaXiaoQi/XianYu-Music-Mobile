@@ -12,6 +12,9 @@ Future<T?> showSheetDialog<T>(
 }) {
   return showDialog<T>(
     context: context,
+    // 必须压到 root Navigator，否则 Tab 页打开时被压在分支内嵌 Navigator 上，
+    // GoRouter 的预测返回感知不到弹窗，导致无法关闭且无返回进度。
+    useRootNavigator: true,
     barrierDismissible: barrierDismissible,
     builder: (dialogContext) => Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),

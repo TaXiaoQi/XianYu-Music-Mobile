@@ -96,6 +96,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     // 二次确认：文件重命名不可撤销
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('确认重命名'),
         content: Text('将重命名 ${valid.length} 个文件，此操作不可撤销。'),

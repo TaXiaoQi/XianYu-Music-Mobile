@@ -287,7 +287,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
             _StatRow(label: '专辑', value: '${lib.albums.length} 张'),
             _StatRow(label: '文件夹', value: '${lib.folders.length} 个'),
             if (formats.isNotEmpty) ...[
-              const Divider(height: 20),
+              const SizedBox(height: 14),
               for (final f in formats)
                 _StatRow(label: f.key, value: '${f.value} 首'),
             ],
@@ -346,25 +346,32 @@ class _ArtistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
     if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
-    return ListView.separated(
+    return ListView.builder(
       padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
       itemCount: artists.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final a = artists[i];
         final scheme = Theme.of(context).colorScheme;
-        return ListTile(
-          leading: CoverImage(
+        return CoverRow(
+          cover: CoverImage(
             songPath: a.firstSongPath,
-            width: 44,
-            height: 44,
-            radius: 22,
+            width: 88,
+            height: 88,
+            radius: 44,
             icon: Icons.person,
             placeholder: _letterAvatar(context, a.name, scheme),
           ),
-          title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('${a.count} 首'),
-          trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
+          title: Text(
+            a.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${a.count} 首',
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+          ),
+          trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
@@ -402,27 +409,33 @@ class _AlbumsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
     if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
-    return ListView.separated(
+    return ListView.builder(
       padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
       itemCount: albums.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final a = albums[i];
-        return ListTile(
-          leading: CoverImage(
+        final scheme = Theme.of(context).colorScheme;
+        return CoverRow(
+          cover: CoverImage(
             songPath: a.firstSongPath,
-            width: 40,
-            height: 40,
-            radius: 6,
+            width: 80,
+            height: 80,
+            radius: 12,
             icon: Icons.album,
           ),
-          title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(
+            a.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
           subtitle: Text(
             '${a.artist} · ${a.count} 首',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
           ),
-          trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.outline),
+          trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
               builder: (_) => SongListPage(
@@ -583,6 +596,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('移除扫描目录'),
         content: Text('确定移除该目录吗？\n$name'),
@@ -1025,15 +1039,7 @@ class _ScanFoldersCard extends StatelessWidget {
               ),
             )
           else
-            for (var i = 0; i < folders.length; i++) ...[
-              if (i > 0)
-                Divider(
-                  height: 1,
-                  indent: 52,
-                  endIndent: 8,
-                  thickness: 0.5,
-                  color: scheme.onSurface.withValues(alpha: 0.08),
-                ),
+            for (var i = 0; i < folders.length; i++)
               Builder(builder: (context) {
                 final f = folders[i];
                 final isLost = lost.contains(f.path);
@@ -1078,7 +1084,6 @@ class _ScanFoldersCard extends StatelessWidget {
                   ),
                 );
               }),
-            ],
         ],
       ),
     );

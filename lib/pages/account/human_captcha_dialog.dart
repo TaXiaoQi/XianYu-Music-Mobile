@@ -12,6 +12,7 @@ Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
 }) {
   return showDialog<HumanCaptchaPayload>(
     context: context,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => HumanCaptchaDialog(
       title: title,

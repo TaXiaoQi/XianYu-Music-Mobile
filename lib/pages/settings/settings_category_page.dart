@@ -1718,6 +1718,7 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
     var chosen = 0;
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('播放缓存上限'),
         content: TextField(

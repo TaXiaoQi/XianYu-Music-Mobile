@@ -15,6 +15,7 @@ Future<void> showSongInfoDialog(BuildContext context, WidgetRef ref,
     QueueItem item) async {
   await showDialog<void>(
     context: context,
+    useRootNavigator: true,
     builder: (ctx) => _SongInfoDialog(
       item: item,
       editable: !item.isOnline,

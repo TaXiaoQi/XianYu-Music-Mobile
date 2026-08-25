@@ -18,13 +18,14 @@ import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
+import '../home/home_providers.dart';
 import '../library/saf_channel.dart';
 import '../online/online_search_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
+import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
-import '../stats/listen_stats.dart';
 import 'online_quality_probe.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
@@ -323,6 +324,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // SAF 本地歌曲恢复会话时的待恢复进度：点击播放时再物化文件并从该位置续播。
   double? _restoredLocalPending;
   DateTime? _trackStartTime;
+  /// 本次播放会话尚未写入数据库的累计听歌声长（秒），对标桌面端 flushPlaySession。
+  double _accumulatedTime = 0;
+  /// 当前这一首歌的首播是否已计入播放次数（后续增量刷写只加时长不加次数）。
+  bool _currentPlayCountRecorded = false;
   /// 通知栏封面路径缓存（歌曲 path → 缩略图路径；空串 = 无封面）。
   final Map<String, String> _notifCoverCache = {};
   /// 进程内是否已请求过通知权限（Android 13+ 媒体通知必需）。
@@ -361,10 +366,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
     });
-    // 播放中每秒累计一次听歌时长，供排行榜上报。
-    _listenTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // 播放中每 15 秒把当前会话的听歌时长增量刷写进数据库（首页统计/排行榜共用），
+    // 避免长时间连续播放时统计迟迟不落库。
+    _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (state.isPlaying) {
-        _ref.read(listenStatsProvider).addDuration(1);
+        _flushPlayStats();
       }
     });
     // 音效变速变调即时生效（just_audio 原生支持 speed/pitch）。
@@ -793,6 +799,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 首次播放时申请通知权限（Android 13+ 未授权则媒体通知被系统静默拦截）。
     unawaited(_ensureNotificationPermission());
     _flushPlayStats();
+    // 新曲目首播计数重置：后续增量刷写只加时长、不再累加播放次数。
+    _currentPlayCountRecorded = false;
+    _accumulatedTime = 0;
 
     _manualPause = manualPause;
     _restoredOnlinePending = null;
@@ -1261,14 +1270,39 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
+  /// 累计并落库本次会话的听歌时长（对标桌面端 flushPlaySession）。
+  ///
+  /// `_accumulatedTime` 累计上一段已停止播放的时间；`_trackStartTime` 追踪当前
+  /// 连续播放段的起点。达到阈值才写入数据库，避免频繁落库；同一首歌只有首帧
+  /// 计入播放次数，后续增量只加时长（countAsPlay=false）。
   void _flushPlayStats() {
     final item = state.current;
-    if (item != null && _trackStartTime != null) {
-      final listenedSecs =
+    if (item == null) return;
+    // 只要 _trackStartTime 非空即代表存在待结算的连续播放段（含刚自然播完/刚暂停
+    // 的时刻，此时 isPlaying 已被置 false），一律按 now - 起点 结算，避免丢失尾段时长。
+    double currentSession = 0;
+    if (_trackStartTime != null) {
+      currentSession =
           DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
-      _recordPlayStats(item, listenedSecs);
-      _trackStartTime = null;
     }
+    final totalDuration = _accumulatedTime + currentSession;
+    final shouldPersist =
+        totalDuration >= 10 || (_currentPlayCountRecorded && totalDuration > 0);
+
+    if (shouldPersist) {
+      final countAsPlay = !_currentPlayCountRecorded;
+      if (countAsPlay) _currentPlayCountRecorded = true;
+      _recordPlayStats(
+        item,
+        totalDuration,
+        countAsPlay: countAsPlay,
+      );
+      _accumulatedTime = 0;
+    } else {
+      _accumulatedTime = totalDuration;
+    }
+    // 置位新起点：若仍在播放，从此刻继续累计；否则等待下次 resume 重建起点。
+    _trackStartTime = state.isPlaying ? DateTime.now() : null;
   }
 
   void _recordHistory(QueueItem item) {
@@ -1280,8 +1314,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
   }
 
-  void _recordPlayStats(QueueItem item, double listenedSecs) {
-    if (listenedSecs < 3) return;
+  void _recordPlayStats(QueueItem item, double listenedSecs,
+      {bool countAsPlay = true}) {
+    if (listenedSecs <= 0) return;
     Future(() async {
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
@@ -1293,8 +1328,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               : (state.duration * 1000).toInt(),
           'title': item.title,
           'artist': item.artist,
+          'album': item.album,
+          'countAsPlay': countAsPlay,
         });
         await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
+        // 首页“累计听歌/今日时长/今日首数”读取的是数据库，落库后需使其重新求值。
+        _ref.invalidate(listenStatsProvider);
       } catch (_) {}
     });
   }
@@ -1470,6 +1509,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
+        // 刷新最近播放列表，使新播放立即可见（对齐 sync 导入后的 refresh）。
+        try {
+          await _ref.read(recentProvider.notifier).refresh();
+        } catch (_) {}
       } catch (_) {}
     });
   }

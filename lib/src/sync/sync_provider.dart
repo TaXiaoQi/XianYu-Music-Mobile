@@ -33,7 +33,8 @@ class UploadConfig {
     this.favorites = true,
     this.plugins = true,
     this.settings = true,
-    this.history = true,
+    // 移动端已去除播放历史同步入口（对齐需求），默认不上传历史。
+    this.history = false,
   });
 
   UploadConfig copyWith({
@@ -65,7 +66,7 @@ class UploadConfig {
         favorites: j['favorites'] as bool? ?? true,
         plugins: j['plugins'] as bool? ?? true,
         settings: j['settings'] as bool? ?? true,
-        history: j['history'] as bool? ?? true,
+        history: false,
       );
 }
 

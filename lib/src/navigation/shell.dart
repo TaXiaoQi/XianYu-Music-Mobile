@@ -117,9 +117,13 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   }
 }
 
-/// 预测返回诊断探针（只记录，不弹页面）：对比触屏与鼠标注入手势的
-/// progress 数值与触点位移，定位 ROM 是否对触屏源手势下发 0 进度。
+/// 预测返回诊断探针（只记录，不弹页面）。
 class _BackGestureProbe with WidgetsBindingObserver {
+  _BackGestureProbe({required this.describeState});
+
+  /// 手势开始时采集应用侧状态（开关/转场/路由栈），判定故障层级。
+  final String Function() describeState;
+
   int _updates = 0;
   double _maxProgress = 0;
   double _lastProgress = 0;
@@ -139,7 +143,7 @@ class _BackGestureProbe with WidgetsBindingObserver {
     _reset();
     debugPrint(
       '[back-probe] start button=${event.isButtonEvent} '
-      'touch=${event.touchOffset} edge=${event.swipeEdge.name}',
+      'touch=${event.touchOffset} edge=${event.swipeEdge.name} | ${describeState()}',
     );
     return true;
   }
@@ -150,7 +154,6 @@ class _BackGestureProbe with WidgetsBindingObserver {
     _lastProgress = event.progress;
     _lastTouch = event.touchOffset;
     if (event.progress > _maxProgress) _maxProgress = event.progress;
-    // 采样：前 3 条 + 之后每 10 条，避免刷屏又能看出进度曲线。
     if (_updates <= 3 || _updates % 10 == 0) {
       _samples.add('n=$_updates p=${event.progress.toStringAsFixed(3)} '
           'x=${event.touchOffset?.dx.toStringAsFixed(0)}');
@@ -187,7 +190,13 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   bool _notificationsChecked = false;
 
-  final _BackGestureProbe _backProbe = _BackGestureProbe();
+  late final _BackGestureProbe _backProbe = _BackGestureProbe(describeState: () {
+    final builder =
+        Theme.of(context).pageTransitionsTheme.builders[TargetPlatform.android];
+    return '开关=${ref.read(settingsProvider).valueOrNull?.enablePredictiveBack} '
+        '转场=${builder.runtimeType} '
+        'canPop=${GoRouter.of(context).canPop()}';
+  });
 
   @override
   void initState() {

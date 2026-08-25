@@ -166,6 +166,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
       if (result.errors.isNotEmpty && mounted) {
         await showDialog<void>(
           context: context,
+          useRootNavigator: true,
           builder: (ctx) => AlertDialog(
             title: const Text('部分内容导入失败'),
             content: SizedBox(
@@ -210,6 +211,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     var settings = false;
     return showDialog<(bool, bool, bool, bool)>(
             context: context,
+            useRootNavigator: true,
             builder: (ctx) => StatefulBuilder(
               builder: (ctx, setDialog) => AlertDialog(
                 title: const Text('导入应用备份'),
@@ -372,6 +374,7 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     final exportedAt = preview['exportedAt'] as String? ?? '';
     return showDialog<String>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('导入统计备份'),
         content: Column(

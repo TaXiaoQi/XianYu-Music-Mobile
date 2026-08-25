@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/library/saf_channel.dart';
+import '../../src/plugin/plugin_backup_file.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
@@ -125,6 +127,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     final versionNote = describeBackupVersion(prepared);
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('导入完成'),
         content: SingleChildScrollView(
@@ -186,12 +189,14 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['json', 'txt'],
+        allowedExtensions: ['json', 'txt', 'zip', 'lxmc'],
       );
       if (files.isEmpty) return;
-      final path = files.single.path;
+      final file = files.single;
+      final path = file.path;
       if (path == null) return;
-      final content = await File(path).readAsString();
+      final content =
+          extractBackupJsonBytes(await File(path).readAsBytes(), file.name);
       await _import(content);
     } catch (e) {
       if (!mounted) return;
@@ -204,20 +209,24 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     if (url.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final content = await _fetch(url);
-      if (content == null || content.isEmpty) {
+      final bytes = await _fetchBytes(url);
+      if (bytes == null || bytes.isEmpty) {
         if (!mounted) return;
         _toast('无法获取备份文件');
         return;
       }
+      final content = extractBackupJsonBytes(bytes, url);
       await _import(content);
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      _toast('导入失败：${e.message}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  /// 与插件页一致的完整 Chrome UA，避免 WAF/CDN 拦截。
-  Future<String?> _fetch(String url) async {
+  /// 与插件页一致的完整 Chrome UA，避免 WAF/CDN 拦截；返回原始字节以便解压 zip/lxmc。
+  Future<Uint8List?> _fetchBytes(String url) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);
     try {
@@ -228,7 +237,11 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
           '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       final resp = await req.close().timeout(const Duration(seconds: 20));
       if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      return await resp.transform(utf8.decoder).join();
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in resp) {
+        builder.add(chunk);
+      }
+      return builder.takeBytes();
     } catch (_) {
       return null;
     } finally {
@@ -243,7 +256,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          '支持 BakaMusic / MusicFree / 洛雪音乐导出的备份 JSON，'
+          '支持 BakaMusic / MusicFree / 洛雪音乐导出的备份（JSON、ZIP、lxmc），'
           '自动匹配已安装音源插件，本地文件路径的歌曲直接作为本地歌曲导入。',
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),

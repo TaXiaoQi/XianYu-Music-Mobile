@@ -191,6 +191,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final notifier = ref.read(authProvider.notifier);
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('登录状态已失效'),
@@ -214,6 +215,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
   Future<void> _confirmLogout(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('退出登录'),
         content: const Text('确定要退出当前账号吗？'),
@@ -518,18 +520,30 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     }
   }
 
-  /// 点击头像：选图 → 压缩 → 上传（走审核流程）。
+  /// 点击头像：先检测剩余机会 → 弹前置确认 → 选图 → 压缩 → 上传（走审核流程）。
   Future<void> _pickAvatar() async {
     final limit = await _notifier.getAvatarChangeLimitStatus();
     if (!mounted) return;
-    if (limit.todayBlocked) {
-      _toast(limit.blockMessage.isNotEmpty ? limit.blockMessage : '今日已修改过啦');
+    if (limit.todayBlocked || limit.status == 'pending') {
+      await showProfileEditGate(
+        context,
+        title: '头像暂不能修改',
+        desc: limit.blockMessage.isNotEmpty
+            ? limit.blockMessage
+            : (limit.status == 'pending' ? '头像正在审核中哦' : '今日已修改过啦'),
+        confirmText: '我知道了',
+        blocked: true,
+      );
       return;
     }
-    if (limit.status == 'pending') {
-      _toast('头像正在审核中哦');
-      return;
-    }
+    final proceed = await showProfileEditGate(
+      context,
+      title: '更换头像提示',
+      desc: '头像每日只能修改 1 次，上传后需要等待管理员审核。审核通过前会继续显示当前头像。',
+      confirmText: '继续选择头像',
+      note: '请确认本次修改内容无误后再继续。',
+    );
+    if (!mounted || !proceed) return;
     final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
@@ -566,18 +580,30 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
-  /// 点击昵称：弹修改昵称弹窗（走审核流程）。
+  /// 点击昵称：先检测剩余机会 → 弹前置确认 → 弹修改昵称弹窗（走审核流程）。
   Future<void> _editNickname() async {
     final limit = await _notifier.getNicknameChangeLimitStatus();
     if (!mounted) return;
-    if (limit.todayBlocked) {
-      _toast(limit.blockMessage.isNotEmpty ? limit.blockMessage : '今日已修改过啦');
+    if (limit.todayBlocked || limit.status == 'pending') {
+      await showProfileEditGate(
+        context,
+        title: '昵称暂不能修改',
+        desc: limit.blockMessage.isNotEmpty
+            ? limit.blockMessage
+            : (limit.status == 'pending' ? '昵称正在审核中哦' : '今日已修改过啦'),
+        confirmText: '我知道了',
+        blocked: true,
+      );
       return;
     }
-    if (limit.status == 'pending') {
-      _toast('昵称正在审核中哦');
-      return;
-    }
+    final proceed = await showProfileEditGate(
+      context,
+      title: '修改昵称提示',
+      desc: '昵称每日只能修改 1 次，提交后需要等待管理员审核。审核通过前会继续显示当前昵称。',
+      confirmText: '继续修改昵称',
+      note: '请确认本次修改内容无误后再继续。',
+    );
+    if (!mounted || !proceed) return;
     final result = await showChangeNicknameDialog(context, _notifier);
     if (result != null && mounted) {
       setState(() => _nicknameStatus = 'pending');
@@ -720,14 +746,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 syncState.uploadConfig.copyWith(settings: val),
               ),
             ),
-            _SwitchTile(
-              title: '播放历史',
-              subtitle: '同步最近播放记录',
-              value: syncState.uploadConfig.history,
-              onChanged: (val) => syncNotifier.updateUploadConfig(
-                syncState.uploadConfig.copyWith(history: val),
-              ),
-            ),
           ],
         ),
 
@@ -759,12 +777,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
               state: syncState.settingsSync,
               onUpload: syncNotifier.syncSettingsUpload,
               onDownload: syncNotifier.syncSettingsDownload,
-            ),
-            _SyncActionTile(
-              title: '历史同步',
-              state: syncState.historySync,
-              onUpload: syncNotifier.syncHistoryUpload,
-              onDownload: syncNotifier.syncHistoryDownload,
             ),
           ],
         ),
@@ -825,7 +837,18 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 icon: Icons.tag_rounded,
                 title: '修改弦予号',
                 subtitle: '每月限一次',
-                onTap: () => showChangeCiyuanxiDialog(context, _notifier),
+                onTap: () async {
+                  final proceed = await showProfileEditGate(
+                    context,
+                    title: '修改弦予号提示',
+                    desc: '弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。',
+                    confirmText: '继续修改弦予号',
+                    note: '请确认本次修改内容无误后再继续。',
+                  );
+                  if (proceed && context.mounted) {
+                    await showChangeCiyuanxiDialog(context, _notifier);
+                  }
+                },
                 trailing: Icon(
                   Icons.chevron_right_rounded,
                   size: 20,

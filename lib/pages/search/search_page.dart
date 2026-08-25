@@ -846,7 +846,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         if (e.isLocal) {
           final s = e.localSong!;
           return ListTile(
-            leading: SongCover(song: s),
+            leading: SongCover(song: s, size: 40),
             title: highlightedText(s.title, q, scheme.primary, maxLines: 1),
             subtitle: Text(
               [s.artist, s.album, '本地']

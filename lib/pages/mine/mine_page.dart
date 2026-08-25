@@ -152,12 +152,6 @@ class _AccountArea extends ConsumerWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.music_note_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 10),
                     Text(
                       '登录弦予音乐账号',
                       style: TextStyle(
@@ -498,6 +492,7 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
+    useRootNavigator: true,
     builder: (ctx) => AlertDialog(
       title: Text(title),
       content: TextField(
@@ -628,6 +623,7 @@ class _PlaylistRow extends ConsumerWidget {
   void _confirmRemove(BuildContext context, PlaylistManager manager) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('删除歌单'),
         content: Text('确定要删除「${playlist.name}」吗？'),

@@ -1688,10 +1688,9 @@ fn insert_history_event(
     played_seconds: i64,
     event: &str,
 ) -> Result<(), String> {
-    let song_id = match lookup_song_id(conn, normalized_path) {
-        Some(id) => id,
-        None => return Ok(()),
-    };
+    // song_id 允许为空（在线歌曲 lx:///plugin:// 不在本地 songs 表），
+    // 对齐 record_play：无条件写历史，缺失时 song_id 落 NULL，否则最近播放对在线歌曲失效。
+    let song_id = lookup_song_id(conn, normalized_path);
 
     conn.execute(
         "INSERT INTO play_history (song_path, song_id, played_at, played_seconds, event) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1748,13 +1747,14 @@ pub fn get_recent_history(
 ) -> Result<Vec<RecentHistoryEntry>, String> {
     let max_rows = limit.unwrap_or(1000).clamp(1, 5000) as i64;
 
+    // 直接按 song_path 分组，不 JOIN songs：在线歌曲（lx:///plugin://）song_id
+    // 为 NULL 且不在 songs 表，INNER JOIN 会把它们过滤掉，导致最近播放只显示本地歌。
     let mut stmt = conn
         .prepare(
-            "SELECT s.path, MAX(ph.played_at) AS played_at
+            "SELECT ph.song_path, MAX(ph.played_at) AS played_at
              FROM play_history ph
-             INNER JOIN songs s ON ph.song_id = s.id
              WHERE ph.event = 'recent'
-             GROUP BY ph.song_id
+             GROUP BY ph.song_path
              ORDER BY played_at DESC
              LIMIT ?1",
         )

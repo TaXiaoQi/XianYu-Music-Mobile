@@ -71,6 +71,7 @@ class RecentPage extends ConsumerWidget {
   void _confirmClear(BuildContext context, RecentManager notifier) {
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('清空最近播放'),
         content: const Text('确定要清空全部播放记录吗？'),
@@ -110,9 +111,8 @@ class _RecentTile extends ConsumerWidget {
     final title = item?.title ?? _titleFromPath(entry.songPath);
     final artist = item?.artist ?? '';
 
-    return songRowPlayGesture(
-      context,
-      ref,
+    final g = songRowPlay(ref, onPlay: onPlay);
+    return g.wrap(
       ListTile(
         leading: CoverImage(
           songPath: entry.songPath,
@@ -122,6 +122,7 @@ class _RecentTile extends ConsumerWidget {
           radius: 8,
           icon: Icons.music_note,
         ),
+        onTap: g.onTap,
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           artist.isEmpty
@@ -137,7 +138,6 @@ class _RecentTile extends ConsumerWidget {
           onPressed: onRemove,
         ),
       ),
-      onPlay: onPlay,
     );
   }
 
