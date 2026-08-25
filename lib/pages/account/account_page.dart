@@ -798,6 +798,26 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 syncState.autoSyncConfig.copyWith(enabled: val),
               ),
             ),
+            if (syncState.autoSyncConfig.enabled) ...[
+              _DropdownTile(
+                title: '同步间隔',
+                value: syncState.autoSyncConfig.syncIntervalSeconds,
+                values: const [1800, 3600, 7200, 21600],
+                labels: const ['30 分钟', '1 小时', '2 小时', '6 小时'],
+                onChanged: (v) => syncNotifier.updateAutoSyncConfig(
+                  syncState.autoSyncConfig.copyWith(syncIntervalSeconds: v),
+                ),
+              ),
+              _DropdownTile(
+                title: '繁忙延后上限',
+                value: syncState.autoSyncConfig.maxDelayMinutes,
+                values: const [15, 30, 60],
+                labels: const ['15 分钟', '30 分钟', '1 小时'],
+                onChanged: (v) => syncNotifier.updateAutoSyncConfig(
+                  syncState.autoSyncConfig.copyWith(maxDelayMinutes: v),
+                ),
+              ),
+            ],
             _GlassTile(
               icon: Icons.file_upload_outlined,
               title: '从本地备份恢复数据',
@@ -1488,6 +1508,72 @@ class _SwitchTile extends StatelessWidget {
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
       value: value,
       onChanged: onChanged,
+    );
+  }
+}
+
+/// 毛玻璃卡片内的下拉选择行（自动同步：同步间隔 / 繁忙延后上限）。
+class _DropdownTile extends StatelessWidget {
+  const _DropdownTile({
+    required this.title,
+    required this.value,
+    required this.values,
+    required this.labels,
+    required this.onChanged,
+  });
+  final String title;
+  final int value;
+  final List<int> values;
+  final List<String> labels;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final v = values.contains(value) ? value : values.first;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '后台定时增量同步时使用',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          DropdownButton<int>(
+            value: v,
+            underline: const SizedBox.shrink(),
+            items: [
+              for (var i = 0; i < values.length; i++)
+                DropdownMenuItem(value: values[i], child: Text(labels[i])),
+            ],
+            onChanged: (nv) {
+              if (nv != null) onChanged(nv);
+            },
+          ),
+        ],
+      ),
     );
   }
 }

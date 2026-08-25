@@ -1,9 +1,13 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'
+    show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/core/app_colors.dart';
@@ -156,6 +160,50 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
+/// 离线程执行的「过滤 + 去重 + 排序」（compute 回调，须为顶层函数）。
+///
+/// 每次按键若在 UI 线程对全库做 toLowerCase 会卡顿，故整体搬进后台 isolate。
+List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
+  final (songs, query, sortIdx, hideDuplicates) = args;
+  List<Song> result = songs;
+  if (query.isNotEmpty) {
+    result = result
+        .where((s) =>
+            s.title.toLowerCase().contains(query) ||
+            s.artist.toLowerCase().contains(query) ||
+            s.album.toLowerCase().contains(query))
+        .toList();
+  }
+  if (hideDuplicates) {
+    final seen = <String, String>{};
+    result = result.where((s) {
+      final key = '${s.title.toLowerCase()}|${s.artist.toLowerCase()}';
+      if (seen.containsKey(key)) return false;
+      seen[key] = s.path;
+      return true;
+    }).toList();
+  }
+  final copy = [...result];
+  switch (_SongSort.values[sortIdx]) {
+    case _SongSort.title:
+      copy.sort((a, b) => a.title.compareTo(b.title));
+    case _SongSort.artist:
+      copy.sort((a, b) {
+        final c = a.artist.compareTo(b.artist);
+        return c != 0 ? c : a.title.compareTo(b.title);
+      });
+    case _SongSort.album:
+      copy.sort((a, b) {
+        final c = a.album.compareTo(b.album);
+        return c != 0 ? c : a.title.compareTo(b.title);
+      });
+    case _SongSort.addedAt:
+    case _SongSort.none:
+      break;
+  }
+  return copy;
+}
+
 /// 全部歌曲（支持本地搜索）。
 class _AllSongsTab extends ConsumerStatefulWidget {
   @override
@@ -169,54 +217,40 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   _SongSort _sort = _SongSort.none;
   bool _hideDuplicates = false;
 
-  List<Song> _applySort(List<Song> list) {
-    final copy = [...list];
-    switch (_sort) {
-      case _SongSort.title:
-        copy.sort((a, b) => a.title.compareTo(b.title));
-      case _SongSort.artist:
-        copy.sort((a, b) {
-          final c = a.artist.compareTo(b.artist);
-          return c != 0 ? c : a.title.compareTo(b.title);
-        });
-      case _SongSort.album:
-        copy.sort((a, b) {
-          final c = a.album.compareTo(b.album);
-          return c != 0 ? c : a.title.compareTo(b.title);
-        });
-      case _SongSort.addedAt:
-      case _SongSort.none:
-        break;
-    }
-    return copy;
+  /// 最近一次离线程计算结果；null 表示尚未计算，直接展示库原始顺序。
+  List<Song>? _result;
+  Timer? _debounce;
+  int _req = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
   }
 
-  List<Song> _filter(List<Song> list) {
-    List<Song> result = list;
-    if (_query.isNotEmpty) {
-      result = result
-          .where((s) =>
-              s.title.toLowerCase().contains(_query) ||
-              s.artist.toLowerCase().contains(_query) ||
-              s.album.toLowerCase().contains(_query))
-          .toList();
-    }
-    if (_hideDuplicates) {
-      final seen = <String, String>{};
-      result = result.where((s) {
-        final key = '${s.title.toLowerCase()}|${s.artist.toLowerCase()}';
-        if (seen.containsKey(key)) return false;
-        seen[key] = s.path;
-        return true;
-      }).toList();
-    }
-    return result;
+  /// 查询/排序/去重任一变化后立即刷新界面，并防抖调度一次离线程重算，
+  /// 避免逐键在 UI 线程对全量歌曲做 toLowerCase 造成卡顿。
+  void _onCriteriaChanged() {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 160), _runFilter);
+  }
+
+  Future<void> _runFilter() async {
+    final gen = ++_req;
+    final songs = ref.read(libraryProvider).songs;
+    final out = await compute(
+      _filterSortSongs,
+      (songs, _query, _sort.index, _hideDuplicates),
+    );
+    if (!mounted || gen != _req) return;
+    setState(() => _result = out);
   }
 
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    final songs = _applySort(_filter(lib.songs));
+    final songs = _result ?? lib.songs;
     final scheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -238,7 +272,10 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                     DropdownMenuItem(value: _SongSort.album, child: Text('按专辑')),
                     DropdownMenuItem(value: _SongSort.addedAt, child: Text('按添加时间')),
                   ],
-                  onChanged: (v) => setState(() => _sort = v ?? _SongSort.none),
+                  onChanged: (v) {
+                    _sort = v ?? _SongSort.none;
+                    _onCriteriaChanged();
+                  },
                 ),
               ),
               const SizedBox(width: 4),
@@ -249,8 +286,10 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                     _hideDuplicates ? Icons.flip_to_front : Icons.flip_to_back,
                     color: _hideDuplicates ? scheme.primary : null,
                   ),
-                  onPressed: () =>
-                      setState(() => _hideDuplicates = !_hideDuplicates),
+                  onPressed: () {
+                    _hideDuplicates = !_hideDuplicates;
+                    _onCriteriaChanged();
+                  },
                 ),
               ),
               IconButton(
@@ -264,7 +303,10 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
           child: TextField(
-            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+            onChanged: (v) {
+              _query = v.trim().toLowerCase();
+              _onCriteriaChanged();
+            },
             decoration: InputDecoration(
               hintText: '搜索歌曲、歌手、专辑',
               prefixIcon: const Icon(Icons.search),
@@ -867,6 +909,9 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               onReauthorize: _reauthorize,
             ),
           ),
+          const SizedBox(height: 16),
+          // —— 远程音乐库（WebDAV）入口 ——
+          const _RemoteLibraryCard(),
           // —— 已扫描文件夹树 ——
           if (root.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -1251,6 +1296,31 @@ class _FolderTile extends StatelessWidget {
         ],
       ),
       onTap: hasChildren ? onToggle : onOpen,
+    );
+  }
+}
+
+/// 远程音乐库 WebDAV 管理入口（从设置页「本地」迁至本文件夹页）。
+class _RemoteLibraryCard extends StatelessWidget {
+  const _RemoteLibraryCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: appCardColor(context),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(Icons.cloud_outlined, color: scheme.primary),
+        title: const Text('远程音乐库 (WebDAV)'),
+        subtitle: Text(
+          '访问 WebDAV 服务器上的音乐资源',
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        ),
+        trailing: Icon(Icons.chevron_right, color: scheme.outline),
+        onTap: () => context.push('/remote-library'),
+      ),
     );
   }
 }

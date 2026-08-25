@@ -52,9 +52,14 @@ class GlassTopBar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
     final statusBarHeight = MediaQuery.of(context).padding.top;
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
     final frosted =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
-            true;
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
+            true) &&
+            !lowPerf;
 
     final bar = _bar(context, statusBarHeight);
     if (!frosted) {
@@ -74,7 +79,8 @@ class GlassTopBar extends ConsumerWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        // sigma 12：移动端降低模糊半径，阶梯式减少滚动/转场时的模糊开销。
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           decoration: BoxDecoration(
             color: isDark

@@ -496,12 +496,19 @@ class _FixedNavBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 性能模式：一次性关闭常驻玻璃/液态玻璃，回退到高不透明度纯色（更实底色补偿模糊缺失）。
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
     final frosted =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
-            true;
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
+            true) &&
+            !lowPerf;
     final liquid =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-            false;
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            false) &&
+            !lowPerf;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -538,7 +545,7 @@ class _FixedNavBar extends ConsumerWidget {
       return AdaptiveGlass(
         shape: const LiquidRoundedRectangle(borderRadius: 26),
         settings: liquidGlassSettings(isDark),
-        quality: GlassQuality.premium,
+        quality: GlassQuality.standard,
         child: bar,
       );
     }
@@ -561,7 +568,7 @@ class _FixedNavBar extends ConsumerWidget {
     // 毛玻璃：半透明白/暗 + BackdropFilter 高斯模糊（安卓原生磨砂质感）。
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           color: isDark
               ? const Color(0xCC222222)
@@ -713,9 +720,14 @@ class _LiquidNavBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
     final liquid =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-            true;
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            true) &&
+            !lowPerf;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -742,7 +754,7 @@ class _LiquidNavBar extends ConsumerWidget {
     );
 
     if (liquid) return _liquidGlass(context, tabs);
-    return _frostedGlass(context, tabs);
+    return _frostedGlass(context, tabs, lowPerf: lowPerf);
   }
 
   /// 液态玻璃：shader 折射 + 高光，胶囊形状。
@@ -753,43 +765,47 @@ class _LiquidNavBar extends ConsumerWidget {
       // 不能用 LiquidOval：那是真椭圆，宽高比大时两端会被压成尖角。
       shape: const LiquidRoundedRectangle(borderRadius: 30),
       settings: liquidGlassSettings(isDark),
-      // premium：真液态玻璃 shader（折射 + 镜面高光 + 色差），
-      // 而非 standard 的轻量 2D 模糊（毛玻璃观感）。
-      quality: GlassQuality.premium,
+      // standard：轻量 shader（折射保留但改轻采样），常驻底栏/二级页面滚动
+      // 下更省 GPU；换 premium 全管线会放大卡顿。
+      quality: GlassQuality.standard,
       child: SizedBox(height: 70, child: tabs),
     );
   }
 
   /// 毛玻璃：轻量回退方案。
-  Widget _frostedGlass(BuildContext context, Widget tabs) {
+  Widget _frostedGlass(BuildContext context, Widget tabs, {bool lowPerf = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 主题感知：亮色下应为白底磨砂玻璃，暗色下为深色玻璃。
-    final bg = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.white.withValues(alpha: 0.52);
+    // 性能模式：用更高不透明度纯色补偿模糊缺失，省去常驻 BackdropFilter 高斯模糊。
+    final bg = lowPerf
+        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
+    final capsule = Container(
+      height: 70,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.18),
+            blurRadius: 26,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: tabs,
+    );
+    if (lowPerf) return capsule;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          height: 70,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.18),
-                blurRadius: 26,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: tabs,
-        ),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: capsule,
       ),
     );
   }
@@ -1042,9 +1058,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final preferredDir = ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
         SideBarExpandDirection.down;
-    final liquid = ref.watch(
-            settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-        true;
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
+    final liquid =
+        (ref.watch(
+                settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            true) &&
+            !lowPerf;
 
     // 展开面板预估高度 (用于方向判断)
     const double approxExpandedH = 295.0;
@@ -1176,14 +1198,38 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           panelWidget = AdaptiveGlass(
             shape: const LiquidRoundedRectangle(borderRadius: 24),
             settings: liquidGlassSettings(isDark),
-            quality: GlassQuality.premium,
+            quality: GlassQuality.standard,
             child: SizedBox(width: panelWidth, child: panelBody),
+          );
+        } else if (lowPerf) {
+          // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
+          panelWidget = Container(
+            width: panelWidth,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xF02A2A2E)
+                  : const Color(0xF5FFFFFF),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: panelBody,
           );
         } else {
           panelWidget = ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
                 width: panelWidth,
                 decoration: BoxDecoration(

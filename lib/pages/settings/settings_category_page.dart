@@ -1,8 +1,15 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../src/backup/app_backup.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
@@ -17,16 +24,12 @@ enum SettingsCategory {
   appearance,
   playback,
   download,
-  library,
-  toolbox,
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
     'appearance' => SettingsCategory.appearance,
     'playback' => SettingsCategory.playback,
     'download' => SettingsCategory.download,
-    'library' => SettingsCategory.library,
-    'toolbox' => SettingsCategory.toolbox,
     'advanced' => SettingsCategory.advanced,
     _ => SettingsCategory.general,
   };
@@ -36,8 +39,6 @@ enum SettingsCategory {
     SettingsCategory.appearance => '外观',
     SettingsCategory.playback => '播放',
     SettingsCategory.download => '下载',
-    SettingsCategory.library => '本地',
-    SettingsCategory.toolbox => '工具箱',
     SettingsCategory.advanced => '高级设置',
   };
 }
@@ -109,10 +110,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         return _playback(context, ref, settings, notifier, exclusivePlaying);
       case SettingsCategory.download:
         return _download(context, ref, settings, notifier);
-      case SettingsCategory.library:
-        return _library(context, ref, settings, notifier);
-      case SettingsCategory.toolbox:
-        return _toolbox(context);
       case SettingsCategory.advanced:
         return _advanced(context, settings, notifier);
     }
@@ -534,76 +531,16 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ];
   }
 
-  // ---- 本地 ----
-  // 扫描目录管理与排除短音频已合并到本地库「文件夹」页（魅族扫描歌曲风格）。
-  List<Widget> _library(
-    BuildContext context,
-    WidgetRef ref,
-    AppSettings? s,
-    SettingsNotifier n,
-  ) {
-    return [
-      _sectionHeader(context, '本地'),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.verified_outlined,
-            title: '显示音质标识',
-            value: s?.showQualityBadges ?? true,
-            onChanged: (v) => n.setShowQualityBadges(v),
-          ),
-          _tile(
-            context,
-            icon: Icons.cloud_outlined,
-            title: '远程音乐库 (WebDAV)',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/remote-library'),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  // ---- 工具箱 ----
-  // 壁纸中心迁至外观设置；同步与备份迁至高级设置；QMC 解密 / 批量重命名 /
-  // 我的歌单入口已移除（我的歌单在「我的」页歌单分区直达）。
-  List<Widget> _toolbox(BuildContext context) {
-    return [
-      _sectionHeader(context, '小工具'),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.leaderboard_outlined,
-            title: '听歌排行榜',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/leaderboard'),
-          ),
-        ],
-      ),
-    ];
-  }
-
   // ---- 高级设置 ----
+  // 应用备份（歌单/收藏/插件/设置导出与导入）按需求从原「同步与备份」页上移至此。
   List<Widget> _advanced(
     BuildContext context,
     AppSettings? s,
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '数据'),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.cloud_sync_outlined,
-            title: '同步与备份',
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/sync'),
-          ),
-        ],
-      ),
+      _sectionHeader(context, '应用备份'),
+      const _AppBackupGroup(),
       _sectionHeader(context, '系统'),
       _CardGroup(
         children: [
@@ -1954,6 +1891,230 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
             onPressed: (cur ?? 0) == 0 ? null : _clear,
             child: Text(_busy ? '清理中…' : '清理'),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 高级设置 → 应用备份：歌单/收藏/插件/设置导出与导入为 JSON。
+class _AppBackupGroup extends ConsumerStatefulWidget {
+  const _AppBackupGroup();
+
+  @override
+  ConsumerState<_AppBackupGroup> createState() => _AppBackupGroupState();
+}
+
+class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
+  bool _busy = false;
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+          SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+  }
+
+  /// 导出完整应用备份并调起系统分享。
+  Future<void> _exportBackup() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final service = ref.read(appBackupProvider);
+      final json = await service.exportJson();
+      final docs = await getApplicationDocumentsDirectory();
+      final path = await writeBackupFile(docs.path, json);
+      if (!mounted) return;
+      _toast('备份已导出');
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(path)], text: '弦予音乐应用备份'),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _toast('导出失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 选择备份文件 → 预览摘要 → 选择导入内容 → 执行。
+  Future<void> _importBackup() async {
+    if (_busy) return;
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (files.isEmpty) return;
+      final file = files.first;
+
+      String content = '';
+      final path = file.path ?? '';
+      if (path.isNotEmpty && File(path).existsSync()) {
+        content = await File(path).readAsString();
+      } else {
+        final bytes = await file.readAsBytes();
+        if (bytes.isEmpty) {
+          _toast('无法读取所选文件');
+          return;
+        }
+        content = utf8.decode(bytes);
+      }
+
+      final service = ref.read(appBackupProvider);
+      final backup = service.parse(content);
+      final options = await _confirmBackupImport(service.summarize(backup));
+      if (options == null) return;
+
+      setState(() => _busy = true);
+      final result = await service.import(backup, includePlaylists: options.$1,
+          includeFavorites: options.$2, includePlugins: options.$3, includeSettings: options.$4);
+      if (!mounted) return;
+      final parts = <String>[
+        if (options.$1) '歌单 ${result.importedPlaylists}',
+        if (options.$2) '收藏 ${result.importedFavorites}',
+        if (options.$3)
+          '插件 ${result.importedPlugins}'
+          '${result.skippedPlugins > 0 ? '（跳过 ${result.skippedPlugins}）' : ''}',
+        if (options.$4 && result.settingsApplied) '设置',
+      ];
+      _toast(parts.isEmpty ? '未导入任何内容' : '导入完成：${parts.join('，')}');
+      if (result.errors.isNotEmpty && mounted) {
+        await showPredictiveDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('部分内容导入失败'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final e in result.errors)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child:
+                          Text(e, style: const TextStyle(fontSize: 12.5)),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        );
+      }
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      _toast(e.message);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('导入失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 导入确认对话框：摘要 + 导入内容勾选，返回 null 表示取消。
+  Future<(bool, bool, bool, bool)?> _confirmBackupImport(
+      AppBackupSummary summary) {
+    var playlists = true;
+    var favorites = true;
+    var plugins = true;
+    var settings = false;
+    return showPredictiveDialog<(bool, bool, bool, bool)>(
+            context: context,
+            builder: (ctx) => StatefulBuilder(
+              builder: (ctx, setDialog) => AlertDialog(
+                title: const Text('导入应用备份'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (summary.createdAt.isNotEmpty)
+                      Text(
+                          '备份时间：${summary.createdAt.length >= 19 ? summary.createdAt.substring(0, 19).replaceAll('T', ' ') : summary.createdAt}',
+                          style: const TextStyle(fontSize: 12.5)),
+                    const SizedBox(height: 6),
+                    Text(
+                      '歌单 ${summary.playlistCount} 个（${summary.totalSongs} 首）\n'
+                      '收藏 ${summary.favoriteCount} 首、收藏集 ${summary.favoriteCollectionCount} 个\n'
+                      '插件 ${summary.pluginCount} 个${summary.hasSettings ? '\n含设置' : ''}',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('选择导入内容：', style: TextStyle(fontSize: 12.5)),
+                    _backupCheck('歌单', playlists, summary.playlistCount > 0,
+                        (v) => setDialog(() => playlists = v ?? false)),
+                    _backupCheck('收藏', favorites,
+                        summary.favoriteCount + summary.favoriteCollectionCount > 0,
+                        (v) => setDialog(() => favorites = v ?? false)),
+                    _backupCheck('插件', plugins, summary.pluginCount > 0,
+                        (v) => setDialog(() => plugins = v ?? false)),
+                    _backupCheck(
+                        '设置（覆盖当前设置）',
+                        settings,
+                        summary.hasSettings,
+                        (v) => setDialog(() => settings = v ?? false)),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
+                    child: const Text('导入'),
+                  ),
+                ],
+              ),
+            ),
+          );
+  }
+
+  Widget _backupCheck(
+      String label, bool value, bool enabled, ValueChanged<bool?> onChanged) {
+    return CheckboxListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Text(label, style: const TextStyle(fontSize: 13.5)),
+      value: value,
+      onChanged: enabled ? onChanged : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final trailing = _busy
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Icon(Icons.chevron_right,
+            size: 18, color: scheme.onSurfaceVariant);
+    return _CardGroup(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.archive_outlined),
+          title: const Text('导出应用备份'),
+          subtitle: const Text('歌单、收藏、插件、设置备份为 JSON 并分享'),
+          trailing: trailing,
+          onTap: _busy ? null : _exportBackup,
+        ),
+        ListTile(
+          leading: const Icon(Icons.settings_backup_restore_outlined),
+          title: const Text('导入应用备份'),
+          subtitle: const Text('从备份文件恢复（支持选择导入内容）'),
+          trailing: trailing,
+          onTap: _busy ? null : _importBackup,
         ),
       ],
     );

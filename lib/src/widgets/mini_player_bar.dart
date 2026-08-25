@@ -70,9 +70,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         ? 0.0
         : (player.position / player.duration).clamp(0.0, 1.0);
 
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
     final liquid =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-            true;
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+            true) &&
+            !lowPerf;
 
     final content = Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
@@ -142,7 +147,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
-          : _frostedSurface(context, content),
+          : _frostedSurface(context, content, lowPerf: lowPerf),
     );
   }
 
@@ -153,40 +158,46 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       // 高 58，圆角取一半成胶囊。
       shape: const LiquidRoundedRectangle(borderRadius: 29),
       settings: liquidGlassSettings(isDark),
-      quality: GlassQuality.premium,
+      // 常驻浮层：premium 全管线 shader 在二级页面滚动时持续重算会超 GPU 预算，
+      // 改用轻量 shader 的 standard（5-10x 更快，文档推荐滚动/常驻场景）。
+      quality: GlassQuality.standard,
       child: SizedBox(height: 58, child: content),
     );
   }
 
   /// 毛玻璃表面：液态玻璃关闭时使用。
-  Widget _frostedSurface(BuildContext context, Widget content) {
+  Widget _frostedSurface(BuildContext context, Widget content, {bool lowPerf = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark
-        ? Colors.white.withValues(alpha: 0.10)
-        : Colors.white.withValues(alpha: 0.52);
+    final bg = lowPerf
+        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
+    final surface = Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
+            blurRadius: 26,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: content,
+    );
+    if (lowPerf) return surface;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          height: 58,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
-                blurRadius: 26,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: content,
-        ),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: surface,
       ),
     );
   }

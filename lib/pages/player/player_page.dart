@@ -368,11 +368,7 @@ class _AmbientBackground extends StatelessWidget {
           right: -120,
           child: _blob(scheme.tertiary.withValues(alpha: 0.12), 260),
         ),
-        // 全屏模糊，把光斑晕开成柔光
-        BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-          child: Container(color: Colors.transparent),
-        ),
+        // 光斑已改为径向渐晕，不再需要全屏 sigma60 BackdropFilter。
       ],
     );
   }
@@ -380,7 +376,11 @@ class _AmbientBackground extends StatelessWidget {
   Widget _blob(Color color, double size) => Container(
     width: size,
     height: size,
-    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      // 自带 alpha 径向渐晕即为柔光，替代原全屏 sigma60 BackdropFilter（常驻高成本点）。
+      gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+    ),
   );
 }
 
@@ -467,11 +467,17 @@ class _GlassControlCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
     final playerLiquid =
-        ref.watch(
-          settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
-        ) ??
-        true;
+        (ref
+            .watch(
+              settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
+            ) ??
+            true) &&
+            !lowPerf;
 
     final content = Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
@@ -506,6 +512,20 @@ class _GlassControlCard extends ConsumerWidget {
               ],
             ),
     );
+
+    if (lowPerf) {
+      // 性能模式：更高不透明度纯色补偿模糊缺失，省去 premium shader 与 BackdropFilter。
+      return Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+          ),
+        ),
+        child: content,
+      );
+    }
 
     if (playerLiquid) {
       return AdaptiveGlass(

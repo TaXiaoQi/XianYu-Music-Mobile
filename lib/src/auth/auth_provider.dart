@@ -9,7 +9,7 @@ import '../rust/api.dart';
 import 'server_models.dart';
 
 /// 默认后端地址与签名密钥（与桌面端一致）。
-const defaultAuthBaseUrl = 'https://back.xymusic.cc/api';
+const defaultAuthBaseUrl = 'https://api.xianyumusic.cn/api';
 const defaultAuthApiSecret = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
 
 /// 认证用户（弦予号登录）。

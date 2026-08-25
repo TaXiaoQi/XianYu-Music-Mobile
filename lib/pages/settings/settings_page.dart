@@ -7,8 +7,9 @@ import '../../src/widgets/glass_appbar.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
 ///
-/// 分类参考桌面版导航（常规/外观/音源/播放/下载/本地/工具箱/高级设置/关于），
-/// 账号入口在「我的」页，桌面歌词、快捷按键等移动端无对应项故未列出。
+/// 分类参考桌面版导航（常规/外观/音源/播放/下载/高级设置/关于），
+/// 账号入口在「我的」页，本地曲库设置已在「我的 → 本地 → 文件夹」页整合，
+/// 桌面歌词、快捷按键等移动端无对应项故未列出。
 /// 本页为二级推入页（从「我的」页菜单与首页顶栏进入）。
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -51,29 +52,12 @@ class SettingsPage extends ConsumerWidget {
       ],
     ),
     (
-      '曲库',
-      [
-        _CategoryEntry(
-          '本地',
-          Icons.album_outlined,
-          '音质标识、远程库',
-          '/settings/library',
-        ),
-        _CategoryEntry(
-          '工具箱',
-          Icons.handyman_outlined,
-          '听歌排行榜',
-          '/settings/toolbox',
-        ),
-      ],
-    ),
-    (
       '系统',
       [
         _CategoryEntry(
           '高级设置',
           Icons.settings_suggest_outlined,
-          '屏幕常亮、同步与备份',
+          '屏幕常亮、应用备份、预测返回',
           '/settings/advanced',
         ),
         _CategoryEntry(

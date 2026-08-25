@@ -697,6 +697,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
 
       _syncToSystemMediaSession();
+      // 会话恢复时本地曲目封面同样走懒提取补封面（否则重启后媒体会话无封面）。
+      unawaited(_resolveNotificationCover(currentItem));
 
       final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
       await _player.setVolume(vol);

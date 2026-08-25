@@ -12,17 +12,23 @@ import 'package:flutter/material.dart';
 /// [PredictiveBackPageTransitionsBuilder]，让弹窗获得与二级页面一致的预测
 /// 返回「行程」：手指拖动时整屏缩放成圆角矩形跟随，松手提交即关闭弹窗。
 ///
+/// 预测返回的「手指信息」（progress/swipeEdge/touchOffset）由系统经
+/// `OnBackInvokedCallback` 下发给框架，框架再通过 [TransitionRoute] 的默认
+/// 钩子把 progress 写进路由动画控制器驱动缩放。这里**不做任何自定义手势
+/// 接管、也不留兜底**，完全照抄 PiliNara/main 的做法——只提供
+/// [PredictiveBackPageTransitionsBuilder] 并保持默认钩子不变，因此同一设备上
+/// 能得到与二级页面完全一致的跟手行程。
+///
 /// 使用要点：必须经 root Navigator push（GoRouter 的预测返回只认 root
 /// Navigator）；不要包在 showDialog 里，直接调用 [Navigator.push] 或
 /// [showPredictiveDialog]。
 class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   PredictiveBackDialogRoute({
     required this.builder,
-    required NavigatorState navigator,
     this.dismissible = false,
     this.closableByBack = true,
     super.settings,
-  }) : _nav = navigator;
+  });
 
   final WidgetBuilder builder;
 
@@ -32,11 +38,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   /// 系统返回 / 预测返回能否关闭弹窗（Android 标准：返回关闭与点遮罩解耦，
   /// 默认 true，即使点遮罩/下滑被禁用也能用返回关闭）。
   final bool closableByBack;
-
-  final NavigatorState _nav;
-
-  // 是否已通过预测返回兜底关闭（避免 start/commit 重复 pop）。
-  bool _backHandled = false;
 
   static const PredictiveBackPageTransitionsBuilder _predictive =
       PredictiveBackPageTransitionsBuilder();
@@ -61,6 +62,7 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   Color? get barrierColor => null;
 
   // 满足预测返回接管条件：成为当前页且允许「返回关闭」时，返回手势才跟手。
+  // 预测返回手势本身交给 TransitionRoute 的默认实现即可（与 PiliNara 一致）。
   @override
   bool get popGestureEnabled => isCurrent && closableByBack;
 
@@ -103,7 +105,7 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     Widget child,
   ) {
     // 交给官方预测返回过渡：gesture 中整屏缩放跟手，松手提交关闭；
-    // 非导航（按钮/编程）时回退 FadeForwards 弹入。
+    // 非导航（按钮/编程）时回退 FadeForwards 弹入。沿用默认不覆盖。
     return _predictive.buildTransitions(
       this,
       context,
@@ -111,36 +113,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
       secondaryAnimation,
       child,
     );
-  }
-
-  // —— 预测返回兜底 ——
-  //
-  // 部分 ROM（Honor/MagicOS 之类）对真实触摸只下发 start 不下发 commit，
-  // 预返回被接管后既不跟手也不关闭。这里在 start 到达（已在框架层证实会
-  // 到达）时就立即关闭弹窗，保证返回手势一定能关掉；commit/cancel 不再触发。
-  //
-  // 只对「可用返回关闭」的弹窗生效：内部按钮专用面板 closableByBack=false，
-  // 官方接管器不会调用本路由的 handleStartBackGesture。
-  @override
-  void handleStartBackGesture({double progress = 0.0}) {
-    if (_backHandled || !closableByBack) {
-      return;
-    }
-    _backHandled = true;
-    _nav.maybePop();
-  }
-
-  @override
-  void handleUpdateBackGestureProgress({required double progress}) {}
-
-  @override
-  void handleCommitBackGesture() {
-    _backHandled = true;
-  }
-
-  @override
-  void handleCancelBackGesture() {
-    _backHandled = false;
   }
 }
 
@@ -155,7 +127,6 @@ Future<T?> showPredictiveDialog<T>({
   return navigator.push<T>(
     PredictiveBackDialogRoute<T>(
       builder: builder,
-      navigator: navigator,
       dismissible: barrierDismissible,
       closableByBack: closableByBack,
     ),

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 
@@ -23,6 +25,23 @@ enum SideBarExpandDirection {
   down,
   up,
 }
+
+/// 性能模式：auto 自动按设备强弱判断 / full 满特效 / performance 性能优先（降级动效）。
+enum PerformanceMode {
+  auto,
+  full,
+  performance,
+}
+
+/// 判断是否应开启「动效降级」（性能模式生效）。
+/// 自动档按 CPU 核心数粗判，单核偏弱设备自动降级；手动档直接覆盖。
+bool performancePriority(AppSettings s) => switch (s.performanceMode) {
+      PerformanceMode.full => false,
+      PerformanceMode.performance => true,
+      PerformanceMode.auto =>
+        // 低核设备（≤4）默认走性能优先；更高核设备保留满特效。
+        (Platform.numberOfProcessors <= 4),
+    };
 
 /// 应用界面语言（system 跟随系统，zhCN 简体，zhTW 繁体，en 英文）。
 enum AppLanguage {
@@ -74,6 +93,7 @@ class AppSettings {
     this.liquidGlass = false,
     this.playerLiquidGlass = true,
     this.frostedGlass = true,
+    this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
     this.streamCacheSizeMB = 500,
     this.scanFormats = kSupportedScanFormats,
@@ -150,6 +170,8 @@ class AppSettings {
 
   /// 安卓原生毛玻璃材质：顶栏与固定底栏使用 BackdropFilter 高斯模糊磨砂。false 时回退纯色。
   final bool frostedGlass;
+  /// 性能模式：auto 自动 / full 满特效 / performance 性能优先。决定动效是否降级。
+  final PerformanceMode performanceMode;
   /// 触觉反馈力度：0=轻，1=正常，2=重。
   final int hapticStrength;
   /// 在线播放流式缓存上限（MB）。
@@ -245,6 +267,7 @@ class AppSettings {
     bool? liquidGlass,
     bool? playerLiquidGlass,
     bool? frostedGlass,
+    PerformanceMode? performanceMode,
     int? hapticStrength,
     int? streamCacheSizeMB,
     List<String>? scanFormats,
@@ -300,6 +323,7 @@ class AppSettings {
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       frostedGlass: frostedGlass ?? this.frostedGlass,
+      performanceMode: performanceMode ?? this.performanceMode,
       hapticStrength: hapticStrength ?? this.hapticStrength,
       streamCacheSizeMB: streamCacheSizeMB ?? this.streamCacheSizeMB,
       scanFormats: scanFormats ?? this.scanFormats,
@@ -382,6 +406,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       liquidGlass: liquidGlass,
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
       frostedGlass: frostedGlass,
+      performanceMode: _perfFromString(prefs.getString('performanceMode') ?? 'auto'),
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
@@ -432,6 +457,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         _ => AppLanguage.system,
       };
 
+  PerformanceMode _perfFromString(String v) => switch (v) {
+        'full' => PerformanceMode.full,
+        'performance' => PerformanceMode.performance,
+        _ => PerformanceMode.auto,
+      };
+
   ThemeModePreference _themeFromInt(int v) {
     switch (v) {
       case 1:
@@ -480,6 +511,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('liquidGlass', next.liquidGlass),
       prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
       prefs.setBool('frostedGlass', next.frostedGlass),
+      prefs.setString('performanceMode', next.performanceMode.name),
       prefs.setInt('hapticStrength', next.hapticStrength),
       prefs.setInt('streamCacheSizeMB', next.streamCacheSizeMB),
       prefs.setStringList('scanFormats', next.scanFormats),
@@ -542,6 +574,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(playerLiquidGlass: v));
+  Future<void> setPerformanceMode(PerformanceMode m) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(performanceMode: m));
   Future<void> setHapticStrength(int v) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(hapticStrength: v));

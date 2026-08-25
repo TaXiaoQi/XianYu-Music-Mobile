@@ -46,6 +46,7 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
             ),
             children: [
               _section(context, '悬浮与特效', [
+                const _PerformanceModeTile(),
                 _GlassSwitchTile(
                   icon: Icons.blur_on,
                   title: '液态玻璃',
@@ -116,10 +117,8 @@ class _AmbientBackground extends StatelessWidget {
             left: -90,
             child: _glow(320, scheme.tertiary.withValues(alpha: isDark ? 0.14 : 0.09)),
           ),
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
-            child: Container(color: Colors.transparent),
-          ),
+          // 光斑用 RadialGradient 自带 alpha 渐隐即为柔光，无需全屏 sigma70 BackdropFilter
+          // （全屏高斯模糊属常驻高成本点，去掉后观感几乎不变、渲染开销显著下降）。
         ],
       ),
     );
@@ -136,43 +135,53 @@ class _AmbientBackground extends StatelessWidget {
 }
 
 /// 毛玻璃分组卡片。
-class _GlassCard extends StatelessWidget {
+class _GlassCard extends ConsumerWidget {
   const _GlassCard({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
+    // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
+    final color = lowPerf
+        ? (isDark ? const Color(0xE0343438) : const Color(0xF7FFFFFF))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.55));
+    final card = Container(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+            color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i != children.length - 1)
+              Divider(
+                height: 1,
+                thickness: 1,
+                indent: 56,
+                color: scheme.onSurface.withValues(alpha: 0.06),
+              ),
+          ],
+        ],
+      ),
+    );
+    if (lowPerf) return card;
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.white.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < children.length; i++) ...[
-                children[i],
-                if (i != children.length - 1)
-                  Divider(
-                    height: 1,
-                    thickness: 1,
-                    indent: 56,
-                    color: scheme.onSurface.withValues(alpha: 0.06),
-                  ),
-              ],
-            ],
-          ),
-        ),
+        child: card,
       ),
     );
   }
@@ -256,6 +265,117 @@ class _GlassSwitchTile extends StatelessWidget {
             onChanged: onChanged,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 性能模式三选一：自动（跟随设备强弱）/ 满特效 / 性能优先（降级动效省 GPU）。
+class _PerformanceModeTile extends ConsumerWidget {
+  const _PerformanceModeTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mode =
+        ref.watch(settingsProvider.select((s) => s.valueOrNull?.performanceMode)) ??
+            PerformanceMode.auto;
+    final notifier = ref.read(settingsProvider.notifier);
+
+    const options = <(PerformanceMode, String, String)>[
+      (PerformanceMode.auto, '自动', '跟随设备性能'),
+      (PerformanceMode.full, '满特效', '开启全部动效'),
+      (PerformanceMode.performance, '性能优先', '关闭常驻模糊'),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.speed, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                '性能模式',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final (m, label, desc) in options)
+                _pill(
+                  scheme: scheme,
+                  isDark: isDark,
+                  label: label,
+                  subtitle: desc,
+                  selected: mode == m,
+                  onTap: () => notifier.setPerformanceMode(m),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill({
+    required ColorScheme scheme,
+    required bool isDark,
+    required String label,
+    required String subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.8)
+                : scheme.onSurface.withValues(alpha: isDark ? 0.12 : 0.16),
+            width: selected ? 1.4 : 1,
+          ),
+          color: selected
+              ? scheme.primary.withValues(alpha: isDark ? 0.22 : 0.12)
+              : Colors.transparent,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? scheme.primary : scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
