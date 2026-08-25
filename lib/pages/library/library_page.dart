@@ -156,7 +156,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       songs: result,
       highlight: _query,
       padding: EdgeInsets.only(
-        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       onPlay: (list, i) =>
@@ -167,7 +167,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -407,7 +407,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               : SongsListView(
                   songs: songs,
                   padding: EdgeInsets.only(
-                    bottom: (ref.watch(playerProvider).current != null
+                    bottom: (ref.watch(playerProvider.select((s) => s.current != null))
                             ? 92.0
                             : 16.0) +
                         MediaQuery.of(context).padding.bottom,
@@ -511,7 +511,7 @@ class _ArtistsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
-        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemCount: artists.length,
@@ -581,7 +581,7 @@ class _AlbumsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
-        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemCount: albums.length,
@@ -939,7 +939,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
           left: 16,
           right: 16,
           top: 8,
-          bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+          bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
               MediaQuery.of(context).padding.bottom,
         ),
         physics: const AlwaysScrollableScrollPhysics(),

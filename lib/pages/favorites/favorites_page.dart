@@ -9,6 +9,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -48,7 +49,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   Widget build(BuildContext context) {
     final fav = ref.watch(favoritesProvider);
     final notifier = ref.read(favoritesProvider.notifier);
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final tabBar = TabBar(
       controller: _tab,
       onTap: (_) => setState(() {}),
@@ -319,7 +320,17 @@ class _FavoriteTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
-    final g = songRowPlay(ref, onPlay: onPlay);
+    final g = songRowPlay(ref, onPlay: () {
+      launchFlyCover(
+        context,
+        coverSize: m.songCover,
+        vPad: m.vPad,
+        songPath: entry.path,
+        networkUrl: entry.coverUrl,
+        radius: m.songRadius,
+      );
+      onPlay();
+    });
     return g.wrap(
       CoverRow(
         cover: CoverImage(

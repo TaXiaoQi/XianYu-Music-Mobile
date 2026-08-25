@@ -10,6 +10,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 
@@ -169,8 +170,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   @override
   Widget build(BuildContext context) {
-    final player = ref.watch(playerProvider);
-    final hasSong = player.current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final success = _phase == _Phase.done && _matches.isNotEmpty;
 
     return Scaffold(
@@ -483,7 +483,17 @@ class _MatchListView extends StatelessWidget {
               return _MatchRow(
                 match: m,
                 fav: isFavorite(m),
-                onPlay: () => onPlay(m),
+                onPlay: () {
+                  launchFlyCover(
+                    context,
+                    coverSize: 52,
+                    horizontalPad: 76,
+                    vPad: 10,
+                    networkUrl: m.img,
+                    radius: 8,
+                  );
+                  onPlay(m);
+                },
                 onFavorite: () => onFavorite(m),
                 onAddToPlaylist: () => onAddToPlaylist(m),
               );

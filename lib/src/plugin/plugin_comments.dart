@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'platform_comments.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 
@@ -85,31 +86,103 @@ class PluginCommentService {
 
   PluginCommentService(this.engine, this.sources);
 
-  /// 当前歌曲可评论的插件源（仅 MusicFree 且声明了 getMusicComments）。
+  /// 解析歌曲所属插件源（musicfree/lx 均可，只要求已启用）。
   Future<PluginSource?> resolveSource(String pluginId) async {
     final matches = sources.where((s) => s.id == pluginId).toList();
     if (matches.isEmpty) return null;
     final source = matches.first;
-    if (!source.enabled || source.format != PluginFormat.musicfree) return null;
+    if (!source.enabled) return null;
     await engine.ensureLoaded(source);
-    final meta = engine.metadataOf(source.id);
-    final methods = meta?['_availableMethods'];
-    if (methods is! List || !methods.contains('getMusicComments')) return null;
     return source;
   }
 
-  /// 拉取一页评论。插件不支持时抛 [PluginEngineException] 由 UI 兜底。
-  Future<CommentPage> fetchComments(
+  /// 拉取一页评论。返回 null 表示当前歌曲无法取得评论（平台不支持或缺少 id），
+  /// 调用方据此展示"不支持"。musicfree 优先走插件 getMusicComments；失败或
+  /// LX（落雪）插件无此扩展时，按歌曲平台直连平台公开评论接口兜底。
+  Future<CommentPage?> fetchComments(
     PluginSource source,
     Map<String, dynamic> musicItem,
     int page,
   ) async {
-    final result = await engine.call(
-      source.id,
-      'getMusicComments',
-      [musicItem, page],
-      timeoutMs: 15000,
+    // 对齐播放链路 getMusicFreeUrl / 桌面端 resetMediaItem：优先透传原始条目
+    // rawData（含平台私有 id/songmid 字段），仅补充 platform 与常见字段别名。
+    // 否则 baka 等插件的 getMusicComments 读不到 musicItem.id/songmid，评论
+    // 接口拿不到歌曲 id 而返回空（表现为「暂无评论」）。
+    final normalized = _normalizeMusicItem(source, musicItem);
+    if (source.format == PluginFormat.musicfree) {
+      try {
+        final result = await engine.call(
+          source.id,
+          'getMusicComments',
+          [normalized, page],
+          timeoutMs: 15000,
+        );
+        final parsed = _parseResult(result);
+        // 插件明确返回（即便为空）即不再走兜底，避免重复消耗。
+        if (parsed.items.isNotEmpty || parsed.isEnd) return parsed;
+      } on PluginEngineException catch (e) {
+        // 插件未声明 getMusicComments 或调用报错 → 落到平台直连。
+        final msg = e.message;
+        if (!RegExp(r'getMusicComments|not\s+a\s+function|undefined',
+                caseSensitive: false)
+            .hasMatch(msg)) {
+          rethrow;
+        }
+        return _fallback(source, normalized, page);
+      } catch (_) {
+        return _fallback(source, normalized, page);
+      }
+    }
+    return _fallback(source, normalized, page);
+  }
+
+  /// 规范化传给插件的 musicItem：优先透传 rawData（原始条目），仅补充
+  /// platform 与 title/artist/id/songmid 字段别名（与 getMusicFreeUrl 同构）。
+  Map<String, dynamic> _normalizeMusicItem(
+    PluginSource source,
+    Map<String, dynamic> songInfo,
+  ) {
+    final raw = songInfo['rawData'];
+    final musicItem = raw is Map<String, dynamic>
+        ? Map<String, dynamic>.from(raw)
+        : Map<String, dynamic>.from(songInfo);
+    if (musicItem['platform'] == null) {
+      musicItem['platform'] = source.name;
+    }
+    if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
+      musicItem['title'] = songInfo['name'];
+    }
+    if (!musicItem.containsKey('artist') && songInfo.containsKey('singer')) {
+      musicItem['artist'] = songInfo['singer'];
+    }
+    if (!musicItem.containsKey('id') &&
+        ((musicItem['id'] as dynamic)?.toString() ?? '').isEmpty &&
+        songInfo.containsKey('songmid')) {
+      musicItem['id'] = songInfo['songmid'];
+    }
+    if (!musicItem.containsKey('songmid') && songInfo.containsKey('songmid')) {
+      musicItem['songmid'] = songInfo['songmid'];
+    }
+    return musicItem;
+  }
+
+  /// 平台直连兜底：检测平台后拉取；不可识别或缺 id 时返回 null。
+  Future<CommentPage?> _fallback(
+    PluginSource source,
+    Map<String, dynamic> musicItem,
+    int page,
+  ) async {
+    final platform =
+        detectCommentPlatform(pluginName: source.name, musicInfo: musicItem);
+    if (platform == null) return null;
+    return fetchPlatformComments(
+      platform: platform,
+      musicInfo: musicItem,
+      page: page,
     );
+  }
+
+  CommentPage _parseResult(dynamic result) {
     if (result is List) {
       // 个别插件直接返回数组
       final items = result.map(CommentItem.normalize).toList();
@@ -132,20 +205,30 @@ class PluginCommentService {
 /// 从播放队列项的 onlineSongJson 提取评论所需上下文。
 class CommentContext {
   final String pluginId;
+  final PluginFormat format;
   final Map<String, dynamic> musicItem;
-  const CommentContext({required this.pluginId, required this.musicItem});
+  const CommentContext({
+    required this.pluginId,
+    required this.format,
+    required this.musicItem,
+  });
 
+  /// 解析 onlineSongJson。musicfree 明确声明 format=musicfree；LX 歌曲构造时
+  /// 可能未带 format 字段，通过存在 `source` 字段兜底推断为 lx。
   static CommentContext? fromSongJson(String? onlineSongJson) {
     if (onlineSongJson == null || onlineSongJson.isEmpty) return null;
     try {
       final j = jsonDecode(onlineSongJson) as Map<String, dynamic>;
       final pluginId = j['pluginId'] as String?;
       if (pluginId == null || pluginId.isEmpty) return null;
-      if ((j['format'] as String?) != 'musicfree') return null;
       final musicInfo = j['musicInfo'];
       if (musicInfo is! Map) return null;
+      final formatRaw = j['format'];
+      final format =
+          formatRaw == 'musicfree' ? PluginFormat.musicfree : PluginFormat.lx;
       return CommentContext(
         pluginId: pluginId,
+        format: format,
         musicItem: musicInfo.cast<String, dynamic>(),
       );
     } catch (_) {

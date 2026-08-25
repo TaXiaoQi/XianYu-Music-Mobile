@@ -7,6 +7,7 @@ import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/auth/account_api.dart';
 import 'src/navigation/routes.dart';
+import 'src/widgets/flying_cover.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -25,6 +26,8 @@ const SnackBarThemeData _toastTheme = SnackBarThemeData(
     color: Colors.white,
     fontSize: 13.5,
     height: 1.3,
+    // 显式清除下划线，避免 toast 文字继承出横线。
+    decoration: TextDecoration.none,
   ),
   // 上下留白让胶囊稍离底部。
   insetPadding: EdgeInsets.symmetric(vertical: 14),
@@ -172,7 +175,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         color: Color(0xFF303030),
         surfaceTintColor: Colors.transparent,
       ),
-      dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF303030)),
+      dialogTheme:
+          const DialogThemeData(backgroundColor: Color(0xFF262626)),
       snackBarTheme: _toastTheme,
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
@@ -248,6 +252,14 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             localizationsDelegates: l10nDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
+            // 注册根 Overlay 供「飞封面」动画使用（首帧后 Navigator 已挂载）。
+            builder: (context, child) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final overlay = appNavigatorKey.currentState?.overlay;
+                if (overlay != null) FlyingCover.instance.attach(overlay);
+              });
+              return child!;
+            },
           );
   }
 

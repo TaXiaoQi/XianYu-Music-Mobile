@@ -9,6 +9,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -25,7 +26,7 @@ class PlaylistsPage extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return HideShellChrome(
       child: Scaffold(
@@ -294,7 +295,7 @@ class PlaylistDetailPage extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final playlist = state.playlists
         .where((p) => p.id == playlistId)
         .cast<ImportedPlaylist?>()
@@ -498,7 +499,16 @@ class _PlaylistSongs extends ConsumerWidget {
       itemCount: playlist.songs.length,
       itemBuilder: (context, index) {
         final song = playlist.songs[index];
-        final g = songRowPlay(ref, onPlay: () => manager.play(playlist, index));
+        final g = songRowPlay(ref, onPlay: () {
+          launchFlyCover(
+            context,
+            coverSize: m.songCover,
+            vPad: m.vPad,
+            networkUrl: song.coverUrl,
+            radius: m.songRadius,
+          );
+          manager.play(playlist, index);
+        });
         return g.wrap(
           CoverRow(
             cover: OnlineCover(

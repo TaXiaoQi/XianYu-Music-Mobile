@@ -151,6 +151,9 @@ class _XianYuToastState extends State<_XianYuToast>
                     color: Colors.white,
                     fontSize: 13.5,
                     height: 1.3,
+                    // 显式清除下划线：不指定时可能继承外层默认样式，
+                    // 导致文字下方出现双黄线。
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ),

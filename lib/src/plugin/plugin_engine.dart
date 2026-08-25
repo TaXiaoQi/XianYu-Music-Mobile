@@ -501,18 +501,84 @@ class PluginEngine {
   }
 
   /// 获取歌词（返回原始字段，由调用方解析）。
+  ///
+  /// 按插件格式分发：LX 插件走 request/lyric 协议；MusicFree 插件调用它
+  /// 自身的 getLyric(musicInfo) 方法（对齐桌面端 pluginGetLyric 对 MF 的取词路径）。
   Future<Map<String, dynamic>?> getLyric(
     PluginSource source,
     String sourceKey,
     Map<String, dynamic> songInfo,
   ) async {
+    if (source.format == PluginFormat.musicfree) {
+      return getMusicFreeLyric(source, songInfo);
+    }
     final response = await lxRequest(
       source,
       'lyric',
       {'source': sourceKey, 'musicInfo': songInfo},
       timeoutMs: _lyricTimeout,
     );
+    return _normalizeLyricResponse(response);
+  }
+
+  /// 获取 MusicFree 插件歌词：调用插件的 getLyric(musicInfo) 方法。
+  ///
+  /// 与 getMediaSource 同构：优先透传搜索返回的原始条目 rawData，仅补充
+  /// platform 与常见字段别名，避免丢 title/artist/id 导致解析失败。
+  Future<Map<String, dynamic>?> getMusicFreeLyric(
+    PluginSource source,
+    Map<String, dynamic> songInfo,
+  ) async {
+    await ensureLoaded(source);
+    if (songInfo.isEmpty) return null;
+    final raw = songInfo['rawData'];
+    final musicItem = raw is Map<String, dynamic>
+        ? Map<String, dynamic>.from(raw)
+        : Map<String, dynamic>.from(songInfo);
+    if (musicItem['platform'] == null) {
+      musicItem['platform'] = source.name;
+    }
+    if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
+      musicItem['title'] = songInfo['name'];
+    }
+    if (!musicItem.containsKey('artist') && songInfo.containsKey('singer')) {
+      musicItem['artist'] = songInfo['singer'];
+    }
+    if (!musicItem.containsKey('id') &&
+        ((musicItem['id'] as dynamic)?.toString() ?? '').isEmpty &&
+        songInfo.containsKey('songmid')) {
+      musicItem['id'] = songInfo['songmid'];
+    }
+    try {
+      final response = await call(
+        source.id,
+        'getLyric',
+        [musicItem],
+        timeoutMs: _lyricTimeout,
+      );
+      return _normalizeLyricResponse(response);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 统一把插件 lyric 返回归一化为歌词字段（缺失为 null；纯文本视为逐行歌词）。
+  Map<String, dynamic>? _normalizeLyricResponse(dynamic response) {
     if (response == null) return null;
+    if (response is String) {
+      final text = response.trim();
+      return text.isEmpty
+          ? null
+          : {
+              'lyric': text,
+              'tlyric': null,
+              'rlyric': null,
+              'lxlyric': null,
+              'yrc': null,
+              'qrc': null,
+              'eslrc': null,
+            };
+    }
     if (response is! Map) return null;
     final obj = response.cast<String, dynamic>();
     final lyric = _pickString([obj['lyric'], obj['rawLrc'], obj['lrc']]);

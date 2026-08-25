@@ -58,6 +58,10 @@ opt-level = 3
 [profile.release]
 # 直接产出已 strip 的 .so：jniLibs 里的 libxianyu_core.so 从 ~42MB（含 13MB 符号表）降到 ~30MB
 strip = "symbols"
-# thin LTO + 单 codegen unit：跨 crate 内联去重，再省约 2~4MB（代价是编译变慢）
-lto = "thin"
+# fat LTO + 单 codegen unit：跨 crate 最大化内联去重（比 thin 再省约 1~3MB，编译更慢）
+lto = "fat"
 codegen-units = 1
+# 包体压缩：按体积优先优化（-Oz），并裁掉 unwind 表（panic=abort）
+# 体积优先会轻微牺牲少数热路径速度，DSP/FFT 热函数用 #[inline]/#[target_feature] 兜底
+opt-level = "z"
+panic = "abort"

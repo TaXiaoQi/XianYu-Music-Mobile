@@ -5,7 +5,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 
 /// 应用版本（与 pubspec.yaml version 保持一致）。
-const appVersion = '1.0.0-bate4';
+const appVersion = '1.0.0-beta7';
 
 /// 热搜条目（get_hot_search）。
 class HotSearchItem {
@@ -553,6 +553,27 @@ class AccountApi {
       }, fetchTimeoutMs: 8000);
     } catch (_) {
       // 上报失败不影响排行榜获取。
+    }
+  }
+
+  /// 上报本地听歌时长到账号（服务端按 MAX 合并，跨端累计总时长）。
+  /// 登录态下播放落库 / 首页统计读取时调用。
+  Future<void> reportListenStats(Map<String, int> durations) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return;
+    await _reportListenStats(ciyuanxiId, durations);
+  }
+
+  /// 获取账号累计听歌时长（秒）与唯一歌曲数，登录后合并进本地统计（跨端同步）。
+  Future<Map<String, dynamic>> fetchListenStats() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return const {};
+    try {
+      return await _action(
+          'get_listen_stats', {'ciyuanxi_id': ciyuanxiId},
+          fetchTimeoutMs: 10000);
+    } catch (_) {
+      return const {};
     }
   }
 

@@ -7,6 +7,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -21,7 +22,7 @@ class RecentPage extends ConsumerWidget {
     final recent = ref.watch(recentProvider);
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return HideShellChrome(
       child: Scaffold(
@@ -143,7 +144,17 @@ class _RecentTile extends ConsumerWidget {
     final title = item?.title ?? _titleFromPath(entry.songPath);
     final artist = item?.artist ?? '';
 
-    final g = songRowPlay(ref, onPlay: onPlay);
+    final g = songRowPlay(ref, onPlay: () {
+      launchFlyCover(
+        context,
+        coverSize: m.songCover,
+        vPad: m.vPad,
+        songPath: entry.songPath,
+        networkUrl: item?.coverUrl,
+        radius: m.songRadius,
+      );
+      onPlay();
+    });
     return g.wrap(
       CoverRow(
         horizontalPadding: 16,

@@ -58,6 +58,7 @@ class PluginSearchService {
     }
     final songJson = jsonEncode({
       'pluginId': source.id,
+      'format': 'lx',
       'source': r.source,
       'musicInfo': r.toJson(),
     });

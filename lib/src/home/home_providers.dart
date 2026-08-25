@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/account_api.dart';
+import '../auth/auth_provider.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../rust/api.dart';
@@ -93,6 +95,25 @@ final listenStatsProvider = FutureProvider<ListenStatsData>((ref) async {
       todayCount = (last['play_count'] as num?)?.toInt() ?? 0;
     }
   } catch (_) {}
+
+  // 3. 登录账号：先把本设备累计时长上报到账号（服务端按 MAX 合并），
+  //    再拉取账号累计总时长覆盖本地，实现桌面端/移动端跨端同步。
+  //    今日时长/首数保持本地（服务端仅回传累计总时长与唯一歌曲数）。
+  final auth = ref.watch(authProvider);
+  if (auth.isLoggedIn) {
+    try {
+      final api = ref.read(accountApiProvider);
+      await api.reportListenStats({
+        'total': totalSecs,
+        'daily': todaySecs,
+      });
+      final server = await api.fetchListenStats();
+      final serverTotal = (server['total_duration'] as num?)?.toInt() ?? 0;
+      if (serverTotal > 0) totalSecs = serverTotal;
+    } catch (_) {
+      // 网络失败时沿用本地数据。
+    }
+  }
 
   return ListenStatsData(
     totalSeconds: totalSecs,

@@ -86,6 +86,16 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
         return;
       }
       final result = await service.fetchComments(source, ctx.musicItem, page);
+      if (result == null) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+          _unsupported = true;
+          _isEnd = true;
+        });
+        return;
+      }
       if (!mounted) return;
       setState(() {
         if (page == 1) {
@@ -170,10 +180,6 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -818,24 +818,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 ),
               ),
             ],
-            _GlassTile(
-              icon: Icons.file_upload_outlined,
-              title: '从本地备份恢复数据',
-              subtitle: '导入应用备份 JSON 文件的歌单与收藏',
-              onTap: () async {
-                final msg = await syncNotifier.importLocalBackupFile();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(msg)),
-                  );
-                }
-              },
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
-              ),
-            ),
           ],
         ),
 

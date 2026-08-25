@@ -1358,8 +1358,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'countAsPlay': countAsPlay,
         });
         await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
-        // 首页“累计听歌/今日时长/今日首数”读取的是数据库，落库后需使其重新求值。
+        // 首页「统计」卡片与「常听排行」读取的都是数据库，落库后需使其重新求值，
+        // 否则播放再久，界面上的统计数据都停留在首次加载的值。
         _ref.invalidate(listenStatsProvider);
+        _ref.invalidate(mostPlayedProvider);
       } catch (_) {}
     });
   }

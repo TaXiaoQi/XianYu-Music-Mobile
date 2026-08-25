@@ -16,7 +16,7 @@ class EffectsPage extends ConsumerWidget {
     final settings = ref.watch(soundEffectProvider).settings;
     final notifier = ref.read(soundEffectProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    final locked = ref.watch(playerProvider).usbExclusive;
+    final locked = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     return Scaffold(
       body: Stack(

@@ -83,12 +83,12 @@ class AppSettings {
     this.enableWordEffect = true,
     this.downloadPath = '',
     this.downloadQuality = '320k',
-    this.downloadLyrics = true,
+    this.downloadLyrics = false,
     this.downloadConcurrency = 3,
     this.overwriteExisting = false,
     this.downloadFileNameStyle = 'artist-title',
     this.embedDownloadMetadata = true,
-    this.embedDownloadLyrics = false,
+    this.embedDownloadLyrics = true,
     this.embedDownloadCover = true,
     this.organizeRule = '{Artist}/{Album}/{Title}',
     this.lyricFontSize = 1,
@@ -97,13 +97,13 @@ class AppSettings {
     this.lyricFontName = '',
     this.lyricFontPath = '',
     this.liquidGlass = false,
-    this.playerLiquidGlass = true,
-    this.frostedGlass = true,
+    this.playerLiquidGlass = false,
+    this.frostedGlass = false,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
     this.streamCacheSizeMB = 500,
     this.scanFormats = kSupportedScanFormats,
-    this.floatingNavBar = true,
+    this.floatingNavBar = false,
     this.navBarPosition = NavBarPosition.bottom,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
     this.usbExclusiveOutput = false,
@@ -123,8 +123,23 @@ class AppSettings {
     this.shareLinkValidityMinutes = 120,
     // 分享链接播放失败行为：pause 暂停播放 / replace 替换播放（走插件索引）。
     this.sharePlaybackFailureBehavior = 'pause',
-    // 播放页样式：advanced 高级模式（默认）/ traditional 传统模式。
-    this.playerStyle = PlayerStyle.advanced,
+    // 播放页样式：traditional 传统模式（默认）/ advanced 高级模式。
+    this.playerStyle = PlayerStyle.traditional,
+    // 悬浮歌词窗（移植自 RawS-Music 外部歌词体系）。
+    this.floatingLyricsEnabled = false,
+    this.floatingLyricsLocked = false,
+    this.floatingLyricsTextColor = 0xFFFFFFFF,
+    this.floatingLyricsOpacity = 100,
+    this.floatingLyricsFontScale = 100,
+    this.floatingLyricsSecondaryScale = 88,
+    this.floatingLyricsShowTranslation = true,
+    this.floatingLyricsShowRomanization = false,
+    this.floatingLyricsShowBackground = true,
+    this.floatingLyricsHideWhenPaused = false,
+    this.floatingLyricsHideInLandscape = false,
+    this.floatingLyricsWidthPercent = 92,
+    this.floatingLyricsX = 0,
+    this.floatingLyricsY = 96,
   });
 
   final double volume;
@@ -248,6 +263,48 @@ class AppSettings {
   /// 播放页样式：advanced 高级模式（现代毛玻璃）/ traditional 传统模式（经典布局）。
   final PlayerStyle playerStyle;
 
+  /// 悬浮歌词窗总开关。
+  final bool floatingLyricsEnabled;
+
+  /// 悬浮歌词窗锁定（不可拖动，通知解锁）。
+  final bool floatingLyricsLocked;
+
+  /// 悬浮歌词文字颜色（ARGB）。
+  final int floatingLyricsTextColor;
+
+  /// 悬浮歌词不透明度（0-100）。
+  final int floatingLyricsOpacity;
+
+  /// 悬浮歌词主文字字号百分比（100 = 默认）。
+  final int floatingLyricsFontScale;
+
+  /// 悬浮歌词副行（翻译/罗马音/背景）字号百分比。
+  final int floatingLyricsSecondaryScale;
+
+  /// 悬浮歌词显示翻译。
+  final bool floatingLyricsShowTranslation;
+
+  /// 悬浮歌词显示罗马音。
+  final bool floatingLyricsShowRomanization;
+
+  /// 悬浮歌词显示背景/副歌歌词。
+  final bool floatingLyricsShowBackground;
+
+  /// 暂停时隐藏悬浮歌词窗。
+  final bool floatingLyricsHideWhenPaused;
+
+  /// 横屏时隐藏悬浮歌词窗。
+  final bool floatingLyricsHideInLandscape;
+
+  /// 悬浮歌词窗宽度占屏百分比（40-100）。
+  final int floatingLyricsWidthPercent;
+
+  /// 悬浮歌词窗位置 X。
+  final int floatingLyricsX;
+
+  /// 悬浮歌词窗位置 Y。
+  final int floatingLyricsY;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -301,6 +358,20 @@ class AppSettings {
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
+    bool? floatingLyricsEnabled,
+    bool? floatingLyricsLocked,
+    int? floatingLyricsTextColor,
+    int? floatingLyricsOpacity,
+    int? floatingLyricsFontScale,
+    int? floatingLyricsSecondaryScale,
+    bool? floatingLyricsShowTranslation,
+    bool? floatingLyricsShowRomanization,
+    bool? floatingLyricsShowBackground,
+    bool? floatingLyricsHideWhenPaused,
+    bool? floatingLyricsHideInLandscape,
+    int? floatingLyricsWidthPercent,
+    int? floatingLyricsX,
+    int? floatingLyricsY,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -367,6 +438,31 @@ class AppSettings {
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
+      floatingLyricsEnabled:
+          floatingLyricsEnabled ?? this.floatingLyricsEnabled,
+      floatingLyricsLocked: floatingLyricsLocked ?? this.floatingLyricsLocked,
+      floatingLyricsTextColor:
+          floatingLyricsTextColor ?? this.floatingLyricsTextColor,
+      floatingLyricsOpacity:
+          floatingLyricsOpacity ?? this.floatingLyricsOpacity,
+      floatingLyricsFontScale:
+          floatingLyricsFontScale ?? this.floatingLyricsFontScale,
+      floatingLyricsSecondaryScale:
+          floatingLyricsSecondaryScale ?? this.floatingLyricsSecondaryScale,
+      floatingLyricsShowTranslation:
+          floatingLyricsShowTranslation ?? this.floatingLyricsShowTranslation,
+      floatingLyricsShowRomanization:
+          floatingLyricsShowRomanization ?? this.floatingLyricsShowRomanization,
+      floatingLyricsShowBackground:
+          floatingLyricsShowBackground ?? this.floatingLyricsShowBackground,
+      floatingLyricsHideWhenPaused:
+          floatingLyricsHideWhenPaused ?? this.floatingLyricsHideWhenPaused,
+      floatingLyricsHideInLandscape:
+          floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
+      floatingLyricsWidthPercent:
+          floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
+      floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
+      floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
     );
   }
 }
@@ -382,7 +478,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     // 液态玻璃 与 毛玻璃材质 二选一（互斥）：毛玻璃（顶栏+底栏高斯模糊）优先。
     final liquidGlass = prefs.getBool('liquidGlass') ?? false;
     final frostedGlass =
-        (prefs.getBool('frostedGlass') ?? true) && !liquidGlass;
+        (prefs.getBool('frostedGlass') ?? false) && !liquidGlass;
 
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
@@ -404,26 +500,26 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       enableWordEffect: prefs.getBool('enableWordEffect') ?? true,
       downloadPath: prefs.getString('downloadPath') ?? '',
       downloadQuality: prefs.getString('downloadQuality') ?? '320k',
-      downloadLyrics: prefs.getBool('downloadLyrics') ?? true,
+      downloadLyrics: prefs.getBool('downloadLyrics') ?? false,
       downloadConcurrency: prefs.getInt('downloadConcurrency') ?? 3,
       overwriteExisting: prefs.getBool('overwriteExisting') ?? false,
       downloadFileNameStyle:
           prefs.getString('downloadFileNameStyle') ?? 'artist-title',
       embedDownloadMetadata:
           prefs.getBool('embedDownloadMetadata') ?? true,
-      embedDownloadLyrics: prefs.getBool('embedDownloadLyrics') ?? false,
+      embedDownloadLyrics: prefs.getBool('embedDownloadLyrics') ?? true,
       embedDownloadCover: prefs.getBool('embedDownloadCover') ?? true,
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
       liquidGlass: liquidGlass,
-      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? true,
+      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
       frostedGlass: frostedGlass,
       performanceMode: _perfFromString(prefs.getString('performanceMode') ?? 'auto'),
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
-      floatingNavBar: prefs.getBool('floatingNavBar') ?? true,
+      floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       navBarPosition:
           (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
               ? NavBarPosition.side
@@ -455,7 +551,31 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       sharePlaybackFailureBehavior:
           prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',
       playerStyle: _playerStyleFromString(
-          prefs.getString('playerStyle') ?? 'advanced'),
+          prefs.getString('playerStyle') ?? 'traditional'),
+      floatingLyricsEnabled:
+          prefs.getBool('floatingLyricsEnabled') ?? false,
+      floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
+      floatingLyricsTextColor:
+          prefs.getInt('floatingLyricsTextColor') ?? 0xFFFFFFFF,
+      floatingLyricsOpacity: prefs.getInt('floatingLyricsOpacity') ?? 100,
+      floatingLyricsFontScale:
+          prefs.getInt('floatingLyricsFontScale') ?? 100,
+      floatingLyricsSecondaryScale:
+          prefs.getInt('floatingLyricsSecondaryScale') ?? 88,
+      floatingLyricsShowTranslation:
+          prefs.getBool('floatingLyricsShowTranslation') ?? true,
+      floatingLyricsShowRomanization:
+          prefs.getBool('floatingLyricsShowRomanization') ?? false,
+      floatingLyricsShowBackground:
+          prefs.getBool('floatingLyricsShowBackground') ?? true,
+      floatingLyricsHideWhenPaused:
+          prefs.getBool('floatingLyricsHideWhenPaused') ?? false,
+      floatingLyricsHideInLandscape:
+          prefs.getBool('floatingLyricsHideInLandscape') ?? false,
+      floatingLyricsWidthPercent:
+          prefs.getInt('floatingLyricsWidthPercent') ?? 92,
+      floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
+      floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
     );
   }
 
@@ -556,6 +676,26 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
       prefs.setString('playerStyle', next.playerStyle.name),
+      prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
+      prefs.setBool('floatingLyricsLocked', next.floatingLyricsLocked),
+      prefs.setInt('floatingLyricsTextColor', next.floatingLyricsTextColor),
+      prefs.setInt('floatingLyricsOpacity', next.floatingLyricsOpacity),
+      prefs.setInt('floatingLyricsFontScale', next.floatingLyricsFontScale),
+      prefs.setInt(
+          'floatingLyricsSecondaryScale', next.floatingLyricsSecondaryScale),
+      prefs.setBool(
+          'floatingLyricsShowTranslation', next.floatingLyricsShowTranslation),
+      prefs.setBool(
+          'floatingLyricsShowRomanization', next.floatingLyricsShowRomanization),
+      prefs.setBool(
+          'floatingLyricsShowBackground', next.floatingLyricsShowBackground),
+      prefs.setBool(
+          'floatingLyricsHideWhenPaused', next.floatingLyricsHideWhenPaused),
+      prefs.setBool(
+          'floatingLyricsHideInLandscape', next.floatingLyricsHideInLandscape),
+      prefs.setInt('floatingLyricsWidthPercent', next.floatingLyricsWidthPercent),
+      prefs.setInt('floatingLyricsX', next.floatingLyricsX),
+      prefs.setInt('floatingLyricsY', next.floatingLyricsY),
     ]);
   }
 
@@ -623,6 +763,19 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
+  Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
+  Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));
+  Future<void> setFloatingLyricsTextColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsTextColor: v));
+  Future<void> setFloatingLyricsOpacity(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsOpacity: v));
+  Future<void> setFloatingLyricsFontScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsFontScale: v));
+  Future<void> setFloatingLyricsSecondaryScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsSecondaryScale: v));
+  Future<void> setFloatingLyricsShowTranslation(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsShowTranslation: v));
+  Future<void> setFloatingLyricsShowRomanization(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsShowRomanization: v));
+  Future<void> setFloatingLyricsShowBackground(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsShowBackground: v));
+  Future<void> setFloatingLyricsHideWhenPaused(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsHideWhenPaused: v));
+  Future<void> setFloatingLyricsHideInLandscape(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsHideInLandscape: v));
+  Future<void> setFloatingLyricsWidthPercent(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsWidthPercent: v));
+  Future<void> setFloatingLyricsPosition(int x, int y) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsX: x, floatingLyricsY: y));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

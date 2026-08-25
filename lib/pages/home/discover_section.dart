@@ -20,6 +20,16 @@ class DiscoverSection extends ConsumerStatefulWidget {
 class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
   int _index = 0;
 
+  void _selectTab(int i) {
+    // 切到「统计」tab 时主动刷新统计数据，确保每次打开都能读到最新
+    // （不依赖播放落库的失效时机，本地查询很快，几乎无感）。
+    if (i == 0) {
+      ref.invalidate(listenStatsProvider);
+      ref.invalidate(mostPlayedProvider);
+    }
+    setState(() => _index = i);
+  }
+
   static const _tabs = [
     (key: 'statistics', label: '统计', route: '/leaderboard'),
     (key: 'dailyRecommend', label: '每日推荐', route: '/home/daily'),
@@ -37,7 +47,7 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
           children: [
             for (var i = 0; i < _tabs.length; i++)
               InkWell(
-                onTap: () => setState(() => _index = i),
+                onTap: () => _selectTab(i),
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),

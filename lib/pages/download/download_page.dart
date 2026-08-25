@@ -10,6 +10,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -24,7 +25,7 @@ class DownloadPage extends ConsumerWidget {
     final state = ref.watch(downloadProvider);
     final notifier = ref.read(downloadProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    final hasSong = ref.watch(playerProvider).current != null;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     final active = state.tasks
         .where((t) =>
@@ -261,10 +262,22 @@ class _HistoryTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
     final exists = File(entry.filePath).existsSync();
+    final play = exists
+        ? () {
+            launchFlyCover(
+              context,
+              coverSize: m.songCover,
+              vPad: m.vPad,
+              songPath: entry.filePath,
+              radius: m.songRadius,
+            );
+            onPlay();
+          }
+        : null;
     return CoverRow(
       horizontalPadding: 16,
       verticalPadding: m.vPad,
-      onTap: exists ? onPlay : null,
+      onTap: play,
       cover: CoverImage(
         songPath: entry.filePath,
         width: m.songCover,
@@ -291,7 +304,7 @@ class _HistoryTile extends ConsumerWidget {
           IconButton(
             icon: Icon(Icons.play_arrow, size: 20, color: scheme.primary),
             tooltip: '播放',
-            onPressed: exists ? onPlay : null,
+            onPressed: play,
           ),
           IconButton(
             icon: Icon(Icons.close, size: 18, color: scheme.outline),

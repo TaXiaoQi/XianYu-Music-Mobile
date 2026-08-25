@@ -18,18 +18,21 @@ import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
 import '../../src/audio/audio_devices.dart';
+import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
   general,
   appearance,
+  lyrics,
   playback,
   download,
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
     'appearance' => SettingsCategory.appearance,
+    'lyrics' => SettingsCategory.lyrics,
     'playback' => SettingsCategory.playback,
     'download' => SettingsCategory.download,
     'advanced' => SettingsCategory.advanced,
@@ -39,6 +42,7 @@ enum SettingsCategory {
   String get title => switch (this) {
     SettingsCategory.general => '常规',
     SettingsCategory.appearance => '外观',
+    SettingsCategory.lyrics => '歌词',
     SettingsCategory.playback => '播放',
     SettingsCategory.download => '下载',
     SettingsCategory.advanced => '高级设置',
@@ -71,7 +75,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider).valueOrNull;
     final notifier = ref.read(settingsProvider.notifier);
-    final exclusivePlaying = ref.watch(playerProvider).usbExclusive;
+    final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     return Scaffold(
       backgroundColor: settingsSurfaceBg(context),
@@ -108,6 +112,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         return _general(context, ref, settings, notifier);
       case SettingsCategory.appearance:
         return _appearance(context, ref, settings, notifier);
+      case SettingsCategory.lyrics:
+        return _lyrics(context, ref, settings, notifier);
       case SettingsCategory.playback:
         return _playback(context, ref, settings, notifier, exclusivePlaying);
       case SettingsCategory.download:
@@ -282,6 +288,17 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+    ];
+  }
+
+  // ---- 歌词 ----
+  List<Widget> _lyrics(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    return [
       _sectionHeader(context, '歌词显示'),
       _CardGroup(
         children: [
@@ -299,6 +316,101 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.enableWordEffect ?? true,
             onChanged: (v) => n.setEnableWordEffect(v),
           ),
+        ],
+      ),
+      _sectionHeader(context, '悬浮歌词'),
+      _CardGroup(
+        children: [
+          _switchTile(
+            context,
+            icon: Icons.lyrics_outlined,
+            title: '悬浮歌词窗',
+            subtitle: '在其他应用上层显示卡拉OK逐字歌词',
+            value: s?.floatingLyricsEnabled ?? false,
+            onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
+          ),
+          if (s?.floatingLyricsEnabled ?? false) ...[
+            _tile(
+              context,
+              icon: Icons.palette_outlined,
+              title: '文字颜色',
+              trailing: _floatingLyricsColorPicker(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.opacity_outlined,
+              title: '不透明度',
+              trailing: _floatingLyricsOpacitySlider(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.text_fields_outlined,
+              title: '字号',
+              trailing: _floatingLyricsFontSlider(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.subtitles_outlined,
+              title: '副行字号',
+              trailing: _floatingLyricsSecondarySlider(s, n),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.translate_outlined,
+              title: '显示翻译',
+              value: s?.floatingLyricsShowTranslation ?? true,
+              onChanged: (v) => n.setFloatingLyricsShowTranslation(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.spellcheck_outlined,
+              title: '显示罗马音',
+              value: s?.floatingLyricsShowRomanization ?? false,
+              onChanged: (v) => n.setFloatingLyricsShowRomanization(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.queue_music_outlined,
+              title: '显示背景歌词',
+              value: s?.floatingLyricsShowBackground ?? true,
+              onChanged: (v) => n.setFloatingLyricsShowBackground(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.pause_outlined,
+              title: '暂停时隐藏',
+              value: s?.floatingLyricsHideWhenPaused ?? false,
+              onChanged: (v) => n.setFloatingLyricsHideWhenPaused(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.screen_lock_landscape_outlined,
+              title: '横屏时隐藏',
+              value: s?.floatingLyricsHideInLandscape ?? false,
+              onChanged: (v) => n.setFloatingLyricsHideInLandscape(v),
+            ),
+            _tile(
+              context,
+              icon: Icons.width_full_outlined,
+              title: '宽度',
+              trailing: _floatingLyricsWidthSlider(s, n),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.lock_outline,
+              title: '锁定位置',
+              subtitle: '锁定后不可拖动，通知栏解锁',
+              value: s?.floatingLyricsLocked ?? false,
+              onChanged: (v) => n.setFloatingLyricsLocked(v),
+            ),
+            _tile(
+              context,
+              icon: Icons.center_focus_strong_outlined,
+              title: '重置位置',
+              trailing: const SizedBox.shrink(),
+              onTap: () => _resetFloatingLyricsPosition(),
+            ),
+          ],
         ],
       ),
     ];
@@ -492,7 +604,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.lyrics_outlined,
             title: '同时下载歌词',
-            value: s?.downloadLyrics ?? true,
+            value: s?.downloadLyrics ?? false,
             onChanged: (v) => n.setDownloadLyrics(v),
           ),
           _tile(
@@ -543,7 +655,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.lyrics_outlined,
             title: '嵌入歌词',
             subtitle: '需同时开启「同时下载歌词」',
-            value: s?.embedDownloadLyrics ?? false,
+            value: s?.embedDownloadLyrics ?? true,
             onChanged: (v) => n.setEmbedDownloadLyrics(v),
           ),
           _switchTile(
@@ -723,6 +835,139 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ),
       ],
     );
+  }
+
+  // ---- 悬浮歌词 ----
+
+  Future<void> _toggleFloatingLyrics(
+    BuildContext context,
+    WidgetRef ref,
+    SettingsNotifier n,
+    bool enable,
+  ) async {
+    if (enable) {
+      final granted = await FloatingLyricsController.isPermissionGranted();
+      if (!granted) {
+        if (!context.mounted) return;
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('悬浮歌词需要悬浮窗权限'),
+            content: const Text('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('去授权'),
+              ),
+            ],
+          ),
+        );
+        if (go == true) {
+          await FloatingLyricsController.openPermissionSettings();
+          // 授权返回后由系统回调，这里先置为开启（控制器会在权限就绪时显示）。
+          await n.setFloatingLyricsEnabled(true);
+        }
+        return;
+      }
+      await n.setFloatingLyricsEnabled(true);
+    } else {
+      await n.setFloatingLyricsEnabled(false);
+    }
+  }
+
+  Widget _floatingLyricsColorPicker(AppSettings? s, SettingsNotifier n) {
+    final current = s?.floatingLyricsTextColor ?? 0xFFFFFFFF;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final c in FloatingLyricsController.quickColors)
+          GestureDetector(
+            onTap: () => n.setFloatingLyricsTextColor(c),
+            child: Container(
+              width: 22,
+              height: 22,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                color: Color(c),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: current == c
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.outlineVariant,
+                  width: current == c ? 2.5 : 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _floatingLyricsOpacitySlider(AppSettings? s, SettingsNotifier n) {
+    final v = (s?.floatingLyricsOpacity ?? 100).toDouble();
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: 20,
+        max: 100,
+        divisions: 16,
+        value: v,
+        onCommit: (x) => n.setFloatingLyricsOpacity(x.round()),
+      ),
+    );
+  }
+
+  Widget _floatingLyricsFontSlider(AppSettings? s, SettingsNotifier n) {
+    final v = (s?.floatingLyricsFontScale ?? 100).toDouble();
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: 60,
+        max: 200,
+        divisions: 28,
+        value: v,
+        onCommit: (x) => n.setFloatingLyricsFontScale(x.round()),
+      ),
+    );
+  }
+
+  Widget _floatingLyricsSecondarySlider(AppSettings? s, SettingsNotifier n) {
+    final v = (s?.floatingLyricsSecondaryScale ?? 88).toDouble();
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: 60,
+        max: 200,
+        divisions: 28,
+        value: v,
+        onCommit: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
+      ),
+    );
+  }
+
+  Widget _floatingLyricsWidthSlider(AppSettings? s, SettingsNotifier n) {
+    final v = (s?.floatingLyricsWidthPercent ?? 92).toDouble();
+    return SizedBox(
+      width: 120,
+      child: CommittedSlider(
+        min: 40,
+        max: 100,
+        divisions: 12,
+        value: v,
+        onCommit: (x) => n.setFloatingLyricsWidthPercent(x.round()),
+      ),
+    );
+  }
+
+  Future<void> _resetFloatingLyricsPosition() async {
+    await FloatingLyricsController.resetPosition();
+    await ref
+        .read(settingsProvider.notifier)
+        .setFloatingLyricsPosition(0, 96);
   }
 
   Widget _shareValidityTile(

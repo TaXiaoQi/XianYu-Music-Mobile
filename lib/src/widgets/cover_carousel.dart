@@ -59,7 +59,9 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
 
   @override
   Widget build(BuildContext context) {
-    final player = ref.watch(playerProvider);
+    // 仅订阅封面需要的信息，避免 position 每秒变化导致首页卡片重建。
+    final sel =
+        ref.watch(playerProvider.select((s) => (current: s.current, playing: s.isPlaying)));
 
     // 频谱条只在正在播放时运转
     ref.listen(playerProvider, (prev, next) {
@@ -84,7 +86,8 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
             children: [
               // 第 1 页：正在播放单曲
               _NowPlayingCard(
-                player: player,
+                item: sel.current,
+                isPlaying: sel.playing,
                 eq: _eq,
                 onTap: () => context.push('/player'),
               ),
@@ -103,18 +106,20 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
 /// 第 1 页：正在播放卡片。
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({
-    required this.player,
+    required this.item,
+    required this.isPlaying,
     required this.eq,
     required this.onTap,
   });
 
-  final PlaybackState player;
+  final QueueItem? item;
+  final bool isPlaying;
   final AnimationController eq;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final item = player.current;
+    final item = this.item;
     if (item == null) {
       return const _EmptyCarousel();
     }
@@ -150,7 +155,7 @@ class _NowPlayingCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _PlayingBadge(eq: eq, isPlaying: player.isPlaying),
+                  _PlayingBadge(eq: eq, isPlaying: isPlaying),
                   const SizedBox(height: 10),
                   Text(
                     item.title,

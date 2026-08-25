@@ -8,7 +8,9 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
 import '../player/player_provider.dart';
+import 'cover_hero.dart';
 import 'cover_image.dart';
+import 'flying_cover.dart';
 import 'glass_settings.dart';
 
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
@@ -34,6 +36,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _spin;
 
+  /// 封面定位锚点：供「飞封面」动画计算目标位置。
+  final GlobalKey _coverKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -47,14 +52,33 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   @override
   void dispose() {
     _spin.dispose();
+    FlyingCover.instance.unregisterTarget();
     super.dispose();
+  }
+
+  /// 布局完成后把封面全局位置注册为飞封面目标。
+  void _updateCoverTarget() {
+    final ctx = _coverKey.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    FlyingCover.instance.registerTarget(() => rect);
   }
 
   @override
   Widget build(BuildContext context) {
-    final player = ref.watch(playerProvider);
-    final current = player.current;
+    // 仅订阅进度环之外的字段；position 交给 _RotatingDisc 内部订阅，
+    // 避免随播放进度每帧重建整根播放条。
+    final p = ref.watch(playerProvider.select(
+        (s) => (current: s.current, playing: s.isPlaying, duration: s.duration)));
+    final current = p.current;
     if (current == null) return const SizedBox.shrink();
+
+    // 布局完成后更新飞封面目标位置（封面尺寸/位置随主题与底栏变化）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateCoverTarget();
+    });
 
     // 播放时旋转封面，暂停时停住（在 build 后回调，避免 build 中 setState）。
     ref.listen(playerProvider, (prev, next) {
@@ -66,9 +90,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     });
 
     final scheme = Theme.of(context).colorScheme;
-    final progress = player.duration <= 0
-        ? 0.0
-        : (player.position / player.duration).clamp(0.0, 1.0);
+    final isPlaying = p.playing;
 
     final lowPerf = ref.watch(
       settingsProvider.select(
@@ -83,10 +105,24 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
       child: Row(
         children: [
-          _RotatingDisc(
-            current: current,
-            progress: progress,
-            spin: _spin,
+          // Hero：打开播放页时封面从底栏过渡放大到播放页大封面。
+          Hero(
+            tag: 'player-cover',
+            flightShuttleBuilder: (ctx, animation, direction, fromCtx, toCtx) {
+              return CoverHeroShuttle(
+                animation: animation,
+                songPath: current.path,
+                networkUrl: current.coverUrl,
+                fromRadius: 23,
+                toRadius: 28,
+              );
+            },
+            child: _RotatingDisc(
+              key: _coverKey,
+              current: current,
+              duration: p.duration,
+              spin: _spin,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -123,7 +159,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           ),
           IconButton(
             icon: Icon(
-              player.isPlaying ? Icons.pause : Icons.play_arrow,
+              isPlaying ? Icons.pause : Icons.play_arrow,
               color: scheme.primary,
             ),
             iconSize: 26,
@@ -203,20 +239,26 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 }
 
-/// 旋转封面 + 环形进度。
-class _RotatingDisc extends StatelessWidget {
+/// 旋转封面 + 环形进度。独立订阅 position，使播放进度只重建本组件。
+class _RotatingDisc extends ConsumerWidget {
   const _RotatingDisc({
+    super.key,
     required this.current,
-    required this.progress,
+    required this.duration,
     required this.spin,
   });
 
   final QueueItem current;
-  final double progress;
+  final double duration;
   final AnimationController spin;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final position = ref.watch(playerProvider.select((s) => s.position));
+    final progress = duration <= 0
+        ? 0.0
+        : (position / duration).clamp(0.0, 1.0);
+
     return SizedBox(
       width: 46,
       height: 46,

@@ -25,6 +25,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/share/share_service.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
+import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -50,7 +51,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final player = ref.watch(playerProvider);
+    // 顶层只取除 position 之外的播放状态（position 每秒跳动会让整页每秒
+    // 重建，滑动歌词时全页跟着重绘变卡）。position 由进度条/歌词等需要
+    // 它的组件内部各自 select，实现「纯滑动不更新、只有进度在局部刷新」。
+    final player = ref.watch(playerProvider.select((s) => s.copyWith(position: 0)));
     final current = player.current;
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
@@ -169,7 +173,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             _showLyrics = true;
                           });
                         },
-                        child: _BigCover(current: current),
+                        child: Hero(
+                          tag: 'player-cover',
+                          flightShuttleBuilder:
+                              (ctx, animation, direction, fromCtx, toCtx) {
+                            return CoverHeroShuttle(
+                              animation: animation,
+                              songPath: current?.path ?? '',
+                              networkUrl: current?.coverUrl,
+                              fromRadius: 23,
+                              toRadius: 31,
+                            );
+                          },
+                          child: _BigCover(current: current),
+                        ),
                       ),
                       const Spacer(),
                     ] else ...[
@@ -178,8 +195,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           child: RepaintBoundary(
                             child: _LyricsView(
                               current: current,
-                              position: player.position,
-                              isPlaying: player.isPlaying,
                               visible: _showLyrics,
                               onTap: () {
                                 setState(() {
@@ -277,8 +292,8 @@ class _TraditionalPlayerLayoutState
   /// 封面/歌词左右滑动翻页控制器。
   late final PageController _pageController;
 
-  /// 「闪」频谱动效（封面底部频谱条）开关。
-  bool _flashOn = false;
+  /// 「闪」频谱动效已由音质按钮替换，保留字段仅作封面频谱条的固定开关（默认关闭）。
+  final bool _flashOn = false;
 
   late final AnimationController _eq;
 
@@ -351,8 +366,6 @@ class _TraditionalPlayerLayoutState
                         child: RepaintBoundary(
                           child: _LyricsView(
                             current: current,
-                            position: player.position,
-                            isPlaying: player.isPlaying,
                             visible: _showLyrics,
                             onTap: () {},
                             onRomajiAvailable: (_) {},
@@ -435,12 +448,25 @@ class _TraditionalPlayerLayoutState
           children: [
             // 封面略下移，与顶部切换 tab 留出呼吸间距
             const SizedBox(height: 14),
-            _TraditionalCover(
-              size: coverSize,
-              current: widget.current,
-              eq: _eq,
-              flash: _flashOn,
-              playing: widget.player.isPlaying,
+            Hero(
+              tag: 'player-cover',
+              flightShuttleBuilder:
+                  (ctx, animation, direction, fromCtx, toCtx) {
+                return CoverHeroShuttle(
+                  animation: animation,
+                  songPath: widget.current?.path ?? '',
+                  networkUrl: widget.current?.coverUrl,
+                  fromRadius: 23,
+                  toRadius: 23,
+                );
+              },
+              child: _TraditionalCover(
+                size: coverSize,
+                current: widget.current,
+                eq: _eq,
+                flash: _flashOn,
+                playing: widget.player.isPlaying,
+              ),
             ),
             // 歌名/作者/收藏信息条：与封面拉开，整体下放
             const SizedBox(height: 30),
@@ -452,10 +478,7 @@ class _TraditionalPlayerLayoutState
                 padding: EdgeInsets.symmetric(horizontal: hInset),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: _LyricPreview(
-                    current: widget.current,
-                    position: widget.player.position,
-                  ),
+                  child: _LyricPreview(current: widget.current),
                 ),
               ),
             ),
@@ -540,6 +563,9 @@ class _TraditionalPlayerLayoutState
     // 下载状态：本地曲天然已在设备；在线曲按下载历史/进行中任务判断。
     final dl = ref.watch(downloadProvider);
     final isLocal = current != null && !current.isOnline;
+    final currentQuality = ref.watch(
+      playerProvider.select((s) => s.currentQuality),
+    );
     final dlActive = current != null &&
         dl.tasks.any((t) =>
             t.songPath == current.path &&
@@ -565,11 +591,24 @@ class _TraditionalPlayerLayoutState
           ),
           _actionItem(
             context,
-            icon: Icons.auto_awesome,
-            label: '闪',
-            status: _flashOn ? 'on' : 'off',
-            active: _flashOn,
-            onTap: () => setState(() => _flashOn = !_flashOn),
+            icon: Icons.hd,
+            label: '音质',
+            status: _qualityLabel(currentQuality),
+            iconColor: (currentQuality != null &&
+                    isLosslessQuality(currentQuality))
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            onTap: () {
+              final c = current;
+              if (c == null) return;
+              if (c.isOnline) {
+                // 在线歌曲：弹出音质选择弹窗，可修改播放音质。
+                _showQualitySheet(context, ref);
+              } else {
+                // 本地音乐按原文件音质直传，无需切换。
+                showXianYuToast(context, '本地音乐以原音质播放');
+              }
+            },
           ),
           _actionItem(
             context,
@@ -720,9 +759,8 @@ class _SegmentSwitcher extends StatelessWidget {
 
 /// 封面下歌词预览：取当前播放行的上一行/当前/下一行 共 3 行展示。
 class _LyricPreview extends ConsumerStatefulWidget {
-  const _LyricPreview({required this.current, required this.position});
+  const _LyricPreview({required this.current});
   final QueueItem? current;
-  final double position; // 秒
 
   @override
   ConsumerState<_LyricPreview> createState() => _LyricPreviewState();
@@ -744,6 +782,39 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     if (old.current?.path != widget.current?.path) _load();
   }
 
+  /// 获取插件源歌词（含 MusicFree/LX），返回待解析的纯歌词文本。
+  /// 优先级与主歌词面板一致：lxlyric → yrc → qrc → eslrc → lyric。
+  Future<String> _fetchPluginPreviewLyric(QueueItem item) async {
+    final online = item.onlineSongJson;
+    if (online == null || online.isEmpty) return '';
+    Map<String, dynamic> parsed;
+    try {
+      parsed = jsonDecode(online) as Map<String, dynamic>;
+    } catch (_) {
+      return '';
+    }
+    final pluginId = parsed['pluginId'] as String?;
+    if (pluginId == null || pluginId.isEmpty) return '';
+    final sourceKey = parsed['source'] as String? ?? '';
+    final musicInfo = parsed['musicInfo'] as Map<String, dynamic>? ?? {};
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final sources = await engine.store.loadSources();
+      final matches = sources.where((s) => s.id == pluginId).toList();
+      if (matches.isEmpty) return '';
+      final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
+      if (lyric == null) return '';
+      return (lyric['lxlyric'] ??
+              lyric['yrc'] ??
+              lyric['qrc'] ??
+              lyric['eslrc'] ??
+              lyric['lyric']) as String? ??
+          '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _load() async {
     final item = widget.current;
     final path = item?.path ?? '';
@@ -751,36 +822,41 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     _loading = true;
     try {
       String jsonStr = '';
-      if (item!.isOnline &&
-          item.source != null &&
-          item.onlineInfoJson != null) {
-        // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词
-        final rawResultStr = await fetchLyricFromSource(
-          source: item.source!,
-          songInfoJson: item.onlineInfoJson!,
-        );
-        if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
-          String lyricsToParse = '';
-          try {
-            final lyricObj =
-                jsonDecode(rawResultStr) as Map<String, dynamic>;
-            final lxlyric = lyricObj['lxlyric'] as String? ?? '';
-            final lyric = lyricObj['lyric'] as String? ?? '';
-            final tlyric = lyricObj['tlyric'] as String? ?? '';
-            if (lxlyric.trim().isNotEmpty) {
-              lyricsToParse = lxlyric;
-            } else if (lyric.trim().isNotEmpty) {
-              if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
-                lyricsToParse = '$lyric\n$tlyric';
-              } else {
-                lyricsToParse = lyric;
+      if (item!.isOnline) {
+        // 在线曲目：优先取插件歌词（插件源走 pluginId 命中的插件），
+        // 取不到再走 Rust 内置音源在线抓词
+        final pluginText = await _fetchPluginPreviewLyric(item);
+        if (pluginText.trim().isNotEmpty) {
+          jsonStr = await parseLyrics(rawLyrics: pluginText);
+        } else if (item.source != null && item.onlineInfoJson != null) {
+          // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词
+          final rawResultStr = await fetchLyricFromSource(
+            source: item.source!,
+            songInfoJson: item.onlineInfoJson!,
+          );
+          if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
+            String lyricsToParse = '';
+            try {
+              final lyricObj =
+                  jsonDecode(rawResultStr) as Map<String, dynamic>;
+              final lxlyric = lyricObj['lxlyric'] as String? ?? '';
+              final lyric = lyricObj['lyric'] as String? ?? '';
+              final tlyric = lyricObj['tlyric'] as String? ?? '';
+              if (lxlyric.trim().isNotEmpty) {
+                lyricsToParse = lxlyric;
+              } else if (lyric.trim().isNotEmpty) {
+                if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
+                  lyricsToParse = '$lyric\n$tlyric';
+                } else {
+                  lyricsToParse = lyric;
+                }
               }
+            } catch (_) {
+              lyricsToParse = rawResultStr;
             }
-          } catch (_) {
-            lyricsToParse = rawResultStr;
-          }
-          if (lyricsToParse.trim().isNotEmpty) {
-            jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+            if (lyricsToParse.trim().isNotEmpty) {
+              jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+            }
           }
         }
       } else {
@@ -803,7 +879,8 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
   @override
   Widget build(BuildContext context) {
     if (_lines.isEmpty) return const SizedBox.shrink();
-    final posMs = widget.position * 1000;
+    // 预览歌词随播放进度局部刷新（只重建本行组，不影响整页）。
+    final posMs = (ref.watch(playerProvider.select((s) => s.position)) * 1000);
     var active = 0;
     for (var i = 0; i < _lines.length; i++) {
       if (_lines[i].timeMs <= posMs) {
@@ -1747,6 +1824,9 @@ class _ProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 进度条是唯一随播放进度每秒变化的区域，单独 select position 局部刷新，
+    // 不影响上层（顶层已另用 copyWith 免除 position 联动）。
+    final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = player.duration <= 0 ? 1.0 : player.duration;
     return Column(
       children: [
@@ -1761,7 +1841,7 @@ class _ProgressBar extends ConsumerWidget {
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
           child: CommittedSlider(
-            value: player.position.clamp(0, dur),
+            value: position.clamp(0, dur),
             min: 0,
             max: dur,
             onCommit: (v) => notifier.seek(v),
@@ -1773,7 +1853,7 @@ class _ProgressBar extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                _fmt(player.position),
+                _fmt(position),
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
               Text(
@@ -2006,16 +2086,12 @@ class _LyricLineItem {
 class _LyricsView extends ConsumerStatefulWidget {
   const _LyricsView({
     required this.current,
-    required this.position,
-    required this.isPlaying,
     required this.visible,
     required this.onTap,
     required this.onRomajiAvailable,
   });
 
   final QueueItem? current;
-  final double position; // 播放进度（秒，来自 positionStream 锚点）
-  final bool isPlaying; // 是否正在播放（驱动逐帧插值时钟）
   final bool visible; // 歌词视图是否可见（不可见时停帧省电）
   final VoidCallback onTap;
   final ValueChanged<bool> onRomajiAvailable;
@@ -2067,8 +2143,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   @override
   void initState() {
     super.initState();
-    _anchorPos = widget.position;
-    _displayPos = widget.position;
+    final p = ref.read(playerProvider).position;
+    _anchorPos = p;
+    _displayPos = p;
     _ticker = createTicker(_onTick);
     _syncTicker();
     _fetchLyrics();
@@ -2079,29 +2156,34 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.current?.path != widget.current?.path) {
       // 换歌：重置插值时钟并重新拉取歌词
-      _anchorPos = widget.position;
-      _displayPos = widget.position;
+      final p = ref.read(playerProvider).position;
+      _anchorPos = p;
+      _displayPos = p;
       _lastActiveIndex = -1;
       _draggingIndexTimer?.cancel();
       _draggingIndex = null;
       _lineLayouts.clear();
       _syncTicker();
       _fetchLyrics();
-      return;
     }
+  }
 
-    // 进度锚点更新：与外推值偏差过大视为用户 Seek
-    final jumped = (widget.position - _displayPos).abs() > 1.2;
-    _anchorPos = widget.position;
+  /// 播放进度锚点更新（positionStream 约 200ms 一跳）。与外推值偏差过大视为
+  /// 用户 Seek。由 build 内 provider 订阅触发，歌词据此推进会；页面其余部分
+  /// 不受 position 每秒跳动影响（纯滑动不更新）。
+  void _onPositionChanged(double next) {
+    final isPlaying = ref.read(playerProvider).isPlaying;
+    final jumped = (next - _displayPos).abs() > 1.2;
+    _anchorPos = next;
     _anchorWatch.reset();
     if (jumped) {
       _recenterTimer?.cancel();
       _userInteracted = false;
-      _displayPos = widget.position;
+      _displayPos = next;
       _autoScrollToActiveLine(force: true);
-    } else if (!widget.isPlaying) {
+    } else if (!isPlaying) {
       // 暂停态直接定格在新锚点
-      _displayPos = widget.position;
+      _displayPos = next;
     }
     _syncTicker();
     _autoScrollToActiveLine();
@@ -2127,9 +2209,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 根据播放/可见状态启停逐帧时钟。
   void _syncTicker() {
-    final shouldRun = widget.isPlaying && widget.visible;
+    final st = ref.read(playerProvider);
+    final shouldRun = st.isPlaying && widget.visible;
     if (shouldRun && !_ticker.isActive) {
-      _anchorPos = widget.position;
+      _anchorPos = st.position;
       _displayPos = _anchorPos;
       _anchorWatch
         ..reset()
@@ -2138,7 +2221,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     } else if (!shouldRun && _ticker.isActive) {
       _ticker.stop();
       _anchorWatch.stop();
-      if (!widget.isPlaying) {
+      if (!st.isPlaying) {
         // 暂停：定格在锚点
         _displayPos = _anchorPos;
       }
@@ -2508,8 +2591,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   @override
   Widget build(BuildContext context) {
+    // 局部订阅播放进度/播放态驱动歌词推进；页面其余部分（封面/背景/控制）
+    // 不随 position 每秒跳动重建（纯滑动不更新）。
+    ref.listen(
+      playerProvider.select((s) => s.position),
+      (_, next) => _onPositionChanged(next),
+    );
+    ref.listen(
+      playerProvider.select((s) => s.isPlaying),
+      (prev, next) => _syncTicker(),
+    );
     final scheme = Theme.of(context).colorScheme;
-
     // 歌词样式设置（移植自 MF LyricOperations）：字号档位 / 翻译开关 / 时间偏移。
     // 存到字段供 _onTick → _autoScrollToActiveLine 等非 build 路径使用。
     final settings = ref.watch(settingsProvider).valueOrNull;
@@ -3511,10 +3603,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
       child: Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.7,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: content,
       ),
