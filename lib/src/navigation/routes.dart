@@ -95,9 +95,8 @@ final appRouter = GoRouter(
       builder: (context, state) => const RecognizePage(),
     ),
     // 播放页为全屏覆盖，不占底部导航。
-    // 开启预测返回时用 MaterialPage 命中主题 PredictiveBackPageTransitionsBuilder，
-    // 边缘侧滑可实时预览下层页面（与 PiliNara 全页面原生转场一致）；
-    // 关闭预测返回时保留纵向滑动转场：从底部滑入 / 向底部收回。
+    // 统一使用「从下往上覆盖」转场：打开时整页上滑覆盖，关闭时从上往下收回。
+    // 开启预测返回时接管边缘返回手势做跟手行程（关闭的覆盖方向跟随手指向上下滑）。
     GoRoute(
       path: '/player',
       pageBuilder: (context, state) {
@@ -107,31 +106,10 @@ final appRouter = GoRouter(
               listen: false,
             ).read(settingsProvider).valueOrNull?.enablePredictiveBack ??
             true;
-        if (predictiveBack) {
-          return MaterialPage<void>(
-            key: state.pageKey,
-            child: const PlayerPage(),
-          );
-        }
-        return CustomTransitionPage<void>(
+        return _PlayerCoverPage(
           key: state.pageKey,
-          transitionDuration: const Duration(milliseconds: 320),
-          reverseTransitionDuration: const Duration(milliseconds: 320),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final curved = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            );
-            return SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            );
-          },
-          child: const PlayerPage(),
+          predictiveBack: predictiveBack,
+          builder: (_) => const PlayerPage(),
         );
       },
     ),
@@ -250,4 +228,91 @@ String navTitle(BuildContext context, BottomNavItem item) {
     '/mine' => l?.navMine ?? '我的',
     _ => l?.navEffects ?? '音效',
   };
+}
+
+/// 播放页「从下往上覆盖」转场的 Page 封装（谓词返回用 [Page] 而非 [PageRoute]）。
+class _PlayerCoverPage extends Page<void> {
+  const _PlayerCoverPage({
+    super.key,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  @override
+  Route<void> createRoute(BuildContext context) {
+    return _PlayerCoverRoute(
+      settings: this,
+      builder: builder,
+      predictiveBack: predictiveBack,
+    );
+  }
+}
+
+/// 播放页覆盖路由：打开从底部上滑覆盖，关闭从上往下收回。
+class _PlayerCoverRoute extends PageRoute<void> {
+  _PlayerCoverRoute({
+    required super.settings,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  // 用户开启预测返回时才接管边缘返回手势，做跟手行程；否则关闭也走
+  // 普通 pop，仍由反向覆盖（从上往下）动画收回。
+  @override
+  bool get popGestureEnabled => isCurrent && predictiveBack;
+
+  @override
+  bool get opaque => true;
+
+  // 全屏不透明页，不透出遮罩（抽象要求实现，实际不使用）。
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 320);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return builder(context);
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 1),
+        end: Offset.zero,
+      ).animate(curved),
+      child: child,
+    );
+  }
 }

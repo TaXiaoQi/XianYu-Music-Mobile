@@ -23,7 +23,6 @@ import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
@@ -311,8 +310,6 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final player = ref.watch(playerProvider);
-    final hasSong = player.current != null;
     final selected = _selected;
     final inResults = _inResults;
 
@@ -375,13 +372,6 @@ class _SearchPageState extends ConsumerState<SearchPage>
                   )
                 : _IdleBody(onSearch: _submitSearch),
           ),
-          if (hasSong)
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: MediaQuery.of(context).padding.bottom + 12,
-              child: const MiniPlayerBar(),
-            ),
           Positioned(
             top: 0,
             left: 0,
@@ -445,9 +435,7 @@ class _IdleBody extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final history = ref.watch(searchHistoryProvider);
     final hotAsync = ref.watch(_hotSearchProvider);
-    final hasMini = ref.watch(playerProvider).current != null;
-    final bottomInset =
-        MediaQuery.of(context).padding.bottom + (hasMini ? 92 : 24);
+    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 4, 16, bottomInset),
@@ -849,7 +837,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       return _emptyHint('没有找到相关歌曲', scheme, source: widget.source.name);
     }
 
-    final bottomInset = MediaQuery.of(context).padding.bottom + 92;
+    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
     return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _results.length,
@@ -1214,7 +1202,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       return _emptyHint('没有找到相关$name', scheme, source: widget.source.name);
     }
 
-    final bottomInset = MediaQuery.of(context).padding.bottom + 92;
+    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
     return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _items.length,

@@ -104,15 +104,24 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 交给官方预测返回过渡：gesture 中整屏缩放跟手，松手提交关闭；
-    // 非导航（按钮/编程）时回退 FadeForwards 弹入。沿用默认不覆盖。
-    return _predictive.buildTransitions(
-      this,
-      context,
-      animation,
-      secondaryAnimation,
-      child,
+    // 预测返回手势进行中才交给官方 predictive 过渡（整屏缩放跟手，
+    // 满足跟手行程）；非手势的打开/关闭（按钮、编程、系统返回）用纯
+    // 淡入淡出，不做覆盖/缩放出现。
+    if (popGestureInProgress) {
+      return _predictive.buildTransitions(
+        this,
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
+    }
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
     );
+    return FadeTransition(opacity: curved, child: child);
   }
 }
 
