@@ -753,12 +753,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Slider(
+          child: CommittedSlider(
             min: 5,
             max: 1440,
             divisions: 287,
             value: minutes.toDouble(),
-            onChanged: (v) => n.setShareLinkValidityMinutes(v.round()),
+            onCommit: (v) => n.setShareLinkValidityMinutes(v.round()),
           ),
         ),
       ],

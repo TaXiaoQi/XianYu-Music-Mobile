@@ -23,6 +23,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/share/share_service.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -420,17 +421,17 @@ class _TraditionalPlayerLayoutState
   Widget _buildCoverSection(BuildContext context) {
     return LayoutBuilder(
       builder: (context, cons) {
-        // 封面贴顶部（靠近顶栏切换 tab），歌名/收藏整齐贴在封面下；
-        // 宽度取屏宽 78%，并预留下方歌名/收藏/歌词预览高度防溢出。
+        // 封面取较紧凑尺寸，使上方信息条（歌名/作者/收藏）与中部的歌词预览
+        // 都能留出空间，不会撑出屏幕。
         final coverSize = math.min(
-          cons.maxWidth * 0.78,
-          (cons.maxHeight - 150).clamp(1.0, double.infinity),
+          cons.maxWidth * 0.72,
+          cons.maxHeight * 0.5,
         );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // 封面略下移，与顶部切换 tab 留出呼吸间距
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             _TraditionalCover(
               size: coverSize,
               current: widget.current,
@@ -438,15 +439,26 @@ class _TraditionalPlayerLayoutState
               flash: _flashOn,
               playing: widget.player.isPlaying,
             ),
-            const SizedBox(height: 24),
+            // 歌名/作者/收藏信息条：与封面拉开，整体下放
+            const SizedBox(height: 30),
             _buildCaption(context),
+            // 中部剩余空间：3 行歌词预览居中对齐
+            // （歌词与歌名/作者分离，位于底部控件与顶部歌名之间的居中位置）
+            Expanded(
+              child: Center(
+                child: _LyricPreview(
+                  current: widget.current,
+                  position: widget.player.position,
+                ),
+              ),
+            ),
           ],
         );
       },
     );
   }
 
-  /// 封面下方的信息条：左边歌名/歌手，右边收藏按钮。
+  /// 封面下方的信息条：左边歌名/作者（分开于歌词，不再内嵌歌词预览），右边收藏按钮。
   Widget _buildCaption(BuildContext context) {
     final c = widget.current;
     final isFav = c != null &&
@@ -454,42 +466,35 @@ class _TraditionalPlayerLayoutState
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 歌名过长时在容器内水平滚动展示
+                // 歌名过长时在容器内水平滚动展示（加大字号）
                 SizedBox(
-                  height: (17 * 1.2).ceilToDouble(),
+                  height: (20 * 1.2).ceilToDouble(),
                   child: _Marquee(
                     text: c?.title ?? '',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 17,
+                      fontSize: 20,
                       fontWeight: FontWeight.w700,
                       height: 1.2,
                     ),
                   ),
                 ),
-                // 歌名下方 3 行歌词预览（上一行/当前/下一行）
-                if (c != null) ...[
-                  const SizedBox(height: 6),
-                  _LyricPreview(
-                    current: c,
-                    position: widget.player.position,
-                  ),
-                ],
                 if (c != null && c.artist.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 5),
                   Text(
                     c.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: 13,
+                      fontSize: 14,
                       height: 1.2,
                     ),
                   ),
@@ -823,7 +828,7 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
                   color: j == 1
                       ? Colors.white
                       : Colors.white.withValues(alpha: 0.5),
-                  fontSize: j == 1 ? 13 : 11.5,
+                  fontSize: j == 1 ? 14 : 12.5,
                   height: 1.2,
                 ),
               ),
@@ -1747,10 +1752,11 @@ class _ProgressBar extends ConsumerWidget {
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
-          child: Slider(
+          child: CommittedSlider(
             value: player.position.clamp(0, dur),
+            min: 0,
             max: dur,
-            onChanged: (v) => notifier.seek(v),
+            onCommit: (v) => notifier.seek(v),
           ),
         ),
         Padding(

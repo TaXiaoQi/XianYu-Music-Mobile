@@ -68,6 +68,8 @@ class _OnlineCoverState extends State<OnlineCover> {
   @override
   Widget build(BuildContext context) {
     final url = widget.url;
+    // 按显示尺寸解码：列表行封面很小，整张高清图解码再缩放会拖慢滚动。
+    final cw = (widget.size * MediaQuery.of(context).devicePixelRatio).round();
 
     if (_bytes != null) {
       return _clip(Image.memory(
@@ -75,6 +77,7 @@ class _OnlineCoverState extends State<OnlineCover> {
         width: widget.size,
         height: widget.size,
         fit: BoxFit.cover,
+        cacheWidth: cw,
         errorBuilder: (_, _, _) => _placeholder(context),
       ));
     }
@@ -89,6 +92,7 @@ class _OnlineCoverState extends State<OnlineCover> {
       width: widget.size,
       height: widget.size,
       fit: BoxFit.cover,
+      memCacheWidth: cw,
       placeholder: (_, _) => _placeholder(context),
       errorWidget: (_, _, _) => _placeholder(context),
     ));
