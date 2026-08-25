@@ -37,7 +37,7 @@ dependencies:
   intl: any
 
   # flutter_rust_bridge 运行时依赖
-  flutter_rust_bridge: ^2.12.0
+  flutter_rust_bridge: 2.12.0
 
   # 状态管理与路由
   flutter_riverpod: ^2.6.0

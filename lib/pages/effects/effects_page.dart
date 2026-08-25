@@ -196,31 +196,10 @@ class _EqSection extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               for (var i = 0; i < eqFreqLabels.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    children: [
-                      Text(
-                        '${settings.eqGains[i] >= 0 ? '+' : ''}${settings.eqGains[i].round()}',
-                        style: TextStyle(
-                            fontSize: 11, color: scheme.onSurfaceVariant),
-                      ),
-                      Expanded(
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: Slider(
-                            value: settings.eqGains[i].clamp(-12.0, 12.0),
-                            min: -12,
-                            max: 12,
-                            onChanged: (v) => notifier.setEqGain(i, v),
-                          ),
-                        ),
-                      ),
-                      Text(eqFreqLabels[i],
-                          style: TextStyle(
-                              fontSize: 11, color: scheme.onSurfaceVariant)),
-                    ],
-                  ),
+                _EqBand(
+                  value: settings.eqGains[i],
+                  freqLabel: eqFreqLabels[i],
+                  onCommit: (v) => notifier.setEqGain(i, v),
                 ),
             ],
           ),
@@ -408,7 +387,7 @@ class _PitchRateSection extends ConsumerWidget {
             value: settings.playbackRate,
             min: 50,
             max: 200,
-            display: '${settings.playbackRate.round()}%',
+            displayBuilder: (v) => '${v.round()}%',
             onChanged: (v) => notifier.setPlaybackRate(v),
           ),
           _SliderTile(
@@ -416,7 +395,7 @@ class _PitchRateSection extends ConsumerWidget {
             value: settings.pitchShift,
             min: 50,
             max: 200,
-            display: '${settings.pitchShift.round()}%',
+            displayBuilder: (v) => '${v.round()}%',
             onChanged: (v) => notifier.setPitchShift(v),
           ),
           SwitchListTile(
@@ -474,7 +453,7 @@ class _ReverbSection extends ConsumerWidget {
               value: settings.reverbDry * 100,
               min: 0,
               max: 100,
-              display: '${(settings.reverbDry * 100).round()}%',
+              displayBuilder: (v) => '${v.round()}%',
               onChanged: (v) => notifier.setReverb(
                   settings.reverbKind, settings.reverbPreset, v / 100,
                   settings.reverbWet),
@@ -484,7 +463,7 @@ class _ReverbSection extends ConsumerWidget {
               value: settings.reverbWet * 100,
               min: 0,
               max: 100,
-              display: '${(settings.reverbWet * 100).round()}%',
+              displayBuilder: (v) => '${v.round()}%',
               onChanged: (v) => notifier.setReverb(
                   settings.reverbKind, settings.reverbPreset, settings.reverbDry,
                   v / 100),
@@ -848,50 +827,131 @@ class _AdvancedSection extends ConsumerWidget {
 }
 
 /// 通用滑杆行：标签 + 滑杆 + 当前值。
-class _SliderTile extends StatelessWidget {
+///
+/// 拖动期间仅本地跟手——拇指移动只在 [State] 内 `setState` 重建本行
+/// （值暂存 [draft]，hit 到 provider），松手（onChangeEnd）才提交一次。
+/// 避免每个 tick 都写 provider 触发整页 rebuild，导致音效页滑动卡顿。
+class _SliderTile extends StatefulWidget {
   const _SliderTile({
     required this.label,
     required this.value,
     required this.min,
     required this.max,
-    required this.display,
     required this.onChanged,
+    this.display,
+    this.displayBuilder,
   });
 
   final String label;
   final double value;
   final double min;
   final double max;
-  final String display;
+
+  /// 未传 [displayBuilder] 时的静态兜底文本。
+  final String? display;
+
+  /// 数值实时文本（由当前拖拽值驱动）；缺省则用 [display] 或取整数值。
+  final String Function(double)? displayBuilder;
   final ValueChanged<double> onChanged;
 
   @override
+  State<_SliderTile> createState() => _SliderTileState();
+}
+
+class _SliderTileState extends State<_SliderTile> {
+  double? _draft;
+
+  @override
   Widget build(BuildContext context) {
+    final v = (_draft ?? widget.value).clamp(widget.min, widget.max);
+    final text = widget.displayBuilder?.call(v) ??
+        widget.display ??
+        v.round().toString();
     return Row(
       children: [
         SizedBox(
           width: 72,
-          child: Text(label,
+          child: Text(widget.label,
               style: const TextStyle(fontSize: 13),
               overflow: TextOverflow.ellipsis),
         ),
         Expanded(
           child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChanged,
+            value: v,
+            min: widget.min,
+            max: widget.max,
+            onChanged: (x) => setState(() => _draft = x),
+            onChangeEnd: (x) {
+              widget.onChanged(x);
+              setState(() => _draft = null);
+            },
           ),
         ),
         SizedBox(
           width: 56,
           child: Text(
-            display,
+            text,
             textAlign: TextAlign.right,
             style: const TextStyle(fontSize: 12),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 均衡器单段：上方增益数值 + 竖向滑杆 + 下方频率标签。
+///
+/// 与 [_SliderTile] 同一提交式优化：拖动只重建本段，松手才写 provider。
+class _EqBand extends StatefulWidget {
+  const _EqBand({
+    required this.value,
+    required this.freqLabel,
+    required this.onCommit,
+  });
+
+  final double value;
+  final String freqLabel;
+  final ValueChanged<double> onCommit;
+
+  @override
+  State<_EqBand> createState() => _EqBandState();
+}
+
+class _EqBandState extends State<_EqBand> {
+  double? _draft;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final v = (_draft ?? widget.value).clamp(-12.0, 12.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        children: [
+          Text(
+            '${v >= 0 ? '+' : ''}${v.round()}',
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: Slider(
+                value: v,
+                min: -12,
+                max: 12,
+                onChanged: (x) => setState(() => _draft = x),
+                onChangeEnd: (x) {
+                  widget.onCommit(x);
+                  setState(() => _draft = null);
+                },
+              ),
+            ),
+          ),
+          Text(widget.freqLabel,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+        ],
+      ),
     );
   }
 }

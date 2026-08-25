@@ -11,6 +11,7 @@ import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
+import '../library/library_provider.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../player/player_provider.dart' show QueueItem;
@@ -303,20 +304,92 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   /// 云端同步载荷 → 本地导入歌曲（duration 毫秒 → 秒）。
-  ImportedSong _songFromSyncPayload(Map<String, dynamic> j) =>
-      ImportedSong.fromJson({
-        'title': j['title'] ?? j['name'] ?? '',
-        'artist': j['artist'],
-        'album': j['album'],
-        'duration': (((j['duration'] as num?) ?? 0) / 1000).round(),
-        'coverUrl': j['coverUrl'],
-        'localPath': j['localPath'],
-        'pluginId': j['pluginId'],
-        'source': j['source'],
-        'format': j['format'],
-        'musicInfo': j['musicInfo'],
-        'path': j['path'] ?? '',
-      });
+  ///
+  /// 桌面端本地歌曲载荷只有 `path`（Windows 路径）+ `syncType/source_type=local`，
+  /// 没有 `localPath` 字段，需据此识别为本地歌曲，避免被误判为在线歌曲。
+  /// 同时按元数据匹配本地曲库，把跨设备失效路径替换为本地真实路径。
+  ImportedSong _songFromSyncPayload(
+    Map<String, dynamic> j,
+    Map<String, Song> byPath,
+    Map<String, List<Song>> byMeta,
+  ) {
+    final rawPath = j['path'] as String? ?? '';
+    final isCloudLocal = j['syncType'] == 'local' || j['source_type'] == 'local';
+    final cloudLocalPath = (j['localPath'] as String?) ??
+        (isCloudLocal ? rawPath : null);
+    final title = (j['title'] ?? j['name'] ?? '').toString();
+    final artist = (j['artist'] ?? '').toString();
+    final durationSec = (((j['duration'] as num?) ?? 0) / 1000).round();
+    final resolvedPath = (cloudLocalPath == null || cloudLocalPath.isEmpty)
+        ? rawPath
+        : _resolveLocalPath(
+            byPath, byMeta, cloudLocalPath, title, artist, durationSec);
+    return ImportedSong.fromJson({
+      'title': title,
+      'artist': j['artist'],
+      'album': j['album'],
+      'duration': durationSec,
+      'coverUrl': j['coverUrl'],
+      'localPath': resolvedPath,
+      'pluginId': j['pluginId'],
+      'source': j['source'],
+      'format': j['format'],
+      'musicInfo': j['musicInfo'],
+      'path': resolvedPath,
+    });
+  }
+
+  static String _normMeta(String s) => s.trim().toLowerCase();
+
+  static bool _isLocalFilePath(String path) =>
+      path.isNotEmpty &&
+      !path.startsWith('lx://') &&
+      !path.startsWith('plugin://') &&
+      !path.startsWith('http://') &&
+      !path.startsWith('https://');
+
+  /// 构建本地曲库匹配索引：按路径精确匹配 + 按「标题|歌手」元数据匹配。
+  ({Map<String, Song> byPath, Map<String, List<Song>> byMeta})
+      _buildLibraryIndex() {
+    final library = _ref.read(libraryProvider);
+    final byPath = <String, Song>{};
+    final byMeta = <String, List<Song>>{};
+    for (final s in library.songs) {
+      byPath[s.path] = s;
+      final key = '${_normMeta(s.title)}|${_normMeta(s.artist)}';
+      (byMeta[key] ??= []).add(s);
+    }
+    return (byPath: byPath, byMeta: byMeta);
+  }
+
+  /// 将同步的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
+  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径。
+  String _resolveLocalPath(
+    Map<String, Song> byPath,
+    Map<String, List<Song>> byMeta,
+    String cloudPath,
+    String title,
+    String artist,
+    int durationSec,
+  ) {
+    if (!_isLocalFilePath(cloudPath)) return cloudPath;
+    if (byPath.containsKey(cloudPath)) return cloudPath;
+    final candidates =
+        byMeta['${_normMeta(title)}|${_normMeta(artist)}'] ?? const [];
+    if (candidates.isEmpty) return cloudPath;
+    if (candidates.length == 1) return candidates.first.path;
+    if (durationSec <= 0) return candidates.first.path;
+    Song? best;
+    var bestDiff = 5;
+    for (final c in candidates) {
+      final diff = (c.duration - durationSec).abs();
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        best = c;
+      }
+    }
+    return best?.path ?? cloudPath;
+  }
 
   Future<void> syncPlaylistsUpload() async {
     state = state.copyWith(
@@ -381,10 +454,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       final toImport = <PluginBackupPlaylist>[];
       var songCount = 0;
+      // 确保本地曲库已加载，用于把跨设备失效的本地路径匹配回本地曲库。
+      final library = _ref.read(libraryProvider);
+      if (library.loading) {
+        await _ref.read(libraryProvider.notifier).load();
+      }
+      final index = _buildLibraryIndex();
       for (final pl in cloudPlaylists) {
         final songs = ((pl['songs'] as List?) ?? const [])
             .whereType<Map>()
-            .map((e) => _songFromSyncPayload(e.cast<String, dynamic>()))
+            .map((e) =>
+                _songFromSyncPayload(e.cast<String, dynamic>(), index.byPath, index.byMeta))
             .toList();
         songCount += songs.length;
         toImport.add(PluginBackupPlaylist(
@@ -473,18 +553,29 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return;
       }
       final notifier = _ref.read(favoritesProvider.notifier);
+      // 确保本地曲库已加载，用于把跨设备失效的本地路径匹配回本地曲库。
+      final library = _ref.read(libraryProvider);
+      if (library.loading) {
+        await _ref.read(libraryProvider.notifier).load();
+      }
+      final index = _buildLibraryIndex();
       for (final item in favs) {
         final path = item['path'] as String?;
         if (path == null || path.isEmpty) continue;
+        final title = (item['title'] ?? item['name'] ?? path
+            .split(RegExp(r'[\\/]'))
+            .last) as String;
+        final artist = (item['artist'] as String?) ?? '';
+        final durationMs = (item['duration'] as num?)?.toInt() ?? 0;
+        final resolved = _resolveLocalPath(
+            index.byPath, index.byMeta, path, title, artist, (durationMs / 1000).round());
         await notifier.add(
           QueueItem(
-            path: path,
-            title: (item['title'] ?? item['name'] ?? path
-                .split(RegExp(r'[\\/]'))
-                .last) as String,
-            artist: (item['artist'] as String?) ?? '',
+            path: resolved,
+            title: title,
+            artist: artist,
             album: (item['album'] as String?) ?? '',
-            durationMs: (item['duration'] as num?)?.toInt() ?? 0,
+            durationMs: durationMs,
             coverUrl: item['coverUrl'] as String?,
             source: item['source'] as String?,
             onlineSongJson: item['onlineSongJson'] as String?,

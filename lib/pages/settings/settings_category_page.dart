@@ -16,6 +16,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/committed_slider.dart';
 import '../../src/audio/audio_devices.dart';
 import '../../src/rust/api.dart' as frb;
 
@@ -688,9 +689,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }) {
     return SizedBox(
       width: 120,
-      child: Slider(
+      child: CommittedSlider(
         value: s?.volume ?? 1.0,
-        onChanged: locked ? null : (v) => n.setVolume(v),
+        min: 0,
+        max: 1,
+        onCommit: locked ? null : (v) => n.setVolume(v),
       ),
     );
   }
@@ -702,12 +705,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       children: [
         SizedBox(
           width: 130,
-          child: Slider(
+          child: CommittedSlider(
             min: -12,
             max: 6,
             divisions: 18,
             value: db.clamp(-12.0, 6.0),
-            onChanged: (v) => n.setVolumeBalanceGainOffsetDb(v),
+            onCommit: (v) => n.setVolumeBalanceGainOffsetDb(v),
           ),
         ),
         SizedBox(
