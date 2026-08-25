@@ -19,12 +19,20 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   PredictiveBackDialogRoute({
     required this.builder,
     required NavigatorState navigator,
-    this.dismissible = true,
+    this.dismissible = false,
+    this.closableByBack = true,
     super.settings,
   }) : _nav = navigator;
 
   final WidgetBuilder builder;
+
+  /// 是否能点击遮罩关闭（桌面端「禁止关闭」语义：默认 false）。
   final bool dismissible;
+
+  /// 系统返回 / 预测返回能否关闭弹窗（Android 标准：返回关闭与点遮罩解耦，
+  /// 默认 true，即使点遮罩/下滑被禁用也能用返回关闭）。
+  final bool closableByBack;
+
   final NavigatorState _nav;
 
   // 是否已通过预测返回兜底关闭（避免 start/commit 重复 pop）。
@@ -52,9 +60,9 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   @override
   Color? get barrierColor => null;
 
-  // 满足预测返回接管条件：成为当前页且允许返回时，返回手势才跟手。
+  // 满足预测返回接管条件：成为当前页且允许「返回关闭」时，返回手势才跟手。
   @override
-  bool get popGestureEnabled => isCurrent && dismissible;
+  bool get popGestureEnabled => isCurrent && closableByBack;
 
   @override
   Widget buildPage(
@@ -65,16 +73,16 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scrim =
         (isDark ? Colors.black : Colors.black).withValues(alpha: isDark ? 0.54 : 0.32);
-    // 仅「可外部关闭」的弹窗参与预测返回；不可外部关闭的（如仅允许内部
-    // 按钮操作的面板）用 PopScope 同时拦截系统返回与预测返回，保持语义。
+    // 点遮罩关闭由 dismissible 控制；返回与预测返回由 closableByBack 控制。
+    // 两者独立：桌面端语义默认禁用点遮罩关闭，但 Android 返回仍能关闭弹窗。
     return PopScope(
-      canPop: dismissible,
+      canPop: closableByBack,
       child: Material(
         type: MaterialType.transparency,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 半透明遮罩：可关闭时点击关掉，不可关闭时拦截点击不穿透。
+            // 半透明遮罩：dismissible 时点击关掉，否则拦截点击不穿透。
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: dismissible ? () => Navigator.of(context).pop() : null,
@@ -111,11 +119,11 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   // 预返回被接管后既不跟手也不关闭。这里在 start 到达（已在框架层证实会
   // 到达）时就立即关闭弹窗，保证返回手势一定能关掉；commit/cancel 不再触发。
   //
-  // 只对「可外部关闭」的弹窗生效：不可关闭的面板 popGestureEnabled=false，
+  // 只对「可用返回关闭」的弹窗生效：内部按钮专用面板 closableByBack=false，
   // 官方接管器不会调用本路由的 handleStartBackGesture。
   @override
   void handleStartBackGesture({double progress = 0.0}) {
-    if (_backHandled || !dismissible) {
+    if (_backHandled || !closableByBack) {
       return;
     }
     _backHandled = true;
@@ -140,7 +148,8 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
 Future<T?> showPredictiveDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
-  bool barrierDismissible = true,
+  bool barrierDismissible = false,
+  bool closableByBack = true,
 }) {
   final navigator = Navigator.of(context, rootNavigator: true);
   return navigator.push<T>(
@@ -148,6 +157,7 @@ Future<T?> showPredictiveDialog<T>({
       builder: builder,
       navigator: navigator,
       dismissible: barrierDismissible,
+      closableByBack: closableByBack,
     ),
   );
 }

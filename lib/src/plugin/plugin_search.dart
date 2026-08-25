@@ -67,6 +67,7 @@ class PluginSearchService {
       artist: r.singer,
       album: r.albumName,
       durationMs: _parseDurationMs(r.interval),
+      coverUrl: r.img,
       onlineSongJson: songJson,
       onlineQuality: _bestQuality(r),
     );

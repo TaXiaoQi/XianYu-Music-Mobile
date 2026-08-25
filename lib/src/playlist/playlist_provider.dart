@@ -100,6 +100,7 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
       artist: song.artist,
       album: song.album,
       durationMs: song.duration * 1000,
+      coverUrl: song.coverUrl,
       onlineSongJson: jsonEncodeSafe(songJson),
       onlineQuality: '320k',
     );

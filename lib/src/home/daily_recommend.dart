@@ -116,6 +116,7 @@ class DailyRecommendItem {
         artist: artist,
         album: album,
         durationMs: durationMs,
+        coverUrl: coverUrl,
         onlineSongJson: jsonEncode(_toUrlSongInfo(song)),
         onlineQuality: quality,
       );

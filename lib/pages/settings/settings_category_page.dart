@@ -383,6 +383,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      // 分享链接设置，与桌面端「播放 → 在线播放」下的分享设置对齐。
+      _sectionHeader(context, '分享'),
+      _CardGroup(
+        children: [
+          _shareValidityTile(context, s, n),
+          _tile(
+            context,
+            icon: Icons.link_outlined,
+            title: '分享链接播放失败行为',
+            subtitle:
+                '通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌',
+            trailing: Text(
+              _sharePlaybackFailureBehaviorLabel(
+                s?.sharePlaybackFailureBehavior ?? 'pause',
+              ),
+            ),
+            onTap: () => _pickShareFailureBehavior(context, ref, s),
+          ),
+        ],
+      ),
       _sectionHeader(context, '输出'),
       _CardGroup(
         children: [
@@ -739,10 +759,56 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
+  Widget _shareValidityTile(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final minutes = (s?.shareLinkValidityMinutes ?? 120).clamp(5, 1440).toInt();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.timer_outlined),
+          title: const Text('分享链接有效时长'),
+          subtitle: Text(
+            '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          trailing: Text(
+            _shareValidityLabel(minutes),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: scheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Slider(
+            min: 5,
+            max: 1440,
+            divisions: 287,
+            value: minutes.toDouble(),
+            onChanged: (v) => n.setShareLinkValidityMinutes(v.round()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _shareValidityLabel(int v) =>
+      v % 60 == 0 ? '${v ~/ 60} 小时' : '$v 分钟';
+
   String _failureBehaviorLabel(String v) => switch (v) {
     'stop' => '停止播放',
     _ => '跳到下一首',
   };
+
+  String _sharePlaybackFailureBehaviorLabel(String v) =>
+      v == 'pause' ? '暂停播放' : '替换播放';
 
   String _qualityFallbackLabel(String v) => switch (v) {
     'pause' => '暂停',
@@ -1027,6 +1093,31 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setOnlineFailureBehavior(choice.value as String);
+    }
+  }
+
+  Future<void> _pickShareFailureBehavior(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.sharePlaybackFailureBehavior ?? 'pause';
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('暂停播放', 'pause', subtitle: '分享歌曲起播失败时停止并显示错误'),
+          _Choice('替换播放', 'replace', subtitle: '按来源信息走插件换源重播同一首歌'),
+        ],
+        cur,
+        labelOf: (v) => _sharePlaybackFailureBehaviorLabel(v as String),
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setSharePlaybackFailureBehavior(choice.value as String);
     }
   }
 
