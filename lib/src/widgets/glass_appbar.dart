@@ -79,13 +79,14 @@ class GlassTopBar extends ConsumerWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        // sigma 12：移动端降低模糊半径，阶梯式减少滚动/转场时的模糊开销。
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
+        // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感。
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
           decoration: BoxDecoration(
             color: isDark
-                ? const Color(0xCC222222)
-                : const Color(0xD9F7F7F9),
+                ? const Color(0xB8222222)
+                : const Color(0xCCF7F7F9),
             border: Border(
               bottom: BorderSide(
                 color: scheme.onSurface.withValues(alpha: 0.06),

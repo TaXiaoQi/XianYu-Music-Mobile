@@ -8,6 +8,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -118,8 +119,7 @@ class PlaylistsPage extends ConsumerWidget {
     if (name == null || name.trim().isEmpty) return;
     await manager.create(name.trim());
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('已创建歌单「${name.trim()}」')));
+    showXianYuToast(context, '已创建歌单「${name.trim()}」');
   }
 }
 
@@ -219,9 +219,8 @@ class _PlaylistCard extends ConsumerWidget {
   }
 
   void _openPlaylist(BuildContext context, String id) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => PlaylistDetailPage(playlistId: id),
-    ));
+    // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致。
+    context.push('/playlist/$id');
   }
 
   void _sheetActions(BuildContext context, PlaylistManager manager) {

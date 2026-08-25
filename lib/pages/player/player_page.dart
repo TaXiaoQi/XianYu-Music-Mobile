@@ -8,18 +8,21 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
+import '../../src/effects/sound_effect_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/share/share_service.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -73,6 +76,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final showRomaji = settings?.showLyricsRomaji ?? false;
     final offsetMs = settings?.lyricOffsetMs ?? 0;
     final hasRomaji = _lyricsViewHasRomaji;
+    final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -81,127 +85,1000 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
       child: _DragDismissSheet(
-        child: Scaffold(
-          backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
-              _BlurredCoverBackground(current: current),
-              SafeArea(
-                child: Stack(
+        child: playerStyle == PlayerStyle.traditional
+            ? _TraditionalPlayerLayout(
+                player: player,
+                notifier: notifier,
+                current: current,
+              )
+            : _buildAdvancedBody(
+                player: player,
+                notifier: notifier,
+                current: current,
+                scheme: scheme,
+                fontSizeIdx: fontSizeIdx,
+                showTranslation: showTranslation,
+                showRomaji: showRomaji,
+                offsetMs: offsetMs,
+                hasRomaji: hasRomaji,
+              ),
+      ),
+    );
+  }
+
+  /// 「高级模式」正在播放页（现代毛玻璃风格，原布局）。
+  Widget _buildAdvancedBody({
+    required PlaybackState player,
+    required PlayerNotifier notifier,
+    required QueueItem? current,
+    required ColorScheme scheme,
+    required int fontSizeIdx,
+    required bool showTranslation,
+    required bool showRomaji,
+    required int offsetMs,
+    required bool hasRomaji,
+  }) {
+    return Scaffold(
+      backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页）
+          _BlurredCoverBackground(current: current),
+          SafeArea(
+            child: Stack(
+              children: [
+                Column(
                   children: [
-                    Column(
-                      children: [
-                        // 顶栏
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.keyboard_arrow_down,
-                                  size: 28,
-                                ),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  _showLyrics ? '歌词' : '正在播放',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                  ),
-                                ),
-                              ),
-                              // 右侧留位 48px 占位，保持标题居中
-                              const SizedBox(width: 48),
-                            ],
+                    // 顶栏
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              size: 28,
+                            ),
+                            onPressed: () => Navigator.of(context).pop(),
                           ),
-                        ),
-                        // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
-                        if (!_showLyrics) ...[
-                          const Spacer(),
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _showLyrics = true;
-                              });
-                            },
-                            child: _BigCover(current: current),
-                          ),
-                          const Spacer(),
-                        ] else ...[
                           Expanded(
-                            child: ClipRect(
-                              child: _LyricsView(
-                                current: current,
-                                position: player.position,
-                                isPlaying: player.isPlaying,
-                                visible: _showLyrics,
-                                onTap: () {
-                                  setState(() {
-                                    _showLyrics = false;
-                                  });
-                                },
-                                onRomajiAvailable: (has) {
-                                  if (_lyricsViewHasRomaji != has) {
-                                    setState(() => _lyricsViewHasRomaji = has);
-                                  }
-                                },
+                            child: Text(
+                              _showLyrics ? '歌词' : '正在播放',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.9),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          // 右侧留位 48px 占位，保持标题居中
+                          const SizedBox(width: 48),
                         ],
-                        // 毛玻璃控制卡
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                          child: _GlassControlCard(
-                            player: player,
-                            notifier: notifier,
-                            current: current,
+                      ),
+                    ),
+                    // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
+                    if (!_showLyrics) ...[
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showLyrics = true;
+                          });
+                        },
+                        child: _BigCover(current: current),
+                      ),
+                      const Spacer(),
+                    ] else ...[
+                      Expanded(
+                        child: ClipRect(
+                          child: RepaintBoundary(
+                            child: _LyricsView(
+                              current: current,
+                              position: player.position,
+                              isPlaying: player.isPlaying,
+                              visible: _showLyrics,
+                              onTap: () {
+                                setState(() {
+                                  _showLyrics = false;
+                                });
+                              },
+                              onRomajiAvailable: (has) {
+                                if (_lyricsViewHasRomaji != has) {
+                                  setState(
+                                    () => _lyricsViewHasRomaji = has,
+                                  );
+                                }
+                              },
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-
-                    // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（与左侧下拉图标/居中标题在同一水平线）
-                    if (_showLyrics)
-                      Positioned(
-                        top: 4,
-                        right: 12,
-                        child: _LyricSettingsRail(
-                          fontSizeIdx: fontSizeIdx,
-                          showTranslation: showTranslation,
-                          showRomaji: showRomaji,
-                          offsetMs: offsetMs,
-                          hasTranslation: true,
-                          hasRomaji: hasRomaji,
-                          onFontSize: () =>
-                              _LyricsViewState._showFontSizeSheet(context, ref),
-                          onToggleTranslation: () {
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setShowLyricsTranslation(!showTranslation);
-                          },
-                          onToggleRomaji: () {
-                            ref
-                                .read(settingsProvider.notifier)
-                                .setShowLyricsRomaji(!showRomaji);
-                          },
-                          onOffset: () =>
-                              _LyricsViewState._showOffsetSheet(context, ref),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    // 毛玻璃控制卡：包一层 RepaintBoundary 隔离成独立图层，
+                    // 进度 tick / 歌词切换等 rebuild 时不会重绘整张玻璃卡。
+                    RepaintBoundary(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                        child: _GlassControlCard(
+                          player: player,
+                          notifier: notifier,
+                          current: current,
                         ),
                       ),
+                    ),
                   ],
+                ),
+
+                // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（与左侧下拉图标/居中标题在同一水平线）
+                if (_showLyrics)
+                  Positioned(
+                    top: 4,
+                    right: 12,
+                    child: _LyricSettingsRail(
+                      fontSizeIdx: fontSizeIdx,
+                      showTranslation: showTranslation,
+                      showRomaji: showRomaji,
+                      offsetMs: offsetMs,
+                      hasTranslation: true,
+                      hasRomaji: hasRomaji,
+                      onFontSize: () =>
+                          _LyricsViewState._showFontSizeSheet(context, ref),
+                      onToggleTranslation: () {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setShowLyricsTranslation(!showTranslation);
+                      },
+                      onToggleRomaji: () {
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setShowLyricsRomaji(!showRomaji);
+                      },
+                      onOffset: () =>
+                          _LyricsViewState._showOffsetSheet(context, ref),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 「传统模式」正在播放页（经典 QQ 音乐式布局）：
+/// 顶部封面居中，标题/歌手与动作栏在下方，进度条与播放控制固定底部；
+/// 顶栏用「封面/歌词」分段切换，也可点击封面切换歌词，封面可开启频谱「闪」动效。
+class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
+  const _TraditionalPlayerLayout({
+    required this.player,
+    required this.notifier,
+    required this.current,
+  });
+  final PlaybackState player;
+  final PlayerNotifier notifier;
+  final QueueItem? current;
+
+  @override
+  ConsumerState<_TraditionalPlayerLayout> createState() =>
+      _TraditionalPlayerLayoutState();
+}
+
+class _TraditionalPlayerLayoutState
+    extends ConsumerState<_TraditionalPlayerLayout>
+    with SingleTickerProviderStateMixin {
+  bool _showLyrics = false;
+
+  /// 封面/歌词左右滑动翻页控制器。
+  late final PageController _pageController;
+
+  /// 「闪」频谱动效（封面底部频谱条）开关。
+  bool _flashOn = false;
+
+  late final AnimationController _eq;
+
+  @override
+  void initState() {
+    super.initState();
+    _eq = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _eq.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  /// 顶栏分段点击：切换到对应页（封面 0 / 歌词 1）。
+  void _switchPage(int i) {
+    _pageController.animateToPage(
+      i,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+    if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
+  }
+
+  /// 依据「闪」开关与播放状态启停频谱动效。
+  void _syncEq() {
+    final run = _flashOn && widget.player.isPlaying;
+    if (run && !_eq.isAnimating) {
+      _eq.repeat();
+    } else if (!run && _eq.isAnimating) {
+      _eq.stop();
+      _eq.reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = widget.player;
+    final current = widget.current;
+    _syncEq();
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _BlurredCoverBackground(current: current),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(context),
+                // 中间区域：封面与歌词左右滑动切换（不再点击切换）。
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: 2,
+                    onPageChanged: (i) {
+                      if (_showLyrics != (i == 1)) {
+                        setState(() => _showLyrics = i == 1);
+                      }
+                    },
+                    itemBuilder: (context, i) {
+                      if (i == 0) return _buildCoverSection(context);
+                      return ClipRect(
+                        child: RepaintBoundary(
+                          child: _LyricsView(
+                            current: current,
+                            position: player.position,
+                            isPlaying: player.isPlaying,
+                            visible: _showLyrics,
+                            onTap: () {},
+                            onRomajiAvailable: (_) {},
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                // 4 个动作控件（音效/闪/下载/评论）：不跟封面走，挂在底部播放条上
+                _buildActionsRow(context),
+                const SizedBox(height: 4),
+                // 进度条（独立图层，tick 不重绘整页）
+                RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
+                    child: _ProgressBar(player: player, notifier: widget.notifier),
+                  ),
+                ),
+                _Controls(player: player, notifier: widget.notifier),
+                // 底部留白：底部整块 UI 再上移一格，避免贴底
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 顶栏：返回 / 封面·歌词分段切换 / 分享。
+  Widget _buildTopBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          Expanded(
+            child: Center(
+              child: _SegmentSwitcher(
+                items: const ['封面', '歌词'],
+                index: _showLyrics ? 1 : 0,
+                onChanged: _switchPage,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.ios_share,
+              size: 28,
+              color: Colors.white,
+            ),
+            tooltip: '分享歌曲',
+            onPressed: () {
+              final c = widget.current;
+              if (c != null) _shareCurrent(context, ref, c);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoverSection(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, cons) {
+        // 封面贴顶部（靠近顶栏切换 tab），歌名/收藏整齐贴在封面下；
+        // 宽度取屏宽 78%，并预留下方歌名/收藏/歌词预览高度防溢出。
+        final coverSize = math.min(
+          cons.maxWidth * 0.78,
+          (cons.maxHeight - 150).clamp(1.0, double.infinity),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 封面略下移，与顶部切换 tab 留出呼吸间距
+            const SizedBox(height: 18),
+            _TraditionalCover(
+              size: coverSize,
+              current: widget.current,
+              eq: _eq,
+              flash: _flashOn,
+              playing: widget.player.isPlaying,
+            ),
+            const SizedBox(height: 24),
+            _buildCaption(context),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 封面下方的信息条：左边歌名/歌手，右边收藏按钮。
+  Widget _buildCaption(BuildContext context) {
+    final c = widget.current;
+    final isFav = c != null &&
+        ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 歌名过长时在容器内水平滚动展示
+                SizedBox(
+                  height: (17 * 1.2).ceilToDouble(),
+                  child: _Marquee(
+                    text: c?.title ?? '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                // 歌名下方 3 行歌词预览（上一行/当前/下一行）
+                if (c != null) ...[
+                  const SizedBox(height: 6),
+                  _LyricPreview(
+                    current: c,
+                    position: widget.player.position,
+                  ),
+                ],
+                if (c != null && c.artist.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    c.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 13,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: () {
+              if (c != null) {
+                ref.read(favoritesProvider.notifier).toggle(c);
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(
+                isFav ? Icons.favorite : Icons.favorite_border,
+                size: 28,
+                color: isFav
+                    ? const Color(0xFFEC4141)
+                    : Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionsRow(BuildContext context) {
+    final sfx = ref.watch(soundEffectProvider).settings;
+    final bypass = sfx.bypass;
+    final current = widget.current;
+    // 下载状态：本地曲天然已在设备；在线曲按下载历史/进行中任务判断。
+    final dl = ref.watch(downloadProvider);
+    final isLocal = current != null && !current.isOnline;
+    final dlActive = current != null &&
+        dl.tasks.any((t) =>
+            t.songPath == current.path &&
+            (t.status == DownloadStatus.waiting ||
+                t.status == DownloadStatus.downloading));
+    final dlDone = current != null &&
+        (isLocal ||
+            dl.history.any((h) => h.songPath == current.path));
+    // 4 个动作项等比放大、平均横向铺满一行（收藏已移至封面右下）。
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _actionItem(
+            context,
+            icon: Icons.graphic_eq,
+            label: '音效',
+            status: bypass ? 'off' : 'on',
+            active: !bypass,
+            // 点击打开音效页（原首页底部栏音效入口已迁入传统播放页）。
+            onTap: () => context.push('/effects'),
+          ),
+          _actionItem(
+            context,
+            icon: Icons.auto_awesome,
+            label: '闪',
+            status: _flashOn ? 'on' : 'off',
+            active: _flashOn,
+            onTap: () => setState(() => _flashOn = !_flashOn),
+          ),
+          _actionItem(
+            context,
+            icon: dlDone
+                ? Icons.check_circle
+                : (dlActive ? Icons.hourglass_top : Icons.download_outlined),
+            label: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
+            iconColor: dlDone ? const Color(0xFF07C160) : null,
+            onTap: () {
+              if (current == null) return;
+              if (dlActive) {
+                showXianYuToast(context, '正在下载中…');
+                return;
+              }
+              if (dlDone) {
+                showXianYuToast(
+                  context,
+                  isLocal ? '本地音乐已在设备' : '已下载，可到下载页查看',
+                );
+                return;
+              }
+              ref.read(downloadProvider.notifier).download(current);
+              showXianYuToast(context, '开始下载：${current.title}');
+            },
+          ),
+          _actionItem(
+            context,
+            icon: Icons.mode_comment_outlined,
+            label: '评论',
+            // 本地歌曲无在线评论信息，置灰不可点
+            enabled: current != null && current.isOnline,
+            onTap: () {
+              final c = current;
+              if (c == null) return;
+              showSheetDialog<void>(
+                context,
+                (_) => CommentSheet(songJson: c.onlineSongJson!),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 单个动作项：图标 + 标签 + 可选 on/off 状态；enabled=false 时置灰且不可点。
+  Widget _actionItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    String? status,
+    bool active = false,
+    Color? iconColor,
+    bool enabled = true,
+    required VoidCallback onTap,
+  }) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: enabled ? onTap : () {},
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
+        child: Opacity(
+          opacity: enabled ? 1 : 0.32,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 27,
+                color: iconColor ??
+                    (active ? accent : Colors.white.withValues(alpha: 0.85)),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                status == null ? label : '$label $status',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: status == null ? FontWeight.w600 : FontWeight.w400,
+                  color: status == null
+                      ? Colors.white.withValues(alpha: 0.78)
+                      : Colors.white.withValues(alpha: 0.55),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 顶栏封面/歌词分段切换控件。
+class _SegmentSwitcher extends StatelessWidget {
+  const _SegmentSwitcher({
+    required this.items,
+    required this.index,
+    required this.onChanged,
+  });
+  final List<String> items;
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < items.length; i++)
+            GestureDetector(
+              onTap: () => onChanged(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: i == index
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  items[i],
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: i == index ? FontWeight.w700 : FontWeight.w500,
+                    color: Colors.white.withValues(
+                      alpha: i == index ? 1 : 0.65,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 封面下歌词预览：取当前播放行的上一行/当前/下一行 共 3 行展示。
+class _LyricPreview extends ConsumerStatefulWidget {
+  const _LyricPreview({required this.current, required this.position});
+  final QueueItem? current;
+  final double position; // 秒
+
+  @override
+  ConsumerState<_LyricPreview> createState() => _LyricPreviewState();
+}
+
+class _LyricPreviewState extends ConsumerState<_LyricPreview> {
+  List<_LyricLineItem> _lines = const [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_LyricPreview old) {
+    super.didUpdateWidget(old);
+    if (old.current?.path != widget.current?.path) _load();
+  }
+
+  Future<void> _load() async {
+    final item = widget.current;
+    final path = item?.path ?? '';
+    if (path.isEmpty || _loading || _lines.isNotEmpty) return;
+    _loading = true;
+    try {
+      String jsonStr = '';
+      if (item!.isOnline &&
+          item.source != null &&
+          item.onlineInfoJson != null) {
+        // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词
+        final rawResultStr = await fetchLyricFromSource(
+          source: item.source!,
+          songInfoJson: item.onlineInfoJson!,
+        );
+        if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
+          String lyricsToParse = '';
+          try {
+            final lyricObj =
+                jsonDecode(rawResultStr) as Map<String, dynamic>;
+            final lxlyric = lyricObj['lxlyric'] as String? ?? '';
+            final lyric = lyricObj['lyric'] as String? ?? '';
+            final tlyric = lyricObj['tlyric'] as String? ?? '';
+            if (lxlyric.trim().isNotEmpty) {
+              lyricsToParse = lxlyric;
+            } else if (lyric.trim().isNotEmpty) {
+              if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
+                lyricsToParse = '$lyric\n$tlyric';
+              } else {
+                lyricsToParse = lyric;
+              }
+            }
+          } catch (_) {
+            lyricsToParse = rawResultStr;
+          }
+          if (lyricsToParse.trim().isNotEmpty) {
+            jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
+          }
+        }
+      } else {
+        // 本地曲目：通过数据库及本地资源提取
+        final dbPath = await ref.read(dbPathProvider.future);
+        jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+      }
+      final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
+          ? _parseLyricsJson(jsonStr)
+          : const <_LyricLineItem>[];
+      if (!mounted) return;
+      setState(() => _lines = parsed);
+    } catch (_) {
+      if (mounted) setState(() => _lines = const []);
+    } finally {
+      _loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_lines.isEmpty) return const SizedBox.shrink();
+    final posMs = widget.position * 1000;
+    var active = 0;
+    for (var i = 0; i < _lines.length; i++) {
+      if (_lines[i].timeMs <= posMs) {
+        active = i;
+      } else {
+        break;
+      }
+    }
+    final items = <_LyricLineItem?>[
+      active - 1 >= 0 ? _lines[active - 1] : null,
+      _lines[active],
+      active + 1 < _lines.length ? _lines[active + 1] : null,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var j = 0; j < items.length; j++)
+          if (items[j] != null)
+            Padding(
+              padding: EdgeInsets.only(
+                top: j == 1 ? 3 : 1,
+                bottom: j == 1 ? 3 : 1,
+              ),
+              child: Text(
+                items[j]!.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: j == 1
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.5),
+                  fontSize: j == 1 ? 13 : 11.5,
+                  height: 1.2,
+                ),
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+/// 单行动态跑马灯：文本超出容器宽度时自动无缝横向滚动，否则静态展示。
+class _Marquee extends StatefulWidget {
+  const _Marquee({required this.text, required this.style});
+  final String text;
+  final TextStyle style;
+
+  @override
+  State<_Marquee> createState() => _MarqueeState();
+}
+
+class _MarqueeState extends State<_Marquee>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  double _textWidth = 0;
+  static const _gap = 60.0;
+  static const _speed = 42.0; // 滚动速度（像素/秒）
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this)
+      ..addListener(() => setState(() {}));
+    _measure();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Marquee old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text || old.style != widget.style) _measure();
+  }
+
+  void _measure() {
+    final tp = TextPainter(
+      text: TextSpan(text: widget.text, style: widget.style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    _textWidth = tp.width;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, cons) {
+        final maxWidth = cons.maxWidth;
+        // 文本未溢出：静态展示，不启动滚动
+        if (_textWidth <= maxWidth) {
+          _controller.stop();
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              widget.text,
+              maxLines: 1,
+              softWrap: false,
+              style: widget.style,
+            ),
+          );
+        }
+        // 无缝循环滚动：总移动距离 = 文本宽 + 间隙，滚动到末尾时第二份文本续上
+        final total = _textWidth + _gap;
+        final seconds = total / _speed;
+        if ((_controller.duration?.inMilliseconds ?? 0) !=
+            (seconds * 1000).round()) {
+          _controller.duration = Duration(milliseconds: (seconds * 1000).round());
+        }
+        if (!_controller.isAnimating) _controller.repeat();
+        final dx = -_controller.value * total;
+        final lineHeight = widget.style.fontSize != null
+            ? (widget.style.fontSize! * 1.2).ceilToDouble()
+            : 20.0;
+        return ClipRect(
+          child: SizedBox(
+            height: lineHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: dx - 20,
+                  top: 0,
+                  child: Text(
+                    widget.text,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: widget.style,
+                  ),
+                ),
+                Positioned(
+                  left: dx - 20 + _textWidth + _gap,
+                  top: 0,
+                  child: Text(
+                    widget.text,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: widget.style,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 传统模式大封面：圆角方形 + 阴影，开启「闪」时在底部叠加频谱条。
+/// （歌名/收藏信息条挂在封面下方的独立行，不再叠加在封面上。）
+class _TraditionalCover extends StatelessWidget {
+  const _TraditionalCover({
+    required this.size,
+    required this.current,
+    required this.eq,
+    required this.flash,
+    required this.playing,
+  });
+  final double size;
+  final QueueItem? current;
+  final AnimationController eq;
+  final bool flash;
+  final bool playing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.14),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(23),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (current == null)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(23),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        scheme.primary,
+                        scheme.primary.withValues(alpha: 0.72),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.music_note,
+                    size: size * 0.3,
+                    color: Colors.white.withValues(alpha: 0.92),
+                  ),
+                )
+              else
+                CoverImage(
+                  songPath: current!.path,
+                  networkUrl: current!.coverUrl,
+                  width: size,
+                  height: size,
+                  radius: 23,
+                  gradient: [
+                    scheme.primary,
+                    scheme.primary.withValues(alpha: 0.72),
+                  ],
+                ),
+              if (flash && playing)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _EqStrip(eq: eq),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 封面底部频谱条（「闪」动效）：底部渐隐 + 跳动的等化器竖条。
+class _EqStrip extends StatelessWidget {
+  const _EqStrip({required this.eq});
+  final AnimationController eq;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.black.withValues(alpha: 0.45),
+          ],
+        ),
+      ),
+      child: AnimatedBuilder(
+        animation: eq,
+        builder: (context, _) {
+          final t = eq.value;
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (var i = 0; i < 7; i++)
+                Container(
+                  width: 3,
+                  height: 12 +
+                      14 *
+                          (0.5 +
+                              0.5 *
+                                  math.sin(
+                                    t * 2 * math.pi * 2 + i * 0.8,
+                                  )),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -300,43 +1177,73 @@ class _BlurredCoverBackground extends StatelessWidget {
       return const _AmbientBackground();
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 深色底：封面加载前/加载失败时的兜底
-        Container(color: Color.lerp(scheme.surface, Colors.black, 0.6)),
-        // 封面铺满全屏 + 大半径模糊（对应 MusicFree blurRadius=50）
-        ImageFiltered(
-          imageFilter: ImageFilter.blur(
-            sigmaX: 50,
-            sigmaY: 50,
-            tileMode: TileMode.decal,
-          ),
-          child: CoverImage(
-            songPath: item.path,
-            networkUrl: item.coverUrl,
-            width: double.infinity,
-            height: double.infinity,
-            radius: 0,
-            gradient: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
-            // 全屏背景占位不要中央大图标
-            placeholder: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    scheme.primary.withValues(alpha: 0.55),
-                    Color.lerp(scheme.surface, Colors.black, 0.6)!,
-                  ],
+    // 低分辨率预烘焙：把封面先渲染到 1/8 尺寸的小图空间里做高斯模糊，再整体
+    // 放大铺满（FittedBox）。高斯模糊只在 ~1/64 的像素上计算一次，放大由 GPU
+    // 插值完成且模糊天然平滑；RepaintBoundary 把结果冻结成图层，整页上滑/收回
+    // 与键盘适配时只搬贴图、不打重采样。
+    final routeAnim = ModalRoute.of(context)?.animation;
+    final size = MediaQuery.of(context).size;
+    const downscale = 8.0;
+    final smallW = size.width / downscale;
+    final smallH = size.height / downscale;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: routeAnim ?? kAlwaysCompleteAnimation,
+        builder: (context, _) {
+          final settled = routeAnim == null || routeAnim.value >= 0.999;
+          // 最终屏幕上等效 sigma；小图空间只要除以 downscale 即可得到一致观感。
+          final onScreenSigma = settled ? 50.0 : 25.0;
+          final sigma = onScreenSigma / downscale;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // 深色底：封面加载前/加载失败时的兜底
+              Container(color: Color.lerp(scheme.surface, Colors.black, 0.6)),
+              // 封面铺满全屏 + 大半径模糊（对应 MusicFree blurRadius=50）
+              FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: smallW,
+                  height: smallH,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: sigma,
+                      sigmaY: sigma,
+                      tileMode: TileMode.decal,
+                    ),
+                    child: CoverImage(
+                      songPath: item.path,
+                      networkUrl: item.coverUrl,
+                      width: smallW,
+                      height: smallH,
+                      radius: 0,
+                      gradient: [
+                        scheme.primary,
+                        scheme.primary.withValues(alpha: 0.72),
+                      ],
+                      // 全屏背景占位不要中央大图标
+                      placeholder: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              scheme.primary.withValues(alpha: 0.55),
+                              Color.lerp(scheme.surface, Colors.black, 0.6)!,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-        // 深色遮罩：对齐 MusicFree「黑底 + 50% 透明封面」的可读性
-        Container(color: Colors.black.withValues(alpha: 0.45)),
-      ],
+              // 深色遮罩：对齐 MusicFree「黑底 + 50% 透明封面」的可读性
+              Container(color: Colors.black.withValues(alpha: 0.45)),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -506,7 +1413,10 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 14),
-                _ProgressBar(player: player, notifier: notifier),
+                // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
+                RepaintBoundary(
+                  child: _ProgressBar(player: player, notifier: notifier),
+                ),
                 const SizedBox(height: 6),
                 _Controls(player: player, notifier: notifier),
               ],
@@ -531,7 +1441,9 @@ class _GlassControlCard extends ConsumerWidget {
       return AdaptiveGlass(
         shape: const LiquidRoundedRectangle(borderRadius: 26),
         settings: liquidGlassSettings(isDark),
-        quality: GlassQuality.premium,
+        // premium 折射+色差+幅散 shader 在整页转场/键盘弹起时逐帧重采样掉帧，
+        // 降到 standard 保留玻璃观感但去掉高成本折射效果（低性能另有纯色补偿分支）。
+        quality: GlassQuality.standard,
         child: content,
       );
     }
@@ -634,9 +1546,7 @@ class _TitleRow extends ConsumerWidget {
             icon: const Icon(Icons.download_outlined),
             onPressed: () {
               ref.read(downloadProvider.notifier).download(current);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('开始下载：${current.title}')));
+              showXianYuToast(context, '开始下载：${current.title}');
             },
           ),
         if (current.isOnline)
@@ -657,23 +1567,23 @@ Future<void> _shareCurrent(
     BuildContext context, WidgetRef ref, QueueItem current) async {
   final share = ref.read(shareServiceProvider);
   final cachedUrl = share.cached(current);
-  // 提前捕获 messenger，避免 await 后跨 async 间隙使用 BuildContext。
-  final messenger = ScaffoldMessenger.of(context);
+  // 提前捕获 Overlay，避免 await 后跨 async 间隙使用 BuildContext。
+  final overlay = Overlay.of(context, rootOverlay: true);
   if (cachedUrl != null && cachedUrl.isNotEmpty) {
     await Clipboard.setData(ClipboardData(text: cachedUrl));
-    messenger.showSnackBar(const SnackBar(content: Text('分享链接已复制')));
+    showXianYuToastByOverlay(overlay, '分享链接已复制');
     return;
   }
   try {
     final url = await share.create(current);
     if (url.isNotEmpty) {
       await Clipboard.setData(ClipboardData(text: url));
-      messenger.showSnackBar(const SnackBar(content: Text('分享链接已复制')));
+      showXianYuToastByOverlay(overlay, '分享链接已复制');
     } else {
-      messenger.showSnackBar(const SnackBar(content: Text('生成分享链接失败')));
+      showXianYuToastByOverlay(overlay, '生成分享链接失败');
     }
   } catch (_) {
-    messenger.showSnackBar(const SnackBar(content: Text('生成分享链接失败')));
+    showXianYuToastByOverlay(overlay, '生成分享链接失败');
   }
 }
 
@@ -788,16 +1698,15 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                           : () async {
                               final ok = await widget.notifier.switchQuality(q);
                               if (!ctx.mounted) return;
+                              final overlay = Overlay.of(
+                                ctx,
+                                rootOverlay: true,
+                              );
                               Navigator.of(ctx).pop();
-                              ScaffoldMessenger.of(ctx)
-                                ..hideCurrentSnackBar()
-                                ..showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      ok ? '已切换为${_qualityLabel(q)}' : '音质切换失败',
-                                    ),
-                                  ),
-                                );
+                              showXianYuToastByOverlay(
+                                overlay,
+                                ok ? '已切换为${_qualityLabel(q)}' : '音质切换失败',
+                              );
                             },
                     );
                   },
@@ -874,63 +1783,51 @@ class _Controls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final icons = [Icons.repeat, Icons.repeat_one, Icons.shuffle];
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        IconButton(
-          iconSize: 21,
-          icon: Icon(icons[player.playMode], color: scheme.onSurfaceVariant),
-          onPressed: notifier.cyclePlayMode,
-        ),
-        IconButton(
-          iconSize: 32,
-          icon: const Icon(Icons.skip_previous),
-          onPressed: notifier.previous,
-        ),
-        // 主题色实心播放键
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: scheme.primary,
-            boxShadow: [
-              BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.4),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          // 在线曲目解析直链期间显示加载态，避免看起来无响应。
-          child: player.resolving
-              ? const Padding(
-                  padding: EdgeInsets.all(18),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Colors.white,
-                  ),
-                )
-              : IconButton(
-                  icon: Icon(
-                    player.isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                  ),
-                  iconSize: 34,
-                  onPressed: notifier.toggle,
+    // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          IconButton(iconSize: 28, icon: Icon(icons[player.playMode], color: scheme.onSurfaceVariant), onPressed: notifier.cyclePlayMode),
+          IconButton(iconSize: 28, icon: const Icon(Icons.skip_previous), onPressed: notifier.previous),
+          // 主题色实心播放键
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.4),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
-        ),
-        IconButton(
-          iconSize: 32,
-          icon: const Icon(Icons.skip_next),
-          onPressed: notifier.next,
-        ),
-        IconButton(
-          iconSize: 21,
-          icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant),
-          onPressed: () => _showQueueSheet(context, ref, player),
-        ),
-      ],
+              ],
+            ),
+            // 在线曲目解析直链期间显示加载态，避免看起来无响应。
+            child: player.resolving
+                ? const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : IconButton(
+                    icon: Icon(
+                      player.isPlaying ? Icons.pause : Icons.play_arrow,
+                      color: Colors.white,
+                    ),
+                    iconSize: 34,
+                    onPressed: notifier.toggle,
+                  ),
+          ),
+          IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next),
+          IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref, player)),
+        ],
+      ),
     );
   }
 
@@ -969,6 +1866,88 @@ String _cleanLyricText(String raw) {
   text = text.replaceAll(RegExp(r'<[^>]*>'), '');
 
   return text.trim();
+}
+
+/// 将歌词 JSON（displayLines/lines，含 time/endTime/text/translation/romaji/words）
+/// 解析为歌词行列表。供歌词视图与封面下预览共用。
+List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
+  final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final rawLines =
+      (map['displayLines'] as List?) ??
+      (map['display_lines'] as List?) ??
+      (map['lines'] as List?) ??
+      [];
+  final lines = <_LyricLineItem>[];
+  for (final item in rawLines) {
+    if (item is Map<String, dynamic>) {
+      double timeSec = 0.0;
+      if (item['time'] is num) {
+        timeSec = (item['time'] as num).toDouble();
+      } else if (item['timeMs'] is num) {
+        timeSec = (item['timeMs'] as num).toDouble() / 1000.0;
+      } else if (item['startTime'] is num) {
+        timeSec = (item['startTime'] as num).toDouble();
+      } else if (item['startTimeMs'] is num) {
+        timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
+      }
+
+      // 行结束时间（Rust 侧 camelCase 序列化为 endTime）
+      double endTimeSec = 0.0;
+      final rawEndTime = item['endTime'] ?? item['end_time'];
+      if (rawEndTime is num) {
+        endTimeSec = rawEndTime.toDouble();
+      } else if (item['endTimeMs'] is num) {
+        endTimeSec = (item['endTimeMs'] as num).toDouble() / 1000.0;
+      }
+
+      final rawText = (item['text'] as String?) ?? '';
+      final text = _cleanLyricText(rawText);
+
+      final rawTrans = (item['translation'] as String?);
+      final translation = rawTrans != null
+          ? _cleanLyricText(rawTrans)
+          : null;
+
+      final rawRomaji = (item['romaji'] as String?)?.trim();
+      final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
+          ? rawRomaji
+          : null;
+
+      // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
+      final words = <_LyricWordItem>[];
+      final rawWords = item['words'] as List?;
+      if (rawWords != null && rawWords.isNotEmpty) {
+        for (final w in rawWords) {
+          if (w is Map<String, dynamic>) {
+            final wText = _cleanLyricText((w['text'] as String?) ?? '');
+            final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
+            final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
+            if (wText.isNotEmpty) {
+              words.add(
+                _LyricWordItem(text: wText, start: wStart, end: wEnd),
+              );
+            }
+          }
+        }
+      }
+
+      if (text.isNotEmpty) {
+        lines.add(
+          _LyricLineItem(
+            timeMs: (timeSec * 1000).toInt(),
+            endTimeMs: (endTimeSec * 1000).round(),
+            text: text,
+            translation: (translation != null && translation.isNotEmpty)
+                ? translation
+                : null,
+            romaji: romaji,
+            words: words,
+          ),
+        );
+      }
+    }
+  }
+  return lines;
 }
 
 /// 单字/单词逐字时间数据 (单位: 秒)
@@ -1303,85 +2282,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       }
 
       if (jsonStr.isNotEmpty && jsonStr != 'null') {
-        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-        final rawLines =
-            (map['displayLines'] as List?) ??
-            (map['display_lines'] as List?) ??
-            (map['lines'] as List?) ??
-            [];
-
-        final lines = <_LyricLineItem>[];
-
-        for (final item in rawLines) {
-          if (item is Map<String, dynamic>) {
-            double timeSec = 0.0;
-            if (item['time'] is num) {
-              timeSec = (item['time'] as num).toDouble();
-            } else if (item['timeMs'] is num) {
-              timeSec = (item['timeMs'] as num).toDouble() / 1000.0;
-            } else if (item['startTime'] is num) {
-              timeSec = (item['startTime'] as num).toDouble();
-            } else if (item['startTimeMs'] is num) {
-              timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
-            }
-
-            // 行结束时间（Rust 侧 camelCase 序列化为 endTime）
-            double endTimeSec = 0.0;
-            final rawEndTime = item['endTime'] ?? item['end_time'];
-            if (rawEndTime is num) {
-              endTimeSec = rawEndTime.toDouble();
-            } else if (item['endTimeMs'] is num) {
-              endTimeSec = (item['endTimeMs'] as num).toDouble() / 1000.0;
-            }
-
-            final rawText = (item['text'] as String?) ?? '';
-            final text = _cleanLyricText(rawText);
-
-            final rawTrans = (item['translation'] as String?);
-            final translation = rawTrans != null
-                ? _cleanLyricText(rawTrans)
-                : null;
-
-            final rawRomaji = (item['romaji'] as String?)?.trim();
-            final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
-                ? rawRomaji
-                : null;
-
-            // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
-            final words = <_LyricWordItem>[];
-            final rawWords = item['words'] as List?;
-            if (rawWords != null && rawWords.isNotEmpty) {
-              for (final w in rawWords) {
-                if (w is Map<String, dynamic>) {
-                  final wText = _cleanLyricText((w['text'] as String?) ?? '');
-                  final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
-                  final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
-                  if (wText.isNotEmpty) {
-                    words.add(
-                      _LyricWordItem(text: wText, start: wStart, end: wEnd),
-                    );
-                  }
-                }
-              }
-            }
-
-            if (text.isNotEmpty) {
-              lines.add(
-                _LyricLineItem(
-                  timeMs: (timeSec * 1000).toInt(),
-                  endTimeMs: (endTimeSec * 1000).round(),
-                  text: text,
-                  translation: (translation != null && translation.isNotEmpty)
-                      ? translation
-                      : null,
-                  romaji: romaji,
-                  words: words,
-                ),
-              );
-            }
-          }
-        }
+        final lines = _parseLyricsJson(jsonStr);
 
         if (lines.isNotEmpty && mounted) {
           setState(() {
@@ -1516,16 +2417,32 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (activeIndex == _lastActiveIndex && !force) return;
     _lastActiveIndex = activeIndex;
 
-    // 计算实际滚动的目标 Offset（使高亮行尽量靠近视图中央）
     final maxScroll = _scrollCtrl.position.maxScrollExtent;
-    final itemRatio =
-        activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1);
-    final targetOffset = maxScroll * itemRatio;
+    final viewport = _scrollCtrl.position.viewportDimension;
 
+    // 精确居中：用该行实测布局（内容坐标顶 + 高/2）对齐视口中心；
+    // 行尚未构建测量时（如长距离 seek）退回按比例估算。
+    double targetOffset;
+    final layout = _lineLayouts[activeIndex];
+    if (layout != null && viewport > 0) {
+      targetOffset = layout.$1 + layout.$2 / 2 - viewport / 2;
+    } else {
+      targetOffset = maxScroll *
+          (activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1));
+    }
+    targetOffset = targetOffset.clamp(0.0, maxScroll);
+
+    // 死区：当前偏移已经很接近目标中心时不再重新滚动，避免每换一行都从头
+    // 发起新动画、并和活动行字号变化引起的布局重排“打架”，让逐行推进更稳。
+    // force（seek / 重新聚焦）永远执行。
+    final current = _scrollCtrl.offset;
+    if (!force && (targetOffset - current).abs() < 26) return;
+
+    // 柔和对称缓动：行与行之间是平滑长滑，换行不“生硬”。
     _scrollCtrl.animateTo(
-      targetOffset.clamp(0.0, maxScroll),
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
+      targetOffset,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
     );
   }
 
@@ -1601,6 +2518,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           controller: _scrollCtrl,
           // 歌词列表内边距：工具栏已移至右上角，底部留空 40px 即可完全无遮挡展现
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+          // 限缓存/不保活离屏行，只构建视口附近歌词，减少滚动时的构建量与内存。
+          scrollCacheExtent: ScrollCacheExtent.pixels(200),
+          addAutomaticKeepAlives: false,
+          addRepaintBoundaries: false,
           itemCount: _lines.length,
           itemBuilder: (context, idx) {
             final line = _lines[idx];
@@ -1617,18 +2538,22 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   children: [
                     // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
                     if (isActive && line.words.isNotEmpty)
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        children: [
-                          for (final w in line.words)
-                            _buildKaraokeWordWidget(
-                              w,
-                              _displayPos - _offsetMs / 1000.0,
-                              scheme,
-                              activeFont,
-                              lyricFontFamily,
-                            ),
-                        ],
+                      // 活动行 ShaderMask 独立成图层：逐字漫过只重绘这一行，
+                      // 不会连带重绘整份歌词列表。
+                      RepaintBoundary(
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          children: [
+                            for (final w in line.words)
+                              _buildKaraokeWordWidget(
+                                w,
+                                _displayPos - _offsetMs / 1000.0,
+                                scheme,
+                                activeFont,
+                                lyricFontFamily,
+                              ),
+                          ],
+                        ),
                       )
                     else
                       AnimatedDefaultTextStyle(
@@ -2295,15 +3220,11 @@ class _FontImportAction extends ConsumerWidget {
             );
             if (imported == null) return;
             if (context.mounted) {
-              ScaffoldMessenger.of(sheetCtx)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(const SnackBar(content: Text('已应用自定义歌词字体')));
+              showXianYuToast(context, '已应用自定义歌词字体');
             }
           } catch (e) {
             if (context.mounted) {
-              ScaffoldMessenger.of(sheetCtx)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(content: Text('字体导入失败：$e')));
+              showXianYuToast(context, '字体导入失败：$e');
             }
           }
         },

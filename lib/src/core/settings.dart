@@ -33,6 +33,12 @@ enum PerformanceMode {
   performance,
 }
 
+/// 播放页样式：advanced 高级模式（默认，现代毛玻璃）/ traditional 传统模式（经典 QQ 音乐式）。
+enum PlayerStyle {
+  advanced,
+  traditional,
+}
+
 /// 判断是否应开启「动效降级」（性能模式生效）。
 /// 自动档按 CPU 核心数粗判，单核偏弱设备自动降级；手动档直接覆盖。
 bool performancePriority(AppSettings s) => switch (s.performanceMode) {
@@ -117,6 +123,8 @@ class AppSettings {
     this.shareLinkValidityMinutes = 120,
     // 分享链接播放失败行为：pause 暂停播放 / replace 替换播放（走插件索引）。
     this.sharePlaybackFailureBehavior = 'pause',
+    // 播放页样式：advanced 高级模式（默认）/ traditional 传统模式。
+    this.playerStyle = PlayerStyle.advanced,
   });
 
   final double volume;
@@ -237,6 +245,9 @@ class AppSettings {
   /// 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走客户端插件索引换源重播）。
   final String sharePlaybackFailureBehavior;
 
+  /// 播放页样式：advanced 高级模式（现代毛玻璃）/ traditional 传统模式（经典布局）。
+  final PlayerStyle playerStyle;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -289,6 +300,7 @@ class AppSettings {
     ListSize? listSize,
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
+    PlayerStyle? playerStyle,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -354,6 +366,7 @@ class AppSettings {
           shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
+      playerStyle: playerStyle ?? this.playerStyle,
     );
   }
 }
@@ -441,6 +454,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
           prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',
+      playerStyle: _playerStyleFromString(
+          prefs.getString('playerStyle') ?? 'advanced'),
     );
   }
 
@@ -448,6 +463,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         'compact' => ListSize.compact,
         'large' => ListSize.large,
         _ => ListSize.medium,
+      };
+
+  PlayerStyle _playerStyleFromString(String v) => switch (v) {
+        'traditional' => PlayerStyle.traditional,
+        _ => PlayerStyle.advanced,
       };
 
   AppLanguage _langFromString(String v) => switch (v) {
@@ -535,6 +555,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
+      prefs.setString('playerStyle', next.playerStyle.name),
     ]);
   }
 
@@ -601,6 +622,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
+  Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

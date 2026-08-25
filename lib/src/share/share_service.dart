@@ -4,6 +4,7 @@
 // - 播放时预加载分享链接：同一首歌只生成一次并缓存，避免用户点分享时才等网络。
 // - 签名请求在 Rust 侧完成，这里通过 requestAction 转发给服务端。
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -45,9 +46,11 @@ class ShareService {
     final pending = _pending[key];
     if (pending != null) return pending;
 
-    final future = _ref
-        .read(authProvider.notifier)
-        .requestAction('create_share', _buildBody(song), fetchTimeoutMs: 15000)
+    final future = _resolveCover(song)
+        .then((cover) => _ref
+            .read(authProvider.notifier)
+            .requestAction('create_share', _buildBody(song, cover),
+                fetchTimeoutMs: 15000))
         .then((data) {
       final url = (data['share_url'] ?? '').toString();
       _cache[key] = url;
@@ -60,6 +63,48 @@ class ShareService {
 
     _pending[key] = future;
     return future;
+  }
+
+  /// 解析分享封面 URL：在线封面（http(s)）直接用；
+  /// 本地封面读取本地文件上传到服务端，返回可被落地页访问的 HTTPS URL。
+  /// 失败静默返回空串（分享链接仍可生成，仅无封面）。
+  Future<String> _resolveCover(QueueItem song) async {
+    final online = _decodeMap(song.onlineSongJson);
+    final onlineCover = online?['picture']?.toString() ?? '';
+    final coverUrl = song.coverUrl ?? '';
+    if (coverUrl.isNotEmpty && _isRemoteHttp(coverUrl)) return coverUrl;
+    if (onlineCover.isNotEmpty && _isRemoteHttp(onlineCover)) return onlineCover;
+    try {
+      final path = song.coverPath;
+      if (path == null || path.isEmpty || path.startsWith('content://')) {
+        return '';
+      }
+      final file = File(_stripFileScheme(path));
+      if (!await file.exists()) return '';
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) return '';
+      final dataUrl = 'data:${_mimeFromPath(path)};base64,${base64Encode(bytes)}';
+      final data = await _ref
+          .read(authProvider.notifier)
+          .requestAction('upload_cover', {'image_data': dataUrl},
+              fetchTimeoutMs: 20000);
+      return (data['cover_url'] ?? '').toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static String _stripFileScheme(String path) {
+    if (path.startsWith('file://')) return path.substring('file://'.length);
+    return path;
+  }
+
+  static String _mimeFromPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
   }
 
   /// 预加载当前歌曲分享链接（fire-and-forget，失败静默，勿阻塞播放）。
@@ -75,7 +120,8 @@ class ShareService {
   /// hash 是卡片拉起客户端的核心定位键：优先 hash，其次 songmid/mid，
   /// 保证两端同一首歌生成一致的深链。
   /// song_id 为本地主键优先、否则来源 path 的稳定标识。
-  Map<String, dynamic> _buildBody(QueueItem song) {
+  /// cover 为已解析的封面 URL（在线 http(s) 或本地上传后的 HTTPS URL）。
+  Map<String, dynamic> _buildBody(QueueItem song, String cover) {
     final online = _decodeMap(song.onlineSongJson);
     final musicInfo = online?['musicInfo'];
     final infoMap = musicInfo is Map ? musicInfo.cast<String, dynamic>() : null;
@@ -94,9 +140,6 @@ class ShareService {
         break;
       }
     }
-
-    String cover = song.coverUrl ?? online?['picture']?.toString() ?? '';
-    if (cover.isNotEmpty && !_isHttp(cover)) cover = '';
 
     // 来源信息：在线歌曲取音源 key（kw/wy/kg/tx/mg），本地歌曲标记为 local，
     // 服务端透传进深链，客户端据此判断用本地播放还是走对应插件播放。
@@ -137,5 +180,13 @@ class ShareService {
     }
   }
 
-  static bool _isHttp(String s) => s.startsWith('http://') || s.startsWith('https://');
+  /// 是否可被外部访问的远程封面：http(s) 且排除本地/回环/asset 地址，
+  /// 避免本地封面被误判为在线封面而跳过上传。
+  static bool _isRemoteHttp(String s) {
+    if (!(s.startsWith('http://') || s.startsWith('https://'))) return false;
+    final lower = s.toLowerCase();
+    return !(lower.contains('asset.localhost') ||
+        lower.contains('localhost') ||
+        lower.contains('127.0.0.1'));
+  }
 }

@@ -11,6 +11,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/widgets/app_toast.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
@@ -152,8 +153,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+    showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
   @override

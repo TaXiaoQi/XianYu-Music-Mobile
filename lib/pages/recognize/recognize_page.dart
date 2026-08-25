@@ -9,6 +9,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 
@@ -137,22 +138,19 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         .read(playerProvider.notifier)
         .playQueue([_toQueueItem(m)]);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('正在解析播放链接…'), duration: Duration(seconds: 1)),
-      );
+      showXianYuToast(context, '正在解析播放链接…',
+          duration: const Duration(seconds: 1));
     }
   }
 
   void _toggleFavorite(RecognizeMatch m) {
     ref.read(favoritesProvider.notifier).toggle(_toQueueItem(m));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ref.read(favoritesProvider).contains(_toQueueItem(m).path)
-            ? '已收藏'
-            : '已取消收藏'),
-        duration: const Duration(seconds: 1),
-      ),
+    showXianYuToast(
+      context,
+      ref.read(favoritesProvider).contains(_toQueueItem(m).path)
+          ? '已收藏'
+          : '已取消收藏',
+      duration: const Duration(seconds: 1),
     );
   }
 

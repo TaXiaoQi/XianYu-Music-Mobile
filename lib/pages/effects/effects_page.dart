@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/effects/sound_effect_provider.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
@@ -298,9 +299,8 @@ class _EqSection extends ConsumerWidget {
     if (name != null && name.isNotEmpty) {
       await manager.saveCustomEqPreset(name);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已保存预设「$name」'), duration: const Duration(seconds: 1)),
-        );
+        showXianYuToast(context, '已保存预设「$name」',
+            duration: const Duration(seconds: 1));
       }
     }
   }
@@ -384,9 +384,8 @@ class _EqSection extends ConsumerWidget {
     } else if (action == 'delete') {
       await manager.deleteCustomEqPreset(name);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已删除预设「$name」'), duration: const Duration(seconds: 1)),
-        );
+        showXianYuToast(context, '已删除预设「$name」',
+            duration: const Duration(seconds: 1));
       }
     }
   }

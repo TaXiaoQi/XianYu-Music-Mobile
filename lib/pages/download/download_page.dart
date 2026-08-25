@@ -8,6 +8,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
@@ -112,9 +113,7 @@ class DownloadPage extends ConsumerWidget {
   void _play(BuildContext context, WidgetRef ref, DownloadHistoryEntry e) {
     final file = File(e.filePath);
     if (!file.existsSync()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('文件不存在：${e.fileName}')),
-      );
+      showXianYuToast(context, '文件不存在：${e.fileName}');
       return;
     }
     ref.read(playerProvider.notifier).playQueue([e.toQueueItem()], startIndex: 0);

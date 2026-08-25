@@ -11,6 +11,7 @@ import '../rust/api.dart';
 import '../rust/music/types.dart';
 
 import 'predictive_dialog_route.dart';
+import 'app_toast.dart';
 
 /// 歌曲信息弹窗：查看 + 标签编辑 + 歌词编辑（对齐桌面端 SongInfoModal）。
 /// 用参与预测返回的路由承载，返回手势可跟手关闭。
@@ -154,9 +155,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         _saving = false;
         _mode = _InfoMode.view;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('歌词已保存')),
-      );
+      showXianYuToast(context, '歌词已保存');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -198,9 +197,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         _saving = false;
         _mode = _InfoMode.view;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('歌曲信息已保存')),
-      );
+      showXianYuToast(context, '歌曲信息已保存');
     } catch (e) {
       if (!mounted) return;
       setState(() {

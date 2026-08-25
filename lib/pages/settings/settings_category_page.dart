@@ -15,6 +15,7 @@ import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/audio/audio_devices.dart';
 import '../../src/rust/api.dart' as frb;
 
@@ -201,6 +202,31 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             subtitle: '悬浮导航 shader 折射光影，与毛玻璃二选一',
             value: s?.liquidGlass ?? false,
             onChanged: (v) => n.setLiquidGlass(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.sync_alt_outlined,
+            title: '播放页液态玻璃',
+            subtitle: '播放页控制卡使用液态玻璃材质',
+            value: s?.playerLiquidGlass ?? true,
+            onChanged: (v) => n.setPlayerLiquidGlass(v),
+          ),
+        ],
+      ),
+      // 播放页样式：高级模式（现代毛玻璃）/ 传统模式（经典布局）。
+      _sectionHeader(context, '播放页'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.grid_view_outlined,
+            title: '播放页样式',
+            subtitle: '切换正在播放页的布局风格',
+            trailing: Text(switch (s?.playerStyle ?? PlayerStyle.advanced) {
+              PlayerStyle.advanced => '高级模式',
+              PlayerStyle.traditional => '传统模式',
+            }),
+            onTap: () => _pickPlayerStyle(context, ref, s),
           ),
         ],
       ),
@@ -921,6 +947,35 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setListSize(choice.value as ListSize);
+    }
+  }
+
+  Future<void> _pickPlayerStyle(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.playerStyle ?? PlayerStyle.advanced;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('高级模式', PlayerStyle.advanced),
+          _Choice('传统模式', PlayerStyle.traditional),
+        ],
+        cur,
+        labelOf: (v) => switch (v) {
+          PlayerStyle.advanced => '高级模式',
+          PlayerStyle.traditional => '传统模式',
+          _ => '高级模式',
+        },
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setPlayerStyle(choice.value as PlayerStyle);
     }
   }
 
@@ -1909,10 +1964,7 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
   bool _busy = false;
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-          SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+    showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
   /// 导出完整应用备份并调起系统分享。

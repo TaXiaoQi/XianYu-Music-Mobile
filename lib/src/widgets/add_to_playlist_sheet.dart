@@ -10,6 +10,7 @@ import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../plugin/plugin_backup_import.dart';
 import 'sheet_dialog.dart';
+import 'app_toast.dart';
 
 /// 把播放队列项转成歌单曲目（本地/在线通吃）。
 ImportedSong importedSongFromQueueItem(QueueItem item) {
@@ -116,9 +117,7 @@ Future<void> showAddToPlaylistSheet(
                           await manager.create(name.trim());
                           if (!context.mounted) return;
                           Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('已创建歌单「${name.trim()}」')),
-                          );
+                          showXianYuToast(context, '已创建歌单「${name.trim()}」');
                         },
                       ),
                       for (final p in state.playlists)
@@ -142,11 +141,8 @@ Future<void> showAddToPlaylistSheet(
                             await manager.addSongs(p.id, songs);
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content:
-                                      Text('已添加到「${p.name}」(${songs.length} 首)')),
-                            );
+                            showXianYuToast(
+                                context, '已添加到「${p.name}」(${songs.length} 首)');
                           },
                         ),
                     ],

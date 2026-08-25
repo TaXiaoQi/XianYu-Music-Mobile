@@ -6,6 +6,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/app_toast.dart';
 
 /// 目录树节点（由 MediaStore 音频路径聚合构建）。
 class _PathNode {
@@ -146,9 +147,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _adding = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('添加失败：$e')),
-      );
+      showXianYuToast(context, '添加失败：$e');
     }
   }
 

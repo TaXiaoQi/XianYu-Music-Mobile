@@ -147,16 +147,19 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   @override
   Widget build(BuildContext context) {
     final url = widget.networkUrl;
+    final box = SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: (url != null && url.isNotEmpty)
+          ? _networkImage(url)
+          : _localImage(),
+    );
+    // radius <= 0 时没必要套 ClipRRect（全屏背景等整张展示），省一层剪裁。
+    if (widget.radius <= 0) return box;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: widget.width,
-        height: widget.height,
-        child: (url != null && url.isNotEmpty)
-            ? _networkImage(url)
-            : _localImage(),
-      ),
+      child: box,
     );
   }
 
@@ -166,6 +169,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       return Image.memory(
         _proxied!,
         fit: BoxFit.cover,
+        cacheWidth: _cacheWidth,
         errorBuilder: (_, _, _) => _placeholder(),
       );
     }
@@ -185,8 +189,22 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     return Image.file(
       File(path),
       fit: BoxFit.cover,
+      cacheWidth: _cacheWidth,
       errorBuilder: (_, _, _) => _placeholder(),
     );
+  }
+
+  /// 按“显示尺寸 × 屏幕密度”解码，避免把整张高清封面解码后再缩放到小格子，
+  /// 大幅降低列表滚动的内存与 GPU 上采样开销（RWAS 同款“按显示尺寸解码”）。
+  ///
+  /// 全屏/占满卡片会以 `double.infinity` 作宽度（本组件的下沉安全网，如首页
+  /// 正在播放轮播图、全屏背景封面）：此时尺寸不可用于解码，返回 null 表示
+  /// 交给引擎按原图解码，否则 `Infinity.round()` 会抛 UnsupportedError。
+  int? get _cacheWidth {
+    final w = widget.width;
+    if (!w.isFinite || w <= 0) return null;
+    final px = w * MediaQuery.of(context).devicePixelRatio;
+    return px.isFinite ? px.round() : null;
   }
 
   Widget _placeholder() {

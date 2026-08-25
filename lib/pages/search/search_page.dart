@@ -18,6 +18,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
@@ -327,6 +328,10 @@ class _SearchPageState extends ConsumerState<SearchPage>
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
+      // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：内容不再每帧
+      // 重排重绘，顶栏 BackdropFilter 背光也不会被压缩变化反复重采样，
+      // 彻底消除输入法动画掉帧（键盘从底部覆盖，结果列表可滚动查看）。
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Padding(
@@ -815,9 +820,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final service = PluginSearchService(engine, _plugins());
     final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
     ref.read(downloadProvider.notifier).download(item);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('开始下载：${item.title}')),
-    );
+    showXianYuToast(context, '开始下载：${item.title}');
   }
 
   @override

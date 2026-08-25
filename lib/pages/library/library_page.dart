@@ -16,6 +16,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -44,6 +45,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
+  /// 整页搜索：从标题栏输入，跨整个本地页（任意 Tab）过滤歌曲。
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  /// 最近一次离线程搜索结果；null 表示正在计算或暂无输入。
+  List<Song>? _searchResult;
+  Timer? _searchDebounce;
+  int _searchReq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +64,104 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   void dispose() {
     _tab.dispose();
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String v) {
+    setState(() => _query = v.trim().toLowerCase());
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 160), _runSearch);
+  }
+
+  /// 在后台 isolate 过滤「标题/歌手/专辑」，避免逐键在 UI 线程对全量歌曲卡顿。
+  Future<void> _runSearch() async {
+    final gen = ++_searchReq;
+    final q = _query;
+    final songs = ref.read(libraryProvider).songs;
+    if (q.isEmpty) {
+      if (mounted) setState(() => _searchResult = null);
+      return;
+    }
+    final out = await compute(
+      _filterSortSongs,
+      (songs, q, _SongSort.none.index, false),
+    );
+    if (!mounted || gen != _searchReq) return;
+    setState(() => _searchResult = out);
+  }
+
+  void _clearSearch() {
+    _searchCtrl.clear();
+    _searchDebounce?.cancel();
+    setState(() {
+      _query = '';
+      _searchResult = null;
+    });
+  }
+
+  Widget _buildSearchField(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: 40,
+      child: TextField(
+        controller: _searchCtrl,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        style: TextStyle(fontSize: 14.5, color: scheme.onSurface),
+        decoration: InputDecoration(
+          hintText: '搜索歌曲、歌手、专辑',
+          hintStyle:
+              TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
+          prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 40),
+          suffixIcon: _query.isNotEmpty
+              ? InkWell(
+                  onTap: _clearSearch,
+                  child: Icon(Icons.close,
+                      size: 18, color: scheme.onSurfaceVariant),
+                )
+              : null,
+          suffixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 40),
+          isDense: true,
+          filled: true,
+          fillColor: isDark
+              ? const Color(0x14FFFFFF)
+              : const Color(0x14000000),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 整页搜索结果列表（跨 Tab 生效），带关键词高亮。
+  Widget _buildSearchResults() {
+    final result = _searchResult;
+    if (result == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (result.isEmpty) {
+      return const Center(child: Text('没有找到相关歌曲'));
+    }
+    return SongsListView(
+      songs: result,
+      highlight: _query,
+      padding: EdgeInsets.only(
+        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
+      onPlay: (list, i) =>
+          ref.read(libraryProvider.notifier).playList(list, i),
+    );
   }
 
   @override
@@ -95,15 +202,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                           onRetry: () =>
                               ref.read(libraryProvider.notifier).load(),
                         )
-                      : TabBarView(
-                          controller: _tab,
-                          children: [
-                            _AllSongsTab(),
-                            _ArtistsTab(),
-                            _AlbumsTab(),
-                            _FoldersTab(),
-                          ],
-                        ),
+                      : _query.isNotEmpty
+                          ? _buildSearchResults()
+                          : TabBarView(
+                              controller: _tab,
+                              children: [
+                                _AllSongsTab(),
+                                _ArtistsTab(),
+                                _AlbumsTab(),
+                                _FoldersTab(),
+                              ],
+                            ),
             ),
             if (hasSong)
               Positioned(
@@ -118,14 +227,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title: const Text('本地'),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () =>
-                        ref.read(libraryProvider.notifier).load(),
-                  ),
-                ],
+                titleSpacing: 4,
+                title: _buildSearchField(context),
                 bottom: tabBar,
               ),
             ),
@@ -211,8 +314,6 @@ class _AllSongsTab extends ConsumerStatefulWidget {
 }
 
 class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
-  String _query = '';
-
   /// 排序方式；null 表示保持库默认顺序。
   _SongSort _sort = _SongSort.none;
   bool _hideDuplicates = false;
@@ -241,7 +342,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
     final songs = ref.read(libraryProvider).songs;
     final out = await compute(
       _filterSortSongs,
-      (songs, _query, _sort.index, _hideDuplicates),
+      (songs, '', _sort.index, _hideDuplicates),
     );
     if (!mounted || gen != _req) return;
     setState(() => _result = out);
@@ -298,23 +399,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                 onPressed: () => _showStats(context, lib),
               ),
             ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-          child: TextField(
-            onChanged: (v) {
-              _query = v.trim().toLowerCase();
-              _onCriteriaChanged();
-            },
-            decoration: InputDecoration(
-              hintText: '搜索歌曲、歌手、专辑',
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-            ),
           ),
         ),
         Expanded(
@@ -574,9 +658,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-    );
+    showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
   /// 申请存储权限（按 Android 版本细分，仅申请音乐读取）。
@@ -760,15 +842,12 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
         .importFolderAsPlaylist(node.path);
     if (!mounted) return;
     final name = node.name.isNotEmpty ? node.name : node.path.split('/').last;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          count > 0
-              ? '已将 $count 首歌曲导入到歌单「$name」'
-              : '「$name」下没有可导入的歌曲',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    showXianYuToast(
+      context,
+      count > 0
+          ? '已将 $count 首歌曲导入到歌单「$name」'
+          : '「$name」下没有可导入的歌曲',
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -781,17 +860,11 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     try {
       final count = await ref.read(libraryProvider.notifier).scanAllFolders();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('扫描完成，共 $count 首'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      showXianYuToast(context, '扫描完成，共 $count 首',
+          duration: const Duration(seconds: 2));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('扫描失败：$e')),
-      );
+      showXianYuToast(context, '扫描失败：$e');
     } finally {
       if (mounted) setState(() => _scanning = false);
     }

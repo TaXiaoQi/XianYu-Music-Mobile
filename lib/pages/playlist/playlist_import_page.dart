@@ -17,6 +17,7 @@ import '../../src/playlist/playlist_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart'
     show importedSongFromQueueItem;
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 
@@ -126,8 +127,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    showXianYuToast(context, msg);
   }
 
   Future<void> _showResult(
@@ -277,9 +277,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 
   Future<void> _pickFolder() async {
     if (!SafChannel.isSupported) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本地文件夹导入仅支持 Android 设备')),
-      );
+      showXianYuToast(context, '本地文件夹导入仅支持 Android 设备');
       return;
     }
     final uri = await SafChannel.chooseFolderTree();
@@ -304,9 +302,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     if (treeUri == null || _importing) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入歌单名称')),
-      );
+      showXianYuToast(context, '请输入歌单名称');
       return;
     }
 
@@ -383,8 +379,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 
   void _finish(bool ok, String message) {
     setState(() => _importing = false);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    showXianYuToast(context, message);
   }
 
   @override
@@ -689,7 +684,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    showXianYuToast(context, msg);
   }
 
   @override

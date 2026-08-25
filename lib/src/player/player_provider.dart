@@ -309,10 +309,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<Duration?>? _posSub;
   StreamSubscription<Duration?>? _durSub;
   StreamSubscription<dynamic>? _stateSub;
+  StreamSubscription<ProcessingState>? _procSub;
   Timer? _listenTimer;
   Timer? _exclusiveTimer;
   Timer? _sfxSyncTimer;
-  bool _manualPause = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   // 在线歌曲连续失败跳过计数（防环）。
   int _skipDepth = 0;
@@ -363,9 +363,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (playing != state.isPlaying) {
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
-        if (!playing && !_manualPause) {
-          _onTrackEnd();
-        }
+      }
+    });
+    // 自然播完的权威信号：just_audio 在源播完时把 processingState 置为
+    // completed（playing 字段不保证翻转），据此自动衔接到队列下一首。
+    // 手动暂停是 paused 而非 completed，不会误触发，故无需 _manualPause 门控。
+    _procSub = _player.processingStateStream.listen((ps) {
+      if (ps == ProcessingState.completed) {
+        _onTrackEnd();
       }
     });
     // 播放中每 15 秒把当前会话的听歌时长增量刷写进数据库（首页统计/排行榜共用），
@@ -532,7 +537,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _flushPlayStats();
     await _stopExclusive();
     if (state.playMode == 1) {
-      await _playAt(state.queueIndex, manualPause: false);
+      await _playAt(state.queueIndex);
       return;
     }
     final next = _pickNextIndex();
@@ -541,7 +546,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
       return;
     }
-    await _playAt(next, manualPause: false);
+    await _playAt(next);
   }
 
   /// EQ/音效设置变化时同步到独占管线（50ms 防抖）。
@@ -789,7 +794,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       current: items[startIndex],
     );
     try {
-      await _playAt(startIndex, manualPause: true);
+      await _playAt(startIndex);
     } catch (e, st) {
       // 手势调用点不 await 异步错误，此处兜底捕获避免整链静默中断。
       debugPrint('[play] playQueue 异常: $e\n$st');
@@ -797,8 +802,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> _playAt(int index,
-      {required bool manualPause, double startAtSecs = 0}) async {
+  Future<void> _playAt(int index, {double startAtSecs = 0}) async {
     if (index < 0 || index >= state.queue.length) return;
 
     debugPrint('[play] _playAt index=$index path=${state.queue[index].path}');
@@ -809,7 +813,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _currentPlayCountRecorded = false;
     _accumulatedTime = 0;
 
-    _manualPause = manualPause;
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
     final item = state.queue[index];
@@ -915,7 +918,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           _skipDepth++;
           final next = _pickNextIndex();
           if (next >= 0 && next != index) {
-            await _playAt(next, manualPause: true);
+            await _playAt(next);
             return;
           }
         }
@@ -1560,7 +1563,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       newIndex = index.clamp(0, queue.length - 1);
     }
     if (wasCurrent) {
-      await _playAt(newIndex, manualPause: true);
+      await _playAt(newIndex);
     } else {
       state = state.copyWith(queue: queue, queueIndex: newIndex);
     }
@@ -1587,7 +1590,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 播放队列中指定歌曲。
   Future<void> playQueueItem(int index) async {
     if (index < 0 || index >= state.queue.length) return;
-    await _playAt(index, manualPause: true);
+    await _playAt(index);
   }
 
   /// 系统控制中心「收藏」键：切换当前歌曲收藏并刷新通知栏图标。
@@ -1615,12 +1618,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // USB 独占管线：seek(pos, isPlaying) 即暂停/恢复。
     if (state.usbExclusive) {
       if (state.isPlaying) {
-        _manualPause = true;
         _flushPlayStats();
         await seekUsbExclusive(timeSecs: state.position, isPlaying: false);
         state = state.copyWith(isPlaying: false);
       } else {
-        _manualPause = false;
         _trackStartTime = DateTime.now();
         await seekUsbExclusive(timeSecs: state.position, isPlaying: true);
         state = state.copyWith(isPlaying: true);
@@ -1630,11 +1631,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     if (state.isPlaying) {
-      _manualPause = true;
       _flushPlayStats();
       await _player.pause();
     } else {
-      _manualPause = false;
       _trackStartTime = DateTime.now();
       final pendingPos = _restoredOnlinePending;
       if (pendingPos != null) {
@@ -1648,7 +1647,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _restoredLocalPending = null;
         final idx = state.queueIndex;
         if (idx >= 0 && idx < state.queue.length) {
-          await _playAt(idx, manualPause: false, startAtSecs: pendingLocalPos);
+          await _playAt(idx, startAtSecs: pendingLocalPos);
           _persistSession();
           return;
         }
@@ -1678,7 +1677,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> next() async {
     final i = _pickNextIndex();
-    if (i >= 0) await _playAt(i, manualPause: true);
+    if (i >= 0) await _playAt(i);
   }
 
   Future<void> previous() async {
@@ -1690,11 +1689,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (n == 0) return;
     if (state.playMode == 2) {
       final i = _randomPrevIndex();
-      if (i >= 0) await _playAt(i, manualPause: true);
+      if (i >= 0) await _playAt(i);
       return;
     }
     final i = state.queueIndex <= 0 ? n - 1 : state.queueIndex - 1;
-    await _playAt(i, manualPause: true);
+    await _playAt(i);
   }
 
   Future<void> cyclePlayMode() async {
@@ -1723,7 +1722,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (state.current != null) await seek(0);
       return;
     }
-    await _playAt(next, manualPause: false);
+    await _playAt(next);
   }
 
   int _pickNextIndex() {
@@ -1861,6 +1860,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
+    _procSub?.cancel();
     try {
       stopUsbExclusivePlayback();
     } catch (_) {}

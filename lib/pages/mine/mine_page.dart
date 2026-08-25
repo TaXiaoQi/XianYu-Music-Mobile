@@ -13,12 +13,12 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/recent/recent_provider.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../home/online_detail_page.dart';
-import '../playlist/playlists_page.dart' show PlaylistDetailPage;
 
 /// 「我的」页：搜索条 + 账号区 + 快捷入口四宫格（参考魅族音乐我的页布局）。
 ///
@@ -482,9 +482,7 @@ class _MyPlaylistsSection extends ConsumerWidget {
     if (name == null || name.trim().isEmpty) return;
     await manager.create(name.trim());
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已创建歌单「${name.trim()}」')));
+    showXianYuToast(context, '已创建歌单「${name.trim()}」');
   }
 }
 
@@ -527,11 +525,9 @@ class _PlaylistRow extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => PlaylistDetailPage(playlistId: playlist.id),
-        ),
-      ),
+      // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致，
+      // 否则返回会被 shell 的 canPop 逻辑误判而直接退出程序。
+      onTap: () => context.push('/playlist/${playlist.id}'),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
         child: Row(

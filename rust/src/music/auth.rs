@@ -18,7 +18,7 @@ use std::time::Duration;
 const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
 /// 官方后端地址
-const OFFICIAL_AUTH_BASE_URL: &str = "https://back.xymusic.cc/api";
+const OFFICIAL_AUTH_BASE_URL: &str = "https://api.xianyumusic.cn/api";
 
 /// 默认后端地址：仅支持 HTTPS，避免 Nginx 重定向丢失 POST 请求体
 const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
@@ -103,7 +103,7 @@ fn token_file_path(data_dir: &Path) -> Result<PathBuf, String> {
 }
 
 /// 从文件读取 base_url，不存在时返回默认值。
-/// 自动将旧版 http://back.xymusic.cc 升级为 https，避免 Nginx 重定向丢失 POST 请求体。
+/// 自动将旧版 back.xymusic.cc 迁移到 api.xianyumusic.cn 并升级为 https。
 fn read_base_url(data_dir: &Path) -> String {
     match base_url_file_path(data_dir) {
         Ok(path) => {
@@ -115,8 +115,9 @@ fn read_base_url(data_dir: &Path) -> String {
                 if saved.is_empty() {
                     return DEFAULT_AUTH_BASE_URL.to_string();
                 }
-                let upgraded =
-                    saved.replace("http://back.xymusic.cc", "https://back.xymusic.cc");
+                let upgraded = saved
+                    .replace("http://back.xymusic.cc", "https://api.xianyumusic.cn")
+                    .replace("https://back.xymusic.cc", "https://api.xianyumusic.cn");
                 if upgraded != saved {
                     let _ = fs::write(&path, &upgraded);
                 }

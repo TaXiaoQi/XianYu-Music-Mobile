@@ -8,6 +8,7 @@ import '../../src/remote/remote_library_service.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/widgets/app_toast.dart';
 
 /// 远程音乐库管理页：WebDAV 源的添加/编辑/同步/删除与缓存管理。
 class RemoteLibraryPage extends ConsumerWidget {
@@ -123,15 +124,11 @@ class RemoteLibraryPage extends ConsumerWidget {
                               .read(remoteLibraryProvider.notifier)
                               .clearCache();
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('远程缓存已清理')),
-                            );
+                            showXianYuToast(context, '远程缓存已清理');
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('清理失败：$e')),
-                            );
+                            showXianYuToast(context, '清理失败：$e');
                           }
                         }
                       },
@@ -335,30 +332,27 @@ class _SourceCard extends ConsumerWidget {
         await ref.read(remoteLibraryProvider.notifier).remove(source.id);
         ref.read(libraryProvider.notifier).load();
         if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('远程源已删除')));
+          showXianYuToast(context, '远程源已删除');
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('删除失败：$e')));
+          showXianYuToast(context, '删除失败：$e');
         }
       }
     }
   }
 
   Future<void> _sync(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final message =
           await ref.read(remoteLibraryProvider.notifier).sync(source.id);
       // 同步写入曲库后刷新音乐库列表。
       ref.read(libraryProvider.notifier).load();
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      if (context.mounted) showXianYuToast(context, message);
     } catch (e) {
       // 刷新以显示 lastSyncError。
       ref.read(remoteLibraryProvider.notifier).refresh();
-      messenger.showSnackBar(SnackBar(content: Text('同步失败：$e')));
+      if (context.mounted) showXianYuToast(context, '同步失败：$e');
     }
   }
 }
@@ -429,8 +423,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
         );
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('连接成功')));
+      showXianYuToast(context, '连接成功');
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '连接失败：$e');

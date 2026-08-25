@@ -15,6 +15,7 @@ import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/app_toast.dart';
 
 enum OnlineDetailType { artist, album, playlist, toplist }
 
@@ -192,8 +193,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     if (source == null) return;
     final item = PluginCatalogService.toQueueItem(source, _songs[index]);
     ref.read(downloadProvider.notifier).download(item);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('开始下载：${item.title}')));
+    showXianYuToast(context, '开始下载：${item.title}');
   }
 
   void _toggleCollectionFavorite() {

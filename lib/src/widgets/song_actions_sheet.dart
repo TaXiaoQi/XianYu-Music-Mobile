@@ -7,6 +7,7 @@ import '../player/player_provider.dart';
 import 'add_to_playlist_sheet.dart';
 import 'sheet_dialog.dart';
 import 'song_info_dialog.dart';
+import 'app_toast.dart';
 
 /// 通用歌曲操作弹层：收藏 / 添加到歌单 / 歌曲信息 / 下载。
 /// 任何来源的歌曲统一以 QueueItem 表示（本地或在线）。
@@ -80,9 +81,7 @@ Future<void> showSongActionsSheet(
                 onTap: () {
                   Navigator.pop(ctx);
                   ref.read(downloadProvider.notifier).download(item);
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('开始下载：${item.title}')),
-                  );
+                  showXianYuToast(ctx, '开始下载：${item.title}');
                 },
               ),
             if (onPlay != null)

@@ -10,6 +10,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
@@ -264,20 +265,15 @@ class _PluginPageState extends ConsumerState<PluginPage> {
         final summary = result.failCount > 0
             ? '成功 ${result.names.length} 个，失败 ${result.failCount} 个'
             : '成功 ${result.names.length} 个：${result.names.join('、')}';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('插件安装完成，$summary')));
+        showXianYuToast(context, '插件安装完成，$summary');
       } else {
         final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('所有插件安装失败$detail')),
-        );
+        showXianYuToast(context, '所有插件安装失败$detail');
       }
     } catch (e) {
       if (!mounted) return;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('安装失败：$msg')),
-      );
+      showXianYuToast(context, '安装失败：$msg');
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -291,15 +287,11 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           .read(pluginManagerProvider.notifier)
           .installFromScript(script, fileName: name);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('插件「${source.name}」安装成功')),
-      );
+      showXianYuToast(context, '插件「${source.name}」安装成功');
     } catch (e) {
       if (!mounted) return;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('安装失败：$msg')),
-      );
+      showXianYuToast(context, '安装失败：$msg');
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -318,18 +310,15 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       if (!mounted) return;
       final updateCount =
           results.values.where((r) => r.hasUpdate).length;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(updateCount > 0
-              ? '发现 $updateCount 个插件可更新'
-              : '所有插件均为最新版本'),
-        ),
+      showXianYuToast(
+        context,
+        updateCount > 0
+            ? '发现 $updateCount 个插件可更新'
+            : '所有插件均为最新版本',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查更新失败：$e')),
-      );
+      showXianYuToast(context, '检查更新失败：$e');
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
     }
@@ -618,20 +607,17 @@ class _PluginCard extends ConsumerWidget {
   }
 
   Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
     final engine = await ref.read(pluginEngineProvider.future);
     final service =
         PluginUpdateService(engine, ref.read(pluginManagerProvider.notifier));
     final result = await service.checkPluginUpdate(source);
     if (!context.mounted) return;
     if (result == null) {
-      messenger.showSnackBar(
-          const SnackBar(content: Text('无可用更新源')));
+      showXianYuToast(context, '无可用更新源');
       return;
     }
     if (!result.hasUpdate) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('「${source.name}」已是最新版本')));
+      showXianYuToast(context, '「${source.name}」已是最新版本');
       return;
     }
     final confirmed = await showPredictiveDialog<bool>(
@@ -656,9 +642,7 @@ class _PluginCard extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
     final outcome = await service.performPluginUpdate(source, result);
     if (!context.mounted) return;
-    messenger.showSnackBar(
-      SnackBar(content: Text(outcome.message)),
-    );
+    showXianYuToast(context, outcome.message);
   }
 
   void _confirmRemove(BuildContext context, PluginManager manager) {
@@ -1058,9 +1042,7 @@ class _UserVarsSheetState extends ConsumerState<_UserVarsSheet> {
           ? (_selectValues[v.name] ?? '')
           : (_controllers[v.name]?.text.trim() ?? '');
       if (value.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('「${v.title ?? v.name}」为必填项')),
-        );
+        showXianYuToast(context, '「${v.title ?? v.name}」为必填项');
         return;
       }
     }
@@ -1079,16 +1061,12 @@ class _UserVarsSheetState extends ConsumerState<_UserVarsSheet> {
           .read(pluginManagerProvider.notifier)
           .saveUserVars(widget.source.id, values);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已保存用户变量，开始生效')),
-      );
+      showXianYuToast(context, '已保存用户变量，开始生效');
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：$e')),
-      );
+      showXianYuToast(context, '保存失败：$e');
     }
   }
 

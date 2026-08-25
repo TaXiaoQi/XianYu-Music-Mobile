@@ -291,6 +291,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
         'duration': s.duration * 1000,
       };
 
+  /// 取歌单内第一首在线歌曲的远程封面（http/https），无则返回空串。
+  String _firstRemoteSongCover(List<ImportedSong> songs) {
+    for (final s in songs) {
+      final cover = s.coverUrl ?? '';
+      if (cover.startsWith('http://') || cover.startsWith('https://')) {
+        return cover;
+      }
+    }
+    return '';
+  }
+
   /// 云端同步载荷 → 本地导入歌曲（duration 毫秒 → 秒）。
   ImportedSong _songFromSyncPayload(Map<String, dynamic> j) =>
       ImportedSong.fromJson({
@@ -327,6 +338,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
           .map((p) => {
                 'id': p.id,
                 'name': p.name,
+                // 移动端歌单无自定义封面，取歌单内第一首在线歌曲封面作为云端封面，
+                // 避免覆盖桌面端已上传的 cloudCoverUrl。
+                'cloudCoverUrl': _firstRemoteSongCover(p.songs),
                 'songs': p.songs.map(_songToSyncPayload).toList(),
               })
           .toList();

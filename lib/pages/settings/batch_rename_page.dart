@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/rust/api.dart';
 
@@ -136,9 +137,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
         _hasScanned = false;
         _previews = [];
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('成功重命名 $count 个文件')),
-      );
+      showXianYuToast(context, '成功重命名 $count 个文件');
     } catch (e) {
       if (!mounted) return;
       setState(() {

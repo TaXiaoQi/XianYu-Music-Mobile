@@ -14,6 +14,7 @@ import '../core/settings.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../widgets/mini_player_bar.dart';
+import '../widgets/app_toast.dart';
 import 'routes.dart';
 
 /// 浮动底栏占据的底部高度（距底 18 + 栏高 60 + 阴影余量）。
@@ -216,12 +217,8 @@ class _AppShellState extends ConsumerState<AppShell> {
         now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
       _lastBackTime = now;
       AppLogger.instance.log('back', '提示再按一次退出');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('再按一次退出应用'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      showXianYuToast(context, '再按一次退出应用',
+        duration: const Duration(seconds: 2));
       return;
     }
 
@@ -252,6 +249,57 @@ class _ShellScaffold extends ConsumerStatefulWidget {
 
 class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
   static final _jellyKey = GlobalKey<State<_JellySwitch>>();
+
+  late final GoRouter _router;
+
+  /// 当前是否处于「根级 Tab 路径」。
+  ///
+  /// 与 [GoRouter.canPop] 刻意解耦：`canPop` 读的是根 Navigator 的 `_history`，
+  /// 被退出的路由在整段反向过渡动画期间都还留在 `_history` 里（要到动画结束才
+  /// 移除、页面 dispose），因此返回途中 `canPop` 恒为 true，导致底栏在整个过渡
+  /// 中一直隐藏、动画结束才淡入，出现「先看到一级页、再看到底栏」。
+  ///
+  /// 而 GoRouter 的 `currentConfiguration` 在 pop 一开始的 `didPop` 就会同步收缩
+  /// 路由匹配（见 delegate 的 `_completeRouteMatch` → `notifyListeners`），用它判断
+  /// 路径能立刻在「一级页开始露出」的同一帧把底栏解开。这样无论用
+  /// PredictBackPageTransitionsBuilder（预测返回）还是 ZoomPageTransitionsBuilder
+  /// （关闭预测返回），返回过渡期间底栏都能随页面露出一起出现。
+  bool _isRootPath = true;
+
+  static const _rootPaths = {'/', '/home', '/mine'};
+
+  static bool _isRootPathOf(String path) => _rootPaths.contains(path);
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter.of(context);
+    _isRootPath =
+        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+    _router.routerDelegate.addListener(_onRouteChanged);
+  }
+
+  /// 路由匹配变化（push/pop）时跟手更新是否处于根路径，并顺带清掉漂移的
+  /// 「隐藏底栏」计数，让底栏/播放条随返回过渡一起淡入，而不是等二级页
+  /// dispose（返回过渡结束后）再触发。
+  void _onRouteChanged() {
+    if (!mounted) return;
+    final rootNow =
+        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+    if (rootNow != _isRootPath) {
+      setState(() => _isRootPath = rootNow);
+    }
+    if (rootNow) {
+      final notifier = ref.read(navBarHiddenProvider.notifier);
+      if (notifier.state > 0) notifier.state = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _router.routerDelegate.removeListener(_onRouteChanged);
+    super.dispose();
+  }
 
   /// 迷你播放条拖拽的绝对位置 (Top & Left)
   double? _playerTop;
@@ -340,16 +388,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
 
-    final canPop = GoRouter.of(context).canPop();
+    // 用「当前是否为根路径」而非 canPop 判断是否处于二级页：canPop 在整个返回
+    // 过渡动画期间一直为 true（被退路由动画结束才从 _history 移除），会让底栏
+    // 动画结束才出现；路径在 pop 开始时即已收缩，可让底栏随一级页露出同步淡入。
     final hiddenCount = ref.watch(navBarHiddenProvider);
-    final hidden = hiddenCount > 0 || canPop;
-
-    // 安全防护：根 Tab 节点下自动重置漂移的 hidden 计数
-    if (!canPop && hiddenCount > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(navBarHiddenProvider.notifier).state = 0;
-      });
-    }
+    final hidden = hiddenCount > 0 || !_isRootPath;
 
     void select(int i) => widget.navigationShell.goBranch(
           i,

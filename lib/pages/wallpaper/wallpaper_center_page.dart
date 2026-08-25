@@ -15,6 +15,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/app_toast.dart';
 
 /// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
 class WallpaperCenterPage extends ConsumerStatefulWidget {
@@ -491,9 +492,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
 
   Future<void> _openUpload() async {
     if (_ciyuanxiId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录账号后再上传壁纸')),
-      );
+      showXianYuToast(context, '请先登录账号后再上传壁纸');
       return;
     }
     final ok = await showSheetDialog<bool>(

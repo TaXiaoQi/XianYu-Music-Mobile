@@ -65,20 +65,17 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/effects',
-              builder: (context, state) => const EffectsPage(),
-            ),
-          ],
-        ),
       ],
     ),
     // 设置页（从「我的」页菜单与首页顶栏进入，二级推入页）。
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsPage(),
+    ),
+    // 音效页（原底部导航项，现为二级推入页，从传统播放页「音效」入口进入）。
+    GoRoute(
+      path: '/effects',
+      builder: (context, state) => const EffectsPage(),
     ),
     // 搜索页（从主页搜索栏进入）。
     GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
@@ -149,6 +146,15 @@ final appRouter = GoRouter(
       path: '/playlist-import',
       builder: (context, state) => const PlaylistImportPage(),
     ),
+    // 自建歌单详情（从「我的」页与歌单列表进入）。注册为顶层 GoRoute 压在
+    // root navigator 上，使 GoRouter.canPop() 如实反映栈深——若用裸
+    // Navigator.pop 压进 branch 内部 Navigator，返回会被 shell 误判而直接退出。
+    GoRoute(
+      path: '/playlist/:id',
+      builder: (context, state) => PlaylistDetailPage(
+        playlistId: state.pathParameters['id'] ?? '',
+      ),
+    ),
     // 收藏 / 最近（主页网格与「我的」页进入）。收藏页 tab=0 单曲 / 1 歌单 / 2 专辑。
     GoRoute(
       path: '/favorites',
@@ -215,7 +221,6 @@ class BottomNavItem {
 const bottomNavItems = [
   BottomNavItem('首页', Icons.home, '/home'),
   BottomNavItem('我的', Icons.person_outline_rounded, '/mine'),
-  BottomNavItem('音效', Icons.graphic_eq, '/effects'),
 ];
 
 /// 底栏/侧栏导航项标题（跟随当前本地化语言）。
