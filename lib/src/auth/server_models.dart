@@ -47,7 +47,7 @@ class AboutConfig {
   final String joinGroupUrl;
   final String joinGroupText;
   const AboutConfig({
-    this.officialSiteUrl = '',
+    this.officialSiteUrl = 'https://www.xianyumusic.cn',
     this.officialSiteText = '前往官网',
     this.updateEnabled = true,
     this.updateText = '检查更新',

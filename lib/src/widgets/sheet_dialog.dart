@@ -12,7 +12,7 @@ import 'predictive_dialog_route.dart';
 Future<T?> showSheetDialog<T>(
   BuildContext context,
   WidgetBuilder builder, {
-  bool barrierDismissible = false,
+  bool barrierDismissible = true,
 }) {
   return showPredictiveDialog<T>(
     context: context,

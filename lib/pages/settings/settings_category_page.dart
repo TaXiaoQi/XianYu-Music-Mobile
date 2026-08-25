@@ -1,4 +1,5 @@
-import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/modern_dialog.dart';
+import '../../src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1212,26 +1213,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.navBarPosition ?? NavBarPosition.bottom;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('底部导航', NavBarPosition.bottom),
-          _Choice('侧边悬浮', NavBarPosition.side),
-        ],
-        cur,
-        labelOf: (v) => switch (v) {
-          NavBarPosition.bottom => '底部导航',
-          NavBarPosition.side => '侧边悬浮',
-          _ => '底部导航',
-        },
-      ),
+    final choice = await showModernChoiceSheet<NavBarPosition>(
+      context: context,
+      title: '导航栏位置',
+      options: const [
+        ModernChoiceOption(label: '底部导航', value: NavBarPosition.bottom, icon: Icons.subtitles_outlined),
+        ModernChoiceOption(label: '侧边悬浮', value: NavBarPosition.side, icon: Icons.navigation_outlined),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setNavBarPosition(choice.value as NavBarPosition);
+          .setNavBarPosition(choice);
     }
   }
 
@@ -1241,26 +1235,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.sideBarExpandDirection ?? SideBarExpandDirection.down;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('向下展开', SideBarExpandDirection.down),
-          _Choice('向上展开', SideBarExpandDirection.up),
-        ],
-        cur,
-        labelOf: (v) => switch (v) {
-          SideBarExpandDirection.down => '向下展开',
-          SideBarExpandDirection.up => '向上展开',
-          _ => '向下展开',
-        },
-      ),
+    final choice = await showModernChoiceSheet<SideBarExpandDirection>(
+      context: context,
+      title: '侧边栏展开方向',
+      options: const [
+        ModernChoiceOption(label: '向下展开', value: SideBarExpandDirection.down, icon: Icons.arrow_downward),
+        ModernChoiceOption(label: '向上展开', value: SideBarExpandDirection.up, icon: Icons.arrow_upward),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setSideBarExpandDirection(choice.value as SideBarExpandDirection);
+          .setSideBarExpandDirection(choice);
     }
   }
 
@@ -1270,26 +1257,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.language ?? AppLanguage.system;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('跟随系统', AppLanguage.system),
-          _Choice('简体中文', AppLanguage.zhCN),
-          _Choice('繁體中文', AppLanguage.zhTW),
-          _Choice('English', AppLanguage.en),
-        ],
-        cur,
-        labelOf: (v) => _languageLabel(v as AppLanguage),
-      ),
+    final choice = await showModernChoiceSheet<AppLanguage>(
+      context: context,
+      title: '语言设置',
+      options: const [
+        ModernChoiceOption(label: '跟随系统', value: AppLanguage.system),
+        ModernChoiceOption(label: '简体中文', value: AppLanguage.zhCN),
+        ModernChoiceOption(label: '繁體中文', value: AppLanguage.zhTW),
+        ModernChoiceOption(label: 'English', value: AppLanguage.en),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
       if (context.mounted) {
         await ref
             .read(settingsProvider.notifier)
-            .setLanguage(choice.value as AppLanguage);
+            .setLanguage(choice);
       }
     }
   }
@@ -1300,23 +1284,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.hapticStrength ?? 1;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('轻', 0),
-          _Choice('正常', 1),
-          _Choice('重', 2),
-        ],
-        cur,
-        labelOf: (v) => _hapticLabel(v as int),
-      ),
+    final choice = await showModernChoiceSheet<int>(
+      context: context,
+      title: '触觉反馈强度',
+      options: const [
+        ModernChoiceOption(label: '轻', value: 0),
+        ModernChoiceOption(label: '正常', value: 1),
+        ModernChoiceOption(label: '重', value: 2),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setHapticStrength(choice.value as int);
+          .setHapticStrength(choice);
     }
   }
 
@@ -1326,23 +1307,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.listSize ?? ListSize.medium;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('最小', ListSize.compact),
-          _Choice('中等', ListSize.medium),
-          _Choice('最大', ListSize.large),
-        ],
-        cur,
-        labelOf: (v) => listSizeLabel(v as ListSize),
-      ),
+    final choice = await showModernChoiceSheet<ListSize>(
+      context: context,
+      title: '列表项尺寸',
+      options: const [
+        ModernChoiceOption(label: '最小', value: ListSize.compact, subtitle: '紧凑布局，一行多看'),
+        ModernChoiceOption(label: '中等', value: ListSize.medium, subtitle: '默认标准高度'),
+        ModernChoiceOption(label: '最大', value: ListSize.large, subtitle: '大图标大字号'),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setListSize(choice.value as ListSize);
+          .setListSize(choice);
     }
   }
 
@@ -1352,26 +1330,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.playerStyle ?? PlayerStyle.advanced;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('高级模式', PlayerStyle.advanced),
-          _Choice('传统模式', PlayerStyle.traditional),
-        ],
-        cur,
-        labelOf: (v) => switch (v) {
-          PlayerStyle.advanced => '高级模式',
-          PlayerStyle.traditional => '传统模式',
-          _ => '高级模式',
-        },
-      ),
+    final choice = await showModernChoiceSheet<PlayerStyle>(
+      context: context,
+      title: '正在播放页样式',
+      options: const [
+        ModernChoiceOption(label: '高级模式', value: PlayerStyle.advanced, subtitle: '含唱片光芒、沉浸流光背景与动感频谱'),
+        ModernChoiceOption(label: '传统模式', value: PlayerStyle.traditional, subtitle: '经典平铺高斯模糊样式'),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setPlayerStyle(choice.value as PlayerStyle);
+          .setPlayerStyle(choice);
     }
   }
 
@@ -1381,28 +1352,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
   ) async {
     final cur = s?.themeMode ?? ThemeModePreference.system;
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('跟随系统', ThemeModePreference.system),
-          _Choice('浅色', ThemeModePreference.light),
-          _Choice('深色', ThemeModePreference.dark),
-        ],
-        cur,
-        labelOf: (v) => switch (v) {
-          ThemeModePreference.system => '跟随系统',
-          ThemeModePreference.light => '浅色',
-          ThemeModePreference.dark => '深色',
-          _ => '跟随系统',
-        },
-      ),
+    final choice = await showModernChoiceSheet<ThemeModePreference>(
+      context: context,
+      title: '外观模式',
+      options: const [
+        ModernChoiceOption(label: '跟随系统', value: ThemeModePreference.system, icon: Icons.brightness_auto),
+        ModernChoiceOption(label: '浅色模式', value: ThemeModePreference.light, icon: Icons.light_mode),
+        ModernChoiceOption(label: '深色模式', value: ThemeModePreference.dark, icon: Icons.dark_mode),
+      ],
+      currentValue: cur,
     );
     if (choice != null) {
       await ref
           .read(settingsProvider.notifier)
-          .setThemeMode(choice.value as ThemeModePreference);
+          .setThemeMode(choice);
     }
   }
 
@@ -1430,26 +1393,49 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = isOnline
         ? s?.onlineDefaultQuality ?? '320k'
         : s?.downloadQuality ?? '320k';
-    final choice = await showSheetDialog<_Choice>(
-      context,
-      (_) => _choiceSheet(
-        context,
-        const [
-          _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
-          _Choice('普通', '128k', subtitle: '128k'),
-          _Choice('中等', '192k', subtitle: '192k'),
-          _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
-          _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
-          _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
-          _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
-          _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
-          _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
-          _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
-          _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
-          _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
-        ],
-        cur,
-        labelOf: (v) => v as String,
+    final choice = await showModalBottomSheet<_Choice>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      enableDrag: true,
+      showDragHandle: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.5,
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 1.0,
+        minChildSize: 0.5,
+        maxChildSize: 1.0,
+        expand: false,
+        builder: (ctx, scrollController) => ListView(
+          controller: scrollController,
+          children: [
+            for (final c in const [
+              _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
+              _Choice('普通', '128k', subtitle: '128k'),
+              _Choice('中等', '192k', subtitle: '192k'),
+              _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
+              _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
+              _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
+              _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
+              _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
+              _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
+              _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
+              _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
+              _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
+            ])
+              ListTile(
+                title: Text(c.label),
+                subtitle: c.subtitle == null ? null : Text(c.subtitle!),
+                trailing: c.value == cur
+                    ? Icon(Icons.check,
+                        color: Theme.of(ctx).colorScheme.primary)
+                    : null,
+                selected: c.value == cur,
+                onTap: () => Navigator.pop(ctx, c),
+              ),
+          ],
+        ),
       ),
     );
     if (choice != null) {
@@ -1556,7 +1542,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 2),
               child: Text(
                 '输出设备',
                 style: const TextStyle(
@@ -1578,29 +1564,33 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               )
             else
               Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final (label, id) in list)
-                      ListTile(
-                        dense: true,
-                        selected: current == id,
-                        title: Text(label),
-                        subtitle: id == -1
-                            ? null
-                            : Text(
-                                _deviceFormatSubtitle(byId[id]) ?? '',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: scheme.onSurfaceVariant,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final (label, id) in list)
+                        ListTile(
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                          selected: current == id,
+                          title: Text(label),
+                          subtitle: id == -1
+                              ? null
+                              : Text(
+                                  _deviceFormatSubtitle(byId[id]) ?? '',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
-                              ),
-                        trailing: current == id
-                            ? Icon(Icons.check, color: scheme.primary, size: 20)
-                            : null,
-                        onTap: () => Navigator.pop(dialogContext, id),
-                      ),
-                  ],
+                          trailing: current == id
+                              ? Icon(Icons.check, color: scheme.primary, size: 20)
+                              : null,
+                          onTap: () => Navigator.pop(dialogContext, id),
+                        ),
+                    ],
+                  ),
                 ),
               ),
           ],
