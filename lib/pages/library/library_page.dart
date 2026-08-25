@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -10,7 +11,12 @@ import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
+import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../settings/folder_picker_page.dart';
@@ -50,6 +56,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
+    final hasSong = ref.watch(playerProvider).current != null;
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -67,34 +74,60 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       ],
     );
 
-    return Scaffold(
-      backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(
-        title: const Text('本地'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(libraryProvider.notifier).load(),
-          ),
-        ],
-        bottom: tabBar,
+    return HideShellChrome(
+      child: Scaffold(
+        backgroundColor: appSurfaceBg(context),
+        body: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(
+                top: GlassTopBar.height(context, bottom: tabBar),
+              ),
+              child: lib.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : lib.error != null
+                      ? _ErrorView(
+                          message: lib.error!,
+                          onRetry: () =>
+                              ref.read(libraryProvider.notifier).load(),
+                        )
+                      : TabBarView(
+                          controller: _tab,
+                          children: [
+                            _AllSongsTab(),
+                            _ArtistsTab(),
+                            _AlbumsTab(),
+                            _FoldersTab(),
+                          ],
+                        ),
+            ),
+            if (hasSong)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: MediaQuery.of(context).padding.bottom + 12,
+                child: const MiniPlayerBar(),
+              ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: const Text('本地'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () =>
+                        ref.read(libraryProvider.notifier).load(),
+                  ),
+                ],
+                bottom: tabBar,
+              ),
+            ),
+          ],
+        ),
       ),
-      body: lib.loading
-          ? const Center(child: CircularProgressIndicator())
-          : lib.error != null
-              ? _ErrorView(
-                  message: lib.error!,
-                  onRetry: () => ref.read(libraryProvider.notifier).load(),
-                )
-              : TabBarView(
-                  controller: _tab,
-                  children: [
-                    _AllSongsTab(),
-                    _ArtistsTab(),
-                    _AlbumsTab(),
-                    _FoldersTab(),
-                  ],
-                ),
     );
   }
 }
@@ -248,7 +281,10 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               : SongsListView(
                   songs: songs,
                   padding: EdgeInsets.only(
-                    bottom: 92 + MediaQuery.of(context).padding.bottom,
+                    bottom: (ref.watch(playerProvider).current != null
+                            ? 92.0
+                            : 16.0) +
+                        MediaQuery.of(context).padding.bottom,
                   ),
                   onPlay: (list, i) =>
                       ref.read(libraryProvider.notifier).playList(list, i),
@@ -346,8 +382,12 @@ class _ArtistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
     if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
+    final m = ListMetrics.ofRef(ref);
     return ListView.builder(
-      padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
+      padding: EdgeInsets.only(
+        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
       itemCount: artists.length,
       itemBuilder: (context, i) {
         final a = artists[i];
@@ -355,9 +395,9 @@ class _ArtistsTab extends ConsumerWidget {
         return CoverRow(
           cover: CoverImage(
             songPath: a.firstSongPath,
-            width: 88,
-            height: 88,
-            radius: 44,
+            width: m.artistCover,
+            height: m.artistCover,
+            radius: m.artistCover / 2,
             icon: Icons.person,
             placeholder: _letterAvatar(context, a.name, scheme),
           ),
@@ -365,12 +405,15 @@ class _ArtistsTab extends ConsumerWidget {
             a.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                fontSize: m.titleSize, fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             '${a.count} 首',
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            style:
+                TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
+          verticalPadding: m.vPad,
           trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
@@ -409,8 +452,12 @@ class _AlbumsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
     if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
+    final m = ListMetrics.ofRef(ref);
     return ListView.builder(
-      padding: EdgeInsets.only(bottom: 92 + MediaQuery.of(context).padding.bottom),
+      padding: EdgeInsets.only(
+        bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
       itemCount: albums.length,
       itemBuilder: (context, i) {
         final a = albums[i];
@@ -418,23 +465,26 @@ class _AlbumsTab extends ConsumerWidget {
         return CoverRow(
           cover: CoverImage(
             songPath: a.firstSongPath,
-            width: 80,
-            height: 80,
-            radius: 12,
+            width: m.songCover,
+            height: m.songCover,
+            radius: m.songRadius,
             icon: Icons.album,
           ),
           title: Text(
             a.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                fontSize: m.titleSize, fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             '${a.artist} · ${a.count} 首',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            style:
+                TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
+          verticalPadding: m.vPad,
           trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(
@@ -594,9 +644,8 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
   Future<void> _removeFolder(String path) async {
     final name = await _friendlyFolderName(path);
     if (!mounted) return;
-    final ok = await showDialog<bool>(
+    final ok = await showPredictiveDialog<bool>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('移除扫描目录'),
         content: Text('确定移除该目录吗？\n$name'),
@@ -775,7 +824,8 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
           left: 16,
           right: 16,
           top: 8,
-          bottom: 92 + MediaQuery.of(context).padding.bottom,
+          bottom: (ref.watch(playerProvider).current != null ? 92.0 : 16.0) +
+              MediaQuery.of(context).padding.bottom,
         ),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [

@@ -70,23 +70,28 @@ class UploadConfig {
       );
 }
 
-/// 自动同步配置
+/// 自动同步配置（与 auto_sync.dart 的 AutoSyncService 共用同一份，账号页/同步页开关均写入这里）
 class AutoSyncConfig {
   final bool enabled;
-  final int syncIntervalHours;
+  final int syncIntervalSeconds;
+  final int maxDelayMinutes;
 
   const AutoSyncConfig({
-    this.enabled = false,
-    this.syncIntervalHours = 24,
+    // 默认开启，对齐桌面端（否则用户不手动开就永远不自动上传收藏/歌单）
+    this.enabled = true,
+    this.syncIntervalSeconds = 3600,
+    this.maxDelayMinutes = 30,
   });
 
   AutoSyncConfig copyWith({
     bool? enabled,
-    int? syncIntervalHours,
+    int? syncIntervalSeconds,
+    int? maxDelayMinutes,
   }) {
     return AutoSyncConfig(
       enabled: enabled ?? this.enabled,
-      syncIntervalHours: syncIntervalHours ?? this.syncIntervalHours,
+      syncIntervalSeconds: syncIntervalSeconds ?? this.syncIntervalSeconds,
+      maxDelayMinutes: maxDelayMinutes ?? this.maxDelayMinutes,
     );
   }
 }
@@ -185,12 +190,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       } catch (_) {}
     }
 
-    final autoEnabled = prefs.getBool('${_autoSyncKey}_enabled') ?? false;
-    final autoInterval = prefs.getInt('${_autoSyncKey}_interval') ?? 24;
+    final autoEnabled = prefs.getBool('${_autoSyncKey}_enabled') ?? true;
+    final autoInterval = prefs.getInt('${_autoSyncKey}_interval_seconds') ?? 3600;
+    final autoMaxDelay = prefs.getInt('${_autoSyncKey}_max_delay') ?? 30;
     state = state.copyWith(
       autoSyncConfig: AutoSyncConfig(
         enabled: autoEnabled,
-        syncIntervalHours: autoInterval,
+        syncIntervalSeconds: autoInterval,
+        maxDelayMinutes: autoMaxDelay,
       ),
     );
   }
@@ -205,7 +212,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(autoSyncConfig: next);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('${_autoSyncKey}_enabled', next.enabled);
-    await prefs.setInt('${_autoSyncKey}_interval', next.syncIntervalHours);
+    await prefs.setInt('${_autoSyncKey}_interval_seconds', next.syncIntervalSeconds);
+    await prefs.setInt('${_autoSyncKey}_max_delay', next.maxDelayMinutes);
   }
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);

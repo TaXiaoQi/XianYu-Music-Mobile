@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,10 +25,19 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   bool _checkingUpdates = false;
   bool _savingAutoUpdate = false;
 
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     _loadAutoUpdatePref();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAutoUpdatePref() async {
@@ -41,6 +51,18 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(pluginManagerProvider);
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    final sources = state.sources;
+    final q = _query.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? sources
+        : sources
+            .where((s) =>
+                s.name.toLowerCase().contains(q) ||
+                s.author.toLowerCase().contains(q) ||
+                s.sources.join(',').toLowerCase().contains(q))
+            .toList();
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -53,11 +75,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             onPressed: _showPluginSettingsSheet,
           ),
           IconButton(
-            icon: const Icon(Icons.system_update_alt_outlined),
-            tooltip: '检查全部更新',
-            onPressed: _checkingUpdates ? null : _checkAllUpdates,
-          ),
-          IconButton(
             icon: const Icon(Icons.add),
             tooltip: '安装插件',
             onPressed: _installing ? null : _showInstallSheet,
@@ -66,7 +83,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       ),
       body: state.loading
           ? const Center(child: CircularProgressIndicator())
-          : state.sources.isEmpty && subscriptions.isEmpty
+          : sources.isEmpty && subscriptions.isEmpty
               ? _EmptyState(onInstall: _showInstallSheet)
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
@@ -78,10 +95,97 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    for (final source in state.sources) ...[
-                      _PluginCard(source: source),
-                      const SizedBox(height: 8),
-                    ],
+                    // 已安装插件标题（对标桌面端「已安装插件」区块）
+                    Row(
+                      children: [
+                        Container(
+                          width: 3,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        const Text(
+                          '已安装插件',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '已启用 ${sources.where((s) => s.enabled).length} / 共 ${sources.length}',
+                          style: TextStyle(
+                              fontSize: 12, color: scheme.outline),
+                        ),
+                        const Spacer(),
+                        FilledButton.tonalIcon(
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 10),
+                            textStyle: const TextStyle(fontSize: 12.5),
+                          ),
+                          onPressed: (_checkingUpdates || sources.isEmpty)
+                              ? null
+                              : _checkAllUpdates,
+                          icon: _checkingUpdates
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : const Icon(Icons.system_update_alt_outlined,
+                                  size: 16),
+                          label: Text(
+                              _checkingUpdates ? '检查中...' : '检查全部更新'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // 搜索框
+                    TextField(
+                      controller: _searchCtrl,
+                      onChanged: (v) => setState(() => _query = v),
+                      decoration: InputDecoration(
+                        hintText: '搜索插件名称、平台或作者',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
+                        isDense: true,
+                        filled: true,
+                        fillColor: appCardColor(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (sources.isNotEmpty && filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: Text(
+                            '未找到匹配的插件',
+                            style: TextStyle(
+                                fontSize: 13, color: scheme.onSurfaceVariant),
+                          ),
+                        ),
+                      )
+                    else
+                      for (final source in filtered) ...[
+                        _PluginCard(source: source),
+                        const SizedBox(height: 8),
+                      ],
                   ],
                 ),
     );
@@ -368,36 +472,56 @@ class _PluginCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(pluginManagerProvider.notifier);
 
+    // 图标/开关按插件格式分类配色（对齐桌面端，不随主题色变化）。
+    // 落雪=绿、MusicFree=橙、BakaMusic(Toskysun)=蓝、其它=红。
+    Color iconBg;
+    Color iconColor;
+    if (source.format == PluginFormat.lx) {
+      iconBg = const Color(0x1A22C55E);
+      iconColor = const Color(0xFF22C55E);
+    } else if (source.format == PluginFormat.musicfree &&
+        source.author.toLowerCase().contains('toskysun')) {
+      iconBg = const Color(0x1A3B82F6);
+      iconColor = const Color(0xFF3B82F6);
+    } else if (source.format == PluginFormat.musicfree) {
+      iconBg = const Color(0x1AF97316);
+      iconColor = const Color(0xFFF97316);
+    } else {
+      iconBg = const Color(0x1AEC4141);
+      iconColor = const Color(0xFFEC4141);
+    }
+
     return Material(
       color: appCardColor(context),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(14, 8, 8, 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // 图标
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                source.format == PluginFormat.lx
-                    ? Icons.music_note
-                    : Icons.extension,
-                color: scheme.primary,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // 名称 + 版本 + 音源
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            // 第一行：图标 + 插件名称/版本 + 开关
+            Row(
+              children: [
+                // 图标
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    source.format == PluginFormat.lx
+                        ? Icons.music_note
+                        : Icons.extension,
+                    color: iconColor,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 名称 + 版本（第一行纯展示名称与版本）
+                Expanded(
+                  child: Row(
                     children: [
                       Flexible(
                         child: Text(
@@ -417,84 +541,38 @@ class _PluginCard extends ConsumerWidget {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    source.author.isEmpty
-                        ? (source.format == PluginFormat.lx ? 'LX 插件' : 'MusicFree 插件')
-                        : source.author,
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (source.sources.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      '音源：${source.sources.join(' / ')}',
-                      style:
-                          TextStyle(fontSize: 11, color: scheme.outline),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            // 用户变量（仅 MusicFree 插件）
-            if (source.format == PluginFormat.musicfree)
-              IconButton(
-                icon: Icon(Icons.tune_outlined,
-                    size: 20, color: scheme.outline),
-                tooltip: '用户变量',
-                onPressed: () => _openUserVars(context, ref),
-              ),
-            // 更新
-            IconButton(
-              icon: Icon(Icons.system_update_alt_outlined,
-                  size: 20, color: scheme.outline),
-              tooltip: '检查更新',
-              onPressed: () => _checkUpdate(context, ref),
-            ),
-            // 更多：脚本编辑 / 跳过检查 / 重新加载
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert, size: 20, color: scheme.outline),
-              tooltip: '更多',
-              onSelected: (action) {
-                switch (action) {
-                  case 'skip':
-                    _toggleSkipUpdate(context, ref);
-                    break;
-                  case 'script':
-                    _openScriptEditor(context, ref);
-                    break;
-                  case 'reload':
-                    _confirmReload(context, ref);
-                    break;
-                }
-              },
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(
-                  value: 'skip',
-                  child: Text('跳过版本检查'),
                 ),
-                const PopupMenuItem(
-                  value: 'script',
-                  child: Text('编辑脚本'),
-                ),
-                const PopupMenuItem(
-                  value: 'reload',
-                  child: Text('重新加载'),
+                // 开关（仍在第一行右侧）
+                Switch(
+                  value: source.enabled,
+                  activeThumbColor: iconColor,
+                  onChanged: (_) => manager.toggleEnabled(source.id),
                 ),
               ],
             ),
-            // 卸载
-            IconButton(
-              icon: Icon(Icons.delete_outline, size: 20, color: scheme.outline),
-              tooltip: '卸载',
-              onPressed: () => _confirmRemove(context, manager),
-            ),
-            // 启用开关
-            Switch(
-              value: source.enabled,
-              onChanged: (_) => manager.toggleEnabled(source.id),
+            const SizedBox(height: 4),
+            // 第二行：详情 / 更新 / 删除 均分布放，图标后带名字
+            Row(
+              children: [
+                _action(
+                  context,
+                  Icons.info_outline,
+                  '详情',
+                  () => _openDetail(context, ref),
+                ),
+                _action(
+                  context,
+                  Icons.system_update_alt_outlined,
+                  '更新',
+                  () => _checkUpdate(context, ref),
+                ),
+                _action(
+                  context,
+                  Icons.delete_outline,
+                  '删除',
+                  () => _confirmRemove(context, manager),
+                ),
+              ],
             ),
           ],
         ),
@@ -502,10 +580,40 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _openUserVars(BuildContext context, WidgetRef ref) async {
+  /// 等宽分布的操作按钮：图标 + 文字（详情/更新/删除）。
+  Widget _action(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 17, color: scheme.outline),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(fontSize: 13, color: scheme.outline),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDetail(BuildContext context, WidgetRef ref) async {
     await showSheetDialog<void>(
       context,
-      (ctx) => _UserVarsSheet(source: source),
+      (ctx) => _PluginDetailSheet(source: source),
     );
   }
 
@@ -526,9 +634,8 @@ class _PluginCard extends ConsumerWidget {
           SnackBar(content: Text('「${source.name}」已是最新版本')));
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showPredictiveDialog<bool>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('发现新版本'),
         content: Text(
@@ -554,33 +661,9 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _openScriptEditor(BuildContext context, WidgetRef ref) async {
-    await showSheetDialog<void>(
-      context,
-      (ctx) => _ScriptEditorSheet(source: source),
-    );
-  }
-
-  Future<void> _toggleSkipUpdate(BuildContext context, WidgetRef ref) async {
-    final current = await PluginPreferences.getSkipUpdateCheck(source.id);
-    await PluginPreferences.setSkipUpdateCheck(source.id, !current);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(!current ? '「${source.name}」将跳过版本检查' : '「${source.name}」已恢复版本检查')),
-    );
-  }
-
-  Future<void> _confirmReload(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await ref.read(pluginManagerProvider.notifier).reload(source.id);
-    messenger.showSnackBar(SnackBar(
-        content: Text(ok ? '「${source.name}」已重新加载' : '「${source.name}」加载失败')));
-  }
-
   void _confirmRemove(BuildContext context, PluginManager manager) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('卸载插件'),
         content: Text('确定要卸载「${source.name}」吗？'),
@@ -602,136 +685,167 @@ class _PluginCard extends ConsumerWidget {
   }
 }
 
-/// 插件脚本编辑器：查看/修改插件 JS 脚本，保存后重新加载生效。
-class _ScriptEditorSheet extends ConsumerStatefulWidget {
-  const _ScriptEditorSheet({required this.source});
+/// 插件详情弹窗：展示插件信息；MusicFree 插件提供「用户变量」配置入口。
+class _PluginDetailSheet extends ConsumerWidget {
+  const _PluginDetailSheet({required this.source});
   final PluginSource source;
 
   @override
-  ConsumerState<_ScriptEditorSheet> createState() => _ScriptEditorSheetState();
-}
-
-class _ScriptEditorSheetState extends ConsumerState<_ScriptEditorSheet> {
-  final _ctrl = TextEditingController();
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final engine = await ref.read(pluginEngineProvider.future);
-      final script = await engine.store.readScript(widget.source.id);
-      if (!mounted) return;
-      _ctrl.text = script ?? '';
-      setState(() => _loading = false);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _save() async {
-    if (_saving || _loading) return;
-    setState(() => _saving = true);
-    try {
-      await ref
-          .read(pluginManagerProvider.notifier)
-          .updateScript(widget.source.id, _ctrl.text);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('脚本已保存并重新加载')),
-      );
-      Navigator.pop(context);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：$e')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final formatLabel =
+        source.format == PluginFormat.lx ? '落雪格式' : 'MusicFree 格式';
+
+    Widget row(String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 64,
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant)),
+              ),
+              Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+            ],
+          ),
+        );
+
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.72,
-            maxWidth: 420,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('编辑脚本 · ${widget.source.name}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(
-                '保存后将校验并重新加载插件；脚本语法错误会阻止保存',
-                style: TextStyle(fontSize: 12, color: scheme.outline),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 头部
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    color: appCardColor(context),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: scheme.outlineVariant),
+                    color: scheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: TextField(
-                    controller: _ctrl,
-                    maxLines: null,
-                    expands: true,
-                    enabled: !_loading,
-                    keyboardType: TextInputType.multiline,
-                    style: const TextStyle(
-                        fontFamily: 'monospace', fontSize: 12.5, height: 1.5),
-                    decoration: const InputDecoration(
-                      hintText: '// 插件 JS 脚本',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(12),
+                  child: Icon(
+                    source.format == PluginFormat.lx
+                        ? Icons.music_note
+                        : Icons.extension,
+                    color: scheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(source.name,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text(formatLabel,
+                          style: TextStyle(
+                              fontSize: 12, color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            row('版本', source.version.isEmpty ? '—' : 'v${source.version}'),
+            row('作者', source.author.isEmpty ? '—' : source.author),
+            if (source.description.isNotEmpty) row('描述', source.description),
+            // 音源 chips
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Text('音源',
+                        style: TextStyle(
+                            fontSize: 13, color: scheme.onSurfaceVariant)),
+                  ),
+                  Expanded(
+                    child: source.sources.isEmpty
+                        ? const Text('—')
+                        : Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final s in source.sources)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: scheme.primary
+                                        .withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(s,
+                                      style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: scheme.primary)),
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            // MusicFree 插件：用户变量入口（对齐桌面端详情内的用户变量区）
+            if (source.format == PluginFormat.musicfree) ...[
+              const Divider(height: 4),
+              const SizedBox(height: 6),
+              Material(
+                color: appCardColor(context),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => showSheetDialog<void>(
+                    context,
+                    (ctx) => _UserVarsSheet(source: source),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.tune_outlined,
+                            size: 18, color: scheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('用户变量',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600)),
+                              Text('插件运行所需的自定义参数',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: scheme.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right,
+                            size: 20, color: scheme.outline),
+                      ],
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _saving ? null : () => Navigator.pop(context),
-                    child: const Text('取消'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: (_loading || _saving) ? null : _save,
-                    child: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('保存'),
-                  ),
-                ],
-              ),
             ],
-          ),
+          ],
         ),
       ),
     );

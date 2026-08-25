@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -163,9 +164,8 @@ Future<void> showAddToPlaylistSheet(
 Future<String?> _promptName(BuildContext context, String title,
     {String initial = ''}) {
   final ctrl = TextEditingController(text: initial);
-  return showDialog<String>(
+  return showPredictiveDialog<String>(
     context: context,
-    useRootNavigator: true,
     builder: (context) => AlertDialog(
       title: Text(title, style: const TextStyle(fontSize: 16)),
       content: TextField(
@@ -224,9 +224,8 @@ Future<void> showPlaylistActionsSheet(
             leading: Icon(Icons.delete_outline, color: scheme.error),
             title: Text('删除歌单', style: TextStyle(color: scheme.error)),
             onTap: () async {
-              final ok = await showDialog<bool>(
+              final ok = await showPredictiveDialog<bool>(
                 context: context,
-                useRootNavigator: true,
                 builder: (context) => AlertDialog(
                   title: const Text('删除歌单',
                       style: TextStyle(fontSize: 16)),

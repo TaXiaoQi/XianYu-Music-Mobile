@@ -117,64 +117,6 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   }
 }
 
-/// 预测返回诊断探针（只记录，不弹页面）。
-class _BackGestureProbe with WidgetsBindingObserver {
-  _BackGestureProbe({required this.describeState});
-
-  /// 手势开始时采集应用侧状态（开关/转场/路由栈），判定故障层级。
-  final String Function() describeState;
-
-  int _updates = 0;
-  double _maxProgress = 0;
-  double _lastProgress = 0;
-  Offset? _lastTouch;
-  final List<String> _samples = [];
-
-  void _reset() {
-    _updates = 0;
-    _maxProgress = 0;
-    _lastProgress = 0;
-    _lastTouch = null;
-    _samples.clear();
-  }
-
-  @override
-  bool handleStartBackGesture(PredictiveBackEvent event) {
-    _reset();
-    debugPrint(
-      '[back-probe] start button=${event.isButtonEvent} '
-      'touch=${event.touchOffset} edge=${event.swipeEdge.name} | ${describeState()}',
-    );
-    return true;
-  }
-
-  @override
-  void handleUpdateBackGestureProgress(PredictiveBackEvent event) {
-    _updates++;
-    _lastProgress = event.progress;
-    _lastTouch = event.touchOffset;
-    if (event.progress > _maxProgress) _maxProgress = event.progress;
-    if (_updates <= 3 || _updates % 10 == 0) {
-      _samples.add('n=$_updates p=${event.progress.toStringAsFixed(3)} '
-          'x=${event.touchOffset?.dx.toStringAsFixed(0)}');
-    }
-  }
-
-  void _finish(String phase) {
-    debugPrint(
-      '[back-probe] $phase updates=$_updates maxP=${_maxProgress.toStringAsFixed(3)} '
-      'lastP=${_lastProgress.toStringAsFixed(3)} lastTouch=$_lastTouch '
-      'samples: ${_samples.join(' | ')}',
-    );
-  }
-
-  @override
-  void handleCommitBackGesture() => _finish('COMMIT');
-
-  @override
-  void handleCancelBackGesture() => _finish('CANCEL');
-}
-
 /// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -190,18 +132,9 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   bool _notificationsChecked = false;
 
-  late final _BackGestureProbe _backProbe = _BackGestureProbe(describeState: () {
-    final builder =
-        Theme.of(context).pageTransitionsTheme.builders[TargetPlatform.android];
-    return '开关=${ref.read(settingsProvider).valueOrNull?.enablePredictiveBack} '
-        '转场=${builder.runtimeType} '
-        'canPop=${GoRouter.of(context).canPop()}';
-  });
-
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(_backProbe);
     // 启动自动同步调度器（每分钟 tick，到点才同步）。
     ref.read(autoSyncProvider).start();
     // 首帧后检查公告/反馈完成通知，避免与启动动画冲突。
@@ -213,12 +146,6 @@ class _AppShellState extends ConsumerState<AppShell> {
           .checkOnStartup(context)
           .catchError((_) {});
     });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(_backProbe);
-    super.dispose();
   }
 
   @override

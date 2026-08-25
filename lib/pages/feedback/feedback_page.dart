@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -410,9 +411,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   }
 
   void _showFeedbackDetail(FeedbackItem item) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => _FeedbackDetailDialog(item: item),
     );
   }
@@ -618,9 +618,8 @@ class _FeedbackDetailDialog extends StatelessWidget {
   }
 
   void _showImageViewer(BuildContext context, String url) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.black,
         child: Stack(

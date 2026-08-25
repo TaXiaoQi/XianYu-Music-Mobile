@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 
 import '../../src/auth/auth_provider.dart';
@@ -10,9 +11,8 @@ Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
   required String title,
   required String description,
 }) {
-  return showDialog<HumanCaptchaPayload>(
+  return showPredictiveDialog<HumanCaptchaPayload>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => HumanCaptchaDialog(
       title: title,

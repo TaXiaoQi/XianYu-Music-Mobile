@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -18,6 +19,7 @@ import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/share/share_service.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -38,12 +40,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
   bool _lyricsViewHasRomaji = false;
 
+  /// 已预加载分享链接的歌曲 path（切歌时预生成，避免点击分享才等网络）。
+  String? _sharePreloadPath;
+
   @override
   Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
     final current = player.current;
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+
+    // 播放歌曲变化时预加载分享链接（服务内部对已缓存/生成中的歌去重，重复触发安全）。
+    if (current != null && _sharePreloadPath != current.path) {
+      _sharePreloadPath = current.path;
+      final toPreload = current;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(shareServiceProvider).preload(toPreload);
+      });
+    }
 
     // 背景是深色模糊封面（学 MusicFree），前景统一按深色主题渲染，
     // 保证浅色系统主题下文字/图标仍可读。
@@ -590,6 +604,11 @@ class _TitleRow extends ConsumerWidget {
           ),
           onPressed: () => ref.read(favoritesProvider.notifier).toggle(current),
         ),
+        IconButton(
+          icon: const Icon(Icons.ios_share),
+          tooltip: '分享歌曲',
+          onPressed: () => _shareCurrent(context, ref, current),
+        ),
         if (current.isOnline)
           IconButton(
             icon: const Icon(Icons.download_outlined),
@@ -610,6 +629,31 @@ class _TitleRow extends ConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+/// 生成并复制当前歌曲的分享链接（已缓存则直接复制）。
+Future<void> _shareCurrent(
+    BuildContext context, WidgetRef ref, QueueItem current) async {
+  final share = ref.read(shareServiceProvider);
+  final cachedUrl = share.cached(current);
+  // 提前捕获 messenger，避免 await 后跨 async 间隙使用 BuildContext。
+  final messenger = ScaffoldMessenger.of(context);
+  if (cachedUrl != null && cachedUrl.isNotEmpty) {
+    await Clipboard.setData(ClipboardData(text: cachedUrl));
+    messenger.showSnackBar(const SnackBar(content: Text('分享链接已复制')));
+    return;
+  }
+  try {
+    final url = await share.create(current);
+    if (url.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: url));
+      messenger.showSnackBar(const SnackBar(content: Text('分享链接已复制')));
+    } else {
+      messenger.showSnackBar(const SnackBar(content: Text('生成分享链接失败')));
+    }
+  } catch (_) {
+    messenger.showSnackBar(const SnackBar(content: Text('生成分享链接失败')));
   }
 }
 

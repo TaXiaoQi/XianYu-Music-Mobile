@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../library/library_provider.dart';
 import 'cover_image.dart';
+import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
 
 /// 歌曲行起播手势装配结果，配合 [songRowPlay] 使用：
@@ -141,6 +142,7 @@ class SongsListView extends ConsumerWidget {
     final single =
         (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
             'single';
+    final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: padding,
       itemCount: songs.length,
@@ -149,12 +151,13 @@ class SongsListView extends ConsumerWidget {
         final hlColor = Theme.of(context).colorScheme.primary;
         final play = onPlay != null ? () => onPlay!(songs, i) : null;
         final row = CoverRow(
-          cover: SongCover(song: s),
+          cover: SongCover(song: s, size: m.songCover),
           title: highlightedText(
             s.title,
             highlight,
             hlColor,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                fontSize: m.titleSize, fontWeight: FontWeight.w600),
             maxLines: 1,
           ),
           subtitle: highlightedText(
@@ -162,15 +165,16 @@ class SongsListView extends ConsumerWidget {
             highlight,
             hlColor,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: m.subtitleSize,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             maxLines: 1,
           ),
+          verticalPadding: m.vPad,
           trailing: Text(
             _fmt(s.duration),
             style: TextStyle(
-                fontSize: 13,
+                fontSize: m.subtitleSize,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           // 双击模式挂空回调：单击仍有水波纹反馈，起播交给外层 onDoubleTap。

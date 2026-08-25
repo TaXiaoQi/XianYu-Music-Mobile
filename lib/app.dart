@@ -9,6 +9,27 @@ import 'src/auth/account_api.dart';
 import 'src/navigation/routes.dart';
 import 'l10n/gen/app_localizations.dart';
 
+/// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
+const SnackBarThemeData _toastTheme = SnackBarThemeData(
+  // 浮动模式：胶囊悬浮贴底，不退化为全宽长条。
+  behavior: SnackBarBehavior.floating,
+  // 固定宽度：无论屏幕多宽都是居中的紧凑小胶囊；文本过长时换行增高。
+  width: 240,
+  // 大圆角构成椭圆药丸外观。
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(60)),
+  ),
+  backgroundColor: Color(0xE6323232),
+  elevation: 0,
+  contentTextStyle: TextStyle(
+    color: Colors.white,
+    fontSize: 13.5,
+    height: 1.3,
+  ),
+  // 上下留白让胶囊稍离底部。
+  insetPadding: EdgeInsets.symmetric(vertical: 14),
+);
+
 class XianYuApp extends ConsumerStatefulWidget {
   const XianYuApp({super.key});
 
@@ -122,6 +143,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceTintColor: Colors.transparent,
       ),
       dialogTheme: const DialogThemeData(backgroundColor: Color(0xFFFFFFFF)),
+      // 全局消息提示：底部居中的小胶囊 toast（对齐大众 toast 设计），替换默认长横条。
+      snackBarTheme: _toastTheme,
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
@@ -150,6 +173,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceTintColor: Colors.transparent,
       ),
       dialogTheme: const DialogThemeData(backgroundColor: Color(0xFF303030)),
+      snackBarTheme: _toastTheme,
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );

@@ -19,7 +19,12 @@ import java.util.concurrent.Executors
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
     private val SAF_CHANNEL = "xianyu/saf"
+    private val DEEP_LINK_CHANNEL = "xianyu/deeplink"
     private val REQ_CHOOSE_TREE = 1001
+
+    // xianyu:// 深链：分享落地页拉起后把 intent 交给 Flutter 解析播放。
+    private var deepLinkChannel: MethodChannel? = null
+    private var pendingDeepLink: String? = null
 
     private lateinit var saf: SafEngine
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -44,6 +49,31 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
+        processDeepLink(intent)
+    }
+
+    /** singleTop 复用已启动 Activity 时的深链回调。 */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        processDeepLink(intent)
+    }
+
+    private fun processDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "xianyu") return
+        pendingDeepLink = data.toString()
+        // 引擎与 Flutter 的 handler 未就绪时（冷启动 onCreate 阶段）不派发，
+        // 交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
+        dispatchIfReady()
+    }
+
+    /** 引擎就绪（warm start / onNewIntent）时走事件通道主动派发。 */
+    private fun dispatchIfReady() {
+        val link = pendingDeepLink ?: return
+        val ch = deepLinkChannel ?: return
+        pendingDeepLink = null
+        mainHandler.post { runCatching { ch.invokeMethod("onDeepLink", link) } }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -55,6 +85,20 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        deepLinkChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, DEEP_LINK_CHANNEL)
+            .apply {
+                setMethodCallHandler { call, result ->
+                    when (call.method) {
+                        "getInitialDeepLink" -> {
+                            // 冷启动：返回 onCreate 阶段暂存的深链并清空
+                            result.success(pendingDeepLink)
+                            pendingDeepLink = null
+                        }
+                        else -> result.notImplemented()
+                    }
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

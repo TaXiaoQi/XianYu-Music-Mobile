@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 
 import '../../src/auth/auth_provider.dart';
@@ -12,9 +13,8 @@ Future<bool> showChangePasswordDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangePasswordDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -233,9 +233,8 @@ Future<bool> showBindEmailDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => BindEmailDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -427,9 +426,8 @@ Future<String?> showChangeNicknameDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<String>(
+  return showPredictiveDialog<String>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangeNicknameDialog(notifier: notifier),
   );
@@ -537,9 +535,8 @@ Future<bool> showChangeCiyuanxiDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ChangeCiyuanxiDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -689,9 +686,8 @@ Future<bool> showDeleteAccountDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => DeleteAccountDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -795,9 +791,8 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
   }
 
   Future<bool?> _showConfirm() {
-    return showDialog<bool>(
+    return showPredictiveDialog<bool>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('确认注销账号'),
@@ -921,9 +916,8 @@ Future<bool> showForgotPasswordDialog(
   BuildContext context,
   AuthNotifier notifier,
 ) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ForgotPasswordDialog(notifier: notifier),
   ).then((v) => v ?? false);
@@ -1163,9 +1157,8 @@ Future<bool> showProfileEditGate(
   String note = '',
   bool blocked = false,
 }) {
-  return showDialog<bool>(
+  return showPredictiveDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => ProfileEditGateDialog(
       title: title,

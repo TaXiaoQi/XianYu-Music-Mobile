@@ -12,6 +12,8 @@ import 'src/core/rust_init.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/auth/account_api.dart';
 import 'src/player/player_provider.dart';
+import 'src/deeplink/deep_link_handler.dart';
+import 'src/navigation/routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +38,9 @@ Future<void> main() async {
       ),
     ),
   );
+
+  // 挂载 xianyu:// 深链监听，让分享落地页能拉起本 App 并播放分享歌曲。
+  XianYuDeepLink.init(container, appRouter);
 
   // 总体首帧计时（从 main 开始）
   final t0 = Stopwatch()..start();

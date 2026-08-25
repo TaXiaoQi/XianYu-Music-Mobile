@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -490,9 +491,8 @@ class _MyPlaylistsSection extends ConsumerWidget {
 /// 歌单名称输入弹窗（新建/重命名共用，不显示当前值）。
 Future<String?> _promptPlaylistName(BuildContext context, String title) {
   final controller = TextEditingController();
-  return showDialog<String>(
+  return showPredictiveDialog<String>(
     context: context,
-    useRootNavigator: true,
     builder: (ctx) => AlertDialog(
       title: Text(title),
       content: TextField(
@@ -621,9 +621,8 @@ class _PlaylistRow extends ConsumerWidget {
   }
 
   void _confirmRemove(BuildContext context, PlaylistManager manager) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('删除歌单'),
         content: Text('确定要删除「${playlist.name}」吗？'),

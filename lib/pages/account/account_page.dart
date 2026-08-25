@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/sync/sync_provider.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
@@ -159,28 +161,30 @@ class _AccountPageState extends ConsumerState<AccountPage>
     }
     return Scaffold(
       backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title: Text(
-          auth.isLoggedIn ? '账号与安全' : '账号认证',
-          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
           const _AmbientBackground(),
           SafeArea(
-            child: auth.isLoggedIn
-                ? _ProfileView(
-                    user: auth.user!,
-                    onLogout: () => _confirmLogout(context),
-                  )
-                : _buildAuthForm(context, auth),
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+              child: auth.isLoggedIn
+                  ? _ProfileView(
+                      user: auth.user!,
+                      onLogout: () => _confirmLogout(context),
+                    )
+                  : _buildAuthForm(context, auth),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(auth.isLoggedIn ? '账号与安全' : '账号认证'),
+            ),
           ),
         ],
       ),
@@ -189,9 +193,8 @@ class _AccountPageState extends ConsumerState<AccountPage>
 
   Future<void> _showSessionExpiredDialog() async {
     final notifier = ref.read(authProvider.notifier);
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('登录状态已失效'),
@@ -213,9 +216,8 @@ class _AccountPageState extends ConsumerState<AccountPage>
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
-    final ok = await showDialog<bool>(
+    final ok = await showPredictiveDialog<bool>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('退出登录'),
         content: const Text('确定要退出当前账号吗？'),
@@ -1268,7 +1270,7 @@ class _GlassCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: appCardColor(context),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: scheme.outlineVariant.withValues(alpha: 0.3),
         ),
@@ -1302,7 +1304,7 @@ class _GlassTile extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(

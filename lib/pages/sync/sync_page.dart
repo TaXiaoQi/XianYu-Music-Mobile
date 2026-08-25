@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,6 +17,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/rust/api.dart';
 import '../../src/sync/auto_sync.dart';
+import '../../src/sync/sync_provider.dart';
 
 /// 同步与备份：设置同步（上传/下载）+ 自动同步调度。
 class SyncPage extends ConsumerStatefulWidget {
@@ -164,9 +166,8 @@ class _SyncPageState extends ConsumerState<SyncPage> {
       ];
       _toast(parts.isEmpty ? '未导入任何内容' : '导入完成：${parts.join('，')}');
       if (result.errors.isNotEmpty && mounted) {
-        await showDialog<void>(
+        await showPredictiveDialog<void>(
           context: context,
-          useRootNavigator: true,
           builder: (ctx) => AlertDialog(
             title: const Text('部分内容导入失败'),
             content: SizedBox(
@@ -209,9 +210,8 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     var favorites = true;
     var plugins = true;
     var settings = false;
-    return showDialog<(bool, bool, bool, bool)>(
+    return showPredictiveDialog<(bool, bool, bool, bool)>(
             context: context,
-            useRootNavigator: true,
             builder: (ctx) => StatefulBuilder(
               builder: (ctx, setDialog) => AlertDialog(
                 title: const Text('导入应用备份'),
@@ -372,9 +372,8 @@ class _SyncPageState extends ConsumerState<SyncPage> {
     final matched = preview['matchedSongCount'] as num? ?? 0;
     final unmatched = preview['unmatchedSongCount'] as num? ?? 0;
     final exportedAt = preview['exportedAt'] as String? ?? '';
-    return showDialog<String>(
+    return showPredictiveDialog<String>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('导入统计备份'),
         content: Column(

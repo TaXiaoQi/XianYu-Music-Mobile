@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,9 +70,8 @@ class NotificationService {
 
   Future<void> _showAnnouncementDialog(
       BuildContext context, Announcement ann) async {
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: ann.title,
@@ -96,9 +96,8 @@ class NotificationService {
         '${isRejected ? '已被拒绝' : '已处理完成'}。\n\n'
         '处理管理员：$operator\n'
         '$reasonLabel：${reason.isEmpty ? '（无说明）' : reason}';
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: isRejected ? '反馈已被拒绝' : '反馈处理完成',
@@ -125,9 +124,8 @@ class NotificationService {
     final content = '管理员已将您的昵称修改为「${notice.newNickname}」。\n\n'
         '原昵称：${notice.oldNickname.isEmpty ? '-' : notice.oldNickname}\n'
         '修改原因：${notice.reason.isEmpty ? '（未填写）' : notice.reason}';
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
         title: '昵称已被修改',
@@ -231,9 +229,8 @@ class _NotificationDialog extends StatelessWidget {
   }
 
   void _showImageViewer(BuildContext context, String url) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.black,
         child: Stack(

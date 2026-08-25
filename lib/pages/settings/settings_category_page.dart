@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/list_metrics.dart';
 import '../../src/audio/audio_devices.dart';
 import '../../src/rust/api.dart' as frb;
 
@@ -139,36 +141,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, '反馈'),
       _CardGroup(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '触觉反馈力度',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '点击底部导航等操作的手感震动强度',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('轻')),
-                    ButtonSegment(value: 1, label: Text('正常')),
-                    ButtonSegment(value: 2, label: Text('重')),
-                  ],
-                  selected: {s?.hapticStrength ?? 1},
-                  onSelectionChanged: (v) => n.setHapticStrength(v.first),
-                  showSelectedIcon: false,
-                ),
-              ],
-            ),
+          _tile(
+            context,
+            icon: Icons.vibration_outlined,
+            title: '触觉反馈力度',
+            subtitle: '点击底部导航等操作的手感震动强度',
+            trailing: Text(_hapticLabel(s?.hapticStrength ?? 1)),
+            onTap: () => _pickHaptic(context, ref, s),
           ),
         ],
       ),
@@ -263,6 +242,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               }),
               onTap: () => _pickSideBarExpandDirection(context, ref, s),
             ),
+        ],
+      ),
+      _sectionHeader(context, '列表'),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.view_list_outlined,
+            title: '列表大小',
+            subtitle: '歌曲 / 歌手 / 专辑 / 歌单列表项尺寸',
+            trailing: Text(listSizeLabel(
+                s?.listSize ?? ListSize.medium)),
+            onTap: () => _pickListSize(context, ref, s),
+          ),
         ],
       ),
       _sectionHeader(context, '歌词显示'),
@@ -699,6 +692,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppLanguage.en => 'English',
   };
 
+  String _hapticLabel(int v) => switch (v) {
+    0 => '轻',
+    2 => '重',
+    _ => '正常',
+  };
+
   Widget _volumeSlider(
     AppSettings? s,
     SettingsNotifier n, {
@@ -870,6 +869,58 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
+  Future<void> _pickHaptic(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.hapticStrength ?? 1;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('轻', 0),
+          _Choice('正常', 1),
+          _Choice('重', 2),
+        ],
+        cur,
+        labelOf: (v) => _hapticLabel(v as int),
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setHapticStrength(choice.value as int);
+    }
+  }
+
+  Future<void> _pickListSize(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.listSize ?? ListSize.medium;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        const [
+          _Choice('最小', ListSize.compact),
+          _Choice('中等', ListSize.medium),
+          _Choice('最大', ListSize.large),
+        ],
+        cur,
+        labelOf: (v) => listSizeLabel(v as ListSize),
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setListSize(choice.value as ListSize);
+    }
+  }
+
   Future<void> _pickThemeMode(
     BuildContext context,
     WidgetRef ref,
@@ -930,18 +981,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       (_) => _choiceSheet(
         context,
         const [
-          _Choice('低清 (96k)', 'mgg'),
-          _Choice('普通', '128k'),
-          _Choice('中等', '192k'),
-          _Choice('HQ', '320k'),
-          _Choice('SQ (无损)', 'flac'),
-          _Choice('Hi-Res', 'flac24bit'),
-          _Choice('高解析度', 'hires'),
-          _Choice('黑胶', 'vinyl'),
-          _Choice('杜比全景声', 'dolby'),
-          _Choice('臻品音质', 'atmos'),
-          _Choice('臻品全景声', 'atmos_plus'),
-          _Choice('臻品母带', 'master'),
+          _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
+          _Choice('普通', '128k', subtitle: '128k'),
+          _Choice('中等', '192k', subtitle: '192k'),
+          _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
+          _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
+          _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
+          _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
+          _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
+          _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
+          _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
+          _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
+          _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
         ],
         cur,
         labelOf: (v) => v as String,
@@ -1205,6 +1256,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         for (final c in choices)
           ListTile(
             title: Text(labelOf(c.value)),
+            subtitle: c.subtitle == null
+                ? null
+                : Text(
+                    c.subtitle!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
             trailing: c.value == cur
                 ? Icon(
                     Icons.check,
@@ -1659,8 +1719,9 @@ class _HueRainbow extends StatelessWidget {
 
 class _Choice {
   final String label;
+  final String? subtitle;
   final dynamic value;
-  const _Choice(this.label, this.value);
+  const _Choice(this.label, this.value, {this.subtitle});
 }
 
 /// 常规 → 存储空间：与桌面端 SettingsGeneral 对齐的在线播放流式缓存管理。
@@ -1716,9 +1777,8 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
       text: (s?.streamCacheSizeMB ?? 500).toString(),
     );
     var chosen = 0;
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('播放缓存上限'),
         content: TextField(

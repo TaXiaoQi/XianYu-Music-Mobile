@@ -10,12 +10,14 @@ import '../player/player_provider.dart';
 import '../rust/api.dart';
 import '../rust/music/types.dart';
 
+import 'predictive_dialog_route.dart';
+
 /// 歌曲信息弹窗：查看 + 标签编辑 + 歌词编辑（对齐桌面端 SongInfoModal）。
+/// 用参与预测返回的路由承载，返回手势可跟手关闭。
 Future<void> showSongInfoDialog(BuildContext context, WidgetRef ref,
     QueueItem item) async {
-  await showDialog<void>(
+  await showPredictiveDialog<void>(
     context: context,
-    useRootNavigator: true,
     builder: (ctx) => _SongInfoDialog(
       item: item,
       editable: !item.isOnline,

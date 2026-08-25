@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
+import '../../src/home/top_lists_preview_provider.dart';
+import '../../src/plugin/plugin_catalog.dart';
 import '../../src/widgets/online_cover.dart';
+import 'online_detail_page.dart';
 
 /// 首页发现区：统计 / 每日推荐 / 音源榜单三 tab 切换（对齐桌面 HomeDiscoverTabs）。
 class DiscoverSection extends ConsumerStatefulWidget {
@@ -108,7 +111,7 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
     return switch (_tabs[_index].key) {
       'statistics' => _StatsCard(),
       'dailyRecommend' => const _DailyCard(),
-      _ => _TopListsCard(),
+      _ => const _TopListsBody(),
     };
   }
 }
@@ -274,45 +277,125 @@ class _DailyCard extends ConsumerWidget {
   }
 }
 
-/// 音源榜单预览：入口卡片。
-class _TopListsCard extends ConsumerWidget {
+/// 音源榜单预览：内嵌展示真实榜单数据（对齐桌面端首页内嵌榜单区块）。
+class _TopListsBody extends ConsumerWidget {
+  const _TopListsBody();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return _CardContainer(
-      onTap: () => context.push('/home/toplists'),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.12),
+    final state = ref.watch(topListsPreviewProvider);
+
+    if (state.checking || state.loading) {
+      return const _CardContainer(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+      );
+    }
+    if (state.noSources) {
+      return _CardContainer(
+        onTap: () => context.push('/plugin'),
+        child: Row(
+          children: [
+            Icon(Icons.extension_outlined, size: 22, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '暂无支持榜单的音源插件，去安装',
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      );
+    }
+    final boards = state.boards;
+    if (boards.isEmpty) {
+      return _CardContainer(
+        onTap: () => context.push('/home/toplists'),
+        child: Row(
+          children: [
+            Icon(Icons.library_music_outlined, size: 22, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '「${state.sourceName ?? '当前音源'}」暂无榜单',
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (state.sourceName != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              '来源：${state.sourceName}',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        SizedBox(
+          height: 144,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: boards.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, i) => _boardTile(context, scheme, boards[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _boardTile(BuildContext context, ColorScheme scheme, MfSheetItem b) {
+    return GestureDetector(
+      onTap: () => context.push(
+        '/online-detail',
+        extra: OnlineDetailArgs(
+          type: OnlineDetailType.toplist,
+          pluginId: b.pluginId,
+          title: b.title,
+          subtitle: b.subtitle,
+          coverUrl: b.coverUrl,
+          raw: b.raw,
+        ),
+      ),
+      child: SizedBox(
+        width: 92,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
               borderRadius: BorderRadius.circular(10),
+              child: OnlineCover(url: b.coverUrl, size: 92, radius: 10),
             ),
-            child:
-                Icon(Icons.leaderboard_outlined, size: 22, color: scheme.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '音源榜单',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '各音源热门排行 · 飙升 / 新歌 / 热歌',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant),
-                ),
-              ],
+            const SizedBox(height: 5),
+            Text(
+              b.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+              ),
             ),
-          ),
-          Icon(Icons.chevron_right, size: 18, color: scheme.onSurfaceVariant),
-        ],
+          ],
+        ),
       ),
     );
   }

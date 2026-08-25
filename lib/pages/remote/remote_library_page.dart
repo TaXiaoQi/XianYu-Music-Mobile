@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -155,9 +156,8 @@ class RemoteLibraryPage extends ConsumerWidget {
 
   Future<bool?> _confirm(BuildContext context,
       {required String title, required String message}) {
-    return showDialog<bool>(
+    return showPredictiveDialog<bool>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: Text(title),
         content: Text(message),
@@ -310,9 +310,8 @@ class _SourceCard extends ConsumerWidget {
         (_) => _SourceEditorSheet(editing: source),
       );
     } else if (action == 'remove') {
-      final ok = await showDialog<bool>(
+      final ok = await showPredictiveDialog<bool>(
         context: context,
-        useRootNavigator: true,
         builder: (ctx) => AlertDialog(
           title: const Text('删除远程源'),
           content: Text(

@@ -10,7 +10,9 @@ import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -223,62 +225,78 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final scheme = Theme.of(context).colorScheme;
     final a = widget.args;
     final isArtist = a.type == OnlineDetailType.artist;
+    final artistTab = isArtist && _tab != null
+        ? TabBar(
+            controller: _tab,
+            tabs: const [
+              Tab(text: '歌曲'),
+              Tab(text: '专辑'),
+              Tab(text: '简介'),
+            ],
+          )
+        : null;
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(
-        title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Column(
+      body: Stack(
         children: [
-          _Header(
-            title: a.title,
-            subtitle: a.subtitle.isNotEmpty
-                ? a.subtitle
-                : (isArtist ? '歌手' : switch (a.type) {
-                    OnlineDetailType.album => '专辑',
-                    OnlineDetailType.toplist => '榜单',
-                    _ => '歌单',
-                  }),
-            coverUrl: a.coverUrl,
-            circular: isArtist,
-            songCount: _songs.length,
-            onPlayAll: _songs.isNotEmpty ? _playAll : null,
-            favoriteLabel: switch (a.type) {
-              OnlineDetailType.album => '收藏整张专辑',
-              OnlineDetailType.toplist => '收藏榜单',
-              _ => '收藏整张歌单',
-            },
-            isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
-                '${a.type.name}:${a.pluginId}:${a.title}'),
-            onToggleFavorite: isArtist
-                ? null
-                : () => _toggleCollectionFavorite(),
-          ),
-          if (isArtist && _tab != null)
-            TabBar(
-              controller: _tab,
-              tabs: const [
-                Tab(text: '歌曲'),
-                Tab(text: '专辑'),
-                Tab(text: '简介'),
+          Padding(
+            padding: EdgeInsets.only(
+              top: GlassTopBar.height(context, bottom: artistTab),
+            ),
+            child: Column(
+              children: [
+                _Header(
+                  title: a.title,
+                  subtitle: a.subtitle.isNotEmpty
+                      ? a.subtitle
+                      : (isArtist ? '歌手' : switch (a.type) {
+                          OnlineDetailType.album => '专辑',
+                          OnlineDetailType.toplist => '榜单',
+                          _ => '歌单',
+                        }),
+                  coverUrl: a.coverUrl,
+                  circular: isArtist,
+                  songCount: _songs.length,
+                  onPlayAll: _songs.isNotEmpty ? _playAll : null,
+                  favoriteLabel: switch (a.type) {
+                    OnlineDetailType.album => '收藏整张专辑',
+                    OnlineDetailType.toplist => '收藏榜单',
+                    _ => '收藏整张歌单',
+                  },
+                  isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
+                      '${a.type.name}:${a.pluginId}:${a.title}'),
+                  onToggleFavorite: isArtist
+                      ? null
+                      : () => _toggleCollectionFavorite(),
+                ),
+                Expanded(
+                  child: isArtist && _tab != null
+                      ? TabBarView(
+                          controller: _tab,
+                          children: [
+                            _buildSongList(),
+                            _buildAlbumList(scheme),
+                            _buildIntro(scheme),
+                          ],
+                        )
+                      : _buildSongList(),
+                ),
               ],
             ),
-          Expanded(
-            child: isArtist && _tab != null
-                ? TabBarView(
-                    controller: _tab,
-                    children: [
-                      _buildSongList(),
-                      _buildAlbumList(scheme),
-                      _buildIntro(scheme),
-                    ],
-                  )
-                : _buildSongList(),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+              title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              bottom: artistTab,
+            ),
           ),
         ],
       ),
@@ -287,6 +305,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   Widget _buildSongList() {
     final scheme = Theme.of(context).colorScheme;
+    final m = ListMetrics.ofRef(ref);
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -332,25 +351,26 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           final r = _songs[i];
           final g = songRowPlay(ref, onPlay: () => _play(i));
           return g.wrap(
-            ListTile(
-              dense: true,
-              leading: OnlineCover(url: r.img, size: 44),
+            CoverRow(
+              cover: OnlineCover(
+                  url: r.img, size: m.songCover, radius: m.songRadius),
               onTap: g.onTap,
+              onLongPress: () => _songActions(i),
+              verticalPadding: m.vPad,
               title: Text(
                 r.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 14.5, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    fontSize: m.titleSize, fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                r.singer.isEmpty
-                    ? r.albumName
-                    : '${r.singer} · ${r.albumName}',
+                r.singer.isEmpty ? r.albumName : '${r.singer} · ${r.albumName}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: 12, color: scheme.onSurfaceVariant),
+                    fontSize: m.subtitleSize,
+                    color: scheme.onSurfaceVariant),
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -365,11 +385,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                     Text(
                       r.interval,
                       style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                          fontSize: m.subtitleSize,
+                          color: scheme.onSurfaceVariant),
                     ),
                 ],
               ),
-              onLongPress: () => _songActions(i),
             ),
           );
         },
@@ -383,6 +403,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         child: Text('暂无专辑', style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
+    final m = ListMetrics.ofRef(ref);
     return ListView.separated(
       padding: EdgeInsets.only(
           top: 6, bottom: MediaQuery.of(context).padding.bottom + 24),
@@ -390,13 +411,14 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       separatorBuilder: (_, _) => const SizedBox.shrink(),
       itemBuilder: (context, i) {
         final album = _albums[i];
-        return ListTile(
-          leading: OnlineCover(url: album.coverUrl, size: 52, radius: 8),
+        return CoverRow(
+          cover: OnlineCover(
+              url: album.coverUrl, size: m.songCover, radius: m.songRadius),
           title: Text(
             album.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
           ),
           subtitle: album.artist.isEmpty
               ? null
@@ -404,8 +426,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                   album.artist,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: TextStyle(
+                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
                 ),
+          verticalPadding: m.vPad,
           trailing:
               Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
           onTap: () => context.push(

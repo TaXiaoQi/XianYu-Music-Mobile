@@ -32,6 +32,13 @@ enum AppLanguage {
   en,
 }
 
+/// 列表项尺寸：最小(compact) / 中等(medium，默认) / 最大(large)。
+enum ListSize {
+  compact,
+  medium,
+  large;
+}
+
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff', 'dsf', 'dff'];
 
@@ -85,6 +92,7 @@ class AppSettings {
     this.songClickAction = 'single',
     this.enablePredictiveBack = true,
     this.language = AppLanguage.system,
+    this.listSize = ListSize.medium,
   });
 
   final double volume;
@@ -194,6 +202,9 @@ class AppSettings {
   /// 应用界面语言。
   final AppLanguage language;
 
+  /// 歌曲/歌手/专辑/歌单列表项尺寸。
+  final ListSize listSize;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -242,6 +253,7 @@ class AppSettings {
     String? songClickAction,
     bool? enablePredictiveBack,
     AppLanguage? language,
+    ListSize? listSize,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -302,6 +314,7 @@ class AppSettings {
       songClickAction: songClickAction ?? this.songClickAction,
       enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
       language: language ?? this.language,
+      listSize: listSize ?? this.listSize,
     );
   }
 }
@@ -383,8 +396,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       songClickAction: prefs.getString('songClickAction') ?? 'single',
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? true,
       language: _langFromString(prefs.getString('language') ?? 'system'),
+      listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
     );
   }
+
+  ListSize _listSizeFromString(String v) => switch (v) {
+        'compact' => ListSize.compact,
+        'large' => ListSize.large,
+        _ => ListSize.medium,
+      };
 
   AppLanguage _langFromString(String v) => switch (v) {
         'zhTW' => AppLanguage.zhTW,
@@ -460,6 +480,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('songClickAction', next.songClickAction),
       prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
       prefs.setString('language', next.language.name),
+      prefs.setString('listSize', next.listSize.name),
     ]);
   }
 
@@ -520,6 +541,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setUsbExclusiveDeviceId(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveDeviceId: v));
   Future<void> setSongClickAction(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(songClickAction: v));
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
+  Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

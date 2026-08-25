@@ -1,3 +1,4 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -66,9 +67,8 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   }
 
   Future<void> _showUpdateDialog(LatestVersion latest) async {
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('发现新版本'),

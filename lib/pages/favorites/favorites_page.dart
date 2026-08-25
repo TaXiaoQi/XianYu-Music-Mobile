@@ -1,15 +1,20 @@
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
-import '../../src/core/app_colors.dart';
 
 /// 收藏页：单曲 / 歌单 / 专辑三 tab（对齐桌面）。
 class FavoritesPage extends ConsumerStatefulWidget {
@@ -43,48 +48,71 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   Widget build(BuildContext context) {
     final fav = ref.watch(favoritesProvider);
     final notifier = ref.read(favoritesProvider.notifier);
+    final hasSong = ref.watch(playerProvider).current != null;
+    final tabBar = TabBar(
+      controller: _tab,
+      onTap: (_) => setState(() {}),
+      tabs: const [
+        Tab(text: '单曲'),
+        Tab(text: '歌单'),
+        Tab(text: '专辑'),
+      ],
+    );
 
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appSurfaceBg(context),
-        appBar: AppBar(
-          title: const Text('收藏'),
-          actions: [
-            if (fav.entries.isNotEmpty && _tab.index == 0)
-              IconButton(
-                icon: const Icon(Icons.delete_sweep_outlined),
-                tooltip: '清空',
-                onPressed: () => _confirmClear(context, notifier),
+        body: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(
+                top: GlassTopBar.height(context, bottom: tabBar),
               ),
-          ],
-          bottom: TabBar(
-            controller: _tab,
-            onTap: (_) => setState(() {}),
-            tabs: const [
-              Tab(text: '单曲'),
-              Tab(text: '歌单'),
-              Tab(text: '专辑'),
-            ],
-          ),
-        ),
-        body: fav.loading
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                controller: _tab,
-                children: [
-                  _SongsTab(fav: fav, notifier: notifier),
-                  _CollectionsTab(fav: fav, kind: 'playlist'),
-                  _CollectionsTab(fav: fav, kind: 'album'),
+              child: fav.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TabBarView(
+                      controller: _tab,
+                      children: [
+                        _SongsTab(fav: fav, notifier: notifier, showPlayer: hasSong),
+                        _CollectionsTab(fav: fav, kind: 'playlist', showPlayer: hasSong),
+                        _CollectionsTab(fav: fav, kind: 'album', showPlayer: hasSong),
+                      ],
+                    ),
+            ),
+            if (hasSong)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: MediaQuery.of(context).padding.bottom + 12,
+                child: const MiniPlayerBar(),
+              ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: const Text('收藏'),
+                actions: [
+                  if (fav.entries.isNotEmpty && _tab.index == 0)
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      tooltip: '清空',
+                      onPressed: () => _confirmClear(context, notifier),
+                    ),
                 ],
+                bottom: tabBar,
               ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _confirmClear(BuildContext context, FavoritesManager notifier) {
-    showDialog<void>(
+    showPredictiveDialog<void>(
       context: context,
-      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('清空收藏'),
         content: const Text('确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。'),
@@ -108,10 +136,15 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 
 /// 单曲收藏列表。
 class _SongsTab extends StatelessWidget {
-  const _SongsTab({required this.fav, required this.notifier});
+  const _SongsTab({
+    required this.fav,
+    required this.notifier,
+    this.showPlayer = false,
+  });
 
   final FavoritesState fav;
   final FavoritesManager notifier;
+  final bool showPlayer;
 
   @override
   Widget build(BuildContext context) {
@@ -134,10 +167,12 @@ class _SongsTab extends StatelessWidget {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 24),
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        bottom: (showPlayer ? 92.0 : 24.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
       itemCount: fav.entries.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final entry = fav.entries[i];
         return _FavoriteTile(
@@ -152,10 +187,15 @@ class _SongsTab extends StatelessWidget {
 
 /// 歌单/专辑收藏列表（来自收藏集）。
 class _CollectionsTab extends ConsumerWidget {
-  const _CollectionsTab({required this.fav, required this.kind});
+  const _CollectionsTab({
+    required this.fav,
+    required this.kind,
+    this.showPlayer = false,
+  });
 
   final FavoritesState fav;
   final String kind;
+  final bool showPlayer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -190,10 +230,13 @@ class _CollectionsTab extends ConsumerWidget {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 24),
+    final m = ListMetrics.ofRef(ref);
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        bottom: (showPlayer ? 92.0 : 24.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
       itemCount: items.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final c = items[i];
         final type = c.kind == 'album'
@@ -201,14 +244,18 @@ class _CollectionsTab extends ConsumerWidget {
             : (c.kind == 'toplist'
                 ? OnlineDetailType.toplist
                 : OnlineDetailType.playlist);
-        return ListTile(
-          leading: OnlineCover(
+        return CoverRow(
+          cover: OnlineCover(
             url: c.coverUrl,
-            size: 48,
-            radius: c.kind == 'album' ? 8 : 8,
+            size: m.songCover,
+            radius: m.songRadius,
           ),
-          title: Text(c.title,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(
+            c.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
+          ),
           subtitle: Text(
             [
               if (c.subtitle.isNotEmpty) c.subtitle,
@@ -216,10 +263,12 @@ class _CollectionsTab extends ConsumerWidget {
             ].join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
+          verticalPadding: m.vPad,
           trailing: IconButton(
-            icon: Icon(Icons.favorite, size: 20, color: const Color(0xFFEC4141)),
+            icon: Icon(Icons.favorite,
+                size: 20, color: scheme.primary),
             tooltip: '取消收藏',
             onPressed: () => ref.read(favoritesProvider.notifier).toggleCollection(
                   kind: c.kind,
@@ -230,7 +279,9 @@ class _CollectionsTab extends ConsumerWidget {
                   raw: c.raw,
                 ),
           ),
-          onTap: () => context.push('/online-detail', extra: OnlineDetailArgs(
+          onTap: () => context.push(
+              '/online-detail',
+              extra: OnlineDetailArgs(
                 type: type,
                 pluginId: c.pluginId,
                 title: c.title,
@@ -267,29 +318,35 @@ class _FavoriteTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final m = ListMetrics.ofRef(ref);
     final g = songRowPlay(ref, onPlay: onPlay);
     return g.wrap(
-      ListTile(
-        leading: CoverImage(
+      CoverRow(
+        cover: CoverImage(
           songPath: entry.path,
           networkUrl: entry.coverUrl,
-          width: 44,
-          height: 44,
-          radius: 8,
+          width: m.songCover,
+          height: m.songCover,
+          radius: m.songRadius,
           icon: Icons.music_note,
         ),
         onTap: g.onTap,
         title: Text(entry.title,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style:
+                TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600)),
         subtitle: Text(
           entry.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          style:
+              TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
         ),
+        verticalPadding: m.vPad,
         trailing: IconButton(
           icon: Icon(Icons.favorite,
-              size: 20, color: const Color(0xFFEC4141)),
+              size: 20, color: scheme.primary),
           tooltip: '取消收藏',
           onPressed: onRemove,
         ),

@@ -21,6 +21,8 @@ import '../../src/playlist/playlist_store.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -312,92 +314,67 @@ class _SearchPageState extends ConsumerState<SearchPage>
     final player = ref.watch(playerProvider);
     final hasSong = player.current != null;
     final selected = _selected;
+    final inResults = _inResults;
+
+    final tabBar = inResults
+        ? TabBar(
+            controller: _tab,
+            tabs: const [
+              Tab(text: '单曲'),
+              Tab(text: '歌手'),
+              Tab(text: '专辑'),
+              Tab(text: '歌单'),
+            ],
+          )
+        : null;
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: TextField(
-          controller: _ctrl,
-          autofocus: true,
-          textInputAction: TextInputAction.search,
-          onChanged: _onChanged,
-          onSubmitted: (q) => _submitSearch(q),
-          decoration: InputDecoration(
-            hintText: '搜索音乐、歌手、专辑、歌单',
-            border: InputBorder.none,
-            suffixIcon: _ctrl.text.isEmpty && !_inResults
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.clear, size: 20),
-                    onPressed: _clearInput,
-                  ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: '搜索',
-            icon: const Icon(Icons.search),
-            style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFFEC4141),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => _submitSearch(_ctrl.text),
-          ),
-        ],
-        bottom: _inResults
-            ? TabBar(
-                controller: _tab,
-                tabs: const [
-                  Tab(text: '单曲'),
-                  Tab(text: '歌手'),
-                  Tab(text: '专辑'),
-                  Tab(text: '歌单'),
-                ],
-              )
-            : null,
-      ),
       body: Stack(
         children: [
-          if (_inResults)
-            Column(
-              children: [
-                _buildSourceBar(scheme),
-                const Divider(height: 1),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tab,
+          Padding(
+            padding: EdgeInsets.only(
+              top: GlassTopBar.height(context, bottom: tabBar),
+            ),
+            child: inResults
+                ? Column(
                     children: [
-                      _TrackTab(
-                        keyword: _searchedQuery,
-                        source: selected,
-                        visible: _tab.index == 0,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.artist,
-                        keyword: _searchedQuery,
-                        source: selected,
-                        visible: _tab.index == 1,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.album,
-                        keyword: _searchedQuery,
-                        source: selected,
-                        visible: _tab.index == 2,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.playlist,
-                        keyword: _searchedQuery,
-                        source: selected,
-                        visible: _tab.index == 3,
+                      _buildSourceBar(scheme),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tab,
+                          children: [
+                            _TrackTab(
+                              keyword: _searchedQuery,
+                              source: selected,
+                              visible: _tab.index == 0,
+                            ),
+                            _CatalogTab(
+                              kind: _CatalogKind.artist,
+                              keyword: _searchedQuery,
+                              source: selected,
+                              visible: _tab.index == 1,
+                            ),
+                            _CatalogTab(
+                              kind: _CatalogKind.album,
+                              keyword: _searchedQuery,
+                              source: selected,
+                              visible: _tab.index == 2,
+                            ),
+                            _CatalogTab(
+                              kind: _CatalogKind.playlist,
+                              keyword: _searchedQuery,
+                              source: selected,
+                              visible: _tab.index == 3,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
-                  ),
-                ),
-              ],
-            )
-          else
-            _IdleBody(onSearch: _submitSearch),
+                  )
+                : _IdleBody(onSearch: _submitSearch),
+          ),
           if (hasSong)
             Positioned(
               left: 14,
@@ -405,6 +382,43 @@ class _SearchPageState extends ConsumerState<SearchPage>
               bottom: MediaQuery.of(context).padding.bottom + 12,
               child: const MiniPlayerBar(),
             ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: _onChanged,
+                onSubmitted: (q) => _submitSearch(q),
+                decoration: InputDecoration(
+                  hintText: '搜索音乐、歌手、专辑、歌单',
+                  border: InputBorder.none,
+                  suffixIcon: _ctrl.text.isEmpty && !_inResults
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: _clearInput,
+                        ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: '搜索',
+                  icon: const Icon(Icons.search),
+                  style: IconButton.styleFrom(
+                    backgroundColor: scheme.primary,
+                    foregroundColor: scheme.onPrimary,
+                  ),
+                  onPressed: () => _submitSearch(_ctrl.text),
+                ),
+              ],
+              bottom: tabBar,
+            ),
+          ),
         ],
       ),
     );
@@ -486,7 +500,7 @@ class _IdleBody extends ConsumerWidget {
         Row(
           children: [
             Icon(Icons.local_fire_department_outlined,
-                size: 18, color: const Color(0xFFEC4141)),
+                size: 18, color: scheme.primary),
             const SizedBox(width: 8),
             Text(
               '大家都在搜',
@@ -591,9 +605,7 @@ class _HotTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     // 前三名高亮。
     final hot = index < 3;
-    final color = hot
-        ? const Color(0xFFEC4141)
-        : scheme.onSurfaceVariant;
+    final color = hot ? scheme.primary : scheme.onSurfaceVariant;
     // 文本大小逐名递减，突出榜首。
     final size = index == 0
         ? 15.5
@@ -825,6 +837,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
     final q = widget.keyword.trim();
+    final m = ListMetrics.ofRef(ref);
 
     if (q.isEmpty) {
       return _emptyHint('输入关键词搜索音乐', scheme, source: widget.source.name);
@@ -837,53 +850,49 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     }
 
     final bottomInset = MediaQuery.of(context).padding.bottom + 92;
-    return ListView.separated(
+    return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _results.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final e = _results[i];
         if (e.isLocal) {
           final s = e.localSong!;
-          return ListTile(
-            leading: SongCover(song: s, size: 40),
-            title: highlightedText(s.title, q, scheme.primary, maxLines: 1),
+          return CoverRow(
+            cover: SongCover(song: s, size: m.songCover),
+            title: highlightedText(s.title, q, scheme.primary,
+                maxLines: 1,
+                style: TextStyle(
+                    fontSize: m.titleSize, fontWeight: FontWeight.w600)),
             subtitle: Text(
               [s.artist, s.album, '本地']
                   .where((x) => x.isNotEmpty)
                   .join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              style: TextStyle(
+                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
             ),
+            verticalPadding: m.vPad,
             onTap: () => _play(i),
           );
         }
         final r = e.pluginResult!;
-        return ListTile(
-          dense: true,
-          leading: r.img != null && r.img!.isNotEmpty
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.network(
-                    r.img!,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        _musicPlaceholder(context, scheme),
-                  ),
-                )
-              : _musicPlaceholder(context, scheme),
-          title: highlightedText(r.name, q, scheme.primary, maxLines: 1),
+        return CoverRow(
+          cover: OnlineCover(url: r.img, size: m.songCover, radius: m.songRadius),
+          title: highlightedText(r.name, q, scheme.primary,
+              maxLines: 1,
+              style: TextStyle(
+                  fontSize: m.titleSize, fontWeight: FontWeight.w600)),
           subtitle: Text(
             [r.singer, r.albumName, widget.source.name]
                 .where((x) => x.isNotEmpty)
                 .join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
+          verticalPadding: m.vPad,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -895,7 +904,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
               ),
               Text(
                 r.interval,
-                style: TextStyle(fontSize: 12, color: scheme.outline),
+                style: TextStyle(fontSize: m.subtitleSize, color: scheme.outline),
               ),
             ],
           ),
@@ -1192,6 +1201,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
     final q = widget.keyword.trim();
+    final m = ListMetrics.ofRef(ref);
     final name = _kindName(widget.kind);
 
     if (q.isEmpty) {
@@ -1205,40 +1215,47 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     }
 
     final bottomInset = MediaQuery.of(context).padding.bottom + 92;
-    return ListView.separated(
+    return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _items.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final item = _items[i];
         final isArtist = item.kind == 'artist';
-        return ListTile(
-          leading: _catalogLeading(item, isArtist, scheme),
-          title: highlightedText(item.title, q, scheme.primary, maxLines: 1),
+        return CoverRow(
+          cover: _catalogLeading(item, isArtist, m, scheme),
+          title: highlightedText(item.title, q, scheme.primary,
+              maxLines: 1,
+              style: TextStyle(
+                  fontSize: m.titleSize, fontWeight: FontWeight.w600)),
           subtitle: Text(
             [item.subtitle, item.sourceTag]
                 .where((x) => x.isNotEmpty)
                 .join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
           ),
-          trailing: Icon(Icons.chevron_right,
-              color: scheme.outline, size: 22),
+          verticalPadding: m.vPad,
+          trailing:
+              Icon(Icons.chevron_right, color: scheme.outline, size: 22),
           onTap: () => _open(item),
         );
       },
     );
   }
 
-  Widget _catalogLeading(_CatalogItem item, bool isArtist, ColorScheme scheme) {
+  Widget _catalogLeading(
+      _CatalogItem item, bool isArtist, ListMetrics m, ColorScheme scheme) {
+    final size = isArtist ? m.artistCover : m.songCover;
+    final radius = isArtist ? m.artistCover / 2 : m.songRadius;
     if (item.localArtist != null) {
       final a = item.localArtist!;
       return CoverImage(
         songPath: a.firstSongPath,
-        width: 44,
-        height: 44,
-        radius: 22,
+        width: size,
+        height: size,
+        radius: m.artistCover / 2,
         icon: Icons.person,
         placeholder: _letterLeading(a.name, scheme),
       );
@@ -1247,29 +1264,25 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       final a = item.localAlbum!;
       return CoverImage(
         songPath: a.firstSongPath,
-        width: 40,
-        height: 40,
-        radius: 6,
+        width: size,
+        height: size,
+        radius: m.songRadius,
         icon: Icons.album,
       );
     }
     if (item.localPlaylist != null) {
       return Container(
-        width: 40,
-        height: 40,
+        width: m.playCover,
+        height: m.playCover,
         decoration: BoxDecoration(
           color: scheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(m.songRadius),
         ),
         alignment: Alignment.center,
-        child: const Icon(Icons.queue_music, size: 20),
+        child: Icon(Icons.queue_music, size: m.playCover * 0.45),
       );
     }
-    return OnlineCover(
-      url: item.coverUrl,
-      size: 46,
-      radius: isArtist ? 23 : 8,
-    );
+    return OnlineCover(url: item.coverUrl, size: size, radius: radius);
   }
 }
 
@@ -1291,18 +1304,6 @@ Widget _emptyHint(String message, ColorScheme scheme,
         ),
       ],
     ),
-  );
-}
-
-Widget _musicPlaceholder(BuildContext context, ColorScheme scheme) {
-  return Container(
-    width: 44,
-    height: 44,
-    decoration: BoxDecoration(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Icon(Icons.music_note, color: scheme.outline, size: 20),
   );
 }
 

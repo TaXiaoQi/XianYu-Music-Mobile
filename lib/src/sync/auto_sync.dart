@@ -1,47 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../core/settings.dart';
+import 'sync_provider.dart';
 
-/// 自动同步配置（持久化）。
-class AutoSyncConfig {
-  final bool enabled;
-  final int syncIntervalSeconds;
-  final int maxDelayMinutes;
-  const AutoSyncConfig({
-    this.enabled = false,
-    this.syncIntervalSeconds = 3600,
-    this.maxDelayMinutes = 30,
-  });
-
-  AutoSyncConfig copyWith({
-    bool? enabled,
-    int? syncIntervalSeconds,
-    int? maxDelayMinutes,
-  }) =>
-      AutoSyncConfig(
-        enabled: enabled ?? this.enabled,
-        syncIntervalSeconds: syncIntervalSeconds ?? this.syncIntervalSeconds,
-        maxDelayMinutes: maxDelayMinutes ?? this.maxDelayMinutes,
-      );
-}
-
-/// 自动同步调度器：每分钟 tick，到点后检查服务器负载并执行设置同步。
+/// 自动同步调度器：每分钟 tick，到点后检查服务器负载并执行同步。
 ///
 /// 与桌面端 autoSync.ts 对齐：
 /// - 服务器繁忙时按 suggestedDelaySeconds 延后，超过 maxDelayMinutes 上限则放弃本轮
-/// - 同步内容为设置（下载云端 → 合并 → 上传）
+/// - 同步内容为歌单/收藏/插件/设置（按 UploadConfig 开关），对齐桌面端 performAutoSync
+/// - 配置统一存放在 syncProvider（账号页/同步页开关均写入同一份）
 class AutoSyncService {
   AutoSyncService(this._ref);
   final Ref _ref;
-
-  static const _enabledKey = 'auto_sync_enabled';
-  static const _intervalKey = 'auto_sync_interval';
-  static const _maxDelayKey = 'auto_sync_max_delay';
 
   Timer? _timer;
   bool _syncing = false;
@@ -60,28 +34,11 @@ class AutoSyncService {
     _timer = null;
   }
 
-  Future<AutoSyncConfig> getConfig() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return AutoSyncConfig(
-        enabled: prefs.getBool(_enabledKey) ?? false,
-        syncIntervalSeconds: prefs.getInt(_intervalKey) ?? 3600,
-        maxDelayMinutes: prefs.getInt(_maxDelayKey) ?? 30,
-      );
-    } catch (_) {
-      return const AutoSyncConfig();
-    }
-  }
+  Future<AutoSyncConfig> getConfig() async =>
+      _ref.read(syncProvider).autoSyncConfig;
 
   Future<void> setConfig(AutoSyncConfig config) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await Future.wait([
-        prefs.setBool(_enabledKey, config.enabled),
-        prefs.setInt(_intervalKey, config.syncIntervalSeconds),
-        prefs.setInt(_maxDelayKey, config.maxDelayMinutes),
-      ]);
-    } catch (_) {}
+    await _ref.read(syncProvider.notifier).updateAutoSyncConfig(config);
     _delayedCount = 0;
     _nextSyncAt = 0;
   }
@@ -129,7 +86,7 @@ class AutoSyncService {
     }
     _syncing = true;
     try {
-      await _syncSettings();
+      await _syncAll();
       _delayedCount = 0;
       _nextSyncAt = now + _intervalMs(config);
     } catch (_) {
@@ -139,7 +96,27 @@ class AutoSyncService {
     }
   }
 
-  /// 设置同步：下载云端 → 合并 → 上传。
+  /// 按上传配置同步歌单/收藏/插件/设置（对齐桌面端 performAutoSync）。
+  Future<void> _syncAll() async {
+    final upload = _ref.read(syncProvider).uploadConfig;
+    final notifier = _ref.read(syncProvider.notifier);
+    if (upload.playlists) {
+      await notifier.syncPlaylistsUpload();
+      await notifier.syncPlaylistsDownload();
+    }
+    if (upload.plugins) {
+      await notifier.syncPluginsUpload();
+      await notifier.syncPluginsDownload();
+    }
+    if (upload.favorites) {
+      await notifier.syncFavoritesUpload();
+    }
+    if (upload.settings) {
+      await _syncSettings();
+    }
+  }
+
+  /// 设置同步：下载云端 → 合并 → 上传（无冲突弹窗，适合后台自动同步）。
   Future<void> _syncSettings() async {
     final settings = _ref.read(settingsProvider).valueOrNull;
     if (settings == null) return;
