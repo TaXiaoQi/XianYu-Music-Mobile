@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_provider.dart';
+import '../core/settings.dart';
 import '../player/player_provider.dart';
 
 /// 面向 UI 的分享服务实例（预加载 + 取缓存 + 生成分享链接）。
@@ -97,6 +98,23 @@ class ShareService {
     String cover = song.coverUrl ?? online?['picture']?.toString() ?? '';
     if (cover.isNotEmpty && !_isHttp(cover)) cover = '';
 
+    // 来源信息：在线歌曲取音源 key（kw/wy/kg/tx/mg），本地歌曲标记为 local，
+    // 服务端透传进深链，客户端据此判断用本地播放还是走对应插件播放。
+    String source = 'local';
+    final onlineSource = online?['source']?.toString() ?? infoMap?['source']?.toString();
+    if (song.isOnline) {
+      source = (song.source?.isNotEmpty ?? false)
+          ? song.source!
+          : (onlineSource?.isNotEmpty ?? false)
+              ? onlineSource!
+              : 'local';
+    }
+
+    // 分享链接有效时长（分钟）：读取客户端设置，钳制到 5~24*60，缺省 2 小时。
+    final settings = _ref.read(settingsProvider).valueOrNull;
+    final rawMinutes = settings?.shareLinkValidityMinutes ?? 120;
+    final expireMinutes = rawMinutes.clamp(5, 24 * 60);
+
     return <String, dynamic>{
       'song_name': song.title,
       'singer': song.artist,
@@ -104,6 +122,8 @@ class ShareService {
       'song_id': song.path,
       'hash': hash,
       'duration_ms': song.durationMs,
+      'source': source,
+      'expire_minutes': expireMinutes,
     };
   }
 

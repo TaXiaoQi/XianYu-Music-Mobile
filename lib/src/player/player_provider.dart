@@ -319,6 +319,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
+  // 分享链接深链触发的播放：失败行为按「分享链接播放失败行为」设置决定（replace 才允许插件换源重播）。
+  bool _shareLinkPlayback = false;
 
   double? _restoredOnlinePending;
   // SAF 本地歌曲恢复会话时的待恢复进度：点击播放时再物化文件并从该位置续播。
@@ -772,9 +774,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {}
   }
 
-  Future<void> playQueue(List<QueueItem> items, {int startIndex = 0}) async {
+  Future<void> playQueue(List<QueueItem> items,
+      {int startIndex = 0, bool shareLinkPlayback = false}) async {
     if (items.isEmpty) return;
     debugPrint('[play] playQueue ${items.length} 首 startIndex=$startIndex');
+    _shareLinkPlayback = shareLinkPlayback;
     _shuffleHistory.clear();
     _shuffleFuture.clear();
     state = state.copyWith(
@@ -879,9 +883,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (e) {
       state = state.copyWith(isPlaying: false, resolving: false);
       // 在线歌曲：先尝试自动切换其他音源，避免直接跳过/停止。
+      // 分享链接触发的播放按「分享链接播放失败行为」设置：pause 不换源（直接透出错误暂停），
+      // replace 才允许走插件索引换源重播。
       if (item.isOnline && _skipDepth < state.queue.length) {
-        final switched = await _autoSwitchSource(item);
-        if (switched) return;
+        final allowSwitch = !_shareLinkPlayback
+            ? true
+            : (_ref
+                        .read(settingsProvider)
+                        .valueOrNull
+                        ?.sharePlaybackFailureBehavior ??
+                    'pause') ==
+                'replace';
+        if (allowSwitch) {
+          final switched = await _autoSwitchSource(item, force: _shareLinkPlayback);
+          if (switched) {
+            _shareLinkPlayback = false;
+            return;
+          }
+        }
       }
       // 在线歌曲失败处理（防环：跳过数不超过队列长度）。
       if (item.isOnline && _skipDepth < state.queue.length) {
@@ -915,6 +934,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _syncToSystemMediaSession();
     }
+    // 一次起播尝试结束即清掉分享链路标记，避免泄漏影响后续非分享链接播放。
+    _shareLinkPlayback = false;
     if (!item.isOnline) _persistSession();
   }
 
@@ -1349,9 +1370,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 在线歌曲起播失败时自动切换到其他落雪音源（同一首歌、另一平台）。
   /// 通过公共音源搜索同名曲目并解析直链播放；返回 true 表示已换源成功。
-  Future<bool> _autoSwitchSource(QueueItem item) async {
+  Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {
     final settings = _ref.read(settingsProvider).valueOrNull;
-    if (!(settings?.autoSwitchSourceOnFailure ?? false)) return false;
+    // 分享链接「替换播放」走插件索引换源时允许绕过通用开关（force=true）。
+    if (!(settings?.autoSwitchSourceOnFailure ?? false) && !force) return false;
 
     final infoJson = item.onlineInfoJson ?? item.onlineSongJson;
     if (infoJson == null || infoJson.isEmpty) return false;

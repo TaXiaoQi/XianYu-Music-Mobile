@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../online/online_search_provider.dart';
+import '../player/player_provider.dart';
 import '../core/app_logger.dart';
 
 /// xianyu:// 深链处理。
@@ -49,7 +50,7 @@ class XianYuDeepLink {
     final name = p['name'] ?? '';
     if (name.isEmpty) return;
     AppLogger.instance.log('deeplink', '收到分享深链: $raw');
-    _playBySearch(container, router, name, p['artist'] ?? '');
+    _playBySearch(container, router, name, p['artist'] ?? '', p['source'] ?? '');
   }
 
   static Map<String, String> _parseSong(String raw) {
@@ -62,6 +63,7 @@ class XianYuDeepLink {
       'name': q['name'] ?? '',
       'artist': q['artist'] ?? '',
       'duration': q['duration'] ?? '0',
+      'source': q['source'] ?? '',
     };
   }
 
@@ -70,12 +72,18 @@ class XianYuDeepLink {
     GoRouter router,
     String name,
     String artist,
+    String source,
   ) async {
-    final notifier = container.read(onlineSearchProvider.notifier);
+    final searchNotifier = container.read(onlineSearchProvider.notifier);
+    // 来源感知：分享链接带音源 key（kw/wy/kg/tx/mg）时优先用该音源搜索，
+    // 命中率更高；'local' 或未知来源则回到默认音源。
+    final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
+    await searchNotifier.setSource(src);
+
     // 用「歌名 + 歌手」搜索提高命中率；空歌手则仅歌名。
     final keyword = artist.isEmpty ? name : '$name $artist';
     try {
-      await notifier.search(keyword);
+      await searchNotifier.search(keyword);
     } catch (e) {
       AppLogger.instance.log('deeplink', '分享歌曲在线搜索失败: $e');
       return;
@@ -85,11 +93,21 @@ class XianYuDeepLink {
     if (results.isEmpty) return;
 
     final index = _bestMatch(results, name, artist);
+    final track = results[index];
+    final playerNotifier = container.read(playerProvider.notifier);
+    // 浅层播放分享曲：只入队最佳匹配这一首（不连播整个搜索结果）。
+    // 播放失败行为由 player 侧按「分享链接播放失败行为」设置处理：
+    // pause → 停止并显示错误；replace → 走插件索引换源重播。
     try {
-      await notifier.play(index);
+      await playerNotifier.playQueue(
+        [track.toQueueItem()],
+        startIndex: 0,
+        shareLinkPlayback: true,
+      );
       router.go('/player');
     } catch (e) {
       AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+      router.go('/player');
     }
   }
 

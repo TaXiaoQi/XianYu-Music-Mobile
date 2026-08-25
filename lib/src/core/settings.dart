@@ -93,6 +93,10 @@ class AppSettings {
     this.enablePredictiveBack = true,
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
+    // 分享链接有效时长（分钟）：5~24*60，默认 2 小时。
+    this.shareLinkValidityMinutes = 120,
+    // 分享链接播放失败行为：pause 暂停播放 / replace 替换播放（走插件索引）。
+    this.sharePlaybackFailureBehavior = 'pause',
   });
 
   final double volume;
@@ -205,6 +209,12 @@ class AppSettings {
   /// 歌曲/歌手/专辑/歌单列表项尺寸。
   final ListSize listSize;
 
+  /// 分享链接有效时长（分钟）：分享到服务端后过期丢弃，范围 5~24*60，默认 120（2 小时）。
+  final int shareLinkValidityMinutes;
+
+  /// 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走客户端插件索引换源重播）。
+  final String sharePlaybackFailureBehavior;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -254,11 +264,12 @@ class AppSettings {
     bool? enablePredictiveBack,
     AppLanguage? language,
     ListSize? listSize,
+    int? shareLinkValidityMinutes,
+    String? sharePlaybackFailureBehavior,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
       playMode: playMode ?? this.playMode,
-      lastTab: lastTab ?? this.lastTab,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       themeMode: themeMode ?? this.themeMode,
       accentColor: accentColor ?? this.accentColor,
@@ -315,6 +326,10 @@ class AppSettings {
       enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
       language: language ?? this.language,
       listSize: listSize ?? this.listSize,
+      shareLinkValidityMinutes:
+          shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
+      sharePlaybackFailureBehavior:
+          sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
     );
   }
 }
@@ -397,6 +412,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? true,
       language: _langFromString(prefs.getString('language') ?? 'system'),
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
+      shareLinkValidityMinutes:
+          prefs.getInt('shareLinkValidityMinutes') ?? 120,
+      sharePlaybackFailureBehavior:
+          prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',
     );
   }
 
@@ -481,6 +500,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
       prefs.setString('language', next.language.name),
       prefs.setString('listSize', next.listSize.name),
+      prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
+      prefs.setString(
+          'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
     ]);
   }
 
@@ -542,6 +564,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setSongClickAction(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(songClickAction: v));
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
   Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
+  Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
+  Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

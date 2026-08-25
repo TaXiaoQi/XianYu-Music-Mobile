@@ -256,7 +256,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
                       color: scheme.primary.withValues(alpha: 0.3),
@@ -282,7 +282,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           child: Container(
             decoration: BoxDecoration(
               color: appCardColor(context),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(4),
             child: TabBar(
@@ -291,7 +291,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
               indicatorSize: TabBarIndicatorSize.tab,
               indicator: BoxDecoration(
                 color: scheme.primary,
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(12),
               ),
               labelColor: scheme.onPrimary,
               unselectedLabelColor: scheme.onSurfaceVariant,
@@ -417,6 +417,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
     bool obscure = false,
     TextInputType? keyboard,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
@@ -428,22 +429,15 @@ class _AccountPageState extends ConsumerState<AccountPage>
           labelText: label,
           hintText: hint,
           filled: true,
-          prefixIcon: icon == null ? null : Icon(icon, size: 20),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
+          fillColor: scheme.onSurface.withValues(alpha: 0.05),
+          prefixIcon: icon == null
+              ? null
+              : Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          border: _inputBorder(),
+          enabledBorder: _inputBorder(),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.primary,
-              width: 2,
-            ),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: scheme.primary, width: 1.5),
           ),
           suffixIcon: obscure
               ? IconButton(
@@ -456,13 +450,21 @@ class _AccountPageState extends ConsumerState<AccountPage>
     );
   }
 
+  /// 柔和圆角输入框：无描边、浅填充，聚焦时才用主题色描边（对齐「我的」页样式）。
+  OutlineInputBorder _inputBorder() {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
+    );
+  }
+
   Widget _submitButton(BuildContext context, AuthState auth, String label) {
     return FilledButton(
       onPressed: auth.loading ? null : _submit,
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
       ),
       child: auth.loading

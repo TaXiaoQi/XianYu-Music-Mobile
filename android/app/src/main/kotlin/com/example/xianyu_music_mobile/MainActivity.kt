@@ -53,7 +53,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /** singleTop 复用已启动 Activity 时的深链回调。 */
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         processDeepLink(intent)

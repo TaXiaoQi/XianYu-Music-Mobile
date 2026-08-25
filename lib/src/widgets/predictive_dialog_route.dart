@@ -18,12 +18,17 @@ import 'package:flutter/material.dart';
 class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   PredictiveBackDialogRoute({
     required this.builder,
+    required NavigatorState navigator,
     this.dismissible = true,
     super.settings,
-  });
+  }) : _nav = navigator;
 
   final WidgetBuilder builder;
   final bool dismissible;
+  final NavigatorState _nav;
+
+  // 是否已通过预测返回兜底关闭（避免 start/commit 重复 pop）。
+  bool _backHandled = false;
 
   static const PredictiveBackPageTransitionsBuilder _predictive =
       PredictiveBackPageTransitionsBuilder();
@@ -99,6 +104,36 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
       child,
     );
   }
+
+  // —— 预测返回兜底 ——
+  //
+  // 部分 ROM（Honor/MagicOS 之类）对真实触摸只下发 start 不下发 commit，
+  // 预返回被接管后既不跟手也不关闭。这里在 start 到达（已在框架层证实会
+  // 到达）时就立即关闭弹窗，保证返回手势一定能关掉；commit/cancel 不再触发。
+  //
+  // 只对「可外部关闭」的弹窗生效：不可关闭的面板 popGestureEnabled=false，
+  // 官方接管器不会调用本路由的 handleStartBackGesture。
+  @override
+  void handleStartBackGesture({double progress = 0.0}) {
+    if (_backHandled || !dismissible) {
+      return;
+    }
+    _backHandled = true;
+    _nav.maybePop();
+  }
+
+  @override
+  void handleUpdateBackGestureProgress({required double progress}) {}
+
+  @override
+  void handleCommitBackGesture() {
+    _backHandled = true;
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    _backHandled = false;
+  }
 }
 
 /// 打开一个支持预测返回的弹窗（root Navigator，可被返回手势跟手关闭）。
@@ -107,9 +142,11 @@ Future<T?> showPredictiveDialog<T>({
   required WidgetBuilder builder,
   bool barrierDismissible = true,
 }) {
-  return Navigator.of(context, rootNavigator: true).push<T>(
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return navigator.push<T>(
     PredictiveBackDialogRoute<T>(
       builder: builder,
+      navigator: navigator,
       dismissible: barrierDismissible,
     ),
   );
