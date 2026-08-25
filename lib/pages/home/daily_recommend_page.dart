@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -185,7 +186,16 @@ class _RecommendList extends ConsumerWidget {
         final item = state.items[i];
         final g = songRowPlay(
           ref,
-          onPlay: () => ref.read(dailyRecommendProvider.notifier).play(i),
+          onPlay: () {
+            launchFlyCover(
+              context,
+              coverSize: 46,
+              centerVertically: true,
+              networkUrl: item.coverUrl,
+              radius: 8,
+            );
+            ref.read(dailyRecommendProvider.notifier).play(i);
+          },
         );
         return g.wrap(
           ListTile(

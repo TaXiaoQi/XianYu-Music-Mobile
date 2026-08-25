@@ -87,6 +87,7 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        FlutterMessengerHolder.messenger = flutterEngine.dartExecutor.binaryMessenger
         deepLinkChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger, DEEP_LINK_CHANNEL)
             .apply {
@@ -165,6 +166,55 @@ class MainActivity : AudioServiceActivity() {
                         val docId = call.argument<String>("docId") ?: ""
                         val destDir = call.argument<String>("destDir") ?: ""
                         safAsync(result) { saf.copyTreeDocToInternal(uri, docId, destDir) }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LyricsOverlayService.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "show" -> {
+                        LyricsOverlayService.show(this)
+                        result.success(null)
+                    }
+                    "hide" -> {
+                        LyricsOverlayService.hide(this)
+                        result.success(null)
+                    }
+                    "setLyrics" -> {
+                        LyricsOverlayService.instance?.setLyrics(
+                            call.argument<String>("json") ?: "")
+                        result.success(null)
+                    }
+                    "setPlayback" -> {
+                        val posMs = (call.argument<Number>("positionMs")?.toLong()) ?: 0L
+                        LyricsOverlayService.instance?.setPlayback(
+                            posMs,
+                            call.argument<Boolean>("isPlaying") ?: false)
+                        result.success(null)
+                    }
+                    "setSettings" -> {
+                        LyricsOverlayService.instance?.setSettings(
+                            call.argument<String>("json") ?: "")
+                        result.success(null)
+                    }
+                    "setLocked" -> {
+                        LyricsOverlayService.instance?.setLocked(
+                            call.argument<Boolean>("locked") ?: false)
+                        result.success(null)
+                    }
+                    "resetPosition" -> {
+                        LyricsOverlayService.instance?.resetPosition()
+                        result.success(null)
+                    }
+                    "isPermissionGranted" -> {
+                        result.success(LyricsOverlayService.canDraw(this))
+                    }
+                    "openPermissionSettings" -> {
+                        runCatching {
+                            startActivity(LyricsOverlayService.permissionIntent(this))
+                        }
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }

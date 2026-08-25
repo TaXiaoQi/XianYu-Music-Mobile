@@ -35,7 +35,9 @@ import 'animated_branch_container.dart';
 import 'shell.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
+final appNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
+  navigatorKey: appNavigatorKey,
   initialLocation: '/home',
   routes: [
     StatefulShellRoute(
@@ -289,7 +291,7 @@ class _PlayerCoverRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 320);
+  Duration get transitionDuration => const Duration(milliseconds: 450);
 
   @override
   Widget buildPage(

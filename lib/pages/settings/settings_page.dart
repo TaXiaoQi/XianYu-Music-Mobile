@@ -26,6 +26,12 @@ class SettingsPage extends ConsumerWidget {
           '主题、主题色、壁纸、液态玻璃、导航栏',
           '/settings/appearance',
         ),
+        _CategoryEntry(
+          '歌词',
+          Icons.lyrics_outlined,
+          '歌词显示、悬浮歌词窗',
+          '/settings/lyrics',
+        ),
       ],
     ),
     (

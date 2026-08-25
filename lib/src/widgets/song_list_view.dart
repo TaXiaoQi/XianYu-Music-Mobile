@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../library/library_provider.dart';
 import 'cover_image.dart';
+import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
 
@@ -149,7 +150,19 @@ class SongsListView extends ConsumerWidget {
       itemBuilder: (context, i) {
         final s = songs[i];
         final hlColor = Theme.of(context).colorScheme.primary;
-        final play = onPlay != null ? () => onPlay!(songs, i) : null;
+        final play = onPlay != null
+            ? () {
+                launchFlyCover(
+                  context,
+                  coverSize: m.songCover,
+                  vPad: m.vPad,
+                  songPath: s.path,
+                  thumbPath: s.coverThumbPath,
+                  radius: m.songRadius,
+                );
+                onPlay!(songs, i);
+              }
+            : null;
         final row = CoverRow(
           cover: SongCover(song: s, size: m.songCover),
           title: highlightedText(

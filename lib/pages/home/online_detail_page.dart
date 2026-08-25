@@ -12,6 +12,7 @@ import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -358,7 +359,16 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             );
           }
           final r = _songs[i];
-          final g = songRowPlay(ref, onPlay: () => _play(i));
+          final g = songRowPlay(ref, onPlay: () {
+            launchFlyCover(
+              context,
+              coverSize: m.songCover,
+              vPad: m.vPad,
+              networkUrl: r.img,
+              radius: m.songRadius,
+            );
+            _play(i);
+          });
           return g.wrap(
             CoverRow(
               cover: OnlineCover(

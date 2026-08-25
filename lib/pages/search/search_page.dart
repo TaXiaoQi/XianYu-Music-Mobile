@@ -22,6 +22,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -871,7 +872,17 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                   fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
             ),
             verticalPadding: m.vPad,
-            onTap: () => _play(i),
+            onTap: () {
+              launchFlyCover(
+                context,
+                coverSize: m.songCover,
+                vPad: m.vPad,
+                songPath: s.path,
+                thumbPath: s.coverThumbPath,
+                radius: m.songRadius,
+              );
+              _play(i);
+            },
           );
         }
         final r = e.pluginResult!;
@@ -906,7 +917,16 @@ class _TrackTabState extends ConsumerState<_TrackTab>
               ),
             ],
           ),
-          onTap: () => _play(i),
+          onTap: () {
+            launchFlyCover(
+              context,
+              coverSize: m.songCover,
+              vPad: m.vPad,
+              networkUrl: r.img,
+              radius: m.songRadius,
+            );
+            _play(i);
+          },
         );
       },
     );

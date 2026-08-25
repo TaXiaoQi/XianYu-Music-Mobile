@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../library/library_provider.dart';
 import '../online/online_search_provider.dart';
 import '../player/player_provider.dart';
 import '../core/app_logger.dart';
@@ -10,8 +11,10 @@ import '../core/rust_init.dart';
 /// xianyu:// 深链处理。
 ///
 /// Android 端由 MainActivity 通过 MethodChannel('xianyu/deeplink') 把 intent 的
-/// xianyu://song?... 深链透传到这里：解析歌名/歌手后，调用在线搜索定位歌曲并播放，
-/// 再跳转到播放页。这样落地页点「在弦予音乐中打开」就能拉起 App 并播放分享曲。
+/// xianyu://song?... 深链透传到这里：解析歌名/歌手/时长后，优先在本地曲库按
+/// 「标题|歌手」(±5s 时长容差) 匹配——命中则直接播放本地文件；未命中再走在线
+/// 搜索定位歌曲并播放。最后跳转到播放页（push 而非 go，保证能返回首页）。
+/// 这样落地页点「在弦予音乐中打开」就能拉起 App 并播放分享曲。
 class XianYuDeepLink {
   static const MethodChannel _channel = MethodChannel('xianyu/deeplink');
 
@@ -52,7 +55,14 @@ class XianYuDeepLink {
       final name = p['name'] ?? '';
       if (name.isEmpty) return;
       AppLogger.instance.log('deeplink', '收到分享深链: $raw');
-      _playBySearch(container, router, name, p['artist'] ?? '', p['source'] ?? '');
+      _playBySearch(
+        container,
+        router,
+        name,
+        p['artist'] ?? '',
+        p['source'] ?? '',
+        int.tryParse(p['duration'] ?? '') ?? 0,
+      );
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
     }
@@ -78,6 +88,7 @@ class XianYuDeepLink {
     String name,
     String artist,
     String source,
+    int durationSec,
   ) async {
     try {
       // 冷启动深链可能早于 Rust 引擎就绪：先等待初始化完成，避免搜索/解析
@@ -86,6 +97,28 @@ class XianYuDeepLink {
         await container.read(rustInitProvider.future);
       } catch (_) {
         AppLogger.instance.log('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
+        return;
+      }
+
+      // 优先本地匹配：移动端若本地曲库有同名同歌手的歌曲（±5s 时长容差），
+      // 直接播放本地文件，避免在线搜索/解析失败导致「分享曲打不开」。
+      // 对齐 sync_provider._resolveLocalPath 的匹配规则，保证两端一致。
+      if (container.read(libraryProvider).songs.isEmpty) {
+        await container.read(libraryProvider.notifier).load();
+      }
+      final localSong = _tryLocalMatch(container, name, artist, durationSec);
+      if (localSong != null) {
+        AppLogger.instance.log('deeplink', '本地匹配命中分享曲: ${localSong.path}');
+        final playerNotifier = container.read(playerProvider.notifier);
+        try {
+          await playerNotifier.playQueue(
+            [localSong.toQueueItem()],
+            startIndex: 0,
+          );
+        } catch (e) {
+          AppLogger.instance.log('deeplink', '本地播放分享曲失败: $e');
+        }
+        router.push('/player');
         return;
       }
 
@@ -119,10 +152,10 @@ class XianYuDeepLink {
           startIndex: 0,
           shareLinkPlayback: true,
         );
-        router.go('/player');
+        router.push('/player');
       } catch (e) {
         AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
-        router.go('/player');
+        router.push('/player');
       }
     } catch (e, st) {
       // 兜底：任何未预期的异常都记录日志，避免变成未捕获异步错误导致整页报错。
@@ -161,4 +194,40 @@ class XianYuDeepLink {
     }
     return best;
   }
+
+  /// 在本地曲库中按「标题|歌手」（±5s 时长容差）匹配分享歌曲。
+  /// 命中则返回本地 Song，直接播放本地文件，避免在线搜索/解析失败。
+  /// 匹配规则与 sync_provider._resolveLocalPath 保持一致：
+  /// 唯一命中直接采用；多候选时用时长消歧（±5s）。
+  static Song? _tryLocalMatch(
+    ProviderContainer container,
+    String name,
+    String artist,
+    int durationSec,
+  ) {
+    final library = container.read(libraryProvider);
+    if (library.songs.isEmpty) return null;
+    final key = '${_normMeta(name)}|${_normMeta(artist)}';
+    final candidates = <Song>[];
+    for (final s in library.songs) {
+      if ('${_normMeta(s.title)}|${_normMeta(s.artist)}' == key) {
+        candidates.add(s);
+      }
+    }
+    if (candidates.isEmpty) return null;
+    if (candidates.length == 1) return candidates.first;
+    if (durationSec <= 0) return candidates.first;
+    Song? best;
+    var bestDiff = 5;
+    for (final c in candidates) {
+      final diff = (c.duration - durationSec).abs();
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  static String _normMeta(String s) => s.trim().toLowerCase();
 }
