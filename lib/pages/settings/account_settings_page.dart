@@ -60,14 +60,18 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     final user = ref.watch(authProvider.select((s) => s.user));
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(
+        child: Stack(
         children: [
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
               GlassTopBar.height(context),
               16,
-              40 + MediaQuery.of(context).padding.bottom,
+              40 +
+                  MediaQuery.of(context).padding.bottom +
+                  MediaQuery.viewInsetsOf(context).bottom,
             ),
             children: [
               // 1. 账号状态
@@ -114,6 +118,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

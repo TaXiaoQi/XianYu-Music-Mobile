@@ -60,11 +60,14 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
     );
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(
+        child: Stack(
         children: [
           Padding(
             padding: EdgeInsets.only(
               top: GlassTopBar.height(context, bottom: tabBar),
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
             ),
             child: TabBarView(
               controller: _tabCtrl,
@@ -86,6 +89,7 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
             ),
           ),
         ],
+      ),
       ),
     );
   }

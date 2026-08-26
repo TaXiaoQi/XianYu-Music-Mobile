@@ -155,8 +155,11 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('批量重命名')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(
+        child: ListView(
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
         children: [
           // 文件夹选择
           Text('目标文件夹',
@@ -330,6 +333,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
                 _previewTile(p, scheme),
           ],
         ],
+        ),
       ),
     );
   }

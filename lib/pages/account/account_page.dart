@@ -160,7 +160,8 @@ class _AccountPageState extends ConsumerState<AccountPage>
     }
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(child: Stack(
         fit: StackFit.expand,
         children: [
           const _AmbientBackground(),
@@ -186,6 +187,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
             ),
           ),
         ],
+        ),
       ),
     );
   }

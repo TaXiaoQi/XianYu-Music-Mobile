@@ -20,13 +20,14 @@ class RemoteLibraryPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: const Text('远程音乐库 (WebDAV)')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSourceEditor(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('添加 WebDAV 音乐库'),
       ),
-      body: Stack(
+      body: RepaintBoundary(child: Stack(
         children: [
           ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
@@ -49,6 +50,7 @@ class RemoteLibraryPage extends ConsumerWidget {
           ),
           const BottomPlayBarSlot(),
         ],
+        ),
       ),
     );
   }

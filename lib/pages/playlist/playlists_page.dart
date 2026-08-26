@@ -31,7 +31,8 @@ class PlaylistsPage extends ConsumerWidget {
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appSurfaceBg(context),
-        body: Stack(
+        resizeToAvoidBottomInset: false,
+        body: RepaintBoundary(child: Stack(
           children: [
             Padding(
               padding: EdgeInsets.only(top: GlassTopBar.height(context)),
@@ -91,6 +92,7 @@ class PlaylistsPage extends ConsumerWidget {
             ),
             const BottomPlayBarSlot(),
           ],
+        ),
         ),
       ),
     );

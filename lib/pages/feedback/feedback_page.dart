@@ -174,6 +174,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final auth = ref.watch(authProvider);
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('意见反馈'),
         bottom: TabBar(
@@ -181,12 +182,13 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           tabs: const [Tab(text: '提交反馈'), Tab(text: '我的反馈')],
         ),
       ),
-      body: TabBarView(
+      body: RepaintBoundary(child: TabBarView(
         controller: _tab,
         children: [
           _buildSubmitTab(context),
           _buildMyFeedbackTab(context, auth),
         ],
+        ),
       ),
     );
   }
@@ -203,7 +205,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       );
     }
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16,
+          16 + MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -212,7 +215,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: appCardColor(context),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
@@ -232,7 +235,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   : '请描述你遇到的问题…',
               filled: true,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
           ),
@@ -281,9 +284,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     return Container(
       decoration: BoxDecoration(
         color: appCardColor(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -453,7 +454,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     return RefreshIndicator(
       onRefresh: _loadMyFeedback,
       child: ListView.separated(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16,
+            16 + MediaQuery.viewInsetsOf(context).bottom),
         itemCount: _myFeedback.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
@@ -529,10 +531,10 @@ class _FeedbackCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: appCardColor(context),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(

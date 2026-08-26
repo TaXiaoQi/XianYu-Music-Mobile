@@ -39,6 +39,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('壁纸中心'),
         bottom: TabBar(
@@ -50,13 +51,14 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
           ],
         ),
       ),
-      body: TabBarView(
+      body: RepaintBoundary(child: TabBarView(
         controller: _tab,
         children: const [
           _WallpaperBrowseTab(),
           _MyUploadsTab(),
           _MyDownloadsTab(),
         ],
+        ),
       ),
     );
   }

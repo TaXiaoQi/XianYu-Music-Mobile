@@ -19,7 +19,8 @@ class EffectsPage extends ConsumerWidget {
     final locked = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     return Scaffold(
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(child: Stack(
         children: [
           IgnorePointer(
             ignoring: locked,
@@ -98,6 +99,7 @@ class EffectsPage extends ConsumerWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

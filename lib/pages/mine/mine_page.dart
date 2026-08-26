@@ -32,7 +32,8 @@ class MinePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(child: Stack(
         children: [
           ListView(
             padding: EdgeInsets.fromLTRB(
@@ -69,6 +70,7 @@ class MinePage extends ConsumerWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

@@ -82,7 +82,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return Scaffold(
       backgroundColor: settingsSurfaceBg(context),
       appBar: AppBar(title: Text(category.title)),
-      body: ListView(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(child: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
           8,
@@ -96,6 +97,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           settings,
           notifier,
           exclusivePlaying,
+        ),
         ),
       ),
     );

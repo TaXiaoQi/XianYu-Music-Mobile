@@ -187,11 +187,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appSurfaceBg(context),
-        body: Stack(
+        resizeToAvoidBottomInset: false,
+        body: RepaintBoundary(child: Stack(
           children: [
             Padding(
               padding: EdgeInsets.only(
                 top: GlassTopBar.height(context, bottom: tabBar),
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
               child: lib.loading
                   ? const Center(child: CircularProgressIndicator())
@@ -227,6 +229,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             if (lib.songs.isNotEmpty)
               const MiniPlayerBar(),
           ],
+        ),
         ),
       ),
     );

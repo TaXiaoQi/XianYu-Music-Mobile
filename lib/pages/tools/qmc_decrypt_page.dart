@@ -121,10 +121,13 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       appBar: AppBar(title: const Text('QMC 文件解密')),
-      body: Stack(
+      resizeToAvoidBottomInset: false,
+      body: RepaintBoundary(
+        child: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            padding: EdgeInsets.fromLTRB(16, 8, 16,
+                120 + MediaQuery.viewInsetsOf(context).bottom),
             children: [
               Container(
                 padding: const EdgeInsets.all(14),
@@ -199,6 +202,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
             ],
           ),
         ],
+      ),
       ),
     );
   }
