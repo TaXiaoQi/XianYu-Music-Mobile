@@ -7,7 +7,6 @@ import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/auth/account_api.dart';
 import 'src/navigation/routes.dart';
-import 'src/player/player_open_fly.dart';
 import 'src/widgets/flying_cover.dart';
 import 'l10n/gen/app_localizations.dart';
 
@@ -257,10 +256,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             builder: (context, child) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final overlay = appNavigatorKey.currentState?.overlay;
-                if (overlay != null) {
-                  FlyingCover.instance.attach(overlay);
-                  PlayerOpenFlyController.instance.attach(overlay);
-                }
+                if (overlay != null) FlyingCover.instance.attach(overlay);
               });
               return child!;
             },

@@ -19,7 +19,6 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
-import '../../src/player/player_open_fly.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
@@ -85,9 +84,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final offsetMs = settings?.lyricOffsetMs ?? 0;
     final hasRomaji = _lyricsViewHasRomaji;
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
-    // 打开飞入期间大封面隐藏，由顶层 OpenFly 接管视觉；落地后恢复（配合 Hero 返回）。
-    final openFlyCoverVisible =
-        ref.watch(playerOpenFlyProvider.select((s) => s.coverVisible));
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -112,7 +108,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 showRomaji: showRomaji,
                 offsetMs: offsetMs,
                 hasRomaji: hasRomaji,
-                openFlyCoverVisible: openFlyCoverVisible,
               ),
       ),
     );
@@ -129,7 +124,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required bool showRomaji,
     required int offsetMs,
     required bool hasRomaji,
-    required bool openFlyCoverVisible,
   }) {
     return Scaffold(
       backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
@@ -181,16 +175,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           });
                         },
                         child: Center(
-                          // OpenFlyDest：向打开飞封面注册大封面全局矩形（落点）。
-                          // 飞入期间封面隐藏并换用不同 Hero 标签，避免与 Hero 开屏飞行
-                          // 冲突（标签不匹配则不开屏 Hero 飞行，由顶层 OpenFly 接管）。
-                          child: OpenFlyDest(
-                            child: Hero(
-                              tag: openFlyCoverVisible
-                                  ? 'player-cover'
-                                  : 'player-cover-openfly',
-                              flightShuttleBuilder: (ctx, animation, direction,
-                                  fromCtx, toCtx) {
+                          child: Hero(
+                            tag: 'player-cover',
+                            flightShuttleBuilder: (ctx, animation, direction,
+                                fromCtx, toCtx) {
                               return PlayerCoverShuttle(
                                 animation: animation,
                                 songPath: current?.path ?? '',
@@ -210,13 +198,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   scheme.primary.withValues(alpha: 0.72),
                                 ],
                               );
-                              },
-                              child: AnimatedOpacity(
-                                opacity: openFlyCoverVisible ? 1.0 : 0.0,
-                                duration: const Duration(milliseconds: 140),
-                                child: _BigCover(current: current),
-                              ),
-                            ),
+                            },
+                            child: _BigCover(current: current),
                           ),
                         ),
                       ),
@@ -372,9 +355,6 @@ class _TraditionalPlayerLayoutState
     final player = widget.player;
     final current = widget.current;
     _syncEq();
-    // 打开飞入期间大封面隐藏并让位 OpenFly（与高级模式一致）。
-    final openFlyCoverVisible =
-        ref.watch(playerOpenFlyProvider.select((s) => s.coverVisible));
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -396,7 +376,7 @@ class _TraditionalPlayerLayoutState
                       }
                     },
                     itemBuilder: (context, i) {
-                      if (i == 0) return _buildCoverSection(context, openFlyCoverVisible);
+                      if (i == 0) return _buildCoverSection(context);
                       return ClipRect(
                         child: RepaintBoundary(
                           child: _LyricsView(
@@ -467,8 +447,7 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  Widget _buildCoverSection(
-      BuildContext context, bool openFlyCoverVisible) {
+  Widget _buildCoverSection(BuildContext context) {
     return LayoutBuilder(
       builder: (context, cons) {
         // 封面取较紧凑尺寸，使上方信息条（歌名/作者/收藏）与中部的歌词预览
@@ -485,45 +464,35 @@ class _TraditionalPlayerLayoutState
             // 封面略下移，与顶部切换 tab 留出呼吸间距
             const SizedBox(height: 14),
             Center(
-              // OpenFlyDest：向打开飞封面注册大封面全局矩形（落点）。飞入期间隐藏
-              // 封面并换用异标签，避免开屏 Hero 飞行与顶层 OpenFly 冲突。
-              child: OpenFlyDest(
-                child: Hero(
-                  tag: openFlyCoverVisible
-                      ? 'player-cover'
-                      : 'player-cover-openfly',
-                  flightShuttleBuilder:
-                      (ctx, animation, direction, fromCtx, toCtx) {
-                    final scheme = Theme.of(context).colorScheme;
-                    return PlayerCoverShuttle(
-                      animation: animation,
-                      songPath: widget.current?.path ?? '',
-                      networkUrl: widget.current?.coverUrl,
-                      fromRadius: 23,
-                      toRadius: 23,
-                      borderColor: Colors.white.withValues(alpha: 0.14),
-                      shadow: BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 28,
-                        offset: const Offset(0, 10),
-                      ),
-                      gradient: [
-                        scheme.primary,
-                        scheme.primary.withValues(alpha: 0.72),
-                      ],
-                    );
-                  },
-                  child: AnimatedOpacity(
-                    opacity: openFlyCoverVisible ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 140),
-                    child: _TraditionalCover(
-                      size: coverSize,
-                      current: widget.current,
-                      eq: _eq,
-                      flash: _flashOn,
-                      playing: widget.player.isPlaying,
+              child: Hero(
+                tag: 'player-cover',
+                flightShuttleBuilder:
+                    (ctx, animation, direction, fromCtx, toCtx) {
+                  final scheme = Theme.of(context).colorScheme;
+                  return PlayerCoverShuttle(
+                    animation: animation,
+                    songPath: widget.current?.path ?? '',
+                    networkUrl: widget.current?.coverUrl,
+                    fromRadius: 23,
+                    toRadius: 23,
+                    borderColor: Colors.white.withValues(alpha: 0.14),
+                    shadow: BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10),
                     ),
-                  ),
+                    gradient: [
+                      scheme.primary,
+                      scheme.primary.withValues(alpha: 0.72),
+                    ],
+                  );
+                },
+                child: _TraditionalCover(
+                  size: coverSize,
+                  current: widget.current,
+                  eq: _eq,
+                  flash: _flashOn,
+                  playing: widget.player.isPlaying,
                 ),
               ),
             ),

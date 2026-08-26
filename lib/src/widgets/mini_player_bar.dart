@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
-import '../player/player_open_fly.dart';
 import '../player/player_provider.dart';
 import 'cover_hero.dart';
 import 'cover_image.dart';
@@ -338,15 +337,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
       onPanCancel: widget.onPanCancel,
-      onTap: () {
-        // 打开详情页前，先把播放条封面提升到顶层 Overlay 起飞飞入大封面（与关闭
-        // 的返回飞行对称）。若无法启动（如非播放条入口），静默回退普通 push。
-        ref.read(playerOpenFlyProvider).open(
-              fromRect: _coverRect,
-              current: current,
-            );
-        context.push('/player');
-      },
+      onTap: () => context.push('/player'),
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
