@@ -16,15 +16,31 @@ class FlyingCover {
   static final FlyingCover instance = FlyingCover._();
 
   OverlayState? _overlay;
-  Rect Function()? _targetProvider;
+  final List<Rect Function()> _targets = [];
   int _flyId = 0;
+
+  /// 当前生效的目标位置：取最后注册的活跃实例。
+  ///
+  /// 根页面由 shell 播放条注册；二级页面被 root navigator 覆盖 shell 后，
+  /// 由页面自己的播放条注册（shell 播放条在二级页面不注册，见 MiniPlayerBar
+  /// 的 [MiniPlayerBar.registerTarget]）。多实例并存时以最后注册者为准。
+  Rect Function()? get _targetProvider =>
+      _targets.isEmpty ? null : _targets.last;
 
   /// 由 app 根 Overlay 注册（app.dart builder 中调用）。
   void attach(OverlayState overlay) => _overlay = overlay;
 
   /// 由 MiniPlayerBar 注册其封面位置（每次布局后更新）。
-  void registerTarget(Rect Function() provider) => _targetProvider = provider;
-  void unregisterTarget() => _targetProvider = null;
+  /// 同一实例重复注册会移到末尾（视为最新），避免累积重复项。
+  void registerTarget(Rect Function() provider) {
+    _targets.remove(provider);
+    _targets.add(provider);
+  }
+
+  /// 注销指定实例的目标位置；仅移除该实例，不影响其他实例。
+  void unregisterTarget(Rect Function() provider) {
+    _targets.remove(provider);
+  }
 
   /// 触发飞封面动画。封面从 [fromRect] 飞到迷你播放栏封面位置。
   void launch({
@@ -162,10 +178,19 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
   late final Animation<double> _t;
   late final AnimationController _fadeCtrl;
   late final Rect _toRect;
+
+  /// 起点中心位置（封面中心坐标）。
   late final Offset _p0;
+
+  /// 终点中心位置（迷你条封面中心坐标）。
   late final Offset _p2;
-  late final Offset _mid;
+
+  /// 弧线控制点（中段最高点）。
+  late final Offset _ctrl;
+
+  /// 目标缩放比例（终点尺寸 / 起点尺寸）。
   late final double _sx;
+
   bool _parking = false;
   bool _fading = false;
   bool _initialized = false;
@@ -194,18 +219,20 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
     _toRect = widget.targetProvider?.call() ??
         // 首曲播放时迷你播放栏尚未挂载：用左下角固定坐标兜底。
         Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
+
     _sx = _toRect.width / widget.fromRect.width;
-    _p0 = widget.fromRect.topLeft;
-    // 中心缩放（对齐桌面端 transform-origin:center）：终点 topLeft 需补偿中心偏移，
-    // 使封面中心落在迷你条封面中心，飞行全程封面以自身中心收拢。
-    final centerOffset = Offset(
-      widget.fromRect.width * (1 - _sx) / 2,
-      widget.fromRect.height * (1 - _sx) / 2,
-    );
-    _p2 = _toRect.topLeft - centerOffset;
+
+    // 用封面中心点作为位移基准（对齐桌面端 transform-origin: center）。
+    // 飞行中封面始终绕自身中心缩放，起点/终点的 topLeft 需补偿中心偏移。
+    _p0 = widget.fromRect.center;
+    _p2 = _toRect.center;
+
+    // 弧线控制点：中段 50% 处向上抬升，营造「飞」的弧线感。
+    // 对齐桌面端：midY = dy * 0.5 - min(60, abs(dy) * 0.25 + 24)
     final dy = _p2.dy - _p0.dy;
     final lift = math.min(60.0, dy.abs() * 0.25 + 24);
-    _mid = Offset.lerp(_p0, _p2, 0.5)! - Offset(0, lift);
+    _ctrl = Offset.lerp(_p0, _p2, 0.5)! - Offset(0, lift);
+
     _startPath = ref.read(playerProvider).current?.path;
 
     // 悬停阶段监听底栏封面更新：current 变化即淡出。
@@ -238,15 +265,23 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
     _fadeCtrl.forward().whenComplete(widget.onDone);
   }
 
-  /// 二次贝塞尔弧线：起点 → 中段抬升点 → 终点。
+  /// 二次贝塞尔弧线：起点 → 控制点 → 终点。
+  /// 返回封面中心点坐标。
   Offset _bezier(double t) {
     final u = 1 - t;
-    return _p0 * (u * u) + _mid * (2 * u * t) + _p2 * (t * t);
+    return _p0 * (u * u) + _ctrl * (2 * u * t) + _p2 * (t * t);
   }
 
   /// 缩放：全程从源封面尺寸平滑缩到迷你条封面尺寸（与位移同曲线），
   /// 视觉上「大封面缩进播放条」，与播放页 Hero 回程一致。
   double _scale(double t) => 1.0 + (_sx - 1.0) * t;
+
+  /// 圆角过渡：从列表行圆角线性渐变到圆形（半径 = 边长一半），
+  /// 与全程线性缩放同步，收拢进播放条时与圆形封面无缝衔接。
+  double _radius(double t) {
+    final targetRadius = widget.fromRect.width / 2;
+    return widget.radius + (targetRadius - widget.radius) * t;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,47 +291,45 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
           animation: Listenable.merge([_flyCtrl, _fadeCtrl]),
           builder: (context, _) {
             final t = _t.value;
-            final pos = _bezier(t);
+            final center = _bezier(t);
             final scale = _scale(t);
+            final w = widget.fromRect.width * scale;
+            final h = widget.fromRect.height * scale;
+            // 从中心位置反推 topLeft，使封面中心恰好落在贝塞尔曲线上
+            final topLeft = center - Offset(w / 2, h / 2);
+
             // 与桌面端一致：飞行中透明度从 1 缓降到 0.92，悬停保持，淡出时归零。
             final opacity = _fading
                 ? (0.92 * (1 - _fadeCtrl.value))
                 : (1.0 - 0.08 * t);
-            // 圆角过渡：从列表行圆角渐变到圆形（半径 = 边长一半），到达底栏时
-            // 与圆形封面无缝衔接，避免圆角矩形与圆形封面重叠。
-            final radius = widget.radius +
-                (widget.fromRect.width / 2 - widget.radius) * t;
+
+            final radius = _radius(t);
+
             return Transform.translate(
-              offset: pos,
-              child: Transform.scale(
-                // 中心缩放（对齐桌面端 transform-origin:center）：封面绕自身中心
-                // 缩放，飞行中始终以列表封面为中心收拢，视觉上「从列表封面起飞」。
-                scale: scale,
-                alignment: Alignment.center,
-                child: Opacity(
-                  opacity: opacity,
-                  child: Container(
-                    width: widget.fromRect.width,
-                    height: widget.fromRect.height,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(radius),
-                      boxShadow: [
-                        // 与桌面端 useFlyingCover 同款投影：0 6px 20px rgba(0,0,0,0.25)。
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.25),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: CoverImage(
-                      songPath: widget.songPath ?? '',
-                      networkUrl: widget.networkUrl,
-                      thumbPath: widget.thumbPath,
-                      width: widget.fromRect.width,
-                      height: widget.fromRect.height,
-                      radius: radius,
-                    ),
+              offset: topLeft,
+              child: Opacity(
+                opacity: opacity,
+                child: Container(
+                  width: w,
+                  height: h,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius),
+                    boxShadow: [
+                      // 与桌面端 useFlyingCover 同款投影：0 6px 20px rgba(0,0,0,0.25)。
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 20,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: CoverImage(
+                    songPath: widget.songPath ?? '',
+                    networkUrl: widget.networkUrl,
+                    thumbPath: widget.thumbPath,
+                    width: w,
+                    height: h,
+                    radius: radius,
                   ),
                 ),
               ),

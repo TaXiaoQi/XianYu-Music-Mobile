@@ -71,13 +71,6 @@ class RecentPage extends ConsumerWidget {
                           },
                         ),
             ),
-            if (hasSong)
-              Positioned(
-                left: 14,
-                right: 14,
-                bottom: MediaQuery.of(context).padding.bottom + 12,
-                child: const MiniPlayerBar(),
-              ),
             Positioned(
               top: 0,
               left: 0,
@@ -95,6 +88,8 @@ class RecentPage extends ConsumerWidget {
                 ],
               ),
             ),
+            if (hasSong)
+              const MiniPlayerBar(),
           ],
         ),
       ),

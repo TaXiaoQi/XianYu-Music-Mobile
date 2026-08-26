@@ -11,13 +11,13 @@ import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/mini_player_bar.dart';
 
 enum OnlineDetailType { artist, album, playlist, toplist }
 
@@ -321,14 +321,8 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ),
-          // 底部迷你播放条：与收藏/最近/下载等列表页一致，有曲目时承载当前播放。
           if (_songs.isNotEmpty)
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: MediaQuery.of(context).padding.bottom + 12,
-              child: const MiniPlayerBar(),
-            ),
+            const MiniPlayerBar(),
         ],
       ),
     );

@@ -416,13 +416,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
               bottom: tabBar,
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            // 仅在搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
-            child: inResults ? const MiniPlayerBar() : const SizedBox.shrink(),
-          ),
+          // 搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
+          if (inResults)
+            const MiniPlayerBar(),
         ],
       ),
     );

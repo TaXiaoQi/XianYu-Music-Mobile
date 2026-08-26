@@ -451,6 +451,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               onPanEnd: (d) =>
                   _onPlayerPanEnd(d, defaultLeft, defaultTop),
               onPanCancel: _onPlayerPanCancel,
+              // 二级页面（非播放页）时 shell 播放条被 root navigator 覆盖不可见，
+              // 不注册飞封面目标，避免与页面自己的播放条竞争目标位置。
+              registerTarget: !(hiddenCount > 0 && !isPlayerPage),
+              // Hero 源：根页面与播放页时由 shell 播放条承担；二级页面（非播放页）
+              // 时去掉 Hero，由页面内嵌播放条承担（Hero 源必须在栈顶页面子树中）。
+              heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
             ),
           ),
 

@@ -8,9 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
-import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart' as frb;
-import '../../src/widgets/mini_player_bar.dart';
 
 /// QMC 独立文件解密页：解密 QQ 音乐加密文件（.qmcflac/.mflac 等）。
 class QmcDecryptPage extends ConsumerStatefulWidget {
@@ -119,7 +117,6 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -201,13 +198,6 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
               ],
             ],
           ),
-          if (hasSong)
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: MediaQuery.of(context).padding.bottom + 12,
-              child: const MiniPlayerBar(),
-            ),
         ],
       ),
     );

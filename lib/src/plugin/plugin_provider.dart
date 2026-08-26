@@ -144,13 +144,23 @@ class PluginManager extends StateNotifier<PluginListState> {
     final fallbackName = isLx
         ? (info['name'] ?? fileName ?? '未知插件')
         : (metadata['platform'] ?? fileName ?? '未知插件');
+    // 作者/版本/描述：LX 取头注释（@author/@version/@description）；MusicFree
+    // 取插件声明的 metadata（桌面端同源），否则读不到作者/版本。
+    final mAuthor = isLx
+        ? (info['author'] ?? '')
+        : (metadata['author']?.toString() ?? '');
+    final mVersion = versionOverride ??
+        (isLx ? (info['version'] ?? '') : (metadata['version']?.toString() ?? ''));
+    final mDesc = isLx
+        ? (info['description'] ?? '')
+        : (metadata['description']?.toString() ?? '');
     final source = PluginSource(
       id: id,
       name: (nameOverride ?? fallbackName).toString(),
       format: isLx ? PluginFormat.lx : PluginFormat.musicfree,
-      version: versionOverride ?? info['version'] ?? '',
-      author: info['author'] ?? '',
-      description: info['description'] ?? '',
+      version: mVersion,
+      author: mAuthor,
+      description: mDesc,
       filePath: path,
       importedAt: DateTime.now().millisecondsSinceEpoch,
       enabled: true,

@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/widgets/flying_cover.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -24,6 +26,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final async = ref.watch(dailyRecommendProvider);
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -34,49 +37,57 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
           onPressed: () => context.pop(),
         ),
       ),
-      body: async.when(
-        loading: () => const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(strokeWidth: 2),
-              SizedBox(height: 14),
-              Text('正在为你生成今日推荐…',
-                  style: TextStyle(fontSize: 13, color: Colors.grey)),
-            ],
+      body: Stack(
+        children: [
+          async.when(
+            loading: () => const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(height: 14),
+                  Text('正在为你生成今日推荐…',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                ],
+              ),
+            ),
+            error: (e, _) => _CenterAction(
+              icon: Icons.error_outline,
+              message: '推荐生成失败：$e',
+              action: '重试',
+              onTap: () => ref.invalidate(dailyRecommendProvider),
+            ),
+            data: (state) {
+              if (!state.loggedIn) {
+                return _CenterAction(
+                  icon: Icons.person_outline,
+                  message: '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制',
+                  action: '去登录',
+                  onTap: () => context.go('/account'),
+                );
+              }
+              if (state.items.isEmpty) {
+                return _CenterAction(
+                  icon: Icons.music_off_outlined,
+                  message: '今天还没有推荐\n请先在「插件管理」中安装音源插件',
+                  action: '去安装插件',
+                  onTap: () => context.go('/plugin'),
+                );
+              }
+              return Column(
+                children: [
+                  _Header(state: state),
+                  Divider(
+                      height: 1,
+                      color: scheme.onSurface.withValues(alpha: 0.06)),
+                  Expanded(child: _RecommendList(state: state)),
+                ],
+              );
+            },
           ),
-        ),
-        error: (e, _) => _CenterAction(
-          icon: Icons.error_outline,
-          message: '推荐生成失败：$e',
-          action: '重试',
-          onTap: () => ref.invalidate(dailyRecommendProvider),
-        ),
-        data: (state) {
-          if (!state.loggedIn) {
-            return _CenterAction(
-              icon: Icons.person_outline,
-              message: '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制',
-              action: '去登录',
-              onTap: () => context.go('/account'),
-            );
-          }
-          if (state.items.isEmpty) {
-            return _CenterAction(
-              icon: Icons.music_off_outlined,
-              message: '今天还没有推荐\n请先在「插件管理」中安装音源插件',
-              action: '去安装插件',
-              onTap: () => context.go('/plugin'),
-            );
-          }
-          return Column(
-            children: [
-              _Header(state: state),
-              Divider(height: 1, color: scheme.onSurface.withValues(alpha: 0.06)),
-              Expanded(child: _RecommendList(state: state)),
-            ],
-          );
-        },
+          if (hasSong)
+            const MiniPlayerBar(),
+        ],
       ),
     );
   }

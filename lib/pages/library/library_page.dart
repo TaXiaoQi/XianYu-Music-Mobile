@@ -167,7 +167,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -214,13 +213,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                               ],
                             ),
             ),
-            if (hasSong)
-              Positioned(
-                left: 14,
-                right: 14,
-                bottom: MediaQuery.of(context).padding.bottom + 12,
-                child: const MiniPlayerBar(),
-              ),
             Positioned(
               top: 0,
               left: 0,
@@ -232,6 +224,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 bottom: tabBar,
               ),
             ),
+            if (lib.songs.isNotEmpty)
+              const MiniPlayerBar(),
           ],
         ),
       ),

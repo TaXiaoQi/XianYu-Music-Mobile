@@ -22,7 +22,15 @@ Future<T?> showSheetDialog<T>(
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
-        child: builder(dialogContext),
+        // 弹窗是屏幕居中的 Dialog，并不贴着状态栏/底部安全区；若内容里用了
+        // SafeArea，会凭空多加一段状态栏高度的顶部/底部空白。这里把安全区内边距
+        // 清零（保留 viewInsets，键盘避让仍正常），统一消除所有该风格弹窗的顶部空白。
+        child: MediaQuery.removePadding(
+          context: dialogContext,
+          removeTop: true,
+          removeBottom: true,
+          child: builder(dialogContext),
+        ),
       ),
     ),
   );

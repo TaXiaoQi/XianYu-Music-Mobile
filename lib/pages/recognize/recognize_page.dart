@@ -170,8 +170,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   @override
   Widget build(BuildContext context) {
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final success = _phase == _Phase.done && _matches.isNotEmpty;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       appBar: AppBar(
@@ -208,12 +208,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
               onRestart: () => setState(() => _phase = _Phase.idle),
             ),
           if (hasSong)
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: MediaQuery.of(context).padding.bottom + 12,
-              child: const MiniPlayerBar(),
-            ),
+            const MiniPlayerBar(),
         ],
       ),
     );
@@ -480,24 +475,12 @@ class _MatchListView extends StatelessWidget {
                 );
               }
               final m = matches[index];
-              return Builder(
-                builder: (rowContext) => _MatchRow(
-                  match: m,
-                  fav: isFavorite(m),
-                  onPlay: () {
-                    launchFlyCover(
-                      rowContext,
-                      coverSize: 52,
-                      horizontalPad: 76,
-                      vPad: 10,
-                      networkUrl: m.img,
-                      radius: 8,
-                    );
-                    onPlay(m);
-                  },
-                  onFavorite: () => onFavorite(m),
-                  onAddToPlaylist: () => onAddToPlaylist(m),
-                ),
+              return _MatchRow(
+                match: m,
+                fav: isFavorite(m),
+                onPlay: () => onPlay(m),
+                onFavorite: () => onFavorite(m),
+                onAddToPlaylist: () => onAddToPlaylist(m),
               );
             },
           ),
@@ -507,7 +490,7 @@ class _MatchListView extends StatelessWidget {
   }
 }
 
-class _MatchRow extends StatelessWidget {
+class _MatchRow extends StatefulWidget {
   const _MatchRow({
     required this.match,
     required this.fav,
@@ -523,10 +506,28 @@ class _MatchRow extends StatelessWidget {
   final VoidCallback onAddToPlaylist;
 
   @override
+  State<_MatchRow> createState() => _MatchRowState();
+}
+
+class _MatchRowState extends State<_MatchRow> {
+  BuildContext? _coverCtx;
+
+  void _handlePlay() {
+    launchFlyCover(
+      context,
+      coverContext: _coverCtx,
+      coverSize: 52,
+      networkUrl: widget.match.img,
+      radius: 8,
+    );
+    widget.onPlay();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final primary = const Color(0xFFEC4141);
-    final pct = (match.confidence * 100).round();
+    final pct = (widget.match.confidence * 100).round();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -555,13 +556,18 @@ class _MatchRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           // 封面
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: OnlineCover(url: match.img, size: 52),
-            ),
+          Builder(
+            builder: (c) {
+              _coverCtx = c;
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: OnlineCover(url: widget.match.img, size: 52),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 12),
           // 歌曲信息
@@ -570,7 +576,7 @@ class _MatchRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  match.name,
+                  widget.match.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -578,7 +584,7 @@ class _MatchRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  [match.singer, match.albumName]
+                  [widget.match.singer, widget.match.albumName]
                       .where((e) => e.isNotEmpty)
                       .join(' · '),
                   maxLines: 1,
@@ -598,22 +604,22 @@ class _MatchRow extends StatelessWidget {
                 icon: Icon(Icons.play_circle_fill,
                     size: 30, color: primary),
                 tooltip: '播放',
-                onPressed: onPlay,
+                onPressed: _handlePlay,
               ),
               IconButton(
                 icon: Icon(
-                  fav ? Icons.favorite : Icons.favorite_border,
+                  widget.fav ? Icons.favorite : Icons.favorite_border,
                   size: 22,
-                  color: fav ? primary : scheme.onSurfaceVariant,
+                  color: widget.fav ? primary : scheme.onSurfaceVariant,
                 ),
-                tooltip: fav ? '已收藏' : '收藏',
-                onPressed: onFavorite,
+                tooltip: widget.fav ? '已收藏' : '收藏',
+                onPressed: widget.onFavorite,
               ),
               IconButton(
                 icon: Icon(Icons.playlist_add,
                     size: 22, color: scheme.onSurfaceVariant),
                 tooltip: '添加到歌单',
-                onPressed: onAddToPlaylist,
+                onPressed: widget.onAddToPlaylist,
               ),
             ],
           ),

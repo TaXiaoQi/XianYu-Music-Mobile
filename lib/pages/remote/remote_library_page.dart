@@ -18,6 +18,7 @@ class RemoteLibraryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(remoteLibraryProvider);
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -48,20 +49,12 @@ class RemoteLibraryPage extends ConsumerWidget {
               _buildCacheCard(context, ref, state),
             ],
           ),
-          if (_hasPlayerSong(ref))
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: MediaQuery.of(context).padding.bottom + 12,
-              child: const MiniPlayerBar(),
-            ),
+          if (hasSong)
+            const MiniPlayerBar(),
         ],
       ),
     );
   }
-
-  static bool _hasPlayerSong(WidgetRef ref) =>
-      ref.watch(playerProvider.select((s) => s.current != null));
 
   Widget _buildEmptyHint(BuildContext context, ColorScheme scheme) => Container(
         padding: const EdgeInsets.symmetric(vertical: 36),

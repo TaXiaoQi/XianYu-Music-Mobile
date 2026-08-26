@@ -14,6 +14,9 @@ import 'flying_cover.dart';
 import 'glass_settings.dart';
 
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
+///
+/// 拖拽为内建默认行为：未传 [onPanUpdate] 等回调时自动启用「全图拖动 + 磁吸
+/// 回弹」，因此页面内嵌的播放条（二级页面）与 shell 播放条（根页面）行为一致。
 class MiniPlayerBar extends ConsumerStatefulWidget {
   const MiniPlayerBar({
     super.key,
@@ -21,12 +24,28 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
     this.onPanUpdate,
     this.onPanEnd,
     this.onPanCancel,
+    this.registerTarget = true,
+    this.heroTag = 'player-cover',
   });
 
   final GestureDragStartCallback? onPanStart;
   final GestureDragUpdateCallback? onPanUpdate;
   final GestureDragEndCallback? onPanEnd;
   final VoidCallback? onPanCancel;
+
+  /// 是否注册为「飞封面」目标位置。
+  ///
+  /// shell 播放条在二级页面（被 root navigator 覆盖不可见）时传 false，
+  /// 避免与页面自己的播放条竞争目标位置；根页面与播放页（Hero 源）传 true。
+  final bool registerTarget;
+
+  /// 封面 Hero 标签。
+  ///
+  /// 默认 'player-cover'：页面内嵌播放条承担「当前路由子树」的播放页转场 Hero
+  /// （Hero 源必须在栈顶页面子树中，shell 播放条在 AppShell 底层不在扫描范围）。
+  /// shell 播放条在二级页面（非播放页）时传 null 避免与页面播放条同标签冲突；
+  /// 根页面与播放页时传 'player-cover' 作为 Hero 源。
+  final String? heroTag;
 
   @override
   ConsumerState<MiniPlayerBar> createState() => _MiniPlayerBarState();
@@ -38,6 +57,41 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
   /// 封面定位锚点：供「飞封面」动画计算目标位置。
   final GlobalKey _coverKey = GlobalKey();
+
+  /// 本实例注册到 FlyingCover 的目标闭包（引用可变 [Rect]，布局更新无需重注册）。
+  Rect _coverRect = Rect.zero;
+  Rect Function()? _targetProvider;
+
+  /// 内建拖拽位置（绝对坐标，null = 默认位置）。
+  ///
+  /// 页面内嵌播放条用 [Positioned] 定位自身，拖动直接改 left/top 触发重新布局，
+  /// hit test 天然跟随，避免 Transform.translate 视觉位移与命中区域错位。
+  Offset? _pos;
+
+  /// 路由监听：页面内嵌播放条在播放页打开时隐藏（避免与 shell 播放条 Hero 冲突）。
+  GoRouter? _router;
+
+  double get _defaultLeft => 18.0;
+
+  double get _defaultTop {
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    return size.height - padding.bottom - 58.0 - 12.0;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 仅内建定位模式（页面播放条）需要监听路由；shell 播放条由 shell 管理。
+    if (widget.onPanUpdate == null && _router == null) {
+      _router = GoRouter.of(context);
+      _router!.routerDelegate.addListener(_onRouteChanged);
+    }
+  }
+
+  void _onRouteChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
@@ -52,18 +106,80 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   @override
   void dispose() {
     _spin.dispose();
-    FlyingCover.instance.unregisterTarget();
+    _router?.routerDelegate.removeListener(_onRouteChanged);
+    final p = _targetProvider;
+    if (p != null) FlyingCover.instance.unregisterTarget(p);
     super.dispose();
   }
 
   /// 布局完成后把封面全局位置注册为飞封面目标。
   void _updateCoverTarget() {
+    if (!widget.registerTarget) {
+      final p = _targetProvider;
+      if (p != null) {
+        FlyingCover.instance.unregisterTarget(p);
+        _targetProvider = null;
+      }
+      return;
+    }
     final ctx = _coverKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
-    final rect = box.localToGlobal(Offset.zero) & box.size;
-    FlyingCover.instance.registerTarget(() => rect);
+    _coverRect = box.localToGlobal(Offset.zero) & box.size;
+    // Positioned 定位变化会触发重新布局，localToGlobal 自动跟随，无需手动叠加偏移。
+    _targetProvider ??= () => _coverRect;
+    FlyingCover.instance.registerTarget(_targetProvider!);
+  }
+
+  /// 内建拖拽更新：以默认位置（left:18 / bottom:12+安全区）为基准，用绝对坐标计算边界。
+  void _defaultPanUpdate(DragUpdateDetails d) {
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final barW = size.width - 36.0;
+    const barH = 58.0;
+    const minLeft = 6.0;
+    final maxLeft = size.width - barW - 6.0;
+    final minTop = padding.top + 6.0;
+    // 页面内嵌播放条仅出现在二级页面（无底栏），可拖到更底部。
+    const bottomInset = 12.0;
+    final maxTop = size.height - padding.bottom - barH - bottomInset;
+    final current = _pos ?? Offset(_defaultLeft, _defaultTop);
+    setState(() {
+      _pos = Offset(
+        (current.dx + d.delta.dx).clamp(minLeft, maxLeft),
+        (current.dy + d.delta.dy).clamp(minTop, maxTop),
+      );
+    });
+  }
+
+  void _defaultPanEnd(DragEndDetails d) {
+    // 距默认位置 < 60px 自动磁吸回弹。
+    final current = _pos ?? Offset(_defaultLeft, _defaultTop);
+    final defaultPos = Offset(_defaultLeft, _defaultTop);
+    if ((current - defaultPos).distance < 60.0) {
+      setState(() => _pos = null);
+    }
+  }
+
+  void _handlePanStart(DragStartDetails d) {
+    widget.onPanStart?.call(d);
+  }
+
+  void _handlePanUpdate(DragUpdateDetails d) {
+    if (widget.onPanUpdate != null) {
+      widget.onPanUpdate!(d);
+    } else {
+      _defaultPanUpdate(d);
+    }
+  }
+
+  void _handlePanEnd(DragEndDetails d) {
+    if (widget.onPanEnd != null) {
+      widget.onPanEnd!(d);
+    } else {
+      _defaultPanEnd(d);
+    }
   }
 
   @override
@@ -101,13 +217,19 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             true) &&
             !lowPerf;
 
-    final content = Padding(
-      padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
-      child: Row(
-        children: [
-          // Hero：打开播放页时封面从底栏过渡放大到播放页大封面。
-          Hero(
-            tag: 'player-cover',
+    final cover = _RotatingDisc(
+      key: _coverKey,
+      current: current,
+      duration: p.duration,
+      spin: _spin,
+    );
+    // 当前路由子树内只存在一个带 Hero 的播放条：根页面由 shell 播放条承担，
+    // 二级页面由页面内嵌播放条承担（shell 在二级页面传 heroTag:null 让位）。
+    // 播放页打开时页面播放条隐藏，避免与 shell 播放条同标签 Hero 冲突。
+    final coverWidget = widget.heroTag == null
+        ? cover
+        : Hero(
+            tag: widget.heroTag!,
             flightShuttleBuilder: (ctx, animation, direction, fromCtx, toCtx) {
               return PlayerCoverShuttle(
                 animation: animation,
@@ -126,13 +248,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                 ),
               );
             },
-            child: _RotatingDisc(
-              key: _coverKey,
-              current: current,
-              duration: p.duration,
-              spin: _spin,
-            ),
-          ),
+            child: cover,
+          );
+
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
+      child: Row(
+        children: [
+          coverWidget,
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -183,10 +306,10 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       ),
     );
 
-    return GestureDetector(
-      onPanStart: widget.onPanStart,
-      onPanUpdate: widget.onPanUpdate,
-      onPanEnd: widget.onPanEnd,
+    final bar = GestureDetector(
+      onPanStart: _handlePanStart,
+      onPanUpdate: _handlePanUpdate,
+      onPanEnd: _handlePanEnd,
       onPanCancel: widget.onPanCancel,
       onTap: () => context.push('/player'),
       behavior: HitTestBehavior.opaque,
@@ -194,6 +317,41 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           ? _liquidSurface(context, content)
           : _frostedSurface(context, content, lowPerf: lowPerf),
     );
+
+    // 内建定位模式（页面内嵌播放条，未传 onPanUpdate）：自己返回 Stack + Positioned，
+    // 拖动直接改 left/top 触发重新布局，hit test 与视觉位置天然一致。
+    if (widget.onPanUpdate == null) {
+      // 播放页打开时隐藏页面播放条：避免与 shell 播放条（Hero 源）同标签冲突，
+      // 同时注销飞封面目标（此时由 shell 播放条接管）。
+      final isPlayerPage = GoRouter.of(context)
+              .routerDelegate
+              .currentConfiguration
+              .uri
+              .path ==
+          '/player';
+      if (isPlayerPage) {
+        final p = _targetProvider;
+        if (p != null) {
+          FlyingCover.instance.unregisterTarget(p);
+          _targetProvider = null;
+        }
+        return const SizedBox.shrink();
+      }
+      final size = MediaQuery.of(context).size;
+      return Stack(
+        children: [
+          Positioned(
+            left: _pos?.dx ?? _defaultLeft,
+            top: _pos?.dy ?? _defaultTop,
+            width: size.width - 36.0,
+            child: bar,
+          ),
+        ],
+      );
+    }
+
+    // 外部定位模式（shell 播放条）：被外层 AnimatedPositioned 包裹定位。
+    return bar;
   }
 
   /// 液态玻璃表面：与底栏同一套参数，保证两者观感一致。

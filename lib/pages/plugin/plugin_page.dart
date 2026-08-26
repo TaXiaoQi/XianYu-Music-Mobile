@@ -199,21 +199,20 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         ),
                     ],
                   ),
+                  // 拖动代理样式与正常卡片保持一致（去掉默认拖拽阴影）
+                  proxyDecorator: (child, index, animation) => child,
                   itemBuilder: (context, i) {
                     final source = filtered[i];
-                    return Padding(
+                    // 整个插件条即拖动区：按住任意位置可拖动排序（延迟触发，
+                    // 短暂点按仍可点击详情/更新/删除与开关）
+                    return ReorderableDelayedDragStartListener(
                       key: ValueKey(source.id),
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _PluginCard(
-                        source: source,
-                        // 搜索过滤时不参与排序，隐藏拖拽把手
-                        handle: _query.isEmpty
-                            ? ReorderableDragStartListener(
-                                index: i,
-                                child: Icon(Icons.drag_indicator,
-                                    size: 20, color: scheme.outline),
-                              )
-                            : null,
+                      index: i,
+                      // 搜索过滤时不参与排序，禁用拖动
+                      enabled: _query.isEmpty,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _PluginCard(source: source),
                       ),
                     );
                   },
@@ -566,14 +565,39 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _PluginCard extends ConsumerWidget {
-  const _PluginCard({required this.source, this.handle});
+class _PluginCard extends ConsumerStatefulWidget {
+  const _PluginCard({required this.source});
   final PluginSource source;
-  /// 排列在卡片最前面的拖拽排序把手（null 时不展示）。
-  final Widget? handle;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PluginCard> createState() => _PluginCardState();
+}
+
+class _PluginCardState extends ConsumerState<_PluginCard> {
+  bool _hasVars = false;
+
+  PluginSource get source => widget.source;
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后再读取，避免插件列表初次渲染被变量加载拖慢
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadHasVars());
+  }
+
+  Future<void> _loadHasVars() async {
+    try {
+      final vars =
+          await ref.read(pluginManagerProvider.notifier).getUserVars(source.id);
+      if (!mounted || vars.isEmpty) return;
+      setState(() => _hasVars = true);
+    } catch (_) {
+      // 读取失败时不显示变量图标
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(pluginManagerProvider.notifier);
 
@@ -596,22 +620,37 @@ class _PluginCard extends ConsumerWidget {
       iconColor = const Color(0xFFEC4141);
     }
 
+    // 第二行文案：v{version} · 作者 · 描述（缺省时省略，与桌面端一致）
+    final subText = [
+      if (source.version.isNotEmpty) 'v${source.version}',
+      if (source.author.isNotEmpty) source.author,
+      if (source.description.isNotEmpty) source.description,
+    ].join(' · ');
+
+    // 格式标签（落雪 / MusicFree / BakaMusic / 未知），与图标配色同源判定
+    final tagLabel = source.format == PluginFormat.lx
+        ? '落雪'
+        : source.format == PluginFormat.musicfree
+            ? (source.author.toLowerCase().contains('toskysun')
+                ? 'BakaMusic'
+                : 'MusicFree')
+            : '未知';
+
     return Material(
       color: appCardColor(context),
       borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 8, 8, 6),
-        child: Column(
+      child: Stack(
+        children: [
+          // 内容：左侧预留拖动图标让位
+          Padding(
+            padding: const EdgeInsets.fromLTRB(56, 8, 8, 6),
+            child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 第一行：拖拽把手 + 图标 + 插件名称/版本 + 开关
+            // 上面行：图标 + [名称(带格式标签) / 版本·作者] + 开关
             Row(
               children: [
-                // 拖拽排序把手（排在最前面）
-                if (handle != null) ...[
-                  handle!,
-                  const SizedBox(width: 2),
-                ],
                 // 图标
                 Container(
                   width: 40,
@@ -629,30 +668,60 @@ class _PluginCard extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // 名称 + 版本（第一行纯展示名称与版本）
+                // 名称 + 格式标签（第 1 行）/ 版本·作者（第 2 行）
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(
-                          source.name,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              source.name,
+                              style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: iconBg,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              tagLabel,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: iconColor,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          // 有用户变量时，在标签后显示变量入口图标
+                          if (_hasVars) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.tune_outlined,
+                                size: 15, color: scheme.primary),
+                          ],
+                        ],
                       ),
-                      if (source.version.isNotEmpty) ...[
-                        const SizedBox(width: 6),
+                      if (subText.isNotEmpty) ...[
+                        const SizedBox(height: 2),
                         Text(
-                          'v${source.version}',
+                          subText,
                           style: TextStyle(
                               fontSize: 12, color: scheme.outline),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ],
                   ),
                 ),
-                // 开关（仍在第一行右侧）
+                const SizedBox(width: 6),
+                // 开关（仍在上面行右侧）
                 Switch(
                   value: source.enabled,
                   activeThumbColor: iconColor,
@@ -661,7 +730,7 @@ class _PluginCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 4),
-            // 第二行：详情 / 更新 / 删除 均分布放，图标后带名字
+            // 下面一行：详情 / 更新 / 删除，与上方插件图标同一左缘对齐
             Row(
               children: [
                 _action(
@@ -670,12 +739,14 @@ class _PluginCard extends ConsumerWidget {
                   '详情',
                   () => _openDetail(context, ref),
                 ),
+                const SizedBox(width: 4),
                 _action(
                   context,
                   Icons.system_update_alt_outlined,
                   '更新',
                   () => _checkUpdate(context, ref),
                 ),
+                const SizedBox(width: 4),
                 _action(
                   context,
                   Icons.delete_outline,
@@ -686,6 +757,19 @@ class _PluginCard extends ConsumerWidget {
             ),
           ],
         ),
+        ),
+        // 拖动 UI：最前方，整条垂直居中（仅视觉提示，整卡均可按住拖动）
+        Positioned(
+          left: 4,
+          top: 0,
+          bottom: 0,
+          width: 40,
+          child: Center(
+            child: Icon(Icons.drag_indicator,
+                size: 38, color: scheme.outline),
+          ),
+        ),
+      ],
       ),
     );
   }
@@ -698,23 +782,21 @@ class _PluginCard extends ConsumerWidget {
     VoidCallback onTap,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 17, color: scheme.outline),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(fontSize: 13, color: scheme.outline),
-              ),
-            ],
-          ),
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 17, color: scheme.outline),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(fontSize: 13, color: scheme.outline),
+            ),
+          ],
         ),
       ),
     );
@@ -790,13 +872,113 @@ class _PluginCard extends ConsumerWidget {
   }
 }
 
-/// 插件详情弹窗：展示插件信息；MusicFree 插件提供「用户变量」配置入口。
-class _PluginDetailSheet extends ConsumerWidget {
+/// 插件详情弹窗：展示插件信息、链接与用户变量（对齐桌面端；无变量则不显示变量区）。
+class _PluginDetailSheet extends ConsumerStatefulWidget {
   const _PluginDetailSheet({required this.source});
   final PluginSource source;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PluginDetailSheet> createState() => _PluginDetailSheetState();
+}
+
+class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
+  List<PluginUserVar> _vars = [];
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, String> _selectValues = {};
+  final Set<String> _visiblePasswords = {};
+  bool _loading = true;
+  bool _saving = false;
+
+  PluginSource get source => widget.source;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final manager = ref.read(pluginManagerProvider.notifier);
+      final vars = await manager.getUserVars(source.id);
+      if (!mounted) return;
+      if (vars.isEmpty) {
+        setState(() {
+          _vars = const [];
+          _loading = false;
+        });
+        return;
+      }
+      final values = await PluginUserVarStore().getValues(source.id);
+      for (final v in vars) {
+        final existing = values[v.name] ?? '';
+        if (v.isSelect) {
+          _selectValues[v.name] = existing.isNotEmpty
+              ? existing
+              : (v.defaultValue ??
+                  (v.options.isNotEmpty ? v.options.first : ''));
+        } else {
+          _controllers[v.name] = TextEditingController(
+              text: existing.isNotEmpty ? existing : (v.defaultValue ?? ''));
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _vars = vars;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _vars = const [];
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    for (final v in _vars) {
+      if (!v.required) continue;
+      final value = v.isSelect
+          ? (_selectValues[v.name] ?? '')
+          : (_controllers[v.name]?.text.trim() ?? '');
+      if (value.isEmpty) {
+        showXianYuToast(context, '「${v.title ?? v.name}」为必填项');
+        return;
+      }
+    }
+    setState(() => _saving = true);
+    final values = <String, String>{};
+    for (final v in _vars) {
+      values[v.name] = v.isSelect
+          ? (_selectValues[v.name] ?? '')
+          : (_controllers[v.name]?.text.trim() ?? '');
+    }
+    try {
+      await ref
+          .read(pluginManagerProvider.notifier)
+          .saveUserVars(source.id, values);
+      if (!mounted) return;
+      showXianYuToast(context, '已保存用户变量，开始生效');
+    } catch (e) {
+      if (!mounted) return;
+      showXianYuToast(context, '保存失败：$e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final formatLabel =
         source.format == PluginFormat.lx ? '落雪格式' : 'MusicFree 格式';
@@ -819,139 +1001,217 @@ class _PluginDetailSheet extends ConsumerWidget {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 头部
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: Icon(
-                    source.format == PluginFormat.lx
-                        ? Icons.music_note
-                        : Icons.extension,
-                    color: scheme.primary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(source.name,
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w700),
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 2),
-                      Text(formatLabel,
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            row('版本', source.version.isEmpty ? '—' : 'v${source.version}'),
-            row('作者', source.author.isEmpty ? '—' : source.author),
-            if (source.description.isNotEmpty) row('描述', source.description),
-            // 音源 chips
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.only(
+          left: 18,
+          right: 18,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 10,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.72,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              // 头部
+              Row(
                 children: [
-                  SizedBox(
-                    width: 64,
-                    child: Text('音源',
-                        style: TextStyle(
-                            fontSize: 13, color: scheme.onSurfaceVariant)),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(
+                      source.format == PluginFormat.lx
+                          ? Icons.music_note
+                          : Icons.extension,
+                      color: scheme.primary,
+                      size: 22,
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: source.sources.isEmpty
-                        ? const Text('—')
-                        : Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              for (final s in source.sources)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: scheme.primary
-                                        .withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(s,
-                                      style: TextStyle(
-                                          fontSize: 11.5,
-                                          color: scheme.primary)),
-                                ),
-                            ],
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            // MusicFree 插件：用户变量入口（对齐桌面端详情内的用户变量区）
-            if (source.format == PluginFormat.musicfree) ...[
-              const Divider(height: 4),
-              const SizedBox(height: 6),
-              Material(
-                color: appCardColor(context),
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => showSheetDialog<void>(
-                    context,
-                    (ctx) => _UserVarsSheet(source: source),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.tune_outlined,
-                            size: 18, color: scheme.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('用户变量',
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600)),
-                              Text('插件运行所需的自定义参数',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant)),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right,
-                            size: 20, color: scheme.outline),
+                        Text(source.name,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700),
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text(formatLabel,
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.onSurfaceVariant)),
                       ],
                     ),
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              row('版本', source.version.isEmpty ? '—' : 'v${source.version}'),
+              row('作者', source.author.isEmpty ? '—' : source.author),
+              if (source.description.isNotEmpty) row('描述', source.description),
+              // 音源（插件链接）chips
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: Text('链接',
+                          style: TextStyle(
+                              fontSize: 13, color: scheme.onSurfaceVariant)),
+                    ),
+                    Expanded(
+                      child: source.sources.isEmpty
+                          ? const Text('—')
+                          : Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final s in source.sources)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary
+                                          .withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(s,
+                                        style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: scheme.primary)),
+                                  ),
+                              ],
+                            ),
+                    ),
+                  ],
                 ),
               ),
+              // 用户变量（内联展示，对齐桌面端；无变量则不显示）
+              if (!_loading && _vars.isNotEmpty) ...[
+                const Divider(height: 8),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.tune_outlined,
+                        size: 18, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('用户变量',
+                          style: TextStyle(
+                              fontSize: 14.5, fontWeight: FontWeight.w600)),
+                    ),
+                    if (_saving)
+                      const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 14),
+                          textStyle: const TextStyle(fontSize: 13),
+                        ),
+                        onPressed: _save,
+                        child: const Text('保存'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('保存后插件将重新加载并应用新的变量值',
+                    style: TextStyle(fontSize: 12, color: scheme.outline)),
+                const SizedBox(height: 12),
+                for (final v in _vars) _buildField(context, v),
+              ],
             ],
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildField(BuildContext context, PluginUserVar v) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = v.title ?? v.name;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              if (v.required)
+                const Text(' *', style: TextStyle(color: Color(0xFFEC4141), fontSize: 13.5)),
+              const Spacer(),
+              Text(v.name,
+                  style: TextStyle(fontSize: 11, color: scheme.outline)),
+            ],
+          ),
+          if (v.description != null && v.description!.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(v.description!,
+                style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+          ],
+          const SizedBox(height: 7),
+          if (v.isSelect)
+            DropdownButtonFormField<String>(
+              initialValue: _selectValues[v.name],
+              decoration: InputDecoration(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                hintText: v.placeholder,
+              ),
+              items: [
+                for (final opt in v.options)
+                  DropdownMenuItem(
+                      value: opt,
+                      child: Text(opt, style: const TextStyle(fontSize: 14))),
+              ],
+              onChanged: (val) {
+                if (val != null) setState(() => _selectValues[v.name] = val);
+              },
+            )
+          else
+            TextField(
+              controller: _controllers[v.name],
+              obscureText: v.isPassword && !_visiblePasswords.contains(v.name),
+              decoration: InputDecoration(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                hintText: v.placeholder,
+                suffixIcon: v.isPassword
+                    ? IconButton(
+                        icon: Icon(
+                          _visiblePasswords.contains(v.name)
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() {
+                          _visiblePasswords.contains(v.name)
+                              ? _visiblePasswords.remove(v.name)
+                              : _visiblePasswords.add(v.name);
+                        }),
+                      )
+                    : null,
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+        ],
       ),
     );
   }
@@ -1131,254 +1391,4 @@ class _InstallOption extends StatelessWidget {
   }
 }
 
-/// 插件用户变量编辑弹层：加载定义 → 表单编辑 → 保存并重载插件。
-class _UserVarsSheet extends ConsumerStatefulWidget {
-  const _UserVarsSheet({required this.source});
-  final PluginSource source;
 
-  @override
-  ConsumerState<_UserVarsSheet> createState() => _UserVarsSheetState();
-}
-
-class _UserVarsSheetState extends ConsumerState<_UserVarsSheet> {
-  List<PluginUserVar> _vars = [];
-  final Map<String, TextEditingController> _controllers = {};
-  final Map<String, String> _selectValues = {};
-  final Set<String> _visiblePasswords = {};
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final manager = ref.read(pluginManagerProvider.notifier);
-      final vars = await manager.getUserVars(widget.source.id);
-      if (!mounted) return;
-      if (vars.isEmpty) {
-        setState(() => _loading = false);
-        return;
-      }
-      final values = await PluginUserVarStore().getValues(widget.source.id);
-      for (final v in vars) {
-        final existing = values[v.name] ?? '';
-        if (v.isSelect) {
-          _selectValues[v.name] = existing.isNotEmpty
-              ? existing
-              : (v.defaultValue ?? (v.options.isNotEmpty ? v.options.first : ''));
-        } else {
-          _controllers[v.name] =
-              TextEditingController(text: existing.isNotEmpty ? existing : (v.defaultValue ?? ''));
-        }
-      }
-      setState(() {
-        _vars = vars;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _save() async {
-    if (_saving) return;
-    // 必填校验
-    for (final v in _vars) {
-      if (!v.required) continue;
-      final value = v.isSelect
-          ? (_selectValues[v.name] ?? '')
-          : (_controllers[v.name]?.text.trim() ?? '');
-      if (value.isEmpty) {
-        showXianYuToast(context, '「${v.title ?? v.name}」为必填项');
-        return;
-      }
-    }
-
-    setState(() => _saving = true);
-    final values = <String, String>{};
-    for (final v in _vars) {
-      if (v.isSelect) {
-        values[v.name] = _selectValues[v.name] ?? '';
-      } else {
-        values[v.name] = _controllers[v.name]?.text.trim() ?? '';
-      }
-    }
-    try {
-      await ref
-          .read(pluginManagerProvider.notifier)
-          .saveUserVars(widget.source.id, values);
-      if (!mounted) return;
-      showXianYuToast(context, '已保存用户变量，开始生效');
-      Navigator.pop(context);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      showXianYuToast(context, '保存失败：$e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('用户变量 · ${widget.source.name}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(
-                '保存后插件将重新加载并应用新的变量值',
-                style: TextStyle(fontSize: 12, color: scheme.outline),
-              ),
-              const SizedBox(height: 16),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_vars.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Column(
-                    children: [
-                      Icon(Icons.tune_outlined, size: 40, color: scheme.outline),
-                      const SizedBox(height: 12),
-                      Text('该插件未声明用户变量',
-                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-                    ],
-                  ),
-                )
-              else
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _vars.length,
-                    itemBuilder: (ctx, i) => _buildField(ctx, _vars[i]),
-                  ),
-                ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('取消'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: (_loading || _saving) ? null : _save,
-                    child: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('保存'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildField(BuildContext context, PluginUserVar v) {
-    final scheme = Theme.of(context).colorScheme;
-    final label = v.title ?? v.name;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(label,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              if (v.required)
-                const Text(' *', style: TextStyle(color: Color(0xFFEC4141), fontSize: 13.5)),
-              const Spacer(),
-              Text(v.name,
-                  style: TextStyle(fontSize: 11, color: scheme.outline)),
-            ],
-          ),
-          if (v.description != null && v.description!.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(v.description!,
-                style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
-          ],
-          const SizedBox(height: 7),
-          if (v.isSelect)
-            DropdownButtonFormField<String>(
-              initialValue: _selectValues[v.name],
-              decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
-                hintText: v.placeholder,
-              ),
-              items: [
-                for (final opt in v.options)
-                  DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 14))),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => _selectValues[v.name] = val);
-              },
-            )
-          else
-            TextField(
-              controller: _controllers[v.name],
-              obscureText: v.isPassword && !_visiblePasswords.contains(v.name),
-              decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
-                hintText: v.placeholder,
-                suffixIcon: v.isPassword
-                    ? IconButton(
-                        icon: Icon(
-                          _visiblePasswords.contains(v.name)
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 20,
-                        ),
-                        onPressed: () => setState(() {
-                          _visiblePasswords.contains(v.name)
-                              ? _visiblePasswords.remove(v.name)
-                              : _visiblePasswords.add(v.name);
-                        }),
-                      )
-                    : null,
-              ),
-              style: const TextStyle(fontSize: 14),
-            ),
-        ],
-      ),
-    );
-  }
-}
