@@ -45,7 +45,7 @@ Future<void> showSongShareSheet(
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 6),
           ListTile(
-            leading: _qqBadge('assets/icon/share_qq.jpg'),
+            leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),
             title: const Text('分享到 QQ 好友'),
             onTap: () {
               Navigator.pop(ctx);
@@ -62,9 +62,10 @@ Future<void> showSongShareSheet(
             },
           ),
           ListTile(
-            leading: _plainBadge(context, Icons.grid_view),
+            // 与桌面端底栏分享控件（lucide Share2）同款图标
+            leading: _plainBadge(context, Icons.share_outlined),
             title: const Text('分享到更多应用'),
-            subtitle: const Text('调用系统分享，可发到微信/钉钉/短信等任意平台'),
+            subtitle: const Text('调用手机系统原生分享，可发到微信/钉钉/短信等任意平台'),
             onTap: () async {
               Navigator.pop(ctx);
               await _shareToOtherApps(overlay, ref, song);
@@ -86,7 +87,9 @@ Future<void> showSongShareSheet(
 }
 
 /// QQ/QQ空间品牌徽章图标：白边圆形裁切，明暗弹窗下都清晰。
-Widget _qqBadge(String asset) => Container(
+/// [fit] 控制图标填充方式：透明去底的品牌 logo（如 QQ 企鹅）用 contain 保留整体，
+/// 满幅方形图标（如 QQ 空间）用默认 cover 裁满圆圈。
+Widget _qqBadge(String asset, {BoxFit fit = BoxFit.cover}) => Container(
       width: 34,
       height: 34,
       decoration: const BoxDecoration(
@@ -94,7 +97,7 @@ Widget _qqBadge(String asset) => Container(
         color: Colors.white,
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.asset(asset, width: 34, height: 34, fit: BoxFit.cover),
+      child: Image.asset(asset, width: 34, height: 34, fit: fit),
     );
 
 /// 普通选项的圆形徽章图标（与 QQ 徽章同尺寸同白底风格，内嵌语义图标）。
