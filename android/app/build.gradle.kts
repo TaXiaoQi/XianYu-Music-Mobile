@@ -1,11 +1,22 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 正式签名：读取 android/key.properties（已 gitignore，含随机密码）。
+// 缺失时回退 debug 签名，保证开发/CI 环境 `flutter run --release` 仍可构建。
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.example.xianyu_music_mobile"
+    namespace = "com.xianyumusic.app"
     // file_picker 依赖的 flutter_plugin_android_lifecycle 要求 compileSdk >= 36；
     // 37：Honor/MagicOS ROM 按 targetSdk 分层下发预测返回进度事件，
     // targetSdk=36 时真手指手势进度恒为 0（页面不跟手），37 正常（对齐 PiliNara）
@@ -18,10 +29,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.xianyu_music_mobile"
-        // You can update these values to match your application needs.
-        // For more information, see https://flutter.dev/to/review-gradle-config.
+        applicationId = "com.xianyumusic.app"
         minSdk = flutter.minSdkVersion
         // 见 compileSdk 注释：预测返回进度需要 targetSdk 37
         targetSdk = 37
@@ -42,11 +50,23 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String? ?: ""
+            keyPassword = keystoreProperties["keyPassword"] as String? ?: ""
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String? ?: ""
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // key.properties 存在时用专用 release 密钥签名，缺失时回退 debug 签名
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             // R8 代码收缩 + 资源收缩：dex/资源再省约 0.5~1.5MB
             isMinifyEnabled = true
             isShrinkResources = true

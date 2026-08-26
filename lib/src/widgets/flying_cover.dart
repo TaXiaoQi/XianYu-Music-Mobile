@@ -285,7 +285,12 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
+    // 用 Positioned(left/top) 而非 Positioned.fill：fill 会给子级屏幕大小的
+    // 紧约束，Container(width: w, height: h) 会被强制撑满全屏，导致飞封面
+    // 以整个列表大小出现（曾表现为超大封面超过屏幕宽度）。
+    return Positioned(
+      left: 0,
+      top: 0,
       child: IgnorePointer(
         child: AnimatedBuilder(
           animation: Listenable.merge([_flyCtrl, _fadeCtrl]),

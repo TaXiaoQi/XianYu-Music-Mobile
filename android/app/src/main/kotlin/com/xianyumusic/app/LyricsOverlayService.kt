@@ -1,4 +1,4 @@
-package com.example.xianyu_music_mobile
+package com.xianyumusic.app
 
 import android.app.Notification
 import android.app.NotificationChannel
