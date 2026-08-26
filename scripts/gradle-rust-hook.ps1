@@ -116,9 +116,13 @@ if ($needCodegen) {
         $pInfo.RedirectStandardError = $true
         $pInfo.CreateNoWindow = $true
         $p = [System.Diagnostics.Process]::Start($pInfo)
-        $stdout = $p.StandardOutput.ReadToEnd()
-        $stderr = $p.StandardError.ReadToEnd()
+        # 并发读 stdout/stderr：顺序 ReadToEnd 会在子进程输出塞满管道时
+        # 双方互等死锁（父读 stdout 等 EOF，子写 stderr 等父读）。
+        $tOut = $p.StandardOutput.ReadToEndAsync()
+        $tErr = $p.StandardError.ReadToEndAsync()
         $p.WaitForExit()
+        $stdout = $tOut.Result
+        $stderr = $tErr.Result
         Set-Content -Path $hookLog -Value ($stdout + "`n" + $stderr) -Encoding UTF8
         if ($p.ExitCode -ne 0) {
             Get-Content $hookLog -Tail 20 | Write-Host
@@ -149,9 +153,13 @@ if ($needSo) {
         $pInfo.RedirectStandardError = $true
         $pInfo.CreateNoWindow = $true
         $p = [System.Diagnostics.Process]::Start($pInfo)
-        $stdout = $p.StandardOutput.ReadToEnd()
-        $stderr = $p.StandardError.ReadToEnd()
+        # 并发读 stdout/stderr：顺序 ReadToEnd 会在子进程输出塞满管道时
+        # 双方互等死锁（父读 stdout 等 EOF，子写 stderr 等父读）。
+        $tOut = $p.StandardOutput.ReadToEndAsync()
+        $tErr = $p.StandardError.ReadToEndAsync()
         $p.WaitForExit()
+        $stdout = $tOut.Result
+        $stderr = $tErr.Result
         Set-Content -Path $hookLog -Value ($stdout + "`n" + $stderr) -Encoding UTF8
         if ($p.ExitCode -ne 0) {
             Get-Content $hookLog -Tail 30 | Write-Host

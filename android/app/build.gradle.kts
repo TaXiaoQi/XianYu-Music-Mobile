@@ -97,7 +97,8 @@ tasks.configureEach {
 
 // Rust 自动编译钩子：flutter run / flutter build apk 时自动检测并编译
 // Rust（绑定 + .so，见 scripts/gradle-rust-hook.ps1）。
-// 只有显式设置 XIANMU_BUILD_RUST=1 时才触发自动重编，默认直接跳过，优先使用已有 .so 产物
+// 默认自动检测并编译 Rust（绑定 + .so）；如需完全跳过（直接复用工程中已有 .so 产物），
+// 设置 XIANMU_SKIP_RUST=1。（XIANMU_BUILD_RUST 仅作历史兼容保留，已不再需要）
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 tasks.register("rustHook") {
     doLast {
