@@ -180,6 +180,36 @@ class PluginCatalogService {
     return const [];
   }
 
+  /// 歌单详情曲目 + 分页结束标志（isEnd）。
+  /// 与 getMusicSheetInfo 同逻辑，但保留 isEnd 供全量导入判断是否还有下一页，
+  /// 避免按返回数量猜页大小（如每页 20 首的歌单被误判为已结束）导致丢歌。
+  Future<({List<PluginSearchResult> songs, bool? isEnd})> getMusicSheetInfoWithEnd(
+      PluginSource source, Map<String, dynamic> item,
+      {int page = 1}) async {
+    final methods = await _availableMethods(source);
+    if (methods.contains('getMusicSheetInfo')) {
+      final raw = await _tryCallRaw(source, 'getMusicSheetInfo', [item, page]);
+      if (raw != null) {
+        final list = extractMfResultList(raw);
+        if (list.isNotEmpty) {
+          final songs = list
+              .map((e) => mfItemToSearchResult(e, source))
+              .where((r) => r.name.isNotEmpty)
+              .toList();
+          return (songs: songs, isEnd: extractMfIsEnd(raw));
+        }
+      }
+    }
+    if (page == 1 && methods.contains('search')) {
+      final title = _stripHtml(item['title'] ?? item['name'] ?? '');
+      if (title.isNotEmpty) {
+        final songs = await _tryCallList(source, 'search', [title, 1, 'music']);
+        return (songs: songs, isEnd: true);
+      }
+    }
+    return (songs: const <PluginSearchResult>[], isEnd: true);
+  }
+
   /// 歌单搜索：sheet → playlist → 专辑回退（专辑也按歌单索引，对齐桌面）。
   Future<List<MfSheetItem>> searchSheets(
       PluginSource source, String keyword) async {
@@ -326,6 +356,16 @@ class PluginCatalogService {
     return mapped.length > limit ? mapped.sublist(0, limit) : mapped;
   }
 
+  /// 调用插件方法并返回原始结果（不提取列表），供需要 isEnd 等标志的场景使用。
+  Future<dynamic> _tryCallRaw(
+      PluginSource source, String method, List<dynamic> args) async {
+    try {
+      return await _call(source, method, args);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 调用插件方法并取原始条目列表（不转搜索结果）。
   Future<List<Map<String, dynamic>>> _tryCallRawList(
       PluginSource source, String method, List<dynamic> args) async {
@@ -392,6 +432,24 @@ String _stripHtml(dynamic v) {
 int? _toInt(dynamic v) {
   if (v is num) return v.toInt();
   if (v is String) return int.tryParse(v);
+  return null;
+}
+
+/// 从插件返回结果中提取 isEnd（分页结束标志），兼容 isEnd/is_end 及嵌套一层。
+bool? extractMfIsEnd(dynamic result) {
+  if (result is! Map) return null;
+  final isEnd = result['isEnd'];
+  if (isEnd is bool) return isEnd;
+  final isEndSnake = result['is_end'];
+  if (isEndSnake is bool) return isEndSnake;
+  for (final v in result.values) {
+    if (v is Map) {
+      final inner = v['isEnd'];
+      if (inner is bool) return inner;
+      final innerSnake = v['is_end'];
+      if (innerSnake is bool) return innerSnake;
+    }
+  }
   return null;
 }
 

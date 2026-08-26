@@ -194,7 +194,7 @@ class _RecommendList extends ConsumerWidget {
                   coverSize: 46,
                   centerVertically: true,
                   networkUrl: item.coverUrl,
-                  radius: 8,
+                  radius: 6,
                 );
                 ref.read(dailyRecommendProvider.notifier).play(i);
               },

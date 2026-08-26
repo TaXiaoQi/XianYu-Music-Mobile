@@ -420,7 +420,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
             left: 0,
             right: 0,
             bottom: 0,
-            child: const MiniPlayerBar(),
+            // 仅在搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
+            child: inResults ? const MiniPlayerBar() : const SizedBox.shrink(),
           ),
         ],
       ),
@@ -827,7 +828,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       return _emptyHint('没有找到相关歌曲', scheme, source: widget.source.name);
     }
 
-    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
+    final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
     return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _results.length,
@@ -1231,7 +1232,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       return _emptyHint('没有找到相关$name', scheme, source: widget.source.name);
     }
 
-    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
+    final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
     return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomInset),
       itemCount: _items.length,

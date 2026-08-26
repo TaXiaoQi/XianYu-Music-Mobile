@@ -109,12 +109,21 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           Hero(
             tag: 'player-cover',
             flightShuttleBuilder: (ctx, animation, direction, fromCtx, toCtx) {
-              return CoverHeroShuttle(
+              return PlayerCoverShuttle(
                 animation: animation,
                 songPath: current.path,
                 networkUrl: current.coverUrl,
                 fromRadius: 23,
                 toRadius: 28,
+                borderColor: Colors.white.withValues(alpha: 0.18),
+                shadow: BoxShadow(
+                  color: Theme.of(ctx)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.28),
+                  blurRadius: 36,
+                  spreadRadius: 2,
+                ),
               );
             },
             child: _RotatingDisc(

@@ -17,6 +17,7 @@ import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/settings/settings_category_page.dart';
+import '../../pages/settings/account_settings_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/feedback/feedback_page.dart';
@@ -114,6 +115,12 @@ final appRouter = GoRouter(
     ),
     // 账号页（从「我的」页进入）。
     GoRoute(path: '/account', builder: (context, state) => const AccountPage()),
+    // 账号设置页（从设置导航页进入）。需注册在 /settings/:category 之前，
+    // 否则会被分类路由捕获。
+    GoRoute(
+      path: '/settings/account',
+      builder: (context, state) => const AccountSettingsPage(),
+    ),
     // 设置分类详情页（从设置导航页进入）。压在根 Navigator 上，
     // 避免 StatefulShellBranch 嵌套 Navigator 导致预测返回动画失效。
     GoRoute(

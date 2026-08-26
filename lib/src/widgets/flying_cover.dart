@@ -215,6 +215,10 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
             final pos = _bezier(t);
             final scale = _scale(t);
             final opacity = _fading ? (1 - _fadeCtrl.value) : 1.0;
+            // 圆角过渡：从列表行圆角渐变到圆形（半径 = 边长一半），到达底栏时
+            // 与圆形封面无缝衔接，避免圆角矩形与圆形封面重叠。
+            final radius = widget.radius +
+                (widget.fromRect.width / 2 - widget.radius) * t;
             return Transform.translate(
               offset: pos,
               child: Transform.scale(
@@ -231,7 +235,7 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
                       thumbPath: widget.thumbPath,
                       width: widget.fromRect.width,
                       height: widget.fromRect.height,
-                      radius: widget.radius,
+                      radius: radius,
                     ),
                   ),
                 ),

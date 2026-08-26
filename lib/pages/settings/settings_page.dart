@@ -17,6 +17,17 @@ class SettingsPage extends ConsumerWidget {
   /// 分组：标题 -> 分类条目。每个条目的 path 指向分类详情页或既有页面。
   static const _groups = <(String, List<_CategoryEntry>)>[
     (
+      '账号',
+      [
+        _CategoryEntry(
+          '账号',
+          Icons.account_circle_outlined,
+          '服务端设置、手动同步、自动同步',
+          '/settings/account',
+        ),
+      ],
+    ),
+    (
       '偏好',
       [
         _CategoryEntry('常规', Icons.tune, '语言、反馈、存储', '/settings/general'),

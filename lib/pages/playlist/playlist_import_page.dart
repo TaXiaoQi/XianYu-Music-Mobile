@@ -683,17 +683,31 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       );
 
       // 分页拉取歌单全部曲目（安全上限 50 页）。
+      // 以插件返回的 isEnd 判断是否还有下一页，避免按返回数量猜页大小（如每页 20 首）
+      // 导致提前截断丢歌；同时按 songmid|标题|歌手 去重，兼容忽略 page 参数每页返回同一批的插件。
       final songs = <ImportedSong>[];
+      final seen = <String>{};
       var page = 1;
+      var maxPageSize = 0;
+      final total = sheet.trackCount ?? 0;
       while (page <= 50) {
-        final results =
-            await catalog.getMusicSheetInfo(source, sheet.raw, page: page);
+        final result = await catalog.getMusicSheetInfoWithEnd(
+            source, sheet.raw, page: page);
+        final results = result.songs;
         if (results.isEmpty) break;
-        songs.addAll(results
+        final fresh = results.where((r) {
+          final key = '${r.songmid}|${r.name}|${r.singer}';
+          return seen.add(key);
+        }).toList();
+        if (fresh.isEmpty) break;
+        songs.addAll(fresh
             .map((r) =>
                 importedSongFromQueueItem(PluginCatalogService.toQueueItem(source, r)))
             .toList());
-        if (results.length < 30) break;
+        if (result.isEnd == true) break;
+        if (total > 0 && songs.length >= total) break;
+        if (results.length > maxPageSize) maxPageSize = results.length;
+        if (results.length < maxPageSize) break;
         page++;
       }
 

@@ -174,19 +174,33 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             _showLyrics = true;
                           });
                         },
-                        child: Hero(
-                          tag: 'player-cover',
-                          flightShuttleBuilder:
-                              (ctx, animation, direction, fromCtx, toCtx) {
-                            return CoverHeroShuttle(
-                              animation: animation,
-                              songPath: current?.path ?? '',
-                              networkUrl: current?.coverUrl,
-                              fromRadius: 23,
-                              toRadius: 31,
-                            );
-                          },
-                          child: _BigCover(current: current),
+                        child: Center(
+                          child: Hero(
+                            tag: 'player-cover',
+                            flightShuttleBuilder: (ctx, animation, direction,
+                                fromCtx, toCtx) {
+                              return PlayerCoverShuttle(
+                                animation: animation,
+                                songPath: current?.path ?? '',
+                                networkUrl: current?.coverUrl,
+                                fromRadius: 23,
+                                toRadius: 31,
+                                borderColor:
+                                    Colors.white.withValues(alpha: 0.18),
+                                shadow: BoxShadow(
+                                  color: scheme.primary
+                                      .withValues(alpha: 0.28),
+                                  blurRadius: 36,
+                                  spreadRadius: 2,
+                                ),
+                                gradient: [
+                                  scheme.primary,
+                                  scheme.primary.withValues(alpha: 0.72),
+                                ],
+                              );
+                            },
+                            child: _BigCover(current: current),
+                          ),
                         ),
                       ),
                       const Spacer(),
@@ -449,24 +463,37 @@ class _TraditionalPlayerLayoutState
           children: [
             // 封面略下移，与顶部切换 tab 留出呼吸间距
             const SizedBox(height: 14),
-            Hero(
-              tag: 'player-cover',
-              flightShuttleBuilder:
-                  (ctx, animation, direction, fromCtx, toCtx) {
-                return CoverHeroShuttle(
-                  animation: animation,
-                  songPath: widget.current?.path ?? '',
-                  networkUrl: widget.current?.coverUrl,
-                  fromRadius: 23,
-                  toRadius: 23,
-                );
-              },
-              child: _TraditionalCover(
-                size: coverSize,
-                current: widget.current,
-                eq: _eq,
-                flash: _flashOn,
-                playing: widget.player.isPlaying,
+            Center(
+              child: Hero(
+                tag: 'player-cover',
+                flightShuttleBuilder:
+                    (ctx, animation, direction, fromCtx, toCtx) {
+                  final scheme = Theme.of(context).colorScheme;
+                  return PlayerCoverShuttle(
+                    animation: animation,
+                    songPath: widget.current?.path ?? '',
+                    networkUrl: widget.current?.coverUrl,
+                    fromRadius: 23,
+                    toRadius: 23,
+                    borderColor: Colors.white.withValues(alpha: 0.14),
+                    shadow: BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10),
+                    ),
+                    gradient: [
+                      scheme.primary,
+                      scheme.primary.withValues(alpha: 0.72),
+                    ],
+                  );
+                },
+                child: _TraditionalCover(
+                  size: coverSize,
+                  current: widget.current,
+                  eq: _eq,
+                  flash: _flashOn,
+                  playing: widget.player.isPlaying,
+                ),
               ),
             ),
             // 歌名/作者/收藏信息条：与封面拉开，整体下放
@@ -1054,70 +1081,68 @@ class _TraditionalCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.14),
-            width: 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 28,
-              offset: const Offset(0, 10),
-            ),
-          ],
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.14),
+          width: 1.0,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(23),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (current == null)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(23),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        scheme.primary,
-                        scheme.primary.withValues(alpha: 0.72),
-                      ],
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.music_note,
-                    size: size * 0.3,
-                    color: Colors.white.withValues(alpha: 0.92),
-                  ),
-                )
-              else
-                CoverImage(
-                  songPath: current!.path,
-                  networkUrl: current!.coverUrl,
-                  width: size,
-                  height: size,
-                  radius: 23,
-                  gradient: [
-                    scheme.primary,
-                    scheme.primary.withValues(alpha: 0.72),
-                  ],
-                ),
-              if (flash && playing)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _EqStrip(eq: eq),
-                ),
-            ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
           ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (current == null)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(23),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      scheme.primary,
+                      scheme.primary.withValues(alpha: 0.72),
+                    ],
+                  ),
+                ),
+                child: Icon(
+                  Icons.music_note,
+                  size: size * 0.3,
+                  color: Colors.white.withValues(alpha: 0.92),
+                ),
+              )
+            else
+              CoverImage(
+                songPath: current!.path,
+                networkUrl: current!.coverUrl,
+                width: size,
+                height: size,
+                radius: 23,
+                gradient: [
+                  scheme.primary,
+                  scheme.primary.withValues(alpha: 0.72),
+                ],
+              ),
+            if (flash && playing)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _EqStrip(eq: eq),
+              ),
+          ],
         ),
       ),
     );
@@ -1392,41 +1417,39 @@ class _BigCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.of(context).size.width * 0.68;
-    return Center(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.18),
-            width: 1.0,
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.18),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.28),
+            blurRadius: 36,
+            spreadRadius: 2,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: scheme.primary.withValues(alpha: 0.28),
-              blurRadius: 36,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(31),
-          clipBehavior: Clip.antiAlias,
-          child: current == null
-              ? _placeholder(scheme, size)
-              : CoverImage(
-                  songPath: current!.path,
-                  networkUrl: current!.coverUrl,
-                  width: size,
-                  height: size,
-                  radius: 31,
-                  gradient: [
-                    scheme.primary,
-                    scheme.primary.withValues(alpha: 0.72),
-                  ],
-                ),
-        ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(31),
+        clipBehavior: Clip.antiAlias,
+        child: current == null
+            ? _placeholder(scheme, size)
+            : CoverImage(
+                songPath: current!.path,
+                networkUrl: current!.coverUrl,
+                width: size,
+                height: size,
+                radius: 31,
+                gradient: [
+                  scheme.primary,
+                  scheme.primary.withValues(alpha: 0.72),
+                ],
+              ),
       ),
     );
   }
