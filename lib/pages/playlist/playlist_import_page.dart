@@ -164,6 +164,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
               title: s.title,
               artist: s.artist,
               duration: s.duration,
+              coverThumbPath: s.coverThumbPath,
             ))
         .toList();
   }

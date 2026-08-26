@@ -31,104 +31,6 @@ class AccountSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
-  final _baseUrlCtrl = TextEditingController();
-  final _secretCtrl = TextEditingController();
-  bool _secretVisible = false;
-  bool _secretFocused = false;
-  String _initialBaseUrl = defaultAuthBaseUrl;
-  String _initialSecret = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadServerConfig();
-  }
-
-  @override
-  void dispose() {
-    _baseUrlCtrl.dispose();
-    _secretCtrl.dispose();
-    super.dispose();
-  }
-
-  /// 读取 auth 目录下已保存的服务器配置（base_url / api_secret）。
-  Future<void> _loadServerConfig() async {
-    final dir = await ref.read(appDataDirProvider.future);
-    String baseUrl = defaultAuthBaseUrl;
-    String secret = '';
-    try {
-      final baseUrlFile = File('$dir/auth/base_url.txt');
-      if (await baseUrlFile.exists()) {
-        final c = (await baseUrlFile.readAsString()).trim();
-        if (c.isNotEmpty) baseUrl = c;
-      }
-      final secretFile = File('$dir/auth/api_secret.txt');
-      if (await secretFile.exists()) {
-        final c = (await secretFile.readAsString()).trim();
-        // 文件里存的是默认密钥时视为「未自定义」，输入框留空。
-        if (c.isNotEmpty && c != defaultAuthApiSecret) secret = c;
-      }
-    } catch (_) {
-      // 读取失败沿用默认值。
-    }
-    if (!mounted) return;
-    setState(() {
-      _initialBaseUrl = baseUrl;
-      _initialSecret = secret;
-      _baseUrlCtrl.text = baseUrl;
-      _secretCtrl.text = secret;
-    });
-  }
-
-  bool get _isDirty {
-    final baseUrl = _baseUrlCtrl.text.trim();
-    final secret = _secretCtrl.text.trim();
-    return baseUrl != _initialBaseUrl || secret != _initialSecret;
-  }
-
-  Future<void> _saveServerConfig() async {
-    final dir = await ref.read(appDataDirProvider.future);
-    final baseUrl = _baseUrlCtrl.text.trim();
-    final secret = _secretCtrl.text.trim();
-    try {
-      await rust.authSetBaseUrl(
-        dataDir: dir,
-        baseUrl: baseUrl.isEmpty ? defaultAuthBaseUrl : baseUrl,
-      );
-      await rust.authSetApiSecret(dataDir: dir, apiSecret: secret);
-      if (!mounted) return;
-      setState(() {
-        _initialBaseUrl = baseUrl.isEmpty ? defaultAuthBaseUrl : baseUrl;
-        _initialSecret = secret;
-      });
-      showXianYuToast(context, '后端连接配置已更新');
-    } catch (_) {
-      if (!mounted) return;
-      showXianYuToast(context, '后端连接配置保存失败，请重试');
-    }
-  }
-
-  Future<void> _resetServerConfig() async {
-    final dir = await ref.read(appDataDirProvider.future);
-    setState(() {
-      _baseUrlCtrl.text = defaultAuthBaseUrl;
-      _secretCtrl.text = '';
-    });
-    try {
-      await rust.authSetBaseUrl(dataDir: dir, baseUrl: defaultAuthBaseUrl);
-      await rust.authSetApiSecret(dataDir: dir, apiSecret: '');
-      if (!mounted) return;
-      setState(() {
-        _initialBaseUrl = defaultAuthBaseUrl;
-        _initialSecret = '';
-      });
-      showXianYuToast(context, '已恢复默认后端连接配置');
-    } catch (_) {
-      if (!mounted) return;
-      showXianYuToast(context, '默认后端连接配置保存失败，请重试');
-    }
-  }
-
   Future<void> _confirmLogout() async {
     final ok = await showPredictiveDialog<bool>(
       context: context,
@@ -154,7 +56,8 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authProvider);
+    // 仅订阅 user 字段：loading/error/sessionExpired 等变化不重建整页。
+    final user = ref.watch(authProvider.select((s) => s.user));
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       body: Stack(
@@ -170,26 +73,15 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
               // 1. 账号状态
               _sectionTitle(context, '账号状态'),
               _AccountStatusCard(
-                user: auth.user,
+                user: user,
                 onManage: () => context.push('/account'),
-                onLogout: auth.isLoggedIn ? _confirmLogout : null,
+                onLogout: user != null ? _confirmLogout : null,
               ),
               const SizedBox(height: 24),
 
               // 2. 服务端设置
               _sectionTitle(context, '服务端设置'),
-              _ServerConfigCard(
-                baseUrlCtrl: _baseUrlCtrl,
-                secretCtrl: _secretCtrl,
-                secretVisible: _secretVisible,
-                secretFocused: _secretFocused,
-                isDirty: _isDirty,
-                onSecretVisibility: () =>
-                    setState(() => _secretVisible = !_secretVisible),
-                onSecretFocus: (v) => setState(() => _secretFocused = v),
-                onSave: _saveServerConfig,
-                onReset: _resetServerConfig,
-              ),
+              const _ServerConfigCard(),
               const SizedBox(height: 24),
 
               // 3. 上传
@@ -198,14 +90,14 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
               const SizedBox(height: 24),
 
               // 4. 手动同步
-              if (auth.isLoggedIn) ...[
+              if (user != null) ...[
                 _sectionTitle(context, '手动同步'),
                 _ManualSyncCard(),
                 const SizedBox(height: 24),
               ],
 
               // 5. 自动同步
-              if (auth.isLoggedIn) ...[
+              if (user != null) ...[
                 _sectionTitle(context, '自动同步'),
                 _AutoSyncCard(),
                 const SizedBox(height: 28),
@@ -376,28 +268,120 @@ class _AccountStatusCard extends ConsumerWidget {
 }
 
 /// 服务端设置卡片：服务器 API + 密钥输入框 + 保存/恢复默认。
-class _ServerConfigCard extends StatelessWidget {
-  const _ServerConfigCard({
-    required this.baseUrlCtrl,
-    required this.secretCtrl,
-    required this.secretVisible,
-    required this.secretFocused,
-    required this.isDirty,
-    required this.onSecretVisibility,
-    required this.onSecretFocus,
-    required this.onSave,
-    required this.onReset,
-  });
+///
+/// 状态（输入框、密钥可见性、脏状态）全部内聚在本卡片内，输入时只重建
+/// 本卡片，不触发整页重建。
+class _ServerConfigCard extends ConsumerStatefulWidget {
+  const _ServerConfigCard();
 
-  final TextEditingController baseUrlCtrl;
-  final TextEditingController secretCtrl;
-  final bool secretVisible;
-  final bool secretFocused;
-  final bool isDirty;
-  final VoidCallback onSecretVisibility;
-  final ValueChanged<bool> onSecretFocus;
-  final VoidCallback onSave;
-  final VoidCallback onReset;
+  @override
+  ConsumerState<_ServerConfigCard> createState() => _ServerConfigCardState();
+}
+
+class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
+  final _baseUrlCtrl = TextEditingController();
+  final _secretCtrl = TextEditingController();
+  String _initialBaseUrl = defaultAuthBaseUrl;
+  String _initialSecret = '';
+  bool _secretVisible = false;
+  bool _secretFocused = false;
+
+  bool get _dirty =>
+      _baseUrlCtrl.text.trim() != _initialBaseUrl ||
+      _secretCtrl.text.trim() != _initialSecret;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServerConfig();
+    _baseUrlCtrl.addListener(_onConfigChanged);
+    _secretCtrl.addListener(_onConfigChanged);
+  }
+
+  @override
+  void dispose() {
+    _baseUrlCtrl.removeListener(_onConfigChanged);
+    _secretCtrl.removeListener(_onConfigChanged);
+    _baseUrlCtrl.dispose();
+    _secretCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onConfigChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 读取 auth 目录下已保存的服务器配置（base_url / api_secret）。
+  Future<void> _loadServerConfig() async {
+    final dir = await ref.read(appDataDirProvider.future);
+    String baseUrl = defaultAuthBaseUrl;
+    String secret = '';
+    try {
+      final baseUrlFile = File('$dir/auth/base_url.txt');
+      if (await baseUrlFile.exists()) {
+        final c = (await baseUrlFile.readAsString()).trim();
+        if (c.isNotEmpty) baseUrl = c;
+      }
+      final secretFile = File('$dir/auth/api_secret.txt');
+      if (await secretFile.exists()) {
+        final c = (await secretFile.readAsString()).trim();
+        // 文件里存的是默认密钥时视为「未自定义」，输入框留空。
+        if (c.isNotEmpty && c != defaultAuthApiSecret) secret = c;
+      }
+    } catch (_) {
+      // 读取失败沿用默认值。
+    }
+    if (!mounted) return;
+    setState(() {
+      _initialBaseUrl = baseUrl;
+      _initialSecret = secret;
+      _baseUrlCtrl.text = baseUrl;
+      _secretCtrl.text = secret;
+    });
+  }
+
+  Future<void> _saveServerConfig() async {
+    final dir = await ref.read(appDataDirProvider.future);
+    final baseUrl = _baseUrlCtrl.text.trim();
+    final secret = _secretCtrl.text.trim();
+    try {
+      await rust.authSetBaseUrl(
+        dataDir: dir,
+        baseUrl: baseUrl.isEmpty ? defaultAuthBaseUrl : baseUrl,
+      );
+      await rust.authSetApiSecret(dataDir: dir, apiSecret: secret);
+      if (!mounted) return;
+      setState(() {
+        _initialBaseUrl = baseUrl.isEmpty ? defaultAuthBaseUrl : baseUrl;
+        _initialSecret = secret;
+      });
+      showXianYuToast(context, '后端连接配置已更新');
+    } catch (_) {
+      if (!mounted) return;
+      showXianYuToast(context, '后端连接配置保存失败，请重试');
+    }
+  }
+
+  Future<void> _resetServerConfig() async {
+    final dir = await ref.read(appDataDirProvider.future);
+    setState(() {
+      _baseUrlCtrl.text = defaultAuthBaseUrl;
+      _secretCtrl.text = '';
+    });
+    try {
+      await rust.authSetBaseUrl(dataDir: dir, baseUrl: defaultAuthBaseUrl);
+      await rust.authSetApiSecret(dataDir: dir, apiSecret: '');
+      if (!mounted) return;
+      setState(() {
+        _initialBaseUrl = defaultAuthBaseUrl;
+        _initialSecret = '';
+      });
+      showXianYuToast(context, '已恢复默认后端连接配置');
+    } catch (_) {
+      if (!mounted) return;
+      showXianYuToast(context, '默认后端连接配置保存失败，请重试');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -417,7 +401,7 @@ class _ServerConfigCard extends StatelessWidget {
           _label(context, '服务器 API'),
           const SizedBox(height: 6),
           TextField(
-            controller: baseUrlCtrl,
+            controller: _baseUrlCtrl,
             autocorrect: false,
             keyboardType: TextInputType.url,
             decoration: _inputDecoration(context,
@@ -427,24 +411,25 @@ class _ServerConfigCard extends StatelessWidget {
           _label(context, '服务器密钥'),
           const SizedBox(height: 6),
           Focus(
-            onFocusChange: onSecretFocus,
+            onFocusChange: (v) => setState(() => _secretFocused = v),
             child: TextField(
-              controller: secretCtrl,
-              obscureText: !secretVisible,
+              controller: _secretCtrl,
+              obscureText: !_secretVisible,
               autocorrect: false,
               enableSuggestions: false,
               decoration: _inputDecoration(context,
                   hint: 'API 签名密钥',
-                  suffixIcon: (secretFocused && secretCtrl.text.isNotEmpty)
+                  suffixIcon: (_secretFocused && _secretCtrl.text.isNotEmpty)
                       ? IconButton(
                           icon: Icon(
-                            secretVisible
+                            _secretVisible
                                 ? Icons.visibility_off
                                 : Icons.visibility,
                             size: 20,
                             color: scheme.onSurfaceVariant,
                           ),
-                          onPressed: onSecretVisibility,
+                          onPressed: () =>
+                              setState(() => _secretVisible = !_secretVisible),
                         )
                       : null),
             ),
@@ -453,7 +438,7 @@ class _ServerConfigCard extends StatelessWidget {
           Row(
             children: [
               FilledButton(
-                onPressed: isDirty ? onSave : null,
+                onPressed: _dirty ? _saveServerConfig : null,
                 style: FilledButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -462,7 +447,7 @@ class _ServerConfigCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               OutlinedButton(
-                onPressed: onReset,
+                onPressed: _resetServerConfig,
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -530,9 +515,9 @@ class _UploadConfigCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(syncProvider);
+    // 仅订阅 uploadConfig：同步状态变化不重建本卡。
+    final config = ref.watch(syncProvider.select((s) => s.uploadConfig));
     final notifier = ref.read(syncProvider.notifier);
-    final config = syncState.uploadConfig;
 
     return _GlassCard(
       children: [
@@ -575,32 +560,38 @@ class _ManualSyncCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(syncProvider);
+    // 仅订阅 4 个同步条目状态：uploadConfig/autoSyncConfig 变化不重建本卡。
+    final sync = ref.watch(syncProvider.select((s) => (
+          s.playlistSync,
+          s.favoritesSync,
+          s.pluginSync,
+          s.settingsSync,
+        )));
     final notifier = ref.read(syncProvider.notifier);
 
     return _GlassCard(
       children: [
         _SyncActionTile(
           title: '歌单',
-          state: syncState.playlistSync,
+          state: sync.$1,
           onUpload: notifier.syncPlaylistsUpload,
           onDownload: notifier.syncPlaylistsDownload,
         ),
         _SyncActionTile(
           title: '收藏',
-          state: syncState.favoritesSync,
+          state: sync.$2,
           onUpload: notifier.syncFavoritesUpload,
           onDownload: notifier.syncFavoritesDownload,
         ),
         _SyncActionTile(
           title: '插件',
-          state: syncState.pluginSync,
+          state: sync.$3,
           onUpload: notifier.syncPluginsUpload,
           onDownload: notifier.syncPluginsDownload,
         ),
         _SyncActionTile(
           title: '设置',
-          state: syncState.settingsSync,
+          state: sync.$4,
           onUpload: notifier.syncSettingsUpload,
           onDownload: notifier.syncSettingsDownload,
         ),
@@ -615,9 +606,9 @@ class _AutoSyncCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(syncProvider);
+    // 仅订阅 autoSyncConfig：同步状态变化不重建本卡。
+    final config = ref.watch(syncProvider.select((s) => s.autoSyncConfig));
     final notifier = ref.read(syncProvider.notifier);
-    final config = syncState.autoSyncConfig;
 
     return _GlassCard(
       children: [

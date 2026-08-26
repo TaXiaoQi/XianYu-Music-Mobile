@@ -738,7 +738,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ??
           const AppSettings())
-      .copyWith(liquidGlass: v, frostedGlass: v ? false : null));
+      .copyWith(
+    liquidGlass: v,
+    frostedGlass: v ? false : null,
+    // 打开液态玻璃时同步打开悬浮底栏（液态玻璃材质作用于悬浮底栏）；
+    // 关闭液态玻璃不联动，保留用户当前的底栏样式。
+    floatingNavBar: v ? true : null,
+  ));
   Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(frostedGlass: v, liquidGlass: v ? false : null));

@@ -528,6 +528,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               artist: s.artist,
               album: s.album,
               duration: s.duration,
+              coverThumbPath: s.coverThumbPath,
               localPath: s.path,
               path: s.path,
             ))

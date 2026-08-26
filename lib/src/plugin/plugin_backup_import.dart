@@ -16,6 +16,7 @@ class ImportedSong {
   final String album;
   final int duration; // 秒
   final String? coverUrl;
+  final String? coverThumbPath; // 本地内嵌封面缩略图路径（扫描期回写）
   final String? localPath; // 本地文件路径
   final String? pluginId; // 在线插件 ID
   final String? source; // 插件内音源 key（lx）或平台标识
@@ -29,6 +30,7 @@ class ImportedSong {
     required this.album,
     required this.duration,
     this.coverUrl,
+    this.coverThumbPath,
     this.localPath,
     this.pluginId,
     this.source,
@@ -45,6 +47,7 @@ class ImportedSong {
         'album': album,
         'duration': duration,
         'coverUrl': coverUrl,
+        'coverThumbPath': coverThumbPath,
         'localPath': localPath,
         'pluginId': pluginId,
         'source': source,
@@ -59,6 +62,7 @@ class ImportedSong {
         album: j['album'] as String? ?? '',
         duration: (j['duration'] as num?)?.toInt() ?? 0,
         coverUrl: j['coverUrl'] as String?,
+        coverThumbPath: j['coverThumbPath'] as String?,
         localPath: j['localPath'] as String?,
         pluginId: j['pluginId'] as String?,
         source: j['source'] as String?,
@@ -979,7 +983,13 @@ PreparedPluginBackupImport preparePluginBackupImport(
 // 每行文件路径创建本地歌曲，跨设备失效路径按「标题|歌手」匹配本地曲库。
 
 /// 本地曲库歌曲引用（供 M3U/TXT 导入时把跨设备失效路径匹配回本地）。
-typedef LocalSongRef = ({String path, String title, String artist, int duration});
+typedef LocalSongRef = ({
+  String path,
+  String title,
+  String artist,
+  int duration,
+  String? coverThumbPath,
+});
 
 final RegExp _audioExtRegex = RegExp(
   r'\.(flac|mp3|wav|ape|ogg|opus|m4a|aac|wv|dsf|dff|webm|mp4)$',
@@ -1117,6 +1127,7 @@ ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
       artist: song.artist,
       album: song.album,
       duration: song.duration,
+      coverThumbPath: c.coverThumbPath,
       localPath: c.path,
       path: c.path,
     );
@@ -1137,6 +1148,7 @@ ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
         artist: song.artist,
         album: song.album,
         duration: song.duration,
+        coverThumbPath: best.coverThumbPath,
         localPath: best.path,
         path: best.path,
       );

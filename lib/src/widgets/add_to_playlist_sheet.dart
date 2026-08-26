@@ -37,6 +37,7 @@ ImportedSong importedSongFromQueueItem(QueueItem item) {
     album: item.album,
     duration: (item.durationMs ~/ 1000),
     coverUrl: item.coverUrl,
+    coverThumbPath: item.coverPath,
     localPath: isLocal ? item.path : null,
     pluginId: pluginId,
     source: source,
@@ -52,6 +53,7 @@ ImportedSong importedSongFromLocal(Song song) => ImportedSong(
       artist: song.artist,
       album: song.album,
       duration: song.duration,
+      coverThumbPath: song.coverThumbPath,
       localPath: song.path,
       path: song.path,
     );

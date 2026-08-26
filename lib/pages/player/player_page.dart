@@ -393,6 +393,9 @@ class _TraditionalPlayerLayoutState
                 // 4 个动作控件（音效/闪/下载/评论）：不跟封面走，挂在底部播放条上
                 _buildActionsRow(context),
                 const SizedBox(height: 4),
+                // 四大控件（含最右的桌面歌词「词」按钮）位于进度条上方。
+                _Controls(player: player, notifier: widget.notifier),
+                const SizedBox(height: 4),
                 // 进度条（独立图层，tick 不重绘整页）
                 RepaintBoundary(
                   child: Padding(
@@ -400,7 +403,6 @@ class _TraditionalPlayerLayoutState
                     child: _ProgressBar(player: player, notifier: widget.notifier),
                   ),
                 ),
-                _Controls(player: player, notifier: widget.notifier),
                 // 底部留白：底部整块 UI 再上移一格，避免贴底
                 const SizedBox(height: 32),
               ],
@@ -1527,12 +1529,13 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 14),
+                // 四大控件（含最右的桌面歌词「词」按钮）位于进度条上方。
+                _Controls(player: player, notifier: notifier),
+                const SizedBox(height: 6),
                 // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
                 RepaintBoundary(
                   child: _ProgressBar(player: player, notifier: notifier),
                 ),
-                const SizedBox(height: 6),
-                _Controls(player: player, notifier: notifier),
               ],
             ),
     );
@@ -1852,9 +1855,6 @@ class _ProgressBar extends ConsumerWidget {
     // 不影响上层（顶层已另用 copyWith 免除 position 联动）。
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = player.duration <= 0 ? 1.0 : player.duration;
-    final lyricsEnabled = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
-    );
     return Column(
       children: [
         SliderTheme(
@@ -1883,77 +1883,16 @@ class _ProgressBar extends ConsumerWidget {
                 _fmt(position),
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _fmt(dur),
-                    style:
-                        TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    iconSize: 16,
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 26, minHeight: 26),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: lyricsEnabled ? '关闭悬浮歌词' : '开启悬浮歌词',
-                    icon: Icon(
-                      lyricsEnabled ? Icons.lyrics : Icons.lyrics_outlined,
-                      color: lyricsEnabled
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant,
-                    ),
-                    onPressed: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-                  ),
-                ],
+              Text(
+                _fmt(dur),
+                style:
+                    TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
             ],
           ),
         ),
       ],
     );
-  }
-
-  Future<void> _toggleFloatingLyrics(
-    BuildContext context,
-    WidgetRef ref,
-    bool enabled,
-  ) async {
-    final n = ref.read(settingsProvider.notifier);
-    if (enabled) {
-      await n.setFloatingLyricsEnabled(false);
-      return;
-    }
-    final granted = await FloatingLyricsController.isPermissionGranted();
-    if (!granted) {
-      if (!context.mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('悬浮歌词需要悬浮窗权限'),
-          content: const Text(
-              '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('去授权'),
-            ),
-          ],
-        ),
-      );
-      if (go == true) {
-        await FloatingLyricsController.openPermissionSettings();
-        await n.setFloatingLyricsEnabled(true);
-      }
-      return;
-    }
-    await n.setFloatingLyricsEnabled(true);
   }
 }
 
@@ -1966,6 +1905,9 @@ class _Controls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final icons = [Icons.repeat, Icons.repeat_one, Icons.shuffle];
+    final lyricsEnabled = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+    );
     // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2009,9 +1951,78 @@ class _Controls extends ConsumerWidget {
           ),
           IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next),
           IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref, player)),
+          // 桌面歌词「词」按钮：与四大控件并排、位于最右（对齐桌面端 FooterControlIcon 词字样式）
+          Tooltip(
+            message: '桌面歌词',
+            child: InkWell(
+              onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: lyricsEnabled
+                      ? scheme.primary.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                ),
+                child: Text(
+                  '词',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: lyricsEnabled
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _toggleFloatingLyrics(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) async {
+    final n = ref.read(settingsProvider.notifier);
+    if (enabled) {
+      await n.setFloatingLyricsEnabled(false);
+      return;
+    }
+    final granted = await FloatingLyricsController.isPermissionGranted();
+    if (!granted) {
+      if (!context.mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('悬浮歌词需要悬浮窗权限'),
+          content: const Text(
+              '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('去授权'),
+            ),
+          ],
+        ),
+      );
+      if (go == true) {
+        await FloatingLyricsController.openPermissionSettings();
+        await n.setFloatingLyricsEnabled(true);
+      }
+      return;
+    }
+    await n.setFloatingLyricsEnabled(true);
   }
 
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。

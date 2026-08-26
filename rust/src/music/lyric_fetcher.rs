@@ -73,7 +73,7 @@ pub struct LyricResult {
 
 // ==================== Utility ====================
 
-fn decode_html_entities(s: &str) -> String {
+pub(crate) fn decode_html_entities(s: &str) -> String {
     s.replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")

@@ -5,7 +5,7 @@ use amll_lyric::{
 use regex::Regex;
 use serde::Serialize;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::OnceLock;
 
 const MAX_GROUP_TOLERANCE_MS: u32 = 50;
@@ -128,6 +128,11 @@ pub struct ParsedLine {
     pub source_index: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explicit_role: Option<ExplicitLineRole>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    pub is_bg: bool,
+    pub is_duet: bool,
+    pub is_duet_partner: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -160,6 +165,11 @@ pub struct LyricTrackLine {
     pub slot_index: Option<usize>,
     pub source_format: ParsedLineSourceFormat,
     pub script_profile: LineScriptProfile,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    pub is_bg: bool,
+    pub is_duet: bool,
+    pub is_duet_partner: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -237,6 +247,11 @@ pub struct SemanticLine {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary_texts: Option<Vec<String>>,
     pub confidence: ClassificationConfidence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    pub is_bg: bool,
+    pub is_duet: bool,
+    pub is_duet_partner: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -262,12 +277,36 @@ pub struct LyricLinePayload {
     pub romaji_words: Option<Vec<LyricWordPayload>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secondary: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    pub is_bg: bool,
+    pub is_duet: bool,
+    pub is_duet_partner: bool,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsMeta {
+    pub offset_ms: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub re: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ve: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct StructuredLyricsPayload {
     pub raw_lyrics: String,
+    pub meta: LyricsMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<LyricDocument>,
     pub semantic_lines: Vec<SemanticLine>,
@@ -340,6 +379,626 @@ fn sanitize_line_text(text: &str) -> String {
 
 fn sanitize_word_text(text: &str) -> String {
     text.replace(['\u{200b}', '\u{2063}'], "")
+}
+
+// ==================== 演唱者/和声标注（移植自桌面端 BakaMusic 体系） ====================
+static CREDIT_LINE_RE: OnceLock<Regex> = OnceLock::new();
+static NON_SPEAKER_LABEL_RE: OnceLock<Regex> = OnceLock::new();
+static SPEAKER_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+static PARENTHETICAL_VOCAL_RE: OnceLock<Regex> = OnceLock::new();
+static INLINE_WORD_MARKER_RE: OnceLock<Regex> = OnceLock::new();
+static LQE_LIKE_MARKER_RE: OnceLock<Regex> = OnceLock::new();
+
+/// 制作信息行（作词/作曲/编曲/演唱/混音等），不是可演唱歌词，应排除出主歌词。
+fn is_credit_line(text: &str) -> bool {
+    let re = CREDIT_LINE_RE.get_or_init(|| {
+        Regex::new(r"^(?:(?:作)?词|(?:作)?詞|曲|作曲|编曲|編曲|词曲|詞曲|原唱|演唱|歌手|制作(?:人)?|製作(?:人)?|出品|发行|發行|策划|策劃|统筹|統籌|监制|監製|导演|導演|混音|母带|母帶|录音|錄音|和声|和聲|翻唱|原曲|歌名|歌曲|专辑|專輯|标题|標題|调教|調教|调声|調聲|曲绘|曲繪|曲絵|绘图|繪圖|画师|畫師|视频|視頻|映像|动画|動畫|written\s+by|vocal|lyrics?|lyricist|composer|music|arrange(?:r|ment)?|producer|produced\s+by|mix|master(?:ing)?|recording|staff|pv|mv|movie|video|animation|illustration|illustrator)\s*[:：]").unwrap()
+    });
+    re.is_match(text.trim())
+}
+
+/// 检测演唱者标签前缀（`A:`、`男:`、`v1:` 等），返回 (演唱者名, 去除前缀后的文本)。
+/// 排除制作信息行与 `http:` 等非演唱者标签。
+fn detect_speaker_prefix(text: &str) -> (Option<String>, String) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || is_credit_line(trimmed) {
+        return (None, trimmed.to_string());
+    }
+
+    let re = SPEAKER_PREFIX_RE
+        .get_or_init(|| Regex::new(r"^\s*([^:：\r\n]{1,24}?)\s*[:：]\s*").unwrap());
+    let Some(caps) = re.captures(trimmed) else {
+        return (None, trimmed.to_string());
+    };
+    let name = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+    if name.is_empty() || name.eq_ignore_ascii_case("http") || name.eq_ignore_ascii_case("https") {
+        return (None, trimmed.to_string());
+    }
+
+    let non_speaker = NON_SPEAKER_LABEL_RE.get_or_init(|| {
+        Regex::new(r"^(?:制作|出品|发行|發行|策划|策劃|监制|監製|混音|母带|母帶|录音|錄音|和声|和聲|翻唱|原曲|歌名|歌曲|专辑|專輯|标题|標題|调教|調教|调声|調聲|曲绘|曲繪|曲絵|绘图|繪圖|画师|畫師|视频|視頻|映像|动画|動畫|artist|album|title|producer|produced\s+by|mix|master(?:ing)?|staff|pv|mv|movie|video|animation|illustration|illustrator)$").unwrap()
+    });
+    if non_speaker.is_match(name) {
+        return (None, trimmed.to_string());
+    }
+
+    let consumed = caps.get(0).map(|m| m.len()).unwrap_or(0);
+    let rest = trimmed[consumed..].trim().to_string();
+    (Some(name.to_string()), rest)
+}
+
+/// 整行被 `()` 或 `[]` 整体包裹 → 背景和声行，返回去除包裹后的文本。
+fn strip_whole_wrapped(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let inner = if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        &trimmed[1..trimmed.len() - 1]
+    } else if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        return None;
+    };
+    let inner = inner.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    Some(inner.to_string())
+}
+
+fn contains_kana(text: &str) -> bool {
+    text.chars().any(is_kana_char)
+}
+
+fn contains_hangul(text: &str) -> bool {
+    text.chars().any(is_hangul_char)
+}
+
+/// 判断括号内容是否为和声段（含明确和声标记，或为短内容且非已知标签）。
+fn is_vocal_parenthetical(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    if lower.contains("和声")
+        || lower.contains("伴唱")
+        || lower.contains("合唱")
+        || lower.contains("合声")
+        || lower.contains("backup")
+        || lower.contains("background")
+        || lower.contains("harmony")
+    {
+        return true;
+    }
+    let known_labels = [
+        "翻译", "译文", "注音", "罗马音", "罗马字", "音译", "旁白", "独白", "对白", "白",
+        "男", "女", "合", "主", "伴", "os", "intro", "outro", "间奏", "前奏", "尾奏",
+    ];
+    if trimmed.chars().count() <= 6 && !known_labels.contains(&lower.as_str()) {
+        return true;
+    }
+    false
+}
+
+/// 拆分主行内嵌的括号和声：`主唱 啦啦啦 (和声 哦哦哦)` → (主唱 啦啦啦, 和声 哦哦哦)。
+/// 假名/谚文括号通常是注音，跳过。
+fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> {
+    let re = PARENTHETICAL_VOCAL_RE
+        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    let mut main_parts = Vec::new();
+    let mut duet_parts = Vec::new();
+    let mut last_end = 0usize;
+    let mut found = false;
+
+    for caps in re.captures_iter(text) {
+        let full = caps.get(0).unwrap();
+        let content = caps.get(1).unwrap().as_str().trim();
+        if content.is_empty() {
+            continue;
+        }
+        if !is_vocal_parenthetical(content) {
+            continue;
+        }
+        if contains_kana(content) || contains_hangul(content) {
+            continue;
+        }
+        found = true;
+        main_parts.push(&text[last_end..full.start()]);
+        duet_parts.push(content);
+        last_end = full.end();
+    }
+    if !found {
+        return None;
+    }
+    main_parts.push(&text[last_end..]);
+
+    let main_text = main_parts
+        .concat()
+        .replace('\u{a0}', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let duet_text = duet_parts.join(" ");
+    if main_text.trim().is_empty() || duet_text.trim().is_empty() {
+        return None;
+    }
+    Some((main_text, duet_text))
+}
+
+/// 判断歌词是否呈现对唱/和声证据：存在演唱者标签前缀，或出现多个不同的括号和声段。
+/// 近似 BakaMusic 的"双歌手"门控——无对唱证据时不拆分括号，避免误伤普通括号歌词。
+fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
+    let mut speaker_count = 0;
+    let mut vocal_contents = HashSet::new();
+    let re = PARENTHETICAL_VOCAL_RE
+        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    for line in lines {
+        if line.speaker.is_some() {
+            speaker_count += 1;
+        }
+        for caps in re.captures_iter(&line.text) {
+            let content = caps.get(1).unwrap().as_str().trim();
+            if is_vocal_parenthetical(content)
+                && !contains_kana(content)
+                && !contains_hangul(content)
+            {
+                vocal_contents.insert(content.to_string());
+            }
+        }
+    }
+    speaker_count >= 2 || vocal_contents.len() >= 2
+}
+
+/// 对解析出的行做演唱者/和声标注：整行背景和声、演唱者前缀、括号和声拆分。
+fn annotate_line_vocals(lines: &mut Vec<ParsedLine>) {
+    let mut expanded = Vec::with_capacity(lines.len());
+    for mut line in lines.drain(..) {
+        if let Some(inner) = strip_whole_wrapped(&line.text) {
+            line.is_bg = true;
+            line.text = inner;
+        }
+
+        let (speaker, rest) = detect_speaker_prefix(&line.text);
+        if let Some(speaker) = speaker {
+            line.speaker = Some(speaker);
+            line.text = rest;
+            line.is_duet = true;
+        }
+
+        expanded.push(line);
+    }
+    *lines = expanded;
+
+    // 括号和声拆分仅在歌词存在对唱证据时进行（近似 BakaMusic 的双歌手门控）。
+    if !has_duet_vocal_evidence(lines) {
+        return;
+    }
+    let mut split = Vec::with_capacity(lines.len());
+    for mut line in lines.drain(..) {
+        if !line.is_bg {
+            if let Some((main_text, duet_text)) = split_parenthetical_vocal(&line.text) {
+                line.text = main_text;
+                let mut partner = line.clone();
+                partner.text = duet_text;
+                partner.is_bg = true;
+                partner.is_duet_partner = true;
+                partner.is_duet = false;
+                partner.speaker = None;
+                split.push(line);
+                split.push(partner);
+                continue;
+            }
+        }
+        split.push(line);
+    }
+    *lines = split;
+}
+
+/// 解析 LRC 头部元数据标签：`[offset:±ms]`、`[ti:标题]`、`[ar:歌手]`、`[al:专辑]`、
+/// `[by:编辑者]`、`[re:制作]`、`[ve:版本]`。`offset` 为正表示歌词整体延后，负表示提前。
+fn extract_lyrics_meta(raw: &str) -> LyricsMeta {
+    let mut meta = LyricsMeta::default();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('[') {
+            continue;
+        }
+        let Some(close) = trimmed.find(']') else {
+            continue;
+        };
+        let tag = &trimmed[1..close];
+        let value = trimmed[close + 1..].trim();
+        let lower = tag.to_ascii_lowercase();
+        if let Some(offset) = lower.strip_prefix("offset:") {
+            if let Ok(ms) = offset.trim().parse::<i64>() {
+                meta.offset_ms = ms;
+            }
+        } else if let Some(title) = lower.strip_prefix("ti:") {
+            if !title.trim().is_empty() {
+                meta.title = Some(value.to_string());
+            }
+        } else if let Some(artist) = lower.strip_prefix("ar:") {
+            if !artist.trim().is_empty() {
+                meta.artist = Some(value.to_string());
+            }
+        } else if let Some(album) = lower.strip_prefix("al:") {
+            if !album.trim().is_empty() {
+                meta.album = Some(value.to_string());
+            }
+        } else if let Some(by) = lower.strip_prefix("by:") {
+            if !by.trim().is_empty() {
+                meta.by = Some(value.to_string());
+            }
+        } else if let Some(re) = lower.strip_prefix("re:") {
+            if !re.trim().is_empty() {
+                meta.re = Some(value.to_string());
+            }
+        } else if let Some(ve) = lower.strip_prefix("ve:") {
+            if !ve.trim().is_empty() {
+                meta.ve = Some(value.to_string());
+            }
+        }
+    }
+    meta
+}
+
+/// 对解析出的行应用 `[offset:]` 时间偏移（含逐字词时间）。
+fn apply_lyrics_offset(lines: &mut [ParsedLine], offset_ms: i64) {
+    if offset_ms == 0 {
+        return;
+    }
+    for line in lines.iter_mut() {
+        line.start_ms = (line.start_ms as i64 + offset_ms).max(0) as u32;
+        line.end_ms = (line.end_ms as i64 + offset_ms).max(0) as u32;
+        if let Some(words) = &mut line.words {
+            for word in words.iter_mut() {
+                word.start_ms = (word.start_ms as i64 + offset_ms).max(0) as u32;
+                word.end_ms = (word.end_ms as i64 + offset_ms).max(0) as u32;
+            }
+        }
+    }
+}
+
+/// LRC 里的空时间行可能是上一句的收尾标记，也可能只是音源用来和翻译、罗马音
+/// 逐行对齐的占位。只有后面确实接着一段静默（≥4s）时才当作收尾采信，否则上一句
+/// 会在还在演唱时就被截断淡出。空行本身不进入渲染。
+fn finalize_lrc_blank_lines(lines: Vec<ParsedLine>) -> Vec<ParsedLine> {
+    const BLANK_LINE_INTERLUDE_MS: u32 = 4000;
+    let mut meaningful: Vec<ParsedLine> = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        if !line.text.trim().is_empty() {
+            meaningful.push(line.clone());
+            continue;
+        }
+        let Some(previous) = meaningful.last_mut() else {
+            continue;
+        };
+        // 上一句已有显式结束时间（非 LRC 默认 start+5000）则跳过
+        if previous.end_ms != previous.start_ms.saturating_add(5000) {
+            continue;
+        }
+        if line.start_ms <= previous.start_ms {
+            continue;
+        }
+        let next_lyric = lines[index + 1..]
+            .iter()
+            .find(|candidate| !candidate.text.trim().is_empty());
+        if let Some(next) = next_lyric {
+            if next.start_ms.saturating_sub(line.start_ms) < BLANK_LINE_INTERLUDE_MS {
+                continue;
+            }
+        }
+        previous.end_ms = line.start_ms;
+    }
+    meaningful
+}
+
+/// 解析前的文本预处理：统一换行、解码 HTML 实体、还原转义换行、过滤注释行。
+fn preprocess_lyrics_text(raw: &str) -> String {
+    let mut normalized = raw
+        .replace('\u{FEFF}', "")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+
+    normalized = super::lyric_fetcher::decode_html_entities(&normalized);
+
+    // 部分来源（如 JSON 内嵌歌词）会把多行用字面量 \n 拼在单行里，还原为真实换行。
+    normalized = normalized.replace("\\n", "\n");
+
+    // 过滤注释行：以 //、#、; 开头且不含时间戳的行属于注释/说明，直接丢弃。
+    // # 开头的十六进制颜色（如 #ffffff）不视为注释。
+    let mut filtered = String::with_capacity(normalized.len());
+    for line in normalized.split('\n') {
+        let trimmed = line.trim_start();
+        let is_hex_color = trimmed
+            .strip_prefix('#')
+            .is_some_and(|rest| {
+                (rest.len() == 3 || rest.len() == 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
+            });
+        let is_comment = trimmed.starts_with("//")
+            || (trimmed.starts_with('#') && !is_hex_color && !trimmed.contains('['))
+            || (trimmed.starts_with(';') && !trimmed.contains('['));
+        if is_comment {
+            continue;
+        }
+        filtered.push_str(line);
+        filtered.push('\n');
+    }
+    filtered
+}
+
+/// 纯文本兜底：无任何时间戳时，按非空文本行合成均匀时间戳（每行 3 秒）。
+fn synthesize_plain_text_lines(raw: &str) -> Vec<ParsedLine> {
+    let mut lines = Vec::new();
+    let mut start_ms = 0u32;
+    for (index, line) in raw.lines().enumerate() {
+        let trimmed = sanitize_line_text(line);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let (explicit_role, text) = detect_explicit_role(&trimmed);
+        if text.is_empty() {
+            continue;
+        }
+        lines.push(ParsedLine {
+            start_ms,
+            end_ms: start_ms.saturating_add(3000),
+            text,
+            words: None,
+            translated_text: None,
+            roman_text: None,
+            source_format: ParsedLineSourceFormat::Lrc,
+            source_index: index as f64,
+            explicit_role,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
+        });
+        start_ms = start_ms.saturating_add(3000);
+    }
+    lines
+}
+
+/// 网易云逐字歌词 JSON 格式：`[{"t":1234,"c":[{"tx":"你"},{"tx":"好"}]}, ...]`。
+/// 每行含 `t`（起始毫秒）、`c`（逐字数组，`tx` 为文本），部分行带 `x`（结束毫秒）。
+fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
+    let value: serde_json::Value = match serde_json::from_str(raw.trim()) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let serde_json::Value::Array(lines) = value else {
+        return Vec::new();
+    };
+
+    let mut result = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Some(start_ms) = line.get("t").and_then(|v| v.as_i64()) else {
+            continue;
+        };
+        let Some(chars) = line.get("c").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        if chars.is_empty() {
+            continue;
+        }
+
+        let mut words = Vec::new();
+        let mut text = String::new();
+        for char_obj in chars {
+            let Some(tx) = char_obj.get("tx").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if tx.is_empty() {
+                continue;
+            }
+            text.push_str(tx);
+            words.push(ParsedWord {
+                text: tx.to_string(),
+                start_ms: start_ms.max(0) as u32,
+                end_ms: start_ms.max(0) as u32,
+                roman_text: None,
+            });
+        }
+        if text.trim().is_empty() {
+            continue;
+        }
+
+        let end_ms = line
+            .get("x")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.max(0) as u32)
+            .unwrap_or(start_ms.max(0) as u32);
+        let (explicit_role, normalized_text) = detect_explicit_role(&text);
+        result.push(ParsedLine {
+            start_ms: start_ms.max(0) as u32,
+            end_ms: end_ms.max(start_ms.max(0) as u32),
+            text: normalized_text,
+            words: Some(words),
+            translated_text: None,
+            roman_text: None,
+            source_format: ParsedLineSourceFormat::Yrc,
+            source_index: index as f64,
+            explicit_role,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
+        });
+    }
+    result
+}
+
+/// 网易云 JSON 单行：`{"t":1234,"c":[{"tx":"你"},{"tx":"好"}]}`。
+/// 出现在 LRC 文件内混排时按逐字行解析；无 `x` 结束时间时按行起始 + 500ms 兜底。
+fn parse_netease_json_single_line(line: &str, source_index: usize) -> Option<ParsedLine> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let start_ms = value.get("t").and_then(|v| v.as_i64())?;
+    let chars = value.get("c").and_then(|v| v.as_array())?;
+    if chars.is_empty() {
+        return None;
+    }
+
+    let mut words = Vec::new();
+    let mut text = String::new();
+    for char_obj in chars {
+        let Some(tx) = char_obj.get("tx").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if tx.is_empty() {
+            continue;
+        }
+        text.push_str(tx);
+        words.push(ParsedWord {
+            text: tx.to_string(),
+            start_ms: start_ms.max(0) as u32,
+            end_ms: start_ms.max(0) as u32,
+            roman_text: None,
+        });
+    }
+    if text.trim().is_empty() {
+        return None;
+    }
+
+    let start_ms = start_ms.max(0) as u32;
+    let end_ms = value
+        .get("x")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(0) as u32)
+        .unwrap_or(start_ms.saturating_add(500));
+    let (explicit_role, normalized_text) = detect_explicit_role(&text);
+    Some(ParsedLine {
+        start_ms,
+        end_ms: end_ms.max(start_ms),
+        text: normalized_text,
+        words: Some(words),
+        translated_text: None,
+        roman_text: None,
+        source_format: ParsedLineSourceFormat::Yrc,
+        source_index: source_index as f64,
+        explicit_role,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
+    })
+}
+
+/// 内联逐字 LRC 格式：`[mm:ss.xx]词(start,dur)词(start,dur)...`。
+/// 行首 `[mm:ss.xx]` 为行起始时间，每个词后跟 `(相对毫秒, 时长毫秒[, 额外])` 标记。
+fn parse_inline_word_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine> {
+    let leading = collect_markers(line, '[', ']');
+    let (_, body_start, line_start_ms) = *leading.first()?;
+    let body = &line[body_start..];
+    if !body.contains('(') || !body.contains(')') {
+        return None;
+    }
+
+    let word_re = INLINE_WORD_MARKER_RE
+        .get_or_init(|| Regex::new(r"([^()]*)\((\d+),(\d+)(?:,\d+)?\)").unwrap());
+
+    let mut words = Vec::new();
+    for captures in word_re.captures_iter(body) {
+        let text = sanitize_word_text(&captures[1]);
+        if text.is_empty() {
+            continue;
+        }
+        let relative_start: u32 = captures[2].parse().unwrap_or(0);
+        let duration: u32 = captures[3].parse().unwrap_or(0);
+        let start_ms = line_start_ms.saturating_add(relative_start);
+        words.push(ParsedWord {
+            text,
+            start_ms,
+            end_ms: start_ms.saturating_add(duration),
+            roman_text: None,
+        });
+    }
+
+    if words.is_empty() {
+        return None;
+    }
+
+    let text = sanitize_line_text(
+        &words
+            .iter()
+            .map(|word| word.text.clone())
+            .collect::<String>(),
+    );
+    if text.is_empty() {
+        return None;
+    }
+
+    let (explicit_role, normalized_text) = detect_explicit_role(&text);
+    let first_start = words.first()?.start_ms;
+    let last_end = words.last().map(|word| word.end_ms).unwrap_or(first_start);
+
+    Some(ParsedLine {
+        start_ms: first_start,
+        end_ms: last_end.max(first_start),
+        text: normalized_text,
+        words: Some(words),
+        translated_text: None,
+        roman_text: None,
+        source_format: ParsedLineSourceFormat::Eslrc,
+        source_index: source_index as f64,
+        explicit_role,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
+    })
+}
+
+/// Lyricify Quick Export（LQE）与 LyricifyLines（LYL）共用行格式：`[start,end,type]text`。
+/// start/end 为毫秒，type 为演唱者类型（0 主唱、1 背景等）。头部行（如 `[Lyricify Quick Export]`）不含数字参数，自动跳过。
+fn parse_lqe_like(raw: &str) -> Vec<ParsedLine> {
+    let marker_re = LQE_LIKE_MARKER_RE
+        .get_or_init(|| Regex::new(r"^\[(\d+),(\d+)(?:,(\d+))?\]").unwrap());
+    let mut result = Vec::new();
+    for (index, line) in raw.lines().enumerate() {
+        let trimmed = line.trim();
+        let Some(caps) = marker_re.captures(trimmed) else {
+            continue;
+        };
+        let full = caps.get(0).unwrap();
+        let Some(start) = caps.get(1).and_then(|s| s.as_str().parse::<i64>().ok()) else {
+            continue;
+        };
+        let Some(end) = caps.get(2).and_then(|s| s.as_str().parse::<i64>().ok()) else {
+            continue;
+        };
+        let _vocal_type: i64 = caps
+            .get(3)
+            .and_then(|s| s.as_str().parse().ok())
+            .unwrap_or(0);
+        let text = trimmed[full.end()..].trim();
+        if text.is_empty() {
+            continue;
+        }
+
+        let start_ms = start.max(0) as u32;
+        let end_ms = end.max(start) as u32;
+        let (explicit_role, normalized_text) = detect_explicit_role(text);
+        result.push(ParsedLine {
+            start_ms,
+            end_ms: end_ms.max(start_ms),
+            text: normalized_text,
+            words: None,
+            translated_text: None,
+            roman_text: None,
+            source_format: ParsedLineSourceFormat::Lrc,
+            source_index: index as f64,
+            explicit_role,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
+        });
+    }
+    result
 }
 
 fn consume_square_timestamp_block(source: &str) -> Option<(usize, String)> {
@@ -795,6 +1454,10 @@ fn prepare_amll_line(
         source_format,
         source_index: source_index as f64,
         explicit_role,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
@@ -883,6 +1546,10 @@ fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<Par
         source_format: ParsedLineSourceFormat::Eslrc,
         source_index: source_index as f64,
         explicit_role,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
@@ -947,6 +1614,10 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         source_format: ParsedLineSourceFormat::EnhancedLrc,
         source_index: source_index as f64,
         explicit_role,
+        speaker: None,
+        is_bg: false,
+        is_duet: false,
+        is_duet_partner: false,
     })
 }
 
@@ -1001,6 +1672,10 @@ fn parse_plain_lrc_line(line: &str, source_index: usize) -> Vec<ParsedLine> {
             source_format: ParsedLineSourceFormat::Lrc,
             source_index: source_index as f64 + (offset as f64 * 0.001),
             explicit_role: explicit_role.clone(),
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
         })
         .collect()
 }
@@ -1106,6 +1781,10 @@ fn parse_ttml(raw: &str) -> Vec<ParsedLine> {
             source_format: ParsedLineSourceFormat::Ttml,
             source_index: index as f64,
             explicit_role,
+            speaker: None,
+            is_bg: false,
+            is_duet: false,
+            is_duet_partner: false,
         });
     }
 
@@ -1128,7 +1807,7 @@ fn parse_manual_lrc_like(raw: &str) -> Vec<ParsedLine> {
         lines.extend(parse_plain_lrc_line(trimmed, index));
     }
 
-    lines
+    finalize_lrc_blank_lines(lines)
 }
 
 fn collect_candidate(
@@ -1159,10 +1838,7 @@ fn collect_candidate(
 }
 
 fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
-    let normalized = raw
-        .replace('\u{FEFF}', "")
-        .replace("\r\n", "\n")
-        .replace('\r', "\n");
+    let normalized = preprocess_lyrics_text(raw);
 
     let mut candidates = Vec::new();
 
@@ -1171,6 +1847,15 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
             &mut candidates,
             ParsedLineSourceFormat::Ttml,
             parse_ttml(&normalized),
+        );
+    }
+
+    let lower = normalized.to_ascii_lowercase();
+    if lower.contains("[lyricify quick export]") || lower.contains("[type:lyricifylines]") {
+        collect_candidate(
+            &mut candidates,
+            ParsedLineSourceFormat::Lrc,
+            parse_lqe_like(&normalized),
         );
     }
 
@@ -1191,6 +1876,12 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
                 .collect(),
         );
     }
+
+    collect_candidate(
+        &mut candidates,
+        ParsedLineSourceFormat::Yrc,
+        parse_netease_json_word_lrc(&normalized),
+    );
 
     collect_candidate(
         &mut candidates,
@@ -1241,11 +1932,20 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
     );
 
     candidates.sort_by(compare_parser_candidates);
-    candidates
+    let mut lines = candidates
         .into_iter()
         .next()
         .map(|candidate| candidate.lines)
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    // 若没有任何带时间戳的候选，兜底按纯文本逐行合成均匀时间戳，保证歌词仍可展示。
+    if lines.is_empty() {
+        lines = synthesize_plain_text_lines(&normalized);
+    }
+
+    annotate_line_vocals(&mut lines);
+    apply_lyrics_offset(&mut lines, extract_lyrics_meta(&normalized).offset_ms);
+    lines
 }
 
 fn track_source_format(lines: &[LyricTrackLine]) -> LyricTrackSourceFormat {
@@ -1319,6 +2019,10 @@ fn build_candidate_lines(lines: &[ParsedLine]) -> Vec<LyricTrackLine> {
                 slot_index: None,
                 source_format: line.source_format.clone(),
                 script_profile: get_line_script_profile(&line.text),
+                speaker: line.speaker.clone(),
+                is_bg: line.is_bg,
+                is_duet: line.is_duet,
+                is_duet_partner: line.is_duet_partner,
             });
         }
 
@@ -1340,6 +2044,10 @@ fn build_candidate_lines(lines: &[ParsedLine]) -> Vec<LyricTrackLine> {
                 slot_index: None,
                 source_format: line.source_format.clone(),
                 script_profile: get_line_script_profile(translation),
+                speaker: None,
+                is_bg: false,
+                is_duet: false,
+                is_duet_partner: false,
             });
         }
 
@@ -1392,6 +2100,10 @@ fn build_candidate_lines(lines: &[ParsedLine]) -> Vec<LyricTrackLine> {
                 slot_index: None,
                 source_format: line.source_format.clone(),
                 script_profile: get_line_script_profile(&roman_text),
+                speaker: None,
+                is_bg: false,
+                is_duet: false,
+                is_duet_partner: false,
             });
         }
     }
@@ -2813,6 +3525,10 @@ fn build_semantic_line_from_orphan_group(
                 roman_words: None,
                 secondary_texts: None,
                 confidence: ClassificationConfidence::Heuristic,
+                speaker: None,
+                is_bg: false,
+                is_duet: false,
+                is_duet_partner: false,
             }
         }
     };
@@ -2827,6 +3543,10 @@ fn build_semantic_line_from_orphan_group(
         roman_words: None,
         secondary_texts: None,
         confidence: resolve_semantic_confidence(&[Some(&main_line)]),
+        speaker: main_line.speaker.clone(),
+        is_bg: main_line.is_bg,
+        is_duet: main_line.is_duet,
+        is_duet_partner: main_line.is_duet_partner,
     };
 
     for (track_index, _line_index, candidate_line) in group.iter() {
@@ -2949,6 +3669,10 @@ fn build_hard_role_semantic_line(
         roman_words: build_aligned_roman_words(main_line, roman_line),
         secondary_texts: None,
         confidence: resolve_semantic_confidence(&[Some(main_line), translation_line, roman_line]),
+        speaker: main_line.speaker.clone(),
+        is_bg: main_line.is_bg,
+        is_duet: main_line.is_duet,
+        is_duet_partner: main_line.is_duet_partner,
     }
 }
 
@@ -3372,6 +4096,10 @@ pub fn lyric_document_to_semantic_lines(document: &LyricDocument) -> Vec<Semanti
                 resolved_translation_line,
                 display_roman_line,
             ]),
+            speaker: display_main_line.speaker.clone(),
+            is_bg: display_main_line.is_bg,
+            is_duet: display_main_line.is_duet,
+            is_duet_partner: display_main_line.is_duet_partner,
         }));
         semantic_line_clusters.push(main_line.cluster_index);
     }
@@ -3516,6 +4244,10 @@ pub fn semantic_line_to_lyric_line(line: &SemanticLine) -> LyricLinePayload {
             })
             .filter(|words| !words.is_empty()),
         secondary: line.secondary_texts.clone(),
+        speaker: line.speaker.clone(),
+        is_bg: line.is_bg,
+        is_duet: line.is_duet,
+        is_duet_partner: line.is_duet_partner,
     }
 }
 
@@ -3838,6 +4570,7 @@ pub fn build_structured_lyrics_payload(raw_lyrics: String) -> StructuredLyricsPa
     // LX 相对逐字格式先归一为绝对时间戳 Enhanced LRC，否则逐字静默丢失。
     let raw_lyrics = convert_lx_relative_to_enhanced(&raw_lyrics).unwrap_or(raw_lyrics);
     let parsed_lines = parse_raw_lyrics(&raw_lyrics);
+    let meta = extract_lyrics_meta(&raw_lyrics);
     let document = build_lyric_document(&parsed_lines);
     let semantic_lines = document
         .as_ref()
@@ -3850,6 +4583,7 @@ pub fn build_structured_lyrics_payload(raw_lyrics: String) -> StructuredLyricsPa
 
     StructuredLyricsPayload {
         raw_lyrics,
+        meta,
         document,
         semantic_lines,
         display_lines,

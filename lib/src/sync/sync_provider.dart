@@ -290,7 +290,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
         ...s.toJson(),
         'name': s.title,
         'duration': s.duration * 1000,
+        // 与桌面端 classifySyncSong 对齐：标记本地/在线，供下载端恢复来源类型。
+        'syncType': _classifySyncSong(s),
       };
+
+  /// 与桌面端 classifySyncSong 对齐：按路径前缀判定本地/在线。
+  static String _classifySyncSong(ImportedSong s) {
+    final path = s.path;
+    if (path.startsWith('lx://') ||
+        path.startsWith('plugin://') ||
+        path.startsWith('http://') ||
+        path.startsWith('https://')) {
+      return 'online';
+    }
+    return 'local';
+  }
+
+  static bool _isOnlineSyncPath(String path) =>
+      path.startsWith('lx://') ||
+      path.startsWith('plugin://') ||
+      path.startsWith('http://') ||
+      path.startsWith('https://');
 
   /// 取歌单内第一首在线歌曲的远程封面（http/https），无则返回空串。
   String _firstRemoteSongCover(List<ImportedSong> songs) {
@@ -305,23 +325,47 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   /// 云端同步载荷 → 本地导入歌曲（duration 毫秒 → 秒）。
   ///
-  /// 桌面端本地歌曲载荷只有 `path`（Windows 路径）+ `syncType/source_type=local`，
-  /// 没有 `localPath` 字段，需据此识别为本地歌曲，避免被误判为在线歌曲。
-  /// 同时按元数据匹配本地曲库，把跨设备失效路径替换为本地真实路径。
+  /// 与桌面端 syncPayloadToSong 对齐：
+  /// - 在线歌曲（lx:// / plugin:// / http(s):// 路径，或 syncType=online /
+  ///   source_type=remote|plugin 标记）localPath 置空，避免被误判为本地歌曲
+  ///   导致在线歌曲缺少 onlineSongJson 而无法解析播放。
+  /// - 本地歌曲：桌面端载荷只有 `path`（Windows 路径）+ `syncType/source_type=local`，
+  ///   没有 `localPath` 字段，需据此识别为本地歌曲；再按元数据匹配本地曲库，
+  ///   把跨设备失效路径替换为本地真实路径。
   ImportedSong _songFromSyncPayload(
     Map<String, dynamic> j,
     Map<String, Song> byPath,
     Map<String, List<Song>> byMeta,
   ) {
     final rawPath = j['path'] as String? ?? '';
-    final isCloudLocal = j['syncType'] == 'local' || j['source_type'] == 'local';
-    final cloudLocalPath = (j['localPath'] as String?) ??
-        (isCloudLocal ? rawPath : null);
     final title = (j['title'] ?? j['name'] ?? '').toString();
     final artist = (j['artist'] ?? '').toString();
     final durationSec = (((j['duration'] as num?) ?? 0) / 1000).round();
-    final resolvedPath = (cloudLocalPath == null || cloudLocalPath.isEmpty)
-        ? rawPath
+
+    final isOnline = _isOnlineSyncPath(rawPath) ||
+        j['syncType'] == 'online' ||
+        j['source_type'] == 'remote' ||
+        j['source_type'] == 'plugin';
+    if (isOnline) {
+      return ImportedSong.fromJson({
+        'title': title,
+        'artist': j['artist'],
+        'album': j['album'],
+        'duration': durationSec,
+        'coverUrl': j['coverUrl'],
+        'pluginId': j['pluginId'],
+        'source': j['source'],
+        'format': j['format'],
+        'musicInfo': j['musicInfo'],
+        'path': rawPath,
+      });
+    }
+
+    final isCloudLocal = j['syncType'] == 'local' || j['source_type'] == 'local';
+    final cloudLocalPath = (j['localPath'] as String?) ??
+        (isCloudLocal ? rawPath : null);
+    final resolved = (cloudLocalPath == null || cloudLocalPath.isEmpty)
+        ? (path: rawPath, coverThumbPath: null)
         : _resolveLocalPath(
             byPath, byMeta, cloudLocalPath, title, artist, durationSec);
     return ImportedSong.fromJson({
@@ -330,12 +374,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
       'album': j['album'],
       'duration': durationSec,
       'coverUrl': j['coverUrl'],
-      'localPath': resolvedPath,
+      'coverThumbPath': resolved.coverThumbPath,
+      'localPath': resolved.path,
       'pluginId': j['pluginId'],
       'source': j['source'],
       'format': j['format'],
       'musicInfo': j['musicInfo'],
-      'path': resolvedPath,
+      'path': resolved.path,
     });
   }
 
@@ -363,8 +408,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   /// 将同步的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
-  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径。
-  String _resolveLocalPath(
+  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径，
+  /// 同时带回匹配到的本地歌曲封面缩略图路径。
+  ({String path, String? coverThumbPath}) _resolveLocalPath(
     Map<String, Song> byPath,
     Map<String, List<Song>> byMeta,
     String cloudPath,
@@ -372,13 +418,30 @@ class SyncNotifier extends StateNotifier<SyncState> {
     String artist,
     int durationSec,
   ) {
-    if (!_isLocalFilePath(cloudPath)) return cloudPath;
-    if (byPath.containsKey(cloudPath)) return cloudPath;
+    if (!_isLocalFilePath(cloudPath)) {
+      return (path: cloudPath, coverThumbPath: null);
+    }
+    final direct = byPath[cloudPath];
+    if (direct != null) {
+      return (path: cloudPath, coverThumbPath: direct.coverThumbPath);
+    }
     final candidates =
         byMeta['${_normMeta(title)}|${_normMeta(artist)}'] ?? const [];
-    if (candidates.isEmpty) return cloudPath;
-    if (candidates.length == 1) return candidates.first.path;
-    if (durationSec <= 0) return candidates.first.path;
+    if (candidates.isEmpty) {
+      return (path: cloudPath, coverThumbPath: null);
+    }
+    if (candidates.length == 1) {
+      return (
+        path: candidates.first.path,
+        coverThumbPath: candidates.first.coverThumbPath,
+      );
+    }
+    if (durationSec <= 0) {
+      return (
+        path: candidates.first.path,
+        coverThumbPath: candidates.first.coverThumbPath,
+      );
+    }
     Song? best;
     var bestDiff = 5;
     for (final c in candidates) {
@@ -388,7 +451,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
         best = c;
       }
     }
-    return best?.path ?? cloudPath;
+    if (best != null) {
+      return (path: best.path, coverThumbPath: best.coverThumbPath);
+    }
+    return (path: cloudPath, coverThumbPath: null);
   }
 
   Future<void> syncPlaylistsUpload() async {
@@ -571,12 +637,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
             index.byPath, index.byMeta, path, title, artist, (durationMs / 1000).round());
         await notifier.add(
           QueueItem(
-            path: resolved,
+            path: resolved.path,
             title: title,
             artist: artist,
             album: (item['album'] as String?) ?? '',
             durationMs: durationMs,
             coverUrl: item['coverUrl'] as String?,
+            coverPath: resolved.coverThumbPath,
             source: item['source'] as String?,
             onlineSongJson: item['onlineSongJson'] as String?,
             onlineQuality: item['onlineQuality'] as String?,

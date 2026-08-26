@@ -209,6 +209,12 @@ class LyricsRepository {
           romaji: romaji,
           words: words,
           secondary: secondary,
+          speaker: (item['speaker'] as String?)?.trim().isNotEmpty == true
+              ? (item['speaker'] as String).trim()
+              : null,
+          isBg: item['isBg'] == true,
+          isDuet: item['isDuet'] == true,
+          isDuetPartner: item['isDuetPartner'] == true,
         ));
       }
     }

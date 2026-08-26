@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../player/media_url.dart';
 import '../rust/api.dart' as frb;
 import 'plugin_models.dart';
 import 'plugin_store.dart';
@@ -389,7 +390,7 @@ class PluginEngine {
   ///
   /// 与桌面端 pluginGetMusicInfo 对齐：优先传原生音质键，其次 standard/high/lossless；
   /// 参考包内同时带 url/headers。musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
-  Future<String?> getMusicFreeUrl(
+  Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
     Map<String, dynamic> songInfo, {
     String preferred = '320k',
@@ -448,27 +449,34 @@ class PluginEngine {
     return null;
   }
 
-  static String? _extractMfPlayableUrl(dynamic response) {
+  static ResolvedMediaUrl? _extractMfPlayableUrl(dynamic response) {
     if (response == null) return null;
     if (response is String) {
       return response.isNotEmpty &&
               response.length <= 2048 &&
               RegExp(r'^https?:').hasMatch(response)
-          ? response
+          ? ResolvedMediaUrl(url: response)
           : null;
     }
     if (response is Map) {
       final obj = response.cast<String, dynamic>();
       final url = (obj['url'] ?? obj['link'] ?? obj['playUrl']) as String?;
-      if (url != null && url.isNotEmpty && url.length <= 2048 && RegExp(r'^https?:').hasMatch(url)) {
-        return url;
+      if (url != null &&
+          url.isNotEmpty &&
+          url.length <= 2048 &&
+          RegExp(r'^https?:').hasMatch(url)) {
+        final h = obj['headers'];
+        return ResolvedMediaUrl(
+          url: url,
+          headers: h is Map ? h.cast<String, String>() : null,
+        );
       }
     }
     return null;
   }
 
   /// 解析歌曲播放直链。
-  Future<Map<String, String>?> getMusicUrl(
+  Future<Map<String, dynamic>?> getMusicUrl(
     PluginSource source,
     String sourceKey,
     Map<String, dynamic> songInfo,
@@ -481,15 +489,18 @@ class PluginEngine {
     });
     if (response == null) return null;
 
-    // 兼容对象返回 { url, type, ... } 与纯字符串
+    // 兼容对象返回 { url, type, headers, ... } 与纯字符串
     String? url;
     String type = quality;
+    Map<String, String>? headers;
     if (response is String) {
       url = response;
     } else if (response is Map) {
       final obj = response.cast<String, dynamic>();
       url = (obj['url'] ?? obj['link'] ?? obj['playUrl']) as String?;
       if (obj['type'] != null) type = obj['type'].toString();
+      final h = obj['headers'];
+      if (h is Map) headers = h.cast<String, String>();
     }
     if (url == null ||
         url.isEmpty ||
@@ -497,7 +508,11 @@ class PluginEngine {
         !RegExp(r'^https?:').hasMatch(url)) {
       throw PluginEngineException('Invalid musicUrl response');
     }
-    return {'type': type, 'url': url};
+    return {
+      'type': type,
+      'url': url,
+      'headers': ?headers,
+    };
   }
 
   /// 获取歌词（返回原始字段，由调用方解析）。

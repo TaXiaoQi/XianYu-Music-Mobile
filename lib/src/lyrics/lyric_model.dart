@@ -39,6 +39,18 @@ class LyricLine {
   /// 背景/副歌等次要歌词行（富歌词 secondary）。
   final List<String> secondary;
 
+  /// 演唱者标识（对唱行的角色前缀）。
+  final String? speaker;
+
+  /// 是否为背景/和声行（整行被括号包裹等）。
+  final bool isBg;
+
+  /// 是否为对唱行（带演唱者前缀）。
+  final bool isDuet;
+
+  /// 是否为由括号拆分出的对唱和声伙伴行。
+  final bool isDuetPartner;
+
   const LyricLine({
     required this.timeMs,
     this.endTimeMs = 0,
@@ -47,6 +59,10 @@ class LyricLine {
     this.romaji,
     this.words = const [],
     this.secondary = const [],
+    this.speaker,
+    this.isBg = false,
+    this.isDuet = false,
+    this.isDuetPartner = false,
   });
 
   LyricLine copyWith({
@@ -57,6 +73,10 @@ class LyricLine {
     String? romaji,
     List<LyricWord>? words,
     List<String>? secondary,
+    String? speaker,
+    bool? isBg,
+    bool? isDuet,
+    bool? isDuetPartner,
   }) {
     return LyricLine(
       timeMs: timeMs ?? this.timeMs,
@@ -66,6 +86,10 @@ class LyricLine {
       romaji: romaji ?? this.romaji,
       words: words ?? this.words,
       secondary: secondary ?? this.secondary,
+      speaker: speaker ?? this.speaker,
+      isBg: isBg ?? this.isBg,
+      isDuet: isDuet ?? this.isDuet,
+      isDuetPartner: isDuetPartner ?? this.isDuetPartner,
     );
   }
 
@@ -77,6 +101,10 @@ class LyricLine {
         if (romaji != null) 'romaji': romaji,
         if (words.isNotEmpty) 'words': words.map((w) => w.toJson()).toList(),
         if (secondary.isNotEmpty) 'secondary': secondary,
+        if (speaker != null) 'speaker': speaker,
+        'isBg': isBg,
+        'isDuet': isDuet,
+        'isDuetPartner': isDuetPartner,
       };
 }
 

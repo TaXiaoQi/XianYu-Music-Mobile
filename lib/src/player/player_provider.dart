@@ -26,6 +26,7 @@ import '../plugin/plugin_provider.dart';
 import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
+import 'media_url.dart';
 import 'online_quality_probe.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
@@ -965,9 +966,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           key, _buildResolveCallback(songJson, item));
       _activeProbeKey = key;
 
-      final start = await probe.startBest(preferred, candidates);
+      // 探测整体限时：多档串行超时（每档 8-30s）会拖垮加载态，超时即放弃。
+      final start = await probe
+          .startBest(preferred, candidates)
+          .timeout(const Duration(seconds: 12), onTimeout: () => null);
       if (start != null) {
-        await _startUrl(start.url);
+        // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
+        state = state.copyWith(resolving: false);
+        await _startUrl(start.url, headers: start.headers);
         state = state.copyWith(currentQuality: start.quality);
         _refreshQualityMenuState(probe);
         return;
@@ -977,7 +983,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError('无法获取播放链接');
-    await _startUrl(url);
+    state = state.copyWith(resolving: false);
+    await _startUrl(url.url, headers: url.headers);
   }
 
   /// 歌曲级探测 key：隔离不同歌曲且共享同一首歌的多路调用。
@@ -993,13 +1000,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 构造单档解析回调：插件音源逐档优先，同档插件失败立即用 LX 兜底；
   /// 纯 LX 音源直接走 LX 单档解析。
-  Future<String?> Function(String) _buildResolveCallback(
+  Future<ResolvedMediaUrl?> Function(String) _buildResolveCallback(
       Map<String, dynamic> songJson, QueueItem item) {
     final hasPlugin = songJson.containsKey('pluginId');
     return (String q) async {
       if (hasPlugin) {
         final u = await _resolvePluginUrl(songJson, q);
-        if (_isPlayableUrl(u)) return u;
+        if (u != null && _isPlayableUrl(u.url)) return u;
         final musicInfo =
             songJson['musicInfo'] as Map<String, dynamic>? ?? {};
         final fallbackInfo = <String, dynamic>{
@@ -1008,15 +1015,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           ...musicInfo,
         };
         final lx = await _lxResolveQuality(jsonEncode(fallbackInfo), q);
-        if (_isPlayableUrl(lx)) return lx;
+        if (lx != null) return lx;
         return null;
       }
       return _lxResolveQuality(jsonEncode(songJson), q);
     };
   }
 
-  /// 单档 LX 直链解析（已导入插件优先 → 公共 API）。
-  Future<String?> _lxResolveQuality(
+  /// 单档 LX 直链解析（已导入插件优先 → 公共 API）。单档限时 8s。
+  Future<ResolvedMediaUrl?> _lxResolveQuality(
       String songInfoJson, String quality) async {
     try {
       final dataDir = await _ref.read(appDataDirProvider.future);
@@ -1024,11 +1031,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         songInfoJson: songInfoJson,
         quality: quality,
         dataDir: dataDir,
-      );
+      ).timeout(const Duration(seconds: 8));
       if (resolved == 'null' || resolved.isEmpty) return null;
       final url =
           (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
-      return _isPlayableUrl(url) ? url : null;
+      return _isPlayableUrl(url) ? ResolvedMediaUrl(url: url!) : null;
     } catch (_) {
       return null;
     }
@@ -1060,7 +1067,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(resolving: false);
         return false;
       }
-      await _startUrl(res.url);
+      await _startUrl(res.url, headers: res.headers);
       state = state.copyWith(
         resolving: false,
         currentQuality: res.quality,
@@ -1272,17 +1279,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
-  Future<void> _startUrl(String url) async {
-    await _player.setUrl(url);
+  Future<void> _startUrl(String url, {Map<String, String>? headers}) async {
+    final clean = sanitizeMediaUrl(url);
+    if (clean.isEmpty) throw StateError('无效的播放链接');
+    // 合并插件 headers 与按域名补齐的防盗链头（Referer/Origin/Accept）。
+    final h = normalizeMediaRequestHeaders(clean, headers);
+    await _player.setUrl(clean, headers: h);
     await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
   }
 
   /// 按候选音质依次调用 lxResolveUrl（已导入插件 → 公共 API），
-  /// 返回首个合法 http(s) 直链。
-  Future<String?> _tryLxResolve(
+  /// 返回首个合法 http(s) 直链。整体限时 12s，避免多档串行超时拖垮加载态。
+  Future<ResolvedMediaUrl?> _tryLxResolve(
       String songInfoJson, List<String> candidates) async {
     final dataDir = await _ref.read(appDataDirProvider.future);
+    try {
+      return await _tryLxResolveInner(songInfoJson, candidates, dataDir)
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<ResolvedMediaUrl?> _tryLxResolveInner(
+      String songInfoJson, List<String> candidates, String dataDir) async {
     for (final quality in candidates) {
       try {
         final resolved = await lxResolveUrl(
@@ -1293,7 +1314,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (resolved == 'null' || resolved.isEmpty) continue;
         final url =
             (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
-        if (_isPlayableUrl(url)) return url;
+        if (_isPlayableUrl(url)) return ResolvedMediaUrl(url: url!);
       } catch (_) {}
     }
     return null;
@@ -1369,7 +1390,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
   }
 
-  Future<String?> _resolveOnlineUrl(QueueItem item) async {
+  Future<ResolvedMediaUrl?> _resolveOnlineUrl(QueueItem item) async {
     final infoJson = item.onlineInfoJson;
     if (infoJson == null) return null;
     final s = _ref.read(settingsProvider).valueOrNull;
@@ -1439,7 +1460,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
       _syncToSystemMediaSession();
       try {
-        await _startUrl(url);
+        // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
+        state = state.copyWith(resolving: false);
+        await _startUrl(url.url, headers: url.headers);
       } catch (_) {
         _failedSources.add(src.id);
         continue;
@@ -1489,7 +1512,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   /// 通过插件引擎解析播放直链。
-  Future<String?> _resolvePluginUrl(
+  Future<ResolvedMediaUrl?> _resolvePluginUrl(
       Map<String, dynamic> songJson, String quality) async {
     try {
       final pluginId = songJson['pluginId'] as String?;
@@ -1514,7 +1537,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       final result =
           await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
-      return result?['url'];
+      if (result == null) return null;
+      final url = result['url'] as String?;
+      if (!_isPlayableUrl(url)) return null;
+      final h = result['headers'];
+      return ResolvedMediaUrl(
+        url: url!,
+        headers: h is Map ? h.cast<String, String>() : null,
+      );
     } catch (_) {
       return null;
     }
@@ -1838,7 +1868,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           _syncToSystemMediaSession();
           return;
         }
-        await _player.setUrl(url);
+        await _player.setUrl(url.url, headers: url.headers);
         final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
         await _player.setVolume(vol);
       }

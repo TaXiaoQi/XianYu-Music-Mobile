@@ -8,12 +8,13 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
+import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
-import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -160,6 +161,7 @@ class _PlaylistCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
+    final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
     return Material(
       color: appCardColor(context),
@@ -179,7 +181,16 @@ class _PlaylistCard extends ConsumerWidget {
                   color: scheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.queue_music, color: scheme.primary, size: 22),
+                child: first == null
+                    ? Icon(Icons.queue_music, color: scheme.primary, size: 22)
+                    : CoverImage(
+                        songPath: first.path,
+                        networkUrl: first.coverUrl,
+                        thumbPath: first.coverThumbPath,
+                        width: 44,
+                        height: 44,
+                        radius: 10,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -337,8 +348,8 @@ class PlaylistDetailPage extends ConsumerWidget {
                 children: [
                   _AlbumHeader(
                     name: playlist.name,
-                    coverUrl: playlist.songs.isNotEmpty
-                        ? playlist.songs.first.coverUrl
+                    song: playlist.songs.isNotEmpty
+                        ? playlist.songs.first
                         : null,
                     count: playlist.songs.length,
                     onPlayAll: playlist.songs.isEmpty
@@ -404,24 +415,25 @@ class PlaylistDetailPage extends ConsumerWidget {
 class _AlbumHeader extends StatelessWidget {
   const _AlbumHeader({
     required this.name,
-    required this.coverUrl,
+    required this.song,
     required this.count,
     required this.onPlayAll,
   });
 
   final String name;
-  final String? coverUrl;
+  final ImportedSong? song;
   final int count;
   final VoidCallback? onPlayAll;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final s = song;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
-          coverUrl == null || coverUrl!.isEmpty
+          s == null
               ? Container(
                   width: 76,
                   height: 76,
@@ -433,7 +445,14 @@ class _AlbumHeader extends StatelessWidget {
                   child: Icon(Icons.queue_music,
                       size: 30, color: scheme.primary),
                 )
-              : OnlineCover(url: coverUrl, size: 76, radius: 12),
+              : CoverImage(
+                  songPath: s.path,
+                  networkUrl: s.coverUrl,
+                  thumbPath: s.coverThumbPath,
+                  width: 76,
+                  height: 76,
+                  radius: 12,
+                ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -506,15 +525,23 @@ class _PlaylistSongs extends ConsumerWidget {
                 rowContext,
                 coverSize: m.songCover,
                 vPad: m.vPad,
+                songPath: song.path,
                 networkUrl: song.coverUrl,
+                thumbPath: song.coverThumbPath,
                 radius: m.songRadius,
               );
               manager.play(playlist, index);
             });
             return g.wrap(
               CoverRow(
-                cover: OnlineCover(
-                    url: song.coverUrl, size: m.songCover, radius: m.songRadius),
+                cover: CoverImage(
+                  songPath: song.path,
+                  networkUrl: song.coverUrl,
+                  thumbPath: song.coverThumbPath,
+                  width: m.songCover,
+                  height: m.songCover,
+                  radius: m.songRadius,
+                ),
                 onTap: g.onTap,
                 verticalPadding: m.vPad,
                 title: Text(

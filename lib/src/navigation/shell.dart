@@ -405,12 +405,21 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
 
     final expanded = ref.watch(sideBarExpandedProvider);
 
+    // 检测当前路由：全屏歌曲详情页 /player 时不隐藏迷你条（见下），
+    // 其余二级页由 hidden 统一处理。
+    final isPlayerPage =
+        GoRouterState.of(context).uri.toString() == '/player';
+
+    // 迷你条位置档位：播放页打开时保持进入前的位置（供 Hero 飞行取源/落点，
+    // 否则位置变化会打断「底栏封面飞播放页」的飞行）；其余情况沿用 hidden 下沉。
+    final miniBarLow = hiddenCount > 0 || (!_isRootPath && !isPlayerPage);
+
     // 默认定位坐标（不受软键盘影响，始终保持在底部稳定避让区）
     final defaultLeft = 18.0;
     final defaultTop = isSide
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
-            ? (hidden
+            ? (miniBarLow
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
                 : (screenSize.height - safeBottom - 58.0 - 82.0))
             : (screenSize.height - safeBottom - 58.0 - 70.0));
@@ -418,34 +427,32 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final actualLeft = _playerLeft ?? defaultLeft;
     final actualTop = _playerTop ?? defaultTop;
 
-    // 检测当前路由：全屏歌曲详情页 /player 隐去迷你播放条，其余所有界面 100% 常驻！
-    final isPlayerPage =
-        GoRouterState.of(context).uri.toString() == '/player';
-
     return Scaffold(
       body: Stack(
         children: [
           widget.navigationShell,
 
-          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；二级页面进出时带有平滑上浮/下沉动画
-          if (!isPlayerPage)
-            AnimatedPositioned(
-              duration: _isPlayerDragging
-                  ? Duration.zero
-                  : const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-              left: actualLeft,
-              top: actualTop,
-              width: screenSize.width - 36.0,
-              child: MiniPlayerBar(
-                onPanStart: _onPlayerPanStart,
-                onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
-                    defaultLeft, defaultTop, !isSide && !hidden),
-                onPanEnd: (d) =>
-                    _onPlayerPanEnd(d, defaultLeft, defaultTop),
-                onPanCancel: _onPlayerPanCancel,
-              ),
+          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
+          // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让
+          // Hero 在 push 后下一帧收集源封面时找不到迷你条，导致「打开无飞行、只有
+          // 返回有飞行」；播放页为不透明路由会盖住迷你条，留在树中无副作用。
+          AnimatedPositioned(
+            duration: _isPlayerDragging
+                ? Duration.zero
+                : const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            left: actualLeft,
+            top: actualTop,
+            width: screenSize.width - 36.0,
+            child: MiniPlayerBar(
+              onPanStart: _onPlayerPanStart,
+              onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
+                  defaultLeft, defaultTop, !isSide && !hidden),
+              onPanEnd: (d) =>
+                  _onPlayerPanEnd(d, defaultLeft, defaultTop),
+              onPanCancel: _onPlayerPanCancel,
             ),
+          ),
 
           // 侧边栏悬浮层
           if (isSide)

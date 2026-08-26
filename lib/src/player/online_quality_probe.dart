@@ -13,6 +13,8 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'media_url.dart';
+
 /// 12 档音质阶梯（低 → 高），与播放器/设置/下载一致。
 const List<String> kQualityLadder = [
   'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
@@ -50,11 +52,16 @@ String resolveActualQuality(String quality, String url) {
   return quality;
 }
 
-/// 单档探测结果：直链 + 修正后的实际音质。
+/// 单档探测结果：直链 + 修正后的实际音质 + 可选请求头。
 class QualityProbeResult {
-  const QualityProbeResult({required this.url, required this.quality});
+  const QualityProbeResult({
+    required this.url,
+    required this.quality,
+    this.headers,
+  });
   final String url;
   final String quality;
+  final Map<String, String>? headers;
 }
 
 /// 每首歌共享一轮音质探测。
@@ -62,7 +69,7 @@ class SongQualityProbe {
   SongQualityProbe({required this.resolveQuality, this.maxConcurrency = 3});
 
   /// 单档解析回调（LX 或插件），由调用方按歌曲类型注入。
-  final Future<String?> Function(String quality) resolveQuality;
+  final Future<ResolvedMediaUrl?> Function(String quality) resolveQuality;
   final int maxConcurrency;
 
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
@@ -82,11 +89,19 @@ class SongQualityProbe {
 
     final future = _runInSlot(() async {
       if (_disposed) return null;
-      final url = await resolveQuality(quality);
-      if (url == null || url.isEmpty) return null;
-      final actual = resolveActualQuality(quality, url);
-      _done.add(QualityProbeResult(url: url, quality: actual));
-      return QualityProbeResult(url: url, quality: actual);
+      final res = await resolveQuality(quality);
+      if (res == null || res.url.isEmpty) return null;
+      final actual = resolveActualQuality(quality, res.url);
+      _done.add(QualityProbeResult(
+        url: res.url,
+        quality: actual,
+        headers: res.headers,
+      ));
+      return QualityProbeResult(
+        url: res.url,
+        quality: actual,
+        headers: res.headers,
+      );
     });
     _perQuality[quality] = future;
     return future;
@@ -163,7 +178,7 @@ final class OnlineQualityProbeRegistry {
 
   SongQualityProbe ensure(
     String songKey,
-    Future<String?> Function(String q) resolve,
+    Future<ResolvedMediaUrl?> Function(String q) resolve,
   ) {
     return _registry.putIfAbsent(
       songKey,

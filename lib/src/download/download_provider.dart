@@ -420,12 +420,12 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     if (format == 'musicfree') {
       // MusicFree 插件：getMediaSource + 内部音质降级映射。
-      return await engine.getMusicFreeUrl(
+      final src = await engine.getMusicFreeUrl(
             source.first,
             musicInfo,
             preferred: quality,
-          ) ??
-          '';
+          );
+      return src?.url ?? '';
     }
 
     final result =

@@ -138,12 +138,25 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
   late final double _sx;
   bool _parking = false;
   bool _fading = false;
+  bool _initialized = false;
   Timer? _parkTimer;
   String? _startPath;
 
   @override
   void initState() {
     super.initState();
+    _flyCtrl = AnimationController(vsync: this, duration: _flyDuration);
+    _t = CurvedAnimation(parent: _flyCtrl, curve: Curves.easeInOutCubic);
+    _fadeCtrl = AnimationController(vsync: this, duration: _fadeDuration);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    // MediaQuery 只能在 didChangeDependencies/build 中访问，initState 里取会抛
+    // dependOnInheritedWidgetOfExactType 异常。
     final size = MediaQuery.of(context).size;
     final bottom = MediaQuery.of(context).padding.bottom;
     _toRect = widget.targetProvider?.call() ??
@@ -156,10 +169,6 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
     _mid = Offset.lerp(_p0, _p2, 0.5)! - Offset(0, lift);
     _sx = _toRect.width / widget.fromRect.width;
     _startPath = ref.read(playerProvider).current?.path;
-
-    _flyCtrl = AnimationController(vsync: this, duration: _flyDuration);
-    _t = CurvedAnimation(parent: _flyCtrl, curve: Curves.easeInOutCubic);
-    _fadeCtrl = AnimationController(vsync: this, duration: _fadeDuration);
 
     // 悬停阶段监听底栏封面更新：current 变化即淡出。
     ref.listenManual(playerProvider, (prev, next) {
