@@ -158,8 +158,10 @@ class SongsListView extends ConsumerWidget {
             // 与列表封面像素级一致，杜绝行高/布局差异导致的起飞偏移。
             BuildContext? coverCtx;
             final play = onPlay != null
-                ? () {
-                    launchFlyCover(
+                ? () async {
+                    // 等封面落地后再播放：播放条封面随落地同步更新，
+                    // 避免飞行过程中播放条封面提前切换。
+                    final ok = await launchFlyCover(
                       rowContext,
                       coverContext: coverCtx,
                       coverSize: m.songCover,
@@ -168,7 +170,7 @@ class SongsListView extends ConsumerWidget {
                       thumbPath: s.coverThumbPath,
                       radius: m.songRadius,
                     );
-                    onPlay!(songs, i);
+                    if (ok) onPlay!(songs, i);
                   }
                 : null;
             final row = CoverRow(

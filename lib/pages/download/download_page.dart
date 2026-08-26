@@ -260,8 +260,9 @@ class _HistoryTile extends ConsumerWidget {
     // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
     BuildContext? coverCtx;
     final play = exists
-        ? () {
-            launchFlyCover(
+        ? () async {
+            // 等封面落地后再播放：播放条封面随落地同步更新。
+            final ok = await launchFlyCover(
               context,
               coverContext: coverCtx,
               coverSize: m.songCover,
@@ -269,7 +270,7 @@ class _HistoryTile extends ConsumerWidget {
               songPath: entry.filePath,
               radius: m.songRadius,
             );
-            onPlay();
+            if (ok) onPlay();
           }
         : null;
     return CoverRow(

@@ -201,8 +201,9 @@ class _RecommendList extends ConsumerWidget {
             BuildContext? coverCtx;
             final g = songRowPlay(
               ref,
-              onPlay: () {
-                launchFlyCover(
+              onPlay: () async {
+                // 等封面落地后再播放：播放条封面随落地同步更新。
+                final ok = await launchFlyCover(
                   rowContext,
                   coverContext: coverCtx,
                   coverSize: 46,
@@ -210,7 +211,7 @@ class _RecommendList extends ConsumerWidget {
                   networkUrl: item.coverUrl,
                   radius: 6,
                 );
-                ref.read(dailyRecommendProvider.notifier).play(i);
+                if (ok) ref.read(dailyRecommendProvider.notifier).play(i);
               },
             );
             return g.wrap(

@@ -2,15 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../player/player_provider.dart';
 import 'cover_image.dart';
 
 /// 全局「飞封面」服务：从歌曲列表被点击行的封面，飞到迷你播放栏封面位置。
 ///
-/// 参考桌面端 useFlyingCover：飞行（平移 + 缩放 + 弧线）→ 悬停（等底栏封面
-/// 更新）→ 淡出。用于掩盖点击播放到实际起播之间的延迟，并给出明确的播放反馈。
+/// 参考桌面端 useFlyingCover：飞行（平移 + 缩放 + 弧线）→ 落地（触发播放，
+/// 播放条封面随之更新）→ 淡出嵌入。用于掩盖点击播放到实际起播之间的延迟，
+/// 并给出明确的播放反馈。
 class FlyingCover {
   FlyingCover._();
   static final FlyingCover instance = FlyingCover._();
@@ -18,6 +17,8 @@ class FlyingCover {
   OverlayState? _overlay;
   final List<Rect Function()> _targets = [];
   int _flyId = 0;
+  OverlayEntry? _currentEntry;
+  Completer<bool>? _currentCompleter;
 
   /// 当前生效的目标位置：取最后注册的活跃实例。
   ///
@@ -42,8 +43,11 @@ class FlyingCover {
     _targets.remove(provider);
   }
 
-  /// 触发飞封面动画。封面从 [fromRect] 飞到迷你播放栏封面位置。
-  void launch({
+  /// 触发飞封面动画。返回的 Future 在封面落地时完成：
+  /// - `true`：封面正常落地，可继续播放；
+  /// - `false`：被更新的飞封面取代，不应再播放（新封面落地后自行触发播放）。
+  /// 无法启动（无 Overlay / 起点无效）时直接返回 `true`，不阻塞播放。
+  Future<bool> launch({
     required Rect fromRect,
     String? songPath,
     String? networkUrl,
@@ -51,11 +55,21 @@ class FlyingCover {
     double radius = 6,
   }) {
     final overlay = _overlay;
-    if (overlay == null) return;
+    if (overlay == null) return Future.value(true);
     if (fromRect.isEmpty || fromRect.width <= 0 || fromRect.height <= 0) {
-      return;
+      return Future.value(true);
     }
     final id = ++_flyId;
+    final completer = Completer<bool>();
+    // 取代上一张飞封面：完成其 Future（false，不再触发播放）并移除其 OverlayEntry。
+    final prevEntry = _currentEntry;
+    final prevCompleter = _currentCompleter;
+    if (prevEntry != null) {
+      if (prevCompleter != null && !prevCompleter.isCompleted) {
+        prevCompleter.complete(false);
+      }
+      prevEntry.remove();
+    }
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _FlyingCoverOverlay(
@@ -65,16 +79,38 @@ class FlyingCover {
         networkUrl: networkUrl,
         thumbPath: thumbPath,
         radius: radius,
+        onLanded: () {
+          if (id == _flyId && !completer.isCompleted) {
+            completer.complete(true);
+          }
+        },
         onDone: () {
-          if (id == _flyId) entry.remove();
+          if (id == _flyId) {
+            entry.remove();
+            if (_currentEntry == entry) _currentEntry = null;
+            if (!completer.isCompleted) completer.complete(true);
+          }
         },
       ),
     );
+    _currentEntry = entry;
+    _currentCompleter = completer;
     overlay.insert(entry);
+    return completer.future;
   }
 
   /// 取消当前飞封面（如切歌/退出播放页）。
-  void cancel() => _flyId++;
+  void cancel() {
+    _flyId++;
+    final entry = _currentEntry;
+    final completer = _currentCompleter;
+    _currentEntry = null;
+    _currentCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(false);
+    }
+    entry?.remove();
+  }
 }
 
 /// 从列表行 context 计算封面位置并触发飞封面。
@@ -84,7 +120,10 @@ class FlyingCover {
 /// 直接取封面 RenderBox 的全局矩形，与列表封面像素级一致，杜绝行高/布局差异
 /// 导致的起飞偏移。未传 [coverContext] 时回退到遍历行内 RenderBox 树查找
 /// `coverSize×coverSize` 的封面（行高高于封面时 vPad 偏移会不准）。
-void launchFlyCover(
+///
+/// 返回的 Future 语义与 [FlyingCover.launch] 一致：`true` 表示封面已落地，
+/// 可继续播放；`false` 表示被更新的飞封面取代，不应再播放。
+Future<bool> launchFlyCover(
   BuildContext context, {
   required double coverSize,
   double vPad = 7,
@@ -95,7 +134,7 @@ void launchFlyCover(
   String? networkUrl,
   String? thumbPath,
   double radius = 6,
-}) {
+}) async {
   Rect? fromRect;
   if (coverContext != null) {
     final ro = coverContext.findRenderObject();
@@ -105,7 +144,7 @@ void launchFlyCover(
   }
   if (fromRect == null) {
     final ro = context.findRenderObject();
-    if (ro is! RenderBox || !ro.hasSize) return;
+    if (ro is! RenderBox || !ro.hasSize) return true;
     final box = ro;
 
     // 找行内实际封面 RenderBox（coverSize×coverSize），确保飞封面起点与列表封面
@@ -135,7 +174,7 @@ void launchFlyCover(
           coverSize,
         );
   }
-  FlyingCover.instance.launch(
+  return FlyingCover.instance.launch(
     fromRect: fromRect,
     songPath: songPath,
     networkUrl: networkUrl,
@@ -144,7 +183,7 @@ void launchFlyCover(
   );
 }
 
-class _FlyingCoverOverlay extends ConsumerStatefulWidget {
+class _FlyingCoverOverlay extends StatefulWidget {
   const _FlyingCoverOverlay({
     required this.fromRect,
     required this.targetProvider,
@@ -152,6 +191,7 @@ class _FlyingCoverOverlay extends ConsumerStatefulWidget {
     required this.networkUrl,
     required this.thumbPath,
     required this.radius,
+    required this.onLanded,
     required this.onDone,
   });
 
@@ -161,18 +201,17 @@ class _FlyingCoverOverlay extends ConsumerStatefulWidget {
   final String? networkUrl;
   final String? thumbPath;
   final double radius;
+  final VoidCallback onLanded;
   final VoidCallback onDone;
 
   @override
-  ConsumerState<_FlyingCoverOverlay> createState() =>
-      _FlyingCoverOverlayState();
+  State<_FlyingCoverOverlay> createState() => _FlyingCoverOverlayState();
 }
 
-class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
+class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     with TickerProviderStateMixin {
   static const _flyDuration = Duration(milliseconds: 520);
   static const _fadeDuration = Duration(milliseconds: 220);
-  static const _parkTimeout = Duration(seconds: 3);
 
   late final AnimationController _flyCtrl;
   late final Animation<double> _t;
@@ -191,11 +230,8 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
   /// 目标缩放比例（终点尺寸 / 起点尺寸）。
   late final double _sx;
 
-  bool _parking = false;
   bool _fading = false;
   bool _initialized = false;
-  Timer? _parkTimer;
-  String? _startPath;
 
   @override
   void initState() {
@@ -233,35 +269,27 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
     final lift = math.min(60.0, dy.abs() * 0.25 + 24);
     _ctrl = Offset.lerp(_p0, _p2, 0.5)! - Offset(0, lift);
 
-    _startPath = ref.read(playerProvider).current?.path;
-
-    // 悬停阶段监听底栏封面更新：current 变化即淡出。
-    ref.listenManual(playerProvider, (prev, next) {
-      if (!_parking || _fading) return;
-      if (next.current?.path != _startPath) _fadeOut();
-    });
-
-    _flyCtrl.forward().whenComplete(_park);
+    _flyCtrl.forward().whenComplete(_landed);
   }
 
   @override
   void dispose() {
-    _parkTimer?.cancel();
     _flyCtrl.dispose();
     _fadeCtrl.dispose();
     super.dispose();
   }
 
-  void _park() {
+  /// 封面落地：通知播放（onLanded 触发 onPlay，播放条封面随之更新），
+  /// 随即淡出嵌入播放条，不再悬停等待。
+  void _landed() {
     if (!mounted) return;
-    setState(() => _parking = true);
-    _parkTimer = Timer(_parkTimeout, _fadeOut);
+    widget.onLanded();
+    _fadeOut();
   }
 
   void _fadeOut() {
     if (_fading || !mounted) return;
     _fading = true;
-    _parkTimer?.cancel();
     _fadeCtrl.forward().whenComplete(widget.onDone);
   }
 
@@ -303,7 +331,7 @@ class _FlyingCoverOverlayState extends ConsumerState<_FlyingCoverOverlay>
             // 从中心位置反推 topLeft，使封面中心恰好落在贝塞尔曲线上
             final topLeft = center - Offset(w / 2, h / 2);
 
-            // 与桌面端一致：飞行中透明度从 1 缓降到 0.92，悬停保持，淡出时归零。
+            // 与桌面端一致：飞行中透明度从 1 缓降到 0.92，淡出时归零。
             final opacity = _fading
                 ? (0.92 * (1 - _fadeCtrl.value))
                 : (1.0 - 0.08 * t);

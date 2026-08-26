@@ -317,8 +317,9 @@ class _FavoriteTile extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
     BuildContext? coverCtx;
-    final g = songRowPlay(ref, onPlay: () {
-      launchFlyCover(
+    final g = songRowPlay(ref, onPlay: () async {
+      // 等封面落地后再播放：播放条封面随落地同步更新。
+      final ok = await launchFlyCover(
         context,
         coverContext: coverCtx,
         coverSize: m.songCover,
@@ -327,7 +328,7 @@ class _FavoriteTile extends ConsumerWidget {
         networkUrl: entry.coverUrl,
         radius: m.songRadius,
       );
-      onPlay();
+      if (ok) onPlay();
     });
     return g.wrap(
       CoverRow(

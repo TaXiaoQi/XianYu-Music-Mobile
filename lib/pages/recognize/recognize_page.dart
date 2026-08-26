@@ -512,15 +512,16 @@ class _MatchRow extends StatefulWidget {
 class _MatchRowState extends State<_MatchRow> {
   BuildContext? _coverCtx;
 
-  void _handlePlay() {
-    launchFlyCover(
+  Future<void> _handlePlay() async {
+    // 等封面落地后再播放：播放条封面随落地同步更新。
+    final ok = await launchFlyCover(
       context,
       coverContext: _coverCtx,
       coverSize: 52,
       networkUrl: widget.match.img,
       radius: 8,
     );
-    widget.onPlay();
+    if (ok) widget.onPlay();
   }
 
   @override

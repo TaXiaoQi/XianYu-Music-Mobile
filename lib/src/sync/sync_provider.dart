@@ -364,23 +364,29 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final isCloudLocal = j['syncType'] == 'local' || j['source_type'] == 'local';
     final cloudLocalPath = (j['localPath'] as String?) ??
         (isCloudLocal ? rawPath : null);
-    final resolved = (cloudLocalPath == null || cloudLocalPath.isEmpty)
-        ? (path: rawPath, coverThumbPath: null)
-        : _resolveLocalPath(
-            byPath, byMeta, cloudLocalPath, title, artist, durationSec);
+    // 只要路径是本地文件路径就尝试匹配本地曲库（兼容旧版云端数据
+    // 未带 syncType/source_type/localPath 标记的情况）。
+    final matchPath = (cloudLocalPath != null && cloudLocalPath.isNotEmpty)
+        ? cloudLocalPath
+        : rawPath;
+    final matched = _isLocalFilePath(matchPath)
+        ? _matchLocalLibrarySong(
+            byPath, byMeta, matchPath, title, artist, durationSec)
+        : null;
+    final resolvedPath = matched?.path ?? matchPath;
     return ImportedSong.fromJson({
-      'title': title,
-      'artist': j['artist'],
-      'album': j['album'],
+      'title': matched?.title ?? title,
+      'artist': matched?.artist ?? (j['artist'] ?? ''),
+      'album': matched?.album ?? (j['album'] ?? ''),
       'duration': durationSec,
       'coverUrl': j['coverUrl'],
-      'coverThumbPath': resolved.coverThumbPath,
-      'localPath': resolved.path,
+      'coverThumbPath': matched?.coverThumbPath,
+      'localPath': resolvedPath,
       'pluginId': j['pluginId'],
       'source': j['source'],
       'format': j['format'],
       'musicInfo': j['musicInfo'],
-      'path': resolved.path,
+      'path': resolvedPath,
     });
   }
 
@@ -408,9 +414,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   /// 将同步的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
-  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径，
-  /// 同时带回匹配到的本地歌曲封面缩略图路径。
-  ({String path, String? coverThumbPath}) _resolveLocalPath(
+  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地歌曲。
+  /// 命中后由调用方把本地歌曲的专辑/封面等元数据一并带回，保证
+  /// 云端同步下来的本地歌单与本地音乐展示一致。未命中（或非本地
+  /// 路径）返回 null，调用方保留云端路径。
+  Song? _matchLocalLibrarySong(
     Map<String, Song> byPath,
     Map<String, List<Song>> byMeta,
     String cloudPath,
@@ -418,30 +426,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
     String artist,
     int durationSec,
   ) {
-    if (!_isLocalFilePath(cloudPath)) {
-      return (path: cloudPath, coverThumbPath: null);
-    }
+    if (!_isLocalFilePath(cloudPath)) return null;
     final direct = byPath[cloudPath];
-    if (direct != null) {
-      return (path: cloudPath, coverThumbPath: direct.coverThumbPath);
-    }
+    if (direct != null) return direct;
     final candidates =
         byMeta['${_normMeta(title)}|${_normMeta(artist)}'] ?? const [];
-    if (candidates.isEmpty) {
-      return (path: cloudPath, coverThumbPath: null);
-    }
-    if (candidates.length == 1) {
-      return (
-        path: candidates.first.path,
-        coverThumbPath: candidates.first.coverThumbPath,
-      );
-    }
-    if (durationSec <= 0) {
-      return (
-        path: candidates.first.path,
-        coverThumbPath: candidates.first.coverThumbPath,
-      );
-    }
+    if (candidates.isEmpty) return null;
+    if (candidates.length == 1) return candidates.first;
+    if (durationSec <= 0) return candidates.first;
     Song? best;
     var bestDiff = 5;
     for (final c in candidates) {
@@ -451,10 +443,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         best = c;
       }
     }
-    if (best != null) {
-      return (path: best.path, coverThumbPath: best.coverThumbPath);
-    }
-    return (path: cloudPath, coverThumbPath: null);
+    return best;
   }
 
   Future<void> syncPlaylistsUpload() async {
@@ -633,17 +622,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
             .last) as String;
         final artist = (item['artist'] as String?) ?? '';
         final durationMs = (item['duration'] as num?)?.toInt() ?? 0;
-        final resolved = _resolveLocalPath(
+        final matched = _matchLocalLibrarySong(
             index.byPath, index.byMeta, path, title, artist, (durationMs / 1000).round());
         await notifier.add(
           QueueItem(
-            path: resolved.path,
-            title: title,
-            artist: artist,
-            album: (item['album'] as String?) ?? '',
+            path: matched?.path ?? path,
+            title: matched?.title ?? title,
+            artist: matched?.artist ?? artist,
+            album: matched?.album ?? (item['album'] as String?) ?? '',
             durationMs: durationMs,
             coverUrl: item['coverUrl'] as String?,
-            coverPath: resolved.coverThumbPath,
+            coverPath: matched?.coverThumbPath,
             source: item['source'] as String?,
             onlineSongJson: item['onlineSongJson'] as String?,
             onlineQuality: item['onlineQuality'] as String?,

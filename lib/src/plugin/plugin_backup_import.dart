@@ -987,6 +987,7 @@ typedef LocalSongRef = ({
   String path,
   String title,
   String artist,
+  String album,
   int duration,
   String? coverThumbPath,
 });
@@ -1125,7 +1126,7 @@ ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
     return ImportedSong(
       title: song.title,
       artist: song.artist,
-      album: song.album,
+      album: c.album.isNotEmpty ? c.album : song.album,
       duration: song.duration,
       coverThumbPath: c.coverThumbPath,
       localPath: c.path,
@@ -1146,7 +1147,7 @@ ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
       return ImportedSong(
         title: song.title,
         artist: song.artist,
-        album: song.album,
+        album: best.album.isNotEmpty ? best.album : song.album,
         duration: song.duration,
         coverThumbPath: best.coverThumbPath,
         localPath: best.path,
