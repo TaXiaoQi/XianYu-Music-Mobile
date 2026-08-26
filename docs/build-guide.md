@@ -61,7 +61,7 @@ flutter build apk --release
 
 1. 版本号自动同步：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
 2. Rust 由 rustHook 自动编译（见上表）
-3. APK 自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 + 混淆 + R8）
+3. APK 自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 16MB，arm64 + 混淆 + R8）
 4. 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（还原线上崩溃堆栈用）
 
 > 版本同步仅 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
