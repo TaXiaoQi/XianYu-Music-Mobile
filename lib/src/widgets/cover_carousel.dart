@@ -138,6 +138,8 @@ class _NowPlayingCard extends StatelessWidget {
               height: double.infinity,
               radius: 0,
               icon: Icons.album,
+              // 全屏大卡：本地封面走 800px 高清提取，否则 150px 缩略图撑满整卡会糊。
+              highQuality: true,
             ),
             const DecoratedBox(
               decoration: BoxDecoration(
