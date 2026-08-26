@@ -65,7 +65,11 @@ class QqShareService {
   }
 
   /// QQ 客户端是否已安装（未安装时走网页分享可能失败，调用方应提示并兜底复制链接）。
+  ///
+  /// 原生实现的 `isQQInstalled` 依赖 `tencent != null`（须先 registerApp 创建实例），
+  /// 若在首次分享前直接查询会因实例未创建而恒判「未安装」，故先走惰性初始化。
   Future<bool> isQQInstalled() async {
+    if (!await _ensureInit()) return false;
     try {
       return await TencentKitPlatform.instance.isQQInstalled();
     } catch (_) {

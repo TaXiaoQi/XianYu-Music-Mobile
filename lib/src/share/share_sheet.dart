@@ -2,9 +2,15 @@
 //
 // 分享以网页卡片落地页深链进行：接收方打开链接拉起重启并播放歌曲。
 // 打开菜单不阻塞，点击对应目标时才现场生成分享链接与封面缩略图。
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 
 import '../player/player_provider.dart';
@@ -19,7 +25,6 @@ Future<void> showSongShareSheet(
   required WidgetRef ref,
   required QueueItem song,
 }) async {
-  final scheme = Theme.of(context).colorScheme;
   // 提前捕获 Overlay，避免 await 后跨 async 间隙使用 BuildContext。
   final overlay = Overlay.of(context, rootOverlay: true);
 
@@ -31,26 +36,16 @@ Future<void> showSongShareSheet(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            child: Text(
-              song.title,
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            child: const Text(
+              '分享',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              song.artist.isEmpty ? '未知歌手' : song.artist,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: 6),
           ListTile(
-            leading: const Icon(Icons.send, color: Color(0xFF12B7F5), size: 22),
+            leading: _qqBadge('assets/icon/share_qq.jpg'),
             title: const Text('分享到 QQ 好友'),
             onTap: () {
               Navigator.pop(ctx);
@@ -58,7 +53,7 @@ Future<void> showSongShareSheet(
             },
           ),
           ListTile(
-            leading: const Icon(Icons.public, color: Color(0xFF12B7F5), size: 22),
+            leading: _qqBadge('assets/icon/share_qzone.jpg'),
             title: const Text('分享到 QQ 空间'),
             subtitle: const Text('QQ 空间支持网页分享，不支持音乐卡片'),
             onTap: () {
@@ -67,7 +62,16 @@ Future<void> showSongShareSheet(
             },
           ),
           ListTile(
-            leading: Icon(Icons.link, color: scheme.onSurfaceVariant, size: 22),
+            leading: _plainBadge(context, Icons.grid_view),
+            title: const Text('分享到更多应用'),
+            subtitle: const Text('调用系统分享，可发到微信/钉钉/短信等任意平台'),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await _shareToOtherApps(overlay, ref, song);
+            },
+          ),
+          ListTile(
+            leading: _plainBadge(context, Icons.link),
             title: const Text('复制分享链接'),
             onTap: () async {
               Navigator.pop(ctx);
@@ -78,6 +82,29 @@ Future<void> showSongShareSheet(
         ],
       ),
     ),
+  );
+}
+
+/// QQ/QQ空间品牌徽章图标：白边圆形裁切，明暗弹窗下都清晰。
+Widget _qqBadge(String asset) => Container(
+      width: 34,
+      height: 34,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.asset(asset, width: 34, height: 34, fit: BoxFit.cover),
+    );
+
+/// 普通选项的圆形徽章图标（与 QQ 徽章同尺寸同白底风格，内嵌语义图标）。
+Widget _plainBadge(BuildContext context, IconData icon) {
+  final scheme = Theme.of(context).colorScheme;
+  return Container(
+    width: 34,
+    height: 34,
+    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+    child: Icon(icon, size: 19, color: scheme.onSurfaceVariant),
   );
 }
 
@@ -147,4 +174,106 @@ Future<void> _shareViaQQ(
       await Clipboard.setData(ClipboardData(text: url));
       showXianYuToastByOverlay(overlay, '分享失败，链接已复制');
   }
+}
+
+/// 调用 Android 系统分享面板（ACTION_SEND）：封面图 + 「歌名 · 歌手 + 落地页链接」。
+/// 覆盖微信/钉钉/短信等任意平台；封面缺失或下载失败时退化为纯文本。
+Future<void> _shareToOtherApps(
+  OverlayState overlay,
+  WidgetRef ref,
+  QueueItem song,
+) async {
+  final url = await _ensureUrl(ref, song);
+  if (url.isEmpty) {
+    showXianYuToastByOverlay(overlay, '生成分享链接失败');
+    return;
+  }
+
+  final artist = song.artist.isEmpty ? '未知歌手' : song.artist;
+
+  final cover = await _localCoverFile(song);
+  try {
+    await SharePlus.instance.share(ShareParams(
+      files: cover == null ? null : [XFile(cover.path)],
+      text: '${song.title} · $artist\n来自弦予音乐\n$url',
+    ));
+  } catch (_) {
+    await Clipboard.setData(ClipboardData(text: url));
+    showXianYuToastByOverlay(overlay, '分享失败，链接已复制');
+  }
+}
+
+/// 取封面本地文件：优先本地封面文件（coverPath），其次在线封面下载到临时目录。
+/// 拿不到返回 null（此时仅分享文本链接）。
+Future<File?> _localCoverFile(QueueItem song) async {
+  final path = song.coverPath;
+  if (path != null && path.isNotEmpty && !path.contains('content://')) {
+    try {
+      final f = File(_stripFileScheme(path));
+      if (await f.exists()) return f;
+    } catch (_) {}
+  }
+
+  final online = _decodeMap(song.onlineSongJson);
+  final candidates = <String?>[
+    song.coverUrl,
+    online?['picture']?.toString(),
+  ];
+  for (final c in candidates) {
+    if (c != null && c.isNotEmpty && _isRemoteHttp(c)) {
+      final f = await _downloadToTemp(c);
+      if (f != null) return f;
+    }
+  }
+  return null;
+}
+
+Future<File?> _downloadToTemp(String url) async {
+  try {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8);
+    final req = await client.getUrl(Uri.parse(url));
+    final res = await req.close();
+    if (res.statusCode != 200) {
+      client.close();
+      return null;
+    }
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in res) {
+      builder.add(chunk);
+    }
+    client.close();
+    final bytes = builder.takeBytes();
+    if (bytes.isEmpty) return null;
+    final dir = await getTemporaryDirectory();
+    final file = File(
+        '${dir.path}/xiuxwe_share_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await file.writeAsBytes(bytes);
+    return file;
+  } catch (_) {
+    return null;
+  }
+}
+
+String _stripFileScheme(String path) {
+  if (path.startsWith('file://')) return path.substring('file://'.length);
+  return path;
+}
+
+Map<String, dynamic>? _decodeMap(String? json) {
+  if (json == null || json.isEmpty) return null;
+  try {
+    final v = jsonDecode(json);
+    return v is Map ? v.cast<String, dynamic>() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+bool _isRemoteHttp(String s) {
+  if (!(s.startsWith('http://') || s.startsWith('https://'))) return false;
+  final lower = s.toLowerCase();
+  return !(lower.contains('asset.localhost') ||
+      lower.contains('localhost') ||
+      lower.contains('127.0.0.1'));
 }
