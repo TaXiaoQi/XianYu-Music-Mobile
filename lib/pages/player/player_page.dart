@@ -619,15 +619,11 @@ class _TraditionalPlayerLayoutState
             // 点击打开音效页（原首页底部栏音效入口已迁入传统播放页）。
             onTap: () => context.push('/effects'),
           ),
-          _actionItem(
+          _qualityActionItem(
             context,
-            icon: Icons.hd,
-            tooltip: '音质',
-            badge: _qualityLabel(currentQuality),
-            iconColor: (currentQuality != null &&
-                    isLosslessQuality(currentQuality))
-                ? Theme.of(context).colorScheme.primary
-                : null,
+            quality: currentQuality,
+            lossless: currentQuality != null &&
+                isLosslessQuality(currentQuality),
             onTap: () {
               final c = current;
               if (c == null) return;
@@ -640,13 +636,11 @@ class _TraditionalPlayerLayoutState
               }
             },
           ),
-          _actionItem(
+          _downloadActionItem(
             context,
-            icon: dlDone
-                ? Icons.check_circle
-                : (dlActive ? Icons.hourglass_top : Icons.download_outlined),
-            tooltip: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
-            iconColor: dlDone ? const Color(0xFF07C160) : null,
+            isLocal: isLocal,
+            dlActive: dlActive,
+            dlDone: dlDone,
             onTap: () {
               if (current == null) return;
               if (dlActive) {
@@ -666,7 +660,7 @@ class _TraditionalPlayerLayoutState
           ),
           _actionItem(
             context,
-            icon: Icons.mode_comment_outlined,
+            icon: Icons.chat_bubble_outline,
             tooltip: '评论',
             // 本地歌曲无在线评论信息，置灰不可点
             enabled: current != null && current.isOnline,
@@ -689,32 +683,95 @@ class _TraditionalPlayerLayoutState
   /// 桌面歌词「词」按钮：文字「词」替代图标，开启时主题色高亮。
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
     final accent = Theme.of(context).colorScheme.primary;
+    return IconButton(
+      iconSize: 28,
+      tooltip: '桌面歌词',
+      icon: Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: lyricsEnabled
+              ? accent.withValues(alpha: 0.14)
+              : Colors.transparent,
+        ),
+        child: Text(
+          '词',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: lyricsEnabled
+                ? accent
+                : Colors.white.withValues(alpha: 0.85),
+          ),
+        ),
+      ),
+      onPressed: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+    );
+  }
+
+  /// 下载按钮（对齐桌面端）：下载中显示环形加载，已下载显示绿色对勾。
+  Widget _downloadActionItem(
+    BuildContext context, {
+    required bool isLocal,
+    required bool dlActive,
+    required bool dlDone,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      iconSize: 28,
+      tooltip: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
+      icon: dlActive
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
+            )
+          : Icon(
+              dlDone ? Icons.check_circle : Icons.download_outlined,
+              color: dlDone
+                  ? const Color(0xFF07C160)
+                  : Colors.white.withValues(alpha: 0.85),
+            ),
+      onPressed: onTap,
+    );
+  }
+
+  /// 音质按钮（对齐桌面端）：以文字缩写显示当前音质，无损时主题色高亮。
+  Widget _qualityActionItem(
+    BuildContext context, {
+    required String? quality,
+    required bool lossless,
+    required VoidCallback onTap,
+  }) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Tooltip(
-      message: '桌面歌词',
+      message: '音质',
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: lyricsEnabled
-                  ? accent.withValues(alpha: 0.14)
-                  : Colors.transparent,
-            ),
-            child: Text(
-              '词',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: lyricsEnabled
-                    ? accent
-                    : Colors.white.withValues(alpha: 0.85),
-              ),
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: lossless
+                ? accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+          ),
+          child: Text(
+            _qualityAbbr(quality),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: lossless
+                  ? accent
+                  : Colors.white.withValues(alpha: 0.85),
             ),
           ),
         ),
@@ -722,12 +779,46 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 单个动作项：纯图标（对齐播放控件行），可选角标；enabled=false 时置灰且不可点。
+  /// 音质缩写（对齐桌面端 QUALITY_ABBR）。
+  String _qualityAbbr(String? q) {
+    switch (q) {
+      case null:
+      case '':
+        return 'HQ';
+      case 'mgg':
+        return 'LQ';
+      case '128k':
+        return '128';
+      case '192k':
+        return '192';
+      case '320k':
+        return 'HQ';
+      case 'flac':
+        return 'SQ';
+      case 'flac24bit':
+        return 'HR';
+      case 'hires':
+        return 'HRA';
+      case 'vinyl':
+        return 'VL';
+      case 'dolby':
+        return 'DA';
+      case 'atmos':
+        return 'AT';
+      case 'atmos_plus':
+        return 'AT+';
+      case 'master':
+        return 'MS';
+      default:
+        return q.toUpperCase();
+    }
+  }
+
+  /// 单个动作项：纯图标（对齐播放控件行）；enabled=false 时置灰且不可点。
   Widget _actionItem(
     BuildContext context, {
     required IconData icon,
     String? tooltip,
-    String? badge,
     bool active = false,
     Color? iconColor,
     bool enabled = true,
@@ -737,39 +828,12 @@ class _TraditionalPlayerLayoutState
     return IconButton(
       iconSize: 28,
       tooltip: tooltip,
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(
-            icon,
-            color: enabled
-                ? (iconColor ??
-                    (active ? accent : Colors.white.withValues(alpha: 0.85)))
-                : Colors.white.withValues(alpha: 0.32),
-          ),
-          if (badge != null)
-            Positioned(
-              right: -7,
-              bottom: -7,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                decoration: BoxDecoration(
-                  color: accent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  badge,
-                  style: const TextStyle(
-                    fontSize: 8,
-                    height: 1,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-        ],
+      icon: Icon(
+        icon,
+        color: enabled
+            ? (iconColor ??
+                (active ? accent : Colors.white.withValues(alpha: 0.85)))
+            : Colors.white.withValues(alpha: 0.32),
       ),
       onPressed: enabled ? onTap : null,
     );

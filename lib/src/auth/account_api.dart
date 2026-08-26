@@ -272,6 +272,29 @@ class AccountApi {
     return settings;
   }
 
+  /// 从云端下载设置（含上传时间元数据，供冲突弹窗展示）。
+  Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
+      downloadSettingsWithMeta() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException('请先登录后再同步设置');
+    }
+    final data = await _action('settings_sync_download', {
+      'user_id': ciyuanxiId,
+      'platform': 'mobile',
+    }, fetchTimeoutMs: 15000);
+    final settings = data['settings'];
+    DateTime? uploadedAt;
+    final uploadedAtStr = data['uploaded_at'];
+    if (uploadedAtStr is String && uploadedAtStr.isNotEmpty) {
+      uploadedAt = DateTime.tryParse(uploadedAtStr);
+    }
+    return (
+      settings: settings is Map<String, dynamic> ? settings : null,
+      uploadedAt: uploadedAt,
+    );
+  }
+
   // ─── 服务器负载（自动同步用） ───────────────────────────
 
   /// 查询服务器负载状态；失败返回 null。
@@ -722,4 +745,25 @@ AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
     downloadLyrics: (cloud['downloadLyrics'] as bool?) ?? local.downloadLyrics,
     organizeRule: (cloud['organizeRule'] as String?) ?? local.organizeRule,
   );
+}
+
+/// 比较本地设置与云端设置是否一致（排除设备相关字段，与桌面端 areSettingsEqual 对齐）。
+///
+/// 仅比较同步字段（settingsToSyncMap 的键集合）；云端缺字段视为与本地一致
+/// （本地保留）；themeMode 兼容 int/string 两种存储表示。
+bool areSettingsEqual(AppSettings local, Map<String, dynamic> cloud) {
+  final localMap = settingsToSyncMap(local);
+  for (final entry in localMap.entries) {
+    var cloudVal = cloud[entry.key];
+    if (cloudVal == null) continue;
+    if (entry.key == 'themeMode' && cloudVal is String) {
+      cloudVal = switch (cloudVal) {
+        'light' => 1,
+        'dark' => 2,
+        _ => 0,
+      };
+    }
+    if (cloudVal != entry.value) return false;
+  }
+  return true;
 }

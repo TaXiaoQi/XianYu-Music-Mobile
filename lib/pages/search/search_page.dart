@@ -853,8 +853,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                       fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
                 ),
                 verticalPadding: m.vPad,
-                onTap: () {
-                  launchFlyCover(
+                onTap: () async {
+                  // 等封面落地后再播放：播放条封面随落地同步更新。
+                  final ok = await launchFlyCover(
                     rowContext,
                     coverContext: coverCtx,
                     coverSize: m.songCover,
@@ -863,7 +864,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     thumbPath: s.coverThumbPath,
                     radius: m.songRadius,
                   );
-                  _play(i);
+                  if (ok) _play(i);
                 },
               );
             },
@@ -924,10 +925,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
               ],
             ),
             onLongPress: () => _openActions(i),
-            onTap: () {
+            onTap: () async {
                 debugPrint('[search] online row onTap i=$i');
                 try {
-                  launchFlyCover(
+                  // 等封面落地后再播放：播放条封面随落地同步更新。
+                  final ok = await launchFlyCover(
                     rowContext,
                     coverContext: coverCtx,
                     coverSize: m.songCover,
@@ -935,10 +937,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     networkUrl: r.img,
                     radius: m.songRadius,
                   );
+                  if (ok) _play(i);
                 } catch (e, st) {
                   debugPrint('[search] launchFlyCover ERROR: $e\n$st');
+                  _play(i);
                 }
-                _play(i);
               },
             );
           },

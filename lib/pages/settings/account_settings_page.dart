@@ -594,6 +594,7 @@ class _ManualSyncCard extends ConsumerWidget {
           state: sync.$4,
           onUpload: notifier.syncSettingsUpload,
           onDownload: notifier.syncSettingsDownload,
+          onSync: () => notifier.syncSettings(context),
         ),
       ],
     );
@@ -682,19 +683,23 @@ class _GlassCard extends StatelessWidget {
   }
 }
 
-/// 手动同步条目：标题 + 上次同步摘要 + 上传/下载按钮。
+/// 手动同步条目：标题 + 上次同步摘要 + 上传/下载按钮（可选「同步」双向按钮）。
 class _SyncActionTile extends StatelessWidget {
   const _SyncActionTile({
     required this.title,
     required this.state,
     required this.onUpload,
     required this.onDownload,
+    this.onSync,
   });
 
   final String title;
   final SyncItemState state;
   final VoidCallback onUpload;
   final VoidCallback onDownload;
+
+  /// 双向同步（带冲突检测与弹窗），仅「设置」条目提供。
+  final VoidCallback? onSync;
 
   @override
   Widget build(BuildContext context) {
@@ -717,6 +722,17 @@ class _SyncActionTile extends StatelessWidget {
               ),
               Row(
                 children: [
+                  if (onSync != null) ...[
+                    FilledButton(
+                      onPressed: state.syncing ? null : onSync,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      child: const Text('同步', style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   FilledButton.tonal(
                     onPressed: state.syncing ? null : onUpload,
                     style: FilledButton.styleFrom(

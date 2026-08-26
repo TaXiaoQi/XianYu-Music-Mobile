@@ -27,6 +27,7 @@ class CoverImage extends ConsumerStatefulWidget {
     this.gradient,
     this.icon = Icons.music_note,
     this.placeholder,
+    this.cacheWidth,
   });
 
   final String songPath;
@@ -40,6 +41,10 @@ class CoverImage extends ConsumerStatefulWidget {
   final double width;
   final double height;
   final double radius;
+
+  /// 固定解码宽度（像素）；非空时覆盖按显示尺寸自动计算的 cacheWidth。
+  /// 用于飞封面等宽度逐帧变化的场景，避免每帧重解码导致闪烁/模糊。
+  final int? cacheWidth;
 
   /// 占位渐变；null 时跟随主题色（primary → 深化 primary）。
   final List<Color>? gradient;
@@ -201,6 +206,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   /// 正在播放轮播图、全屏背景封面）：此时尺寸不可用于解码，返回 null 表示
   /// 交给引擎按原图解码，否则 `Infinity.round()` 会抛 UnsupportedError。
   int? get _cacheWidth {
+    if (widget.cacheWidth != null) return widget.cacheWidth;
     final w = widget.width;
     if (!w.isFinite || w <= 0) return null;
     final px = w * MediaQuery.of(context).devicePixelRatio;

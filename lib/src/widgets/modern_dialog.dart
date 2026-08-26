@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'predictive_dialog_route.dart';
+import 'sheet_dialog.dart';
 
 /// 现代优雅弹窗组件与全局调用助手
-/// 包含：单选/多选抽屉面板 (ChoiceSheet)、确认提示框 (AlertDialog)、输入框 (InputDialog)
+/// 包含：单选/多选居中面板 (ChoiceSheet)、确认提示框 (AlertDialog)、输入框 (InputDialog)
 
 class ModernChoiceOption<T> {
   final String label;
@@ -18,34 +19,21 @@ class ModernChoiceOption<T> {
   });
 }
 
-/// 1. 全局单选/多选现代抽屉弹窗
+/// 1. 全局单选/多选现代居中弹窗（对齐「安装插件」弹窗风格，不再从底部滑出）
 Future<T?> showModernChoiceSheet<T>({
   required BuildContext context,
   required String title,
   String? subtitle,
   required List<ModernChoiceOption<T>> options,
   T? currentValue,
-  bool isBottomSheet = true,
 }) {
-  if (isBottomSheet) {
-    return showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      builder: (ctx) => _ModernBottomSheetContainer<T>(
-        title: title,
-        subtitle: subtitle,
-        options: options,
-        currentValue: currentValue,
+  return showSheetDialog<T>(
+    context,
+    (ctx) => ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(ctx).size.height * 0.7,
       ),
-    );
-  } else {
-    return showPredictiveDialog<T>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => ModernDialogCard(
+      child: SingleChildScrollView(
         child: _ModernChoiceList<T>(
           title: title,
           subtitle: subtitle,
@@ -54,8 +42,8 @@ Future<T?> showModernChoiceSheet<T>({
           onSelected: (val) => Navigator.of(ctx).pop(val),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// 2. 全局现代通用确认/提示弹窗
@@ -301,77 +289,6 @@ class ModernDialogCard extends StatelessWidget {
           color: Colors.transparent,
           child: child,
         ),
-      ),
-    );
-  }
-}
-
-/// 现代底部抽屉容器
-class _ModernBottomSheetContainer<T> extends StatelessWidget {
-  const _ModernBottomSheetContainer({
-    required this.title,
-    this.subtitle,
-    required this.options,
-    this.currentValue,
-  });
-
-  final String title;
-  final String? subtitle;
-  final List<ModernChoiceOption<T>> options;
-  final T? currentValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-      decoration: BoxDecoration(
-        color: isDark ? scheme.surfaceContainerHigh : scheme.surface,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.18),
-            blurRadius: 32,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 顶端拖拽手柄
-          const SizedBox(height: 10),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 6),
-          // 列表内容
-          Flexible(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 12,
-              ),
-              child: _ModernChoiceList<T>(
-                title: title,
-                subtitle: subtitle,
-                options: options,
-                currentValue: currentValue,
-                onSelected: (val) => Navigator.of(context).pop(val),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

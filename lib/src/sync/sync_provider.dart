@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,6 +21,7 @@ import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_subscriptions.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
+import 'settings_conflict_dialog.dart';
 
 /// 上传选项配置
 class UploadConfig {
@@ -561,6 +563,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     try {
       final favEntries = _ref.read(favoritesProvider).entries;
+      if (favEntries.isEmpty) {
+        // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏
+        // （换包名/重装后本地为空，若直接上传会把云端收藏清空）。
+        state = state.copyWith(
+          favoritesSync: state.favoritesSync.copyWith(
+            syncing: false,
+            lastSummary: '本地收藏为空，跳过上传',
+            lastTime: DateTime.now(),
+            errors: [],
+          ),
+        );
+        return;
+      }
       final payload = favEntries.map((e) {
         return {
           'title': e.title,
@@ -929,6 +944,135 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errors: [err],
       ),
     );
+  }
+
+  /// 双向同步设置：先下载云端设置比较，不一致时弹冲突弹窗按类别选择。
+  ///
+  /// 与桌面端 syncSettings 对齐：云端无数据则上传本地（首次同步）；一致则跳过；
+  /// 不一致则弹出「设置同步冲突」弹窗，让用户按类别（设置/歌单/插件）选择
+  /// 保留本地或云端。自动同步走 auto_sync 的静默合并，不弹窗。
+  Future<void> syncSettings(BuildContext context) async {
+    state = state.copyWith(
+      settingsSync: state.settingsSync.copyWith(syncing: true, errors: []),
+    );
+    try {
+      final local = _ref.read(settingsProvider).valueOrNull;
+      if (local == null) {
+        _setSettingsError('本地设置尚未加载完成');
+        return;
+      }
+      final meta = await _api.downloadSettingsWithMeta();
+      final cloud = meta.settings;
+      final cloudTime = meta.uploadedAt;
+      final upload = _ref.read(syncProvider).uploadConfig;
+
+      // 云端无数据：直接上传本地设置（首次同步）
+      if (cloud == null || cloud.isEmpty) {
+        if (upload.settings) {
+          await _api.uploadSettings(local);
+          state = state.copyWith(
+            settingsSync: state.settingsSync.copyWith(
+              syncing: false,
+              lastSummary: '已上传偏好设置',
+              lastTime: DateTime.now(),
+              errors: [],
+            ),
+          );
+        } else {
+          state = state.copyWith(
+            settingsSync: state.settingsSync.copyWith(
+              syncing: false,
+              lastSummary: '云端暂无设置',
+              lastTime: DateTime.now(),
+              errors: [],
+            ),
+          );
+        }
+        return;
+      }
+
+      // 本地与云端一致：跳过
+      if (areSettingsEqual(local, cloud)) {
+        state = state.copyWith(
+          settingsSync: state.settingsSync.copyWith(
+            syncing: false,
+            lastSummary: '本地与云端设置一致，无需同步',
+            lastTime: DateTime.now(),
+            errors: [],
+          ),
+        );
+        return;
+      }
+
+      // 不一致：弹冲突弹窗，用户按类别选择保留本地或云端
+      if (!context.mounted) return;
+      final choices = await showSettingsConflictDialog(
+        context: context,
+        localTime: DateTime.now(),
+        cloudTime: cloudTime ?? DateTime.now(),
+      );
+      if (choices == null) {
+        state = state.copyWith(
+          settingsSync: state.settingsSync.copyWith(
+            syncing: false,
+            lastSummary: '已取消设置同步',
+            lastTime: DateTime.now(),
+            errors: [],
+          ),
+        );
+        return;
+      }
+
+      final errors = <String>[];
+
+      // --- 设置 ---
+      if (choices.settings == SyncDirection.local) {
+        if (upload.settings) {
+          try {
+            await _api.uploadSettings(local);
+          } catch (e) {
+            errors.add('设置上传失败: $e');
+          }
+        }
+      } else {
+        try {
+          final merged = applySyncedSettings(local, cloud);
+          await _ref.read(settingsProvider.notifier).saveAll(merged);
+        } catch (e) {
+          errors.add('设置下载失败: $e');
+        }
+      }
+
+      // --- 歌单 ---
+      if (choices.playlists == SyncDirection.local) {
+        if (upload.playlists) {
+          await syncPlaylistsUpload();
+        }
+      } else {
+        await syncPlaylistsDownload();
+      }
+
+      // --- 插件 ---
+      if (choices.plugins == SyncDirection.local) {
+        if (upload.plugins) {
+          await syncPluginsUpload();
+        }
+      } else {
+        await syncPluginsDownload();
+      }
+
+      state = state.copyWith(
+        settingsSync: state.settingsSync.copyWith(
+          syncing: false,
+          lastSummary: errors.isEmpty ? '同步完成' : '同步完成（${errors.length} 个错误）',
+          lastTime: DateTime.now(),
+          errors: errors,
+        ),
+      );
+    } catch (e) {
+      AppLogger.instance.log('sync', '设置同步失败: $e');
+      _setSettingsError(e is AuthException ? e.message : '同步失败: $e');
+    }
   }
 
   // ==================== 播放历史同步 ====================

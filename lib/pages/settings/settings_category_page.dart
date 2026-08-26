@@ -1393,48 +1393,42 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = isOnline
         ? s?.onlineDefaultQuality ?? '320k'
         : s?.downloadQuality ?? '320k';
-    final choice = await showModalBottomSheet<_Choice>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      enableDrag: true,
-      showDragHandle: true,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.5,
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 1.0,
-        minChildSize: 0.5,
-        maxChildSize: 1.0,
-        expand: false,
-        builder: (ctx, scrollController) => ListView(
-          controller: scrollController,
-          children: [
-            for (final c in const [
-              _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
-              _Choice('普通', '128k', subtitle: '128k'),
-              _Choice('中等', '192k', subtitle: '192k'),
-              _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
-              _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
-              _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
-              _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
-              _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
-              _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
-              _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
-              _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
-              _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
-            ])
-              ListTile(
-                title: Text(c.label),
-                subtitle: c.subtitle == null ? null : Text(c.subtitle!),
-                trailing: c.value == cur
-                    ? Icon(Icons.check,
-                        color: Theme.of(ctx).colorScheme.primary)
-                    : null,
-                selected: c.value == cur,
-                onTap: () => Navigator.pop(ctx, c),
-              ),
-          ],
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (dialogContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(dialogContext).size.height * 0.6,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final c in const [
+                _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
+                _Choice('普通', '128k', subtitle: '128k'),
+                _Choice('中等', '192k', subtitle: '192k'),
+                _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
+                _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
+                _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
+                _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
+                _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
+                _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
+                _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
+                _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
+                _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
+              ])
+                ListTile(
+                  title: Text(c.label),
+                  subtitle: c.subtitle == null ? null : Text(c.subtitle!),
+                  trailing: c.value == cur
+                      ? Icon(Icons.check,
+                          color: Theme.of(dialogContext).colorScheme.primary)
+                      : null,
+                  selected: c.value == cur,
+                  onTap: () => Navigator.pop(dialogContext, c),
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -32,6 +32,7 @@ import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
+import '../../pages/debug/debug_page.dart';
 import 'animated_branch_container.dart';
 import 'shell.dart';
 
@@ -138,6 +139,8 @@ final appRouter = GoRouter(
     ),
     // 关于页（从设置页进入）。
     GoRoute(path: '/about', builder: (context, state) => const AboutPage()),
+    // 调试页（关于页版本号连点 5 次进入）。
+    GoRoute(path: '/debug', builder: (context, state) => const DebugPage()),
     // 听歌排行榜（从设置页进入）。
     GoRoute(
       path: '/leaderboard',

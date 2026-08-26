@@ -1,6 +1,7 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/auth/account_api.dart';
@@ -19,10 +20,30 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   AboutConfig _config = const AboutConfig();
   bool _checkingUpdate = false;
 
+  /// 版本号连点进入调试页（对齐桌面端：1.5s 内连点 5 次）。
+  static const _debugTapTarget = 5;
+  static const _debugTapInterval = Duration(milliseconds: 1500);
+  int _debugTapCount = 0;
+  DateTime? _lastDebugTap;
+
   @override
   void initState() {
     super.initState();
     _loadConfig();
+  }
+
+  void _handleVersionTap() {
+    final now = DateTime.now();
+    if (_lastDebugTap == null ||
+        now.difference(_lastDebugTap!) > _debugTapInterval) {
+      _debugTapCount = 0;
+    }
+    _lastDebugTap = now;
+    _debugTapCount++;
+    if (_debugTapCount >= _debugTapTarget) {
+      _debugTapCount = 0;
+      context.push('/debug');
+    }
   }
 
   Future<void> _loadConfig() async {
@@ -171,9 +192,10 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           ),
           const SizedBox(height: 4),
           Center(
-            child: Text('版本 $appVersion',
-                style: TextStyle(
-                    fontSize: 13, color: scheme.onSurfaceVariant)),
+            child: _VersionTapBadge(
+              label: '版本 $appVersion',
+              onTap: _handleVersionTap,
+            ),
           ),
           const SizedBox(height: 20),
           // 检查更新
@@ -236,6 +258,52 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 版本号徽标：点击时缩放 + 主题色高亮回弹特效（连点 5 次进入调试页）。
+class _VersionTapBadge extends StatefulWidget {
+  const _VersionTapBadge({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_VersionTapBadge> createState() => _VersionTapBadgeState();
+}
+
+class _VersionTapBadgeState extends State<_VersionTapBadge> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.88 : 1.0,
+        duration: Duration(milliseconds: _pressed ? 80 : 300),
+        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: _pressed
+                ? scheme.primary.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+          ),
+        ),
       ),
     );
   }

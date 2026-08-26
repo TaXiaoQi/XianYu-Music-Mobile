@@ -230,6 +230,10 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
   /// 目标缩放比例（终点尺寸 / 起点尺寸）。
   late final double _sx;
 
+  /// 固定解码宽度：按起点封面尺寸 × 屏幕密度锁定，飞行中宽度逐帧变化时
+  /// 不重解码，避免封面模糊/时隐时现。
+  late final int _cacheWidth;
+
   bool _fading = false;
   bool _initialized = false;
 
@@ -257,6 +261,9 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
         Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
 
     _sx = _toRect.width / widget.fromRect.width;
+    _cacheWidth =
+        (widget.fromRect.width * MediaQuery.of(context).devicePixelRatio)
+            .round();
 
     // 用封面中心点作为位移基准（对齐桌面端 transform-origin: center）。
     // 飞行中封面始终绕自身中心缩放，起点/终点的 topLeft 需补偿中心偏移。
@@ -363,6 +370,7 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                     width: w,
                     height: h,
                     radius: radius,
+                    cacheWidth: _cacheWidth,
                   ),
                 ),
               ),

@@ -109,6 +109,9 @@ class AutoSyncService {
       await notifier.syncPluginsDownload();
     }
     if (upload.favorites) {
+      // 先下载再上传：换包名/重装后本地收藏为空，先拉取云端收藏再上传，
+      // 避免空列表覆盖云端（syncFavoritesUpload 另有空列表保护兜底）。
+      await notifier.syncFavoritesDownload();
       await notifier.syncFavoritesUpload();
     }
     if (upload.settings) {

@@ -203,16 +203,13 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                   proxyDecorator: (child, index, animation) => child,
                   itemBuilder: (context, i) {
                     final source = filtered[i];
-                    // 整个插件条即拖动区：按住任意位置可拖动排序（延迟触发，
-                    // 短暂点按仍可点击详情/更新/删除与开关）
-                    return ReorderableDelayedDragStartListener(
-                      key: ValueKey(source.id),
-                      index: i,
-                      // 搜索过滤时不参与排序，禁用拖动
-                      enabled: _query.isEmpty,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _PluginCard(source: source),
+                    // 点击最前方拖动图标即可拖拽；搜索过滤时禁用
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PluginCard(
+                        source: source,
+                        index: i,
+                        dragEnabled: _query.isEmpty,
                       ),
                     );
                   },
@@ -566,8 +563,14 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _PluginCard extends ConsumerStatefulWidget {
-  const _PluginCard({required this.source});
+  const _PluginCard({
+    required this.source,
+    required this.index,
+    required this.dragEnabled,
+  });
   final PluginSource source;
+  final int index;
+  final bool dragEnabled;
 
   @override
   ConsumerState<_PluginCard> createState() => _PluginCardState();
@@ -758,15 +761,21 @@ class _PluginCardState extends ConsumerState<_PluginCard> {
           ],
         ),
         ),
-        // 拖动 UI：最前方，整条垂直居中（仅视觉提示，整卡均可按住拖动）
+        // 拖动 UI：最前方，整条垂直居中；点击立即触发拖拽
         Positioned(
           left: 4,
           top: 0,
           bottom: 0,
           width: 40,
           child: Center(
-            child: Icon(Icons.drag_indicator,
-                size: 38, color: scheme.outline),
+            child: widget.dragEnabled
+                ? ReorderableDragStartListener(
+                    index: widget.index,
+                    child: Icon(Icons.drag_indicator,
+                        size: 38, color: scheme.outline),
+                  )
+                : Icon(Icons.drag_indicator,
+                    size: 38, color: scheme.outline),
           ),
         ),
       ],
