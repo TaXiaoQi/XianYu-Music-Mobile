@@ -158,8 +158,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: ListView(
-        padding: EdgeInsets.fromLTRB(
-            16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+        padding: const EdgeInsets.all(16),
         children: [
           // 文件夹选择
           Text('目标文件夹',

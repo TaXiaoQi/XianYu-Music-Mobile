@@ -126,8 +126,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
         child: Stack(
         children: [
           ListView(
-            padding: EdgeInsets.fromLTRB(16, 8, 16,
-                120 + MediaQuery.viewInsetsOf(context).bottom),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
             children: [
               Container(
                 padding: const EdgeInsets.all(14),

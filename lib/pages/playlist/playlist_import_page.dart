@@ -67,7 +67,6 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
           Padding(
             padding: EdgeInsets.only(
               top: GlassTopBar.height(context, bottom: tabBar),
-              bottom: MediaQuery.viewInsetsOf(context).bottom,
             ),
             child: TabBarView(
               controller: _tabCtrl,

@@ -191,10 +191,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         body: RepaintBoundary(child: Stack(
           children: [
             Padding(
-              padding: EdgeInsets.only(
-                top: GlassTopBar.height(context, bottom: tabBar),
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
-              ),
+              padding: EdgeInsets.only(top: GlassTopBar.height(context, bottom: tabBar)),
               child: lib.loading
                   ? const Center(child: CircularProgressIndicator())
                   : lib.error != null

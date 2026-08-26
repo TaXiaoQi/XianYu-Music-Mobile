@@ -205,8 +205,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       );
     }
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16,
-          16 + MediaQuery.viewInsetsOf(context).bottom),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -454,8 +453,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     return RefreshIndicator(
       onRefresh: _loadMyFeedback,
       child: ListView.separated(
-        padding: EdgeInsets.fromLTRB(16, 16, 16,
-            16 + MediaQuery.viewInsetsOf(context).bottom),
+        padding: const EdgeInsets.all(16),
         itemCount: _myFeedback.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {

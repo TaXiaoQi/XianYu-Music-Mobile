@@ -69,9 +69,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
               16,
               GlassTopBar.height(context),
               16,
-              40 +
-                  MediaQuery.of(context).padding.bottom +
-                  MediaQuery.viewInsetsOf(context).bottom,
+              40 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
               // 1. 账号状态
