@@ -79,7 +79,7 @@ Future<void> showAddToPlaylistSheet(
             mainAxisSize: MainAxisSize.min,
             children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Row(
                     children: [
                       Text(
@@ -201,7 +201,7 @@ Future<void> showPlaylistActionsSheet(
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
             child: Text(
               playlist.name,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),

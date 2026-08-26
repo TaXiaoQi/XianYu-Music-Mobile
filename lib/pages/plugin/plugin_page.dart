@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -205,6 +206,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                     final source = filtered[i];
                     // 点击最前方拖动图标即可拖拽；搜索过滤时禁用
                     return Padding(
+                      key: ValueKey(source.id),
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _PluginCard(
                         source: source,
@@ -562,12 +564,30 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// 长按 1 秒才触发的拖动监听：默认 ReorderableDelayedDragStartListener 固定为
+/// 系统长按时长（约 500ms），这里显式放大到 1 秒，避免未能及时做出排布导致滑动手感卡顿。
+class _HoldDragStartListener extends ReorderableDelayedDragStartListener {
+  const _HoldDragStartListener({
+    required super.child,
+    required super.index,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() {
+    return DelayedMultiDragGestureRecognizer(
+      delay: const Duration(seconds: 1),
+      debugOwner: this,
+    );
+  }
+}
+
 class _PluginCard extends ConsumerStatefulWidget {
   const _PluginCard({
     required this.source,
     required this.index,
     required this.dragEnabled,
   });
+
   final PluginSource source;
   final int index;
   final bool dragEnabled;
@@ -769,8 +789,9 @@ class _PluginCardState extends ConsumerState<_PluginCard> {
           width: 40,
           child: Center(
             child: widget.dragEnabled
-                ? ReorderableDragStartListener(
+                ? _HoldDragStartListener(
                     index: widget.index,
+                    // 长按满 1 秒才进入排布，避免一按即拖造成滑动卡顿
                     child: Icon(Icons.drag_indicator,
                         size: 38, color: scheme.outline),
                   )

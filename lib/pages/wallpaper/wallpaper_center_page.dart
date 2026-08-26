@@ -832,7 +832,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       itemCount: _downloads.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, i) {

@@ -187,7 +187,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   /// 下载在线歌曲（插件音源或 lx:// 音源）。受并发上限控制，超出排队。
-  Future<void> download(QueueItem item) async {
+  ///
+  /// [quality] 为调用方（下载音质弹窗）选定的档位；未指定时按
+  /// 歌曲自带音质 → 设置下载音质 → 320k 依次回退。
+  Future<void> download(QueueItem item, {String? quality}) async {
     if (!item.isOnline) return;
     if (state.tasks.any((t) =>
         t.songPath == item.path &&
@@ -197,14 +200,17 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
 
     final settings = _ref.read(settingsProvider).valueOrNull;
-    final quality = item.onlineQuality ?? settings?.downloadQuality ?? '320k';
+    final q = quality ??
+        item.onlineQuality ??
+        settings?.downloadQuality ??
+        '320k';
 
     final task = DownloadTask(
       songPath: item.path,
       title: item.title,
       artist: item.artist,
       album: item.album,
-      quality: quality,
+      quality: q,
       coverUrl: item.coverUrl,
       source: item.source,
       onlineSongJson: item.onlineSongJson,

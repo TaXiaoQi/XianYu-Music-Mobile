@@ -289,26 +289,29 @@ class _EqSection extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final action = await showSheetDialog<String>(
       context,
-      (dialogContext) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            title: Text('预设「$name」',
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            dense: true,
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.drive_file_rename_outline),
-            title: const Text('重命名'),
-            onTap: () => Navigator.pop(dialogContext, 'rename'),
-          ),
-          ListTile(
-            leading: Icon(Icons.delete_outline, color: scheme.error),
-            title: Text('删除', style: TextStyle(color: scheme.error)),
-            onTap: () => Navigator.pop(dialogContext, 'delete'),
-          ),
-        ],
+      (dialogContext) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('预设「$name」',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              dense: true,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('重命名'),
+              onTap: () => Navigator.pop(dialogContext, 'rename'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: scheme.error),
+              title: Text('删除', style: TextStyle(color: scheme.error)),
+              onTap: () => Navigator.pop(dialogContext, 'delete'),
+            ),
+          ],
+        ),
       ),
     );
     if (action == 'rename') {

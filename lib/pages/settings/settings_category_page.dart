@@ -1400,6 +1400,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           maxHeight: MediaQuery.of(dialogContext).size.height * 0.6,
         ),
         child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1713,31 +1714,34 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     Object? cur, {
     required String Function(dynamic) labelOf,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final c in choices)
-          ListTile(
-            title: Text(labelOf(c.value)),
-            subtitle: c.subtitle == null
-                ? null
-                : Text(
-                    c.subtitle!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final c in choices)
+            ListTile(
+              title: Text(labelOf(c.value)),
+              subtitle: c.subtitle == null
+                  ? null
+                  : Text(
+                      c.subtitle!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-            trailing: c.value == cur
-                ? Icon(
-                    Icons.check,
-                    color: Theme.of(context).colorScheme.primary,
-                  )
-                : null,
-            selected: c.value == cur,
-            onTap: () => Navigator.pop(context, c),
-          ),
-      ],
+              trailing: c.value == cur
+                  ? Icon(
+                      Icons.check,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              selected: c.value == cur,
+              onTap: () => Navigator.pop(context, c),
+            ),
+        ],
+      ),
     );
   }
 }

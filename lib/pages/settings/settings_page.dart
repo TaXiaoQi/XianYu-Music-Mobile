@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/developer_mode.dart';
 import '../../src/widgets/glass_appbar.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
@@ -90,6 +91,8 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDeveloperMode = ref.watch(developerModeProvider);
+    final groups = _buildGroups(isDeveloperMode);
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       body: Stack(
@@ -104,7 +107,7 @@ class SettingsPage extends ConsumerWidget {
               92 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
-              for (final (header, entries) in _groups) ...[
+              for (final (header, entries) in groups) ...[
                 _sectionHeader(context, header),
                 _CardGroup(
                   children: [
@@ -128,6 +131,32 @@ class SettingsPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// 构建分类分组；开发者模式开启时在「系统」分组末尾追加「调试」入口（对齐桌面端）。
+  List<(String, List<_CategoryEntry>)> _buildGroups(bool isDeveloperMode) {
+    final groups = <(String, List<_CategoryEntry>)>[
+      ..._groups,
+    ];
+    if (isDeveloperMode) {
+      final systemIndex = groups.indexWhere((g) => g.$1 == '系统');
+      if (systemIndex >= 0) {
+        final (header, entries) = groups[systemIndex];
+        groups[systemIndex] = (
+          header,
+          [
+            ...entries,
+            const _CategoryEntry(
+              '调试',
+              Icons.bug_report_outlined,
+              '调试模式：弹窗测试、退出调试',
+              '/debug',
+            ),
+          ],
+        );
+      }
+    }
+    return groups;
   }
 
   Widget _sectionHeader(BuildContext context, String title) => Padding(

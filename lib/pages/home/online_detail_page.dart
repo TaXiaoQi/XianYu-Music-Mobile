@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
-import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -188,14 +187,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         .toList();
     if (queue.isEmpty) return;
     ref.read(playerProvider.notifier).playQueue(queue, startIndex: index);
-  }
-
-  void _download(int index) {
-    final source = _source;
-    if (source == null) return;
-    final item = PluginCatalogService.toQueueItem(source, _songs[index]);
-    ref.read(downloadProvider.notifier).download(item);
-    showXianYuToast(context, '开始下载：${item.title}');
   }
 
   QueueItem? _queueItem(int index) {
@@ -432,12 +423,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                         tooltip: '收藏',
                         onPressed: () => _toggleFavorite(i),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.download_outlined,
-                            size: 20, color: scheme.primary),
-                        tooltip: '下载',
-                        onPressed: () => _download(i),
-                      ),
                       if (r.interval.isNotEmpty)
                         Text(
                           r.interval,
@@ -445,6 +430,12 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                               fontSize: m.subtitleSize,
                               color: scheme.onSurfaceVariant),
                         ),
+                      IconButton(
+                        icon: const Icon(Icons.more_horiz, size: 22),
+                        color: scheme.onSurfaceVariant,
+                        tooltip: '更多',
+                        onPressed: () => _songActions(i),
+                      ),
                     ],
                   ),
                 ),

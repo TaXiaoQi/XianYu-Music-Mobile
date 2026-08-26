@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/developer_mode.dart';
+import '../../src/notifications/notification_service.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
@@ -51,6 +53,7 @@ class DebugPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
       body: Stack(
@@ -63,6 +66,26 @@ class DebugPage extends ConsumerWidget {
               92 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
+              _sectionHeader(context, '开发者模式'),
+              _CardGroup(
+                children: [
+                  ListTile(
+                    title: const Text('开发者模式'),
+                    subtitle: Text(
+                      '当前已开启，退出后设置页将隐藏调试入口',
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    trailing: FilledButton(
+                      onPressed: () {
+                        ref.read(developerModeProvider.notifier).disable();
+                        showXianYuToast(context, '已退出调试模式');
+                      },
+                      child: const Text('退出'),
+                    ),
+                  ),
+                ],
+              ),
               _sectionHeader(context, '通用弹窗'),
               _CardGroup(
                 children: [
@@ -140,6 +163,13 @@ class DebugPage extends ConsumerWidget {
                       confirmText: '知道了',
                       blocked: true,
                     ),
+                  ),
+                  _DebugRow(
+                    title: '公告展示框',
+                    subtitle: '测试公告弹窗显示',
+                    onTap: () => ref
+                        .read(notificationServiceProvider)
+                        .showAnnouncementForDebug(context),
                   ),
                 ],
               ),

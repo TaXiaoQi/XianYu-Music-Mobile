@@ -29,7 +29,7 @@ Future<void> showSongActionsSheet(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
               child: Text(
                 item.title,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),

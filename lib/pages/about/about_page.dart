@@ -1,12 +1,15 @@
+import 'dart:async';
+
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/developer_mode.dart';
+import '../../src/widgets/app_toast.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
 class AboutPage extends ConsumerStatefulWidget {
@@ -20,8 +23,10 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   AboutConfig _config = const AboutConfig();
   bool _checkingUpdate = false;
 
-  /// 版本号连点进入调试页（对齐桌面端：1.5s 内连点 5 次）。
-  static const _debugTapTarget = 5;
+  /// 版本号连点开启调试模式（对齐安卓开发者模式：1.5s 内连点 10 次，最后几次提示剩余次数）。
+  /// 开启后设置页出现「调试」入口，点击进入调试页。
+  static const _debugTapTarget = 10;
+  static const _debugTapHintStart = 7;
   static const _debugTapInterval = Duration(milliseconds: 1500);
   int _debugTapCount = 0;
   DateTime? _lastDebugTap;
@@ -42,7 +47,13 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     _debugTapCount++;
     if (_debugTapCount >= _debugTapTarget) {
       _debugTapCount = 0;
-      context.push('/debug');
+      ref.read(developerModeProvider.notifier).enable();
+      showXianYuToast(context, '已进入调试模式');
+      return;
+    }
+    if (_debugTapCount >= _debugTapHintStart) {
+      showXianYuToast(
+          context, '再点击 ${_debugTapTarget - _debugTapCount} 次即可进入调试模式');
     }
   }
 
@@ -276,32 +287,61 @@ class _VersionTapBadge extends StatefulWidget {
 
 class _VersionTapBadgeState extends State<_VersionTapBadge> {
   bool _pressed = false;
+  Timer? _releaseTimer;
+
+  @override
+  void dispose() {
+    _releaseTimer?.cancel();
+    super.dispose();
+  }
+
+  void _press() {
+    _releaseTimer?.cancel();
+    setState(() => _pressed = true);
+  }
+
+  void _release() {
+    _releaseTimer?.cancel();
+    // 松手后保持按压态一小段时间再回弹，避免快速点击时反馈一闪而过。
+    _releaseTimer = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) setState(() => _pressed = false);
+    });
+  }
+
+  void _cancel() {
+    _releaseTimer?.cancel();
+    setState(() => _pressed = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
+      onTapDown: (_) => _press(),
+      onTapUp: (_) => _release(),
+      onTapCancel: _cancel,
       onTap: widget.onTap,
       child: AnimatedScale(
         scale: _pressed ? 0.88 : 1.0,
-        duration: Duration(milliseconds: _pressed ? 80 : 300),
+        duration: Duration(milliseconds: _pressed ? 120 : 280),
         curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
             color: _pressed
-                ? scheme.primary.withValues(alpha: 0.12)
+                ? scheme.primary.withValues(alpha: 0.14)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
             widget.label,
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+              fontSize: 13,
+              color: _pressed ? scheme.primary : scheme.onSurfaceVariant,
+              fontWeight: _pressed ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
         ),
       ),

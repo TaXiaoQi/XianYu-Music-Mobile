@@ -186,7 +186,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
           children: [
             // 标题 + 排序切换
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 12, 4),
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
               child: Row(
                 children: [
                   Text('评论',

@@ -654,13 +654,20 @@ class _TraditionalPlayerLayoutState
                 );
                 return;
               }
-              ref.read(downloadProvider.notifier).download(current);
-              showXianYuToast(context, '开始下载：${current.title}');
+              // 在线歌曲：弹出下载音质选择弹窗，选档后按该档下载。
+              _showDownloadQualitySheet(context, ref, current);
             },
           ),
           _actionItem(
             context,
             icon: Icons.chat_bubble_outline,
+            // 圆形评论气泡（对齐桌面端 lucide MessageCircle）
+            iconWidget: _MessageCircleIcon(
+              size: 24,
+              color: current != null && current.isOnline
+                  ? Colors.white.withValues(alpha: 0.85)
+                  : Colors.white.withValues(alpha: 0.32),
+            ),
             tooltip: '评论',
             // 本地歌曲无在线评论信息，置灰不可点
             enabled: current != null && current.isOnline,
@@ -699,7 +706,7 @@ class _TraditionalPlayerLayoutState
         child: Text(
           '词',
           style: TextStyle(
-            fontSize: 15,
+            fontSize: 17,
             fontWeight: FontWeight.bold,
             color: lyricsEnabled
                 ? accent
@@ -732,7 +739,7 @@ class _TraditionalPlayerLayoutState
               ),
             )
           : Icon(
-              dlDone ? Icons.check_circle : Icons.download_outlined,
+              dlDone ? Icons.check_circle_outline : Icons.download_outlined,
               color: dlDone
                   ? const Color(0xFF07C160)
                   : Colors.white.withValues(alpha: 0.85),
@@ -767,7 +774,7 @@ class _TraditionalPlayerLayoutState
           child: Text(
             _qualityAbbr(quality),
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
               color: lossless
                   ? accent
@@ -818,6 +825,7 @@ class _TraditionalPlayerLayoutState
   Widget _actionItem(
     BuildContext context, {
     required IconData icon,
+    Widget? iconWidget,
     String? tooltip,
     bool active = false,
     Color? iconColor,
@@ -828,16 +836,71 @@ class _TraditionalPlayerLayoutState
     return IconButton(
       iconSize: 28,
       tooltip: tooltip,
-      icon: Icon(
-        icon,
-        color: enabled
-            ? (iconColor ??
-                (active ? accent : Colors.white.withValues(alpha: 0.85)))
-            : Colors.white.withValues(alpha: 0.32),
-      ),
+      icon: iconWidget ??
+          Icon(
+            icon,
+            color: enabled
+                ? (iconColor ??
+                    (active ? accent : Colors.white.withValues(alpha: 0.85)))
+                : Colors.white.withValues(alpha: 0.32),
+          ),
       onPressed: enabled ? onTap : null,
     );
   }
+}
+
+/// 圆形评论气泡图标（对齐桌面端 lucide MessageCircle）。
+class _MessageCircleIcon extends StatelessWidget {
+  const _MessageCircleIcon({
+    this.size = 24,
+    this.color,
+  });
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _MessageCirclePainter(
+        color: color ?? Colors.white.withValues(alpha: 0.85),
+      ),
+    );
+  }
+}
+
+class _MessageCirclePainter extends CustomPainter {
+  _MessageCirclePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final s = size.width / 24;
+    final path = Path()
+      ..moveTo(7.9 * s, 20 * s)
+      ..arcToPoint(
+        Offset(4 * s, 16.1 * s),
+        radius: Radius.circular(9 * s),
+        largeArc: true,
+        clockwise: false,
+      )
+      ..lineTo(2 * s, 22 * s)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MessageCirclePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// 顶栏封面/歌词分段切换控件。
@@ -1772,10 +1835,7 @@ class _TitleRow extends ConsumerWidget {
         if (current.isOnline)
           IconButton(
             icon: const Icon(Icons.download_outlined),
-            onPressed: () {
-              ref.read(downloadProvider.notifier).download(current);
-              showXianYuToast(context, '开始下载：${current.title}');
-            },
+            onPressed: () => _showDownloadQualitySheet(context, ref, current),
           ),
         if (current.isOnline)
           IconButton(
@@ -1848,6 +1908,16 @@ Future<void> _shareCurrent(
 void _showQualitySheet(BuildContext context, WidgetRef ref) {
   final notifier = ref.read(playerProvider.notifier);
   showSheetDialog<void>(context, (_) => _QualitySheet(notifier: notifier));
+}
+
+/// 打开下载音质选择弹窗（复用共享探针探测真实可用档位，选档后直接下载）。
+void _showDownloadQualitySheet(
+    BuildContext context, WidgetRef ref, QueueItem song) {
+  final notifier = ref.read(playerProvider.notifier);
+  showSheetDialog<void>(
+    context,
+    (_) => _DownloadQualitySheet(notifier: notifier, song: song),
+  );
 }
 
 /// 把 12 档内部键转成菜单/按钮上的人类可读标签。
@@ -1965,6 +2035,101 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                                 ok ? '已切换为${_qualityLabel(q)}' : '音质切换失败',
                               );
                             },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 下载音质选择弹窗：复用共享探针探测真实可用档位，点选即按该档下载。
+class _DownloadQualitySheet extends ConsumerStatefulWidget {
+  const _DownloadQualitySheet({required this.notifier, required this.song});
+
+  final PlayerNotifier notifier;
+  final QueueItem song;
+
+  @override
+  ConsumerState<_DownloadQualitySheet> createState() =>
+      _DownloadQualitySheetState();
+}
+
+class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
+  Future<List<String>>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.notifier.downloadQualityOptions();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // 高亮当前播放音质；无播放音质时回退设置中的下载音质。
+    final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
+    final settingsQ = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.downloadQuality),
+    );
+    return SizedBox(
+      height: 360,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              '下载音质',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<String>>(
+              future: _future,
+              builder: (ctx, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  );
+                }
+                final opts = snap.data ?? const <String>[];
+                if (opts.isEmpty) {
+                  return const Center(child: Text('暂无可下载音质'));
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: opts.length,
+                  itemBuilder: (ctx, i) {
+                    final q = opts[i];
+                    final active =
+                        q == cur || (cur == null && q == settingsQ);
+                    return ListTile(
+                      dense: true,
+                      title: Text(_qualityLabel(q)),
+                      trailing: Icon(
+                        active
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        size: 20,
+                        color: active ? scheme.primary : Colors.grey.shade400,
+                      ),
+                      onTap: () {
+                        final overlay = Overlay.of(ctx, rootOverlay: true);
+                        Navigator.of(ctx).pop();
+                        ref
+                            .read(downloadProvider.notifier)
+                            .download(widget.song, quality: q);
+                        showXianYuToastByOverlay(
+                          overlay,
+                          '开始下载：${widget.song.title}（${_qualityLabel(q)}）',
+                        );
+                      },
                     );
                   },
                 );
@@ -3685,7 +3850,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
       children: [
         // 顶部标题栏
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 12, 4),
+          padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
           child: Row(
             children: [
               Text(

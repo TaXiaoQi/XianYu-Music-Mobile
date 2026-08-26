@@ -221,6 +221,21 @@ class QueueItem {
         source: source,
         onlineInfoJson: onlineInfoJson,
       );
+
+  /// 复制并更新在线音质（音质切换后写回队列项，切歌/重播沿用该档）。
+  QueueItem copyWithQuality(String quality) => QueueItem(
+        path: path,
+        title: title,
+        artist: artist,
+        album: album,
+        durationMs: durationMs,
+        onlineSongJson: onlineSongJson,
+        onlineQuality: quality,
+        coverUrl: coverUrl,
+        coverPath: coverPath,
+        source: source,
+        onlineInfoJson: onlineInfoJson,
+      );
 }
 
 class PlaybackState {
@@ -1068,7 +1083,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return false;
       }
       await _startUrl(res.url, headers: res.headers);
+      // 把所选音质写回队列项，切歌/重播沿用该档（对齐桌面端会话级覆盖）。
+      final updated = item.copyWithQuality(res.quality);
       state = state.copyWith(
+        current: updated,
+        queue: state.queue
+            .map((e) => e.path == item.path ? updated : e)
+            .toList(),
         resolving: false,
         currentQuality: res.quality,
         availableQualities: probe.availableQualities,
@@ -1084,7 +1105,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 获取当前在线歌曲的真实可用档位（触发无损档全量探测，供音质菜单展示）。
   ///
   /// 复用共享探针做受控并发探测与降级校验，返回按高 → 低排序的可用档。
-  Future<List<String>> qualityOptions() async {
+  Future<List<String>> qualityOptions() =>
+      _probeQualityOptions(forDownload: false);
+
+  /// 获取当前在线歌曲的可下载档位（触发无损档 + 320k 全量探测，供下载弹窗展示）。
+  ///
+  /// 与 [qualityOptions] 共用同一轮共享探针（探测传递），额外包含 320k
+  /// 这一常用下载档，返回按高 → 低排序的可用档。
+  Future<List<String>> downloadQualityOptions() =>
+      _probeQualityOptions(forDownload: true);
+
+  Future<List<String>> _probeQualityOptions(
+      {required bool forDownload}) async {
     final item = state.current;
     final json = item?.onlineSongJson;
     if (json == null || json.isEmpty) return const [];
@@ -1096,10 +1128,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _activeProbeKey = key;
       state = state.copyWith(qualityMenuProbing: true);
 
-      // 探测无损及以上档位，最低端 128k 作为可播兜底档。
+      // 探测无损及以上档位，最低端 128k 作为可播兜底档；下载额外探测 320k。
       final targets = <String>[];
       for (final q in kQualityLadder.reversed.toList()) {
-        if (isLosslessQuality(q) || q == '128k') targets.add(q);
+        if (isLosslessQuality(q) ||
+            q == '128k' ||
+            (forDownload && q == '320k')) {
+          targets.add(q);
+        }
       }
       await Future.wait(targets.map(probe.probe).toList());
 

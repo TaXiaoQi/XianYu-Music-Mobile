@@ -68,6 +68,28 @@ class NotificationService {
 
   String _fingerprint(Announcement ann) => '${ann.id}_${ann.updatedAt}';
 
+  /// 调试模式：展示公告弹窗（假数据，不发送服务器），对齐桌面端 simulateAnnouncement。
+  Future<void> showAnnouncementForDebug(BuildContext context) async {
+    final ann = Announcement(
+      id: 'debug-announcement',
+      title: '公告展示框',
+      content: '这是一条调试用的公告内容，用于验证公告弹窗的展示效果。\n\n'
+          '公告支持多行文本、日期与类型样式（info / warning）。',
+      type: 'info',
+      date: '2026-08-26',
+    );
+    await showPredictiveDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _NotificationDialog(
+        title: ann.title,
+        content: ann.content,
+        type: ann.type,
+        date: ann.date,
+      ),
+    );
+  }
+
   Future<void> _showAnnouncementDialog(
       BuildContext context, Announcement ann) async {
     await showPredictiveDialog<void>(

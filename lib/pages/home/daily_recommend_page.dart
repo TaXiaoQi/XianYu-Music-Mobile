@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/flying_cover.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 
 /// 每日推荐页：日期徽章 + 播放全部/换一批 + 推荐歌曲列表。
@@ -30,60 +33,65 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(
-        title: const Text('每日推荐'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
       body: Stack(
         children: [
-          async.when(
-            loading: () => const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(strokeWidth: 2),
-                  SizedBox(height: 14),
-                  Text('正在为你生成今日推荐…',
-                      style: TextStyle(fontSize: 13, color: Colors.grey)),
-                ],
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: async.when(
+              loading: () => const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 14),
+                    Text('正在为你生成今日推荐…',
+                        style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  ],
+                ),
               ),
-            ),
-            error: (e, _) => _CenterAction(
-              icon: Icons.error_outline,
-              message: '推荐生成失败：$e',
-              action: '重试',
-              onTap: () => ref.invalidate(dailyRecommendProvider),
-            ),
-            data: (state) {
-              if (!state.loggedIn) {
-                return _CenterAction(
-                  icon: Icons.person_outline,
-                  message: '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制',
-                  action: '去登录',
-                  onTap: () => context.go('/account'),
+              error: (e, _) => _CenterAction(
+                icon: Icons.error_outline,
+                message: '推荐生成失败：$e',
+                action: '重试',
+                onTap: () => ref.invalidate(dailyRecommendProvider),
+              ),
+              data: (state) {
+                if (!state.loggedIn) {
+                  return _CenterAction(
+                    icon: Icons.person_outline,
+                    message: '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制',
+                    action: '去登录',
+                    onTap: () => context.go('/account'),
+                  );
+                }
+                if (state.items.isEmpty) {
+                  return _CenterAction(
+                    icon: Icons.music_off_outlined,
+                    message: '今天还没有推荐\n请先在「插件管理」中安装音源插件',
+                    action: '去安装插件',
+                    onTap: () => context.go('/plugin'),
+                  );
+                }
+                return Column(
+                  children: [
+                    _Header(state: state),
+                    Divider(
+                        height: 1,
+                        color: scheme.onSurface.withValues(alpha: 0.06)),
+                    Expanded(child: _RecommendList(state: state)),
+                  ],
                 );
-              }
-              if (state.items.isEmpty) {
-                return _CenterAction(
-                  icon: Icons.music_off_outlined,
-                  message: '今天还没有推荐\n请先在「插件管理」中安装音源插件',
-                  action: '去安装插件',
-                  onTap: () => context.go('/plugin'),
-                );
-              }
-              return Column(
-                children: [
-                  _Header(state: state),
-                  Divider(
-                      height: 1,
-                      color: scheme.onSurface.withValues(alpha: 0.06)),
-                  Expanded(child: _RecommendList(state: state)),
-                ],
-              );
-            },
+              },
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: const Text('每日推荐'),
+            ),
           ),
           if (hasSong)
             const MiniPlayerBar(),
@@ -186,10 +194,12 @@ class _RecommendList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     return ListView.separated(
       padding: EdgeInsets.only(
         top: 6,
-        bottom: MediaQuery.of(context).padding.bottom + 24,
+        bottom: (hasSong ? 92.0 : 24.0) +
+            MediaQuery.of(context).padding.bottom,
       ),
       itemCount: state.items.length,
       separatorBuilder: (_, _) => SizedBox(height: 4),
@@ -214,6 +224,22 @@ class _RecommendList extends ConsumerWidget {
                 if (ok) ref.read(dailyRecommendProvider.notifier).play(i);
               },
             );
+            // 长按与「更多」图标共用同一操作菜单。
+            void openActions() {
+              final quality = ref
+                      .read(settingsProvider)
+                      .valueOrNull
+                      ?.onlineDefaultQuality ??
+                  '320k';
+              showSongActionsSheet(
+                rowContext,
+                ref: ref,
+                item: item.toQueueItem(quality),
+                onPlay: () =>
+                    ref.read(dailyRecommendProvider.notifier).play(i),
+              );
+            }
+
             return g.wrap(
               ListTile(
                 dense: true,
@@ -224,6 +250,7 @@ class _RecommendList extends ConsumerWidget {
                   },
                 ),
                 onTap: g.onTap,
+                onLongPress: openActions,
                 title: Text(
                   item.title,
                   maxLines: 1,
@@ -257,13 +284,23 @@ class _RecommendList extends ConsumerWidget {
                       ),
                   ],
                 ),
-                trailing: item.durationMs > 0
-                    ? Text(
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (item.durationMs > 0)
+                      Text(
                         '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant),
-                      )
-                    : null,
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.more_horiz, size: 22),
+                      color: scheme.onSurfaceVariant,
+                      tooltip: '更多',
+                      onPressed: openActions,
+                    ),
+                  ],
+                ),
               ),
             );
           },

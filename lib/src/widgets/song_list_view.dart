@@ -173,6 +173,15 @@ class SongsListView extends ConsumerWidget {
                     if (ok) onPlay!(songs, i);
                   }
                 : null;
+            // 长按与「更多」图标共用同一操作菜单。
+            final openActions = enableActions
+                ? () => showSongActionsSheet(
+                      rowContext,
+                      ref: ref,
+                      item: s.toQueueItem(),
+                      onPlay: play,
+                    )
+                : null;
             final row = CoverRow(
               cover: Builder(
                 builder: (c) {
@@ -199,22 +208,28 @@ class SongsListView extends ConsumerWidget {
                 maxLines: 1,
               ),
               verticalPadding: m.vPad,
-              trailing: Text(
-                _fmt(s.duration),
-                style: TextStyle(
-                    fontSize: m.subtitleSize,
-                    color: Theme.of(rowContext).colorScheme.onSurfaceVariant),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _fmt(s.duration),
+                    style: TextStyle(
+                        fontSize: m.subtitleSize,
+                        color:
+                            Theme.of(rowContext).colorScheme.onSurfaceVariant),
+                  ),
+                  if (openActions != null)
+                    IconButton(
+                      icon: const Icon(Icons.more_horiz, size: 22),
+                      color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
+                      tooltip: '更多',
+                      onPressed: openActions,
+                    ),
+                ],
               ),
               // 双击模式挂空回调：单击仍有水波纹反馈，起播交给外层 onDoubleTap。
               onTap: play == null ? null : (single ? play : () {}),
-              onLongPress: enableActions
-                  ? () => showSongActionsSheet(
-                        rowContext,
-                        ref: ref,
-                        item: s.toQueueItem(),
-                        onPlay: play,
-                      )
-                  : null,
+              onLongPress: openActions,
             );
             return !single && play != null
                 ? GestureDetector(onDoubleTap: play, child: row)

@@ -235,27 +235,30 @@ class _PlaylistCard extends ConsumerWidget {
     showSheetDialog<void>(
         context,
         (ctx) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
-                title: const Text('重命名歌单'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _rename(context, manager);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_outline,
-                    color: scheme.error, size: 22),
-                title: const Text('删除歌单'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _confirmRemove(context, manager);
-                },
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
+                  title: const Text('重命名歌单'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _rename(context, manager);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_outline,
+                      color: scheme.error, size: 22),
+                  title: const Text('删除歌单'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _confirmRemove(context, manager);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       );
