@@ -13,6 +13,7 @@ import 'src/core/rust_init.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/auth/account_api.dart';
 import 'src/player/player_provider.dart';
+import 'src/player/player_widget_bridge.dart';
 import 'src/deeplink/deep_link_handler.dart';
 import 'src/lyrics/floating_lyrics.dart';
 import 'src/navigation/routes.dart';
@@ -50,6 +51,9 @@ Future<void> main() async {
 
   // 挂载悬浮歌词窗控制器：跟随设置与播放状态，向原生悬浮窗推送歌词/进度。
   container.read(floatingLyricsControllerProvider).init();
+
+  // 挂载桌面播放小组件桥：跟随播放状态写入组件数据，响应小组件按钮控制。
+  container.read(playerWidgetControllerProvider).init();
 
   // 总体首帧计时（从 main 开始）
   final t0 = Stopwatch()..start();
