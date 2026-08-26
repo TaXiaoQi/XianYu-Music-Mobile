@@ -219,6 +219,23 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/player_widget")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setState" -> {
+                        // Flutter 侧经此把组件状态 JSON 落盘（确定性 key，不依赖插件存储格式）。
+                        val json = call.argument<String>("json") ?: ""
+                        getSharedPreferences("player_widget", MODE_PRIVATE)
+                            .edit().putString("state", json).apply()
+                        result.success(null)
+                    }
+                    "update" -> {
+                        PlayerWidgetProvider.updateAll(this)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     /** 枚举全部输出音频设备，返回 JSON 数组 JSON。id 与 AAudio setDeviceId 一致。 */

@@ -106,6 +106,19 @@
                 <data android:scheme="tencent1905495962" />
             </intent-filter>
         </activity>
+
+        <!-- 桌面播放小组件：APPWIDGET_UPDATE 由系统/launcher 拉取渲染；按钮经 Provider 广播控制 -->
+        <receiver
+            android:name=".PlayerWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/player_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
