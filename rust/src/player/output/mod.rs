@@ -30,6 +30,12 @@ pub struct ExclusivePlayRequest {
     pub equalizer_settings_json: String,
     /// 音效设置 JSON（camelCase），空串 = 默认
     pub sound_effect_settings_json: String,
+    /// Bit-perfect 输出：绕过响度归一化/EQ/音效/用户音量，按源位深整数直出。
+    /// 开启时 DSP 全部旁通，仅保留安全限幅。
+    pub bit_perfect: bool,
+    /// DSD 原生 DoP 直通开关：仅对 .dsf/.dff 且为真时走 DoP 打包直出
+    /// （绕过解码器与 DSP）；为假时 DSD 容器按 PCM 解码走常规管线。
+    pub dsd_native_passthrough: bool,
 }
 
 // =========================================================================
@@ -66,6 +72,22 @@ pub fn seek_exclusive(time_secs: f64, is_playing: bool) {
     #[cfg(not(target_os = "android"))]
     {
         let _ = (time_secs, is_playing);
+    }
+}
+
+/// 暂停独占播放（不改变进度）。
+pub fn pause_exclusive() {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::pause_exclusive();
+    }
+}
+
+/// 从暂停恢复独占播放（不改变进度）。
+pub fn resume_exclusive() {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::resume_exclusive();
     }
 }
 
@@ -119,6 +141,31 @@ pub fn set_exclusive_sound_effect(settings_json: String) -> Result<(), String> {
     }
 }
 
+/// 运行时切换 Bit-perfect 直出：开启时立即绕过响度/EQ/音效/音量；
+/// 关闭时恢复当前 DSP 链。格式协商（整数 vs 浮点）在启动时按初始值确定。
+pub fn set_exclusive_bit_perfect(enabled: bool) {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::set_exclusive_bit_perfect(enabled);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = enabled;
+    }
+}
+
+/// 查询当前独占播放是否处于 Bit-perfect 直出状态。
+pub fn is_exclusive_bit_perfect() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::is_exclusive_bit_perfect()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
 /// 独占播放是否活跃。
 pub fn is_exclusive_active() -> bool {
     #[cfg(target_os = "android")]
@@ -152,6 +199,25 @@ pub fn get_exclusive_sample_rate() -> u32 {
     #[cfg(not(target_os = "android"))]
     {
         0
+    }
+}
+
+/// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出。
+pub fn get_exclusive_device_info() -> String {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::get_exclusive_device_info()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        serde_json::json!({
+            "active": false,
+            "deviceName": "",
+            "sampleRate": 0,
+            "channels": 0,
+            "bitPerfect": false,
+        })
+        .to_string()
     }
 }
 

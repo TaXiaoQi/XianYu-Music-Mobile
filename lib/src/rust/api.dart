@@ -139,6 +139,16 @@ Future<double> loudnessPlaybackGainForFile({
   preventClipping: preventClipping,
 );
 
+/// 查询指定歌曲的响度分析缓存记录（LUFS/峰值等），返回 `LoudnessRecord` JSON。
+/// 无记录返回 `"null"`。
+Future<String> getTrackLoudnessInfo({
+  required String dbPath,
+  required PlatformInt64 songId,
+}) => RustLib.instance.api.crateApiGetTrackLoudnessInfo(
+  dbPath: dbPath,
+  songId: songId,
+);
+
 /// 记录一次播放事件（含聚合统计与播放历史）。
 ///
 /// - `db_path`：SQLite 数据库文件路径
@@ -243,6 +253,25 @@ Future<String> scanMusicFolder({
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
   allowedFormats: allowedFormats,
+);
+
+/// 批量解析一组音频文件的元数据（不写库），返回 `Song[]` JSON。对齐桌面端 `parse_audio_files`。
+Future<String> parseAudioFiles({
+  required List<String> paths,
+  int? minimumDurationSeconds,
+}) => RustLib.instance.api.crateApiParseAudioFiles(
+  paths: paths,
+  minimumDurationSeconds: minimumDurationSeconds,
+);
+
+/// 递归扫描文件夹内全部受支持音频并解析元数据（不写库），返回 `Song[]` JSON。
+/// 对齐桌面端 `parse_music_folder`。
+Future<String> parseMusicFolder({
+  required String folderPath,
+  int? minimumDurationSeconds,
+}) => RustLib.instance.api.crateApiParseMusicFolder(
+  folderPath: folderPath,
+  minimumDurationSeconds: minimumDurationSeconds,
 );
 
 /// Android SAF：从一个已被 Android 侧通过 ContentResolver 打开的 fd 解析单个音频，
@@ -556,6 +585,47 @@ Future<String> saveSongLyrics({
   sourcePath: sourcePath,
 );
 
+/// 读取歌曲完整歌词（内嵌标签 → 侧边 LRC，远程歌曲走源 + 缓存），返回原始歌词文本。
+Future<String> getSongLyrics({required String dbPath, required String path}) =>
+    RustLib.instance.api.crateApiGetSongLyrics(dbPath: dbPath, path: path);
+
+/// 读取用户主动选择的 .lrc 歌词文件源码（返回解码后的歌词文本）。
+Future<String> readLyricsFile({required String path}) =>
+    RustLib.instance.api.crateApiReadLyricsFile(path: path);
+
+/// 保存歌曲背景图到背景根目录下 `song_backgrounds/` 并写入数据库，返回保存后的背景图路径。
+Future<String> saveSongBackground({
+  required String dbPath,
+  required String songBackgroundsRoot,
+  required String songPath,
+  required String backgroundPath,
+}) => RustLib.instance.api.crateApiSaveSongBackground(
+  dbPath: dbPath,
+  songBackgroundsRoot: songBackgroundsRoot,
+  songPath: songPath,
+  backgroundPath: backgroundPath,
+);
+
+/// 查询歌曲背景图路径，无则返回 JSON `null`。
+Future<String> getSongBackground({
+  required String dbPath,
+  required String songPath,
+}) => RustLib.instance.api.crateApiGetSongBackground(
+  dbPath: dbPath,
+  songPath: songPath,
+);
+
+/// 清除歌曲背景图（删除本地文件 + 数据库记录）。
+Future<void> clearSongBackground({
+  required String dbPath,
+  required String songBackgroundsRoot,
+  required String songPath,
+}) => RustLib.instance.api.crateApiClearSongBackground(
+  dbPath: dbPath,
+  songBackgroundsRoot: songBackgroundsRoot,
+  songPath: songPath,
+);
+
 /// 保存歌曲信息标签（返回 `SaveSongInfoResponse` JSON）。
 Future<String> saveSongInfo({
   required String dbPath,
@@ -584,7 +654,14 @@ Future<void> savePlaybackSession({
 Future<String> loadPlaybackSession({required String dbPath}) =>
     RustLib.instance.api.crateApiLoadPlaybackSession(dbPath: dbPath);
 
-/// 高频更新播放进度（防抖写 SQLite）。
+/// 只读查询当前播放会话状态（读内存权威状态），返回 `PlaybackSessionData` JSON。
+Future<String> sessionGetPlaybackSession({required String dbPath}) =>
+    RustLib.instance.api.crateApiSessionGetPlaybackSession(dbPath: dbPath);
+
+/// 强制将当前播放会话内存状态持久化到 SQLite（定时刷新或退出时调用）。
+Future<void> sessionFlushPlaybackSession({required String dbPath}) =>
+    RustLib.instance.api.crateApiSessionFlushPlaybackSession(dbPath: dbPath);
+
 Future<void> updatePlaybackPosition({
   required String dbPath,
   required double positionSecs,
@@ -649,6 +726,8 @@ Future<String> resolveDownloadFullPath({
 
 /// 启动 USB 独占播放。返回设备名或错误信息。
 /// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
+/// `bit_perfect` = Bit-perfect 直出（绕过响度/EQ/音效/音量，按源位深整数直出）。
+/// `dsd_native_passthrough` = DSD(.dsf/.dff) 原生 DoP 直通开关。
 Future<String> startUsbExclusivePlayback({
   required String path,
   required int deviceId,
@@ -658,6 +737,8 @@ Future<String> startUsbExclusivePlayback({
   required double volumeBalanceGain,
   required String equalizerSettingsJson,
   required String soundEffectSettingsJson,
+  required bool bitPerfect,
+  required bool dsdNativePassthrough,
 }) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
   path: path,
   deviceId: deviceId,
@@ -667,11 +748,21 @@ Future<String> startUsbExclusivePlayback({
   volumeBalanceGain: volumeBalanceGain,
   equalizerSettingsJson: equalizerSettingsJson,
   soundEffectSettingsJson: soundEffectSettingsJson,
+  bitPerfect: bitPerfect,
+  dsdNativePassthrough: dsdNativePassthrough,
 );
 
 /// 停止 USB 独占播放并释放设备。
 Future<void> stopUsbExclusivePlayback() =>
     RustLib.instance.api.crateApiStopUsbExclusivePlayback();
+
+/// 暂停 USB 独占播放（保持进度，等待 resume 恢复）。
+Future<void> pauseUsbExclusive() =>
+    RustLib.instance.api.crateApiPauseUsbExclusive();
+
+/// 从暂停恢复 USB 独占播放。
+Future<void> resumeUsbExclusive() =>
+    RustLib.instance.api.crateApiResumeUsbExclusive();
 
 /// 跳转到指定位置（秒）。
 Future<void> seekUsbExclusive({
@@ -701,6 +792,18 @@ Future<void> setUsbExclusiveSoundEffect({required String settingsJson}) =>
     RustLib.instance.api.crateApiSetUsbExclusiveSoundEffect(
       settingsJson: settingsJson,
     );
+
+/// 运行时切换 Bit-perfect 直出：开启绕过响度/EQ/音效/音量，关闭恢复 DSP 链。
+Future<void> setUsbExclusiveBitPerfect({required bool enabled}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveBitPerfect(enabled: enabled);
+
+/// 当前独占播放是否处于 Bit-perfect 直出状态。
+Future<bool> getUsbExclusiveBitPerfect() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveBitPerfect();
+
+/// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出设备。
+Future<String> getUsbExclusiveDeviceInfo() =>
+    RustLib.instance.api.crateApiGetUsbExclusiveDeviceInfo();
 
 /// 获取当前播放位置（秒）。
 Future<double> getUsbExclusivePositionSecs() =>
@@ -769,6 +872,80 @@ Future<String> readPluginFile({required String path}) =>
 /// 代理图片请求（自动添加 Referer，返回 data URL）。
 Future<String> proxyImage({required String url, String? referer}) =>
     RustLib.instance.api.crateApiProxyImage(url: url, referer: referer);
+
+/// 读取本地图片文件为 base64，返回 JSON `{"mime":..., "base64":...}`（分享封面上传用）。
+Future<String> readImageBase64({required String path}) =>
+    RustLib.instance.api.crateApiReadImageBase64(path: path);
+
+/// 将插件解析得到的视频流式写入 `video-background` 缓存，返回缓存文件完整路径。
+/// `cache_dir` 为应用缓存根目录（如 Flutter getApplicationCacheDirectory()）。
+Future<String> downloadVideoToCache({
+  required String cacheDir,
+  required String url,
+  Map<String, String>? headers,
+}) => RustLib.instance.api.crateApiDownloadVideoToCache(
+  cacheDir: cacheDir,
+  url: url,
+  headers: headers,
+);
+
+/// 清理本功能创建的后台视频缓存文件。
+/// `cache_dir` 必须与下载时传入的缓存根目录一致。
+Future<void> removeCachedBackgroundVideo({
+  required String cacheDir,
+  required String path,
+}) => RustLib.instance.api.crateApiRemoveCachedBackgroundVideo(
+  cacheDir: cacheDir,
+  path: path,
+);
+
+/// QQ 音乐 zzcSign 签名。
+Future<String> hostZzcSign({required String text}) =>
+    RustLib.instance.api.crateApiHostZzcSign(text: text);
+
+/// 酷狗参数签名（`platform` 为 `"web"` 用 web 盐，其余用 android 盐）。
+Future<String> hostKugouSign({
+  required String params,
+  required String platform,
+  String? body,
+}) => RustLib.instance.api.crateApiHostKugouSign(
+  params: params,
+  platform: platform,
+  body: body,
+);
+
+/// 酷狗请求密钥（android 盐）。
+Future<String> hostKugouRequestKey() =>
+    RustLib.instance.api.crateApiHostKugouRequestKey();
+
+/// 咪咕搜索签名。返回 JSON `{"sign":..., "deviceId":...}`。
+Future<String> hostMiguSign({required String text, required String time}) =>
+    RustLib.instance.api.crateApiHostMiguSign(text: text, time: time);
+
+/// 网易云 linuxapi 加密（AES-128-ECB PKCS7 → hex 大写）。
+Future<String> hostLinuxapiEncrypt({required String payload}) =>
+    RustLib.instance.api.crateApiHostLinuxapiEncrypt(payload: payload);
+
+/// 网易云 weapi 加密。返回 JSON `{"params":..., "encSecKey":...}`。
+Future<String> hostWeapiEncrypt({required String payload}) =>
+    RustLib.instance.api.crateApiHostWeapiEncrypt(payload: payload);
+
+/// 通用 SHA-256 hex（插件脚本哈希等）。
+Future<String> hostSha256Hex({required String text}) =>
+    RustLib.instance.api.crateApiHostSha256Hex(text: text);
+
+/// 校验服务端下发的兜底模块签名（ed25519）。返回 true 表示签名有效可执行。
+Future<bool> verifyFallbackModuleSignature({
+  required String moduleKey,
+  required PlatformInt64 version,
+  required String code,
+  required String signature,
+}) => RustLib.instance.api.crateApiVerifyFallbackModuleSignature(
+  moduleKey: moduleKey,
+  version: version,
+  code: code,
+  signature: signature,
+);
 
 /// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
 Future<void> pluginEngineInit({required String dataDir}) =>
@@ -853,6 +1030,421 @@ Future<BigInt> streamCacheMaxBytes() =>
 /// 清空在线播放缓存。
 Future<void> clearStreamCache() =>
     RustLib.instance.api.crateApiClearStreamCache();
+
+/// 读取音质分布（返回 [`QualityDistribution`] JSON）。
+Future<String> statsGetQualityDistribution({required String dbPath}) =>
+    RustLib.instance.api.crateApiStatsGetQualityDistribution(dbPath: dbPath);
+
+/// 读取格式分布（返回 [`FormatDistribution`] JSON）。
+Future<String> statsGetFormatDistribution({required String dbPath}) =>
+    RustLib.instance.api.crateApiStatsGetFormatDistribution(dbPath: dbPath);
+
+/// 读取曲库统计（歌曲/歌手/专辑数等，返回 [`LibraryStats`] JSON）。
+Future<String> statsGetLibraryStats({required String dbPath}) =>
+    RustLib.instance.api.crateApiStatsGetLibraryStats(dbPath: dbPath);
+
+/// 重置本地听歌统计（清空播放计数/时长等，不清收藏与下载）。
+Future<void> statsResetLocalStatistics({required String dbPath}) =>
+    RustLib.instance.api.crateApiStatsResetLocalStatistics(dbPath: dbPath);
+
+/// 收藏歌手目录：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回 [`ArtistCatalogItem[]`] JSON。
+Future<String> statsGetFavoriteArtistCatalog({
+  required String dbPath,
+  required List<String> favoritePaths,
+}) => RustLib.instance.api.crateApiStatsGetFavoriteArtistCatalog(
+  dbPath: dbPath,
+  favoritePaths: favoritePaths,
+);
+
+/// 收藏专辑目录：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回 [`AlbumCatalogItem[]`] JSON。
+Future<String> statsGetFavoriteAlbumCatalog({
+  required String dbPath,
+  required List<String> favoritePaths,
+}) => RustLib.instance.api.crateApiStatsGetFavoriteAlbumCatalog(
+  dbPath: dbPath,
+  favoritePaths: favoritePaths,
+);
+
+/// 收藏歌曲路径视图：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回排序过滤后的 `String[]`（歌曲路径）。`sort_mode` 为 [`SongPathSortMode`] 的 snake_case 字符串。
+Future<String> statsGetFavoriteSongPathsView({
+  required String dbPath,
+  required List<String> favoritePaths,
+  String? query,
+  required String sortMode,
+  String? detailFilterType,
+  String? detailFilterValue,
+}) => RustLib.instance.api.crateApiStatsGetFavoriteSongPathsView(
+  dbPath: dbPath,
+  favoritePaths: favoritePaths,
+  query: query,
+  sortMode: sortMode,
+  detailFilterType: detailFilterType,
+  detailFilterValue: detailFilterValue,
+);
+
+/// 近期专辑目录：`recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回 [`RecentAlbumCatalogItem[]`] JSON。
+Future<String> statsGetRecentAlbumCatalog({
+  required String dbPath,
+  required String recentEntriesJson,
+}) => RustLib.instance.api.crateApiStatsGetRecentAlbumCatalog(
+  dbPath: dbPath,
+  recentEntriesJson: recentEntriesJson,
+);
+
+/// 近期歌曲路径视图：`recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回排序过滤后的 `String[]`。
+Future<String> statsGetRecentSongPathsView({
+  required String dbPath,
+  required String recentEntriesJson,
+  String? query,
+  required String sortMode,
+}) => RustLib.instance.api.crateApiStatsGetRecentSongPathsView(
+  dbPath: dbPath,
+  recentEntriesJson: recentEntriesJson,
+  query: query,
+  sortMode: sortMode,
+);
+
+/// 近期歌单目录：`playlists_json` 为 [`PlaylistImportItem[]`] 的 camelCase JSON，
+/// `recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回 [`RecentPlaylistCatalogItem[]`] JSON。
+Future<String> statsGetRecentPlaylistCatalog({
+  required String playlistsJson,
+  required String recentEntriesJson,
+}) => RustLib.instance.api.crateApiStatsGetRecentPlaylistCatalog(
+  playlistsJson: playlistsJson,
+  recentEntriesJson: recentEntriesJson,
+);
+
+/// 清空封面缓存目录。
+Future<void> clearCoverCache({required String cacheDir}) =>
+    RustLib.instance.api.crateApiClearCoverCache(cacheDir: cacheDir);
+
+/// 获取 LX 音乐源封面 URL。`song_info_json` 为 [`LxUrlSongInfo`] 的 camelCase JSON。
+Future<String> getLxCover({required String songInfoJson}) =>
+    RustLib.instance.api.crateApiGetLxCover(songInfoJson: songInfoJson);
+
+/// 清除 LX 音源 URL 直链缓存。
+Future<void> clearLxUrlCache() =>
+    RustLib.instance.api.crateApiClearLxUrlCache();
+
+/// 清除 LX 音源全部缓存（URL 直链 + 搜索结果）。
+Future<void> clearLxAllCache() =>
+    RustLib.instance.api.crateApiClearLxAllCache();
+
+/// 换源：在其他落雪平台搜索同名同歌手歌曲。
+/// 返回 [`AlternativeSourceResult`] JSON 或 "null"。
+Future<String> findAlternativeLxSource({
+  required String songName,
+  required String songArtist,
+  required double songDuration,
+  required List<String> failedSources,
+  required List<String> qualities,
+}) => RustLib.instance.api.crateApiFindAlternativeLxSource(
+  songName: songName,
+  songArtist: songArtist,
+  songDuration: songDuration,
+  failedSources: failedSources,
+  qualities: qualities,
+);
+
+/// 按音质顺序回退解析播放直链（返回 [`ResolvedUrl`] JSON 或 "null"）。
+Future<String> resolveLxWithQualityFallback({
+  required String songInfoJson,
+  required List<String> qualities,
+}) => RustLib.instance.api.crateApiResolveLxWithQualityFallback(
+  songInfoJson: songInfoJson,
+  qualities: qualities,
+);
+
+/// 测试远程源连通性。`source_json` 为 [`RemoteSourceInput`] 的 camelCase JSON。
+/// 返回 `{"ok":bool,"message":String}` JSON。
+Future<String> testRemoteSource({required String sourceJson}) =>
+    RustLib.instance.api.crateApiTestRemoteSource(sourceJson: sourceJson);
+
+/// 预缓存远程歌曲到本地缓存（`remote_uri` 形如 `remote://<source_id>/<path>`）。
+Future<void> precacheRemoteSong({
+  required String dbPath,
+  required String cacheRoot,
+  required String remoteUri,
+}) => RustLib.instance.api.crateApiPrecacheRemoteSong(
+  dbPath: dbPath,
+  cacheRoot: cacheRoot,
+  remoteUri: remoteUri,
+);
+
+/// 列出远程源指定目录下的条目（返回 [`RemoteFileEntry[]`] JSON）。
+Future<String> listRemoteDirectory({
+  required String dbPath,
+  required String sourceId,
+  required String path,
+}) => RustLib.instance.api.crateApiListRemoteDirectory(
+  dbPath: dbPath,
+  sourceId: sourceId,
+  path: path,
+);
+
+/// 用 `Range: bytes=0-0` 探测直链文件大小（返回 [`ProbeUrlInfo`] JSON）。
+Future<String> probeUrlSize({required String url}) =>
+    RustLib.instance.api.crateApiProbeUrlSize(url: url);
+
+/// 写入文本文件（自动创建父目录），返回目标路径。
+Future<String> writeTextFile({
+  required String content,
+  required String destPath,
+}) => RustLib.instance.api.crateApiWriteTextFile(
+  content: content,
+  destPath: destPath,
+);
+
+/// 下载图片二进制（绕过 WebView CORS），返回 `{"data":String,"mime":String}` JSON（data 为 base64）。
+Future<String> fetchImageBytes({required String url}) =>
+    RustLib.instance.api.crateApiFetchImageBytes(url: url);
+
+/// 将歌曲元数据写入音频文件 tag。`request_json` 为 [`EmbedMetadataRequest`] 的 camelCase JSON。
+Future<void> embedAudioMetadata({required String requestJson}) =>
+    RustLib.instance.api.crateApiEmbedAudioMetadata(requestJson: requestJson);
+
+/// 判断路径是否为目录。
+Future<bool> isDirectory({required String path}) =>
+    RustLib.instance.api.crateApiIsDirectory(path: path);
+
+/// 保存歌手头像到封面目录，并可选写入该歌手所有歌曲标签。
+/// 返回头像路径（`save_artist_avatar_response.avatar_path` 的 JSON 字符串）。
+Future<String> saveArtistAvatar({
+  required String dbPath,
+  required String coversRoot,
+  required PlatformInt64 artistId,
+  required String imagePath,
+  required bool writeToTags,
+}) => RustLib.instance.api.crateApiSaveArtistAvatar(
+  dbPath: dbPath,
+  coversRoot: coversRoot,
+  artistId: artistId,
+  imagePath: imagePath,
+  writeToTags: writeToTags,
+);
+
+/// 音乐库「全部歌曲」视图（支持查询过滤、歌手/专辑过滤、排序），返回 `String[]` 路径。
+Future<String> getLibrarySongPathsForAllView({
+  required String dbPath,
+  String? query,
+  String? artistFilter,
+  String? albumFilter,
+  required String sortMode,
+}) => RustLib.instance.api.crateApiGetLibrarySongPathsForAllView(
+  dbPath: dbPath,
+  query: query,
+  artistFilter: artistFilter,
+  albumFilter: albumFilter,
+  sortMode: sortMode,
+);
+
+/// 扫描音乐库下所有已添加文件夹，返回全部 `LibrarySong[]`。
+Future<String> scanLibrary({
+  required String dbPath,
+  int? minimumDurationSeconds,
+}) => RustLib.instance.api.crateApiScanLibrary(
+  dbPath: dbPath,
+  minimumDurationSeconds: minimumDurationSeconds,
+);
+
+/// 获取文件夹的直接子目录节点（返回 `FolderNode[]`）。
+Future<String> getFolderChildren({
+  required String dbPath,
+  required String folderPath,
+}) => RustLib.instance.api.crateApiGetFolderChildren(
+  dbPath: dbPath,
+  folderPath: folderPath,
+);
+
+/// 递归查找某文件夹下的第一首歌曲路径（用于文件夹视图预览）。
+Future<String> getFolderFirstSong({
+  required String dbPath,
+  required String folderPath,
+}) => RustLib.instance.api.crateApiGetFolderFirstSong(
+  dbPath: dbPath,
+  folderPath: folderPath,
+);
+
+/// 在父目录下创建新文件夹，返回新文件夹路径。
+Future<String> createFolder({
+  required String parentPath,
+  required String folderName,
+}) => RustLib.instance.api.crateApiCreateFolder(
+  parentPath: parentPath,
+  folderName: folderName,
+);
+
+/// 删除文件夹（递归删除目录下所有内容）。注意：真删，不会进回收站。
+Future<void> deleteFolder({required String path}) =>
+    RustLib.instance.api.crateApiDeleteFolder(path: path);
+
+/// 移动文件到目标文件夹（同步数据库中的歌曲路径）。
+Future<void> moveFileToFolder({
+  required String dbPath,
+  required String sourcePath,
+  required String targetFolder,
+}) => RustLib.instance.api.crateApiMoveFileToFolder(
+  dbPath: dbPath,
+  sourcePath: sourcePath,
+  targetFolder: targetFolder,
+);
+
+/// 批量移动音乐文件到目标文件夹（返回 `BatchMoveMusicFilesResult` JSON）。
+Future<String> batchMoveMusicFiles({
+  required String dbPath,
+  required List<String> paths,
+  required String targetFolder,
+}) => RustLib.instance.api.crateApiBatchMoveMusicFiles(
+  dbPath: dbPath,
+  paths: paths,
+  targetFolder: targetFolder,
+);
+
+/// 移动单个音乐文件到新路径（同步数据库路径）。
+Future<void> moveMusicFile({
+  required String dbPath,
+  required String oldPath,
+  required String newPath,
+}) => RustLib.instance.api.crateApiMoveMusicFile(
+  dbPath: dbPath,
+  oldPath: oldPath,
+  newPath: newPath,
+);
+
+/// 删除音乐文件（真删，不回收）。
+Future<void> deleteMusicFile({required String path}) =>
+    RustLib.instance.api.crateApiDeleteMusicFile(path: path);
+
+/// 从最近播放历史与统计中批量移除歌曲。
+Future<void> removeSongsFromHistoryAndStatistics({
+  required String dbPath,
+  required List<String> songPaths,
+}) => RustLib.instance.api.crateApiRemoveSongsFromHistoryAndStatistics(
+  dbPath: dbPath,
+  songPaths: songPaths,
+);
+
+/// 解析下载目标路径：目录 + 文件名，`overwrite_existing` 为 false 时自动追加 `(1)`/`(2)` 避免冲突。
+Future<String> resolveDownloadPath({
+  required String directory,
+  required String fileName,
+  required bool overwriteExisting,
+}) => RustLib.instance.api.crateApiResolveDownloadPath(
+  directory: directory,
+  fileName: fileName,
+  overwriteExisting: overwriteExisting,
+);
+
+/// 按命名风格构建下载文件基名（不含扩展名）。
+Future<String> buildDownloadBasename({
+  required String title,
+  required String artist,
+  required String album,
+  required String fileNameStyle,
+}) => RustLib.instance.api.crateApiBuildDownloadBasename(
+  title: title,
+  artist: artist,
+  album: album,
+  fileNameStyle: fileNameStyle,
+);
+
+/// 写入原始下载字节到目标路径（创建父目录），返回目标路径。
+Future<String> saveDownloadBytes({
+  required List<int> data,
+  required String destPath,
+}) => RustLib.instance.api.crateApiSaveDownloadBytes(
+  data: data,
+  destPath: destPath,
+);
+
+/// 保存下载歌词文本到目标路径（创建父目录），返回目标路径。
+Future<String> saveDownloadLyrics({
+  required String content,
+  required String destPath,
+}) => RustLib.instance.api.crateApiSaveDownloadLyrics(
+  content: content,
+  destPath: destPath,
+);
+
+/// 获取流缓存信息，返回 `{"current":u64,"max":u64}` JSON。
+Future<String> getStreamCacheInfo() =>
+    RustLib.instance.api.crateApiGetStreamCacheInfo();
+
+/// 判断某个 URL 是否已缓存完整。
+Future<bool> isStreamCached({required String url}) =>
+    RustLib.instance.api.crateApiIsStreamCached(url: url);
+
+/// 将已缓存的 URL 文件复制到目标路径，返回实际写入字节数。
+Future<BigInt> copyStreamCache({
+  required String url,
+  required String destPath,
+}) =>
+    RustLib.instance.api.crateApiCopyStreamCache(url: url, destPath: destPath);
+
+/// 等待某个 URL 缓存下载完成（超时秒数），完成返回 true。
+Future<bool> waitStreamComplete({
+  required String url,
+  required BigInt timeoutSecs,
+}) => RustLib.instance.api.crateApiWaitStreamComplete(
+  url: url,
+  timeoutSecs: timeoutSecs,
+);
+
+/// 在播放前评估/更新响度元数据并计算目标线性增益。
+/// `enabled` 为 true 时按 `gain_offset_db`（dB）与 `prevent_clipping` 计算，
+/// 返回 `ProcessLoudnessResult` JSON；`enabled` 为 false 时返回 1.0（原始音量）。
+Future<String> updateLoudnessSettings({
+  required String dbPath,
+  required bool enabled,
+  PlatformInt64? songId,
+  String? songPath,
+  required double gainOffsetDb,
+  required bool preventClipping,
+}) => RustLib.instance.api.crateApiUpdateLoudnessSettings(
+  dbPath: dbPath,
+  enabled: enabled,
+  songId: songId,
+  songPath: songPath,
+  gainOffsetDb: gainOffsetDb,
+  preventClipping: preventClipping,
+);
+
+/// 将云端累计总听歌时长合并进本地（取较大值），返回 [`CloudMergeResult`] JSON。
+Future<String> mergeCloudListenDuration({
+  required String dbPath,
+  required PlatformInt64 totalSeconds,
+}) => RustLib.instance.api.crateApiMergeCloudListenDuration(
+  dbPath: dbPath,
+  totalSeconds: totalSeconds,
+);
+
+/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+Future<void> pluginEngineStoreImport({
+  required String dataDir,
+  required String payloadJson,
+}) => RustLib.instance.api.crateApiPluginEngineStoreImport(
+  dataDir: dataDir,
+  payloadJson: payloadJson,
+);
+
+/// 获取某个域名的 cookie header（分号分隔的 `name=value` 字符串）。
+Future<String> pluginEngineCookieHeaderForDomain({
+  required String dataDir,
+  required String domain,
+}) => RustLib.instance.api.crateApiPluginEngineCookieHeaderForDomain(
+  dataDir: dataDir,
+  domain: domain,
+);
+
+/// 获取插件引擎会话快照，返回 `{"cookies":..., "storage":...}` JSON。
+Future<String> pluginEngineStoreSnapshot({required String dataDir}) =>
+    RustLib.instance.api.crateApiPluginEngineStoreSnapshot(dataDir: dataDir);
 
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {

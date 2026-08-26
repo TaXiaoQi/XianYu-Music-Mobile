@@ -5,6 +5,8 @@
 //! 其他宿主跨平台复用。后续批次会逐步并入音效 DSP、歌词、URL 解析等模块。
 
 pub mod error;
+pub mod host_crypto;
+pub mod fallback_verify;
 pub mod music;
 pub mod player;
 pub mod security;

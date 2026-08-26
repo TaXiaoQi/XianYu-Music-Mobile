@@ -15,9 +15,19 @@ mod progress;
 #[path = "scanner/repository.rs"]
 mod repository;
 
-pub(crate) use orchestrator::{scan_folder_recursive, scan_single_directory_internal};
+pub(crate) use orchestrator::{
+    parse_audio_files, parse_music_folder, scan_folder_recursive, scan_single_directory_internal,
+};
 pub(crate) use parser::{parse_song_from_file, parse_song_from_file_with_name, parse_song_from_fd};
 pub(crate) use repository::apply_scan_changes;
+
+/// 在音乐库中递归查找某个文件夹下的第一首歌曲路径（按路径字典序）。
+pub fn find_first_song_in_folder(
+    conn: &rusqlite::Connection,
+    folder_path: &str,
+) -> Option<String> {
+    orchestrator::find_first_song_recursive(std::path::Path::new(folder_path), conn)
+}
 
 pub(super) const VARIOUS_ARTISTS: &str = "Various Artists";
 pub(super) const VARIOUS_ARTISTS_THRESHOLD: usize = 5;

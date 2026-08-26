@@ -107,6 +107,7 @@ class AppSettings {
     this.navBarPosition = NavBarPosition.bottom,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
     this.usbExclusiveOutput = false,
+    this.bitPerfectOutput = false,
     this.dsdNativePassthrough = false,
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
@@ -215,6 +216,10 @@ class AppSettings {
   /// USB 独占输出（AAudio exclusive，bit-perfect 直达 USB DAC）。
   /// 仅本地音乐生效；在线歌曲与失败场景自动回退普通播放。
   final bool usbExclusiveOutput;
+
+  /// Bit-perfect 输出（PCM）：绕过响度归一化/EQ/音效/音量，按源位深整数直出。
+  /// 仅 USB 独占输出生效；开启时音量与音质 UI 置灰禁用。
+  final bool bitPerfectOutput;
 
   /// DSD 原生直出（DoP 打包，bit-perfect 直达 DSD-DAC）。
   /// 开启后 dsf/dff 本地文件在播放态走 AAudio 独占 I24 独占流，绕过解码器与 DSP。
@@ -347,6 +352,7 @@ class AppSettings {
     NavBarPosition? navBarPosition,
     SideBarExpandDirection? sideBarExpandDirection,
     bool? usbExclusiveOutput,
+    bool? bitPerfectOutput,
     bool? dsdNativePassthrough,
     bool? volumeBalanceEnabled,
     double? volumeBalanceGainOffsetDb,
@@ -420,6 +426,7 @@ class AppSettings {
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
       usbExclusiveOutput: usbExclusiveOutput ?? this.usbExclusiveOutput,
+      bitPerfectOutput: bitPerfectOutput ?? this.bitPerfectOutput,
       dsdNativePassthrough:
           dsdNativePassthrough ?? this.dsdNativePassthrough,
       volumeBalanceEnabled: volumeBalanceEnabled ?? this.volumeBalanceEnabled,
@@ -536,7 +543,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
               ? SideBarExpandDirection.up
               : SideBarExpandDirection.down,
       usbExclusiveOutput: prefs.getBool('usbExclusiveOutput') ?? false,
-      dsdNativePassthrough: prefs.getBool('dsdNativePassthrough') ?? false,
+      bitPerfectOutput: prefs.getBool('bitPerfectOutput') ?? false,
+      dsdNativePassthrough: prefs.getBool('dsdNativePassthrough')
+          ?? false,
       volumeBalanceEnabled: prefs.getBool('volumeBalanceEnabled') ?? false,
       volumeBalanceGainOffsetDb:
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
@@ -669,6 +678,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString(
           'sideBarExpandDirection', next.sideBarExpandDirection.name),
       prefs.setBool('usbExclusiveOutput', next.usbExclusiveOutput),
+      prefs.setBool('bitPerfectOutput', next.bitPerfectOutput),
       prefs.setBool('dsdNativePassthrough', next.dsdNativePassthrough),
       prefs.setBool('volumeBalanceEnabled', next.volumeBalanceEnabled),
       prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
@@ -765,6 +775,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
   Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));
+  Future<void> setBitPerfectOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(bitPerfectOutput: v));
   Future<void> setDsdNativePassthrough(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dsdNativePassthrough: v));
   Future<void> setVolumeBalanceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceEnabled: v));
   Future<void> setVolumeBalanceGainOffsetDb(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceGainOffsetDb: v));

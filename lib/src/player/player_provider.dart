@@ -489,15 +489,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       final sfx = _ref.read(soundEffectProvider).settings;
       final settings = _ref.read(settingsProvider).valueOrNull;
+      final bitPerfect = settings?.bitPerfectOutput ?? false;
+      final dsd = settings?.dsdNativePassthrough ?? false;
       await startUsbExclusivePlayback(
         path: path,
         deviceId: settings?.usbExclusiveDeviceId ?? -1,
         volume: _ref.read(volumeProvider),
         startTimeSecs: startAtSecs,
         isPlaying: isPlaying,
-        volumeBalanceGain: _effectiveBalanceGain(),
-        equalizerSettingsJson: jsonEncode(sfx.toEqualizerRustJson()),
-        soundEffectSettingsJson: jsonEncode(sfx.toRustJson()),
+        volumeBalanceGain: bitPerfect ? 1.0 : _effectiveBalanceGain(),
+        // Bit-perfect 直出时 EQ/音效被旁通，避免传空让 DAC 保持原生。
+        equalizerSettingsJson: bitPerfect ? '' : jsonEncode(sfx.toEqualizerRustJson()),
+        soundEffectSettingsJson: bitPerfect ? '' : jsonEncode(sfx.toRustJson()),
+        bitPerfect: bitPerfect,
+        dsdNativePassthrough: dsd,
       );
       state = state.copyWith(usbExclusive: true, isPlaying: isPlaying);
       _startExclusivePolling();

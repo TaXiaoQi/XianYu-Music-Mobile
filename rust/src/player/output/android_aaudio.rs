@@ -438,10 +438,14 @@ enum ExclusiveCommand {
         is_playing: bool,
     },
     Stop,
+    Pause,
+    Resume,
     SetVolume(f32),
     SetVolumeBalanceGain(f32),
     SetEqualizer(EqualizerSettings),
     SetSoundEffect(SoundEffectSettings),
+    /// Bit-perfect 直出运行时切换：开启即绕过响度/EQ/音效/音量。
+    SetBitPerfect(bool),
 }
 
 // =========================================================================
@@ -453,6 +457,8 @@ struct AndroidExclusivePlayback {
     join_handle: Option<thread::JoinHandle<()>>,
     progress: Arc<ExclusiveProgress>,
     device_name: String,
+    /// Bit-perfect 直出当前状态（供外部查询，工作线程持有同一 Arc）。
+    bit_perfect: Arc<AtomicBool>,
 }
 
 impl Drop for AndroidExclusivePlayback {
@@ -488,11 +494,13 @@ pub fn start_exclusive_playback(
     let (tx, rx) = mpsc::channel::<ExclusiveCommand>();
     let (init_tx, init_rx) = mpsc::sync_channel::<Result<(String, u32, u16), String>>(1);
     let progress_clone = progress.clone();
+    let bit_perfect = Arc::new(AtomicBool::new(request.bit_perfect));
+    let bit_perfect_clone = bit_perfect.clone();
 
     let handle = thread::Builder::new()
         .name("xy-aaudio-exclusive".to_string())
         .spawn(move || {
-            run_exclusive_playback(request, rx, init_tx, progress_clone);
+            run_exclusive_playback(request, rx, init_tx, progress_clone, bit_perfect_clone);
         })
         .map_err(|e| e.to_string())?;
 
@@ -518,6 +526,7 @@ pub fn start_exclusive_playback(
         join_handle: Some(handle),
         progress,
         device_name: device_name.clone(),
+        bit_perfect,
     };
 
     let mut guard = instance().lock().map_err(|e| e.to_string())?;
@@ -595,6 +604,43 @@ pub fn set_exclusive_sound_effect(settings_json: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 暂停独占播放（保持进度，等待 resume 恢复）。
+pub fn pause_exclusive() {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::Pause);
+        }
+    }
+}
+
+/// 从暂停恢复独占播放。
+pub fn resume_exclusive() {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::Resume);
+        }
+    }
+}
+
+/// 运行时切换 Bit-perfect 直出。开启时 DSP 全部旁通、音量置 1.0；
+/// 关闭时恢复当前响度/EQ/音效/音量。
+pub fn set_exclusive_bit_perfect(enabled: bool) {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::SetBitPerfect(enabled));
+        }
+    }
+}
+
+pub fn is_exclusive_bit_perfect() -> bool {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            return playback.bit_perfect.load(Ordering::Relaxed);
+        }
+    }
+    false
+}
+
 pub fn is_exclusive_active() -> bool {
     if let Ok(guard) = instance().lock() {
         guard.is_some()
@@ -635,6 +681,35 @@ pub fn get_exclusive_channels() -> u16 {
     0
 }
 
+/// 查询当前独占播放输出设备/格式信息（用于前端展示已选输出）。
+/// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
+pub fn get_exclusive_device_info() -> String {
+    let (active, device_name, sample_rate, channels, bit_perfect) =
+        if let Ok(guard) = instance().lock() {
+            if let Some(playback) = guard.as_ref() {
+                (
+                    true,
+                    playback.device_name.clone(),
+                    playback.progress.sample_rate.load(Ordering::Relaxed),
+                    playback.progress.channels.load(Ordering::Relaxed) as u16,
+                    playback.bit_perfect.load(Ordering::Relaxed),
+                )
+            } else {
+                (false, String::new(), 0, 0, false)
+            }
+        } else {
+            (false, String::new(), 0, 0, false)
+        };
+    serde_json::json!({
+        "active": active,
+        "deviceName": device_name,
+        "sampleRate": sample_rate,
+        "channels": channels,
+        "bitPerfect": bit_perfect,
+    })
+    .to_string()
+}
+
 // =========================================================================
 // 工作线程
 // =========================================================================
@@ -644,6 +719,7 @@ fn run_exclusive_playback(
     cmd_rx: Receiver<ExclusiveCommand>,
     init_tx: SyncSender<Result<(String, u32, u16), String>>,
     progress: Arc<ExclusiveProgress>,
+    bit_perfect: Arc<AtomicBool>,
 ) {
     // 1. 加载 AAudio 库
     let lib = match AAudioLib::load() {
@@ -654,9 +730,11 @@ fn run_exclusive_playback(
         }
     };
 
-    // 1.5 DSD（dsf/dff）走原生 DoP 直出：绕过解码器与 DSP，逐帧打包 24-bit。
-    if is_dsd_path(&request.path) {
-        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress);
+    // 1.5 DSD（dsf/dff）原生 DoP 直出：仅当打开「DSD 原生直通」且当前处于
+    // Bit-perfect 直出状态才走 DoP 打包（绕过解码器与 DSP，逐帧打包 24-bit）。
+    // 关闭直通时 DSD 容器降级为 PCM 解码，走常规 DSP 管线。
+    if request.dsd_native_passthrough && is_dsd_path(&request.path) {
+        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress, bit_perfect);
         return;
     }
 
@@ -689,11 +767,24 @@ fn run_exclusive_playback(
         }
     }
 
-    // 5. 装配 DSP 链
-    let (mut normalizer, normalizer_handle) =
-        VolumeNormalizer::new(request.volume_balance_gain, source_sample_rate, source_channels, 100);
+    // 5. 装配 DSP 链。
+    // Bit-perfect 直出：绕过响度归一化/EQ/音效，音量恒为 1.0，仅保留安全限幅；
+    // 仍构造链对象以便运行时关闭直出后无缝恢复。
+    let initial_bit_perfect = request.bit_perfect;
+    let (mut normalizer, normalizer_handle) = VolumeNormalizer::new(
+        if initial_bit_perfect {
+            1.0
+        } else {
+            request.volume_balance_gain
+        },
+        source_sample_rate,
+        source_channels,
+        100,
+    );
 
-    let eq_settings: EqualizerSettings = if request.equalizer_settings_json.is_empty() {
+    let eq_settings: EqualizerSettings = if initial_bit_perfect {
+        EqualizerSettings::default()
+    } else if request.equalizer_settings_json.is_empty() {
         EqualizerSettings::default()
     } else {
         serde_json::from_str(&request.equalizer_settings_json).unwrap_or_default()
@@ -702,8 +793,10 @@ fn run_exclusive_playback(
     let mut equalizer = Equalizer::new(source_sample_rate, source_channels, eq_handle.clone());
 
     let mut sound_effect = SoundEffectBlockProcessor::new(source_sample_rate, source_channels);
-    if !request.sound_effect_settings_json.is_empty() {
-        if let Ok(se_settings) = serde_json::from_str::<SoundEffectSettings>(&request.sound_effect_settings_json) {
+    if !initial_bit_perfect && !request.sound_effect_settings_json.is_empty() {
+        if let Ok(se_settings) =
+            serde_json::from_str::<SoundEffectSettings>(&request.sound_effect_settings_json)
+        {
             sound_effect.set_settings(se_settings);
         }
     }
@@ -711,15 +804,33 @@ fn run_exclusive_playback(
     let user_volume = Arc::new(AtomicU32::new(request.volume.to_bits()));
     let is_paused = Arc::new(AtomicBool::new(!request.is_playing));
 
-    // 6. 创建 AAudio 独占流
-    let (stream, device_format, stream_sample_rate, stream_channels) =
+    // 6. 创建 AAudio 独占流。
+    // Bit-perfect 时优先按源位深协商整数格式（≤16bit→Int16，>16bit→Int24，
+    // 深层浮点回退），实现「按源位深整数直出」；常规模式仍 Float32→Int16。
+    let (stream, device_format, stream_sample_rate, stream_channels) = if initial_bit_perfect {
+        let depth = probe_source_bit_depth(&request.path);
+        match create_aaudio_stream_bitperfect(
+            &lib,
+            request.device_id,
+            source_sample_rate,
+            source_channels,
+            depth,
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                let _ = init_tx.send(Err(e));
+                return;
+            }
+        }
+    } else {
         match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels) {
             Ok(result) => result,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
                 return;
             }
-        };
+        }
+    };
 
     let effective_rate = sound_effect.effective_sample_rate();
     progress.sample_rate.store(effective_rate, Ordering::Relaxed);
@@ -780,7 +891,16 @@ fn run_exclusive_playback(
                     let _ = unsafe { (lib.stream_request_start)(stream) };
                 }
             }
+            Ok(ExclusiveCommand::Pause) => {
+                let _ = unsafe { (lib.stream_request_pause)(stream) };
+                is_paused.store(true, Ordering::Relaxed);
+            }
+            Ok(ExclusiveCommand::Resume) => {
+                is_paused.store(false, Ordering::Relaxed);
+                let _ = unsafe { (lib.stream_request_start)(stream) };
+            }
             Ok(ExclusiveCommand::SetVolume(vol)) => {
+                // Bit-perfect 直出时音量被旁通，仅记录供关闭直出后恢复。
                 user_volume.store(vol.to_bits(), Ordering::Relaxed);
             }
             Ok(ExclusiveCommand::SetVolumeBalanceGain(gain)) => {
@@ -792,6 +912,20 @@ fn run_exclusive_playback(
             }
             Ok(ExclusiveCommand::SetSoundEffect(settings)) => {
                 sound_effect.set_settings(settings);
+            }
+            Ok(ExclusiveCommand::SetBitPerfect(enabled)) => {
+                bit_perfect.store(enabled, Ordering::Relaxed);
+                if enabled {
+                    // 进入直出：清空 DSP 内部状态，避免关闭直出时的历史中间值。
+                    normalizer.reset();
+                    equalizer.reset();
+                    sound_effect.reset();
+                    if is_paused.load(Ordering::Relaxed) {
+                        let _ = unsafe { (lib.stream_request_start)(stream) };
+                    }
+                    is_paused.store(false, Ordering::Relaxed);
+                }
+                // 关闭直出：仅恢复绕过的 DSP 链，不改变暂停状态。
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
@@ -818,14 +952,22 @@ fn run_exclusive_playback(
             }
         };
 
-        // DSP 链处理
+        // DSP 链处理。Bit-perfect 直出：绕过响度/EQ/音效，仅安全限幅（不放大）。
+        let do_bypass = bit_perfect.load(Ordering::Relaxed);
+        let effected = if do_bypass {
+            block
+        } else {
+            let normalized = normalizer.process_block(&block);
+            let eq_applied = equalizer.process_block(&normalized);
+            sound_effect.process_block(eq_applied)
+        };
 
-        let normalized = normalizer.process_block(&block);
-        let eq_applied = equalizer.process_block(&normalized);
-        let effected = sound_effect.process_block(eq_applied);
-
-        // 应用用户音量 + clip guard + 格式转换
-        let vol = f32::from_bits(user_volume.load(Ordering::Relaxed));
+        // 应用用户音量 + clip guard + 格式转换（直出时音量恒为 1.0）
+        let vol = if do_bypass {
+            1.0
+        } else {
+            f32::from_bits(user_volume.load(Ordering::Relaxed))
+        };
         let mut byte_buf: Vec<u8> = Vec::with_capacity(effected.len() * bytes_per_sample);
 
         let mut chan_sum = 0.0f32;
@@ -890,6 +1032,7 @@ fn run_dsd_passthrough(
     cmd_rx: Receiver<ExclusiveCommand>,
     init_tx: SyncSender<Result<(String, u32, u16), String>>,
     progress: Arc<ExclusiveProgress>,
+    bit_perfect: Arc<AtomicBool>,
 ) {
     let dsd = match parse_dsd_info(&request.path) {
         Ok(info) => info,
@@ -982,6 +1125,18 @@ fn run_dsd_passthrough(
                     AAUDIO_OK
                 };
             }
+            Ok(ExclusiveCommand::Pause) => {
+                let _ = unsafe { (lib.stream_request_pause)(stream) };
+                is_paused = true;
+            }
+            Ok(ExclusiveCommand::Resume) => {
+                is_paused = false;
+                let _ = unsafe { (lib.stream_request_start)(stream) };
+            }
+            Ok(ExclusiveCommand::SetBitPerfect(_)) => {
+                // DSD 原生直出天然 bit-perfect，保持状态开启。
+                bit_perfect.store(true, Ordering::Relaxed);
+            }
             // DSD 直出下音量、增益、EQ 与音效均被绕过，命令直接忽略。
             Ok(ExclusiveCommand::SetVolume(_))
             | Ok(ExclusiveCommand::SetVolumeBalanceGain(_))
@@ -1060,6 +1215,119 @@ fn create_aaudio_stream(
     }
 
     Err("无法创建 AAudio 独占流（设备不支持独占模式或已被占用）".to_string())
+}
+
+/// Bit-perfect 流协商：按源位深优先尝试整数格式（≤16bit→Int16，>16bit→Int24，
+/// 未知位深→Int16），失败回退 Int16 → Float32。实现「按源位深整数直出」。
+fn create_aaudio_stream_bitperfect(
+    lib: &AAudioLib,
+    device_id: i32,
+    sample_rate: u32,
+    channels: u16,
+    source_depth: Option<u8>,
+) -> Result<(*mut AAudioStream, DeviceFormat, u32, u16), String> {
+    let preferred: DeviceFormat = match source_depth {
+        Some(d) if d <= 16 => DeviceFormat::Int16,
+        Some(_) => DeviceFormat::I24Packed,
+        None => DeviceFormat::Int16,
+    };
+
+    let mut attempts: Vec<DeviceFormat> = vec![preferred];
+    for f in [DeviceFormat::Int16, DeviceFormat::I24Packed, DeviceFormat::Float32] {
+        if f != preferred && !attempts.contains(&f) {
+            attempts.push(f);
+        }
+    }
+
+    for &fmt in &attempts {
+        let stream = unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt) };
+        match stream {
+            Ok(s) => {
+                let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
+                let actual_channels = unsafe { (lib.stream_get_channel_count)(s) } as u16;
+                return Ok((s, fmt, actual_rate, actual_channels));
+            }
+            Err(_e) => continue,
+        }
+    }
+
+    Err("无法创建 AAudio 独占流（设备不支持独占/整数格式）".to_string())
+}
+
+/// 探测源文件的每样本位深（bit），供 bit-perfect 整数格式协商。
+/// 支持 FLAC / WAVE / AIFF / MP4(M4A)-hdlr 位深。无法识别返回 None（回退 Int16）。
+fn probe_source_bit_depth(path: &str) -> Option<u8> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut head = [0u8; 64];
+    let n = file.read(&mut head).ok()?;
+    let head = &head[..n];
+    if head.len() < 12 {
+        return None;
+    }
+
+    // FLAC: "fLaC"，STREAMINFO bits-per-sample 位于 12..18 的第 23..27 位
+    if head.starts_with(b"fLaC") {
+        if head.len() < 18 {
+            return None;
+        }
+        let mut u = 0u64;
+        for &b in &head[12..18] {
+            u = (u << 8) | b as u64;
+        }
+        let bits = ((u >> 23) & 0x1F) as u8 + 1;
+        return Some(bits);
+    }
+
+    // WAVE: RIFF....WAVE，扫 fmt 子块取每样本位数
+    if head.starts_with(b"RIFF") && &head[8..12] == b"WAVE" {
+        let mut off = 12usize;
+        while off + 8 <= head.len() {
+            if &head[off..off + 4] == b"fmt " {
+                let data = off + 8;
+                if data + 16 <= head.len() {
+                    let bits = u16::from_le_bytes([head[data + 14], head[data + 15]]);
+                    return Some(bits as u8);
+                }
+                return None;
+            }
+            let size = u32::from_le_bytes([
+                head[off + 4],
+                head[off + 5],
+                head[off + 6],
+                head[off + 7],
+            ]) as usize;
+            off += 8 + size + (size & 1);
+        }
+        return None;
+    }
+
+    // AIFF: FORM....AIFF，COMM 块 sampleSize（每样本位数）
+    if head.starts_with(b"FORM") && &head[8..12] == b"AIFF" {
+        let mut off = 12usize;
+        while off + 8 <= head.len() {
+            let chunk = &head[off..off + 4];
+            let size = u32::from_be_bytes([
+                head[off + 4],
+                head[off + 5],
+                head[off + 6],
+                head[off + 7],
+            ]) as usize;
+            if chunk == b"COMM" {
+                if off + 8 + 4 > head.len() {
+                    return None;
+                }
+                let bits = u16::from_be_bytes([head[off + 12], head[off + 13]]);
+                return Some(bits as u8);
+            }
+            off += 8 + size + (size & 1);
+        }
+        return None;
+    }
+
+    // MP4/M4A: 通过 esds 的 decoderSpecificInfo 或 atom 无法简单读位深；
+    // 常见 AAC 为 16 位，MP3 为 16 位，返回 None 让上层回退 Int16。
+    None
 }
 
 unsafe fn try_open_stream(

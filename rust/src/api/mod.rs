@@ -246,6 +246,17 @@ pub fn loudness_playback_gain_for_file(
     crate::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
 }
 
+/// 查询指定歌曲的响度分析缓存记录（LUFS/峰值等），返回 `LoudnessRecord` JSON。
+/// 无记录返回 `"null"`。
+pub fn get_track_loudness_info(db_path: String, song_id: i64) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let record = crate::player::loudness::get_song_loudness_record(&conn, song_id)?;
+    match record {
+        Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
+        None => Ok("null".to_string()),
+    }
+}
+
 // =========================================================================
 // 听歌统计（第五批）
 // =========================================================================
@@ -383,6 +394,25 @@ pub fn scan_music_folder(
     let songs = crate::music::scanner::scan_single_directory_internal(
         folder_path, db_conn, None, None, 1, 1, options,
     )?;
+    serde_json::to_string(&songs).map_err(|e| e.to_string())
+}
+
+/// 批量解析一组音频文件的元数据（不写库），返回 `Song[]` JSON。对齐桌面端 `parse_audio_files`。
+pub fn parse_audio_files(
+    paths: Vec<String>,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<String, String> {
+    let songs = crate::music::scanner::parse_audio_files(paths, minimum_duration_seconds)?;
+    serde_json::to_string(&songs).map_err(|e| e.to_string())
+}
+
+/// 递归扫描文件夹内全部受支持音频并解析元数据（不写库），返回 `Song[]` JSON。
+/// 对齐桌面端 `parse_music_folder`。
+pub fn parse_music_folder(
+    folder_path: String,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<String, String> {
+    let songs = crate::music::scanner::parse_music_folder(folder_path, minimum_duration_seconds)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -765,6 +795,55 @@ pub async fn save_song_lyrics(
     crate::music::files::save_song_lyrics(path, lyrics, source, source_path).await
 }
 
+/// 读取歌曲完整歌词（内嵌标签 → 侧边 LRC，远程歌曲走源 + 缓存），返回原始歌词文本。
+pub async fn get_song_lyrics(db_path: String, path: String) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
+    crate::music::files::get_song_lyrics(path, db_conn).await
+}
+
+/// 读取用户主动选择的 .lrc 歌词文件源码（返回解码后的歌词文本）。
+pub fn read_lyrics_file(path: String) -> Result<String, String> {
+    crate::music::files::read_lyrics_file(path)
+}
+
+/// 保存歌曲背景图到背景根目录下 `song_backgrounds/` 并写入数据库，返回保存后的背景图路径。
+pub fn save_song_background(
+    db_path: String,
+    song_backgrounds_root: String,
+    song_path: String,
+    background_path: String,
+) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    crate::music::files::save_song_background(
+        &conn,
+        std::path::Path::new(&song_backgrounds_root),
+        song_path,
+        background_path,
+    )
+}
+
+/// 查询歌曲背景图路径，无则返回 JSON `null`。
+pub fn get_song_background(db_path: String, song_path: String) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let result = crate::music::files::get_song_background(&conn, song_path)?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 清除歌曲背景图（删除本地文件 + 数据库记录）。
+pub fn clear_song_background(
+    db_path: String,
+    song_backgrounds_root: String,
+    song_path: String,
+) -> Result<(), String> {
+    let conn = open_scan_conn(&db_path)?;
+    crate::music::files::clear_song_background(
+        &conn,
+        std::path::Path::new(&song_backgrounds_root),
+        song_path,
+    )
+}
+
 /// 保存歌曲信息标签（返回 `SaveSongInfoResponse` JSON）。
 pub fn save_song_info(
     db_path: String,
@@ -811,7 +890,19 @@ pub fn load_playback_session(db_path: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 高频更新播放进度（防抖写 SQLite）。
+/// 只读查询当前播放会话状态（读内存权威状态），返回 `PlaybackSessionData` JSON。
+pub fn session_get_playback_session(db_path: String) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    global_playback_session().load_from_db(&conn)?;
+    serde_json::to_string(&global_playback_session().get_playback_session())
+        .map_err(|e| e.to_string())
+}
+
+/// 强制将当前播放会话内存状态持久化到 SQLite（定时刷新或退出时调用）。
+pub fn session_flush_playback_session(db_path: String) -> Result<(), String> {
+    let conn = open_stats_conn(&db_path)?;
+    global_playback_session().flush_playback_session(&conn)
+}
 pub fn update_playback_position(
     db_path: String,
     position_secs: f64,
@@ -885,6 +976,8 @@ pub fn resolve_download_full_path(
 
 /// 启动 USB 独占播放。返回设备名或错误信息。
 /// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
+/// `bit_perfect` = Bit-perfect 直出（绕过响度/EQ/音效/音量，按源位深整数直出）。
+/// `dsd_native_passthrough` = DSD(.dsf/.dff) 原生 DoP 直通开关。
 pub fn start_usb_exclusive_playback(
     path: String,
     device_id: i32,
@@ -894,48 +987,105 @@ pub fn start_usb_exclusive_playback(
     volume_balance_gain: f32,
     equalizer_settings_json: String,
     sound_effect_settings_json: String,
+    bit_perfect: bool,
+    dsd_native_passthrough: bool,
 ) -> Result<String, String> {
-    let request = crate::player::output::ExclusivePlayRequest {
-        path,
-        device_id,
-        volume,
-        start_time_secs,
-        is_playing,
-        volume_balance_gain,
-        equalizer_settings_json,
-        sound_effect_settings_json,
-    };
-    crate::player::output::start_exclusive_playback(request)
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::Play {
+            path,
+            device_id,
+            volume,
+            start_time_secs,
+            is_playing,
+            volume_balance_gain,
+            equalizer_settings_json,
+            sound_effect_settings_json,
+            bit_perfect,
+            dsd_native_passthrough,
+        },
+    )
 }
 
 /// 停止 USB 独占播放并释放设备。
 pub fn stop_usb_exclusive_playback() {
-    crate::player::output::stop_exclusive_playback();
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::Stop,
+    )
+    .ok();
+}
+
+/// 暂停 USB 独占播放（保持进度，等待 resume 恢复）。
+pub fn pause_usb_exclusive() {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::Pause,
+    )
+    .ok();
+}
+
+/// 从暂停恢复 USB 独占播放。
+pub fn resume_usb_exclusive() {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::Resume,
+    )
+    .ok();
 }
 
 /// 跳转到指定位置（秒）。
 pub fn seek_usb_exclusive(time_secs: f64, is_playing: bool) {
-    crate::player::output::seek_exclusive(time_secs, is_playing);
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::Seek { time_secs, is_playing },
+    )
+    .ok();
 }
 
 /// 设置用户音量（0.0–1.0）。
 pub fn set_usb_exclusive_volume(volume: f32) {
-    crate::player::output::set_exclusive_volume(volume);
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetVolume(volume),
+    )
+    .ok();
 }
 
 /// 运行时更新独占管线的音量平衡（ReplayGain）目标增益（平滑渐变不断音）。
 pub fn set_usb_exclusive_volume_balance_gain(gain: f32) {
-    crate::player::output::set_exclusive_volume_balance_gain(gain);
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetVolumeBalanceGain(gain),
+    )
+    .ok();
 }
 
 /// 更新 EQ 设置（camelCase JSON）。
 pub fn set_usb_exclusive_equalizer(settings_json: String) -> Result<(), String> {
-    crate::player::output::set_exclusive_equalizer(settings_json)
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetEqualizer(settings_json),
+    )
+    .map(|_| ())
 }
 
 /// 更新音效设置（camelCase JSON）。
 pub fn set_usb_exclusive_sound_effect(settings_json: String) -> Result<(), String> {
-    crate::player::output::set_exclusive_sound_effect(settings_json)
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetSoundEffect(settings_json),
+    )
+    .map(|_| ())
+}
+
+/// 运行时切换 Bit-perfect 直出：开启绕过响度/EQ/音效/音量，关闭恢复 DSP 链。
+pub fn set_usb_exclusive_bit_perfect(enabled: bool) {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetBitPerfect(enabled),
+    )
+    .ok();
+}
+
+/// 当前独占播放是否处于 Bit-perfect 直出状态。
+pub fn get_usb_exclusive_bit_perfect() -> bool {
+    crate::player::output::is_exclusive_bit_perfect()
+}
+
+/// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出设备。
+pub fn get_usb_exclusive_device_info() -> String {
+    crate::player::output::get_exclusive_device_info()
 }
 
 /// 获取当前播放位置（秒）。
@@ -1013,6 +1163,82 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
 /// 代理图片请求（自动添加 Referer，返回 data URL）。
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
     crate::plugins::proxy_image(url, referer).await
+}
+
+/// 读取本地图片文件为 base64，返回 JSON `{"mime":..., "base64":...}`（分享封面上传用）。
+pub fn read_image_base64(path: String) -> Result<String, String> {
+    crate::plugins::read_image_base64(path)
+}
+
+/// 将插件解析得到的视频流式写入 `video-background` 缓存，返回缓存文件完整路径。
+/// `cache_dir` 为应用缓存根目录（如 Flutter getApplicationCacheDirectory()）。
+pub async fn download_video_to_cache(
+    cache_dir: String,
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    crate::plugins::download_video_to_cache(cache_dir, url, headers).await
+}
+
+/// 清理本功能创建的后台视频缓存文件。
+/// `cache_dir` 必须与下载时传入的缓存根目录一致。
+pub async fn remove_cached_background_video(
+    cache_dir: String,
+    path: String,
+) -> Result<(), String> {
+    crate::plugins::remove_cached_background_video(cache_dir, path).await
+}
+
+// =========================================================================
+// 宿主端平台签名/加密 + 兜底模块验签（移植自桌面端 host_crypto / fallback_verify）
+// 供插件脚本 / 前端调用，对齐桌面端同名 Tauri 命令。
+// =========================================================================
+
+/// QQ 音乐 zzcSign 签名。
+pub fn host_zzc_sign(text: String) -> String {
+    crate::host_crypto::zzc_sign(&text)
+}
+
+/// 酷狗参数签名（`platform` 为 `"web"` 用 web 盐，其余用 android 盐）。
+pub fn host_kugou_sign(params: String, platform: String, body: Option<String>) -> String {
+    crate::host_crypto::kugou_sign(&params, &platform, body.as_deref().unwrap_or(""))
+}
+
+/// 酷狗请求密钥（android 盐）。
+pub fn host_kugou_request_key() -> String {
+    crate::host_crypto::KG_SALT_ANDROID.to_string()
+}
+
+/// 咪咕搜索签名。返回 JSON `{"sign":..., "deviceId":...}`。
+pub fn host_migu_sign(text: String, time: String) -> String {
+    let (sign, device_id) = crate::host_crypto::migu_sign(&text, &time);
+    serde_json::json!({ "sign": sign, "deviceId": device_id }).to_string()
+}
+
+/// 网易云 linuxapi 加密（AES-128-ECB PKCS7 → hex 大写）。
+pub fn host_linuxapi_encrypt(payload: String) -> String {
+    crate::host_crypto::linuxapi_encrypt(&payload)
+}
+
+/// 网易云 weapi 加密。返回 JSON `{"params":..., "encSecKey":...}`。
+pub fn host_weapi_encrypt(payload: String) -> String {
+    let (params, enc_sec_key) = crate::host_crypto::weapi_encrypt(&payload);
+    serde_json::json!({ "params": params, "encSecKey": enc_sec_key }).to_string()
+}
+
+/// 通用 SHA-256 hex（插件脚本哈希等）。
+pub fn host_sha256_hex(text: String) -> String {
+    crate::host_crypto::sha256_hex(&text)
+}
+
+/// 校验服务端下发的兜底模块签名（ed25519）。返回 true 表示签名有效可执行。
+pub fn verify_fallback_module_signature(
+    module_key: String,
+    version: i64,
+    code: String,
+    signature: String,
+) -> Result<bool, String> {
+    crate::fallback_verify::verify_fallback_module_signature(&module_key, version, &code, &signature)
 }
 
 // =========================================================================
@@ -1113,4 +1339,576 @@ pub fn stream_cache_max_bytes() -> u64 {
 /// 清空在线播放缓存。
 pub fn clear_stream_cache() {
     crate::player::stream_cache::clear_all();
+}
+
+// =========================================================================
+// 统计分布 / 重置（对齐桌面端 statistics）
+// =========================================================================
+
+/// 读取音质分布（返回 [`QualityDistribution`] JSON）。
+pub fn stats_get_quality_distribution(db_path: String) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_quality_distribution(&conn)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 读取格式分布（返回 [`FormatDistribution`] JSON）。
+pub fn stats_get_format_distribution(db_path: String) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_format_distribution(&conn)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 读取曲库统计（歌曲/歌手/专辑数等，返回 [`LibraryStats`] JSON）。
+pub fn stats_get_library_stats(db_path: String) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_library_stats(&conn)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 重置本地听歌统计（清空播放计数/时长等，不清收藏与下载）。
+pub fn stats_reset_local_statistics(db_path: String) -> Result<(), String> {
+    let conn = open_stats_conn(&db_path)?;
+    crate::statistics::reset_local_statistics(&conn)
+}
+
+// =========================================================================
+// 收藏 / 近期目录（对齐桌面端 get_favorite_*/get_recent_*）
+// =========================================================================
+
+/// 收藏歌手目录：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回 [`ArtistCatalogItem[]`] JSON。
+pub fn stats_get_favorite_artist_catalog(
+    db_path: String,
+    favorite_paths: Vec<String>,
+) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_favorite_artist_catalog(&conn, favorite_paths)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 收藏专辑目录：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回 [`AlbumCatalogItem[]`] JSON。
+pub fn stats_get_favorite_album_catalog(
+    db_path: String,
+    favorite_paths: Vec<String>,
+) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_favorite_album_catalog(&conn, favorite_paths)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 收藏歌曲路径视图：`favorite_paths` 为收藏的歌曲路径数组。
+/// 返回排序过滤后的 `String[]`（歌曲路径）。`sort_mode` 为 [`SongPathSortMode`] 的 snake_case 字符串。
+pub fn stats_get_favorite_song_paths_view(
+    db_path: String,
+    favorite_paths: Vec<String>,
+    query: Option<String>,
+    sort_mode: String,
+    detail_filter_type: Option<String>,
+    detail_filter_value: Option<String>,
+) -> Result<String, String> {
+    let sort: crate::statistics::SongPathSortMode =
+        serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_favorite_song_paths_view(
+        &conn,
+        favorite_paths,
+        query,
+        sort,
+        detail_filter_type,
+        detail_filter_value,
+    )?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 近期专辑目录：`recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回 [`RecentAlbumCatalogItem[]`] JSON。
+pub fn stats_get_recent_album_catalog(
+    db_path: String,
+    recent_entries_json: String,
+) -> Result<String, String> {
+    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+        serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_recent_album_catalog(&conn, entries)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 近期歌曲路径视图：`recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回排序过滤后的 `String[]`。
+pub fn stats_get_recent_song_paths_view(
+    db_path: String,
+    recent_entries_json: String,
+    query: Option<String>,
+    sort_mode: String,
+) -> Result<String, String> {
+    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+        serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
+    let sort: crate::statistics::SongPathSortMode =
+        serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
+    let conn = open_stats_conn(&db_path)?;
+    let v = crate::statistics::get_recent_song_paths_view(&conn, entries, query, sort)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 近期歌单目录：`playlists_json` 为 [`PlaylistImportItem[]`] 的 camelCase JSON，
+/// `recent_entries_json` 为 [`RecentHistoryImportEntry[]`] 的 camelCase JSON。
+/// 返回 [`RecentPlaylistCatalogItem[]`] JSON。
+pub fn stats_get_recent_playlist_catalog(
+    playlists_json: String,
+    recent_entries_json: String,
+) -> Result<String, String> {
+    let playlists: Vec<crate::statistics::PlaylistImportItem> =
+        serde_json::from_str(&playlists_json).map_err(|e| e.to_string())?;
+    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+        serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
+    let v = crate::statistics::get_recent_playlist_catalog(playlists, entries)?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+// =========================================================================
+// 封面缓存清理（对齐桌面端 music::covers::clear_cover_cache）
+// =========================================================================
+
+/// 清空封面缓存目录。
+pub fn clear_cover_cache(cache_dir: String) -> Result<(), String> {
+    crate::music::covers::clear_cover_cache(std::path::Path::new(&cache_dir))
+}
+
+// =========================================================================
+// LX 音源解析辅助（对齐桌面端 get_lx_cover / 换源 / 音质回退 / 缓存清理）
+// =========================================================================
+
+/// 获取 LX 音乐源封面 URL。`song_info_json` 为 [`LxUrlSongInfo`] 的 camelCase JSON。
+pub async fn get_lx_cover(song_info_json: String) -> Result<String, String> {
+    let song_info: LxUrlSongInfo =
+        serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
+    let url = crate::music::url_resolver::get_lx_cover(song_info).await?;
+    serde_json::to_string(&url).map_err(|e| e.to_string())
+}
+
+/// 清除 LX 音源 URL 直链缓存。
+pub async fn clear_lx_url_cache() -> Result<(), String> {
+    crate::music::url_resolver::clear_lx_url_cache().await
+}
+
+/// 清除 LX 音源全部缓存（URL 直链 + 搜索结果）。
+pub async fn clear_lx_all_cache() -> Result<(), String> {
+    if crate::music::url_resolver::clear_lx_url_cache().await.is_err() {
+        return Err("清除 URL 缓存失败".to_string());
+    }
+    crate::music::lx_search::clear_lx_all_cache().await
+}
+
+/// 换源：在其他落雪平台搜索同名同歌手歌曲。
+/// 返回 [`AlternativeSourceResult`] JSON 或 "null"。
+pub async fn find_alternative_lx_source(
+    song_name: String,
+    song_artist: String,
+    song_duration: f64,
+    failed_sources: Vec<String>,
+    qualities: Vec<String>,
+) -> Result<String, String> {
+    let v = crate::music::url_resolver::find_alternative_lx_source(
+        song_name,
+        song_artist,
+        song_duration,
+        failed_sources,
+        qualities,
+    )
+    .await?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+/// 按音质顺序回退解析播放直链（返回 [`ResolvedUrl`] JSON 或 "null"）。
+pub async fn resolve_lx_with_quality_fallback(
+    song_info_json: String,
+    qualities: Vec<String>,
+) -> Result<String, String> {
+    let song_info: LxUrlSongInfo =
+        serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
+    let v = crate::music::url_resolver::resolve_lx_with_quality_fallback(song_info, qualities).await?;
+    serde_json::to_string(&v).map_err(|e| e.to_string())
+}
+
+// =========================================================================
+// 远程源管理增强（对齐桌面端 test_remote_source / precache / list_directory）
+// =========================================================================
+
+/// 测试远程源连通性。`source_json` 为 [`RemoteSourceInput`] 的 camelCase JSON。
+/// 返回 `{"ok":bool,"message":String}` JSON。
+pub async fn test_remote_source(source_json: String) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TestInput {
+        id: Option<String>,
+        name: String,
+        provider: String,
+        base_url: String,
+        username: Option<String>,
+        password: Option<String>,
+        root_path: Option<String>,
+    }
+    let input: TestInput = serde_json::from_str(&source_json).map_err(|e| e.to_string())?;
+    if input.provider != "webdav" {
+        return Err("第一版仅支持 WebDAV".to_string());
+    }
+    let creds = crate::remote::types::RemoteSourceCredentials {
+        id: input.id.unwrap_or_else(|| "test".to_string()),
+        name: input.name,
+        provider: input.provider,
+        base_url: input.base_url.trim().trim_end_matches('/').to_string(),
+        username: input.username,
+        password: input.password,
+        root_path: input.root_path.unwrap_or_else(|| "/".to_string()),
+        enabled: true,
+        last_sync_at: None,
+        last_sync_error: None,
+        created_at: crate::remote::now_seconds(),
+        updated_at: crate::remote::now_seconds(),
+    };
+    match crate::remote::webdav::test_connection(&creds).await {
+        Ok(()) => Ok(serde_json::json!({ "ok": true, "message": "连接成功" }).to_string()),
+        Err(error) => Ok(serde_json::json!({ "ok": false, "message": error }).to_string()),
+    }
+}
+
+/// 预缓存远程歌曲到本地缓存（`remote_uri` 形如 `remote://<source_id>/<path>`）。
+pub async fn precache_remote_song(
+    db_path: String,
+    cache_root: String,
+    remote_uri: String,
+) -> Result<(), String> {
+    if !crate::remote::cache::is_remote_uri(&remote_uri) {
+        return Ok(());
+    }
+    let db_conn = std::sync::Arc::new(std::sync::Mutex::new(open_scan_conn(&db_path)?));
+    crate::remote::cache::ensure_cached_path(
+        std::path::Path::new(&cache_root),
+        db_conn,
+        &remote_uri,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// 列出远程源指定目录下的条目（返回 [`RemoteFileEntry[]`] JSON）。
+pub async fn list_remote_directory(
+    db_path: String,
+    source_id: String,
+    path: String,
+) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let source = crate::remote::repository::get_source(&conn, &source_id)?;
+    let entries =
+        crate::remote::webdav::list_directory(crate::remote::webdav::shared_client(), &source, &path)
+            .await?;
+    serde_json::to_string(&entries).map_err(|e| e.to_string())
+}
+
+// =========================================================================
+// 下载工具链（对齐桌面端 probe_url_size / write_text / fetch_image /
+// embed_metadata / finalize_extras）
+// =========================================================================
+
+/// 用 `Range: bytes=0-0` 探测直链文件大小（返回 [`ProbeUrlInfo`] JSON）。
+pub async fn probe_url_size(url: String) -> Result<String, String> {
+    let info = crate::toolbox::probe_url_size(url).await?;
+    serde_json::to_string(&info).map_err(|e| e.to_string())
+}
+
+/// 写入文本文件（自动创建父目录），返回目标路径。
+pub async fn write_text_file(content: String, dest_path: String) -> Result<String, String> {
+    crate::toolbox::write_text_file(content, dest_path).await
+}
+
+/// 下载图片二进制（绕过 WebView CORS），返回 `{"data":String,"mime":String}` JSON（data 为 base64）。
+pub async fn fetch_image_bytes(url: String) -> Result<String, String> {
+    let img = crate::toolbox::fetch_image_bytes(url).await?;
+    serde_json::to_string(&img).map_err(|e| e.to_string())
+}
+
+/// 将歌曲元数据写入音频文件 tag。`request_json` 为 [`EmbedMetadataRequest`] 的 camelCase JSON。
+pub async fn embed_audio_metadata(request_json: String) -> Result<(), String> {
+    let request: crate::music::tags::EmbedMetadataRequest =
+        serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
+    crate::toolbox::embed_audio_metadata(request).await
+}
+
+// =========================================================================
+// 曲库 / 文件 / 下载管理补齐（对齐桌面端 library/files/toolbox）
+// =========================================================================
+
+/// 判断路径是否为目录。
+pub fn is_directory(path: String) -> bool {
+    crate::music::files::is_directory(path)
+}
+
+/// 保存歌手头像到封面目录，并可选写入该歌手所有歌曲标签。
+/// 返回头像路径（`save_artist_avatar_response.avatar_path` 的 JSON 字符串）。
+pub fn save_artist_avatar(
+    db_path: String,
+    covers_root: String,
+    artist_id: i64,
+    image_path: String,
+    write_to_tags: bool,
+) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    crate::music::files::save_artist_avatar(
+        &conn,
+        std::path::Path::new(&covers_root),
+        artist_id,
+        image_path,
+        write_to_tags,
+    )
+}
+
+/// 音乐库「全部歌曲」视图（支持查询过滤、歌手/专辑过滤、排序），返回 `String[]` 路径。
+pub fn get_library_song_paths_for_all_view(
+    db_path: String,
+    query: Option<String>,
+    artist_filter: Option<String>,
+    album_filter: Option<String>,
+    sort_mode: String,
+) -> Result<String, String> {
+    let mode: crate::music::library::LibrarySongSortMode =
+        serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
+    let conn = open_scan_conn(&db_path)?;
+    let paths = crate::music::library::get_library_song_paths_for_all_view(
+        &conn,
+        query,
+        artist_filter,
+        album_filter,
+        mode,
+    )?;
+    serde_json::to_string(&paths).map_err(|e| e.to_string())
+}
+
+/// 扫描音乐库下所有已添加文件夹，返回全部 `LibrarySong[]`。
+pub fn scan_library(
+    db_path: String,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(conn));
+    let songs = crate::music::library::scan_library(shared, minimum_duration_seconds)?;
+    serde_json::to_string(&songs).map_err(|e| e.to_string())
+}
+
+/// 获取文件夹的直接子目录节点（返回 `FolderNode[]`）。
+pub fn get_folder_children(db_path: String, folder_path: String) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let nodes = crate::music::library::get_folder_children(&conn, folder_path)?;
+    serde_json::to_string(&nodes).map_err(|e| e.to_string())
+}
+
+/// 递归查找某文件夹下的第一首歌曲路径（用于文件夹视图预览）。
+pub fn get_folder_first_song(db_path: String, folder_path: String) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let path = crate::music::scanner::find_first_song_in_folder(&conn, &folder_path);
+    serde_json::to_string(&path).map_err(|e| e.to_string())
+}
+
+/// 在父目录下创建新文件夹，返回新文件夹路径。
+pub fn create_folder(parent_path: String, folder_name: String) -> Result<String, String> {
+    crate::music::files::create_folder(parent_path, folder_name)
+}
+
+/// 删除文件夹（递归删除目录下所有内容）。注意：真删，不会进回收站。
+pub fn delete_folder(path: String) -> Result<(), String> {
+    crate::music::files::delete_folder(path)
+}
+
+/// 移动文件到目标文件夹（同步数据库中的歌曲路径）。
+pub fn move_file_to_folder(
+    db_path: String,
+    source_path: String,
+    target_folder: String,
+) -> Result<(), String> {
+    let mut conn = open_scan_conn(&db_path)?;
+    crate::music::files::move_file_to_folder(&mut conn, source_path, target_folder)
+}
+
+/// 批量移动音乐文件到目标文件夹（返回 `BatchMoveMusicFilesResult` JSON）。
+pub fn batch_move_music_files(
+    db_path: String,
+    paths: Vec<String>,
+    target_folder: String,
+) -> Result<String, String> {
+    let mut conn = open_scan_conn(&db_path)?;
+    let result = crate::music::files::batch_move_music_files(&mut conn, paths, target_folder)?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 移动单个音乐文件到新路径（同步数据库路径）。
+pub fn move_music_file(
+    db_path: String,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    let mut conn = open_scan_conn(&db_path)?;
+    crate::music::files::move_music_file(&mut conn, old_path, new_path)
+}
+
+/// 删除音乐文件（真删，不回收）。
+pub fn delete_music_file(path: String) -> Result<(), String> {
+    crate::music::files::delete_music_file(path)
+}
+
+/// 从最近播放历史与统计中批量移除歌曲。
+pub fn remove_songs_from_history_and_statistics(
+    db_path: String,
+    song_paths: Vec<String>,
+) -> Result<(), String> {
+    let mut conn = open_stats_conn(&db_path)?;
+    crate::statistics::remove_songs_from_history_and_statistics(&mut conn, song_paths)
+}
+
+/// 解析下载目标路径：目录 + 文件名，`overwrite_existing` 为 false 时自动追加 `(1)`/`(2)` 避免冲突。
+pub fn resolve_download_path(
+    directory: String,
+    file_name: String,
+    overwrite_existing: bool,
+) -> Result<String, String> {
+    crate::toolbox::resolve_download_path(directory, file_name, overwrite_existing)
+}
+
+/// 按命名风格构建下载文件基名（不含扩展名）。
+pub fn build_download_basename(
+    title: String,
+    artist: String,
+    album: String,
+    file_name_style: String,
+) -> String {
+    crate::toolbox::build_download_basename(title, artist, album, file_name_style)
+}
+
+/// 写入原始下载字节到目标路径（创建父目录），返回目标路径。
+pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<String, String> {
+    crate::toolbox::save_download_bytes(data, dest_path).await
+}
+
+/// 保存下载歌词文本到目标路径（创建父目录），返回目标路径。
+pub async fn save_download_lyrics(
+    content: String,
+    dest_path: String,
+) -> Result<String, String> {
+    crate::toolbox::save_download_lyrics(content, dest_path).await
+}
+
+// =========================================================================
+// 流缓存增强（对齐桌面端 get_stream_cache_info/is_stream_cached/
+// copy_stream_cache/wait_stream_complete）
+// =========================================================================
+
+/// 获取流缓存信息，返回 `{"current":u64,"max":u64}` JSON。
+pub fn get_stream_cache_info() -> String {
+    serde_json::json!({
+        "current": crate::player::stream_cache::current_cache_size(),
+        "max": crate::player::stream_cache::max_cache_size(),
+    })
+    .to_string()
+}
+
+/// 判断某个 URL 是否已缓存完整。
+pub fn is_stream_cached(url: String) -> bool {
+    crate::player::stream_cache::is_url_cached(&url)
+}
+
+/// 将已缓存的 URL 文件复制到目标路径，返回实际写入字节数。
+pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> {
+    crate::player::stream_cache::copy_cache_to(&url, &dest_path)
+}
+
+/// 等待某个 URL 缓存下载完成（超时秒数），完成返回 true。
+pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
+    tokio::task::spawn_blocking(move || {
+        crate::player::stream_cache::wait_url_complete(&url, timeout_secs)
+    })
+    .await
+    .unwrap_or(false)
+}
+
+// =========================================================================
+// 响度目标设置 + 云端时长合并（对齐桌面端 update_loudness_settings /
+// merge_cloud_listen_duration）
+// =========================================================================
+
+/// 在播放前评估/更新响度元数据并计算目标线性增益。
+/// `enabled` 为 true 时按 `gain_offset_db`（dB）与 `prevent_clipping` 计算，
+/// 返回 `ProcessLoudnessResult` JSON；`enabled` 为 false 时返回 1.0（原始音量）。
+pub fn update_loudness_settings(
+    db_path: String,
+    enabled: bool,
+    song_id: Option<i64>,
+    song_path: Option<String>,
+    gain_offset_db: f32,
+    prevent_clipping: bool,
+) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let gain = if enabled {
+        if song_id.is_none() || song_path.is_none() {
+            return Ok(serde_json::json!({ "enabled": true, "targetGain": 1.0 }).to_string());
+        }
+        let record = crate::player::loudness::process_song_on_play(
+            &conn,
+            song_id.unwrap(),
+            song_path.as_ref().unwrap(),
+        )?;
+        crate::player::loudness::calculate_playback_gain(
+            &record,
+            gain_offset_db,
+            prevent_clipping,
+        )
+    } else {
+        1.0
+    };
+    Ok(serde_json::json!({ "enabled": enabled, "targetGain": gain }).to_string())
+}
+
+/// 将云端累计总听歌时长合并进本地（取较大值），返回 [`CloudMergeResult`] JSON。
+pub fn merge_cloud_listen_duration(db_path: String, total_seconds: i64) -> Result<String, String> {
+    let conn = open_stats_conn(&db_path)?;
+    let result = crate::statistics::merge_cloud_listen_duration(&conn, total_seconds)?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+// =========================================================================
+// 插件引擎会话增强（对齐桌面端 store_import / cookie_header_for_domain /
+// store_snapshot）
+// =========================================================================
+
+/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+pub async fn plugin_engine_store_import(data_dir: String, payload_json: String) -> Result<(), String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct StoreImportPayload {
+        cookies: std::collections::HashMap<String, crate::plugin_host::CookieEntry>,
+        storage: std::collections::HashMap<String, String>,
+    }
+    let payload: StoreImportPayload =
+        serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    engine.store().import_local(payload.cookies, payload.storage);
+    Ok(())
+}
+
+/// 获取某个域名的 cookie header（分号分隔的 `name=value` 字符串）。
+pub async fn plugin_engine_cookie_header_for_domain(
+    data_dir: String,
+    domain: String,
+) -> Result<String, String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    Ok(engine.store().cookie_header_for_domain(&domain))
+}
+
+/// 获取插件引擎会话快照，返回 `{"cookies":..., "storage":...}` JSON。
+pub async fn plugin_engine_store_snapshot(data_dir: String) -> Result<String, String> {
+    let engine = crate::plugin_host::global_engine(&data_dir);
+    let result = serde_json::json!({
+        "cookies": engine.store().cookie_snapshot(),
+        "storage": engine.store().storage_snapshot(),
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }

@@ -58,6 +58,30 @@ fn sanitize_stream_url(raw: &str) -> String {
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
+/// 对已完整下载的缓存文件执行 CENC 后处理解密（就地，长度不变）。
+/// 若文件不是 CENC 加密则直接返回成功（无操作）。
+fn decrypt_cenc_file(path: &std::path::Path, cek: &str) -> Result<(), String> {
+    let mut data = std::fs::read(path).map_err(|e| format!("读取缓存文件失败: {}", e))?;
+    let key = crate::player::cenc::cek_to_key(cek).map_err(|e| e.to_string())?;
+    let decrypted = crate::player::cenc::decrypt_cenc_in_place(&mut data, &key)
+        .map_err(|e| format!("CENC 解密失败: {}", e))?;
+    if decrypted {
+        // 就地写回：不截断（长度不变），避免破坏已打开的 reader 句柄
+        let mut f = OpenOptions::new()
+            .write(true)
+            .open(path)
+            .map_err(|e| format!("打开缓存文件写回失败: {}", e))?;
+        f.seek(SeekFrom::Start(0))
+            .map_err(|e| format!("定位缓存文件失败: {}", e))?;
+        f.write_all(&data)
+            .map_err(|e| format!("写回解密文件失败: {}", e))?;
+        f.set_len(data.len() as u64)
+            .map_err(|e| format!("设置文件长度失败: {}", e))?;
+        f.flush().map_err(|e| format!("刷新文件失败: {}", e))?;
+    }
+    Ok(())
+}
+
 /// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
 /// 512KB ≈ 32s @ 128kbps / 12.8s @ 320kbps，平衡起播速度和播放流畅度。
 /// 配合 StreamingTempFileReader 的阻塞等待机制，即使播放追上下载进度也能平滑等待。
@@ -158,6 +182,14 @@ pub struct StreamingTempFileState {
     /// QMC2 ekey (if provided by the plugin or extracted from JSON response).
     /// 使用 Arc<Mutex> 允许 download_thread 在运行时从 JSON 响应中提取并更新 ekey。
     pub ekey: Arc<std::sync::Mutex<Option<String>>>,
+    /// CENC 内容密钥（汽水音乐等音源加密音轨），由插件从 PlayAuth 解密得到。
+    /// 由播放/插件侧在解析歌曲时写入，供 new_reader_with_decryption 包装 CencDecryptReader。
+    pub cek: Arc<std::sync::Mutex<Option<String>>>,
+    /// CENC 流式解密元数据（moov 在文件头部时提前解析，供 reader 包装解密）
+    pub cenc_metadata:
+        Arc<std::sync::Mutex<Option<crate::player::cenc::CencMetadata>>>,
+    /// CENC 流式解密是否已激活（true = reader 用 CencDecryptReader，false = 需整文件解密）
+    pub cenc_streaming: Arc<AtomicBool>,
     /// When Some(true), blocks reads until download thread finishes post-download QMC check/decryption
     pub post_check_pending: Option<Arc<AtomicBool>>,
     /// 下载失败原因（供前端诊断）
@@ -189,6 +221,18 @@ impl std::fmt::Debug for StreamingTempFileState {
                     .map(|e| e.is_some())
                     .unwrap_or(false),
             )
+            .field(
+                "cek",
+                &self
+                    .cek
+                    .lock()
+                    .map(|c| c.is_some())
+                    .unwrap_or(false),
+            )
+            .field(
+                "cenc_streaming",
+                &self.cenc_streaming.load(Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -212,12 +256,38 @@ impl StreamingTempFileState {
         self.ekey.lock().ok().and_then(|e| e.clone())
     }
 
-    /// 创建 reader，若 ekey 存在则自动包装 QmcDecryptReader 进行流式解密。
-    /// 返回 Box<dyn> 以统一有/无 ekey 两种情况的具体类型。
+    /// Returns the cek for CENC decryption, if available.
+    pub fn cek(&self) -> Option<String> {
+        self.cek.lock().ok().and_then(|c| c.clone())
+    }
+
+    /// 创建 reader，根据加密类型自动包装解密层：
+    /// - CENC 流式：CencDecryptReader（moov 在头部时，按样本 AES-CTR 流式解密 + 虚拟 enca→mp4a 补丁）
+    /// - QMC 流式：QmcDecryptReader（纯位置流密码，任意位置独立解密）
+    /// - 无加密：裸 StreamingTempFileReader
     pub fn new_reader_with_decryption(
         &self,
     ) -> std::io::Result<Box<dyn ReadSeek + Send + Sync + 'static>> {
         let reader = self.new_reader()?;
+
+        // CENC 流式解密：moov 在头部时已由下载线程预解析元数据
+        if self.cenc_streaming.load(Ordering::Relaxed) {
+            if let Ok(md_lock) = self.cenc_metadata.lock() {
+                if let Some(ref metadata) = *md_lock {
+                    if let Some(cek_str) = self.cek() {
+                        if let Ok(key) = crate::player::cenc::cek_to_key(&cek_str) {
+                            return Ok(Box::new(
+                                crate::player::cenc::CencDecryptReader::new(
+                                    reader, key, metadata.clone(),
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // QMC 流式解密
         let ekey = self.ekey();
         if let Some(ekey_str) = ekey {
             match crate::player::qmc2::QmcCrypto::from_ekey(&ekey_str) {
@@ -421,6 +491,7 @@ pub fn start_streaming_download(
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
     ekey: Option<&str>,
+    cek: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
     // Rust 端 URL 清洗：移除插件可能返回的反引号、引号、逗号等脏字符
     let cleaned_url = sanitize_stream_url(url);
@@ -443,29 +514,51 @@ pub fn start_streaming_download(
         if entry.download_complete.load(Ordering::Relaxed)
             && !entry.download_failed.load(Ordering::Relaxed)
         {
-            let downloaded = entry.size;
+            // [CENC] 复用已完成缓存：若文件仍是加密态且提供了 cek，就地解密。
+            // 解密失败则移除缓存，走全新下载。
+            if let Some(cek_str) = cek {
+                if let Err(e) = decrypt_cenc_file(&entry.path, cek_str) {
+                    let failed = mgr.entries.remove(&hash);
+                    if let Some(failed) = failed {
+                        let _ = std::fs::remove_file(&failed.path);
+                        mgr.current_size = mgr.current_size.saturating_sub(failed.size);
+                    }
+                    eprintln!("[CENC] 复用缓存解密失败，重新下载: {}", e);
+                }
+            }
+            // 重新查找（可能已被移除）
+            if let Some(entry) = mgr.entries.get_mut(&hash) {
+                let downloaded = entry.size;
+                return Ok(StreamingTempFileState {
+                    path: entry.path.to_string_lossy().to_string(),
+                    downloaded_bytes: Arc::new(AtomicU64::new(downloaded)),
+                    download_complete: Arc::new(AtomicBool::new(true)),
+                    download_failed: Arc::new(AtomicBool::new(false)),
+                    total_bytes: Some(downloaded),
+                    ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
+                    cek: Arc::new(std::sync::Mutex::new(cek.map(|s| s.to_string()))),
+                    post_check_pending: None,
+                    cenc_metadata: Arc::new(std::sync::Mutex::new(None)),
+                    cenc_streaming: Arc::new(AtomicBool::new(false)),
+                    download_error: Arc::new(std::sync::Mutex::new(None)),
+                });
+            }
+        } else {
+            // 下载进行中：复用同一个文件和下载状态
             return Ok(StreamingTempFileState {
                 path: entry.path.to_string_lossy().to_string(),
-                downloaded_bytes: Arc::new(AtomicU64::new(downloaded)),
-                download_complete: Arc::new(AtomicBool::new(true)),
-                download_failed: Arc::new(AtomicBool::new(false)),
-                total_bytes: Some(downloaded),
+                downloaded_bytes: entry.downloaded_bytes.clone(),
+                download_complete: entry.download_complete.clone(),
+                download_failed: entry.download_failed.clone(),
+                total_bytes: None,
                 ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
+                cek: Arc::new(std::sync::Mutex::new(cek.map(|s| s.to_string()))),
                 post_check_pending: None,
+                cenc_metadata: Arc::new(std::sync::Mutex::new(None)),
+                cenc_streaming: Arc::new(AtomicBool::new(false)),
                 download_error: Arc::new(std::sync::Mutex::new(None)),
             });
         }
-        // 下载进行中：复用同一个文件和下载状态
-        return Ok(StreamingTempFileState {
-            path: entry.path.to_string_lossy().to_string(),
-            downloaded_bytes: entry.downloaded_bytes.clone(),
-            download_complete: entry.download_complete.clone(),
-            download_failed: entry.download_failed.clone(),
-            total_bytes: None,
-            ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
-            post_check_pending: None,
-            download_error: Arc::new(std::sync::Mutex::new(None)),
-        });
     }
 
     // 创建缓存文件
@@ -484,7 +577,10 @@ pub fn start_streaming_download(
     let download_failed = Arc::new(AtomicBool::new(false));
     let post_check_pending = Arc::new(AtomicBool::new(false));
     let shared_ekey = Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string())));
+    let shared_cek = Arc::new(std::sync::Mutex::new(cek.map(|s| s.to_string())));
     let download_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+    let cenc_metadata = Arc::new(std::sync::Mutex::new(None));
+    let cenc_streaming = Arc::new(AtomicBool::new(false));
 
     // 启动后台下载线程
     let url_clone = url.to_string();
@@ -497,7 +593,10 @@ pub fn start_streaming_download(
     let dl_failed = download_failed.clone();
     let dl_post_check = post_check_pending.clone();
     let dl_ekey = shared_ekey.clone();
+    let dl_cek = shared_cek.clone();
     let dl_error = download_error.clone();
+    let dl_cenc_metadata = cenc_metadata.clone();
+    let dl_cenc_streaming = cenc_streaming.clone();
 
     let handle = std::thread::spawn(move || {
         // 专用线程内建临时 runtime：下载走异步 reqwest（不再链接 blocking 模块），
@@ -526,7 +625,10 @@ pub fn start_streaming_download(
             dl_failed,
             dl_post_check,
             dl_ekey,
+            dl_cek,
             dl_error,
+            dl_cenc_metadata,
+            dl_cenc_streaming,
         ));
     });
 
@@ -551,7 +653,10 @@ pub fn start_streaming_download(
         download_failed,
         total_bytes: None,
         ekey: shared_ekey,
+        cek: shared_cek,
         post_check_pending: Some(post_check_pending),
+        cenc_metadata,
+        cenc_streaming,
         download_error,
     })
 }
@@ -982,9 +1087,12 @@ async fn download_thread(
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
     download_failed: Arc<AtomicBool>,
-    _post_check_pending: Arc<AtomicBool>,
+    post_check_pending: Arc<AtomicBool>,
     ekey: Arc<std::sync::Mutex<Option<String>>>,
+    cek: Arc<std::sync::Mutex<Option<String>>>,
     download_error: Arc<std::sync::Mutex<Option<String>>>,
+    cenc_metadata: Arc<std::sync::Mutex<Option<crate::player::cenc::CencMetadata>>>,
+    cenc_streaming: Arc<AtomicBool>,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
         downloaded_bytes.store(bytes_written, Ordering::Relaxed);
@@ -996,6 +1104,13 @@ async fn download_thread(
             mgr.update_size(hash, bytes_written);
         }
     };
+
+    // [CENC] 加密音源需在下载完成后做后处理解密。提前置位 post_check_pending，
+    // 使 is_buffer_ready 与 reader 在解密完成前阻塞，避免解码器读到未解密的 enca 文件。
+    let has_cek = cek.lock().map(|c| c.is_some()).unwrap_or(false);
+    if has_cek {
+        post_check_pending.store(true, Ordering::Relaxed);
+    }
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
@@ -1168,6 +1283,7 @@ async fn download_thread(
 
     let mut bytes_written = 0u64;
     let mut error: Option<String> = None;
+    let mut cenc_probe_done = false;
 
     loop {
         // Response 未实现 AsyncRead，用原生的 chunk() 逐块读取
@@ -1179,6 +1295,30 @@ async fn download_thread(
                 }
                 bytes_written += chunk.len() as u64;
                 downloaded_bytes.store(bytes_written, Ordering::Relaxed);
+
+                // [CENC 流式] 下载达到 512KB 后尝试解析 moov（若在头部则启用流式解密）
+                if has_cek && !cenc_probe_done && bytes_written >= MIN_BUFFER_BYTES {
+                    cenc_probe_done = true;
+                    let probe_len = bytes_written.min(1024 * 1024) as usize;
+                    let mut probe_buf = vec![0u8; probe_len];
+                    if let Ok(mut f) = std::fs::File::open(&path) {
+                        use std::io::Read as _;
+                        if f.read_exact(&mut probe_buf).is_ok() {
+                            let cek_str = cek.lock().ok().and_then(|c| c.clone());
+                            if let Some(ref cek_str) = cek_str {
+                                if let Ok(key) = crate::player::cenc::cek_to_key(cek_str) {
+                                    if let Ok(Some(metadata)) = crate::player::cenc::parse_cenc_metadata(&probe_buf, &key) {
+                                        if let Ok(mut md) = cenc_metadata.lock() {
+                                            *md = Some(metadata);
+                                        }
+                                        cenc_streaming.store(true, Ordering::Relaxed);
+                                        post_check_pending.store(false, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Ok(None) => break,
             Err(e) => {
@@ -1223,9 +1363,24 @@ async fn download_thread(
                     &format!("下载内容非有效音频格式 (header: {})", header_hex),
                     bytes_written,
                 );
+                post_check_pending.store(false, Ordering::Relaxed);
                 return;
             }
         }
+    }
+
+    // [CENC] 后处理解密：仅当流式解密未激活（moov 在文件尾部）时才整文件就地解密。
+    // 若流式已激活（cenc_streaming=true），样本在 reader 层按需解密，无需后处理。
+    if has_cek && !cenc_streaming.load(Ordering::Relaxed) {
+        let cek_str = cek.lock().ok().and_then(|c| c.clone());
+        if let Some(ref cek_str) = cek_str {
+            if let Err(e) = decrypt_cenc_file(&path, cek_str) {
+                fail_download(&e, bytes_written);
+                post_check_pending.store(false, Ordering::Relaxed);
+                return;
+            }
+        }
+        post_check_pending.store(false, Ordering::Relaxed);
     }
 
     download_complete.store(true, Ordering::Relaxed);

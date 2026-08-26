@@ -598,6 +598,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
           _switchTile(
             context,
+            icon: Icons.high_quality,
+            title: 'Bit-perfect 直出',
+            subtitle:
+                'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+            value: s?.bitPerfectOutput ?? false,
+            onChanged: (v) => n.setBitPerfectOutput(v),
+          ),
+          _switchTile(
+            context,
             icon: Icons.graphic_eq_outlined,
             title: 'DSD 原生直出',
             subtitle:

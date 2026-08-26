@@ -1,6 +1,7 @@
 use super::super::types::{FolderNode, Song};
-use super::super::utils::{descendant_like_patterns, normalize_path};
+use super::super::utils::{descendant_like_patterns, is_supported_library_extension, normalize_path};
 use super::diff::{collect_scan_diff, load_db_snapshot_for_folder};
+use super::parser::parse_audio_files_internal;
 use super::progress::{ScanProgressReporter, ScanProgressSink};
 use super::repository::apply_scan_changes;
 use super::ScanOptions;
@@ -8,6 +9,7 @@ use rusqlite::{params, OptionalExtension};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use walkdir::WalkDir;
 
 /// 歌手头像保存器（移动端由调用方注入，桌面端为 covers 模块实现）。
 pub(crate) trait AvatarSaver: Send + Sync {
@@ -89,6 +91,42 @@ pub(crate) fn scan_single_directory_internal(
     }
 
     Ok(scan_diff.songs)
+}
+
+/// 批量解析一组音频文件的元数据（不写库）。对齐桌面端 `parse_audio_files`。
+pub(crate) fn parse_audio_files(
+    paths: Vec<String>,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<Vec<Song>, String> {
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+    Ok(parse_audio_files_internal(paths, options))
+}
+
+/// 递归扫描文件夹内全部受支持音频并解析元数据（不写库）。对齐桌面端 `parse_music_folder`。
+pub(crate) fn parse_music_folder(
+    folder_path: String,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<Vec<Song>, String> {
+    let root = Path::new(&folder_path);
+    if !root.is_dir() || fs::read_dir(root).is_err() {
+        return Err("所选路径不是可读取的文件夹".to_string());
+    }
+
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+    let mut paths: Vec<String> = WalkDir::new(root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| {
+            let extension = entry.path().extension()?.to_string_lossy().to_lowercase();
+            is_supported_library_extension(&extension)
+                .then(|| normalize_path(&entry.path().to_string_lossy()))
+        })
+        .collect();
+    paths.sort();
+    paths.dedup();
+
+    Ok(parse_audio_files_internal(paths, options))
 }
 
 pub(crate) fn find_first_song_recursive(path: &Path, conn: &rusqlite::Connection) -> Option<String> {

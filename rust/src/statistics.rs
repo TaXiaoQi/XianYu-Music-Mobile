@@ -2343,6 +2343,50 @@ pub fn reset_local_statistics(conn: &rusqlite::Connection) -> Result<(), String>
     Ok(())
 }
 
+/// 云端时长合并结果。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct CloudMergeResult {
+    /// 合并后服务端累计总听歌时长（秒）
+    pub total_duration: u64,
+    /// 云端时长是否大于本地（本次是否写入/提升了本地值）
+    pub merged: bool,
+}
+
+/// 将云端累计总听歌时长合并进本地：取本地与云端较大值。
+/// 服务端 report_listen_stats 已用 GREATEST 做最大值合并并返回 server_total_duration，
+/// 这里把该值并回本地 global_stats，实现「云端长覆盖本地」；「本地长覆盖云端」由服务端 GREATEST 完成。
+pub fn merge_cloud_listen_duration(
+    conn: &rusqlite::Connection,
+    total_seconds: i64,
+) -> Result<CloudMergeResult, String> {
+    // 确保统计行存在，否则 UPDATE 落空、云端值会丢失
+    let _ = conn.execute(
+        "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
+         ON CONFLICT(id) DO NOTHING",
+        [],
+    );
+
+    let cur_ms: i64 = conn
+        .query_row(
+            "SELECT total_play_time_ms FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let target_ms = total_seconds.max(0) * 1000;
+    conn.execute(
+        "UPDATE global_stats SET total_play_time_ms = MAX(total_play_time_ms, ?) WHERE id = 1",
+        [target_ms],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(CloudMergeResult {
+        total_duration: (target_ms.max(cur_ms) / 1000) as u64,
+        merged: target_ms > cur_ms,
+    })
+}
+
 /// 记录一次播放事件（通过 song_path 查找 song_id）
 pub fn record_play(
     conn: &mut rusqlite::Connection,

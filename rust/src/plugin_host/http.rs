@@ -20,6 +20,49 @@ const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REDIRECT_LIMIT: usize = 10;
 
+/// 校验插件 HTTP 请求 URL：仅允许 http/https，并阻止 SSRF 目标
+/// （环回 / 内网 / 链路本地 / 保留地址，以及 localhost 等内网域名）。
+/// 与桌面端 plugins.rs 的 validate_plugin_http_url 保持一致（纵深防御）。
+fn validate_plugin_http_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 格式非法: {e}"))?;
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("仅允许 http/https 协议，当前: {scheme}"));
+    }
+    let host = parsed.host_str().unwrap_or("").to_lowercase();
+    if host.is_empty() {
+        return Err("URL 缺少主机名".to_string());
+    }
+    if host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+    {
+        return Err(format!("禁止访问内网地址: {host}"));
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let blocked = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_multicast()
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unique_local()
+                    || v6.is_unspecified()
+                    || v6.is_multicast()
+            }
+        };
+        if blocked {
+            return Err(format!("禁止访问内网/保留地址: {host}"));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpBridgeResponse {
@@ -120,6 +163,7 @@ impl HttpBridge {
         follow: i64,
         want_binary: bool,
     ) -> Result<HttpBridgeResponse, String> {
+        validate_plugin_http_url(url)?;
         let method = reqwest::Method::from_bytes(method.trim().to_uppercase().as_bytes())
             .map_err(|e| e.to_string())?;
         let redirect_limit = if follow < 0 {

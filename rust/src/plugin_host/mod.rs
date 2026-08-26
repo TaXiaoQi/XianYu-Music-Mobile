@@ -31,7 +31,7 @@ use rquickjs::{
 use tokio::sync::Mutex as AsyncMutex;
 
 pub use http::HttpBridge;
-pub use store::PluginStore;
+pub use store::{CookieEntry, PluginStore};
 
 pub const HOST_SHIM_JS: &str = include_str!("host_shim.js");
 pub const PACKAGES_BUNDLE_JS: &str = include_str!("packages_bundle.js");
