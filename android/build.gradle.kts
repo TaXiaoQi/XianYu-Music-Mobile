@@ -37,6 +37,21 @@ subprojects {
         afterEvaluate { forceCompileSdk() }
     }
 }
+// tencent_kit 6.2.0 捆绑的 open_sdk jar 方法签名引用已移除的
+// android.support.v4.app.Fragment，AndroidX 工程下编译报「找不到
+// android.support.v4.app.Fragment」；注入编译期桩 jar 提供该类
+// （仅作用于 tencent_kit 模块，pub get 重装插件后仍生效）。
+subprojects {
+    if (name == "tencent_kit") {
+        afterEvaluate {
+            val stubJar = rootProject.file("stubs/android-support-v4-fragment.jar")
+            if (stubJar.exists()) {
+                dependencies.add("vendorImplementation", files(stubJar))
+                println("[stub] injected android.support.v4.app.Fragment stub into tencent_kit")
+            }
+        }
+    }
+}
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)

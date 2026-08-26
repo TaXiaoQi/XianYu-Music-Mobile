@@ -74,6 +74,8 @@ dependencies:
   # 诊断日志分享（Android 系统分享面板）
   share_plus: ^13.3.0
   record: ^7.1.1
+  # QQ 互联分享（歌曲分享到 QQ 好友 / QQ 空间），Android 配置见下方顶层 tencent_kit 块
+  tencent_kit: ^6.2.0
 
 dev_dependencies:
   flutter_test:
@@ -150,3 +152,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# QQ 互联配置（tencent_kit 插件 Android 侧读取，注入 AndroidManifest 的
+# meta-data com.tencent.oauth 注册）。必须与 lib/src/share/qq_share_service.dart
+# 里的 appId 保持一致。
+tencent_kit:
+  app_id: '1905495962'
+  # universal_link: # 仅 iOS 需要，可略

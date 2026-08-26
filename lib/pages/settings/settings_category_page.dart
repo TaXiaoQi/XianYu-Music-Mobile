@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../src/backup/app_backup.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -716,6 +717,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return [
       _sectionHeader(context, '应用备份'),
       const _AppBackupGroup(),
+      _sectionHeader(context, '日志'),
+      const _LogGroup(),
       _sectionHeader(context, '系统'),
       _CardGroup(
         children: [
@@ -2469,6 +2472,131 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
             onPressed: (cur ?? 0) == 0 ? null : _clear,
             child: Text(_busy ? '清理中…' : '清理'),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 高级设置 → 日志：导出全部/错误日志并分享、一键清理。
+class _LogGroup extends ConsumerStatefulWidget {
+  const _LogGroup();
+
+  @override
+  ConsumerState<_LogGroup> createState() => _LogGroupState();
+}
+
+class _LogGroupState extends ConsumerState<_LogGroup> {
+  bool _busy = false;
+
+  void _toast(String msg) {
+    showXianYuToast(context, msg, duration: const Duration(seconds: 2));
+  }
+
+  /// 导出日志（全部或仅错误）并调起系统分享。
+  Future<void> _export({required bool onlyErrors}) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final manager = ApplicationLogManager.instance;
+      final logs = ref.read(applicationLogsProvider);
+      if (logs.isEmpty ||
+          (onlyErrors && !logs.any((e) => e.level == LogLevel.error))) {
+        if (mounted) _toast(onlyErrors ? '暂无错误日志' : '暂无日志');
+        return;
+      }
+      final content = manager.formatExport(onlyErrors: onlyErrors);
+      final docs = await getApplicationDocumentsDirectory();
+      final fileName = onlyErrors
+          ? 'xianyu_error_logs_${DateTime.now().millisecondsSinceEpoch}.txt'
+          : 'xianyu_all_logs_${DateTime.now().millisecondsSinceEpoch}.txt';
+      final file = File('${docs.path}/$fileName');
+      await file.writeAsString(content, flush: true);
+      if (!mounted) return;
+      _toast(onlyErrors ? '错误日志已导出' : '全部日志已导出');
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: '弦予音乐${onlyErrors ? '错误' : ''}日志'),
+      );
+    } catch (e) {
+      if (mounted) _toast('导出失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _clearLogs() async {
+    if (_busy) return;
+    // 无日志时直接忽略，避免弹出无意义的确认框。
+    if (ref.read(applicationLogsProvider).isEmpty) {
+      _toast('暂无日志');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清理日志'),
+        content: const Text('确定要清空全部应用日志吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    ApplicationLogManager.instance.clear();
+    if (mounted) _toast('日志已清理');
+  }
+
+  Widget _action(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    VoidCallback? onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: scheme.primary),
+      title: Text(title),
+      trailing: Icon(Icons.chevron_right,
+          size: 18, color: scheme.outline),
+      onTap: onTap,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final logs = ref.watch(applicationLogsProvider);
+    final errorCount = logs.where((e) => e.level == LogLevel.error).length;
+    final scheme = Theme.of(context).colorScheme;
+    return _CardGroup(
+      children: [
+        _action(
+          context,
+          icon: Icons.description_outlined,
+          title: logs.isEmpty ? '导出全部日志' : '导出全部日志（${logs.length} 条）',
+          onTap: _busy ? () {} : () => _export(onlyErrors: false),
+        ),
+        _action(
+          context,
+          icon: Icons.error_outline,
+          title: errorCount == 0 ? '导出错误日志' : '导出错误日志（$errorCount 条）',
+          // 无错误日志时置灰不可点。
+          onTap: errorCount == 0 || _busy
+              ? null
+              : () => _export(onlyErrors: true),
+        ),
+        Divider(height: 1, indent: 16, endIndent: 16, color: scheme.outlineVariant),
+        _action(
+          context,
+          icon: Icons.delete_sweep_outlined,
+          title: '清理日志',
+          onTap: _busy ? () {} : _clearLogs,
         ),
       ],
     );

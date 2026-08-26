@@ -1022,7 +1022,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   ///   都没有时按桌面 pluginGetSupportedQualities 兜底为 128k/320k/flac。
   /// - 落雪在线搜索歌：读顶层 _types。
   /// 无声明返回空列表。
-  List<String> _declaredQualities(Map<String, dynamic> songJson) {
+  Future<List<String>> _declaredQualities(Map<String, dynamic> songJson) async {
     final out = <String>{};
     final pid = songJson['pluginId'];
     if (pid is String && pid.isNotEmpty) {
@@ -1041,6 +1041,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final engine = _ref.read(pluginEngineProvider).valueOrNull;
           final meta = engine?.metadataOf(pid);
           final raw = meta?['supportedQualities'];
+          debugPrint('[quality] declared pid=$pid meta=${meta == null ? 'null' : 'ok'} '
+              'supportedQualities=$raw');
           if (raw is List) {
             for (final dq in raw) {
               final norm = PluginEngine.normalizeQualityKey(dq);
@@ -1063,7 +1065,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
     }
-    return kQualityLadder.where(out.contains).toList();
+    final result = kQualityLadder.where(out.contains).toList();
+    debugPrint('[quality] _declaredQualities pid=$pid result=$result');
+    return result;
   }
 
   /// 构造单档解析回调：插件音源逐档优先，同档插件失败立即用 LX 兜底；
@@ -1174,6 +1178,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final item = state.current;
     // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
+    debugPrint('[quality] _probeQualityOptions item=${item?.title} '
+        'onlineSongJson=${item?.onlineSongJson?.isNotEmpty ?? false} '
+        'onlineInfoJson=${item?.onlineInfoJson?.isNotEmpty ?? false}');
     if (json == null || json.isEmpty) return const [];
     try {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
@@ -1186,28 +1193,65 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       // 探测目标：优先用源声明的音质（对齐桌面 probeDownloadableQualities，
       // 插件只声明支持哪些档，探测声明之外无意义）；无声明时回退
       // 无损 + 320k（常用档）+ 128k 兜底档。
-      final declared = _declaredQualities(songJson);
-      final targets = declared.isNotEmpty
-          ? declared
-          : kQualityLadder.reversed
-              .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
-              .toList();
+      final declared = await _declaredQualities(songJson);
+      if (declared.isNotEmpty) {
+        // 对齐桌面 getOnlineAvailableQualities：菜单直接展示源声明音质，
+        // 探测仅作后台校验/降级修正，不再阻塞菜单展示（避免探测慢/挂起导致空态）。
+        final base = kQualityLadder.reversed.where(declared.contains).toList();
+        debugPrint('[quality] declared non-empty base=$base');
+        state = state.copyWith(
+          availableQualities: base,
+          qualityMenuProbing: true,
+        );
+        unawaited(_probeInBackground(probe, declared, base));
+        return base;
+      }
+
+      // 无声明（如落雪在线搜索无 _types）：探测常用档位后展示。
+      final targets = kQualityLadder.reversed
+          .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
+          .toList();
+      debugPrint('[quality] declared empty, probing targets=$targets');
       await Future.wait(targets.map(probe.probe).toList());
 
       final opts = <String>{...probe.availableQualities};
       if (state.currentQuality != null) opts.add(state.currentQuality!);
-      // 探测全部失败时回退到源声明音质，避免菜单空态。
-      if (opts.isEmpty) opts.addAll(declared);
+      final ordered =
+          kQualityLadder.reversed.where(opts.contains).toList();
+      debugPrint('[quality] probe done opts=$ordered');
+      state = state.copyWith(
+        availableQualities: ordered,
+        qualityMenuProbing: false,
+      );
+      return ordered;
+    } catch (e) {
+      debugPrint('[quality] _probeQualityOptions error: $e');
+      state = state.copyWith(qualityMenuProbing: false);
+      return state.availableQualities;
+    }
+  }
+
+  /// 后台探测可用档位：成功档位并入 [base]，供切换/下载复用。
+  /// 探测失败/超时不影响已展示的声明音质。
+  Future<void> _probeInBackground(
+    SongQualityProbe probe,
+    List<String> targets,
+    List<String> base,
+  ) async {
+    try {
+      await Future.wait(targets.map(probe.probe).toList())
+          .timeout(const Duration(seconds: 30));
+      final opts = <String>{...probe.availableQualities};
+      if (state.currentQuality != null) opts.add(state.currentQuality!);
+      if (opts.isEmpty) opts.addAll(base);
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
       state = state.copyWith(
         availableQualities: ordered,
         qualityMenuProbing: false,
       );
-      return ordered;
     } catch (_) {
       state = state.copyWith(qualityMenuProbing: false);
-      return state.availableQualities;
     }
   }
 

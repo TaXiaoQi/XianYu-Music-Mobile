@@ -409,17 +409,122 @@ class PluginEngine {
     }
 
     if (declaredKeys.isNotEmpty) {
-      final filtered = candidates.where(declaredKeys.contains).toList();
+      // 候选为插件串（mgg→96k），需先归一化再与声明键比对。
+      final filtered = candidates.where((c) {
+        final norm = _normalizeQualityKey(c);
+        return norm != null && declaredKeys.contains(norm);
+      }).toList();
       if (filtered.isNotEmpty) return filtered;
     }
     // 声明键无一匹配时退回候选链首档，避免完全空候选。
     return candidates.take(1).toList();
   }
 
+  /// Baka 插件旧四级键回退（对齐桌面 BAKA_TO_LEGACY_QUALITY_MAP）。
+  static String? _bakaLegacyQuality(String q) {
+    switch (q) {
+      case 'mgg':
+      case '128k':
+        return 'low';
+      case '192k':
+        return 'standard';
+      case '320k':
+        return 'high';
+      case 'flac':
+      case 'flac24bit':
+      case 'hires':
+      case 'vinyl':
+      case 'dolby':
+      case 'atmos':
+      case 'atmos_plus':
+      case 'master':
+        return 'super';
+    }
+    return null;
+  }
+
+  /// 是否 Baka 系列插件（对齐桌面 BakaPluginManager.isBakaPlugin）：
+  /// 实现了 getMusicComments 评论区 API，或声明了 12 档风格 supportedQualities。
+  bool isBakaPlugin(String pluginId) {
+    final meta = metadataOf(pluginId);
+    if (meta == null) return false;
+    final methods = meta['_availableMethods'];
+    if (methods is List && methods.contains('getMusicComments')) return true;
+    final author = (meta['author'] as String? ?? '').toLowerCase();
+    if (author.contains('toskysun')) return true;
+    if (author.contains('时迁酱')) return false;
+    final raw = meta['supportedQualities'];
+    if (raw is List) {
+      for (final dq in raw) {
+        if (_normalizeQualityKey(dq) != null) return true;
+      }
+    }
+    return false;
+  }
+
+  /// 构建 Baka 插件音质候选（对齐桌面 BakaPluginManager.getMediaSource）：
+  /// 12 档原生键优先（mgg→96k），按首选→更高→更低顺序，声明键过滤后
+  /// 逐档补旧四级键回退（newToLegacyQualityMap）。未声明 supportedQualities
+  /// 时只试首选 + 相邻一档，避免每档一次网络请求拖慢起播。
+  static List<String> _bakaQualityCandidates(
+    String preferred,
+    String fallback,
+    Set<String> declaredKeys,
+  ) {
+    final ladderDesc = _qualityLadder.reversed.toList();
+    final native = <String>[];
+    final seen = <String>{};
+    void add(String qk) {
+      if (seen.add(qk)) native.add(qk);
+    }
+
+    if (fallback == 'pause') {
+      add(preferred);
+    } else if (fallback == 'higher') {
+      final start = _qualityLadder.indexOf(preferred);
+      if (start >= 0) {
+        for (var i = start; i < _qualityLadder.length; i++) {
+          add(_qualityLadder[i]);
+        }
+      } else {
+        add(preferred);
+      }
+    } else {
+      final start = ladderDesc.indexOf(preferred);
+      if (start >= 0) {
+        for (var i = start; i < ladderDesc.length; i++) {
+          add(ladderDesc[i]);
+        }
+      } else {
+        add(preferred);
+      }
+    }
+
+    if (declaredKeys.isNotEmpty) {
+      final filtered = native.where(declaredKeys.contains).toList();
+      if (filtered.isNotEmpty) {
+        native
+          ..clear()
+          ..addAll(filtered);
+      }
+    } else {
+      // 未声明 supportedQualities（Baka 自回落插件）：只补一个相邻档。
+      final idx = _qualityLadder.indexOf(preferred);
+      if (idx >= 0) {
+        final adj = fallback == 'higher'
+            ? (idx + 1 < _qualityLadder.length ? _qualityLadder[idx + 1] : null)
+            : (idx - 1 >= 0 ? _qualityLadder[idx - 1] : null);
+        if (adj != null) add(adj);
+      }
+    }
+    return native;
+  }
+
   /// 解析 MusicFree 插件播放直链。
   ///
   /// 与桌面端 pluginGetMusicInfo 对齐：主路径传 MF 四级键（low/standard/high/super），
   /// 四级键全部报「不支持音质」时兜底补试原生键；参考包内同时带 url/headers。
+  /// Baka 系列插件走 12 档原生键（对齐 BakaPluginManager.getMediaSource）。
   /// musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
@@ -461,6 +566,43 @@ class PluginEngine {
     }
     if (!musicItem.containsKey('songmid') && songInfo.containsKey('songmid')) {
       musicItem['songmid'] = songInfo['songmid'];
+    }
+
+    // Baka 系列插件：12 档原生键主路径（对齐桌面 BakaPluginManager.getMediaSource）。
+    // 新键无结果时按 BAKA_TO_LEGACY_QUALITY_MAP 逐档补试旧四级键。
+    if (isBakaPlugin(source.id)) {
+      final tryKeys = _bakaQualityCandidates(preferred, fallback, declaredKeys);
+      final attempted = <String>{};
+      for (final qk in tryKeys) {
+        final pluginQ = _qualityKeyToPluginString(qk);
+        if (!attempted.add(pluginQ)) continue;
+        try {
+          final response = await call(
+            source.id,
+            'getMediaSource',
+            [musicItem, pluginQ],
+          );
+          final url = _extractMfPlayableUrl(response);
+          if (url != null) return url;
+        } catch (_) {
+          // 单档失败继续下一档
+        }
+        final legacy = _bakaLegacyQuality(qk);
+        if (legacy != null && attempted.add(legacy)) {
+          try {
+            final response = await call(
+              source.id,
+              'getMediaSource',
+              [musicItem, legacy],
+            );
+            final url = _extractMfPlayableUrl(response);
+            if (url != null) return url;
+          } catch (_) {
+            // 单档失败继续下一档
+          }
+        }
+      }
+      return null;
     }
 
     // 主路径：MF 四级键按 asc 顺序尝试；记录是否出现「不支持音质」错误。

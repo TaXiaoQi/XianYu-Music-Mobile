@@ -1034,6 +1034,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.1+2"
+  tencent_kit:
+    dependency: "direct main"
+    description:
+      name: tencent_kit
+      sha256: c4a9b6e6686dce4c868fd5ee699ffbe766f3f6cb895bcbef685d63a41277c9e5
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.2.0"
   term_glyph:
     dependency: transitive
     description:

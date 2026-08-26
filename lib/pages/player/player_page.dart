@@ -6,7 +6,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -24,6 +23,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/share/share_service.dart';
+import '../../src/share/share_sheet.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
@@ -1881,29 +1881,10 @@ class _TitleRow extends ConsumerWidget {
   }
 }
 
-/// 生成并复制当前歌曲的分享链接（已缓存则直接复制）。
+/// 弹出歌曲分享菜单（分享到 QQ 好友 / QQ 空间 / 复制链接）。
 Future<void> _shareCurrent(
     BuildContext context, WidgetRef ref, QueueItem current) async {
-  final share = ref.read(shareServiceProvider);
-  final cachedUrl = share.cached(current);
-  // 提前捕获 Overlay，避免 await 后跨 async 间隙使用 BuildContext。
-  final overlay = Overlay.of(context, rootOverlay: true);
-  if (cachedUrl != null && cachedUrl.isNotEmpty) {
-    await Clipboard.setData(ClipboardData(text: cachedUrl));
-    showXianYuToastByOverlay(overlay, '分享链接已复制');
-    return;
-  }
-  try {
-    final url = await share.create(current);
-    if (url.isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: url));
-      showXianYuToastByOverlay(overlay, '分享链接已复制');
-    } else {
-      showXianYuToastByOverlay(overlay, '生成分享链接失败');
-    }
-  } catch (_) {
-    showXianYuToastByOverlay(overlay, '生成分享链接失败');
-  }
+  await showSongShareSheet(context, ref: ref, song: current);
 }
 
 /// 打开音质选择弹窗（触发全量探测真实可用档位）。
@@ -2000,7 +1981,15 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                   );
                 }
                 final opts = snap.data ?? const <String>[];
-                if (opts.isEmpty) {
+                debugPrint('[quality] sheet future done opts=$opts '
+                    'state=${snap.connectionState}');
+                // 兜底：future 返回空但状态里已有探测结果时展示状态结果，
+                // 避免探测时序导致菜单空态。
+                final fallbackOpts = ref.watch(
+                  playerProvider.select((s) => s.availableQualities),
+                );
+                final shown = opts.isNotEmpty ? opts : fallbackOpts;
+                if (shown.isEmpty) {
                   return const Center(child: Text('暂无可切换音质'));
                 }
                 final cur = ref.watch(
@@ -2008,9 +1997,9 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                 );
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: opts.length,
+                  itemCount: shown.length,
                   itemBuilder: (ctx, i) {
-                    final q = opts[i];
+                    final q = shown[i];
                     final active = q == cur;
                     return ListTile(
                       dense: true,

@@ -46,7 +46,7 @@ class ShareService {
     final pending = _pending[key];
     if (pending != null) return pending;
 
-    final future = _resolveCover(song)
+    final future = resolveCover(song)
         .then((cover) => _ref
             .read(authProvider.notifier)
             .requestAction('create_share', _buildBody(song, cover),
@@ -67,8 +67,9 @@ class ShareService {
 
   /// 解析分享封面 URL：在线封面（http(s)）直接用；
   /// 本地封面读取本地文件上传到服务端，返回可被落地页访问的 HTTPS URL。
-  /// 失败静默返回空串（分享链接仍可生成，仅无封面）。
-  Future<String> _resolveCover(QueueItem song) async {
+  /// 失败静默返回空串（分享仍可进行，仅无封面）。
+  /// 供分享链接生成与 QQ 分享共用（QQ 分享只需 http(s) 封面缩略图）。
+  Future<String> resolveCover(QueueItem song) async {
     final online = _decodeMap(song.onlineSongJson);
     final onlineCover = online?['picture']?.toString() ?? '';
     final coverUrl = song.coverUrl ?? '';
