@@ -10,11 +10,11 @@ import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 
@@ -27,7 +27,6 @@ class PlaylistsPage extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return HideShellChrome(
       child: Scaffold(
@@ -72,19 +71,7 @@ class PlaylistsPage extends ConsumerWidget {
                             ],
                           ),
                         )
-                      : ListView.separated(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            8,
-                            16,
-                            (hasSong ? 92.0 : 150.0) +
-                                MediaQuery.of(context).padding.bottom,
-                          ),
-                          itemCount: state.playlists.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) =>
-                              _PlaylistCard(playlist: state.playlists[index]),
-                        ),
+                      : _PlaylistList(state: state),
             ),
             Positioned(
               top: 0,
@@ -102,8 +89,7 @@ class PlaylistsPage extends ConsumerWidget {
                 ],
               ),
             ),
-            if (hasSong)
-              const MiniPlayerBar(),
+            const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -146,6 +132,30 @@ Future<String?> _promptName(BuildContext context, String title) {
       ],
     ),
   );
+}
+
+/// 我的歌单列表：独立订阅播放状态以调整底部留白，避免播放状态翻转波及页头。
+class _PlaylistList extends ConsumerWidget {
+  const _PlaylistList({required this.state});
+
+  final ImportedPlaylistState state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        (hasSong ? 92.0 : 150.0) + MediaQuery.of(context).padding.bottom,
+      ),
+      itemCount: state.playlists.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) =>
+          _PlaylistCard(playlist: state.playlists[index]),
+    );
+  }
 }
 
 class _PlaylistCard extends ConsumerWidget {
@@ -304,7 +314,6 @@ class PlaylistDetailPage extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final playlist = state.playlists
         .where((p) => p.id == playlistId)
         .cast<ImportedPlaylist?>()
@@ -367,7 +376,6 @@ class PlaylistDetailPage extends ConsumerWidget {
                         : _PlaylistSongs(
                             playlist: playlist,
                             manager: manager,
-                            hasSong: hasSong,
                             onRemove: (index) =>
                                 manager.removeSong(playlist.id, playlist.songs[index].path),
                           ),
@@ -395,8 +403,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                 ],
               ),
             ),
-            if (hasSong)
-              const MiniPlayerBar(),
+            const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -490,19 +497,18 @@ class _PlaylistSongs extends ConsumerWidget {
   const _PlaylistSongs({
     required this.playlist,
     required this.manager,
-    required this.hasSong,
     required this.onRemove,
   });
 
   final ImportedPlaylist playlist;
   final PlaylistManager manager;
-  final bool hasSong;
   final void Function(int index) onRemove;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     return ListView.builder(
       padding: EdgeInsets.only(
         bottom: (hasSong ? 92.0 : 150.0) +

@@ -28,8 +28,8 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 只依赖推荐数据；播放状态由 _BottomPlayBar 单独订阅，避免翻转时整页重建
     final async = ref.watch(dailyRecommendProvider);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -93,11 +93,24 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
               title: const Text('每日推荐'),
             ),
           ),
-          if (hasSong)
-            const MiniPlayerBar(),
+          // 播放条显隐收敛为独立组件，播放状态变化不影响上方整页重建
+          const _BottomPlayBar(),
         ],
       ),
     );
+  }
+}
+
+/// 底部播放条：仅当有歌曲时占位显示。独立订阅播放状态，
+/// 避免播放状态翻转时触发整页（Header/列表）重建。
+class _BottomPlayBar extends ConsumerWidget {
+  const _BottomPlayBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
+    if (!hasSong) return const SizedBox.shrink();
+    return const MiniPlayerBar();
   }
 }
 

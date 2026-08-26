@@ -21,11 +21,11 @@ import '../../src/playlist/playlist_store.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -495,8 +495,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
             ),
           ),
           // 搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
-          if (ref.watch(playerProvider.select((s) => s.current != null)))
-            const MiniPlayerBar(),
+          const BottomPlayBarSlot(),
         ],
       ),
     );

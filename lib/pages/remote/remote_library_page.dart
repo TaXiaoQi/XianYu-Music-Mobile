@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
-import '../../src/player/player_provider.dart';
 import '../../src/remote/remote_library_service.dart';
-import '../../src/widgets/mini_player_bar.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
@@ -18,7 +17,6 @@ class RemoteLibraryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(remoteLibraryProvider);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
@@ -49,8 +47,7 @@ class RemoteLibraryPage extends ConsumerWidget {
               _buildCacheCard(context, ref, state),
             ],
           ),
-          if (hasSong)
-            const MiniPlayerBar(),
+          const BottomPlayBarSlot(),
         ],
       ),
     );

@@ -10,8 +10,8 @@ import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/flying_cover.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 
 /// 听歌识曲页（桌面端风格）：居中麦克风圆钮 + 脉冲/旋转 / 波形条，
@@ -171,7 +171,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
   @override
   Widget build(BuildContext context) {
     final success = _phase == _Phase.done && _matches.isNotEmpty;
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return Scaffold(
       appBar: AppBar(
@@ -207,8 +206,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
               onTap: _active ? _cancel : _start,
               onRestart: () => setState(() => _phase = _Phase.idle),
             ),
-          if (hasSong)
-            const MiniPlayerBar(),
+          const BottomPlayBarSlot(),
         ],
       ),
     );

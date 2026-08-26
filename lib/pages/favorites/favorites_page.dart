@@ -8,11 +8,11 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
@@ -49,7 +49,6 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   Widget build(BuildContext context) {
     final fav = ref.watch(favoritesProvider);
     final notifier = ref.read(favoritesProvider.notifier);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final tabBar = TabBar(
       controller: _tab,
       onTap: (_) => setState(() {}),
@@ -74,9 +73,9 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                   : TabBarView(
                       controller: _tab,
                       children: [
-                        _SongsTab(fav: fav, notifier: notifier, showPlayer: hasSong),
-                        _CollectionsTab(fav: fav, kind: 'playlist', showPlayer: hasSong),
-                        _CollectionsTab(fav: fav, kind: 'album', showPlayer: hasSong),
+                        _SongsTab(fav: fav, notifier: notifier),
+                        _CollectionsTab(fav: fav, kind: 'playlist'),
+                        _CollectionsTab(fav: fav, kind: 'album'),
                       ],
                     ),
             ),
@@ -98,8 +97,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                 bottom: tabBar,
               ),
             ),
-            if (hasSong)
-              const MiniPlayerBar(),
+            const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -131,20 +129,19 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 }
 
 /// 单曲收藏列表。
-class _SongsTab extends StatelessWidget {
+class _SongsTab extends ConsumerWidget {
   const _SongsTab({
     required this.fav,
     required this.notifier,
-    this.showPlayer = false,
   });
 
   final FavoritesState fav;
   final FavoritesManager notifier;
-  final bool showPlayer;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     if (fav.entries.isEmpty) {
       return Center(
         child: Column(
@@ -165,7 +162,7 @@ class _SongsTab extends StatelessWidget {
     }
     return ListView.builder(
       padding: EdgeInsets.only(
-        bottom: (showPlayer ? 92.0 : 24.0) +
+        bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemCount: fav.entries.length,
@@ -186,16 +183,15 @@ class _CollectionsTab extends ConsumerWidget {
   const _CollectionsTab({
     required this.fav,
     required this.kind,
-    this.showPlayer = false,
   });
 
   final FavoritesState fav;
   final String kind;
-  final bool showPlayer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final items =
         fav.collections.where((c) => c.kind == kind).toList();
     if (items.isEmpty) {
@@ -229,7 +225,7 @@ class _CollectionsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
-        bottom: (showPlayer ? 92.0 : 24.0) +
+        bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemCount: items.length,

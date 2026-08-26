@@ -6,11 +6,11 @@ import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
+import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/song_list_view.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
@@ -22,7 +22,6 @@ class RecentPage extends ConsumerWidget {
     final recent = ref.watch(recentProvider);
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
 
     return HideShellChrome(
       child: Scaffold(
@@ -52,23 +51,9 @@ class RecentPage extends ConsumerWidget {
                             ],
                           ),
                         )
-                      : ListView.separated(
-                          padding: EdgeInsets.only(
-                            bottom: (hasSong ? 92.0 : 24.0) +
-                                MediaQuery.of(context).padding.bottom,
-                          ),
-                          itemCount: recent.entries.length,
-                          separatorBuilder: (_, _) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final entry = recent.entries[i];
-                            return _RecentTile(
-                              entry: entry,
-                              onPlay: () => notifier.play(i),
-                              onRemove: () =>
-                                  notifier.remove(entry.songPath),
-                            );
-                          },
+                      : _RecentList(
+                          recent: recent,
+                          notifier: notifier,
                         ),
             ),
             Positioned(
@@ -88,8 +73,7 @@ class RecentPage extends ConsumerWidget {
                 ],
               ),
             ),
-            if (hasSong)
-              const MiniPlayerBar(),
+            const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -116,6 +100,35 @@ class RecentPage extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 最近播放列表：独立订阅播放状态以调整底部留白，播放状态翻转不波及页头。
+class _RecentList extends ConsumerWidget {
+  const _RecentList({required this.recent, required this.notifier});
+
+  final RecentState recent;
+  final RecentManager notifier;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
+    return ListView.separated(
+      padding: EdgeInsets.only(
+        bottom: (hasSong ? 92.0 : 24.0) +
+            MediaQuery.of(context).padding.bottom,
+      ),
+      itemCount: recent.entries.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, i) {
+        final entry = recent.entries[i];
+        return _RecentTile(
+          entry: entry,
+          onPlay: () => notifier.play(i),
+          onRemove: () => notifier.remove(entry.songPath),
+        );
+      },
     );
   }
 }
