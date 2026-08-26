@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
+import '../player/player_open_fly.dart';
 import '../player/player_provider.dart';
 import 'cover_hero.dart';
 import 'cover_image.dart';
@@ -54,6 +55,9 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
 class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _spin;
+
+  /// 当前旋转封面对应的歌曲 path；切歌（含手动/自动/播放结束）时据此归零重转。
+  String? _lastSpinPath;
 
   /// 封面定位锚点：供「飞封面」动画计算目标位置。
   final GlobalKey _coverKey = GlobalKey();
@@ -110,6 +114,30 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final p = _targetProvider;
     if (p != null) FlyingCover.instance.unregisterTarget(p);
     super.dispose();
+  }
+
+  /// 同步封面旋转：
+  /// - 切歌（path 变化，含手动/自动/播放结束跳下一首）→ 归零后，若真正在播且
+  ///   未缓冲则从头转；
+  /// - 暂停或在线解析/缓冲中（resolving）→ 停住不动；
+  /// - 真正在播 → 旋转。
+  void _syncSpin({
+    required bool isPlaying,
+    required bool resolving,
+    required String path,
+  }) {
+    if (path != _lastSpinPath) {
+      _spin.stop();
+      _spin.value = 0;
+      _lastSpinPath = path;
+      if (isPlaying && !resolving) _spin.repeat();
+      return;
+    }
+    if (isPlaying && !resolving && !_spin.isAnimating) {
+      _spin.repeat();
+    } else if ((!isPlaying || resolving) && _spin.isAnimating) {
+      _spin.stop();
+    }
   }
 
   /// 布局完成后把封面全局位置注册为飞封面目标。
@@ -186,8 +214,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   Widget build(BuildContext context) {
     // 仅订阅进度环之外的字段；position 交给 _RotatingDisc 内部订阅，
     // 避免随播放进度每帧重建整根播放条。
-    final p = ref.watch(playerProvider.select(
-        (s) => (current: s.current, playing: s.isPlaying, duration: s.duration)));
+    final p = ref.watch(playerProvider.select((s) => (
+          current: s.current,
+          playing: s.isPlaying,
+          duration: s.duration,
+          resolving: s.resolving,
+        )));
     final current = p.current;
     if (current == null) return const SizedBox.shrink();
 
@@ -196,14 +228,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       if (mounted) _updateCoverTarget();
     });
 
-    // 播放时旋转封面，暂停时停住（在 build 后回调，避免 build 中 setState）。
-    ref.listen(playerProvider, (prev, next) {
-      if (next.isPlaying && !_spin.isAnimating) {
-        _spin.repeat();
-      } else if (!next.isPlaying && _spin.isAnimating) {
-        _spin.stop();
-      }
-    });
+    // 封面旋转由 build 驱动（播放条已 watch current/playing/resolving，任何切歌、
+    // 缓冲状态变化必触发 rebound）：真正在播且未缓冲才转，其余停住，切歌归零。
+    _syncSpin(isPlaying: p.playing, resolving: p.resolving, path: current.path);
 
     final scheme = Theme.of(context).colorScheme;
     final isPlaying = p.playing;
@@ -311,7 +338,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
       onPanCancel: widget.onPanCancel,
-      onTap: () => context.push('/player'),
+      onTap: () {
+        // 打开详情页前，先把播放条封面提升到顶层 Overlay 起飞飞入大封面（与关闭
+        // 的返回飞行对称）。若无法启动（如非播放条入口），静默回退普通 push。
+        ref.read(playerOpenFlyProvider).open(
+              fromRect: _coverRect,
+              current: current,
+            );
+        context.push('/player');
+      },
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
