@@ -36,10 +36,20 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
+  // 「是否有用户变量」的指示图标，按插件 id 缓存。预渲染策略：
+  // 进入页面首帧后即在后台批量求值插件并缓存，滑动只读取缓存。
+  final Map<String, bool> _hasVars = {};
+  bool _collectingVars = false;
+
   @override
   void initState() {
     super.initState();
     _loadAutoUpdatePref();
+    // 预渲染：不阻塞首帧，首帧渲染后立即在后台串行批量加载并缓存，
+    // 之后滑动/重建只读缓存，不再逐卡触发插件加载。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ensureVarsLoaded();
+    });
   }
 
   @override
@@ -51,6 +61,34 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   Future<void> _loadAutoUpdatePref() async {
     final enabled = await PluginPreferences.getAutoUpdateOnStartup();
     if (mounted) setState(() => _autoUpdateOnStartup = enabled);
+  }
+
+  /// 预渲染：后台串行批量求值各插件是否含用户变量并缓存（仅首次）。
+  /// 全部算完后统一刷新一次图标，避免预渲染过程中逐卡重建。
+  Future<void> _ensureVarsLoaded() async {
+    if (_collectingVars) return;
+    _collectingVars = true;
+    try {
+      final sources = ref.read(pluginManagerProvider).sources;
+      var needRefresh = false;
+      for (final s in sources) {
+        if (_hasVars.containsKey(s.id)) continue;
+        var hasVars = false;
+        try {
+          final vars = await ref
+              .read(pluginManagerProvider.notifier)
+              .getUserVars(s.id);
+          hasVars = vars.isNotEmpty;
+        } catch (_) {
+          // 读取失败视为无变量图标
+        }
+        _hasVars[s.id] = hasVars;
+        needRefresh = needRefresh || hasVars;
+      }
+      if (needRefresh && mounted) setState(() {});
+    } finally {
+      _collectingVars = false;
+    }
   }
 
   bool _autoUpdateOnStartup = false;
@@ -92,11 +130,19 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           ),
         ],
       ),
-      body: state.loading
-          ? const Center(child: CircularProgressIndicator())
-          : sources.isEmpty && subscriptions.isEmpty
-              ? _EmptyState(onInstall: _showInstallSheet)
-              : ReorderableListView.builder(
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
+          if (notification is ScrollEndNotification) {
+            _ensureVarsLoaded();
+          }
+          return false;
+        },
+        child: state.loading
+            ? const Center(child: CircularProgressIndicator())
+            : sources.isEmpty && subscriptions.isEmpty
+                ? _EmptyState(onInstall: _showInstallSheet)
+                : ReorderableListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
                   buildDefaultDragHandles: false,
                   itemCount: sources.isNotEmpty && filtered.isEmpty
@@ -214,10 +260,12 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         source: source,
                         index: i,
                         dragEnabled: _query.isEmpty,
+                        hasVars: _hasVars[source.id] == true,
                       ),
                     );
                   },
                 ),
+              ),
     );
   }
 
@@ -630,46 +678,21 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
   }
 }
 
-class _PluginCard extends ConsumerStatefulWidget {
+class _PluginCard extends ConsumerWidget {
   const _PluginCard({
     required this.source,
     required this.index,
     required this.dragEnabled,
+    required this.hasVars,
   });
 
   final PluginSource source;
   final int index;
   final bool dragEnabled;
+  final bool hasVars;
 
   @override
-  ConsumerState<_PluginCard> createState() => _PluginCardState();
-}
-
-class _PluginCardState extends ConsumerState<_PluginCard> {
-  bool _hasVars = false;
-
-  PluginSource get source => widget.source;
-
-  @override
-  void initState() {
-    super.initState();
-    // 首帧后再读取，避免插件列表初次渲染被变量加载拖慢
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadHasVars());
-  }
-
-  Future<void> _loadHasVars() async {
-    try {
-      final vars =
-          await ref.read(pluginManagerProvider.notifier).getUserVars(source.id);
-      if (!mounted || vars.isEmpty) return;
-      setState(() => _hasVars = true);
-    } catch (_) {
-      // 读取失败时不显示变量图标
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(pluginManagerProvider.notifier);
 
@@ -773,7 +796,7 @@ class _PluginCardState extends ConsumerState<_PluginCard> {
                             ),
                           ),
                           // 有用户变量时，在标签后显示变量入口图标
-                          if (_hasVars) ...[
+                          if (hasVars) ...[
                             const SizedBox(width: 6),
                             Icon(Icons.tune_outlined,
                                 size: 15, color: scheme.primary),
@@ -837,9 +860,9 @@ class _PluginCardState extends ConsumerState<_PluginCard> {
           bottom: 0,
           width: 40,
           child: Center(
-            child: widget.dragEnabled
+            child: dragEnabled
                 ? _HoldDragStartListener(
-                    index: widget.index,
+                    index: index,
                     // 长按满 1 秒才进入排布，避免一按即拖造成滑动卡顿
                     child: Icon(Icons.drag_indicator,
                         size: 38, color: scheme.outline),
