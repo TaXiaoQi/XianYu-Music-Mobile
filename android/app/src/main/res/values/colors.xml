@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+
+    <!-- 启动图背景：白天白底（夜间见 values-night/colors.xml） -->
+    <color name="splash_background">#FFFFFF</color>
 </resources>
