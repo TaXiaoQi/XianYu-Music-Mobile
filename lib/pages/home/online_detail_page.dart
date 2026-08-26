@@ -385,9 +385,12 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           final isFav = item != null && favorites.contains(item.path);
           return Builder(
             builder: (rowContext) {
+              // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+              BuildContext? coverCtx;
               final g = songRowPlay(ref, onPlay: () {
                 launchFlyCover(
                   rowContext,
+                  coverContext: coverCtx,
                   coverSize: m.songCover,
                   vPad: m.vPad,
                   networkUrl: r.img,
@@ -397,8 +400,13 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               });
               return g.wrap(
                 CoverRow(
-                  cover: OnlineCover(
-                      url: r.img, size: m.songCover, radius: m.songRadius),
+                  cover: Builder(
+                    builder: (c) {
+                      coverCtx = c;
+                      return OnlineCover(
+                          url: r.img, size: m.songCover, radius: m.songRadius);
+                    },
+                  ),
                   onTap: g.onTap,
                   onLongPress: () => _songActions(i),
                   verticalPadding: m.vPad,

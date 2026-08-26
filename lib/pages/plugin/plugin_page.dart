@@ -93,130 +93,130 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           ? const Center(child: CircularProgressIndicator())
           : sources.isEmpty && subscriptions.isEmpty
               ? _EmptyState(onInstall: _showInstallSheet)
-              : ListView(
+              : ReorderableListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
-                  children: [
-                    if (subscriptions.isNotEmpty) ...[
-                      _SubscriptionSection(
-                        subscriptions: subscriptions,
-                        onReinstall: _installUrl,
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    // 已安装插件标题（对标桌面端「已安装插件」区块）
-                    Row(
-                      children: [
-                        Container(
-                          width: 3,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                  buildDefaultDragHandles: false,
+                  itemCount: sources.isNotEmpty && filtered.isEmpty
+                      ? 0
+                      : filtered.length,
+                  onReorderItem: _onReorder,
+                  header: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (subscriptions.isNotEmpty) ...[
+                        _SubscriptionSection(
+                          subscriptions: subscriptions,
+                          onReinstall: _installUrl,
                         ),
-                        const SizedBox(width: 7),
-                        const Text(
-                          '已安装插件',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '已启用 ${sources.where((s) => s.enabled).length} / 共 ${sources.length}',
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.outline),
-                        ),
-                        const Spacer(),
-                        FilledButton.tonalIcon(
-                          style: FilledButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 10),
-                            textStyle: const TextStyle(fontSize: 12.5),
-                          ),
-                          onPressed: (_checkingUpdates || sources.isEmpty)
-                              ? null
-                              : _checkAllUpdates,
-                          icon: _checkingUpdates
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : const Icon(Icons.system_update_alt_outlined,
-                                  size: 16),
-                          label: Text(
-                              _checkingUpdates ? '检查中...' : '检查全部更新'),
-                        ),
+                        const SizedBox(height: 16),
                       ],
-                    ),
-                    const SizedBox(height: 10),
-                    // 搜索框
-                    TextField(
-                      controller: _searchCtrl,
-                      onChanged: (v) => setState(() => _query = v),
-                      decoration: InputDecoration(
-                        hintText: '搜索插件名称、平台或作者',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        suffixIcon: _query.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() => _query = '');
-                                },
-                              ),
-                        isDense: true,
-                        filled: true,
-                        fillColor: appCardColor(context),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (sources.isNotEmpty && filtered.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 32),
-                        child: Center(
-                          child: Text(
-                            '未找到匹配的插件',
+                      // 已安装插件标题（对标桌面端「已安装插件」区块）
+                      Row(
+                        children: [
+                          Container(
+                            width: 3,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          const Text(
+                            '已安装插件',
                             style: TextStyle(
-                                fontSize: 13, color: scheme.onSurfaceVariant),
+                                fontSize: 14, fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '已启用 ${sources.where((s) => s.enabled).length} / 共 ${sources.length}',
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.outline),
+                          ),
+                          const Spacer(),
+                          FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10),
+                              textStyle: const TextStyle(fontSize: 12.5),
+                            ),
+                            onPressed: (_checkingUpdates || sources.isEmpty)
+                                ? null
+                                : _checkAllUpdates,
+                            icon: _checkingUpdates
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.system_update_alt_outlined,
+                                    size: 16),
+                            label: Text(_checkingUpdates
+                                ? '检查中...'
+                                : '检查全部更新'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      // 搜索框
+                      TextField(
+                        controller: _searchCtrl,
+                        onChanged: (v) => setState(() => _query = v),
+                        decoration: InputDecoration(
+                          hintText: '搜索插件名称、平台或作者',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          suffixIcon: _query.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() => _query = '');
+                                  },
+                                ),
+                          isDense: true,
+                          filled: true,
+                          fillColor: appCardColor(context),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
                         ),
-                      )
-                    else
-                      ReorderableListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        buildDefaultDragHandles: false,
-                        padding: EdgeInsets.zero,
-                        itemCount: filtered.length,
-                        onReorderItem: _onReorder,
-                        itemBuilder: (context, i) {
-                          final source = filtered[i];
-                          return Padding(
-                            key: ValueKey(source.id),
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _PluginCard(
-                              source: source,
-                              // 搜索过滤时不参与排序，隐藏拖拽把手
-                              handle: _query.isEmpty
-                                  ? ReorderableDragStartListener(
-                                      index: i,
-                                      child: Icon(Icons.drag_indicator,
-                                          size: 20, color: scheme.outline),
-                                    )
-                                  : null,
-                            ),
-                          );
-                        },
                       ),
-                  ],
+                      const SizedBox(height: 10),
+                      if (sources.isNotEmpty && filtered.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 32),
+                          child: Center(
+                            child: Text(
+                              '未找到匹配的插件',
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  itemBuilder: (context, i) {
+                    final source = filtered[i];
+                    return Padding(
+                      key: ValueKey(source.id),
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PluginCard(
+                        source: source,
+                        // 搜索过滤时不参与排序，隐藏拖拽把手
+                        handle: _query.isEmpty
+                            ? ReorderableDragStartListener(
+                                index: i,
+                                child: Icon(Icons.drag_indicator,
+                                    size: 20, color: scheme.outline),
+                              )
+                            : null,
+                      ),
+                    );
+                  },
                 ),
     );
   }

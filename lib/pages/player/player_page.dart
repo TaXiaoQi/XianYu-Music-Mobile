@@ -390,11 +390,8 @@ class _TraditionalPlayerLayoutState
                     },
                   ),
                 ),
-                // 4 个动作控件（音效/闪/下载/评论）：不跟封面走，挂在底部播放条上
+                // 4 个动作控件（音效/音质/下载/评论）：不跟封面走，挂在底部播放条上
                 _buildActionsRow(context),
-                const SizedBox(height: 4),
-                // 四大控件（含最右的桌面歌词「词」按钮）位于进度条上方。
-                _Controls(player: player, notifier: widget.notifier),
                 const SizedBox(height: 4),
                 // 进度条（独立图层，tick 不重绘整页）
                 RepaintBoundary(
@@ -403,6 +400,7 @@ class _TraditionalPlayerLayoutState
                     child: _ProgressBar(player: player, notifier: widget.notifier),
                   ),
                 ),
+                _Controls(player: player, notifier: widget.notifier),
                 // 底部留白：底部整块 UI 再上移一格，避免贴底
                 const SizedBox(height: 32),
               ],
@@ -596,6 +594,9 @@ class _TraditionalPlayerLayoutState
     final currentQuality = ref.watch(
       playerProvider.select((s) => s.currentQuality),
     );
+    final lyricsEnabled = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+    );
     final dlActive = current != null &&
         dl.tasks.any((t) =>
             t.songPath == current.path &&
@@ -604,17 +605,16 @@ class _TraditionalPlayerLayoutState
     final dlDone = current != null &&
         (isLocal ||
             dl.history.any((h) => h.songPath == current.path));
-    // 4 个动作项等比放大、平均横向铺满一行（收藏已移至封面右下）。
+    // 动作项纯图标、等距铺满一行（对齐播放控件行布局）。
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _actionItem(
             context,
             icon: Icons.graphic_eq,
-            label: '音效',
-            status: bypass ? 'off' : 'on',
+            tooltip: '音效',
             active: !bypass,
             // 点击打开音效页（原首页底部栏音效入口已迁入传统播放页）。
             onTap: () => context.push('/effects'),
@@ -622,8 +622,8 @@ class _TraditionalPlayerLayoutState
           _actionItem(
             context,
             icon: Icons.hd,
-            label: '音质',
-            status: _qualityLabel(currentQuality),
+            tooltip: '音质',
+            badge: _qualityLabel(currentQuality),
             iconColor: (currentQuality != null &&
                     isLosslessQuality(currentQuality))
                 ? Theme.of(context).colorScheme.primary
@@ -645,7 +645,7 @@ class _TraditionalPlayerLayoutState
             icon: dlDone
                 ? Icons.check_circle
                 : (dlActive ? Icons.hourglass_top : Icons.download_outlined),
-            label: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
+            tooltip: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
             iconColor: dlDone ? const Color(0xFF07C160) : null,
             onTap: () {
               if (current == null) return;
@@ -667,7 +667,7 @@ class _TraditionalPlayerLayoutState
           _actionItem(
             context,
             icon: Icons.mode_comment_outlined,
-            label: '评论',
+            tooltip: '评论',
             // 本地歌曲无在线评论信息，置灰不可点
             enabled: current != null && current.isOnline,
             onTap: () {
@@ -679,54 +679,99 @@ class _TraditionalPlayerLayoutState
               );
             },
           ),
+          // 桌面歌词「词」按钮：与音效/音质/下载/评论并排、位于最右（对齐桌面端 FooterControlIcon 词字样式）
+          _lyricsActionItem(context, lyricsEnabled),
         ],
       ),
     );
   }
 
-  /// 单个动作项：图标 + 标签 + 可选 on/off 状态；enabled=false 时置灰且不可点。
+  /// 桌面歌词「词」按钮：文字「词」替代图标，开启时主题色高亮。
+  Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Tooltip(
+      message: '桌面歌词',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: lyricsEnabled
+                  ? accent.withValues(alpha: 0.14)
+                  : Colors.transparent,
+            ),
+            child: Text(
+              '词',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: lyricsEnabled
+                    ? accent
+                    : Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 单个动作项：纯图标（对齐播放控件行），可选角标；enabled=false 时置灰且不可点。
   Widget _actionItem(
     BuildContext context, {
     required IconData icon,
-    required String label,
-    String? status,
+    String? tooltip,
+    String? badge,
     bool active = false,
     Color? iconColor,
     bool enabled = true,
     required VoidCallback onTap,
   }) {
     final accent = Theme.of(context).colorScheme.primary;
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: enabled ? onTap : () {},
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
-        child: Opacity(
-          opacity: enabled ? 1 : 0.32,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 27,
-                color: iconColor ??
-                    (active ? accent : Colors.white.withValues(alpha: 0.85)),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                status == null ? label : '$label $status',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: status == null ? FontWeight.w600 : FontWeight.w400,
-                  color: status == null
-                      ? Colors.white.withValues(alpha: 0.78)
-                      : Colors.white.withValues(alpha: 0.55),
+    return IconButton(
+      iconSize: 28,
+      tooltip: tooltip,
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            icon,
+            color: enabled
+                ? (iconColor ??
+                    (active ? accent : Colors.white.withValues(alpha: 0.85)))
+                : Colors.white.withValues(alpha: 0.32),
+          ),
+          if (badge != null)
+            Positioned(
+              right: -7,
+              bottom: -7,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  badge,
+                  style: const TextStyle(
+                    fontSize: 8,
+                    height: 1,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
+      onPressed: enabled ? onTap : null,
     );
   }
 }
@@ -1529,13 +1574,12 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 14),
-                // 四大控件（含最右的桌面歌词「词」按钮）位于进度条上方。
-                _Controls(player: player, notifier: notifier),
-                const SizedBox(height: 6),
                 // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
                 RepaintBoundary(
                   child: _ProgressBar(player: player, notifier: notifier),
                 ),
+                const SizedBox(height: 6),
+                _Controls(player: player, notifier: notifier),
               ],
             ),
     );
@@ -1598,6 +1642,9 @@ class _TitleRow extends ConsumerWidget {
     final isFav = ref.watch(favoritesProvider).contains(current.path);
     final currentQuality = ref.watch(
       playerProvider.select((s) => s.currentQuality),
+    );
+    final lyricsEnabled = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
     return Row(
       children: [
@@ -1674,6 +1721,35 @@ class _TitleRow extends ConsumerWidget {
               (_) => CommentSheet(songJson: current.onlineSongJson),
             ),
           ),
+        // 桌面歌词「词」按钮（高级模式）：与收藏/分享/下载/评论并排、位于最右
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: lyricsEnabled
+                    ? scheme.primary.withValues(alpha: 0.14)
+                    : Colors.transparent,
+              ),
+              child: Text(
+                '词',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: lyricsEnabled
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1905,9 +1981,6 @@ class _Controls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final icons = [Icons.repeat, Icons.repeat_one, Icons.shuffle];
-    final lyricsEnabled = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
-    );
     // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1951,78 +2024,9 @@ class _Controls extends ConsumerWidget {
           ),
           IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next),
           IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref, player)),
-          // 桌面歌词「词」按钮：与四大控件并排、位于最右（对齐桌面端 FooterControlIcon 词字样式）
-          Tooltip(
-            message: '桌面歌词',
-            child: InkWell(
-              onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-              customBorder: const CircleBorder(),
-              child: Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: lyricsEnabled
-                      ? scheme.primary.withValues(alpha: 0.12)
-                      : Colors.transparent,
-                ),
-                child: Text(
-                  '词',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: lyricsEnabled
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  Future<void> _toggleFloatingLyrics(
-    BuildContext context,
-    WidgetRef ref,
-    bool enabled,
-  ) async {
-    final n = ref.read(settingsProvider.notifier);
-    if (enabled) {
-      await n.setFloatingLyricsEnabled(false);
-      return;
-    }
-    final granted = await FloatingLyricsController.isPermissionGranted();
-    if (!granted) {
-      if (!context.mounted) return;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('悬浮歌词需要悬浮窗权限'),
-          content: const Text(
-              '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('去授权'),
-            ),
-          ],
-        ),
-      );
-      if (go == true) {
-        await FloatingLyricsController.openPermissionSettings();
-        await n.setFloatingLyricsEnabled(true);
-      }
-      return;
-    }
-    await n.setFloatingLyricsEnabled(true);
   }
 
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。
@@ -2033,6 +2037,47 @@ class _Controls extends ConsumerWidget {
   ) {
     showSheetDialog<void>(context, (_) => _QueueSheet(player: player));
   }
+}
+
+/// 切换悬浮歌词（桌面歌词）：未开启且无悬浮窗权限时引导授权。
+Future<void> _toggleFloatingLyrics(
+  BuildContext context,
+  WidgetRef ref,
+  bool enabled,
+) async {
+  final n = ref.read(settingsProvider.notifier);
+  if (enabled) {
+    await n.setFloatingLyricsEnabled(false);
+    return;
+  }
+  final granted = await FloatingLyricsController.isPermissionGranted();
+  if (!granted) {
+    if (!context.mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('悬浮歌词需要悬浮窗权限'),
+        content: const Text(
+            '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('去授权'),
+          ),
+        ],
+      ),
+    );
+    if (go == true) {
+      await FloatingLyricsController.openPermissionSettings();
+      await n.setFloatingLyricsEnabled(true);
+    }
+    return;
+  }
+  await n.setFloatingLyricsEnabled(true);
 }
 
 /// 剥离所有音源（酷我/酷狗/LX/KRC/YRC/QRC 等）内嵌的逐字时间戳与元数据标签。

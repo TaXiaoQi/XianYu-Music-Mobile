@@ -520,9 +520,12 @@ class _PlaylistSongs extends ConsumerWidget {
         final song = playlist.songs[index];
         return Builder(
           builder: (rowContext) {
+            // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+            BuildContext? coverCtx;
             final g = songRowPlay(ref, onPlay: () {
               launchFlyCover(
                 rowContext,
+                coverContext: coverCtx,
                 coverSize: m.songCover,
                 vPad: m.vPad,
                 songPath: song.path,
@@ -534,13 +537,18 @@ class _PlaylistSongs extends ConsumerWidget {
             });
             return g.wrap(
               CoverRow(
-                cover: CoverImage(
-                  songPath: song.path,
-                  networkUrl: song.coverUrl,
-                  thumbPath: song.coverThumbPath,
-                  width: m.songCover,
-                  height: m.songCover,
-                  radius: m.songRadius,
+                cover: Builder(
+                  builder: (c) {
+                    coverCtx = c;
+                    return CoverImage(
+                      songPath: song.path,
+                      networkUrl: song.coverUrl,
+                      thumbPath: song.coverThumbPath,
+                      width: m.songCover,
+                      height: m.songCover,
+                      radius: m.songRadius,
+                    );
+                  },
                 ),
                 onTap: g.onTap,
                 verticalPadding: m.vPad,

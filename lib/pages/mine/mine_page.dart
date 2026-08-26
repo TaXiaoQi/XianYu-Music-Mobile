@@ -14,6 +14,7 @@ import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -523,6 +524,7 @@ class _PlaylistRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final first = playlist.songs.firstOrNull;
 
     return InkWell(
       // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致，
@@ -532,11 +534,25 @@ class _PlaylistRow extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
         child: Row(
           children: [
-            OnlineCover(
-              url: playlist.songs.firstOrNull?.coverUrl,
-              size: 56,
-              radius: 12,
-            ),
+            first == null
+                ? Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.queue_music,
+                        color: scheme.primary, size: 24),
+                  )
+                : CoverImage(
+                    songPath: first.path,
+                    networkUrl: first.coverUrl,
+                    thumbPath: first.coverThumbPath,
+                    width: 56,
+                    height: 56,
+                    radius: 12,
+                  ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

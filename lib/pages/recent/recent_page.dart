@@ -144,9 +144,12 @@ class _RecentTile extends ConsumerWidget {
     final title = item?.title ?? _titleFromPath(entry.songPath);
     final artist = item?.artist ?? '';
 
+    // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+    BuildContext? coverCtx;
     final g = songRowPlay(ref, onPlay: () {
       launchFlyCover(
         context,
+        coverContext: coverCtx,
         coverSize: m.songCover,
         vPad: m.vPad,
         songPath: entry.songPath,
@@ -161,13 +164,18 @@ class _RecentTile extends ConsumerWidget {
         verticalPadding: m.vPad,
         onTap: g.onTap,
         onLongPress: () => onRemove(),
-        cover: CoverImage(
-          songPath: entry.songPath,
-          networkUrl: item?.coverUrl,
-          width: m.songCover,
-          height: m.songCover,
-          radius: m.songRadius,
-          icon: Icons.music_note,
+        cover: Builder(
+          builder: (c) {
+            coverCtx = c;
+            return CoverImage(
+              songPath: entry.songPath,
+              networkUrl: item?.coverUrl,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            );
+          },
         ),
         title: Text(
           title,

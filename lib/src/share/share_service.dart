@@ -141,16 +141,26 @@ class ShareService {
       }
     }
 
-    // 来源信息：在线歌曲取音源 key（kw/wy/kg/tx/mg），本地歌曲标记为 local，
-    // 服务端透传进深链，客户端据此判断用本地播放还是走对应插件播放。
+    // 来源信息：按播放协议提取——lx://<source>/<songmid> → 音源 key
+    // （kw/wy/kg/tx/mg），plugin://<platform>/<id> → 插件名/插件 id，
+    // 本地歌曲标记为 local（与桌面端 getSongSource 同构）。
+    // 服务端透传进深链，客户端据此显示来源并选择播放路径。
     String source = 'local';
-    final onlineSource = online?['source']?.toString() ?? infoMap?['source']?.toString();
     if (song.isOnline) {
-      source = (song.source?.isNotEmpty ?? false)
-          ? song.source!
-          : (onlineSource?.isNotEmpty ?? false)
-              ? onlineSource!
-              : 'local';
+      if (song.path.startsWith('lx://')) {
+        source = song.path.substring('lx://'.length).split('/').first;
+      } else if (song.path.startsWith('plugin://')) {
+        source = song.path.substring('plugin://'.length).split('/').first;
+      }
+      if (source.isEmpty) {
+        final onlineSource =
+            online?['source']?.toString() ?? infoMap?['source']?.toString();
+        source = (song.source?.isNotEmpty ?? false)
+            ? song.source!
+            : (onlineSource?.isNotEmpty ?? false)
+                ? onlineSource!
+                : 'local';
+      }
     }
 
     // 分享链接有效时长（分钟）：读取客户端设置，钳制到 5~24*60，缺省 2 小时。

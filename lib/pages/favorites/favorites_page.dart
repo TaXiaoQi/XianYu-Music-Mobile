@@ -320,9 +320,12 @@ class _FavoriteTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
+    // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+    BuildContext? coverCtx;
     final g = songRowPlay(ref, onPlay: () {
       launchFlyCover(
         context,
+        coverContext: coverCtx,
         coverSize: m.songCover,
         vPad: m.vPad,
         songPath: entry.path,
@@ -333,13 +336,18 @@ class _FavoriteTile extends ConsumerWidget {
     });
     return g.wrap(
       CoverRow(
-        cover: CoverImage(
-          songPath: entry.path,
-          networkUrl: entry.coverUrl,
-          width: m.songCover,
-          height: m.songCover,
-          radius: m.songRadius,
-          icon: Icons.music_note,
+        cover: Builder(
+          builder: (c) {
+            coverCtx = c;
+            return CoverImage(
+              songPath: entry.path,
+              networkUrl: entry.coverUrl,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            );
+          },
         ),
         onTap: g.onTap,
         title: Text(entry.title,

@@ -1,24 +1,37 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../library/library_provider.dart';
+import '../navigation/routes.dart' show appNavigatorKey;
 import '../online/online_search_provider.dart';
 import '../player/player_provider.dart';
 import '../core/app_logger.dart';
 import '../core/rust_init.dart';
+import '../widgets/app_toast.dart';
+import 'share_link_dialog.dart';
 
 /// xianyu:// 深链处理。
 ///
 /// Android 端由 MainActivity 通过 MethodChannel('xianyu/deeplink') 把 intent 的
-/// xianyu://song?... 深链透传到这里：解析歌名/歌手/时长后，优先在本地曲库按
-/// 「标题|歌手」(±5s 时长容差) 匹配——命中则直接播放本地文件；未命中再走在线
-/// 搜索定位歌曲并播放。最后跳转到播放页（push 而非 go，保证能返回首页）。
+/// xianyu://song?... 深链透传到这里：解析歌名/歌手/时长/封面后，先弹「分享预览窗」
+/// （封面/歌名/歌手/来源 + 播放/下一首播放/取消），用户点「播放」才进入播放，
+/// 点「下一首播放」插入当前曲目之后（不自动起播）。播放/插队优先在本地曲库按
+/// 「标题|歌手」(±5s 时长容差) 匹配——命中直接用本地文件；未命中再按来源走在线
+/// 搜索定位。最后（仅播放）跳转播放页（push 而非 go，保证能返回首页）。
 /// 这样落地页点「在弦予音乐中打开」就能拉起 App 并播放分享曲。
+///
+/// 防重复：`_busy` 保证同一时刻只处理一枚深链；`_openPlayerOnce` 保证播放页
+/// 不重复压栈，杜绝「卡出 2 个播放器页面」。
 class XianYuDeepLink {
   static const MethodChannel _channel = MethodChannel('xianyu/deeplink');
 
   static bool _initialized = false;
+
+  /// 同一时刻只处理一枚深链：防止冷/热启同链被二次派发时重复弹分享预览窗、
+  /// 重复压栈播放页（表现为「卡出 2 个播放器页面」）。
+  static bool _busy = false;
 
   static void init(ProviderContainer container, GoRouter router) {
     if (_initialized) return;
@@ -45,24 +58,76 @@ class XianYuDeepLink {
         .catchError((Object _) {});
   }
 
-  static void _handle(
+  static Future<void> _handle(
     ProviderContainer container,
     GoRouter router,
     String raw,
-  ) {
+  ) async {
+    if (_busy) {
+      AppLogger.instance.log('deeplink', '忽略重复的分享深链: $raw');
+      return;
+    }
+    _busy = true;
+    try {
+      await _run(container, router, raw);
+    } catch (e, st) {
+      AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
+    } finally {
+      _busy = false;
+    }
+  }
+
+  static Future<void> _run(
+    ProviderContainer container,
+    GoRouter router,
+    String raw,
+  ) async {
     try {
       final p = _parseSong(raw);
       final name = p['name'] ?? '';
       if (name.isEmpty) return;
       AppLogger.instance.log('deeplink', '收到分享深链: $raw');
-      _playBySearch(
-        container,
-        router,
-        name,
-        p['artist'] ?? '',
-        p['source'] ?? '',
-        int.tryParse(p['duration'] ?? '') ?? 0,
+
+      final artist = p['artist'] ?? '';
+      final source = p['source'] ?? '';
+      final durationSec = int.tryParse(p['duration'] ?? '') ?? 0;
+      final cover = p['cover'] ?? '';
+
+      // 等待引擎与本地曲库就绪后再判定来源（本地命中显示「本地音乐」）
+      final ready = await _ensureReady(container);
+      if (!ready) {
+        AppLogger.instance.log('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
+        return;
+      }
+      final localSong = _tryLocalMatch(container, name, artist, durationSec);
+      final sourceLabel = localSong != null
+          ? '本地音乐'
+          : _sourceLabel(source);
+
+      // 分享预览窗：点「播放/下一首播放」才执行对应动作
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) {
+        AppLogger.instance.log('deeplink', '无可用的导航上下文，跳过分享预览窗');
+        return;
+      }
+      final overlay = Overlay.of(ctx, rootOverlay: true);
+      final action = await showShareLinkPreviewDialog(
+        context: ctx,
+        name: name,
+        artist: artist,
+        sourceLabel: sourceLabel,
+        cover: cover,
       );
+      if (action == ShareLinkPreviewAction.cancel) return;
+
+      if (action == ShareLinkPreviewAction.playNext) {
+        await _playNext(container, overlay, name, artist, source, durationSec,
+            localSong);
+        return;
+      }
+
+      await _playBySearch(container, router, name, artist, source, durationSec,
+          localSong);
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
     }
@@ -79,7 +144,37 @@ class XianYuDeepLink {
       'artist': q['artist'] ?? '',
       'duration': q['duration'] ?? '0',
       'source': q['source'] ?? '',
+      'cover': q['cover'] ?? '',
     };
+  }
+
+  /// 分享来源展示名：本地 → 本地音乐；lx 音源 → 平台名；
+  /// 插件来源（深链携带插件名/id，如「酷我音乐」）→ 直接展示；其余 → 在线搜索。
+  static String _sourceLabel(String source) {
+    if (source == 'local') return '本地音乐';
+    for (final s in kOnlineSources) {
+      if (s.id == source) return s.label;
+    }
+    if (source.isNotEmpty) return source;
+    return '在线搜索';
+  }
+
+  /// 等待 Rust 引擎就绪并确保本地曲库已加载（空曲库时主动加载一次）。
+  /// 返回 false 表示引擎初始化失败，后续播放无法进行。
+  static Future<bool> _ensureReady(ProviderContainer container) async {
+    try {
+      await container.read(rustInitProvider.future);
+    } catch (_) {
+      return false;
+    }
+    if (container.read(libraryProvider).songs.isEmpty) {
+      try {
+        await container.read(libraryProvider.notifier).load();
+      } catch (_) {
+        // 曲库加载失败不阻塞分享播放，走在线搜索兜底
+      }
+    }
+    return true;
   }
 
   static Future<void> _playBySearch(
@@ -89,24 +184,10 @@ class XianYuDeepLink {
     String artist,
     String source,
     int durationSec,
+    Song? localSong,
   ) async {
     try {
-      // 冷启动深链可能早于 Rust 引擎就绪：先等待初始化完成，避免搜索/解析
-      // 在引擎未就绪时静默失败（表现为「点了打开却没反应」）。
-      try {
-        await container.read(rustInitProvider.future);
-      } catch (_) {
-        AppLogger.instance.log('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
-        return;
-      }
-
-      // 优先本地匹配：移动端若本地曲库有同名同歌手的歌曲（±5s 时长容差），
-      // 直接播放本地文件，避免在线搜索/解析失败导致「分享曲打不开」。
-      // 对齐 sync_provider._resolveLocalPath 的匹配规则，保证两端一致。
-      if (container.read(libraryProvider).songs.isEmpty) {
-        await container.read(libraryProvider.notifier).load();
-      }
-      final localSong = _tryLocalMatch(container, name, artist, durationSec);
+      // 本地匹配命中：直接播放本地文件，避免在线搜索/解析失败导致「分享曲打不开」。
       if (localSong != null) {
         AppLogger.instance.log('deeplink', '本地匹配命中分享曲: ${localSong.path}');
         final playerNotifier = container.read(playerProvider.notifier);
@@ -118,7 +199,7 @@ class XianYuDeepLink {
         } catch (e) {
           AppLogger.instance.log('deeplink', '本地播放分享曲失败: $e');
         }
-        router.push('/player');
+        _openPlayerOnce(router);
         return;
       }
 
@@ -152,15 +233,70 @@ class XianYuDeepLink {
           startIndex: 0,
           shareLinkPlayback: true,
         );
-        router.push('/player');
+        _openPlayerOnce(router);
       } catch (e) {
         AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
-        router.push('/player');
+        _openPlayerOnce(router);
       }
     } catch (e, st) {
       // 兜底：任何未预期的异常都记录日志，避免变成未捕获异步错误导致整页报错。
       AppLogger.instance.log('deeplink', '分享深链处理异常: $e\n$st');
     }
+  }
+
+  /// 「下一首播放」：解析分享歌曲并插入到当前曲目之后，不自动起播、不打开播放页。
+  /// 解析顺序与播放一致：本地曲库匹配 → 在线搜索最佳匹配。
+  static Future<void> _playNext(
+    ProviderContainer container,
+    OverlayState overlay,
+    String name,
+    String artist,
+    String source,
+    int durationSec,
+    Song? localSong,
+  ) async {
+    try {
+      final playerNotifier = container.read(playerProvider.notifier);
+      // 本地匹配命中：直接插队，避免在线搜索/解析失败。
+      if (localSong != null) {
+        AppLogger.instance.log('deeplink', '本地匹配命中分享曲(下一首): ${localSong.path}');
+        await playerNotifier.playNextShare(localSong.toQueueItem());
+        showXianYuToastByOverlay(overlay, '已添加至下一首播放');
+        return;
+      }
+
+      // 来源感知：带音源 key（kw/wy/kg/tx/mg）优先用该音源搜索。
+      final searchNotifier = container.read(onlineSearchProvider.notifier);
+      final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
+      await searchNotifier.setSource(src);
+      final keyword = artist.isEmpty ? name : '$name $artist';
+      try {
+        await searchNotifier.search(keyword);
+      } catch (e) {
+        AppLogger.instance.log('deeplink', '分享歌曲在线搜索失败: $e');
+        showXianYuToastByOverlay(overlay, '未找到分享的歌曲');
+        return;
+      }
+      final results = container.read(onlineSearchProvider).results;
+      if (results.isEmpty) {
+        showXianYuToastByOverlay(overlay, '未找到分享的歌曲');
+        return;
+      }
+      final index = _bestMatch(results, name, artist);
+      final track = results[index];
+      await playerNotifier.playNextShare(track.toQueueItem());
+      showXianYuToastByOverlay(overlay, '已添加至下一首播放');
+    } catch (e, st) {
+      AppLogger.instance.log('deeplink', '添加到下一首播放异常: $e\n$st');
+    }
+  }
+
+  /// 「播放」跳转播放页：仅当播放页不在栈顶时才压入，避免重复压栈成 2 个播放页。
+  static void _openPlayerOnce(GoRouter router) {
+    if (router.routerDelegate.currentConfiguration.uri.toString() == '/player') {
+      return;
+    }
+    router.push('/player');
   }
 
   /// 优先最接近的歌名，再叠加歌手匹配；都无则默认第一条。

@@ -1628,6 +1628,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _playAt(index);
   }
 
+  /// 将 [item] 插入到当前曲目的下一首播放（不中断当前播放、不自动起播）。
+  /// 队列为空时作为待播队列唯一一首置入（仍不起播），供后续手动播放。
+  Future<void> playNextShare(QueueItem item) async {
+    final queue = [...state.queue];
+    final qi = state.queueIndex;
+    if (queue.isEmpty) {
+      state = state.copyWith(
+        queue: [item],
+        queueIndex: 0,
+        current: null,
+        isPlaying: false,
+      );
+      return;
+    }
+    final insertAt = (qi + 1).clamp(0, queue.length);
+    queue.insert(insertAt, item);
+    // 插入在当前曲目之后，queueIndex 无需变化。
+    state = state.copyWith(queue: queue, queueIndex: qi);
+  }
+
   /// 系统控制中心「收藏」键：切换当前歌曲收藏并刷新通知栏图标。
   Future<void> toggleFavoriteFromSystem() async {
     final item = state.current;

@@ -154,10 +154,14 @@ class SongsListView extends ConsumerWidget {
         // 返回 RenderSliverList，飞封面拿不到行的 RenderBox。
         return Builder(
           builder: (rowContext) {
+            // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，
+            // 与列表封面像素级一致，杜绝行高/布局差异导致的起飞偏移。
+            BuildContext? coverCtx;
             final play = onPlay != null
                 ? () {
                     launchFlyCover(
                       rowContext,
+                      coverContext: coverCtx,
                       coverSize: m.songCover,
                       vPad: m.vPad,
                       songPath: s.path,
@@ -168,7 +172,12 @@ class SongsListView extends ConsumerWidget {
                   }
                 : null;
             final row = CoverRow(
-              cover: SongCover(song: s, size: m.songCover),
+              cover: Builder(
+                builder: (c) {
+                  coverCtx = c;
+                  return SongCover(song: s, size: m.songCover);
+                },
+              ),
               title: highlightedText(
                 s.title,
                 highlight,

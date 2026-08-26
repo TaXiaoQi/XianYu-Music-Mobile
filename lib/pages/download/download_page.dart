@@ -262,10 +262,13 @@ class _HistoryTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
     final exists = File(entry.filePath).existsSync();
+    // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+    BuildContext? coverCtx;
     final play = exists
         ? () {
             launchFlyCover(
               context,
+              coverContext: coverCtx,
               coverSize: m.songCover,
               vPad: m.vPad,
               songPath: entry.filePath,
@@ -278,12 +281,17 @@ class _HistoryTile extends ConsumerWidget {
       horizontalPadding: 16,
       verticalPadding: m.vPad,
       onTap: play,
-      cover: CoverImage(
-        songPath: entry.filePath,
-        width: m.songCover,
-        height: m.songCover,
-        radius: m.songRadius,
-        icon: Icons.music_note,
+      cover: Builder(
+        builder: (c) {
+          coverCtx = c;
+          return CoverImage(
+            songPath: entry.filePath,
+            width: m.songCover,
+            height: m.songCover,
+            radius: m.songRadius,
+            icon: Icons.music_note,
+          );
+        },
       ),
       title: Text(entry.title ?? entry.fileName,
           maxLines: 1, overflow: TextOverflow.ellipsis,

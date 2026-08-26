@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
-import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -28,6 +27,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
 import '../library/song_list_page.dart';
@@ -781,15 +781,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
   }
 
-  void _download(int index) {
-    final e = _results[index];
-    if (e.isLocal) return;
-    final engine = ref.read(pluginEngineProvider).valueOrNull;
-    if (engine == null) return;
-    final service = PluginSearchService(engine, _plugins());
-    final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
-    ref.read(downloadProvider.notifier).download(item);
-    showXianYuToast(context, '开始下载：${item.title}');
+  /// 打开「更多」菜单：复用长按菜单（showSongActionsSheet）。
+  void _openActions(int index) {
+    final item = _queueItem(index);
+    if (item == null) return;
+    showSongActionsSheet(context, ref: ref, item: item);
   }
 
   void _toggleFavorite(int index) {
@@ -837,14 +833,67 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         if (e.isLocal) {
           final s = e.localSong!;
           return Builder(
-            builder: (rowContext) => CoverRow(
-              cover: SongCover(song: s, size: m.songCover),
-              title: highlightedText(s.title, q, scheme.primary,
+            builder: (rowContext) {
+              // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+              BuildContext? coverCtx;
+              return CoverRow(
+                cover: Builder(
+                  builder: (c) {
+                    coverCtx = c;
+                    return SongCover(song: s, size: m.songCover);
+                  },
+                ),
+                title: highlightedText(s.title, q, scheme.primary,
+                    maxLines: 1,
+                    style: TextStyle(
+                        fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  [s.artist, s.album, '本地']
+                      .where((x) => x.isNotEmpty)
+                      .join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                ),
+                verticalPadding: m.vPad,
+                onTap: () {
+                  launchFlyCover(
+                    rowContext,
+                    coverContext: coverCtx,
+                    coverSize: m.songCover,
+                    vPad: m.vPad,
+                    songPath: s.path,
+                    thumbPath: s.coverThumbPath,
+                    radius: m.songRadius,
+                  );
+                  _play(i);
+                },
+              );
+            },
+          );
+        }
+        final r = e.pluginResult!;
+        final item = _queueItem(i);
+        final isFav = item != null && favorites.contains(item.path);
+        return Builder(
+          builder: (rowContext) {
+            // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+            BuildContext? coverCtx;
+            return CoverRow(
+              cover: Builder(
+                builder: (c) {
+                  coverCtx = c;
+                  return OnlineCover(
+                      url: r.img, size: m.songCover, radius: m.songRadius);
+                },
+              ),
+              title: highlightedText(r.name, q, scheme.primary,
                   maxLines: 1,
                   style: TextStyle(
                       fontSize: m.titleSize, fontWeight: FontWeight.w600)),
               subtitle: Text(
-                [s.artist, s.album, '本地']
+                [r.singer, r.albumName, widget.source.name]
                     .where((x) => x.isNotEmpty)
                     .join(' · '),
                 maxLines: 1,
@@ -853,40 +902,6 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
               ),
               verticalPadding: m.vPad,
-              onTap: () {
-                launchFlyCover(
-                  rowContext,
-                  coverSize: m.songCover,
-                  vPad: m.vPad,
-                  songPath: s.path,
-                  thumbPath: s.coverThumbPath,
-                  radius: m.songRadius,
-                );
-                _play(i);
-              },
-            ),
-          );
-        }
-        final r = e.pluginResult!;
-        final item = _queueItem(i);
-        final isFav = item != null && favorites.contains(item.path);
-        return Builder(
-          builder: (rowContext) => CoverRow(
-            cover: OnlineCover(url: r.img, size: m.songCover, radius: m.songRadius),
-            title: highlightedText(r.name, q, scheme.primary,
-                maxLines: 1,
-                style: TextStyle(
-                    fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-            subtitle: Text(
-              [r.singer, r.albumName, widget.source.name]
-                  .where((x) => x.isNotEmpty)
-                  .join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-            ),
-            verticalPadding: m.vPad,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -899,34 +914,38 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                   tooltip: '收藏',
                   onPressed: () => _toggleFavorite(i),
                 ),
-                IconButton(
-                  icon: Icon(Icons.download_outlined,
-                      size: 20, color: scheme.primary),
-                  tooltip: '下载',
-                  onPressed: () => _download(i),
-                ),
                 Text(
                   r.interval,
-                  style: TextStyle(fontSize: m.subtitleSize, color: scheme.outline),
+                  style: TextStyle(
+                      fontSize: m.subtitleSize, color: scheme.outline),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.more_horiz, size: 22),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: '更多',
+                  onPressed: () => _openActions(i),
                 ),
               ],
             ),
+            onLongPress: () => _openActions(i),
             onTap: () {
-              debugPrint('[search] online row onTap i=$i');
-              try {
-                launchFlyCover(
-                  rowContext,
-                  coverSize: m.songCover,
-                  vPad: m.vPad,
-                  networkUrl: r.img,
-                  radius: m.songRadius,
-                );
-              } catch (e, st) {
-                debugPrint('[search] launchFlyCover ERROR: $e\n$st');
-              }
-              _play(i);
-            },
-          ),
+                debugPrint('[search] online row onTap i=$i');
+                try {
+                  launchFlyCover(
+                    rowContext,
+                    coverContext: coverCtx,
+                    coverSize: m.songCover,
+                    vPad: m.vPad,
+                    networkUrl: r.img,
+                    radius: m.songRadius,
+                  );
+                } catch (e, st) {
+                  debugPrint('[search] launchFlyCover ERROR: $e\n$st');
+                }
+                _play(i);
+              },
+            );
+          },
         );
       },
     );

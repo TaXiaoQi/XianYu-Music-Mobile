@@ -56,6 +56,15 @@ Future<void> showSongActionsSheet(
               },
             ),
             ListTile(
+              leading: Icon(Icons.playlist_play, color: scheme.primary, size: 22),
+              title: const Text('下一首播放'),
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(playerProvider.notifier).playNextShare(item);
+                showXianYuToast(ctx, '已添加至下一首播放');
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.playlist_add, color: scheme.primary, size: 22),
               title: const Text('添加到歌单'),
               onTap: () {

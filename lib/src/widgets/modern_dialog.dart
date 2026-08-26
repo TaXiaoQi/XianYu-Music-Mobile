@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'predictive_dialog_route.dart';
 
@@ -46,7 +45,7 @@ Future<T?> showModernChoiceSheet<T>({
     return showPredictiveDialog<T>(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => _ModernDialogCard(
+      builder: (ctx) => ModernDialogCard(
         child: _ModernChoiceList<T>(
           title: title,
           subtitle: subtitle,
@@ -75,7 +74,7 @@ Future<bool> showModernConfirmDialog({
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
       final accentColor = isDanger ? scheme.error : scheme.primary;
-      return _ModernDialogCard(
+      return ModernDialogCard(
         child: Padding(
           padding: const EdgeInsets.all(22),
           child: Column(
@@ -178,7 +177,7 @@ Future<String?> showModernInputDialog({
     barrierDismissible: true,
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
-      return _ModernDialogCard(
+      return ModernDialogCard(
         child: Padding(
           padding: const EdgeInsets.all(22),
           child: Column(
@@ -270,8 +269,8 @@ Future<String?> showModernInputDialog({
 // ==================== 内部私有现代化组件 ====================
 
 /// 现代居中对话框圆角外框（适配深色/浅色、毛玻璃防护与阴影）
-class _ModernDialogCard extends StatelessWidget {
-  const _ModernDialogCard({required this.child});
+class ModernDialogCard extends StatelessWidget {
+  const ModernDialogCard({super.key, required this.child});
   final Widget child;
 
   @override
