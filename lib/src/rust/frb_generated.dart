@@ -190,6 +190,12 @@ abstract class RustLibApi extends BaseApi {
     required String path,
   });
 
+  Future<String> crateApiGetSongCover({
+    required String dbPath,
+    required String cacheRoot,
+    required String path,
+  });
+
   Future<String> crateApiGetSongDetail({
     required String dbPath,
     required String path,
@@ -1464,6 +1470,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiGetSongCoverThumbnailConstMeta =>
       const TaskConstMeta(
         debugName: "get_song_cover_thumbnail",
+        argNames: ["dbPath", "cacheRoot", "path"],
+      );
+
+  @override
+  Future<String> crateApiGetSongCover({
+    required String dbPath,
+    required String cacheRoot,
+    required String path,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(cacheRoot, serializer);
+          sse_encode_String(path, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 97,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiGetSongCoverConstMeta,
+        argValues: [dbPath, cacheRoot, path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiGetSongCoverConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_song_cover",
         argNames: ["dbPath", "cacheRoot", "path"],
       );
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
+import '../core/application_logger.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -40,6 +41,7 @@ import 'shell.dart';
 final appNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
+  observers: [AppLogRouteObserver()],
   initialLocation: '/home',
   routes: [
     StatefulShellRoute(
@@ -83,6 +85,11 @@ final appRouter = GoRouter(
     ),
     // 搜索页（从主页搜索栏进入）。
     GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
+    // 搜索结果页（搜索页提交后进入，独立路由以承载迷你播放条）。
+    GoRoute(
+      path: '/search/result',
+      builder: (context, state) => const SearchResultPage(),
+    ),
     // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
     GoRoute(
       path: '/library',

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
@@ -564,10 +566,22 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// 长按 1 秒才触发的拖动监听：默认 ReorderableDelayedDragStartListener 固定为
-/// 系统长按时长（约 500ms），这里显式放大到 1 秒，避免未能及时做出排布导致滑动手感卡顿。
-class _HoldDragStartListener extends ReorderableDelayedDragStartListener {
-  const _HoldDragStartListener({
+/// 长按 0.3 秒才触发的拖动监听：默认 ReorderableDelayedDragStartListener 固定为
+/// 系统长按时长（约 500ms），这里显式缩短到 0.3 秒，平衡「避免滑动手感卡顿」与「拖动响应速度」。
+/// 同时在该延迟到期（可开始移动）的那一刻触发一次触觉反馈，与拖拽真正可移动的时机对齐。
+class _HoldDragStartListener extends StatefulWidget {
+  const _HoldDragStartListener({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_HoldDragStartListener> createState() => _HoldDragStartListenerState();
+}
+
+/// 把底层拖拽识别延迟固定为与触觉反馈一致的 0.3s。
+class _DelayedDragRecognizerListener extends ReorderableDelayedDragStartListener {
+  const _DelayedDragRecognizerListener({
     required super.child,
     required super.index,
   });
@@ -575,8 +589,43 @@ class _HoldDragStartListener extends ReorderableDelayedDragStartListener {
   @override
   MultiDragGestureRecognizer createRecognizer() {
     return DelayedMultiDragGestureRecognizer(
-      delay: const Duration(seconds: 1),
+      delay: const Duration(milliseconds: 300),
       debugOwner: this,
+    );
+  }
+}
+
+class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
+  Timer? _haptic;
+
+  void _onDown(PointerDownEvent _) {
+    _haptic?.cancel();
+    _haptic = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) HapticFeedback.mediumImpact();
+    });
+  }
+
+  void _clear() {
+    _haptic?.cancel();
+    _haptic = null;
+  }
+
+  @override
+  void dispose() {
+    _clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Listener 不参与手势竞技场，仅用于与拖拽延迟(0.3s)对齐的触觉反馈；
+    // 拖拽识别由内层延迟监听在 0.3s 时触发，二者时刻一致。
+    return Listener(
+      onPointerDown: _onDown,
+      child: _DelayedDragRecognizerListener(
+        index: widget.index,
+        child: widget.child,
+      ),
     );
   }
 }

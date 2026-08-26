@@ -8,6 +8,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
 import 'src/core/app_logger.dart';
+import 'src/core/application_logger.dart';
 import 'src/core/rust_init.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/auth/account_api.dart';
@@ -19,6 +20,10 @@ import 'src/navigation/routes.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final container = ProviderContainer();
+  // 通用应用日志：加载历史 + 挂生命周期观察者 + 安装全局错误捕获。
+  ApplicationLogManager.instance.bootstrap();
+  WidgetsBinding.instance
+      .addObserver(AppLogLifecycleObserver());
   _installErrorReporting(container);
 
   // 尽早触发 rust 初始化（与首帧渲染并行），缩短「打开→可交互」的等待。
@@ -90,6 +95,7 @@ void _installErrorReporting(ProviderContainer container) {
     final stack = details.stack?.toString() ?? '';
     AppLogger.instance
         .log('fatal', '未捕获异常: $msg\n$stack');
+    AppLog.error('fatal', '$msg\n$stack');
     FlutterError.presentError(details);
     try {
       container.read(accountApiProvider).reportError(
@@ -105,6 +111,7 @@ void _installErrorReporting(ProviderContainer container) {
   PlatformDispatcher.instance.onError = (error, stack) {
     AppLogger.instance
         .log('fatal', '平台异常: $error\n$stack');
+    AppLog.error('platform', '$error\n$stack');
     try {
       container.read(accountApiProvider).reportError(
             errorType: 'platform',

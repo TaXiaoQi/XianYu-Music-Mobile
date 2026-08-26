@@ -992,62 +992,90 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   Widget _floatingLyricsOpacitySlider(AppSettings? s, SettingsNotifier n) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsOpacity ?? 100).toDouble();
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => (s?.floatingLyricsOpacity ?? 100).toDouble(),
+      step: 5,
+      min: 35,
+      max: 100,
+      format: (x) => '${x.round()}%',
+      slider: CommittedSlider(
         min: 35,
         max: 100,
         divisions: 13,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (x) => n.setFloatingLyricsOpacity(x.round()),
       ),
+      onAdjust: (x) => n.setFloatingLyricsOpacity(x.round()),
     );
   }
 
   Widget _floatingLyricsFontSlider(AppSettings? s, SettingsNotifier n) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsFontScale ?? 100).toDouble();
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => (s?.floatingLyricsFontScale ?? 100).toDouble(),
+      step: 5,
+      min: 80,
+      max: 220,
+      format: (x) => '${x.round()}%',
+      slider: CommittedSlider(
         min: 80,
         max: 220,
         divisions: 28,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (x) => n.setFloatingLyricsFontScale(x.round()),
       ),
+      onAdjust: (x) => n.setFloatingLyricsFontScale(x.round()),
     );
   }
 
   Widget _floatingLyricsSecondarySlider(AppSettings? s, SettingsNotifier n) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsSecondaryScale ?? 88).toDouble();
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => (s?.floatingLyricsSecondaryScale ?? 88).toDouble(),
+      step: 5,
+      min: 70,
+      max: 180,
+      format: (x) => '${x.round()}%',
+      slider: CommittedSlider(
         min: 70,
         max: 180,
         divisions: 22,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
       ),
+      onAdjust: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
     );
   }
 
   Widget _floatingLyricsWidthSlider(AppSettings? s, SettingsNotifier n) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsWidthPercent ?? 92).toDouble();
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => (s?.floatingLyricsWidthPercent ?? 92).toDouble(),
+      step: 5,
+      min: 40,
+      max: 100,
+      format: (x) => '${x.round()}%',
+      slider: CommittedSlider(
         min: 40,
         max: 100,
         divisions: 12,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (x) => n.setFloatingLyricsWidthPercent(x.round()),
       ),
+      onAdjust: (x) => n.setFloatingLyricsWidthPercent(x.round()),
     );
   }
 
@@ -1057,27 +1085,39 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final screenW = MediaQuery.of(context).size.width * dpr;
     final widthPercent = (s?.floatingLyricsWidthPercent ?? 92) / 100;
     final overlayW =
         (screenW * widthPercent).clamp(180.0 * dpr, screenW - 12 * dpr);
     final maxX = (screenW / 2 - overlayW / 2).clamp(0.0, double.infinity);
-    final x = (s?.floatingLyricsX ?? 0).toDouble();
-    final v = maxX <= 0 ? 0.0 : (x / maxX * 100).clamp(-100.0, 100.0);
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    double norm(double x) =>
+        maxX <= 0 ? 0.0 : (x / maxX * 100).clamp(-100.0, 100.0);
+    final v = norm((s?.floatingLyricsX ?? 0).toDouble());
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => norm((s?.floatingLyricsX ?? 0).toDouble()),
+      step: 5,
+      min: -100,
+      max: 100,
+      valueWidth: 44,
+      format: (x) => x == 0 ? '0' : ('${x > 0 ? '+' : ''}${x.round()}'),
+      slider: CommittedSlider(
         min: -100,
         max: 100,
         divisions: 40,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (val) {
           final px = (val / 100 * maxX).round();
           n.setFloatingLyricsPosition(px, s?.floatingLyricsY ?? 96);
         },
       ),
+      onAdjust: (val) {
+        final px = (val / 100 * maxX).round();
+        n.setFloatingLyricsPosition(px, s?.floatingLyricsY ?? 96);
+      },
     );
   }
 
@@ -1087,28 +1127,38 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
+    final enabled = s?.floatingLyricsEnabled ?? false;
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final screenH = MediaQuery.of(context).size.height * dpr;
     final statusBar = MediaQuery.of(context).padding.top * dpr;
     final overlayH = 150.0 * dpr;
     final minY = -statusBar;
     final maxY = (screenH - overlayH).clamp(0.0, double.infinity);
-    final y = (s?.floatingLyricsY ?? 96).toDouble();
-    final v =
+    double norm(double y) =>
         maxY <= minY ? 0.0 : ((y - minY) / (maxY - minY) * 100).clamp(0.0, 100.0);
-    return SizedBox(
-      width: 120,
-      child: CommittedSlider(
+    final v = norm((s?.floatingLyricsY ?? 96).toDouble());
+    return _StepperSliderRow(
+      enabled: enabled,
+      readValue: () => norm((s?.floatingLyricsY ?? 96).toDouble()),
+      step: 5,
+      min: 0,
+      max: 100,
+      format: (x) => '${x.round()}',
+      slider: CommittedSlider(
         min: 0,
         max: 100,
         divisions: 40,
         value: v,
-        enabled: s?.floatingLyricsEnabled ?? false,
+        enabled: enabled,
         onCommit: (val) {
           final px = (minY + val / 100 * (maxY - minY)).round();
           n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, px);
         },
       ),
+      onAdjust: (val) {
+        final px = (minY + val / 100 * (maxY - minY)).round();
+        n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, px);
+      },
     );
   }
 
@@ -1742,6 +1792,77 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// 带 -/+ 步进按钮的滑块行：左「−」右「＋」，中间为滑块，右侧显示当前值，
+/// 便于对悬浮歌词位置等连续值做精细微调。
+class _StepperSliderRow extends StatelessWidget {
+  const _StepperSliderRow({
+    required this.slider,
+    required this.enabled,
+    required this.readValue,
+    required this.step,
+    required this.min,
+    required this.max,
+    required this.onAdjust,
+    this.format,
+    this.valueWidth = 40,
+  });
+
+  final Widget slider;
+  final bool enabled;
+  final double Function() readValue;
+  final double step;
+  final double min;
+  final double max;
+  final void Function(double value) onAdjust;
+  final String Function(double)? format;
+  final double valueWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget stepButton(IconData icon, double delta) {
+      return IconButton(
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+        padding: EdgeInsets.zero,
+        iconSize: 16,
+        style: IconButton.styleFrom(
+          backgroundColor: enabled
+              ? scheme.surfaceContainerHighest
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          foregroundColor: enabled ? scheme.onSurfaceVariant : scheme.outline,
+        ),
+        icon: Icon(icon),
+        onPressed: enabled
+            ? () => onAdjust((readValue() + delta).clamp(min, max))
+            : null,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        stepButton(Icons.remove, -step),
+        const SizedBox(width: 6),
+        SizedBox(width: 120, child: slider),
+        const SizedBox(width: 6),
+        stepButton(Icons.add, step),
+        if (format != null) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: valueWidth,
+            child: Text(
+              format!(readValue()),
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

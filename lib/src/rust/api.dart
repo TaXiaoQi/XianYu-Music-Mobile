@@ -505,6 +505,17 @@ Future<String> getSongCoverThumbnail({
   path: path,
 );
 
+/// 获取歌曲高清封面（远程 URI 先缓存到本地），返回缓存路径字符串。
+Future<String> getSongCover({
+  required String dbPath,
+  required String cacheRoot,
+  required String path,
+}) => RustLib.instance.api.crateApiGetSongCover(
+  dbPath: dbPath,
+  cacheRoot: cacheRoot,
+  path: path,
+);
+
 /// 扫描 SAF 歌曲时从已打开的 fd 提取内嵌封面并写入封面缓存。
 ///
 /// 读文件走 `/proc/self/fd/{fd}`，按 content URI 路径哈希写别名，使列表展示时

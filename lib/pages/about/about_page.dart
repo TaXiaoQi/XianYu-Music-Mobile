@@ -31,6 +31,14 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   int _debugTapCount = 0;
   DateTime? _lastDebugTap;
 
+  /// 开发者名单（与桌面端一致），点击跳转 GitHub 主页。
+  static const _developers = <(String, String)>[
+    ('@ShenYichenCN', 'https://github.com/ShenYichenCN'),
+    ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
+    ('@知难辞', 'https://github.com/88541'),
+    ('@绛狐', 'https://github.com/kaishui-server'),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -208,6 +216,13 @@ class _AboutPageState extends ConsumerState<AboutPage> {
               onTap: _handleVersionTap,
             ),
           ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              '将音乐给予你',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+          ),
           const SizedBox(height: 20),
           // 检查更新
           if (_config.updateEnabled)
@@ -264,11 +279,89 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           const SizedBox(height: 28),
           Center(
             child: Text(
-              '© 2026 弦予音乐',
+              '开发者名单（排名不分先后）',
+              style: TextStyle(
+                  fontSize: 12.5, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final d in _developers)
+                _DeveloperChip(name: d.$1, url: d.$2, onOpen: _openUrl),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: Text(
+              '© 2026 弦予音乐 · Licensed under AGPL-3.0-only',
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 开发者名字标签：点击调用外部浏览器打开对应 GitHub 主页。
+class _DeveloperChip extends StatefulWidget {
+  const _DeveloperChip({
+    required this.name,
+    required this.url,
+    required this.onOpen,
+  });
+
+  final String name;
+  final String url;
+  final void Function(String url) onOpen;
+
+  @override
+  State<_DeveloperChip> createState() => _DeveloperChipState();
+}
+
+class _DeveloperChipState extends State<_DeveloperChip> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: () => widget.onOpen(widget.url),
+      child: AnimatedScale(
+        scale: _pressed ? 0.9 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _pressed
+                ? scheme.primary.withValues(alpha: 0.14)
+                : appCardColor(context),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: _pressed
+                  ? scheme.primary.withValues(alpha: 0.5)
+                  : scheme.outlineVariant,
+            ),
+          ),
+          child: Text(
+            widget.name,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: _pressed ? scheme.primary : scheme.onSurface,
+            ),
+          ),
+        ),
       ),
     );
   }

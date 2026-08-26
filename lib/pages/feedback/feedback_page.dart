@@ -11,6 +11,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/widgets/app_toast.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
@@ -31,6 +32,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   final List<String> _images = [];
   bool _submitting = false;
   bool _compressing = false;
+  bool _attachAllLogs = false;
+  bool _attachErrorLogs = false;
 
   // 我的反馈
   List<FeedbackItem> _myFeedback = const [];
@@ -111,12 +114,22 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     }
     final api = ref.read(accountApiProvider);
     final title = _feedbackType == 'suggestion' ? '功能建议' : '问题反馈';
+    final isProblem = _feedbackType == 'problem';
+    // 勾选后格式化本地应用日志（仅问题反馈附带日志）。
+    final errorLogs = isProblem && _attachErrorLogs
+        ? ApplicationLogManager.instance.formatExport(onlyErrors: true)
+        : null;
+    final allLogs = isProblem && _attachAllLogs
+        ? ApplicationLogManager.instance.formatExport(onlyErrors: false)
+        : null;
     setState(() => _submitting = true);
     try {
       await api.submitFeedback(
         title: title,
         content: content,
         feedbackType: _feedbackType,
+        errorLogs: errorLogs,
+        allLogs: allLogs,
         images: _feedbackType == 'suggestion' ? [..._images] : null,
       );
       if (!mounted) return;
@@ -181,6 +194,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Widget _buildSubmitTab(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
+    final logs = ref.watch(applicationLogsProvider);
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
@@ -231,6 +245,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             const SizedBox(height: 8),
             _buildImageGrid(),
           ],
+          if (_feedbackType == 'problem') ...[
+            const SizedBox(height: 16),
+            _buildLogOptions(context, scheme, logs),
+          ],
           const SizedBox(height: 20),
           FilledButton(
             onPressed: _submitting || _compressing ? null : _submit,
@@ -250,6 +268,66 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                     style:
                         TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 问题反馈的日志勾选区：仅在有日志时展示对应勾选项，避免上传无用日志。
+  Widget _buildLogOptions(
+      BuildContext context, ColorScheme scheme, List<AppLogEntry> logs) {
+    final errorLogs = logs.where((e) => e.level == LogLevel.error).toList();
+    if (logs.isEmpty) return const SizedBox.shrink();
+    return Container(
+      decoration: BoxDecoration(
+        color: appCardColor(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: Row(
+              children: [
+                Icon(Icons.troubleshoot, size: 16, color: scheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  '附带诊断日志，便于定位问题',
+                  style: TextStyle(
+                      fontSize: 12.5, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          // 全部日志
+          CheckboxListTile(
+            dense: true,
+            value: _attachAllLogs,
+            title: Text(
+              '全部日志（${logs.length} 条）',
+              style: const TextStyle(fontSize: 14),
+            ),
+            secondary:
+                Icon(Icons.description_outlined, size: 20, color: scheme.primary),
+            onChanged: (v) => setState(() => _attachAllLogs = v ?? false),
+          ),
+          // 错误日志（仅在存在错误日志时显示）
+          if (errorLogs.isNotEmpty)
+            CheckboxListTile(
+              dense: true,
+              value: _attachErrorLogs,
+              title: Text(
+                '错误日志（${errorLogs.length} 条）',
+                style: const TextStyle(fontSize: 14),
+              ),
+              secondary:
+                  Icon(Icons.error_outline, size: 20, color: scheme.error),
+              onChanged: (v) => setState(() => _attachErrorLogs = v ?? false),
+            ),
         ],
       ),
     );

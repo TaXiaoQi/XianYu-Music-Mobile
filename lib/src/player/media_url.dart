@@ -145,9 +145,10 @@ Map<String, String>? normalizeMediaRequestHeaders(
   return headers.isNotEmpty ? headers : null;
 }
 
-/// 解析得到的播放源：直链 + 可选请求头。
+/// 解析得到的播放源：直链 + 可选请求头 + 实际命中的音质档位（LX 多档回退时可知实际档）。
 class ResolvedMediaUrl {
-  const ResolvedMediaUrl({required this.url, this.headers});
+  const ResolvedMediaUrl({required this.url, this.headers, this.quality});
   final String url;
   final Map<String, String>? headers;
+  final String? quality;
 }

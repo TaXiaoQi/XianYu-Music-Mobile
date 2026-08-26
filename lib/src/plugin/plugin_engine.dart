@@ -313,83 +313,114 @@ class PluginEngine {
     return _qualityLadder.contains(normalized) ? normalized : _qualityAliases[normalized];
   }
 
+  /// 归一化插件音质声明到统一 12 档键（对齐桌面 normalizeQualityKey）。
+  static String? normalizeQualityKey(dynamic raw) => _normalizeQualityKey(raw);
+
   /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）。
   static String _qualityKeyToPluginString(String q) => q == 'mgg' ? '96k' : q;
 
   static bool _isLossless(String q) =>
       _qualityLadder.indexOf(q) >= _qualityLadder.indexOf('flac');
 
-  /// 内部键 → 旧式 MF 三档音质（对齐桌面 qualityKeyToMfQuality）。
+  /// 内部键 → MusicFree 四级键（对齐桌面 qualityKeyToMfQuality）。
+  ///
+  /// 原版 MusicFree 插件 getMediaSource 的入参是四级键 low/standard/high/super
+  /// （约相当于 128k / 320k / FLAC / 超高），插件内部 QUALITY_MAPPING 只认这 4 个键。
+  /// 映射规则：mgg/128k/192k → low；320k → standard；flac → high；其余无损 → super。
+  /// 注意 _qualityLadder 为 0 基索引（320k 在 index 3），对应桌面 rank 需 +1。
   static String _qualityKeyToMfQuality(String q) {
     final rank = _qualityLadder.indexOf(q);
     if (rank < 0) return 'standard';
-    if (rank >= 4) return 'lossless'; // 320k 及以上 → lossless 档
-    if (rank >= 3) return 'high'; // 320k → high
-    return 'standard';
+    if (rank >= 5) return 'super';
+    if (rank >= 4) return 'high';
+    if (rank >= 3) return 'standard';
+    return 'low';
   }
 
-  /// 构建 MusicFree 音质候选（对齐桌面 buildNativePluginQualityPairs + 三档映射）。
+  /// MusicFree 四级键顺序（低 → 高），对齐桌面 MF_QUALITY_ORDER。
+  static const List<String> _mfQualityOrder = ['low', 'standard', 'high', 'super'];
+
+  /// 构建 MusicFree 音质候选（对齐桌面 runPluginGetMusicInfo 的 MF 四级键主路径）。
   ///
-  /// [declaredKeys] 为插件 supportedQualities 归一化后的原生键集合（可能为空）。
-  /// 原生键插件按 12 档降级（lower/higher/pause）依次尝试；旧三档插件走 standard/high/lossless。
+  /// 原版 MusicFree 插件 getMediaSource 的入参是四级键 low/standard/high/super，
+  /// 插件内部 QUALITY_MAPPING 只认这 4 个键（supportedQualities 声明仅用于展示）。
+  /// 若按声明值直传原生键，128k/flac 等在插件 QUALITY_MAPPING 里查不到映射，
+  /// 会全部回退到默认档（如 320k），导致音质列表塌缩成只有一档。
+  ///
+  /// 主路径统一用 _qualityKeyToMfQuality 映射到四级键，按官方 asc 顺序
+  /// （首选 → 更高 → 更低）逐级尝试；pause 时仅尝试首选档。
   static List<String> _musicFreeQualityCandidates(
     String preferred,
     String fallback,
     Set<String> declaredKeys,
   ) {
+    final baseMf = _qualityKeyToMfQuality(preferred);
+    if (fallback == 'pause') return [baseMf];
+    final baseIdx = _mfQualityOrder.indexOf(baseMf);
+    final order = <String>[baseMf];
+    for (var i = baseIdx + 1; i < _mfQualityOrder.length; i++) {
+      order.add(_mfQualityOrder[i]);
+    }
+    for (var i = baseIdx - 1; i >= 0; i--) {
+      order.add(_mfQualityOrder[i]);
+    }
+    return order;
+  }
+
+  /// 构建 MusicFree 原生键候选（对齐桌面 buildNativePluginQualityPairs）。
+  ///
+  /// 仅当四级键全部报「不支持音质」时作为兜底补试；部分 QQ/MusicFree 插件
+  /// 实际接收 flac/320k/128k/super 等原生键。按降级方向生成候选，无损档
+  /// 额外补充 'super'（部分插件把无损档称作 super）。
+  static List<String> _musicFreeNativeCandidates(
+    String preferred,
+    String fallback,
+    Set<String> declaredKeys,
+  ) {
     final ladderDesc = _qualityLadder.reversed.toList();
-    final base = ladderDesc;
+    final candidates = <String>[];
+    final seen = <String>{};
+    void add(String qk) {
+      final pluginQ = _qualityKeyToPluginString(qk);
+      if (seen.add(pluginQ)) candidates.add(pluginQ);
+      if (_isLossless(qk) && seen.add('super')) candidates.add('super');
+    }
 
-    if (declaredKeys.isNotEmpty && _qualityLadder.contains(preferred)) {
-      // 原生键插件：按降级方向生成候选（含无损档补充 'super'），仅保留声明过的键。
-      final candidates = <String>[];
-      final seen = <String>{};
-      void add(String qk) {
-        final pluginQ = _qualityKeyToPluginString(qk);
-        if (seen.add(pluginQ)) candidates.add(pluginQ);
-        if (_isLossless(qk) && seen.add('super')) candidates.add('super');
-      }
-
-      if (fallback == 'pause') {
-        add(preferred);
-      } else if (fallback == 'higher') {
-        final start = _qualityLadder.indexOf(preferred);
+    if (fallback == 'pause') {
+      add(preferred);
+    } else if (fallback == 'higher') {
+      final start = _qualityLadder.indexOf(preferred);
+      if (start >= 0) {
         for (var i = start; i < _qualityLadder.length; i++) {
           add(_qualityLadder[i]);
         }
       } else {
-        final start = base.indexOf(preferred);
-        final end = start == -1 ? base.length : start + 1;
-        for (var i = 0; i < end; i++) {
-          add(base[i]);
-        }
+        add(preferred);
       }
-      final filtered = candidates.where(declaredKeys.contains).toList();
-      if (filtered.isNotEmpty) return filtered;
-      // 声明键无一匹配时退回候选链首档，避免完全空候选。
-      return candidates.take(1).toList();
+    } else {
+      final start = ladderDesc.indexOf(preferred);
+      if (start >= 0) {
+        for (var i = start; i < ladderDesc.length; i++) {
+          add(ladderDesc[i]);
+        }
+      } else {
+        add(preferred);
+      }
     }
 
-    // 旧三档插件：首选映射 + 向下降级链。
-    final mf = _qualityKeyToMfQuality(preferred);
-    switch (fallback) {
-      case 'higher':
-        if (mf == 'standard') return ['standard', 'high', 'lossless'];
-        if (mf == 'high') return ['high', 'lossless'];
-        return ['lossless'];
-      case 'pause':
-        return [mf];
-      default: // lower
-        if (mf == 'lossless') return ['lossless', 'high', 'standard'];
-        if (mf == 'high') return ['high', 'standard'];
-        return ['standard'];
+    if (declaredKeys.isNotEmpty) {
+      final filtered = candidates.where(declaredKeys.contains).toList();
+      if (filtered.isNotEmpty) return filtered;
     }
+    // 声明键无一匹配时退回候选链首档，避免完全空候选。
+    return candidates.take(1).toList();
   }
 
   /// 解析 MusicFree 插件播放直链。
   ///
-  /// 与桌面端 pluginGetMusicInfo 对齐：优先传原生音质键，其次 standard/high/lossless；
-  /// 参考包内同时带 url/headers。musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
+  /// 与桌面端 pluginGetMusicInfo 对齐：主路径传 MF 四级键（low/standard/high/super），
+  /// 四级键全部报「不支持音质」时兜底补试原生键；参考包内同时带 url/headers。
+  /// musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
     Map<String, dynamic> songInfo, {
@@ -432,7 +463,9 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
+    // 主路径：MF 四级键按 asc 顺序尝试；记录是否出现「不支持音质」错误。
     final tryQs = _musicFreeQualityCandidates(preferred, fallback, declaredKeys);
+    var unsupportedQuality = false;
     for (final q in tryQs) {
       try {
         final response = await call(
@@ -442,8 +475,29 @@ class PluginEngine {
         );
         final url = _extractMfPlayableUrl(response);
         if (url != null) return url;
-      } catch (_) {
+      } catch (e) {
+        final msg = e is PluginEngineException ? e.message : e.toString();
+        if (isUnsupportedQualityError(msg)) unsupportedQuality = true;
         // 单档失败继续下一档
+      }
+    }
+
+    // 兜底：四级键全部报「不支持音质」时补试原生键，避免可播放歌曲被误判。
+    if (unsupportedQuality) {
+      final tried = tryQs.toSet();
+      for (final q in _musicFreeNativeCandidates(preferred, fallback, declaredKeys)) {
+        if (tried.contains(q)) continue;
+        try {
+          final response = await call(
+            source.id,
+            'getMediaSource',
+            [musicItem, q],
+          );
+          final url = _extractMfPlayableUrl(response);
+          if (url != null) return url;
+        } catch (_) {
+          // 单档失败继续下一档
+        }
       }
     }
     return null;
@@ -776,4 +830,15 @@ bool isSongLevelError(String message) {
     if (RegExp(pattern, caseSensitive: false).hasMatch(message)) return true;
   }
   return false;
+}
+
+/// 检测错误消息是否为「不支持音质」类错误（对齐桌面 isUnsupportedQualityError）。
+///
+/// 部分插件只认原生音质键，收到 MF 四级键（low/standard/high/super）时报此错；
+/// 检测到后由 getMusicFreeUrl 兜底补试原生键。
+bool isUnsupportedQualityError(String message) {
+  return RegExp(
+    r'不支持.*音质|音质.*不支持|quality.*not\s+support|not\s+support.*quality',
+    caseSensitive: false,
+  ).hasMatch(message);
 }

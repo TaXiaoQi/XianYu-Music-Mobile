@@ -1304,6 +1304,7 @@ class _TraditionalCover extends StatelessWidget {
                 width: size,
                 height: size,
                 radius: 23,
+                highQuality: true,
                 gradient: [
                   scheme.primary,
                   scheme.primary.withValues(alpha: 0.72),
@@ -1619,6 +1620,7 @@ class _BigCover extends StatelessWidget {
                 width: size,
                 height: size,
                 radius: 31,
+                highQuality: true,
                 gradient: [
                   scheme.primary,
                   scheme.primary.withValues(alpha: 0.72),
@@ -2209,14 +2211,21 @@ class _Controls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final icons = [Icons.repeat, Icons.repeat_one, Icons.shuffle];
     // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          IconButton(iconSize: 28, icon: Icon(icons[player.playMode], color: scheme.onSurfaceVariant), onPressed: notifier.cyclePlayMode),
+          IconButton(
+            iconSize: 28,
+            icon: _PlayModeIcon(
+              mode: player.playMode,
+              color: scheme.onSurfaceVariant,
+              size: 28,
+            ),
+            onPressed: notifier.cyclePlayMode,
+          ),
           IconButton(iconSize: 28, icon: const Icon(Icons.skip_previous), onPressed: notifier.previous),
           // 主题色实心播放键
           Container(
@@ -2266,6 +2275,117 @@ class _Controls extends ConsumerWidget {
   ) {
     showSheetDialog<void>(context, (_) => _QueueSheet(player: player));
   }
+}
+
+/// 播放顺序图标（对齐桌面端 FooterControlIcon 的线性 SVG 风格）：
+/// 0=列表循环、1=单曲循环、2=随机播放。
+class _PlayModeIcon extends StatelessWidget {
+  const _PlayModeIcon({
+    required this.mode,
+    required this.color,
+    this.size = 24,
+  });
+
+  final int mode;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _PlayModePainter(mode: mode, color: color),
+    );
+  }
+}
+
+class _PlayModePainter extends CustomPainter {
+  _PlayModePainter({required this.mode, required this.color});
+
+  final int mode;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final s = size.width / 24;
+    final path = Path();
+    if (mode == 0 || mode == 1) {
+      // 列表循环 / 单曲循环：Heroicons arrow-path
+      path
+        ..moveTo(4 * s, 4 * s)
+        ..lineTo(4 * s, 9 * s)
+        ..lineTo(4.582 * s, 9 * s)
+        ..moveTo(19.938 * s, 11 * s)
+        ..arcToPoint(
+          Offset(4.582 * s, 9 * s),
+          radius: Radius.circular(8.001 * s),
+          largeArc: false,
+          clockwise: false,
+        )
+        ..moveTo(4.582 * s, 9 * s)
+        ..lineTo(9 * s, 9 * s)
+        ..moveTo(20 * s, 20 * s)
+        ..lineTo(20 * s, 15 * s)
+        ..lineTo(19.419 * s, 15 * s)
+        ..arcToPoint(
+          Offset(4.062 * s, 13 * s),
+          radius: Radius.circular(8.003 * s),
+          largeArc: false,
+          clockwise: true,
+        )
+        ..moveTo(19.419 * s, 15 * s)
+        ..lineTo(15 * s, 15 * s);
+    } else {
+      // 随机播放：Heroicons arrows-right-left
+      path
+        ..moveTo(16 * s, 3 * s)
+        ..lineTo(21 * s, 3 * s)
+        ..lineTo(21 * s, 8 * s)
+        ..moveTo(4 * s, 20 * s)
+        ..lineTo(21 * s, 3 * s)
+        ..moveTo(21 * s, 16 * s)
+        ..lineTo(21 * s, 21 * s)
+        ..lineTo(16 * s, 21 * s)
+        ..moveTo(15 * s, 15 * s)
+        ..lineTo(21 * s, 21 * s)
+        ..moveTo(4 * s, 4 * s)
+        ..lineTo(9 * s, 9 * s);
+    }
+    canvas.drawPath(path, paint);
+
+    if (mode == 1) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '1',
+          style: TextStyle(
+            fontSize: 10 * s,
+            fontWeight: FontWeight.bold,
+            color: color,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(
+          (size.width - tp.width) / 2,
+          (size.height - tp.height) / 2,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayModePainter oldDelegate) =>
+      oldDelegate.mode != mode || oldDelegate.color != color;
 }
 
 /// 切换悬浮歌词（桌面歌词）：未开启且无悬浮窗权限时引导授权。

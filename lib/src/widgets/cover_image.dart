@@ -28,6 +28,7 @@ class CoverImage extends ConsumerStatefulWidget {
     this.icon = Icons.music_note,
     this.placeholder,
     this.cacheWidth,
+    this.highQuality = false,
   });
 
   final String songPath;
@@ -46,6 +47,9 @@ class CoverImage extends ConsumerStatefulWidget {
   /// 用于飞封面等宽度逐帧变化的场景，避免每帧重解码导致闪烁/模糊。
   final int? cacheWidth;
 
+  /// 高清模式：本地封面走 800px 高清提取（详情页大封面），默认缩略图 150px。
+  final bool highQuality;
+
   /// 占位渐变；null 时跟随主题色（primary → 深化 primary）。
   final List<Color>? gradient;
   final IconData icon;
@@ -59,6 +63,7 @@ class CoverImage extends ConsumerStatefulWidget {
 
 class _CoverImageState extends ConsumerState<CoverImage> {
   // 按歌曲路径缓存缩略图路径，避免重复触发 Rust 提取。
+  // 高清模式用独立 key，避免与缩略图缓存互相污染。
   static final Map<String, String> _cache = {};
   String? _path;
 
@@ -77,7 +82,8 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.songPath != widget.songPath ||
         oldWidget.networkUrl != widget.networkUrl ||
-        oldWidget.thumbPath != widget.thumbPath) {
+        oldWidget.thumbPath != widget.thumbPath ||
+        oldWidget.highQuality != widget.highQuality) {
       _path = null;
       _proxied = null;
       _load();
@@ -109,13 +115,19 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     // 在线封面直接走网络，无需 Rust 本地提取。
     if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) return;
     // 已知缩略图（扫描期回写）直接展示，避免列表滚动时逐行触发 Rust 查询。
+    // 高清模式不直接使用扫描期缩略图，需走高清提取。
     final direct = widget.thumbPath;
-    if (direct != null && direct.isNotEmpty && File(direct).existsSync()) {
+    if (!widget.highQuality &&
+        direct != null &&
+        direct.isNotEmpty &&
+        File(direct).existsSync()) {
       _cache[widget.songPath] = direct;
       if (mounted) setState(() => _path = direct);
       return;
     }
-    final cached = _cache[widget.songPath];
+    final cacheKey =
+        widget.highQuality ? '${widget.songPath}\u0000full' : widget.songPath;
+    final cached = _cache[cacheKey];
     if (cached != null) {
       if (mounted) setState(() => _path = cached.isEmpty ? null : cached);
       return;
@@ -123,7 +135,12 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     try {
       final dbPath = await ref.read(dbPathProvider.future);
       final cacheRoot = await ref.read(coverCacheRootProvider.future);
-      var p = await getSongCoverThumbnail(
+      Future<String> Function({
+        required String dbPath,
+        required String cacheRoot,
+        required String path,
+      }) fetch = widget.highQuality ? getSongCover : getSongCoverThumbnail;
+      var p = await fetch(
         dbPath: dbPath,
         cacheRoot: cacheRoot,
         path: widget.songPath,
@@ -134,17 +151,17 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         final healed = await SafChannel.extractCoverToCache(
             widget.songPath, cacheRoot);
         if (healed.isNotEmpty) {
-          p = await getSongCoverThumbnail(
+          p = await fetch(
             dbPath: dbPath,
             cacheRoot: cacheRoot,
             path: widget.songPath,
           );
         }
       }
-      _cache[widget.songPath] = p;
+      _cache[cacheKey] = p;
       if (mounted) setState(() => _path = p.isEmpty ? null : p);
     } catch (_) {
-      _cache[widget.songPath] = '';
+      _cache[cacheKey] = '';
       if (mounted) setState(() => _path = null);
     }
   }

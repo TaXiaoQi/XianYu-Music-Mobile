@@ -4,8 +4,12 @@
     android:viewportWidth="24"
     android:viewportHeight="24"
     android:tint="#FFFFFF">
-    <!-- 播放顺序：列表循环 -->
+    <!-- 播放顺序：列表循环（对齐播放详情页 Heroicons arrow-path 描边） -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M7,7h10v3l4,-4 -4,-4v3L5,5v6h2L7,7zM17,17L7,17v-3l-4,4 4,4v-3h12v-6h-2v4z"/>
+        android:pathData="M4 4 L4 9 L4.582 9 M19.938 11 A8.001 8.001 0 0 0 4.582 9 M4.582 9 L9 9 M20 20 L20 15 L19.419 15 A8.003 8.003 0 0 1 4.062 13 M19.419 15 L15 15"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent"/>
 </vector>

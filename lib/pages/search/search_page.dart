@@ -122,10 +122,35 @@ class _CatalogItem {
   bool get isDirectPlay => directSource != null && directSongs.isNotEmpty;
 }
 
+// ==================== 在线搜索会话（跨搜索页/结果页两级路由） ====================
+
+/// 搜索页 → 结果页之间共享的关键词与所选音源。
+class SearchSession {
+  final String query;
+  final String sourceId;
+  const SearchSession({this.query = '', this.sourceId = ''});
+}
+
+final searchSessionProvider =
+    NotifierProvider<SearchSessionNotifier, SearchSession>(
+        SearchSessionNotifier.new);
+
+/// 保留音源选择，便于从结果页返回搜索页后发起新搜索仍沿用所选音源。
+class SearchSessionNotifier extends Notifier<SearchSession> {
+  @override
+  SearchSession build() => const SearchSession();
+
+  void startSearch(String query, String sourceId) =>
+      state = SearchSession(query: query, sourceId: sourceId);
+
+  void setSource(String id) =>
+      state = SearchSession(query: state.query, sourceId: id);
+}
+
 // ==================== 搜索页 ====================
 
-/// 搜索页：合并后的单一在线搜索页。顶部 4 个内容 tab（单曲/歌手/专辑/歌单），
-/// tab 下方为来源切换条；来源仅由插件音源构建，无插件时降级为“本地”索引音乐库。
+/// 搜索页：顶部搜索输入框 + 搜索历史/热搜。提交后跳到结果页（/search/result）。
+/// 结果页不在此页内联展示，因此本路由不显示迷你播放条。
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
 
@@ -134,30 +159,139 @@ class SearchPage extends ConsumerStatefulWidget {
 }
 
 class _SearchPageState extends ConsumerState<SearchPage>
-    with SingleTickerProviderStateMixin, HidesShellChrome {
+    with HidesShellChrome {
   final TextEditingController _ctrl = TextEditingController();
-  late final TabController _tab;
-
-  /// idle：默认空白页（搜索历史 + 大家都在搜）；results：搜索结果页。
-  _SearchMode _mode = _SearchMode.idle;
-  /// 已提交、用于驱动结果页的关键词。
-  String _searchedQuery = '';
-
-  bool get _inResults => _mode == _SearchMode.results;
-
-  List<_SourceItem> _sources = const [];
-  String _selectedSourceId = '';
 
   // 输入统计：1.5s 无新输入后批量上报新增字符数。
   int _pendingCharCount = 0;
   int _lastQueryLength = 0;
   Timer? _inputFlushTimer;
 
+  @override
+  void dispose() {
+    _inputFlushTimer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String keyword) {
+    setState(() {}); // 更新清除按钮显隐。
+
+    // 输入统计上报（1.5s 无新输入后批量上报新增字符数）。
+    final len = keyword.length;
+    final delta = len - _lastQueryLength;
+    _lastQueryLength = len;
+    if (delta > 0) {
+      _pendingCharCount += delta;
+      _inputFlushTimer?.cancel();
+      _inputFlushTimer = Timer(const Duration(milliseconds: 1500), () {
+        final count = _pendingCharCount;
+        _pendingCharCount = 0;
+        if (count > 0) {
+          ref.read(accountApiProvider).reportInputStats(count);
+        }
+      });
+    }
+  }
+
+  /// 提交搜索：记录历史与会话，跳到结果页（/search/result）。
+  void _submitSearch(String raw) {
+    final q = raw.trim();
+    if (q.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    if (_ctrl.text != q) _ctrl.text = q;
+    ref.read(searchHistoryProvider.notifier).add(q);
+    final sourceId = ref.read(searchSessionProvider).sourceId;
+    ref.read(searchSessionProvider.notifier).startSearch(q, sourceId);
+    context.push('/search/result');
+  }
+
+  void _clearInput() {
+    if (_ctrl.text.isNotEmpty) _ctrl.clear();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: appSurfaceBg(context),
+      // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body，避免顶栏
+      // BackdropFilter 背光被压缩变化反复重采样导致输入法动画掉帧。
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: _IdleBody(onSearch: _submitSearch),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: _onChanged,
+                onSubmitted: (q) => _submitSearch(q),
+                decoration: InputDecoration(
+                  hintText: '搜索音乐、歌手、专辑、歌单',
+                  border: InputBorder.none,
+                  suffixIcon: _ctrl.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: _clearInput,
+                        ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: '搜索',
+                  icon: const Icon(Icons.search),
+                  style: IconButton.styleFrom(
+                    backgroundColor: scheme.primary,
+                    foregroundColor: scheme.onPrimary,
+                  ),
+                  onPressed: () => _submitSearch(_ctrl.text),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== 搜索结果页 ====================
+
+/// 搜索结果页：独立的 /search/result 路由。顶部 4 个内容 tab（单曲/歌手/专辑/歌单），
+/// tab 下方为来源切换条；本页显示迷你播放条，搜索输入框用于返回搜索页，不内联搜索。
+class SearchResultPage extends ConsumerStatefulWidget {
+  const SearchResultPage({super.key});
+
+  @override
+  ConsumerState<SearchResultPage> createState() => _SearchResultPageState();
+}
+
+class _SearchResultPageState extends ConsumerState<SearchResultPage>
+    with SingleTickerProviderStateMixin, HidesShellChrome {
+  late final TabController _tab;
+  final TextEditingController _queryCtrl = TextEditingController();
+
+  List<_SourceItem> _sources = const [];
+  String _selectedSourceId = '';
   int _activeIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _queryCtrl.text = ref.read(searchSessionProvider).query;
     _tab = TabController(length: 4, vsync: this);
     // tab 由 TabController 内部驱动切换，父页面需监听其 index 变化并重建，
     // 以把新的 visible 标记传给子 tab，否则切换后新 tab 不会发起搜索。
@@ -176,9 +310,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   void dispose() {
     _tab.removeListener(_onTabChanged);
-    _inputFlushTimer?.cancel();
     _tab.dispose();
-    _ctrl.dispose();
+    _queryCtrl.dispose();
     super.dispose();
   }
 
@@ -229,62 +362,21 @@ class _SearchPageState extends ConsumerState<SearchPage>
             _SourceItem(id: 'local', name: '本地', type: _SourceType.local)
           ]
         : items;
-    // 若不触发重建，列表不会更新；若当前选中项失效则落回第一项。
     if (!mounted) return;
+    final sessionSource = ref.read(searchSessionProvider).sourceId;
+    final initial = sessionSource.isNotEmpty ? sessionSource : result.first.id;
     setState(() {
       _sources = result;
-      if (result.every((s) => s.id != _selectedSourceId)) {
-        _selectedSourceId = result.first.id;
-      }
+      _selectedSourceId =
+          result.any((s) => s.id == initial) ? initial : result.first.id;
     });
   }
 
   void _onSourceSelected(String id) {
     if (id == _selectedSourceId) return;
     setState(() => _selectedSourceId = id);
+    ref.read(searchSessionProvider.notifier).setSource(id);
     // 子 tab 通过 didUpdateWidget 感知来源变化并重搜（仅可见 tab）。
-  }
-
-  void _onChanged(String keyword) {
-    setState(() {}); // 更新清除按钮显隐。
-
-    // 输入统计上报（1.5s 无新输入后批量上报新增字符数）。
-    final len = keyword.length;
-    final delta = len - _lastQueryLength;
-    _lastQueryLength = len;
-    if (delta > 0) {
-      _pendingCharCount += delta;
-      _inputFlushTimer?.cancel();
-      _inputFlushTimer = Timer(const Duration(milliseconds: 1500), () {
-        final count = _pendingCharCount;
-        _pendingCharCount = 0;
-        if (count > 0) {
-          ref.read(accountApiProvider).reportInputStats(count);
-        }
-      });
-    }
-  }
-
-  /// 提交搜索：加入历史并切换到结果页（仅点击搜索按钮 / 键盘确认 / 点历史或热搜触发）。
-  void _submitSearch(String raw) {
-    final q = raw.trim();
-    if (q.isEmpty) return;
-    FocusScope.of(context).unfocus();
-    if (_ctrl.text != q) _ctrl.text = q;
-    ref.read(searchHistoryProvider.notifier).add(q);
-    _tab.index = 0;
-    setState(() {
-      _searchedQuery = q;
-      _mode = _SearchMode.results;
-    });
-  }
-
-  void _clearInput() {
-    if (_ctrl.text.isNotEmpty) _ctrl.clear();
-    setState(() {
-      _mode = _SearchMode.idle;
-      _searchedQuery = '';
-    });
   }
 
   Widget _buildSourceBar() {
@@ -314,26 +406,21 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final keyword = ref.watch(searchSessionProvider).query;
     final selected = _selected;
-    final inResults = _inResults;
 
-    final tabBar = inResults
-        ? TabBar(
-            controller: _tab,
-            tabs: const [
-              Tab(text: '单曲'),
-              Tab(text: '歌手'),
-              Tab(text: '专辑'),
-              Tab(text: '歌单'),
-            ],
-          )
-        : null;
+    final tabBar = TabBar(
+      controller: _tab,
+      tabs: const [
+        Tab(text: '单曲'),
+        Tab(text: '歌手'),
+        Tab(text: '专辑'),
+        Tab(text: '歌单'),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: appSurfaceBg(context),
-      // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：内容不再每帧
-      // 重排重绘，顶栏 BackdropFilter 背光也不会被压缩变化反复重采样，
-      // 彻底消除输入法动画掉帧（键盘从底部覆盖，结果列表可滚动查看）。
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
@@ -341,43 +428,41 @@ class _SearchPageState extends ConsumerState<SearchPage>
             padding: EdgeInsets.only(
               top: GlassTopBar.height(context, bottom: tabBar),
             ),
-            child: inResults
-                ? Column(
+            child: Column(
+              children: [
+                _buildSourceBar(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tab,
                     children: [
-                      _buildSourceBar(),
-                      Expanded(
-                        child: TabBarView(
-                          controller: _tab,
-                          children: [
-                            _TrackTab(
-                              keyword: _searchedQuery,
-                              source: selected,
-                              visible: _tab.index == 0,
-                            ),
-                            _CatalogTab(
-                              kind: _CatalogKind.artist,
-                              keyword: _searchedQuery,
-                              source: selected,
-                              visible: _tab.index == 1,
-                            ),
-                            _CatalogTab(
-                              kind: _CatalogKind.album,
-                              keyword: _searchedQuery,
-                              source: selected,
-                              visible: _tab.index == 2,
-                            ),
-                            _CatalogTab(
-                              kind: _CatalogKind.playlist,
-                              keyword: _searchedQuery,
-                              source: selected,
-                              visible: _tab.index == 3,
-                            ),
-                          ],
-                        ),
+                      _TrackTab(
+                        keyword: keyword,
+                        source: selected,
+                        visible: _tab.index == 0,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.artist,
+                        keyword: keyword,
+                        source: selected,
+                        visible: _tab.index == 1,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.album,
+                        keyword: keyword,
+                        source: selected,
+                        visible: _tab.index == 2,
+                      ),
+                      _CatalogTab(
+                        kind: _CatalogKind.playlist,
+                        keyword: keyword,
+                        source: selected,
+                        visible: _tab.index == 3,
                       ),
                     ],
-                  )
-                : _IdleBody(onSearch: _submitSearch),
+                  ),
+                ),
+              ],
+            ),
           ),
           Positioned(
             top: 0,
@@ -385,49 +470,42 @@ class _SearchPageState extends ConsumerState<SearchPage>
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
+              // 结果页输入框只读：点击返回搜索页，不在结果页内联搜索。
               title: TextField(
-                controller: _ctrl,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: _onChanged,
-                onSubmitted: (q) => _submitSearch(q),
+                controller: _queryCtrl,
+                readOnly: true,
+                onTap: _goToSearchPage,
                 decoration: InputDecoration(
-                  hintText: '搜索音乐、歌手、专辑、歌单',
+                  hintText: keyword.isEmpty ? '搜索音乐、歌手、专辑、歌单' : null,
                   border: InputBorder.none,
-                  suffixIcon: _ctrl.text.isEmpty && !_inResults
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: _clearInput,
-                        ),
                 ),
               ),
               actions: [
                 IconButton(
-                  tooltip: '搜索',
+                  tooltip: '返回搜索',
                   icon: const Icon(Icons.search),
                   style: IconButton.styleFrom(
                     backgroundColor: scheme.primary,
                     foregroundColor: scheme.onPrimary,
                   ),
-                  onPressed: () => _submitSearch(_ctrl.text),
+                  onPressed: _goToSearchPage,
                 ),
               ],
               bottom: tabBar,
             ),
           ),
           // 搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
-          if (inResults)
+          if (ref.watch(playerProvider.select((s) => s.current != null)))
             const MiniPlayerBar(),
         ],
       ),
     );
   }
+
+  /// 结果页返回搜索页，在新搜索页发起新搜索。
+  void _goToSearchPage() => context.pop();
 }
-
 // ==================== 默认页（搜索历史 + 大家都在搜） ====================
-
-enum _SearchMode { idle, results }
 
 /// 大家都在搜：聚合所有用户搜索数据（后端 get_hot_search）。
 final _hotSearchProvider = FutureProvider<List<HotSearchItem>>((ref) {

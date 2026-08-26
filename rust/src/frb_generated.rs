@@ -1082,6 +1082,49 @@ fn wire__crate__api__get_song_cover_thumbnail_impl(
         },
     )
 }
+fn wire__crate__api__get_song_cover_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_song_cover",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_cache_root = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::get_song_cover(
+                            api_db_path,
+                            api_cache_root,
+                            api_path,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__get_song_detail_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3915,6 +3958,7 @@ fn pde_ffi_dispatcher_primary_impl(
         94 => wire__crate__api__webdav_test_connection_impl(port, ptr, rust_vec_len, data_len),
         95 => wire__crate__api__webdav_test_saved_source_impl(port, ptr, rust_vec_len, data_len),
         96 => wire__crate__api__write_download_history_impl(port, ptr, rust_vec_len, data_len),
+        97 => wire__crate__api__get_song_cover_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

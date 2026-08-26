@@ -87,6 +87,12 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
           as_pkg.MediaControl.skipToNext,
           as_pkg.MediaControl(
+            androidIcon: _playModeIcon(playMode),
+            label: _playModeLabel(playMode),
+            action: as_pkg.MediaAction.custom,
+            customAction: const as_pkg.CustomMediaAction(name: 'cyclePlayMode'),
+          ),
+          as_pkg.MediaControl(
             // 0.18.x 的 androidIcon 必须带 "drawable/" 前缀：
             // Android 端 getResourceId 按 "/" split 后取 parts[1]，
             // 缺前缀会抛 ArrayIndexOutOfBoundsException 导致整个媒体卡片不显示。
@@ -96,12 +102,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
             label: isFavorite ? '取消收藏' : '收藏',
             action: as_pkg.MediaAction.custom,
             customAction: const as_pkg.CustomMediaAction(name: 'toggleFavorite'),
-          ),
-          as_pkg.MediaControl(
-            androidIcon: _playModeIcon(playMode),
-            label: _playModeLabel(playMode),
-            action: as_pkg.MediaAction.custom,
-            customAction: const as_pkg.CustomMediaAction(name: 'cyclePlayMode'),
           ),
         ],
         systemActions: const {
@@ -998,7 +998,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError('无法获取播放链接');
-    state = state.copyWith(resolving: false);
+    state = state.copyWith(
+      resolving: false,
+      currentQuality: url.quality,
+    );
     await _startUrl(url.url, headers: url.headers);
   }
 
@@ -1011,6 +1014,56 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return 'plugin:$pid:${mid ?? songJson['title'] ?? item.title}';
     }
     return 'lx:$src:${mid ?? item.title}';
+  }
+
+  /// 获取当前歌曲的声明音质（对齐桌面 getOnlineAvailableQualities）：
+  /// - 插件歌：优先读 musicInfo._types（LX 插件搜索结果带真实音质档），
+  ///   其次读插件元数据 supportedQualities（MusicFree 新式插件声明），
+  ///   都没有时按桌面 pluginGetSupportedQualities 兜底为 128k/320k/flac。
+  /// - 落雪在线搜索歌：读顶层 _types。
+  /// 无声明返回空列表。
+  List<String> _declaredQualities(Map<String, dynamic> songJson) {
+    final out = <String>{};
+    final pid = songJson['pluginId'];
+    if (pid is String && pid.isNotEmpty) {
+      final musicInfo = songJson['musicInfo'];
+      if (musicInfo is Map) {
+        final types = musicInfo['_types'];
+        if (types is Map) {
+          for (final k in types.keys) {
+            final norm = PluginEngine.normalizeQualityKey(k);
+            if (norm != null) out.add(norm);
+          }
+        }
+      }
+      if (out.isEmpty) {
+        try {
+          final engine = _ref.read(pluginEngineProvider).valueOrNull;
+          final meta = engine?.metadataOf(pid);
+          final raw = meta?['supportedQualities'];
+          if (raw is List) {
+            for (final dq in raw) {
+              final norm = PluginEngine.normalizeQualityKey(dq);
+              if (norm != null) out.add(norm);
+            }
+          }
+        } catch (_) {}
+      }
+      if (out.isEmpty) {
+        // 对齐桌面 pluginGetSupportedQualities 兜底：原版 MusicFree 插件
+        // 只暴露 standard/high/lossless 三档，映射为代表音质。
+        out.addAll(const {'128k', '320k', 'flac'});
+      }
+    } else {
+      final types = songJson['_types'];
+      if (types is Map) {
+        for (final k in types.keys) {
+          final norm = PluginEngine.normalizeQualityKey(k);
+          if (norm != null) out.add(norm);
+        }
+      }
+    }
+    return kQualityLadder.where(out.contains).toList();
   }
 
   /// 构造单档解析回调：插件音源逐档优先，同档插件失败立即用 LX 兜底；
@@ -1068,7 +1121,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<bool> switchQuality(String quality) async {
     final item = state.current;
     if (item == null || !item.isOnline) return false;
-    final json = item.onlineSongJson;
+    // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
+    final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return false;
     try {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
@@ -1118,7 +1172,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<List<String>> _probeQualityOptions(
       {required bool forDownload}) async {
     final item = state.current;
-    final json = item?.onlineSongJson;
+    // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
+    final json = item?.onlineSongJson ?? item?.onlineInfoJson;
     if (json == null || json.isEmpty) return const [];
     try {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
@@ -1128,19 +1183,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _activeProbeKey = key;
       state = state.copyWith(qualityMenuProbing: true);
 
-      // 探测无损及以上档位，最低端 128k 作为可播兜底档；下载额外探测 320k。
-      final targets = <String>[];
-      for (final q in kQualityLadder.reversed.toList()) {
-        if (isLosslessQuality(q) ||
-            q == '128k' ||
-            (forDownload && q == '320k')) {
-          targets.add(q);
-        }
-      }
+      // 探测目标：优先用源声明的音质（对齐桌面 probeDownloadableQualities，
+      // 插件只声明支持哪些档，探测声明之外无意义）；无声明时回退
+      // 无损 + 320k（常用档）+ 128k 兜底档。
+      final declared = _declaredQualities(songJson);
+      final targets = declared.isNotEmpty
+          ? declared
+          : kQualityLadder.reversed
+              .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
+              .toList();
       await Future.wait(targets.map(probe.probe).toList());
 
       final opts = <String>{...probe.availableQualities};
       if (state.currentQuality != null) opts.add(state.currentQuality!);
+      // 探测全部失败时回退到源声明音质，避免菜单空态。
+      if (opts.isEmpty) opts.addAll(declared);
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
       state = state.copyWith(
@@ -1350,7 +1407,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (resolved == 'null' || resolved.isEmpty) continue;
         final url =
             (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
-        if (_isPlayableUrl(url)) return ResolvedMediaUrl(url: url!);
+        if (_isPlayableUrl(url)) {
+          return ResolvedMediaUrl(url: url!, quality: quality);
+        }
       } catch (_) {}
     }
     return null;

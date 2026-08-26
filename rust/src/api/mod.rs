@@ -705,6 +705,22 @@ pub async fn get_song_cover_thumbnail(
     .await
 }
 
+/// 获取歌曲高清封面（远程 URI 先缓存到本地），返回缓存路径字符串。
+pub async fn get_song_cover(
+    db_path: String,
+    cache_root: String,
+    path: String,
+) -> Result<String, String> {
+    let conn = open_scan_conn(&db_path)?;
+    let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
+    crate::music::covers::get_song_cover(
+        std::path::PathBuf::from(&cache_root),
+        db_conn,
+        path,
+    )
+    .await
+}
+
 /// 扫描 SAF 歌曲时从已打开的 fd 提取内嵌封面并写入封面缓存。
 ///
 /// 读文件走 `/proc/self/fd/{fd}`，按 content URI 路径哈希写别名，使列表展示时
