@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件背景：固定暗色，贴近桌面端迷你窗口 #262626 -->
+<!-- 桌面播放组件背景：暗色玻璃卡，轻微纵向渐变带来层次（顶亮底暗），
+     更贴近桌面端迷你窗口质感。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#262626" />
-    <corners android:radius="18dp" />
+    <gradient
+        android:startColor="#2E2E2E"
+        android:endColor="#1B1B1B"
+        android:angle="270" />
+    <corners android:radius="20dp" />
 </shape>

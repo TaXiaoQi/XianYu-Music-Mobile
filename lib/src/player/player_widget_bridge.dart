@@ -133,6 +133,8 @@ class PlayerWidgetController {
       'playing': s.isPlaying,
       'progress': progress,
       'playMode': s.playMode,
+      'position': s.position.round(),
+      'duration': s.duration.round(),
       'coverPath': cover ?? '',
     });
     try {

@@ -69,6 +69,8 @@ class PlayerWidgetProvider : AppWidgetProvider() {
                 R.id.btnPlay, if (playing) R.drawable.ic_pause else R.drawable.ic_play)
 
             views.setProgressBar(R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
+            views.setTextViewText(R.id.timeCur, fmt(s.optInt("position")))
+            views.setTextViewText(R.id.timeDur, fmt(s.optInt("duration")))
 
             views.setImageViewResource(
                 R.id.btnMode, when (s.optInt("playMode")) {
@@ -77,13 +79,15 @@ class PlayerWidgetProvider : AppWidgetProvider() {
                     else -> R.drawable.ic_notif_mode_repeat
                 })
 
-            val cover = roundedCover(ctx, s.optString("coverPath"))
+            val cover = landscapeCover(ctx, s.optString("coverPath"))
             if (cover != null) {
-                views.setImageViewBitmap(R.id.cover, cover)
+                views.setImageViewBitmap(R.id.bgCover, cover)
             } else {
-                views.setImageViewResource(R.id.cover, R.drawable.ic_widget_music_note)
+                // 无封面：整卡回落到暗色渐变底（拉伸图形资源无副作用），不清不糊。
+                views.setImageViewResource(R.id.bgCover, R.drawable.widget_bg)
             }
 
+            views.setOnClickPendingIntent(R.id.root, openPending(ctx, 1000))
             views.setOnClickPendingIntent(R.id.btnPrev, pending(ctx, "previous", 1001))
             views.setOnClickPendingIntent(R.id.btnPlay, pending(ctx, "toggle", 1002))
             views.setOnClickPendingIntent(R.id.btnNext, pending(ctx, "next", 1003))
@@ -106,27 +110,47 @@ class PlayerWidgetProvider : AppWidgetProvider() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        /** 封面 -> 圆角方块位图（无封面/失败返回 null）。 */
-        private fun roundedCover(ctx: Context, path: String): Bitmap? {
+        /** 封面 -> 圆角横版背景位图（无封面/失败返回 null）。 */
+        private fun landscapeCover(ctx: Context, path: String): Bitmap? {
             if (path.isBlank()) return null
             return try {
                 val bmp = BitmapFactory.decodeFile(path) ?: return null
-                val size = (42 * ctx.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-                val dim = minOf(bmp.width, bmp.height)
-                val sx = (bmp.width - dim) / 2f
-                val sy = (bmp.height - dim) / 2f
-                val crop = Bitmap.createBitmap(bmp, sx.toInt(), sy.toInt(), dim, dim)
-                val half = Bitmap.createScaledBitmap(crop, size, size, true)
-                val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val density = ctx.resources.displayMetrics.density
+                // 目标横版尺寸（2:1），radius 随卡片圆角；RemoteViews 无法裁剪子 View，
+                // 所以在位图里就把四角裁圆，fitXY 铺满时四角贴合圆角卡。
+                val w = (360 * density).toInt().coerceAtLeast(2)
+                val h = (180 * density).toInt().coerceAtLeast(2)
+
+                // centerCrop：封面按中心裁满横版，避免拉伸变形。
+                val srcW = bmp.width.toFloat()
+                val srcH = bmp.height.toFloat()
+                val scale = maxOf(w / srcW, h / srcH)
+                val cw = (w / scale).coerceAtMost(srcW)
+                val ch = (h / scale).coerceAtMost(srcH)
+                val sx = ((srcW - cw) / 2f).toInt()
+                val sy = ((srcH - ch) / 2f).toInt()
+                val crop = Bitmap.createBitmap(
+                    bmp, sx, sy, cw.toInt(), ch.toInt())
+                val scaled = Bitmap.createScaledBitmap(crop, w, h, true)
+
+                val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                 val cv = Canvas(out)
-                val paint = Paint().apply { isAntiAlias = true }
-                paint.setShader(BitmapShader(half, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
-                val r = size * 0.22f
-                cv.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), r, r, paint)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+                paint.setShader(BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+                val r = 20 * density
+                cv.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, paint)
                 out
             } catch (_: Throwable) {
                 null
             }
+        }
+
+        /** 秒 -> "m:ss" 时间文本。 */
+        private fun fmt(sec: Int): String {
+            val s = sec.coerceAtLeast(0)
+            val m = s / 60
+            val r = s % 60
+            return String.format(java.util.Locale.US, "%d:%02d", m, r)
         }
     }
 

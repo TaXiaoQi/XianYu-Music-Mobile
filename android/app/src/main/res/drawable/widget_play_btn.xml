@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 播放按钮圆形底：白色 10%，桌面端 bg-white/10 -->
+<!-- 播放按钮圆形底：App 品牌红 #EC4142（与桌面端/详情页收藏色一致），白色图标。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="#1AFFFFFF" />
+    <solid android:color="#EC4142" />
 </shape>

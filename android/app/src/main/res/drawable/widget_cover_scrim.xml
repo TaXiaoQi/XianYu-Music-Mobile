@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 封面背景上的内容蒙版：根部接近透明 → 底加深，
+     保证左上标题与底部控件在任意封面下都可读；四角随卡片圆角。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="#33000000"
+        android:centerColor="#66000000"
+        android:endColor="#D9000000"
+        android:angle="270" />
+    <corners android:radius="20dp" />
+</shape>

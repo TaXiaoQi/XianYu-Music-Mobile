@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 进度条绘制：轨道 white20 / 进度 white80，圆角 -->
+<!-- 进度条绘制：轨道 white14 / 进度 App 红 #EC4142，圆角 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
         <shape android:shape="rectangle">
-            <solid android:color="#33FFFFFF" />
+            <solid android:color="#24FFFFFF" />
             <corners android:radius="3dp" />
         </shape>
     </item>
     <item android:id="@android:id/progress">
         <clip>
             <shape android:shape="rectangle">
-                <solid android:color="#CCFFFFFF" />
+                <solid android:color="#EC4142" />
                 <corners android:radius="3dp" />
             </shape>
         </clip>

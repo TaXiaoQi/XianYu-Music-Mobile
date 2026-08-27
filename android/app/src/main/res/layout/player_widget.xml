@@ -1,125 +1,179 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件：封面 | 歌名/歌手 | 上一/播放/下一；第二行 循环模式 | 进度条 | 打开 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 桌面播放组件（横版大卡片）：封面整卡做背景（圆角位图）+
+     深色渐变蒙版保证文字可读；左上 歌名/歌手 + 「打开」；底部 控制 + 进度 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_bg"
-    android:padding="14dp">
+    android:background="@drawable/widget_bg">
 
+    <!-- 封面背景（Provider 合成一张圆角横版位图，fitXY 铺满卡，四角贴合圆角卡） -->
+    <ImageView
+        android:id="@+id/bgCover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@string/widget_label" />
+
+    <!-- 顶部透明 → 底部加深的蒙版，让标题与底部控件始终可读 -->
+    <View
+        android:id="@+id/scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_cover_scrim" />
+
+    <!-- 浮动内容层 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <ImageView
-            android:id="@+id/cover"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:scaleType="centerCrop"
-            android:contentDescription="@string/widget_label" />
-
+        <!-- 左上：标题区 -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="8dp"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/songText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/artistText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="13sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/songText"
-                android:layout_width="match_parent"
+                android:id="@+id/btnOpen"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:singleLine="true"
-                android:ellipsize="end" />
-
-            <TextView
-                android:id="@+id/artistText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="#99FFFFFF"
-                android:textSize="12sp"
-                android:singleLine="true"
-                android:ellipsize="end" />
+                android:text="打开"
+                android:textColor="#EFFFFFFF"
+                android:textSize="13sp"
+                android:background="@drawable/widget_open_btn"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:contentDescription="@string/widget_label" />
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/btnPrev"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_skip_previous"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
+        <!-- 撑开：标题靠上，控件沉底 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
-        <ImageButton
-            android:id="@+id/btnPlay"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@drawable/widget_play_btn"
-            android:src="@drawable/ic_play"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <ImageButton
-            android:id="@+id/btnNext"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_skip_next"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageButton
-            android:id="@+id/btnMode"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_notif_mode_repeat"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <ProgressBar
-            android:id="@+id/progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="0dp"
+        <!-- 底部控制行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:max="100"
-            android:progress="0"
-            android:progressDrawable="@drawable/widget_progress_drawable"
-            android:maxHeight="4dp"
-            android:minHeight="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/btnOpen"
-            android:layout_width="wrap_content"
+            <ImageButton
+                android:id="@+id/btnPrev"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="7dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_previous"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/widget_label" />
+
+            <ImageButton
+                android:id="@+id/btnPlay"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:padding="10dp"
+                android:background="@drawable/widget_play_btn"
+                android:src="@drawable/ic_play"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/widget_label" />
+
+            <ImageButton
+                android:id="@+id/btnNext"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="7dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_next"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/widget_label" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/btnMode"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:padding="3dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_notif_mode_repeat"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/widget_label" />
+        </LinearLayout>
+
+        <!-- 进度行：当前时间 + 进度 + 总时长 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="打开"
-            android:textColor="#C7FFFFFF"
-            android:textSize="14sp"
-            android:background="?android:attr/selectableItemBackground"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:contentDescription="@string/widget_label" />
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/timeCur"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0:00"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp" />
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:max="100"
+                android:progress="0"
+                android:progressDrawable="@drawable/widget_progress_drawable"
+                android:maxHeight="4dp"
+                android:minHeight="4dp" />
+
+            <TextView
+                android:id="@+id/timeDur"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0:00"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>
