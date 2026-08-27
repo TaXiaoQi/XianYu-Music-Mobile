@@ -6,7 +6,7 @@ import 'server_models.dart';
 import '../i18n/i18n.dart';
 
 /// 应用版本（与 pubspec.yaml version 保持一致）。
-const appVersion = '1.0.0-beta7';
+const appVersion = '1.0.0-beta8';
 
 /// 热搜条目（get_hot_search）。
 class HotSearchItem {

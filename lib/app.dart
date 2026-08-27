@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -9,6 +11,7 @@ import 'src/core/app_colors.dart';
 import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
 import 'src/navigation/routes.dart';
+import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/custom_background.dart';
 import 'l10n/gen/app_localizations.dart';
@@ -144,8 +147,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final pageTransitions = PageTransitionsTheme(
       builders: {
         TargetPlatform.android: predictiveBack
-            ? const PredictiveBackPageTransitionsBuilder()
-            : const FadeForwardsPageTransitionsBuilder(),
+            ? const PredictiveBackPageTransitionsBuilder(
+                // 应用为透明 Scaffold + 根层背景（自定义壁纸/默认底色）垫底，
+                // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
+                // 置为透明让下方根层背景自然透出，消除背景闪烁。
+                fallbackColor: Colors.transparent,
+              )
+            : const FadeForwardsPageTransitionsBuilder(
+                backgroundColor: Colors.transparent,
+              ),
         TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
       },
     );
@@ -235,6 +245,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       _loggedHomeFirstFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         debugPrint('[startup] home first frame rendered');
+        // 首帧后静默查一次服务端版本，有更新且当日未弹过才自动弹升级窗。
+        unawaited(maybePromptStartupUpdate(ref));
       });
     }
 

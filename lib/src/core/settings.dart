@@ -168,6 +168,7 @@ class AppSettings {
     this.frostedGlass = false,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
+    this.updateCheckMode = 'startup',
     this.streamCacheSizeMB = 500,
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = false,
@@ -268,6 +269,8 @@ class AppSettings {
   final PerformanceMode performanceMode;
   /// 触觉反馈力度：0=轻，1=正常，2=重。
   final int hapticStrength;
+  /// 检测更新模式：startup 启动自动检测 / never 从不检测。关于页手动检测始终可用。
+  final String updateCheckMode;
   /// 在线播放流式缓存上限（MB）。
   final int streamCacheSizeMB;
 
@@ -419,6 +422,7 @@ class AppSettings {
     bool? frostedGlass,
     PerformanceMode? performanceMode,
     int? hapticStrength,
+    String? updateCheckMode,
     int? streamCacheSizeMB,
     List<String>? scanFormats,
     bool? floatingNavBar,
@@ -494,6 +498,7 @@ class AppSettings {
       frostedGlass: frostedGlass ?? this.frostedGlass,
       performanceMode: performanceMode ?? this.performanceMode,
       hapticStrength: hapticStrength ?? this.hapticStrength,
+      updateCheckMode: updateCheckMode ?? this.updateCheckMode,
       streamCacheSizeMB: streamCacheSizeMB ?? this.streamCacheSizeMB,
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
@@ -608,6 +613,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       frostedGlass: frostedGlass,
       performanceMode: _perfFromString(prefs.getString('performanceMode') ?? 'auto'),
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
+      updateCheckMode: prefs.getString('updateCheckMode') ?? 'startup',
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
@@ -762,6 +768,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('frostedGlass', next.frostedGlass),
       prefs.setString('performanceMode', next.performanceMode.name),
       prefs.setInt('hapticStrength', next.hapticStrength),
+      prefs.setString('updateCheckMode', next.updateCheckMode),
       prefs.setInt('streamCacheSizeMB', next.streamCacheSizeMB),
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
@@ -868,6 +875,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setHapticStrength(int v) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(hapticStrength: v));
+  Future<void> setUpdateCheckMode(String v) => _save((state.valueOrNull ??
+          const AppSettings())
+      .copyWith(updateCheckMode: v));
   Future<void> setStreamCacheSizeMB(int v) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(streamCacheSizeMB: v));
