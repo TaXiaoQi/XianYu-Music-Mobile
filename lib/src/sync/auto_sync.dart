@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
-import '../core/settings.dart';
 import 'sync_provider.dart';
 
 /// 自动同步调度器：每分钟 tick，到点后检查服务器负载并执行同步。
@@ -96,40 +95,27 @@ class AutoSyncService {
     }
   }
 
-  /// 按上传配置同步歌单/收藏/插件/设置（对齐桌面端 performAutoSync）。
+  /// 按上传配置同步歌单/收藏/插件/设置。
+  ///
+  /// 以客户端为主，仅上传（覆盖式同步，保证服务器保存的是客户端当前状态，
+  /// 含新增内容）。首次登录时已通过 syncOnLoginSuccess 做了一次全量一致性同步，
+  /// 此后自动同步不再下载、不再弹冲突窗。
   Future<void> _syncAll() async {
     final upload = _ref.read(syncProvider).uploadConfig;
     final notifier = _ref.read(syncProvider.notifier);
     if (upload.playlists) {
       await notifier.syncPlaylistsUpload();
-      await notifier.syncPlaylistsDownload();
     }
     if (upload.plugins) {
       await notifier.syncPluginsUpload();
-      await notifier.syncPluginsDownload();
     }
     if (upload.favorites) {
-      // 先下载再上传：换包名/重装后本地收藏为空，先拉取云端收藏再上传，
-      // 避免空列表覆盖云端（syncFavoritesUpload 另有空列表保护兜底）。
-      await notifier.syncFavoritesDownload();
+      // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏。
       await notifier.syncFavoritesUpload();
     }
     if (upload.settings) {
-      await _syncSettings();
+      await notifier.syncSettingsUpload();
     }
-  }
-
-  /// 设置同步：下载云端 → 合并 → 上传（无冲突弹窗，适合后台自动同步）。
-  Future<void> _syncSettings() async {
-    final settings = _ref.read(settingsProvider).valueOrNull;
-    if (settings == null) return;
-    final cloud = await _api.downloadSettings();
-    if (cloud != null && cloud.isNotEmpty) {
-      final merged = applySyncedSettings(settings, cloud);
-      await _ref.read(settingsProvider.notifier).saveAll(merged);
-    }
-    final latest = _ref.read(settingsProvider).valueOrNull ?? settings;
-    await _api.uploadSettings(latest);
   }
 }
 

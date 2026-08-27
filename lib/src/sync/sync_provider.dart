@@ -22,6 +22,7 @@ import '../plugin/plugin_subscriptions.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
 import 'settings_conflict_dialog.dart';
+import '../i18n/i18n.dart';
 
 /// 上传选项配置
 class UploadConfig {
@@ -180,6 +181,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   final Ref _ref;
   static const _uploadKey = 'sync_upload_config';
   static const _autoSyncKey = 'sync_auto_config';
+  static const _loginSyncKey = 'sync_login_synced';
+
+  // 首次登录同步标记：每个设备仅在首次登录做一次全量一致性同步
+  bool _loginSyncCompleted = false;
+  bool _loginSyncInProgress = false;
 
   AccountApi get _api => _ref.read(accountApiProvider);
 
@@ -196,6 +202,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final autoEnabled = prefs.getBool('${_autoSyncKey}_enabled') ?? true;
     final autoInterval = prefs.getInt('${_autoSyncKey}_interval_seconds') ?? 3600;
     final autoMaxDelay = prefs.getInt('${_autoSyncKey}_max_delay') ?? 30;
+    _loginSyncCompleted = prefs.getBool(_loginSyncKey) ?? false;
     state = state.copyWith(
       autoSyncConfig: AutoSyncConfig(
         enabled: autoEnabled,
@@ -209,6 +216,46 @@ class SyncNotifier extends StateNotifier<SyncState> {
     state = state.copyWith(uploadConfig: next);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uploadKey, jsonEncode(next.toJson()));
+  }
+
+  /// 首次登录全量一致性同步（每个设备仅执行一次，标记持久化）。
+  ///
+  /// - 歌单/插件做「上传后下载」双向合并，收藏做「下载后上传」（含空列表保护），
+  ///   让两端数据保持一致；
+  /// - 设置放在最后执行：云端有数据且与本地不一致时才弹出冲突菜单，
+  ///   用户按类别（设置/歌单/插件）选择保留本地或云端，选择后两端一致。
+  ///   此后自动同步以客户端为主，只上传，不再每次上下不一致就弹窗。
+  Future<void> syncOnLoginSuccess(BuildContext context) async {
+    if (_loginSyncCompleted || _loginSyncInProgress) return;
+    _loginSyncInProgress = true;
+    final upload = state.uploadConfig;
+    try {
+      if (upload.playlists) {
+        await syncPlaylistsUpload();
+        await syncPlaylistsDownload();
+      }
+      if (upload.plugins) {
+        await syncPluginsUpload();
+        await syncPluginsDownload();
+      }
+      if (upload.favorites) {
+        await syncFavoritesDownload();
+        await syncFavoritesUpload();
+      }
+      if (upload.settings) {
+        // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
+        if (context.mounted) {
+          await syncSettings(context);
+        }
+      }
+    } finally {
+      _loginSyncCompleted = true;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_loginSyncKey, true);
+      } catch (_) {}
+      _loginSyncInProgress = false;
+    }
   }
 
   Future<void> updateAutoSyncConfig(AutoSyncConfig next) async {
@@ -228,7 +275,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         type: FileType.custom,
         allowedExtensions: ['json', 'txt'],
       );
-      if (files.isEmpty) return '未选择文件';
+      if (files.isEmpty) return tr('未选择文件');
       final file = files.first;
       String jsonContent = '';
       final bytes = await file.readAsBytes();
@@ -240,7 +287,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           jsonContent = await ioFile.readAsString();
         }
       }
-      if (jsonContent.trim().isEmpty) return '读取文件失败或文件为空';
+      if (jsonContent.trim().isEmpty) return tr('读取文件失败或文件为空');
 
       final Map<String, dynamic> data = jsonDecode(jsonContent);
       final schema = data['schema'] as String?;
@@ -265,7 +312,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             importedFavs++;
           }
         }
-        return '成功导入备份：包含 $importedFavs 首收藏曲目';
+        return tr('成功导入备份：包含 {n} 首收藏曲目', {'n': importedFavs});
       }
 
       // 2. 兼容导入 BakaMusic / MusicFree / 洛雪备份文件
@@ -276,12 +323,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
           .addFromBackup(prepared);
 
       final versionNote = describeBackupVersion(prepared);
-      return '导入成功（$versionNote）：共新增 ${importedPlaylists.length} 个歌单，包含 ${prepared.importedSongCount} 首歌曲';
+      return tr('导入成功（{note}）：共新增 {pcount} 个歌单，包含 {scount} 首歌曲', {'note': versionNote, 'pcount': importedPlaylists.length, 'scount': prepared.importedSongCount});
     } on FormatException catch (e) {
-      return '文件格式不匹配或无法解析: ${e.message}';
+      return tr('文件格式不匹配或无法解析: {msg}', {'msg': e.message});
     } catch (e) {
       AppLogger.instance.log('sync', '导入本地备份失败: $e');
-      return '导入失败: $e';
+      return tr('导入失败: {e}', {'e': e});
     }
   }
 
@@ -458,7 +505,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           playlistSync: state.playlistSync.copyWith(
             syncing: false,
-            lastSummary: '本地暂无可上传的歌单',
+            lastSummary: tr('本地暂无可上传的歌单'),
             lastTime: DateTime.now(),
           ),
         );
@@ -478,14 +525,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         playlistSync: state.playlistSync.copyWith(
           syncing: false,
-          lastSummary: '已上传 ${res.playlistCount} 个歌单 / ${res.songTotal} 首',
+          lastSummary: tr('已上传 {pcount} 个歌单 / {scount} 首', {'pcount': res.playlistCount, 'scount': res.songTotal}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '歌单上传失败: $e');
-      _setPlaylistError(e is AuthException ? e.message : '上传失败: $e');
+      _setPlaylistError(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
 
@@ -503,7 +550,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           playlistSync: state.playlistSync.copyWith(
             syncing: false,
-            lastSummary: '云端暂无歌单数据',
+            lastSummary: tr('云端暂无歌单数据'),
             lastTime: DateTime.now(),
           ),
         );
@@ -525,7 +572,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             .toList();
         songCount += songs.length;
         toImport.add(PluginBackupPlaylist(
-          name: (pl['name'] as String?) ?? '未命名歌单',
+          name: (pl['name'] as String?) ?? tr('未命名歌单'),
           songs: songs,
           originalSongCount: songs.length,
         ));
@@ -535,14 +582,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         playlistSync: state.playlistSync.copyWith(
           syncing: false,
-          lastSummary: '已导入 ${toImport.length} 个歌单 / $songCount 首',
+          lastSummary: tr('已导入 {n} 个歌单 / {scount} 首', {'n': toImport.length, 'scount': songCount}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '歌单下载失败: $e');
-      _setPlaylistError(e is AuthException ? e.message : '下载失败: $e');
+      _setPlaylistError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
 
@@ -569,7 +616,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           favoritesSync: state.favoritesSync.copyWith(
             syncing: false,
-            lastSummary: '本地收藏为空，跳过上传',
+            lastSummary: tr('本地收藏为空，跳过上传'),
             lastTime: DateTime.now(),
             errors: [],
           ),
@@ -595,14 +642,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         favoritesSync: state.favoritesSync.copyWith(
           syncing: false,
-          lastSummary: '已上传 $count 首收藏歌曲',
+          lastSummary: tr('已上传 {n} 首收藏歌曲', {'n': count}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '收藏上传失败: $e');
-      _setFavoritesError(e is AuthException ? e.message : '上传失败: $e');
+      _setFavoritesError(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
 
@@ -616,7 +663,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           favoritesSync: state.favoritesSync.copyWith(
             syncing: false,
-            lastSummary: '云端暂无收藏数据',
+            lastSummary: tr('云端暂无收藏数据'),
             lastTime: DateTime.now(),
           ),
         );
@@ -658,14 +705,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         favoritesSync: state.favoritesSync.copyWith(
           syncing: false,
-          lastSummary: '已拉取 ${favs.length} 首收藏',
+          lastSummary: tr('已拉取 {n} 首收藏', {'n': favs.length}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '收藏下载失败: $e');
-      _setFavoritesError(e is AuthException ? e.message : '下载失败: $e');
+      _setFavoritesError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
 
@@ -712,18 +759,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
             state = state.copyWith(
               pluginSync: state.pluginSync.copyWith(
                 syncing: false,
-                lastSummary: '已上传 ${subs.length} 个订阅链接',
+                lastSummary: tr('已上传 {n} 个订阅链接', {'n': subs.length}),
                 lastTime: DateTime.now(),
               ),
             );
           } catch (e) {
-            _setPluginError(e is AuthException ? e.message : '订阅上传失败: $e');
+            _setPluginError(e is AuthException ? e.message : tr('订阅上传失败: {e}', {'e': e}));
           }
         } else {
           state = state.copyWith(
             pluginSync: state.pluginSync.copyWith(
               syncing: false,
-              lastSummary: '本地暂无可上传的插件',
+              lastSummary: tr('本地暂无可上传的插件'),
               lastTime: DateTime.now(),
             ),
           );
@@ -739,7 +786,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         try {
           final script = await rust.readPluginFile(path: scriptPath);
           if (script.trim().isEmpty) {
-            errors.add('插件 "${p.name}" 脚本读取失败，已跳过');
+            errors.add(tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
             continue;
           }
           await _api.uploadPlugin({
@@ -757,22 +804,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
           uploaded++;
         } catch (e) {
           AppLogger.instance.log('sync', '插件 ${p.name} 上传失败: $e');
-          errors.add('插件 "${p.name}" 上传失败');
+          errors.add(tr('插件 "{name}" 上传失败', {'name': p.name}));
         }
       }
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,
           lastSummary: uploaded > 0
-              ? '已上传 $uploaded 个插件${subs.isNotEmpty ? '、${subs.length} 个订阅' : ''}'
-              : '没有插件被上传',
+              ? tr('已上传 {n} 个插件{subs}', {'n': uploaded, 'subs': subs.isNotEmpty ? tr('、{n} 个订阅', {'n': subs.length}) : ''})
+              : tr('没有插件被上传'),
           lastTime: DateTime.now(),
           errors: errors,
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '插件上传失败: $e');
-      _setPluginError(e is AuthException ? e.message : '上传失败: $e');
+      _setPluginError(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
 
@@ -803,8 +850,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           pluginSync: state.pluginSync.copyWith(
             syncing: false,
             lastSummary: mergedSubs > 0
-                ? '已同步 $mergedSubs 个订阅链接'
-                : '云端暂无插件数据',
+                ? tr('已同步 {n} 个订阅链接', {'n': mergedSubs})
+                : tr('云端暂无插件数据'),
             lastTime: DateTime.now(),
           ),
         );
@@ -815,18 +862,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final pluginManager = _ref.read(pluginManagerProvider.notifier);
       for (final item in items) {
         final cloudName = (item['name'] as String?)?.trim() ?? '';
-        final name = cloudName.isNotEmpty ? cloudName : '未知插件';
+        final name = cloudName.isNotEmpty ? cloudName : tr('未知插件');
         var script = (item['script'] as String?) ?? '';
         if (item['scriptEncoded'] == true && script.isNotEmpty) {
           try {
             script = _decodeRevBase64(script);
           } catch (_) {
-            errors.add('插件 "$name" 脚本解码失败');
+            errors.add(tr('插件 "{name}" 脚本解码失败', {'name': name}));
             continue;
           }
         }
         if (script.trim().isEmpty) {
-          errors.add('插件 "$name" 脚本为空，已跳过');
+          errors.add(tr('插件 "{name}" 脚本为空，已跳过', {'name': name}));
           continue;
         }
         try {
@@ -845,22 +892,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
           installed++;
         } catch (e) {
           AppLogger.instance.log('sync', '插件 $name 恢复失败: $e');
-          errors.add('插件 "$name" 恢复失败：$e');
+          errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,
           lastSummary: installed > 0
-              ? '已恢复 $installed 个插件${mergedSubs > 0 ? '、$mergedSubs 个订阅' : ''}'
-              : (mergedSubs > 0 ? '已同步 $mergedSubs 个订阅链接' : '没有插件被恢复'),
+              ? tr('已恢复 {n} 个插件{subs}', {'n': installed, 'subs': mergedSubs > 0 ? tr('、{n} 个订阅', {'n': mergedSubs}) : ''})
+              : (mergedSubs > 0 ? tr('已同步 {n} 个订阅链接', {'n': mergedSubs}) : tr('没有插件被恢复')),
           lastTime: DateTime.now(),
           errors: errors,
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '插件下载失败: $e');
-      _setPluginError(e is AuthException ? e.message : '下载失败: $e');
+      _setPluginError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
 
@@ -882,21 +929,21 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       final settings = _ref.read(settingsProvider).valueOrNull;
       if (settings == null) {
-        _setSettingsError('本地设置尚未加载完成');
+        _setSettingsError(tr('本地设置尚未加载完成'));
         return;
       }
       await _api.uploadSettings(settings);
       state = state.copyWith(
         settingsSync: state.settingsSync.copyWith(
           syncing: false,
-          lastSummary: '已上传偏好设置',
+          lastSummary: tr('已上传偏好设置'),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '设置上传失败: $e');
-      _setSettingsError(e is AuthException ? e.message : '上传失败: $e');
+      _setSettingsError(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
 
@@ -910,7 +957,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           settingsSync: state.settingsSync.copyWith(
             syncing: false,
-            lastSummary: '云端暂无设置',
+            lastSummary: tr('云端暂无设置'),
             lastTime: DateTime.now(),
           ),
         );
@@ -918,7 +965,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       final local = _ref.read(settingsProvider).valueOrNull;
       if (local == null) {
-        _setSettingsError('本地设置尚未加载完成');
+        _setSettingsError(tr('本地设置尚未加载完成'));
         return;
       }
       final merged = applySyncedSettings(local, cloud);
@@ -926,14 +973,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         settingsSync: state.settingsSync.copyWith(
           syncing: false,
-          lastSummary: '已应用云端设置',
+          lastSummary: tr('已应用云端设置'),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '设置下载失败: $e');
-      _setSettingsError(e is AuthException ? e.message : '下载失败: $e');
+      _setSettingsError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
 
@@ -958,7 +1005,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       final local = _ref.read(settingsProvider).valueOrNull;
       if (local == null) {
-        _setSettingsError('本地设置尚未加载完成');
+        _setSettingsError(tr('本地设置尚未加载完成'));
         return;
       }
       final meta = await _api.downloadSettingsWithMeta();
@@ -973,7 +1020,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           state = state.copyWith(
             settingsSync: state.settingsSync.copyWith(
               syncing: false,
-              lastSummary: '已上传偏好设置',
+              lastSummary: tr('已上传偏好设置'),
               lastTime: DateTime.now(),
               errors: [],
             ),
@@ -982,7 +1029,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           state = state.copyWith(
             settingsSync: state.settingsSync.copyWith(
               syncing: false,
-              lastSummary: '云端暂无设置',
+              lastSummary: tr('云端暂无设置'),
               lastTime: DateTime.now(),
               errors: [],
             ),
@@ -996,7 +1043,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           settingsSync: state.settingsSync.copyWith(
             syncing: false,
-            lastSummary: '本地与云端设置一致，无需同步',
+            lastSummary: tr('本地与云端设置一致，无需同步'),
             lastTime: DateTime.now(),
             errors: [],
           ),
@@ -1015,7 +1062,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           settingsSync: state.settingsSync.copyWith(
             syncing: false,
-            lastSummary: '已取消设置同步',
+            lastSummary: tr('已取消设置同步'),
             lastTime: DateTime.now(),
             errors: [],
           ),
@@ -1031,7 +1078,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           try {
             await _api.uploadSettings(local);
           } catch (e) {
-            errors.add('设置上传失败: $e');
+            errors.add(tr('设置上传失败: {e}', {'e': e}));
           }
         }
       } else {
@@ -1039,7 +1086,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           final merged = applySyncedSettings(local, cloud);
           await _ref.read(settingsProvider.notifier).saveAll(merged);
         } catch (e) {
-          errors.add('设置下载失败: $e');
+          errors.add(tr('设置下载失败: {e}', {'e': e}));
         }
       }
 
@@ -1064,14 +1111,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         settingsSync: state.settingsSync.copyWith(
           syncing: false,
-          lastSummary: errors.isEmpty ? '同步完成' : '同步完成（${errors.length} 个错误）',
+          lastSummary: errors.isEmpty ? tr('同步完成') : '同步完成（${errors.length} 个错误）',
           lastTime: DateTime.now(),
           errors: errors,
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '设置同步失败: $e');
-      _setSettingsError(e is AuthException ? e.message : '同步失败: $e');
+      _setSettingsError(e is AuthException ? e.message : tr('同步失败: {e}', {'e': e}));
     }
   }
 
@@ -1091,7 +1138,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           historySync: state.historySync.copyWith(
             syncing: false,
-            lastSummary: '本地暂无播放历史',
+            lastSummary: tr('本地暂无播放历史'),
             lastTime: DateTime.now(),
           ),
         );
@@ -1108,14 +1155,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         historySync: state.historySync.copyWith(
           syncing: false,
-          lastSummary: '已上传 $count 条播放记录',
+          lastSummary: tr('已上传 {n} 条播放记录', {'n': count}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '播放历史上传失败: $e');
-      _setHistoryError(e is AuthException ? e.message : '上传失败: $e');
+      _setHistoryError(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
 
@@ -1129,7 +1176,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         state = state.copyWith(
           historySync: state.historySync.copyWith(
             syncing: false,
-            lastSummary: '云端暂无播放历史',
+            lastSummary: tr('云端暂无播放历史'),
             lastTime: DateTime.now(),
           ),
         );
@@ -1149,14 +1196,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       state = state.copyWith(
         historySync: state.historySync.copyWith(
           syncing: false,
-          lastSummary: '已恢复 $added 条播放历史',
+          lastSummary: tr('已恢复 {n} 条播放历史', {'n': added}),
           lastTime: DateTime.now(),
           errors: [],
         ),
       );
     } catch (e) {
       AppLogger.instance.log('sync', '播放历史下载失败: $e');
-      _setHistoryError(e is AuthException ? e.message : '下载失败: $e');
+      _setHistoryError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
 

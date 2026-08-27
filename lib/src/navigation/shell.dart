@@ -11,11 +11,14 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../core/app_logger.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
+import '../auth/auth_provider.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
+import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart';
 import '../widgets/app_toast.dart';
 import 'routes.dart';
+import '../i18n/i18n.dart';
 
 /// 浮动底栏占据的底部高度（距底 18 + 栏高 60 + 阴影余量）。
 ///
@@ -138,6 +141,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     super.initState();
     // 启动自动同步调度器（每分钟 tick，到点才同步）。
     ref.read(autoSyncProvider).start();
+    // 启动时若已登录则触发首次全量一致性同步（仅首次，本地有数据且与云端冲突才弹窗）。
+    // 显式登录/注册场景由 account_page 触发，此处覆盖重开应用自动登录的既有用户。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(authProvider).user != null) {
+        ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
+      }
+    });
     // 首帧后检查公告/反馈完成通知，避免与启动动画冲突。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_notificationsChecked) return;
@@ -217,7 +227,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
       _lastBackTime = now;
       AppLogger.instance.log('back', '提示再按一次退出');
-      showXianYuToast(context, '再按一次退出应用',
+      showXianYuToast(context, tr('再按一次退出应用'),
         duration: const Duration(seconds: 2));
       return;
     }
