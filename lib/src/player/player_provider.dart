@@ -87,12 +87,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
           as_pkg.MediaControl.skipToNext,
           as_pkg.MediaControl(
-            androidIcon: _playModeIcon(playMode),
-            label: _playModeLabel(playMode),
-            action: as_pkg.MediaAction.custom,
-            customAction: const as_pkg.CustomMediaAction(name: 'cyclePlayMode'),
-          ),
-          as_pkg.MediaControl(
             // 0.18.x 的 androidIcon 必须带 "drawable/" 前缀：
             // Android 端 getResourceId 按 "/" split 后取 parts[1]，
             // 缺前缀会抛 ArrayIndexOutOfBoundsException 导致整个媒体卡片不显示。
@@ -102,6 +96,12 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
             label: isFavorite ? '取消收藏' : '收藏',
             action: as_pkg.MediaAction.custom,
             customAction: const as_pkg.CustomMediaAction(name: 'toggleFavorite'),
+          ),
+          as_pkg.MediaControl(
+            androidIcon: _playModeIcon(playMode),
+            label: _playModeLabel(playMode),
+            action: as_pkg.MediaAction.custom,
+            customAction: const as_pkg.CustomMediaAction(name: 'cyclePlayMode'),
           ),
         ],
         systemActions: const {
