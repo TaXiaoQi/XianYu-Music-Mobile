@@ -463,7 +463,8 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      // 键盘避让由 showSheetDialog 的 DialogKeyboardLift 统一处理，这里固定布局
+      padding: EdgeInsets.zero,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         child: Column(

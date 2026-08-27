@@ -1103,12 +1103,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(
-          left: 18,
-          right: 18,
-          top: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 10,
-        ),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height * 0.72,
@@ -1331,22 +1326,9 @@ class _UrlInstallSheet extends StatefulWidget {
 class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   final _urlCtrl = TextEditingController();
   bool _loading = false;
-  /// 键盘所需上移量：只作用于外层位移，弹窗内容布局固定，不随键盘逐帧重建。
-  final _keyboardShift = ValueNotifier<double>(0.0);
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final insets = MediaQuery.viewInsetsOf(context).bottom;
-    final next = insets > 0 ? insets / 2 : 0.0;
-    if ((next - _keyboardShift.value).abs() > 0.5) {
-      _keyboardShift.value = next;
-    }
-  }
 
   @override
   void dispose() {
-    _keyboardShift.dispose();
     _urlCtrl.dispose();
     super.dispose();
   }
@@ -1366,67 +1348,58 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 弹窗整体顶起由 showSheetDialog 的 DialogKeyboardLift 统一处理
+    // （仅被输入法遮挡才顶起恰好露出的量），这里只需固定内容布局。
     return SafeArea(
-      child: ValueListenableBuilder<double>(
-        valueListenable: _keyboardShift,
-        builder: (context, shift, _) => Transform.translate(
-          offset: Offset(0, -shift),
-          child: RepaintBoundary(
-            child: Padding(
-              // 内容布局固定；被键盘遮挡时仅整体上移，不随键盘逐帧重排
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('在线链接安装',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）',
-                    style: TextStyle(fontSize: 12, color: scheme.outline),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _urlCtrl,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: '插件 URL',
-                      hintText: 'https://example.com/plugin.js',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    keyboardType: TextInputType.url,
-                    onSubmitted: (_) => _installFromUrl(),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('取消'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: _loading ? null : _installFromUrl,
-                        icon: _loading
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.download, size: 18),
-                        label: const Text('安装'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('在线链接安装',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）',
+              style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
-          ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _urlCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '插件 URL',
+                hintText: 'https://example.com/plugin.js',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.url,
+              onSubmitted: (_) => _installFromUrl(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _installFromUrl,
+                  icon: _loading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download, size: 18),
+                  label: const Text('安装'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
