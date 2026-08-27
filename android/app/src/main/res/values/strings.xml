@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_label">弦予播放</string>
+    <string name="widget_square_label">弦予播放·方形</string>
+    <string name="widget_recognize_label">弦予播放·识曲</string>
+    <string name="widget_lyric_label">弦予播放·歌词</string>
 </resources>

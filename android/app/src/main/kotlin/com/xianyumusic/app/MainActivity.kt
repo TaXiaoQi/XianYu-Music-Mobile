@@ -49,6 +49,8 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
+        // Android 15+ 组件选择面板「生成的预览」（幂等 + 限速重试）。
+        WidgetShared.ensurePreviewGen(this)
         // 冷启动：Flutter 的 MethodChannel handler 尚未注册，若此时走 onDeepLink
         // 派发，消息会被引擎丢弃且 pendingDeepLink 已被清空，深链彻底丢失。
         // 只暂存链接，交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
