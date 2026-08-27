@@ -92,19 +92,6 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- 桌面播放小组件：APPWIDGET_UPDATE 由系统/launcher 拉取渲染；按钮经 Provider 广播控制 -->
-        <receiver
-            android:name=".PlayerWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/player_widget_info" />
-        </receiver>
-
         <!-- 桌面播放小组件 · 方形样式（2×2 固定：上封面/下歌名+小播放键），独立入口 -->
         <receiver
             android:name=".SquareWidgetProvider"

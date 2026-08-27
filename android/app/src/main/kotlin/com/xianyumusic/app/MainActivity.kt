@@ -232,7 +232,7 @@ class MainActivity : AudioServiceActivity() {
                         result.success(null)
                     }
                     "update" -> {
-                        PlayerWidgetProvider.updateAll(this)
+                        WidgetShared.updateAll(this)
                         result.success(null)
                     }
                     else -> result.notImplemented()

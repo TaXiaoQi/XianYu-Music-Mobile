@@ -13,19 +13,18 @@
     android:background="@drawable/widget_bg"
     android:padding="12dp">
 
-    <!-- 左列：大封面 + 底部三控制钮 -->
+    <!-- 左列：固定方形封面（垂直居中，与右列信息块中心对齐）+ 底部三控制钮 -->
     <LinearLayout
-        android:layout_width="112dp"
+        android:layout_width="96dp"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:gravity="center_horizontal">
+        android:gravity="center">
 
         <ImageView
             android:id="@+id/cover"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:scaleType="fitCenter"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:scaleType="centerCrop"
             android:contentDescription="@string/widget_label" />
 
         <LinearLayout
@@ -84,8 +83,7 @@
             android:textSize="14sp"
             android:textStyle="bold"
             android:singleLine="true"
-            android:ellipsize="marquee"
-            android:marqueeRepeatLimit="marquee_forever" />
+                android:ellipsize="end" />
 
         <TextView
             android:id="@+id/artistText"

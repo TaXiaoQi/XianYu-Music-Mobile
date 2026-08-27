@@ -28,7 +28,7 @@ import org.json.JSONObject
 
 /**
  * 桌面播放组件共享渲染与控制逻辑
- * （PlayerWidgetProvider / RecognizeWidgetProvider / LyricWidgetProvider 共用）。
+ * （SquareWidgetProvider / RecognizeWidgetProvider / LyricWidgetProvider 共用）。
  *
  * 渲染：读 SharedPreferences("player_widget"/"state") 的 JSON（由 Flutter 侧随播放状态
  * 写入），按组件尺寸/组件入口构建对应 RemoteViews。卡片/文字/图标颜色随系统明暗主题
@@ -54,8 +54,8 @@ internal object WidgetShared {
     // 封面位图边长（dp）：横版 60、2×2/识曲/歌词卡用大图保证清晰。
     private const val COVER_TALL_DP = 60
     private const val COVER_2X2_DP = 156
-    private const val COVER_RECOGNIZE_DP = 160
-    private const val COVER_LYRIC_DP = 130
+    private const val COVER_RECOGNIZE_DP = 72
+    private const val COVER_LYRIC_DP = 96
 
     // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
     // 避免按位图边长比例（0.26×）换算后随组件尺寸缩放导致的圆角错位。
@@ -85,11 +85,6 @@ internal object WidgetShared {
         JSONObject(raw)
     } catch (_: Exception) {
         null
-    }
-
-    private fun layoutMode(ctx: Context, id: Int): String {
-        return ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
-            .getString(LAYOUT_PREFIX + id, MODE_TALL) ?: MODE_TALL
     }
 
     private fun cellCount(size: Int): Int =
@@ -137,7 +132,6 @@ internal object WidgetShared {
         prefs.edit().putLong("preview_gen_attempt_ts", now).apply()
         val mgr = AppWidgetManager.getInstance(ctx)
         val defs = listOf(
-            PlayerWidgetProvider::class.java to R.layout.player_widget_preview,
             SquareWidgetProvider::class.java to R.layout.player_widget_square_preview,
             RecognizeWidgetProvider::class.java to R.layout.player_widget_recognize_preview,
             LyricWidgetProvider::class.java to R.layout.player_widget_lyric_preview,
@@ -158,14 +152,10 @@ internal object WidgetShared {
         }
     }
 
-    /** 刷新所有已放置的组件（四个 Provider 的全部 id），按各自尺寸/入口构建。 */
+    /** 刷新所有已放置的组件（三个 Provider 的全部 id），按各自尺寸/入口构建。 */
     fun updateAll(ctx: Context) {
         val mgr = AppWidgetManager.getInstance(ctx)
         val s = stateJson(ctx) ?: JSONObject()
-        for (id in mgr.getAppWidgetIds(
-            ComponentName(ctx, PlayerWidgetProvider::class.java))) {
-            mgr.updateAppWidget(id, buildViewsForId(ctx, s, id))
-        }
         for (id in mgr.getAppWidgetIds(
             ComponentName(ctx, SquareWidgetProvider::class.java))) {
             // 封面按各组件实际尺寸渲染（圆角对齐容器），逐 id 构建。
@@ -184,17 +174,7 @@ internal object WidgetShared {
         }
     }
 
-    /** 按已存布局模式构建（主组件：尺寸自适应入口）。 */
-    fun buildViewsForId(ctx: Context, s: JSONObject, id: Int): RemoteViews {
-        val mode = layoutMode(ctx, id)
-        // 2×2 档封面需按该组件实际尺寸渲染，圆角才能对齐容器。
-        val size = if (mode == MODE_2X2) {
-            widgetSizeDp(AppWidgetManager.getInstance(ctx), id)
-        } else null
-        return buildViews(ctx, s, mode, PlayerWidgetProvider::class.java, 1000, size)
-    }
-
-    /** 按显式布局模式构建（主组件与固定样式组件共用）。 */
+    /** 按显式布局模式构建（方形/歌词卡固定样式共用）。 */
     fun buildViews(
         ctx: Context,
         s: JSONObject,
@@ -218,9 +198,6 @@ internal object WidgetShared {
         val favorite = s.optBoolean("favorite")
         val floatingLyrics = s.optBoolean("floatingLyrics")
         views.setTextViewText(R.id.songText, title)
-        // 超长歌名跑马灯：ellipsize=marquee 需视图 selected 才滚动，
-        // RemoteViews 经 setBoolean 反射调 setSelected(true) 激活。
-        views.setBoolean(R.id.songText, "setSelected", true)
         if (mode != MODE_2X2) {
             views.setTextViewText(
                 R.id.artistText, lyric.takeUnless { it.isBlank() } ?: artist)
@@ -362,11 +339,8 @@ internal object WidgetShared {
         val artist = s.optString("artist").takeUnless { it.isBlank() } ?: "未在播放"
         val lyric = s.optString("lyric")
         views.setTextViewText(R.id.songText, title)
-        // 识曲条歌名/歌手跑马灯（setSelected 激活 marquee）。
-        views.setBoolean(R.id.songText, "setSelected", true)
         views.setTextViewText(
             R.id.artistText, lyric.takeUnless { it.isBlank() } ?: artist)
-        views.setBoolean(R.id.artistText, "setSelected", true)
 
         val playing = s.optBoolean("playing")
         views.setImageViewResource(
@@ -387,11 +361,8 @@ internal object WidgetShared {
         // 右上识曲钮：经深链拉起识曲页（冷/热启动都由 MainActivity 深链管道处理）。
         views.setOnClickPendingIntent(R.id.btnRecognize, recognizePending(ctx, 2004))
 
-        // 封面顶满容器上下：按实际高度渲染同边长方形位图（adjustViewBounds 顶满左缘），
-        // 圆角绝对 24dp 与卡片左上/左下圆弧重合；尺寸未知时回退固定大图。
-        val cover = sizeDp?.let {
-            roundedCoverRect(ctx, s.optString("coverPath"), it.second, it.second, CARD_CORNER_DP)
-        } ?: roundedCover(ctx, s.optString("coverPath"), COVER_RECOGNIZE_DP)
+        // 封面固定小方形（不再顶满容器），圆角 24dp 对齐卡片，垂直居中于左侧。
+        val cover = roundedCover(ctx, s.optString("coverPath"), COVER_RECOGNIZE_DP)
         if (cover != null) {
             views.setImageViewBitmap(R.id.cover, cover)
         } else {
@@ -593,52 +564,5 @@ internal object WidgetShared {
         val m = s / 60
         val r = s % 60
         return String.format(java.util.Locale.US, "%d:%02d", m, r)
-    }
-}
-
-/**
- * 桌面播放组件（尺寸自适应：2×2 方形 / 大卡两档，拖拽 2×2↔2×4↔3×4 无缝切换）。
- */
-class PlayerWidgetProvider : AppWidgetProvider() {
-
-    companion object {
-        /** 刷新所有已放置的组件（Flutter 推送状态后调用），含识曲样式组件。 */
-        fun updateAll(ctx: Context) = WidgetShared.updateAll(ctx)
-    }
-
-    override fun onUpdate(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray,
-    ) {
-        val s = WidgetShared.stateJson(context) ?: JSONObject()
-        for (id in appWidgetIds) {
-            appWidgetManager.updateAppWidget(id, WidgetShared.buildViewsForId(context, s, id))
-        }
-    }
-
-    override fun onAppWidgetOptionsChanged(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetId: Int,
-        newOptions: Bundle,
-    ) {
-        val (cw, ch) = WidgetShared.cellsOf(newOptions)
-        // 两档自适应：≤2×2 用方形布局，其余（含 2×4/3×4 等纵向尺寸）用大卡，
-        // 拖拽缩放时即时切换布局；横向 4×2 需求由识曲组件承担，此组件不再有横条档。
-        val mode = if (cw <= 2 && ch <= 2) WidgetShared.MODE_2X2 else WidgetShared.MODE_TALL
-        context.getSharedPreferences(WidgetShared.SP_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString("layout_" + appWidgetId, mode)
-            .apply()
-        appWidgetManager.updateAppWidget(
-            appWidgetId,
-            WidgetShared.buildViewsForId(
-                context, WidgetShared.stateJson(context) ?: JSONObject(), appWidgetId))
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        WidgetShared.handleAction(context, intent)
     }
 }

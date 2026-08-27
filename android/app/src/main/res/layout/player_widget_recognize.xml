@@ -17,10 +17,11 @@
          使宽度随高度撑满左缘；fitXY 保证顶满不露底；圆角绝对 24dp 与卡片圆角重合） -->
     <ImageView
         android:id="@+id/cover"
-        android:layout_width="wrap_content"
-        android:layout_height="match_parent"
-        android:adjustViewBounds="true"
-        android:scaleType="fitXY"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginStart="12dp"
+        android:layout_gravity="center_vertical"
+        android:scaleType="centerCrop"
         android:src="@drawable/ic_widget_music_note"
         android:contentDescription="@string/widget_label" />
 
@@ -58,8 +59,7 @@
                     android:textSize="15sp"
                     android:textStyle="bold"
                     android:singleLine="true"
-                    android:ellipsize="marquee"
-                    android:marqueeRepeatLimit="marquee_forever" />
+                    android:ellipsize="end" />
 
                 <TextView
                     android:id="@+id/artistText"
@@ -69,17 +69,16 @@
                     android:textColor="@color/widget_text_secondary"
                     android:textSize="12sp"
                     android:singleLine="true"
-                    android:ellipsize="marquee"
-                    android:marqueeRepeatLimit="marquee_forever" />
+                    android:ellipsize="end" />
             </LinearLayout>
 
             <ImageButton
                 android:id="@+id/btnRecognize"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_marginStart="8dp"
-                android:padding="8dp"
-                android:background="@null"
+                android:padding="6dp"
+                android:background="@drawable/widget_btn_circle"
                 android:src="@drawable/ic_notif_recognize"
                 android:scaleType="fitCenter"
                 android:contentDescription="@string/widget_label" />
@@ -131,43 +130,45 @@
                 android:contentDescription="@string/widget_label" />
         </LinearLayout>
 
-        <!-- 行3：当前时间 + 进度条 + 总时长 -->
-        <LinearLayout
+        <!-- 行3a：进度条（独立一行） -->
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/widget_progress_drawable"
+            android:maxHeight="6dp"
+            android:minHeight="6dp" />
+
+        <!-- 行3b：当前/总时长（进度条下方，左右分布） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/timeCur"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0:00"
-                android:textColor="@color/widget_time"
-                android:textSize="11sp" />
-
-            <ProgressBar
-                android:id="@+id/progress"
-                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:max="100"
-                android:progress="0"
-                android:progressDrawable="@drawable/widget_progress_drawable"
-                android:maxHeight="6dp"
-                android:minHeight="6dp" />
+                android:gravity="start"
+                android:text="0:00"
+                android:textColor="@color/widget_time"
+                android:textSize="10sp" />
 
             <TextView
                 android:id="@+id/timeDur"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
                 android:text="0:00"
                 android:textColor="@color/widget_time"
-                android:textSize="11sp" />
+                android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

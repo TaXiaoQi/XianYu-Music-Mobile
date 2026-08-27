@@ -37,8 +37,7 @@
             android:textSize="14sp"
             android:textStyle="bold"
             android:singleLine="true"
-            android:ellipsize="marquee"
-            android:marqueeRepeatLimit="marquee_forever"
+            android:ellipsize="end"
             android:contentDescription="@string/widget_label" />
 
         <ImageButton
