@@ -82,14 +82,15 @@ class MinePage extends ConsumerWidget {
 }
 
 /// 顶部搜索条：点击进入搜索页（参考图布局）。
-class _SearchEntry extends StatelessWidget {
+class _SearchEntry extends ConsumerWidget {
   const _SearchEntry();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: () => context.push('/search'),
@@ -100,7 +101,9 @@ class _SearchEntry extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.3),
+              color: glass
+                  ? glassControlBorder
+                  : scheme.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
           child: Row(
@@ -130,6 +133,7 @@ class _AccountArea extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
+    final glass = ref.watch(wallpaperActiveProvider);
     final user = auth.user;
     final loggedIn = auth.isLoggedIn && user != null;
 
@@ -184,9 +188,13 @@ class _AccountArea extends ConsumerWidget {
     }
 
     return Material(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () => context.push('/account'),
         borderRadius: BorderRadius.circular(16),
@@ -206,6 +214,7 @@ class _AccountArea extends ConsumerWidget {
                     ? UserAvatarImage(
                         avatar: user.avatar,
                         fallback: _fallback(scheme, user.nickname),
+                        size: 56,
                       )
                     : _fallback(scheme, user.nickname),
               ),
@@ -270,6 +279,7 @@ class _QuickEntries extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final favCount = ref.watch(
       favoritesProvider.select((s) => s.entries.length),
     );
@@ -335,9 +345,13 @@ class _QuickEntries extends ConsumerWidget {
     }
 
     return Material(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
@@ -411,7 +425,7 @@ class _SectionHeader extends StatelessWidget {
 
 /// 内嵌滚动条中的可拖动排序卡片（shrinkWrap + NeverScrollable，供外层 ListView 使用）。
 /// 每项自带一条与封面-文字对齐的分隔线（末项除外），视觉对齐原 _CardGroup。
-class _ReorderCard extends StatelessWidget {
+class _ReorderCard extends ConsumerWidget {
   const _ReorderCard({
     required this.itemCount,
     required this.onReorder,
@@ -427,12 +441,17 @@ class _ReorderCard extends StatelessWidget {
   final IndexedWidgetBuilder itemBuilder;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: ReorderableListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -600,7 +619,7 @@ class _PlaylistRow extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final first = playlist.songs.firstOrNull;
 
-    return InkWell(
+    final row = InkWell(
       // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致，
       // 否则返回会被 shell 的 canPop 逻辑误判而直接退出程序。
       onTap: () => context.push('/playlist/${playlist.id}'),
@@ -608,7 +627,6 @@ class _PlaylistRow extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
         child: Row(
           children: [
-            DragHandle(index: index, enabled: dragEnabled),
             first == null
                 ? Container(
                     width: 56,
@@ -662,6 +680,10 @@ class _PlaylistRow extends ConsumerWidget {
         ),
       ),
     );
+    // 整条即拖拽把手：长按任意处拖动排序，不再单独展示拖拽图标。
+    return dragEnabled
+        ? ReorderableRowDragStart(index: index, child: row)
+        : row;
   }
 
   /// 操作菜单：重命名 / 删除歌单。

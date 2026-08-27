@@ -13,6 +13,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
@@ -176,20 +177,42 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     return Scaffold(
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title:   Text(tr('意见反馈')),
-        bottom: TabBar(
-          controller: _tab,
-          tabs:   [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
-        ),
-      ),
-      body: RepaintBoundary(child: TabBarView(
-        controller: _tab,
+      body: Stack(
         children: [
-          _buildSubmitTab(context),
-          _buildMyFeedbackTab(context, auth),
+          Padding(
+            padding: EdgeInsets.only(
+              top: GlassTopBar.height(
+                context,
+                bottom: TabBar(
+                  controller: _tab,
+                  tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
+                ),
+              ),
+            ),
+            child: RepaintBoundary(
+              child: TabBarView(
+                controller: _tab,
+                children: [
+                  _buildSubmitTab(context),
+                  _buildMyFeedbackTab(context, auth),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(tr('意见反馈')),
+              bottom: TabBar(
+                controller: _tab,
+                tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
+              ),
+            ),
+          ),
         ],
-        ),
       ),
     );
   }
@@ -198,6 +221,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final logs = ref.watch(applicationLogsProvider);
+    final glass = ref.watch(wallpaperActiveProvider);
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
@@ -214,8 +238,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: glass ? glassControlFill : appCardColor(context),
               borderRadius: BorderRadius.circular(16),
+              border: glass ? Border.all(color: glassControlBorder) : null,
             ),
             child: Row(
               children: [
@@ -234,9 +259,15 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   ? tr('请描述你的功能建议…')
                   : tr('请描述你遇到的问题…'),
               filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              fillColor: glass ? glassControlFill : null,
+              border: glass
+                  ? OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: glassControlBorder),
+                    )
+                  : OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
             ),
           ),
           if (_feedbackType == 'suggestion') ...[
@@ -281,10 +312,12 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       BuildContext context, ColorScheme scheme, List<AppLogEntry> logs) {
     final errorLogs = logs.where((e) => e.level == LogLevel.error).toList();
     if (logs.isEmpty) return const SizedBox.shrink();
+    final glass = ref.watch(wallpaperActiveProvider);
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
+        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -363,6 +396,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
 
   Widget _buildImageGrid() {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -413,9 +447,11 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: appCardColor(context),
+                color: glass ? glassControlFill : appCardColor(context),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: scheme.outlineVariant),
+                border: glass
+                    ? Border.all(color: glassControlBorder)
+                    : Border.all(color: scheme.outlineVariant),
               ),
               child: _compressing
                   ? const Center(
@@ -520,17 +556,24 @@ class _StatusBadge extends StatelessWidget {
 }
 
 /// 我的反馈列表卡片。
-class _FeedbackCard extends StatelessWidget {
+class _FeedbackCard extends ConsumerWidget {
   const _FeedbackCard({required this.item, required this.onTap});
   final FeedbackItem item;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
+      color: glass ? glassControlFill : appCardColor(context),
+      borderRadius: glass ? null : BorderRadius.circular(16),
+      shape: glass
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: glassControlBorder),
+            )
+          : null,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),

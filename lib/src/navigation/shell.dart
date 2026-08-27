@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/app_logger.dart';
+import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
@@ -578,6 +579,8 @@ class _FixedNavBar extends ConsumerWidget {
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
+    // 自定义壁纸启用时，底栏改为半透明白玻璃（对齐首页「发现」区卡片），透出壁纸。
+    final wallpaper = ref.watch(wallpaperActiveProvider);
 
     // 固定底栏内容（与材质设置无关，共用布局）。
     final bar = SafeArea(
@@ -618,12 +621,17 @@ class _FixedNavBar extends ConsumerWidget {
 
     if (!frosted) {
       // 关闭毛玻璃：纯色底栏。
+      // 启用自定义壁纸时同样改为半透明玻璃。
       return Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
+          color: wallpaper
+              ? glassControlFill
+              : isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
           border: Border(
             top: BorderSide(
-              color: scheme.onSurface.withValues(alpha: 0.08),
+              color: wallpaper
+                  ? glassControlBorder
+                  : scheme.onSurface.withValues(alpha: 0.08),
             ),
           ),
         ),
@@ -632,19 +640,24 @@ class _FixedNavBar extends ConsumerWidget {
     }
 
     // 毛玻璃：半透明白/暗 + BackdropFilter 高斯模糊（安卓原生磨砂质感）。
+    // 启用自定义壁纸时铺底改得更透明以透出壁纸。
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
-          color: isDark
-              ? const Color(0xCC222222)
-              : const Color(0xD9F7F7F9),
+          color: wallpaper
+              ? glassControlFill
+              : isDark
+                  ? const Color(0xCC222222)
+                  : const Color(0xD9F7F7F9),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 height: 1,
-                color: scheme.onSurface.withValues(alpha: 0.08),
+                color: wallpaper
+                    ? glassControlBorder
+                    : scheme.onSurface.withValues(alpha: 0.08),
               ),
               bar,
             ],

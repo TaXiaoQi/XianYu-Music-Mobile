@@ -11,6 +11,7 @@ import '../../src/recognize/recognize_service.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/i18n/i18n.dart';
@@ -174,40 +175,52 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     final success = _phase == _Phase.done && _matches.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.mic, size: 18, color: const Color(0xFFEC4141)),
-            const SizedBox(width: 8),
-              Text(tr('听歌识曲'), style: TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          if (success)
-            _MatchListView(
-              matches: _matches,
-              onPlay: _play,
-              onFavorite: _toggleFavorite,
-              isFavorite: (m) =>
-                  ref.read(favoritesProvider).contains(_toQueueItem(m).path),
-              onAddToPlaylist: _addToPlaylist,
-              onRestart: () => setState(() => _phase = _Phase.idle),
-              onStart: _start,
-            )
-          else
-            _MicView(
-              phase: _phase,
-              active: _active,
-              pulse: _pulse,
-              statusText: _statusText,
-              error: !success ? _error : null,
-              onTap: _active ? _cancel : _start,
-              onRestart: () => setState(() => _phase = _Phase.idle),
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: Stack(
+              children: [
+                if (success)
+                  _MatchListView(
+                    matches: _matches,
+                    onPlay: _play,
+                    onFavorite: _toggleFavorite,
+                    isFavorite: (m) =>
+                        ref.read(favoritesProvider).contains(_toQueueItem(m).path),
+                    onAddToPlaylist: _addToPlaylist,
+                    onRestart: () => setState(() => _phase = _Phase.idle),
+                    onStart: _start,
+                  )
+                else
+                  _MicView(
+                    phase: _phase,
+                    active: _active,
+                    pulse: _pulse,
+                    statusText: _statusText,
+                    error: !success ? _error : null,
+                    onTap: _active ? _cancel : _start,
+                    onRestart: () => setState(() => _phase = _Phase.idle),
+                  ),
+                const BottomPlayBarSlot(),
+              ],
             ),
-          const BottomPlayBarSlot(),
+          ),
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.mic, size: 18, color: const Color(0xFFEC4141)),
+                  const SizedBox(width: 8),
+                  Text(tr('听歌识曲'), style: TextStyle(fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -243,8 +256,7 @@ class _MicView extends StatelessWidget {
     final failed = phase == _Phase.done && error != null && error!.isNotEmpty;
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(
-          24, MediaQuery.of(context).padding.top + 20, 24, 32),
+      padding: EdgeInsets.fromLTRB(24, 20, 24, 32),
       children: [
         // —— 麦克风圆钮 ——
         SizedBox(
@@ -427,7 +439,7 @@ class _WaveformState extends State<_Waveform>
 
 // ==================== 匹配结果列表 ====================
 
-class _MatchListView extends StatelessWidget {
+class _MatchListView extends ConsumerWidget {
   const _MatchListView({
     required this.matches,
     required this.onPlay,
@@ -447,15 +459,16 @@ class _MatchListView extends StatelessWidget {
   final VoidCallback onStart;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       children: [
         // 结果提示条
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: appCardColor(context),
+          color: glass ? glassControlFill : appCardColor(context),
           child: Text(
             tr('识别到 {n} 首匹配', {'n': matches.length}),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

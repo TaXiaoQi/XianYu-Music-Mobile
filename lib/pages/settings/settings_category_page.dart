@@ -16,6 +16,7 @@ import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
@@ -82,24 +83,38 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: Text(category.title)),
       resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          24 + MediaQuery.of(context).padding.bottom,
-        ),
-        children: _buildItems(
-          context,
-          ref,
-          category,
-          settings,
-          notifier,
-          exclusivePlaying,
-        ),
-        ),
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: RepaintBoundary(child: ListView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                24 + MediaQuery.of(context).padding.bottom,
+              ),
+              children: _buildItems(
+                context,
+                ref,
+                category,
+                settings,
+                notifier,
+                exclusivePlaying,
+              ),
+            )),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(category.title),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -158,6 +173,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             subtitle: tr('点击底部导航等操作的手感震动强度'),
             trailing: Text(_hapticLabel(s?.hapticStrength ?? 1)),
             onTap: () => _pickHaptic(context, ref, s),
+          ),
+        ],
+      ),
+      _sectionHeader(context, tr('检测更新')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.system_update_alt_outlined,
+            title: tr('检测更新模式'),
+            subtitle: tr('启动时自动检查 App 更新'),
+            trailing: Text(_updateModeLabel(s?.updateCheckMode ?? 'startup')),
+            onTap: () => _pickUpdateCheckMode(context, ref, s),
           ),
         ],
       ),
@@ -858,6 +886,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     _ => tr('正常'),
   };
 
+  String _updateModeLabel(String mode) => switch (mode) {
+    'never' => tr('从不检测'),
+    _ => tr('启动检测'),
+  };
+
   Widget _volumeSlider(
     AppSettings? s,
     SettingsNotifier n, {
@@ -1379,6 +1412,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
+  Future<void> _pickUpdateCheckMode(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.updateCheckMode ?? 'startup';
+    final choice = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('检测更新模式'),
+      options: [
+        ModernChoiceOption(label: tr('启动检测'), value: 'startup'),
+        ModernChoiceOption(label: tr('从不检测'), value: 'never'),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref.read(settingsProvider.notifier).setUpdateCheckMode(choice);
+    }
+  }
+
   Future<void> _pickListSize(
     BuildContext context,
     WidgetRef ref,
@@ -1896,13 +1949,14 @@ class _StepperSliderRow extends StatelessWidget {
 }
 
 /// 分组圆角卡片包裹容器（纯白卡片）。
-class _CardGroup extends StatelessWidget {
+class _CardGroup extends ConsumerWidget {
   const _CardGroup({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
@@ -1920,9 +1974,15 @@ class _CardGroup extends StatelessWidget {
     }
 
     return Material(
-      color: settingsCardColor(context),
+      color: glass ? glassControlFill : settingsCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      shape: glass
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: glassControlBorder),
+            )
+          : null,
       child: Column(children: items),
     );
   }

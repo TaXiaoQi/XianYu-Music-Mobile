@@ -11,6 +11,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/db_path.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 听歌排行榜：日榜/周榜/总榜切换，Top 列表 + 底部个人排名。
@@ -102,66 +103,93 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final loggedIn = auth.isLoggedIn;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title:   Text(tr('听歌排行榜'))),
-      body: Column(
+      body: Stack(
         children: [
-          // 周期切换
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Row(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: Column(
               children: [
-                Expanded(
-                  child: Text(
-                    _periodLabel,
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: appCardColor(context),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                // 周期切换
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final p in _periods)
-                        _PeriodTab(
-                          label: p.label,
-                          active: _period == p.value,
-                          onTap: _loading ? null : () => _switchPeriod(p.value),
+                      Expanded(
+                        child: Text(
+                          _periodLabel,
+                          style: TextStyle(
+                              fontSize: 12, color: scheme.onSurfaceVariant),
+                          overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: glass ? glassControlFill : appCardColor(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: glass
+                              ? Border.all(color: glassControlBorder)
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final p in _periods)
+                              _PeriodTab(
+                                label: p.label,
+                                active: _period == p.value,
+                                onTap: _loading
+                                    ? null
+                                    : () => _switchPeriod(p.value),
+                              ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                Expanded(child: _buildBody(scheme, loggedIn)),
               ],
             ),
           ),
-          Expanded(child: _buildBody(scheme, loggedIn)),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(tr('听歌排行榜')),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildBody(ColorScheme scheme, bool loggedIn) {
+    final glass = ref.watch(wallpaperActiveProvider);
     if (_loading) {
+      // 骨架行复用同一原型：prototypeItem 让 Sliver 直接按固定行高估算滚动范围，
+      // 避免首帧逐行测量再布局（对齐 PiliNara 的 prototypeItem 骨架屏）。
+      final skeleton = Container(
+        height: 56,
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: glass ? glassControlFill : appCardColor(context),
+          borderRadius: BorderRadius.circular(12),
+          border: glass ? Border.all(color: glassControlBorder) : null,
+        ),
+        child: _skeletonRow(scheme),
+      );
       return ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: 8,
-        itemBuilder: (_, i) => Container(
-          height: 56,
-          margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
-            color: appCardColor(context),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: _skeletonRow(scheme),
-        ),
+        prototypeItem: skeleton,
+        itemBuilder: (_, i) => skeleton,
       );
     }
     if (_error) {
@@ -224,6 +252,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
   }
 
   Widget _skeletonRow(ColorScheme scheme) {
+    final glass = ref.watch(wallpaperActiveProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
@@ -232,7 +261,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: glass ? glassControlFill : appCardColor(context),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
@@ -241,7 +270,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: glass ? glassControlFill : appCardColor(context),
               shape: BoxShape.circle,
             ),
           ),
@@ -255,7 +284,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 120,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: appCardColor(context),
+                    color: glass ? glassControlFill : appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -264,7 +293,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 80,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: appCardColor(context),
+                    color: glass ? glassControlFill : appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -321,7 +350,7 @@ class _PeriodTab extends StatelessWidget {
   }
 }
 
-class _LeaderboardRow extends StatelessWidget {
+class _LeaderboardRow extends ConsumerWidget {
   const _LeaderboardRow({
     required this.entry,
     required this.isMe,
@@ -332,8 +361,9 @@ class _LeaderboardRow extends StatelessWidget {
   final bool highlight;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final name = entry.nickname.isNotEmpty ? entry.nickname : entry.username;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -343,11 +373,11 @@ class _LeaderboardRow extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.08)
             : (highlight
                 ? scheme.primary.withValues(alpha: 0.04)
-                : appCardColor(context)),
+                : (glass ? glassControlFill : appCardColor(context))),
         borderRadius: BorderRadius.circular(12),
         border: isMe
             ? Border.all(color: scheme.primary.withValues(alpha: 0.3))
-            : null,
+            : (glass ? Border.all(color: glassControlBorder) : null),
       ),
       child: Row(
         children: [
@@ -416,18 +446,19 @@ class _LeaderboardRow extends StatelessWidget {
   }
 }
 
-class _RankBadge extends StatelessWidget {
+class _RankBadge extends ConsumerWidget {
   const _RankBadge({required this.rank});
   final int rank;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final (Color bg, Color fg) = switch (rank) {
       1 => (const Color(0xFFFFA500), Colors.white),
       2 => (const Color(0xFFA8A8A8), Colors.white),
       3 => (const Color(0xFFA0522D), Colors.white),
-      _ => (appCardColor(context), scheme.onSurfaceVariant),
+      _ => (glass ? glassControlFill : appCardColor(context), scheme.onSurfaceVariant),
     };
     return Container(
       width: 28,
@@ -454,14 +485,15 @@ class _RankBadge extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
+class _Avatar extends ConsumerWidget {
   const _Avatar({required this.name, required this.avatar});
   final String name;
   final String avatar;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final char = name.isEmpty
         ? '?'
         : String.fromCharCode(name.runes.first).toUpperCase();
@@ -472,16 +504,18 @@ class _Avatar extends StatelessWidget {
         child: avatar.isNotEmpty
             ? UserAvatarImage(
                 avatar: avatar,
-                fallback: _fallback(context, scheme, char),
+                fallback: _fallback(context, scheme, glass, char),
+                size: 36,
               )
-            : _fallback(context, scheme, char),
+            : _fallback(context, scheme, glass, char),
       ),
     );
   }
 
-  Widget _fallback(BuildContext context, ColorScheme scheme, String char) {
+  Widget _fallback(
+      BuildContext context, ColorScheme scheme, bool glass, String char) {
     return Container(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       alignment: Alignment.center,
       child: Text(
         char,
@@ -492,13 +526,14 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-class _LoginRow extends StatelessWidget {
+class _LoginRow extends ConsumerWidget {
   const _LoginRow({required this.onTap});
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
       color: scheme.primary.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(12),
@@ -518,7 +553,7 @@ class _LoginRow extends StatelessWidget {
                 height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: appCardColor(context),
+                  color: glass ? glassControlFill : appCardColor(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('—',
@@ -532,7 +567,7 @@ class _LoginRow extends StatelessWidget {
                 child: Container(
                   width: 36,
                   height: 36,
-                  color: appCardColor(context),
+                  color: glass ? glassControlFill : appCardColor(context),
                   alignment: Alignment.center,
                   child: Text(tr('未'),
                       style: TextStyle(

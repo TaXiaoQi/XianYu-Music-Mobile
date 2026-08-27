@@ -544,6 +544,9 @@ class _ArtistsTab extends ConsumerWidget {
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
+      // 行高固定（封面 + 上下内边距），itemExtent 跳过逐行测量，长列表滚动更省。
+      itemExtent: m.artistCover + 2 * m.vPad,
+      addAutomaticKeepAlives: false,
       itemCount: artists.length,
       itemBuilder: (context, i) {
         final a = artists[i];
@@ -614,6 +617,9 @@ class _AlbumsTab extends ConsumerWidget {
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
+      // 行高固定（封面 + 上下内边距），itemExtent 跳过逐行测量，长列表滚动更省。
+      itemExtent: m.songCover + 2 * m.vPad,
+      addAutomaticKeepAlives: false,
       itemCount: albums.length,
       itemBuilder: (context, i) {
         final a = albums[i];
@@ -958,6 +964,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
             ?.libraryMinDurationSeconds ??
         0;
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
@@ -1030,9 +1037,14 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               ),
             ),
             Material(
-              color: appCardColor(context),
-              borderRadius: BorderRadius.circular(16),
+              color: glass ? glassControlFill : appCardColor(context),
               clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: glass
+                    ? BorderSide(color: glassControlBorder)
+                    : BorderSide.none,
+              ),
               child: Column(children: tiles),
             ),
           ],
@@ -1135,7 +1147,7 @@ class _ScanHero extends StatelessWidget {
 }
 
 /// 过滤设置卡：按时长过滤开关 + 阈值选择。
-class _FilterCard extends StatelessWidget {
+class _FilterCard extends ConsumerWidget {
   const _FilterCard({
     required this.minDuration,
     required this.onToggle,
@@ -1147,12 +1159,16 @@ class _FilterCard extends StatelessWidget {
   final VoidCallback onPick;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
+      color: glass ? glassControlFill : appCardColor(context),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: ListTile(
         leading: Icon(Icons.timer_outlined, color: scheme.primary),
         title:   Text(tr('按时长过滤')),
@@ -1173,7 +1189,7 @@ class _FilterCard extends StatelessWidget {
 }
 
 /// 扫描目录管理卡：目录列表 + 添加 / 重新授权 / 移除。
-class _ScanFoldersCard extends StatelessWidget {
+class _ScanFoldersCard extends ConsumerWidget {
   const _ScanFoldersCard({
     required this.folders,
     required this.lost,
@@ -1191,12 +1207,16 @@ class _ScanFoldersCard extends StatelessWidget {
   final void Function(String path) onReauthorize;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
+      color: glass ? glassControlFill : appCardColor(context),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1404,16 +1424,20 @@ class _FolderTile extends StatelessWidget {
 }
 
 /// 远程音乐库 WebDAV 管理入口（从设置页「本地」迁至本文件夹页）。
-class _RemoteLibraryCard extends StatelessWidget {
+class _RemoteLibraryCard extends ConsumerWidget {
   const _RemoteLibraryCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
+      color: glass ? glassControlFill : appCardColor(context),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: ListTile(
         leading: Icon(Icons.cloud_outlined, color: scheme.primary),
         title:   Text(tr('远程音乐库 (WebDAV)')),

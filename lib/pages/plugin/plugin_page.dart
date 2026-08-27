@@ -18,6 +18,7 @@ import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -99,6 +100,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     final state = ref.watch(pluginManagerProvider);
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     final sources = state.sources;
     final q = _query.trim().toLowerCase();
@@ -116,22 +118,11 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：插件列表不再
       // 每帧重排重绘，彻底消除输入法动画掉帧（键盘弹出后面板由弹窗自行上移）。
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title:   Text(tr('音源')),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: tr('插件设置'),
-            onPressed: _showPluginSettingsSheet,
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: tr('安装插件'),
-            onPressed: _installing ? null : _showInstallSheet,
-          ),
-        ],
-      ),
-      body: NotificationListener<ScrollNotification>(
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
           if (notification is ScrollEndNotification) {
@@ -228,10 +219,12 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 ),
                           isDense: true,
                           filled: true,
-                          fillColor: appCardColor(context),
+                          fillColor: glass ? glassControlFill : appCardColor(context),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                            borderSide: glass
+                                ? BorderSide(color: glassControlBorder)
+                                : BorderSide.none,
                           ),
                         ),
                       ),
@@ -275,7 +268,31 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                   },
                 ),
               ),
-    );
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('音源')),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: tr('插件设置'),
+                    onPressed: _showPluginSettingsSheet,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    tooltip: tr('安装插件'),
+                    onPressed: _installing ? null : _showInstallSheet,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
   }
 
   /// 拖拽排序结束：把调整后的完整插件顺序持久化到 sortOrder。
@@ -509,6 +526,7 @@ class _SubscriptionSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -532,10 +550,15 @@ class _SubscriptionSection extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: appCardColor(context),
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
+              color: glass ? glassControlFill : appCardColor(context),
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
+                side: glass
+                    ? BorderSide(color: glassControlBorder)
+                    : BorderSide.none,
+              ),
+              child: InkWell(
                 onTap: () => onReinstall(sub.url),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
@@ -703,6 +726,7 @@ class _PluginCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final manager = ref.read(pluginManagerProvider.notifier);
 
     // 图标/开关按插件格式分类配色（对齐桌面端，不随主题色变化）。
@@ -741,8 +765,14 @@ class _PluginCard extends ConsumerWidget {
             : tr('未知');
 
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(14),
+      color: glass ? glassControlFill : appCardColor(context),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: glass
+            ? BorderSide(color: glassControlBorder)
+            : BorderSide.none,
+      ),
       child: Stack(
         children: [
           // 内容：左侧预留拖动图标让位
@@ -1415,7 +1445,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
 }
 
 /// 安装方式选项卡片：图标 + 标题 + 副标题。
-class _InstallOption extends StatelessWidget {
+class _InstallOption extends ConsumerWidget {
   const _InstallOption({
     required this.icon,
     required this.title,
@@ -1429,13 +1459,19 @@ class _InstallOption extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
+      color: glass ? glassControlFill : appCardColor(context),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
+        side: glass
+            ? BorderSide(color: glassControlBorder)
+            : BorderSide.none,
+      ),
+      child: InkWell(
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(14),

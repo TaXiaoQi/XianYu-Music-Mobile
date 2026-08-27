@@ -1,4 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'settings.dart';
+
+/// 是否启用自定义壁纸。启用时设置页/我的页等控件切换为玻璃透明样式以透出壁纸。
+final wallpaperActiveProvider = Provider<bool>((ref) {
+  return ref.watch(
+    settingsProvider.select((s) => s.valueOrNull?.customBackground.active ?? false),
+  );
+});
+
+/// 自定义壁纸启用时控件使用的半透明白玻璃填充 / 描边
+/// （对齐首页「发现」区卡片 _CardContainer：底 alpha 0.06、描边 alpha 0.08）。
+final Color glassControlFill = Colors.white.withValues(alpha: 0.06);
+final Color glassControlBorder = Colors.white.withValues(alpha: 0.08);
 
 /// 全局统一页面底色。
 ///

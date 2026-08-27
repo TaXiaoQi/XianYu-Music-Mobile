@@ -249,6 +249,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
 
   Widget _buildAuthForm(BuildContext context, AuthState auth) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       children: [
         // 品牌头部
@@ -290,7 +291,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Container(
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: glass ? glassControlFill : appCardColor(context),
               borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(4),
@@ -906,7 +907,7 @@ class _StatusBadge extends StatelessWidget {
 
 /// 英雄头图区：大尺寸头像 + 2px 渐变描边 + 弥散光影 + 身份胶囊。
 /// 头像可点击上传（带相机角标），昵称可点击修改。
-class _ProfileHeaderCard extends StatelessWidget {
+class _ProfileHeaderCard extends ConsumerWidget {
   const _ProfileHeaderCard({
     required this.user,
     required this.onCopy,
@@ -922,17 +923,18 @@ class _ProfileHeaderCard extends StatelessWidget {
   final VoidCallback? onNicknameTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: glass
+            ? Border.all(color: glassControlBorder)
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Column(
         children: [
@@ -1119,6 +1121,7 @@ class _Avatar extends StatelessWidget {
             ? UserAvatarImage(
                 avatar: avatar,
                 fallback: _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
+                size: 87,
               )
             : _fallback(fallbackChar, scheme.primary, scheme.onPrimary),
       ),
@@ -1143,13 +1146,14 @@ class _Avatar extends StatelessWidget {
 }
 
 /// 全高透毛玻璃分组卡片。
-class _GlassCard extends StatelessWidget {
+class _GlassCard extends ConsumerWidget {
   const _GlassCard({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
@@ -1169,11 +1173,11 @@ class _GlassCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: glass
+            ? Border.all(color: glassControlBorder)
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Column(children: items),
     );

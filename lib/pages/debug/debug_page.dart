@@ -297,13 +297,14 @@ class _DebugRow extends StatelessWidget {
 }
 
 /// 分组圆角卡片包裹容器（与设置页一致）。
-class _CardGroup extends StatelessWidget {
+class _CardGroup extends ConsumerWidget {
   const _CardGroup({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
@@ -321,9 +322,13 @@ class _CardGroup extends StatelessWidget {
     }
 
     return Material(
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: Column(children: items),
     );
   }

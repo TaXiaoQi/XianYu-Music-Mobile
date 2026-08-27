@@ -154,6 +154,7 @@ class _AccountStatusCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final isLoggedIn = user != null;
     final fallbackChar = isLoggedIn && user!.nickname.isNotEmpty
         ? String.fromCharCode(user!.nickname.runes.first)
@@ -161,11 +162,11 @@ class _AccountStatusCard extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: glass
+            ? Border.all(color: glassControlBorder)
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -196,6 +197,7 @@ class _AccountStatusCard extends ConsumerWidget {
                     ? UserAvatarImage(
                         avatar: user!.avatar,
                         fallback: _fallback(fallbackChar, scheme),
+                        size: 42,
                       )
                     : _fallback(fallbackChar, scheme),
               ),
@@ -390,13 +392,14 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: glass
+            ? Border.all(color: glassControlBorder)
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -650,13 +653,14 @@ class _AutoSyncCard extends ConsumerWidget {
 }
 
 /// 全高透毛玻璃分组卡片。
-class _GlassCard extends StatelessWidget {
+class _GlassCard extends ConsumerWidget {
   const _GlassCard({required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
 
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
@@ -676,11 +680,11 @@ class _GlassCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
-        ),
+        border: glass
+            ? Border.all(color: glassControlBorder)
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Column(children: items),
     );

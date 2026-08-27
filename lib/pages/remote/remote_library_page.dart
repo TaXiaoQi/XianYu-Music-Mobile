@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/remote/remote_library_service.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
@@ -19,48 +20,62 @@ class RemoteLibraryPage extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(remoteLibraryProvider);
 
+    final glass = ref.watch(wallpaperActiveProvider);
     return Scaffold(
       backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(title:   Text(tr('远程音乐库 (WebDAV)'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSourceEditor(context, ref),
         icon: const Icon(Icons.add),
         label:   Text(tr('添加 WebDAV 音乐库')),
       ),
-      body: RepaintBoundary(child: Stack(
+      body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 10),
-                child: Text(
-                  tr('挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放'),
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: RepaintBoundary(child: Stack(
+              children: [
+                ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 10),
+                      child: Text(
+                        tr('挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放'),
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                    if (state.sources.isEmpty && !state.loading)
+                      _buildEmptyHint(context, scheme, glass)
+                    else
+                      for (final source in state.sources)
+                        _SourceCard(source: source),
+                    const SizedBox(height: 20),
+                    _buildCacheCard(context, ref, state, glass),
+                  ],
                 ),
-              ),
-              if (state.sources.isEmpty && !state.loading)
-                _buildEmptyHint(context, scheme)
-              else
-                for (final source in state.sources)
-                  _SourceCard(source: source),
-              const SizedBox(height: 20),
-              _buildCacheCard(context, ref, state),
-            ],
+                const BottomPlayBarSlot(),
+              ],
+            )),
           ),
-          const BottomPlayBarSlot(),
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title:   Text(tr('远程音乐库 (WebDAV)')),
+            ),
+          ),
         ],
-        ),
       ),
     );
   }
 
-  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme) => Container(
+  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme, bool glass) => Container(
         padding: const EdgeInsets.symmetric(vertical: 36),
         decoration: BoxDecoration(
-          color: appCardColor(context),
+          color: glass ? glassControlFill : appCardColor(context),
           borderRadius: BorderRadius.circular(16),
+          border: glass ? Border.all(color: glassControlBorder) : null,
         ),
         child: Column(
           children: [
@@ -80,12 +95,13 @@ class RemoteLibraryPage extends ConsumerWidget {
       );
 
   Widget _buildCacheCard(
-      BuildContext context, WidgetRef ref, RemoteLibraryState state) {
+      BuildContext context, WidgetRef ref, RemoteLibraryState state, bool glass) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
+        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         children: [
@@ -174,6 +190,7 @@ class _SourceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final state = ref.watch(remoteLibraryProvider);
     final syncing = state.syncingSourceId == source.id;
 
@@ -181,8 +198,9 @@ class _SourceCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(16),
+        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

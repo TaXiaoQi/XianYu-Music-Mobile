@@ -169,12 +169,17 @@ class _PlaylistCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final manager = ref.read(playlistManagerProvider.notifier);
     final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
     return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
+      color: glass ? glassControlFill : appCardColor(context),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _openPlaylist(context, playlist.id),

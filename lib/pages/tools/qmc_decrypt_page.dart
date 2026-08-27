@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/rust/api.dart' as frb;
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// QMC 独立文件解密页：解密 QQ 音乐加密文件（.qmcflac/.mflac 等）。
@@ -121,86 +122,98 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title:   Text(tr('QMC 文件解密'))),
       resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(
-        child: Stack(
+      body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.lock_open_outlined,
-                        size: 20, color: scheme.primary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        tr('解密 QQ 音乐加密文件（.qmcflac / .qmcmp3 / .mflac / .mmp3 等）。\n') + tr('优先使用文件内置 ekey（QMC2），老格式 .qmc 系列自动用固定密钥（QMC1）；') + tr('解密后自动修正扩展名，可分享保存到任意位置。'),
-                        style: TextStyle(
-                            fontSize: 12.5, color: scheme.onSurfaceVariant,
-                            height: 1.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_showEkey) ...[
-                TextField(
-                  controller: _ekeyCtrl,
-                  decoration: InputDecoration(
-                    labelText: tr('ekey（可选，QMC2 加密密钥）'),
-                    hintText: tr('留空则自动从文件尾部提取'),
-                    isDense: true,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  style: const TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-              ],
-              Row(
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: RepaintBoundary(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
                 children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _busy ? null : _pickAndDecrypt,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.folder_open, size: 18),
-                      label: Text(_busy ? tr('解密中…') : tr('选择文件并解密')),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.lock_open_outlined,
+                            size: 20, color: scheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            tr('解密 QQ 音乐加密文件（.qmcflac / .qmcmp3 / .mflac / .mmp3 等）。\n') + tr('优先使用文件内置 ekey（QMC2），老格式 .qmc 系列自动用固定密钥（QMC1）；') + tr('解密后自动修正扩展名，可分享保存到任意位置。'),
+                            style: TextStyle(
+                                fontSize: 12.5, color: scheme.onSurfaceVariant,
+                                height: 1.5),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  IconButton(
-                    tooltip: _showEkey ? tr('隐藏 ekey 输入') : tr('手动输入 ekey'),
-                    isSelected: _showEkey,
-                    onPressed: () => setState(() => _showEkey = !_showEkey),
-                    icon: const Icon(Icons.vpn_key_outlined, size: 20),
+                  const SizedBox(height: 12),
+                  if (_showEkey) ...[
+                    TextField(
+                      controller: _ekeyCtrl,
+                      decoration: InputDecoration(
+                        labelText: tr('ekey（可选，QMC2 加密密钥）'),
+                        hintText: tr('留空则自动从文件尾部提取'),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _pickAndDecrypt,
+                          icon: _busy
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))
+                              : const Icon(Icons.folder_open, size: 18),
+                          label: Text(_busy ? tr('解密中…') : tr('选择文件并解密')),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        tooltip: _showEkey ? tr('隐藏 ekey 输入') : tr('手动输入 ekey'),
+                        isSelected: _showEkey,
+                        onPressed: () => setState(() => _showEkey = !_showEkey),
+                        icon: const Icon(Icons.vpn_key_outlined, size: 20),
+                      ),
+                    ],
                   ),
+                  if (_results.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildSummary(scheme),
+                    const SizedBox(height: 10),
+                    for (final item in _results)
+                      _buildResultCard(scheme, item),
+                  ],
                 ],
               ),
-              if (_results.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _buildSummary(scheme),
-                const SizedBox(height: 10),
-                for (final item in _results) _buildResultCard(scheme, item),
-              ],
-            ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(tr('QMC 文件解密')),
+            ),
           ),
         ],
-      ),
       ),
     );
   }
@@ -223,6 +236,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
   }
 
   Widget _buildResultCard(ColorScheme scheme, _DecryptResult item) {
+    final glass = ref.watch(wallpaperActiveProvider);
     final (icon, color, text) = switch (item.status) {
       _DecryptStatus.pending => (Icons.schedule, scheme.outline, tr('等待解密')),
       _DecryptStatus.running => (Icons.sync, scheme.primary, tr('解密中…')),
@@ -237,8 +251,9 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: glass ? glassControlFill : appCardColor(context),
         borderRadius: BorderRadius.circular(14),
+        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

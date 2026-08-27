@@ -1,15 +1,15 @@
 import 'dart:async';
 
-import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/update/app_update.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
@@ -76,96 +76,18 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
     try {
-      final latest = await ref.read(accountApiProvider).fetchServerUpdate();
-      if (!mounted) return;
-      if (latest == null) {
-        _toast(tr('检查更新失败，请稍后重试'));
-        return;
-      }
-      final cmp = _compareVersions(latest.version, appVersion);
-      if (cmp > 0) {
-        await _showUpdateDialog(latest);
-      } else {
-        _toast(tr('当前已是最新版本（{v}）', {'v': appVersion}));
-      }
+      await checkAppUpdate(context, ref);
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
     }
   }
 
-  /// 版本号比较：a > b 返回 1，a < b 返回 -1，相等返回 0。
-  int _compareVersions(String a, String b) {
-    final aParts = a.split('.').map((s) => int.tryParse(s) ?? 0).toList();
-    final bParts = b.split('.').map((s) => int.tryParse(s) ?? 0).toList();
-    final len = aParts.length > bParts.length ? aParts.length : bParts.length;
-    for (var i = 0; i < len; i++) {
-      final av = i < aParts.length ? aParts[i] : 0;
-      final bv = i < bParts.length ? bParts[i] : 0;
-      if (av > bv) return 1;
-      if (av < bv) return -1;
-    }
-    return 0;
-  }
-
-  Future<void> _showUpdateDialog(LatestVersion latest) async {
-    await showPredictiveDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('发现新版本')),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(tr('最新版本：{v}', {'v': latest.version}),
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              if (latest.content.isNotEmpty)
-                Text(latest.content,
-                    style: const TextStyle(fontSize: 13, height: 1.5)),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('暂不更新')),
-          ),
-          if (latest.downloadUrl.isNotEmpty)
-            FilledButton(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                await _openUrl(latest.downloadUrl);
-              },
-              child:   Text(tr('去下载')),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openUrl(String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    try {
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) _toast(tr('无法打开链接'));
-    } catch (_) {
-      _toast(tr('无法打开链接'));
-    }
-  }
-
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  Future<void> _openUrl(String url) async => openExternalUrl(context, url);
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final links = <({IconData icon, String label, String url})>[
       if (_config.officialSiteUrl.isNotEmpty)
         (icon: Icons.language, label: tr(_config.officialSiteText), url: _config.officialSiteUrl),
@@ -178,8 +100,11 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     ];
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title:   Text(tr('关于'))),
-      body: ListView(
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: ListView(
         padding: const EdgeInsets.all(24),
         children: [
           // 品牌区
@@ -254,8 +179,9 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: appCardColor(context),
+                color: glass ? glassControlFill : appCardColor(context),
                 borderRadius: BorderRadius.circular(14),
+                border: glass ? Border.all(color: glassControlBorder) : null,
               ),
               child: Column(
                 children: [
@@ -305,12 +231,24 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           ),
         ],
       ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title:   Text(tr('关于')),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 /// 开发者名字标签：点击调用外部浏览器打开对应 GitHub 主页。
-class _DeveloperChip extends StatefulWidget {
+class _DeveloperChip extends ConsumerStatefulWidget {
   const _DeveloperChip({
     required this.name,
     required this.url,
@@ -322,15 +260,16 @@ class _DeveloperChip extends StatefulWidget {
   final void Function(String url) onOpen;
 
   @override
-  State<_DeveloperChip> createState() => _DeveloperChipState();
+  ConsumerState<_DeveloperChip> createState() => _DeveloperChipState();
 }
 
-class _DeveloperChipState extends State<_DeveloperChip> {
+class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
   bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
@@ -346,12 +285,12 @@ class _DeveloperChipState extends State<_DeveloperChip> {
           decoration: BoxDecoration(
             color: _pressed
                 ? scheme.primary.withValues(alpha: 0.14)
-                : appCardColor(context),
+                : (glass ? glassControlFill : appCardColor(context)),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: _pressed
                   ? scheme.primary.withValues(alpha: 0.5)
-                  : scheme.outlineVariant,
+                  : (glass ? glassControlBorder : scheme.outlineVariant),
             ),
           ),
           child: Text(

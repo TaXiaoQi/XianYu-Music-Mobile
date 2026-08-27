@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/db_path.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/i18n/i18n.dart';
@@ -154,9 +155,12 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title:   Text(tr('批量重命名'))),
       resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: RepaintBoundary(
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -332,6 +336,16 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           ],
         ],
         ),
+        ),
+        ),
+        Positioned(
+          top: 0, left: 0, right: 0,
+          child: GlassTopBar(
+            leading: const BackButton(),
+            title:   Text(tr('批量重命名')),
+          ),
+        ),
+      ],
       ),
     );
   }

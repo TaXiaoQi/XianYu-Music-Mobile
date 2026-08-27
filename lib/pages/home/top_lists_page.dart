@@ -6,6 +6,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
@@ -75,37 +76,49 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title:   Text(tr('音源榜单')),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Column(
+      body: Stack(
         children: [
-          if (_sources.isNotEmpty)
-            SizedBox(
-              height: 46,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                children: [
-                  for (final s in _sources)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(s.name),
-                        showCheckmark: false,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        selected: _selectedId == s.id,
-                        onSelected: (_) => _load(s),
-                      ),
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: Column(
+              children: [
+                if (_sources.isNotEmpty)
+                  SizedBox(
+                    height: 46,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      children: [
+                        for (final s in _sources)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(s.name),
+                              showCheckmark: false,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              selected: _selectedId == s.id,
+                              onSelected: (_) => _load(s),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+                Expanded(child: _buildBody(scheme)),
+              ],
             ),
-          Expanded(child: _buildBody(scheme)),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+              title: Text(tr('音源榜单')),
+            ),
+          ),
         ],
       ),
     );

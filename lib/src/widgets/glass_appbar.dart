@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/app_colors.dart';
 import '../core/settings.dart';
 
 /// 顶栏毛玻璃条（安卓原生磨砂质感）。
@@ -60,16 +61,23 @@ class GlassTopBar extends ConsumerWidget {
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
             true) &&
             !lowPerf;
+    // 自定义壁纸启用时，顶栏改为半透明白玻璃（对齐首页「发现」区卡片），透出壁纸。
+    final wallpaper = ref.watch(wallpaperActiveProvider);
 
     final bar = _bar(context, statusBarHeight);
     if (!frosted) {
       // 关闭毛玻璃：纯色顶栏（与页面背景一致，无高斯模糊）。
+      // 启用自定义壁纸时同样改为半透明玻璃。
       return Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
+          color: wallpaper
+              ? glassControlFill
+              : isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
           border: Border(
             bottom: BorderSide(
-              color: scheme.onSurface.withValues(alpha: 0.06),
+              color: wallpaper
+                  ? glassControlBorder
+                  : scheme.onSurface.withValues(alpha: 0.06),
             ),
           ),
         ),
@@ -84,12 +92,16 @@ class GlassTopBar extends ConsumerWidget {
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
           decoration: BoxDecoration(
-            color: isDark
-                ? const Color(0xB8222222)
-                : const Color(0xCCF7F7F9),
+            color: wallpaper
+                ? glassControlFill
+                : isDark
+                    ? const Color(0xB8222222)
+                    : const Color(0xCCF7F7F9),
             border: Border(
               bottom: BorderSide(
-                color: scheme.onSurface.withValues(alpha: 0.06),
+                color: wallpaper
+                    ? glassControlBorder
+                    : scheme.onSurface.withValues(alpha: 0.06),
               ),
             ),
           ),

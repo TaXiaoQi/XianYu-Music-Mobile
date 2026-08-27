@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 底栏与工具栏设置页：支持配置底栏位置（底部/侧边）、悬浮样式与液态玻璃。
@@ -25,45 +26,54 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
     final notifier = ref.read(settingsProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title:   Text(
-          tr('底栏与工具栏'),
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-        ),
-      ),
-      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          const _AmbientBackground(),
-          ListView(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + kToolbarHeight,
-              left: 16,
-              right: 16,
-              bottom: 40,
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: Stack(
+              children: [
+                const _AmbientBackground(),
+                ListView(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: 40,
+                  ),
+                  children: [
+                    _section(context, tr('悬浮与特效'), [
+                      const _PerformanceModeTile(),
+                      _GlassSwitchTile(
+                        icon: Icons.blur_on,
+                        title: tr('液态玻璃'),
+                        subtitle: tr('导航栏与迷你播放条使用 shader 折射与动态光影'),
+                        value: settings?.liquidGlass ?? true,
+                        onChanged: (v) => notifier.setLiquidGlass(v),
+                      ),
+                      _GlassSwitchTile(
+                        icon: Icons.music_video,
+                        title: tr('歌曲详情页液态玻璃'),
+                        subtitle: tr('正在播放页面的控制卡片使用 shader 折射与动态光效'),
+                        value: settings?.playerLiquidGlass ?? true,
+                        onChanged: (v) => notifier.setPlayerLiquidGlass(v),
+                      ),
+                    ]),
+                  ],
+                ),
+              ],
             ),
-            children: [
-              _section(context, tr('悬浮与特效'), [
-                const _PerformanceModeTile(),
-                _GlassSwitchTile(
-                  icon: Icons.blur_on,
-                  title: tr('液态玻璃'),
-                  subtitle: tr('导航栏与迷你播放条使用 shader 折射与动态光影'),
-                  value: settings?.liquidGlass ?? true,
-                  onChanged: (v) => notifier.setLiquidGlass(v),
-                ),
-                _GlassSwitchTile(
-                  icon: Icons.music_video,
-                  title: tr('歌曲详情页液态玻璃'),
-                  subtitle: tr('正在播放页面的控制卡片使用 shader 折射与动态光效'),
-                  value: settings?.playerLiquidGlass ?? true,
-                  onChanged: (v) => notifier.setPlayerLiquidGlass(v),
-                ),
-              ]),
-            ],
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(
+                tr('底栏与工具栏'),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+            ),
           ),
         ],
       ),

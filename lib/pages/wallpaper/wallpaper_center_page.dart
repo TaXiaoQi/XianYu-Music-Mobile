@@ -16,6 +16,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/widgets/custom_background.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
@@ -33,6 +34,18 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(length: 4, vsync: this);
 
+  PreferredSizeWidget get _tabBar => TabBar(
+        controller: _tab,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        tabs: [
+          Tab(text: tr('壁纸广场')),
+          Tab(text: tr('我的上传')),
+          Tab(text: tr('我的下载')),
+          Tab(text: tr('自定义壁纸')),
+        ],
+      );
+
   @override
   void dispose() {
     _tab.dispose();
@@ -42,30 +55,37 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        title:   Text(tr('壁纸中心')),
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs:   [
-            Tab(text: tr('壁纸广场')),
-            Tab(text: tr('我的上传')),
-            Tab(text: tr('我的下载')),
-            Tab(text: tr('自定义壁纸')),
-          ],
-        ),
-      ),
-      body: RepaintBoundary(child: TabBarView(
-        controller: _tab,
-        children: const [
-          _WallpaperBrowseTab(),
-          _MyUploadsTab(),
-          _MyDownloadsTab(),
-          _CustomWallpaperTab(),
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+              top: GlassTopBar.height(context, bottom: _tabBar),
+            ),
+            child: RepaintBoundary(
+              child: TabBarView(
+                controller: _tab,
+                children: const [
+                  _WallpaperBrowseTab(),
+                  _MyUploadsTab(),
+                  _MyDownloadsTab(),
+                  _CustomWallpaperTab(),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title: Text(tr('壁纸中心')),
+              bottom: _tabBar,
+            ),
+          ),
         ],
-        ),
       ),
     );
   }
@@ -166,22 +186,28 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
   }
 }
 
-class _WallpaperCard extends StatelessWidget {
+class _WallpaperCard extends ConsumerWidget {
   const _WallpaperCard({required this.wallpaper, this.statusBadge});
 
   final Map<String, dynamic> wallpaper;
   final String? statusBadge;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(wallpaperActiveProvider);
     final thumb = (wallpaper['thumbnailUrl'] as String?) ?? '';
     final title = (wallpaper['title'] as String?) ?? '';
     final uploader = (wallpaper['uploaderNickname'] as String?) ?? '';
     return Material(
-      borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
-      color: appCardColor(context),
+      color: glass ? glassControlFill : appCardColor(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: glass
+            ? BorderSide(color: glassControlBorder)
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () => _openPreview(context),
         child: Column(

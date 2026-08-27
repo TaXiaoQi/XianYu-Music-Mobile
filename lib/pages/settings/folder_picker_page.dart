@@ -6,6 +6,7 @@ import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 目录树节点（由 MediaStore 音频路径聚合构建）。
@@ -157,17 +158,11 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     final kept = _keptSelection;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title:   Text(tr('选择音乐文件夹')),
-        actions: [
-          IconButton(
-            tooltip: tr('刷新'),
-            icon: const Icon(Icons.refresh),
-            onPressed: _loading || _adding ? null : _load,
-          ),
-        ],
-      ),
-      body: _loading
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
@@ -223,6 +218,23 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                         for (final node in _roots) _tile(node, 0),
                       ],
                     ),
+          ),
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: GlassTopBar(
+              leading: const BackButton(),
+              title:   Text(tr('选择音乐文件夹')),
+              actions: [
+                IconButton(
+                  tooltip: tr('刷新'),
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loading || _adding ? null : _load,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
       bottomNavigationBar: _roots.isEmpty || _error != null
           ? null
           : SafeArea(
