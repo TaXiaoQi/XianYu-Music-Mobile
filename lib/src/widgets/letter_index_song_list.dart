@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pinyin/pinyin.dart';
 
@@ -193,7 +194,9 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
           controller: _controller,
           padding: widget.padding,
           // 提前约半屏预渲染，避免快速滑动时行连同封面在进场帧现建现画而抽帧。
-          cacheExtent: 500,
+          scrollCacheExtent: ScrollCacheExtent.pixels(500),
+          // 行不保留状态，离屏即弃，省内存与重建（分组表头/歌曲行均无持久状态）。
+          addAutomaticKeepAlives: false,
           itemCount: total,
           itemBuilder: (context, i) {
             final gIdx = flatGroup[i];

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
@@ -240,18 +241,25 @@ class SongsListView extends ConsumerWidget {
     }
 
     final onReorder = this.onReorder;
+    // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
+    // 跳过逐行布局测量，长列表快速滑动更省 CPU（对齐 PiliNara 列表优化）。
+    final rowExtent = m.songCover + 2 * m.vPad;
     if (onReorder == null) {
       return ListView.builder(
         padding: padding,
         // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
         // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
-        cacheExtent: 500,
+        scrollCacheExtent: ScrollCacheExtent.pixels(500),
+        // 行不保留状态（封面/标题均为无状态构建），离屏即弃，省内存与重建。
+        addAutomaticKeepAlives: false,
+        itemExtent: rowExtent,
         itemCount: songs.length,
         itemBuilder: (context, i) => buildRow(i),
       );
     }
     return ReorderableListView.builder(
       padding: padding,
+      itemExtent: rowExtent,
       // 顶级列表：拖到边缘时自动滚动。
       buildDefaultDragHandles: false,
       // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
