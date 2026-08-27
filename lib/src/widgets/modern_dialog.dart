@@ -348,7 +348,7 @@ class _ModernChoiceList<T> extends StatelessWidget {
             const SizedBox(height: 12),
           ],
           for (final opt in options) ...[
-            _ModernOptionTile<T>(
+            ModernOptionTile<T>(
               option: opt,
               isSelected: currentValue == opt.value,
               onTap: () => onSelected(opt.value),
@@ -361,8 +361,10 @@ class _ModernChoiceList<T> extends StatelessWidget {
   }
 }
 
-class _ModernOptionTile<T> extends StatelessWidget {
-  const _ModernOptionTile({
+/// 现代单选列表项：软色胶囊高亮 + 对勾指示（设置页选择弹窗的通用样式）。
+class ModernOptionTile<T> extends StatelessWidget {
+  const ModernOptionTile({
+    super.key,
     required this.option,
     required this.isSelected,
     required this.onTap,

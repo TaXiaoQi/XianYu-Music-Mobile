@@ -156,3 +156,134 @@ Future<T?> showPredictiveDialog<T>({
     ),
   );
 }
+
+/// 底部漂浮弹窗路由：与 [PredictiveBackDialogRoute] 使用同一套预测返回接管，
+/// 但弹窗贴在屏幕底部、从下往上覆盖，交互动效为竖直滑入/滑出。
+///
+/// 打开/关闭（按钮、编程、系统返回）与预测返回共用**同一条**竖直过渡：
+/// 动画值 0→1 时弹窗自底部滑入、遮罩淡入；1→0 时滑出。因预测返回期间框架
+/// 会把手指进度写入本路由的 `animation`，返回手势即表现为弹窗随手指下移，
+/// 与普通关闭的动作方向完全一致（「预测和普通一样」）。
+class PredictiveBackSheetRoute<T> extends PageRoute<T> {
+  PredictiveBackSheetRoute({
+    required this.builder,
+    this.dismissible = false,
+    this.closableByBack = true,
+    this.maxWidth = 720,
+    super.settings,
+  });
+
+  final WidgetBuilder builder;
+  final bool dismissible;
+  final bool closableByBack;
+
+  /// 弹窗面板最大宽度；手机屏幕宽度小于该值时自然全宽，实现「从下往上覆盖」。
+  final double maxWidth;
+
+  @override
+  bool get opaque => false;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 300);
+
+  @override
+  bool get barrierDismissible => dismissible;
+
+  @override
+  String? get barrierLabel => dismissible ? 'Close' : null;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get popGestureEnabled => isCurrent && closableByBack;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scrim = Colors.black.withValues(alpha: isDark ? 0.54 : 0.32);
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    // 遮罩淡入淡出 + 弹窗自底部竖直滑入/滑出，全部由路由 animation 驱动；
+    // 预测返回时框架把手指进度写进 animation，同一份过渡自然跟随手指下滑。
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FadeTransition(
+          opacity: curved,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: dismissible ? () => Navigator.of(context).pop() : null,
+            child: Container(color: scrim),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: FractionalTranslation(
+            translation: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).evaluate(curved),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: builder(context),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // 过渡已内置在 buildPage，这里只需挂上预测返回接管器（WidgetsBinding
+    // observer），不做额外转场——普通与预测共用同一过渡。
+    return PredictiveBackGestureDetector(
+      route: this,
+      builder:
+          (
+            BuildContext context,
+            PredictiveBackPhase phase,
+            PredictiveBackEvent? startBackEvent,
+            PredictiveBackEvent? currentBackEvent,
+          ) => child,
+    );
+  }
+}
+
+/// 打开一个从底部覆盖的预测返回弹窗（root Navigator）。
+Future<T?> showPredictiveBottomSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = false,
+  bool closableByBack = true,
+  double maxWidth = 720,
+}) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return navigator.push<T>(
+    PredictiveBackSheetRoute<T>(
+      builder: builder,
+      dismissible: barrierDismissible,
+      closableByBack: closableByBack,
+      maxWidth: maxWidth,
+    ),
+  );
+}

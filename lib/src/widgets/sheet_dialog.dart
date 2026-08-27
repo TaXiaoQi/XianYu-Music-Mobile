@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_colors.dart';
 import 'predictive_dialog_route.dart';
 
 /// 把原本从底部滑出的上弹窗内容改为居中弹窗展示（对齐「修改弦予号」弹窗风格）。
@@ -17,9 +18,10 @@ Future<T?> showSheetDialog<T>(
   return showPredictiveDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
-    builder: (dialogContext) => DialogKeyboardLift(
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+    builder: (dialogContext) {
+      final dialog = Dialog(
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
@@ -33,8 +35,62 @@ Future<T?> showSheetDialog<T>(
             child: builder(dialogContext),
           ),
         ),
-      ),
-    ),
+      );
+      // 弹窗面板不透明（#FFF/#262626），其文字应保持明暗主题各自的内置前景，
+      // 用基础配色恢复，避免自定义壁纸启用的「亮字/暗字」前景把弹窗文字也变成
+      // 白底白字/黑底黑字。
+      final base = Theme.of(dialogContext).brightness == Brightness.dark
+          ? darkBaseScheme
+          : lightBaseScheme;
+      return DialogKeyboardLift(
+        child: base == null
+            ? dialog
+            : Theme(
+                data: Theme.of(dialogContext).copyWith(colorScheme: base),
+                child: dialog,
+              ),
+      );
+    },
+  );
+}
+
+/// 底部漂浮弹窗（播放页音质 / 下载 / 播放列表等）：从下往上覆盖、支持预测返回。
+///
+/// - 面板贴屏幕底部、圆角顶角，手机屏自然全宽铺满（覆盖式抽屉）
+/// - 不可点遮罩、不可下滑关闭（桌面端语义），但系统返回/预测返回可关闭
+/// - 键盘弹出时整体上移避让（底部 padding = viewInsets），收起自动回落
+/// - 面板不透明，文字沿用明暗主题各自的内置前景，避免自定义壁纸把弹窗文字
+///   变成白底白字 / 黑底黑字
+Future<T?> showBottomSheetDialog<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  bool barrierDismissible = false,
+}) {
+  return showPredictiveBottomSheet<T>(
+    context: context,
+    barrierDismissible: barrierDismissible,
+    builder: (dialogContext) {
+      final base = Theme.of(dialogContext).brightness == Brightness.dark
+          ? darkBaseScheme
+          : lightBaseScheme;
+      final scheme = base ?? Theme.of(dialogContext).colorScheme;
+      final themed = Theme(data: base == null ? Theme.of(dialogContext) : Theme.of(dialogContext).copyWith(colorScheme: base), child: builder(dialogContext));
+      return Material(
+        color: scheme.surface,
+        clipBehavior: Clip.antiAlias,
+        elevation: 20,
+        shadowColor: Colors.black45,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(dialogContext).bottom,
+          ),
+          child: SafeArea(top: false, child: themed),
+        ),
+      );
+    },
   );
 }
 
