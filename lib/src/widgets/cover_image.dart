@@ -200,6 +200,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     return CachedNetworkImage(
       imageUrl: url,
       fit: BoxFit.cover,
+      // 与本地封面一致按显示尺寸低清解码，避免在线大图全分辨率解码
+      // 拖垮列表滚动内存与 GPU 上采样。
+      memCacheWidth: _cacheWidth,
       placeholder: (_, _) => _placeholder(),
       errorWidget: (_, _, _) => _placeholder(),
     );
@@ -222,12 +225,18 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   /// 全屏/占满卡片会以 `double.infinity` 作宽度（本组件的下沉安全网，如首页
   /// 正在播放轮播图、全屏背景封面）：此时尺寸不可用于解码，返回 null 表示
   /// 交给引擎按原图解码，否则 `Infinity.round()` 会抛 UnsupportedError。
+  ///
+  /// 非高清（列表缩略图）模式强制封顶低清解码宽度：即使封面在网格/大行里
+  /// 显示得较大，也最多按 256px 解码，滚动时只搬运低清图层；高清模式
+  /// （详情页大封面）不封顶，保留清晰度。
   int? get _cacheWidth {
     if (widget.cacheWidth != null) return widget.cacheWidth;
     final w = widget.width;
     if (!w.isFinite || w <= 0) return null;
     final px = w * MediaQuery.of(context).devicePixelRatio;
-    return px.isFinite ? px.round() : null;
+    if (!px.isFinite) return null;
+    if (widget.highQuality) return px.round();
+    return px.round().clamp(1, 256);
   }
 
   Widget _placeholder() {
