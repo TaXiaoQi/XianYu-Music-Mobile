@@ -146,6 +146,9 @@ class SongsListView extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: padding,
+      // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
+      // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
+      cacheExtent: 500,
       itemCount: songs.length,
       itemBuilder: (context, i) {
         final s = songs[i];

@@ -25,6 +25,7 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../settings/folder_picker_page.dart';
+import '../../src/widgets/letter_index_song_list.dart';
 import 'song_list_page.dart';
 
 /// 本地曲库：全部 / 歌手 / 专辑 / 文件夹（从「我的」页进入的二级页面）。
@@ -398,8 +399,15 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         Expanded(
           child: songs.isEmpty
               ? const Center(child: Text('没有匹配的歌曲'))
-              : SongsListView(
+              : LetterIndexSongList(
                   songs: songs,
+                  // 仅按字母序字段排序时才启用 A-Z 索引条；默认/添加时间无意义。
+                  indexField: switch (_sort) {
+                    _SongSort.title => (Song s) => s.title,
+                    _SongSort.artist => (Song s) => s.artist,
+                    _SongSort.album => (Song s) => s.album,
+                    _SongSort.none || _SongSort.addedAt => null,
+                  },
                   padding: EdgeInsets.only(
                     bottom: (ref.watch(playerProvider.select((s) => s.current != null))
                             ? 92.0

@@ -76,6 +76,7 @@ dependencies:
   record: ^7.1.1
   # QQ 互联分享（歌曲分享到 QQ 好友 / QQ 空间），Android 配置见下方顶层 tencent_kit 块
   tencent_kit: ^6.2.0
+  pinyin: ^3.3.0
 
 dev_dependencies:
   flutter_test:
