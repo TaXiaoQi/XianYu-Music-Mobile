@@ -438,6 +438,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final actualLeft = _playerLeft ?? defaultLeft;
     final actualTop = _playerTop ?? defaultTop;
 
+    // 根页停靠位顶部：预测返回回拨的落点（页面条在二级页位于低位 -18，shell 条
+    // 回到根页停在 -82/-70/-12，直接取隐藏位产生的飞行只有几像素不可见）。用
+    // 根页停靠顶计算目标，才能复现「页面条封面飞回根页 shell 条」的可见飞行。
+    final rootBarTop = isSide
+        ? (screenSize.height - safeBottom - 58.0 - 12.0)
+        : (floating
+            ? (screenSize.height - safeBottom - 58.0 - 82.0)
+            : (screenSize.height - safeBottom - 58.0 - 70.0));
+
     return Scaffold(
       body: Stack(
         children: [
@@ -468,6 +477,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               // Hero 源：根页面与播放页时由 shell 播放条承担；二级页面（非播放页）
               // 时去掉 Hero，由页面内嵌播放条承担（Hero 源必须在栈顶页面子树中）。
               heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
+              // 预测返回回拨落点：用根页停靠位（见上 rootBarTop），使二级页返回时
+              // 封面飞行可见地归位到 shell 条。
+              returnTarget: () => Rect.fromLTWH(
+                actualLeft,
+                rootBarTop,
+                46,
+                46,
+              ),
             ),
           ),
 
