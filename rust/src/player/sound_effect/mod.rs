@@ -318,6 +318,16 @@ pub struct BassBoostParams {
     pub dynamic: bool,
 }
 
+/// 高音增强参数：8kHz 高频搁架提升（对齐低音增强的 highshelf 做法）。
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrebleParams {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub gain: f32,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DynamicEqParams {
@@ -401,6 +411,7 @@ pub struct SoundEffectSettings {
     pub stereo_separation: StereoSepParams,
     pub crossfeed: CrossfeedParams,
     pub bass_boost: BassBoostParams,
+    pub treble: TrebleParams,
     pub dynamic_eq: DynamicEqParams,
     // 组合
     pub v4a_enabled: bool,
@@ -451,6 +462,7 @@ impl Default for SoundEffectSettings {
             stereo_separation: StereoSepParams::default(),
             crossfeed: CrossfeedParams::default(),
             bass_boost: BassBoostParams::default(),
+            treble: TrebleParams::default(),
             dynamic_eq: DynamicEqParams::default(),
             v4a_enabled: false,
             bypass: false,
@@ -507,8 +519,9 @@ impl SoundEffectSettings {
             || self.stereo_separation.enabled
             || self.crossfeed.enabled
             || self.bass_boost.enabled
-            || self.dynamic_eq.enabled
-            || self.v4a_enabled
+    || self.treble.enabled
+    || self.dynamic_eq.enabled
+    || self.v4a_enabled
     }
 
     #[inline]

@@ -663,6 +663,25 @@ class _AdvancedSection extends ConsumerWidget {
           ],
           _switchTile(
             context,
+            icon: Icons.graphic_eq,
+            title: '高音增强',
+            value: settings.trebleEnabled,
+            onChanged: (v) =>
+                notifier.set(settings.copyWith(trebleEnabled: v)),
+          ),
+          if (settings.trebleEnabled) ...[
+            _SliderTile(
+              label: '增益',
+              value: settings.trebleGain,
+              min: 0,
+              max: 15,
+              display: '${settings.trebleGain.round()} dB',
+              onChanged: (v) =>
+                  notifier.set(settings.copyWith(trebleGain: v)),
+            ),
+          ],
+          _switchTile(
+            context,
             icon: Icons.auto_fix_high,
             title: '失真',
             value: settings.distortionEnabled,

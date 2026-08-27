@@ -36,6 +36,7 @@ pub struct ChannelRack {
     wet_sep: SmoothedValue,
     wet_crossfeed: SmoothedValue,
     wet_bass: SmoothedValue,
+    wet_treble: SmoothedValue,
     wet_dyn_eq: SmoothedValue,
 
     // ---- Crossfeed（模块 12）----
@@ -47,6 +48,10 @@ pub struct ChannelRack {
     bass_env: EnvelopeFollower,   // 低频包络跟随
     bass_dyn_gain: SmoothedValue, // 动态增益乘法（1.0~1.5）
     bass_last_gain: f32,          // 跟踪 gain，避免每帧重设系数
+
+    // ---- 高音增强（Treble Boost）----
+    treble_shelf: [Biquad; 2],  // highshelf @ 8kHz, Q=0.707
+    treble_last_gain: f32,      // 跟踪 gain，避免每帧重设系数
 
     // ---- 动态均衡（模块 6）----
     dyn_low_boost: [Biquad; 2],     // lowshelf @ 80Hz, +3dB
@@ -67,6 +72,7 @@ impl ChannelRack {
             wet_sep: SmoothedValue::new(0.0),
             wet_crossfeed: SmoothedValue::new(0.0),
             wet_bass: SmoothedValue::new(0.0),
+            wet_treble: SmoothedValue::new(0.0),
             wet_dyn_eq: SmoothedValue::new(0.0),
             // Crossfeed
             cross_lp: [Biquad::new(2), Biquad::new(2)],
@@ -76,6 +82,9 @@ impl ChannelRack {
             bass_env: EnvelopeFollower::new(5.0, 80.0, 44100.0),
             bass_dyn_gain: SmoothedValue::new(1.0),
             bass_last_gain: f32::NAN,
+            // 高音增强
+            treble_shelf: [Biquad::new(2), Biquad::new(2)],
+            treble_last_gain: f32::NAN,
             // 动态均衡
             dyn_low_boost: [Biquad::new(2), Biquad::new(2)],
             dyn_split_lp: [Biquad::new(2), Biquad::new(2)],
@@ -92,6 +101,7 @@ impl ChannelRack {
             self.cross_lp[i].resize_channels(ch);
             self.bass_shelf[i].resize_channels(ch);
             self.bass_detect_lp[i].resize_channels(ch);
+            self.treble_shelf[i].resize_channels(ch);
             self.dyn_low_boost[i].resize_channels(ch);
             self.dyn_split_lp[i].resize_channels(ch);
             self.dyn_split_hp[i].resize_channels(ch);
@@ -105,6 +115,7 @@ impl ChannelRack {
         self.wet_sep.set_time_constant(tc, sample_rate);
         self.wet_crossfeed.set_time_constant(tc, sample_rate);
         self.wet_bass.set_time_constant(tc, sample_rate);
+        self.wet_treble.set_time_constant(tc, sample_rate);
         self.wet_dyn_eq.set_time_constant(tc, sample_rate);
         self.bass_dyn_gain.set_time_constant(tc, sample_rate);
 
@@ -125,6 +136,7 @@ impl ChannelRack {
             self.cross_lp[i].reset();
             self.bass_shelf[i].reset();
             self.bass_detect_lp[i].reset();
+            self.treble_shelf[i].reset();
             self.dyn_low_boost[i].reset();
             self.dyn_split_lp[i].reset();
             self.dyn_split_hp[i].reset();
@@ -154,6 +166,8 @@ impl ChannelRack {
             .set_target(if s.crossfeed.enabled { 1.0 } else { 0.0 });
         self.wet_bass
             .set_target(if s.bass_boost.enabled { 1.0 } else { 0.0 });
+        self.wet_treble
+            .set_target(if s.treble.enabled { 1.0 } else { 0.0 });
         self.wet_dyn_eq
             .set_target(if s.dynamic_eq.enabled { 1.0 } else { 0.0 });
 
@@ -163,6 +177,15 @@ impl ChannelRack {
             self.bass_last_gain = bg;
             for i in 0..2 {
                 self.bass_shelf[i].set_lowshelf(120.0, self.sample_rate, bg, 0.707);
+            }
+        }
+
+        // 高音增强: highshelf @ 8kHz, Q=0.707（仅 gain 变化时重设）
+        let tg = s.treble.gain.clamp(0.0, 15.0);
+        if !self.treble_last_gain.is_finite() || (tg - self.treble_last_gain).abs() > 0.01 {
+            self.treble_last_gain = tg;
+            for i in 0..2 {
+                self.treble_shelf[i].set_highshelf(8000.0, self.sample_rate, tg, 0.707);
             }
         }
 
@@ -270,6 +293,18 @@ impl ChannelRack {
             let r = frame[1];
             let nl = self.bass_shelf[0].process(l, 0) * dyn_g;
             let nr = self.bass_shelf[1].process(r, 1) * dyn_g;
+            frame[0] = l * (1.0 - w) + nl * w;
+            frame[1] = r * (1.0 - w) + nr * w;
+        }
+
+        // ====== 高音增强 ======
+        // YinDongMusic: highshelf 搁架提升高频（新增细项），对齐 Bass 的 wet 混合启停无 click。
+        let w = self.wet_treble.tick();
+        if w > 0.001 {
+            let l = frame[0];
+            let r = frame[1];
+            let nl = self.treble_shelf[0].process(l, 0);
+            let nr = self.treble_shelf[1].process(r, 1);
             frame[0] = l * (1.0 - w) + nl * w;
             frame[1] = r * (1.0 - w) + nr * w;
         }

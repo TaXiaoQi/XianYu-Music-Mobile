@@ -75,6 +75,8 @@ class SoundEffectSettings {
   final bool bassBoostEnabled;
   final double bassBoostGain;
   final bool bassBoostDynamic;
+  final bool trebleEnabled;
+  final double trebleGain;
   final bool distortionEnabled;
   final double distortionAmount;
   final String distortionType; // soft | hard
@@ -144,6 +146,8 @@ class SoundEffectSettings {
     this.bassBoostEnabled = false,
     this.bassBoostGain = 6,
     this.bassBoostDynamic = true,
+    this.trebleEnabled = false,
+    this.trebleGain = 6,
     this.distortionEnabled = false,
     this.distortionAmount = 10,
     this.distortionType = 'soft',
@@ -214,6 +218,8 @@ class SoundEffectSettings {
     bool? bassBoostEnabled,
     double? bassBoostGain,
     bool? bassBoostDynamic,
+    bool? trebleEnabled,
+    double? trebleGain,
     bool? distortionEnabled,
     double? distortionAmount,
     String? distortionType,
@@ -283,6 +289,8 @@ class SoundEffectSettings {
       bassBoostEnabled: bassBoostEnabled ?? this.bassBoostEnabled,
       bassBoostGain: bassBoostGain ?? this.bassBoostGain,
       bassBoostDynamic: bassBoostDynamic ?? this.bassBoostDynamic,
+      trebleEnabled: trebleEnabled ?? this.trebleEnabled,
+      trebleGain: trebleGain ?? this.trebleGain,
       distortionEnabled: distortionEnabled ?? this.distortionEnabled,
       distortionAmount: distortionAmount ?? this.distortionAmount,
       distortionType: distortionType ?? this.distortionType,
@@ -360,6 +368,10 @@ class SoundEffectSettings {
           'enabled': bassBoostEnabled,
           'gain': bassBoostGain,
           'dynamic': bassBoostDynamic,
+        },
+        'treble': {
+          'enabled': trebleEnabled,
+          'gain': trebleGain,
         },
         'distortion': {
           'enabled': distortionEnabled,
@@ -440,6 +452,7 @@ class SoundEffectSettings {
       vibratoEnabled ||
       tremoloEnabled ||
       bassBoostEnabled ||
+      trebleEnabled ||
       distortionEnabled ||
       delayEnabled ||
       flangerEnabled ||
@@ -479,6 +492,8 @@ class SoundEffectSettings {
         'bassBoostEnabled': bassBoostEnabled,
         'bassBoostGain': bassBoostGain,
         'bassBoostDynamic': bassBoostDynamic,
+        'trebleEnabled': trebleEnabled,
+        'trebleGain': trebleGain,
         'distortionEnabled': distortionEnabled,
         'distortionAmount': distortionAmount,
         'distortionType': distortionType,
@@ -557,6 +572,8 @@ class SoundEffectSettings {
       bassBoostEnabled: j['bassBoostEnabled'] as bool? ?? false,
       bassBoostGain: (j['bassBoostGain'] as num?)?.toDouble() ?? 6,
       bassBoostDynamic: j['bassBoostDynamic'] as bool? ?? true,
+      trebleEnabled: j['trebleEnabled'] as bool? ?? false,
+      trebleGain: (j['trebleGain'] as num?)?.toDouble() ?? 6,
       distortionEnabled: j['distortionEnabled'] as bool? ?? false,
       distortionAmount: (j['distortionAmount'] as num?)?.toDouble() ?? 10,
       distortionType: j['distortionType'] as String? ?? 'soft',
