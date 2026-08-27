@@ -1528,7 +1528,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[stats] add_to_history 失败: $e');
+      }
     });
   }
 
@@ -1554,7 +1556,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         // 否则播放再久，界面上的统计数据都停留在首次加载的值。
         _ref.invalidate(listenStatsProvider);
         _ref.invalidate(mostPlayedProvider);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[stats] record_play 失败: $e');
+      }
     });
   }
 
@@ -1637,6 +1641,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _skipDepth = 0;
       state = state.copyWith(resolving: false, error: null);
+      // 换源成功等同于一次全新起播：重置首播计数并记录最近播放/历史，
+      // 否则换源曲目不进最近播放、播放次数也会漏记。
+      _currentPlayCountRecorded = false;
+      _accumulatedTime = 0;
+      _recordRecentPlay(newItem);
+      _recordHistory(newItem);
       _reportBehavior(newItem, 'play', 0);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
@@ -1743,7 +1753,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         try {
           await _ref.read(recentProvider.notifier).refresh();
         } catch (_) {}
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[stats] 最近播放写入失败: $e');
+      }
     });
   }
 
