@@ -21,6 +21,11 @@ import 'src/navigation/routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 封面/头像已按显示尺寸低清解码（单张很小），放宽条目数、收紧字节上限，
+  // 让缓存多装小图、少触发整块 GC 造成的滚动/翻页卡顿。
+  final imageCache = PaintingBinding.instance.imageCache;
+  imageCache.maximumSize = 800;
+  imageCache.maximumSizeBytes = 120 << 20;
   final container = ProviderContainer();
   // 通用应用日志：加载历史 + 挂生命周期观察者 + 安装全局错误捕获。
   ApplicationLogManager.instance.bootstrap();
