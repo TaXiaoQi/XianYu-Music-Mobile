@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 歌词卡组件圆形控制钮底：半透明主题色圆（播放键另有品牌红 widget_play_btn）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/widget_circle_btn" />
+</shape>

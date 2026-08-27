@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 识曲组件添加页实时预览（Android 12+ previewLayout），与真实布局同构：
+     封面顶满上下贴左缘 + 右列（歌名/歌手 + 识曲钮、三控制键、进度时间行）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/previewRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="@drawable/widget_bg">
+
+    <ImageView
+        android:layout_width="100dp"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/widget_preview_cover" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="与你到永久"
+                    android:textColor="@color/widget_text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="伍佰 &amp; China Blue"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="12sp"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_horizontal">
+
+            <TextView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/widget_preview_dot" />
+
+            <TextView
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/widget_play_btn" />
+
+            <TextView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1:23"
+                android:textColor="@color/widget_time"
+                android:textSize="11sp" />
+
+            <ProgressBar
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:max="100"
+                android:progress="38"
+                android:progressDrawable="@drawable/widget_progress_drawable"
+                android:maxHeight="6dp"
+                android:minHeight="6dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="4:56"
+                android:textColor="@color/widget_time"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

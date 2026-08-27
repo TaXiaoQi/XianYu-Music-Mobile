@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 歌词卡组件添加页静态预览图（Android 11 及以下用 previewImage）：
+     系统通知式平面底色圆角卡；左列大封面 + 底部三圆钮（红播放键居中）；
+     右列歌名/歌手条 + 五行歌词条（中间行最深最长）+ 底部细进度条。
+     颜色引用 @color（随系统明暗主题）。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 平面卡片底 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_card_start" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+
+    <!-- 左列：大封面块（品牌红渐变，圆角，占左列上部） -->
+    <item
+        android:width="104dp"
+        android:height="128dp"
+        android:left="12dp"
+        android:top="12dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#EC4142"
+                android:centerColor="#7A2026"
+                android:endColor="#201416"
+                android:angle="45" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+
+    <!-- 左列底部：三个圆形控制钮（红播放键居中） -->
+    <item
+        android:width="26dp"
+        android:height="26dp"
+        android:left="12dp"
+        android:bottom="12dp"
+        android:gravity="bottom|start">
+        <shape android:shape="oval">
+            <solid android:color="@color/widget_circle_btn" />
+        </shape>
+    </item>
+    <item
+        android:width="32dp"
+        android:height="32dp"
+        android:left="44dp"
+        android:bottom="9dp"
+        android:gravity="bottom|start">
+        <shape android:shape="oval">
+            <solid android:color="#EC4142" />
+        </shape>
+    </item>
+    <item
+        android:width="26dp"
+        android:height="26dp"
+        android:left="82dp"
+        android:bottom="12dp"
+        android:gravity="bottom|start">
+        <shape android:shape="oval">
+            <solid android:color="@color/widget_circle_btn" />
+        </shape>
+    </item>
+
+    <!-- 右列顶部：歌名条 / 歌手条 -->
+    <item
+        android:width="92dp"
+        android:height="12dp"
+        android:left="128dp"
+        android:top="12dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_text_primary" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item
+        android:width="64dp"
+        android:height="7dp"
+        android:left="128dp"
+        android:top="30dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_text_secondary" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+
+    <!-- 右列中部：五行歌词条（上下远行渐淡、中间当前行最长最深） -->
+    <item
+        android:width="52dp"
+        android:height="6dp"
+        android:left="128dp"
+        android:top="46dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_lyric_far" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item
+        android:width="64dp"
+        android:height="6dp"
+        android:left="128dp"
+        android:top="58dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_lyric_near" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item
+        android:width="84dp"
+        android:height="8dp"
+        android:left="128dp"
+        android:top="70dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_text_primary" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item
+        android:width="64dp"
+        android:height="6dp"
+        android:left="128dp"
+        android:top="84dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_lyric_near" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    <item
+        android:width="52dp"
+        android:height="6dp"
+        android:left="128dp"
+        android:top="96dp"
+        android:gravity="top|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_lyric_far" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+
+    <!-- 右列底部：细进度条（已播放段 + 轨道段） -->
+    <item
+        android:height="4dp"
+        android:left="128dp"
+        android:right="64dp"
+        android:bottom="12dp"
+        android:gravity="bottom|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_fill" />
+            <corners android:radius="2dp" />
+        </shape>
+    </item>
+    <item
+        android:height="4dp"
+        android:left="128dp"
+        android:right="12dp"
+        android:bottom="12dp"
+        android:gravity="bottom|start">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/widget_track" />
+            <corners android:radius="2dp" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面播放组件 · 2×2 方形（参考 QQ 音乐：两行）。
+     行1 = 封面（占满上部）；行2 = 歌名(左) + 小播放键(右)。
+     颜色随系统明暗主题。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="10dp">
+
+    <!-- 行1：封面（占上部权重；provider 按组件实际尺寸渲染等比例矩形位图填满本区，
+         圆角为绝对 24dp，与卡片容器圆角对齐） -->
+    <ImageView
+        android:id="@+id/cover"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="8dp"
+        android:scaleType="fitCenter"
+        android:contentDescription="@string/widget_label" />
+
+    <!-- 行2：歌名(左) + 小播放键(右) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/songText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:contentDescription="@string/widget_label" />
+
+        <ImageButton
+            android:id="@+id/btnPlay"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="10dp"
+            android:padding="8dp"
+            android:background="@null"
+            android:src="@drawable/ic_play"
+            android:tint="@color/widget_icon"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/widget_label" />
+    </LinearLayout>
+</LinearLayout>

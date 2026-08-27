@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 歌词卡组件添加页实时预览（Android 12+ previewLayout），与真实 4×3 歌词卡布局同构：
+     左列大封面 + 底部三控制钮；右列歌名/歌手 + 五行歌词 + 细进度条。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/previewRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="@drawable/widget_bg"
+    android:padding="12dp">
+
+    <!-- 左列：大封面 + 底部三控制钮 -->
+    <LinearLayout
+        android:layout_width="112dp"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_preview_cover" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/widget_preview_dot" />
+
+            <TextView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/widget_play_btn" />
+
+            <TextView
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 右列：歌名 / 歌手·来源 / 五行歌词 / 细进度条 -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="与你到永久"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="伍佰 &amp; China Blue · 弦予音乐"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10.5sp"
+            android:textStyle="italic"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="14dp"
+                android:text="怕我说得太晚"
+                android:textColor="@color/widget_lyric_far"
+                android:textSize="11sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:minHeight="15dp"
+                android:text="让你如此的承担"
+                android:textColor="@color/widget_lyric_near"
+                android:textSize="11.5sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:minHeight="17dp"
+                android:text="面对岁月的河"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:minHeight="15dp"
+                android:text="对你已经无法割舍"
+                android:textColor="@color/widget_lyric_near"
+                android:textSize="11.5sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:minHeight="14dp"
+                android:text="我是爱着你"
+                android:textColor="@color/widget_lyric_far"
+                android:textSize="11sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <ProgressBar
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:max="100"
+            android:progress="38"
+            android:progressDrawable="@drawable/widget_progress_drawable"
+            android:maxHeight="4dp"
+            android:minHeight="4dp" />
+    </LinearLayout>
+</LinearLayout>

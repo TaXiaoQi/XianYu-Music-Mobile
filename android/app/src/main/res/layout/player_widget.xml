@@ -1,165 +1,216 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件（横版，稳妥纯 LinearLayout 结构）。
-     参考桌面端 mini 窗的三行布局：
-     行1 = 封面 + 歌名/歌手；行2 = 时间+进度+时间；行3 = 上一首/播放/下一首(+循环/+打开)。
-     不叠加全卡背景/蒙版，最大化各 launcher RemoteViews 兼容。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 桌面播放组件 · 三行大卡（默认样式）。
+    FrameLayout：底层 bgCover = 封面模糊+暗色蒙层背景（由 provider 合成位图，无封面时
+    显示 widget_bg 主题渐变）；上层内容三行：
+    行1 = 封面 + 歌名/当前行歌词；行2 = 时间+进度+时间；
+    行3 = 左(收藏) · 中(上一首/播放/下一首，居中) · 右(循环 + 桌面歌词开关)。
+    有模糊背景时文字/图标由 provider 运行时置白（类播放详情页）；无封面时用主题色。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:background="@drawable/widget_bg"
-    android:padding="14dp">
+    android:background="@drawable/widget_bg">
 
-    <!-- 行1：封面 + 歌名/歌手（信息行，封面与文字垂直居中成组） -->
+    <ImageView
+        android:id="@+id/bgCover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/widget_label" />
+
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:padding="14dp">
 
-        <ImageView
-            android:id="@+id/cover"
-            android:layout_width="60dp"
-            android:layout_height="60dp"
-            android:layout_marginEnd="14dp"
-            android:scaleType="centerCrop"
-            android:contentDescription="@string/widget_label" />
-
+        <!-- 行1：封面 + 歌名/当前歌词（信息行，封面与文字垂直居中成组） -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/cover"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:layout_marginEnd="14dp"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/widget_label" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/songText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/widget_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="marquee_forever" />
+
+                <TextView
+                    android:id="@+id/artistText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="@color/widget_text_secondary"
+                    android:textSize="13sp"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 行2：当前时间 + 进度条 + 总时长 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/songText"
-                android:layout_width="match_parent"
+                android:id="@+id/timeCur"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:singleLine="true"
-                android:ellipsize="end" />
+                android:layout_marginStart="2dp"
+                android:text="0:00"
+                android:textColor="@color/widget_time"
+                android:textSize="11sp" />
+
+            <ProgressBar
+                android:id="@+id/progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:max="100"
+                android:progress="0"
+                android:progressDrawable="@drawable/widget_progress_drawable"
+                android:maxHeight="6dp"
+                android:minHeight="6dp" />
 
             <TextView
-                android:id="@+id/artistText"
-                android:layout_width="match_parent"
+                android:id="@+id/timeDur"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:textColor="#B8FFFFFF"
-                android:textSize="13sp"
-                android:singleLine="true"
-                android:ellipsize="end" />
+                android:layout_marginEnd="2dp"
+                android:text="0:00"
+                android:textColor="@color/widget_time"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 行3：左=收藏 / 中=上一首·播放·下一首 / 右=循环·桌面歌词 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- 左：收藏 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="start">
+                <ImageButton
+                    android:id="@+id/btnFavorite"
+                    android:layout_width="46dp"
+                    android:layout_height="46dp"
+                    android:padding="10dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_notif_favorite"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+            </LinearLayout>
+
+            <!-- 中：上一首 / 播放 / 下一首 -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <ImageButton
+                    android:id="@+id/btnPrev"
+                    android:layout_width="46dp"
+                    android:layout_height="46dp"
+                    android:layout_marginEnd="10dp"
+                    android:padding="10dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_skip_previous"
+                    android:tint="@color/widget_icon"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+
+                <ImageButton
+                    android:id="@+id/btnPlay"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_marginEnd="10dp"
+                    android:padding="11dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_play"
+                    android:tint="@color/widget_icon"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+
+                <ImageButton
+                    android:id="@+id/btnNext"
+                    android:layout_width="46dp"
+                    android:layout_height="46dp"
+                    android:layout_marginStart="10dp"
+                    android:padding="10dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_skip_next"
+                    android:tint="@color/widget_icon"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+            </LinearLayout>
+
+            <!-- 右：循环 + 桌面歌词开关 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="end">
+
+                <ImageButton
+                    android:id="@+id/btnMode"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="9dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_notif_mode_repeat"
+                    android:tint="@color/widget_icon"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+
+                <ImageButton
+                    android:id="@+id/btnLyrics"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="12dp"
+                    android:padding="10dp"
+                    android:background="@null"
+                    android:src="@drawable/ic_notif_lyrics_off"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="@string/widget_label" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
-
-    <!-- 行2：当前时间 + 进度条 + 总时长 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/timeCur"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="2dp"
-            android:text="0:00"
-            android:textColor="#AAFFFFFF"
-            android:textSize="11sp" />
-
-        <ProgressBar
-            android:id="@+id/progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:max="100"
-            android:progress="0"
-            android:progressDrawable="@drawable/widget_progress_drawable"
-            android:maxHeight="6dp"
-            android:minHeight="6dp" />
-
-        <TextView
-            android:id="@+id/timeDur"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="2dp"
-            android:text="0:00"
-            android:textColor="#AAFFFFFF"
-            android:textSize="11sp" />
-    </LinearLayout>
-
-    <!-- 行3：上一首 / 播放 / 下一首 / 循环 / 打开（水平居中成排，避免 Space/weight 兼容问题） -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal"
-        android:gravity="center_horizontal">
-
-        <ImageButton
-            android:id="@+id/btnPrev"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:padding="7dp"
-            android:background="@null"
-            android:src="@drawable/ic_skip_previous"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <ImageButton
-            android:id="@+id/btnPlay"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:padding="11dp"
-            android:background="@drawable/widget_play_btn"
-            android:src="@drawable/ic_play"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <ImageButton
-            android:id="@+id/btnNext"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:padding="7dp"
-            android:background="@null"
-            android:src="@drawable/ic_skip_next"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <ImageButton
-            android:id="@+id/btnMode"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="10dp"
-            android:padding="4dp"
-            android:background="@null"
-            android:src="@drawable/ic_notif_mode_repeat"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
-
-        <TextView
-            android:id="@+id/btnOpen"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:text="打开"
-            android:textColor="#E9FFFFFF"
-            android:textSize="12sp"
-            android:background="@drawable/widget_open_btn"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
-            android:contentDescription="@string/widget_label" />
-    </LinearLayout>
-</LinearLayout>
+</FrameLayout>

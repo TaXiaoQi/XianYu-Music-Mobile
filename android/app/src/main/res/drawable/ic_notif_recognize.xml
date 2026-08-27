@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 听歌识曲（波形声纹），颜色随明暗主题 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/widget_icon"
+        android:pathData="M3,10h2v4h-2zM6.5,7h2v10h-2zM10,4h2v16h-2zM13.5,7h2v10h-2zM17,10h2v4h-2zM20.5,12h1v0.5h-1z" />
+</vector>

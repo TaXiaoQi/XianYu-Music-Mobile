@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面歌词开关（开）：品牌红 #EC4142 实底圆角框 + 白色文字横线（已开启） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#EC4142"
+        android:pathData="M5.5,3.5h13a2,2 0 0 1 2,2v13a2,2 0 0 1 -2,2h-13a2,2 0 0 1 -2,-2v-13a2,2 0 0 1 2,-2z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,8.5h10M7,12h10M7,15.5h6"/>
+</vector>

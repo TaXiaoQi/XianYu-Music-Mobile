@@ -2,4 +2,20 @@
 <resources>
     <!-- 启动图背景：夜间深色，避免冷启动闪白底 -->
     <color name="splash_background">#121212</color>
+
+    <!-- 桌面播放组件 · 深色主题 -->
+    <!-- 卡片背景：系统通知式平面色（对齐系统媒体通知深色 #1C1C1E） -->
+    <color name="widget_card_start">#1C1C1E</color>
+    <color name="widget_text_primary">#FFFFFF</color>
+    <color name="widget_text_secondary">#B8FFFFFF</color>
+    <color name="widget_time">#AAFFFFFF</color>
+    <color name="widget_icon">#FFFFFF</color>
+    <color name="widget_icon_subtle">#26FFFFFF</color>
+    <color name="widget_track">#26FFFFFF</color>
+    <color name="widget_fill">#EC4142</color>
+
+    <!-- 歌词卡组件 · 深色主题 -->
+    <color name="widget_lyric_near">#99FFFFFF</color>
+    <color name="widget_lyric_far">#54FFFFFF</color>
+    <color name="widget_circle_btn">#24FFFFFF</color>
 </resources>

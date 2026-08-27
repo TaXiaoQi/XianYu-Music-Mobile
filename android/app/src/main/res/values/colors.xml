@@ -4,4 +4,25 @@
 
     <!-- 启动图背景：白天白底（夜间见 values-night/colors.xml） -->
     <color name="splash_background">#FFFFFF</color>
+
+    <!-- 桌面播放组件 · 浅色主题（深层 dark 见 values-night/colors.xml） -->
+    <!-- 卡片背景：系统通知式平面色，随系统明暗反转（values/values-night） -->
+    <color name="widget_card_start">#F2F2F7</color>
+    <!-- 文字 -->
+    <color name="widget_text_primary">#FF202224</color>
+    <color name="widget_text_secondary">#92202224</color>
+    <color name="widget_time">#6B202224</color>
+    <!-- 图标（无内嵌色的纯图标统一着色） -->
+    <color name="widget_icon">#FF373B41</color>
+    <!-- 预览示意圆点（图标色低透明） -->
+    <color name="widget_icon_subtle">#26373B41</color>
+    <!-- 进度条轨道/进度 -->
+    <color name="widget_track">#1A20242B</color>
+    <color name="widget_fill">#EC4142</color>
+
+    <!-- 歌词卡组件（浅色主题；卡片底色与其他组件一致走系统通知平面色） -->
+    <color name="widget_lyric_near">#8C202224</color>
+    <color name="widget_lyric_far">#54202224</color>
+    <!-- 圆形控制钮底色 -->
+    <color name="widget_circle_btn">#14202224</color>
 </resources>

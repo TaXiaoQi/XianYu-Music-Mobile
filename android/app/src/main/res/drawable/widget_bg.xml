@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件背景：暗色玻璃卡，轻微纵向渐变带来层次（顶亮底暗），
-     更贴近桌面端迷你窗口质感。 -->
+<!-- 桌面播放组件背景：系统通知式平面色（浅 #F2F2F7 / 深 #1C1C1E，随系统明暗反转），
+     大圆角对齐系统通知卡片观感。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:startColor="#2E2E2E"
-        android:endColor="#1B1B1B"
-        android:angle="270" />
-    <corners android:radius="20dp" />
+    <solid android:color="@color/widget_card_start" />
+    <corners android:radius="24dp" />
 </shape>

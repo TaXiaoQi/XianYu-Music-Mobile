@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 组件添加页实时预览（Android 12+ previewLayout）。
-     与真实组件同构的稳妥纯 LinearLayout，三行布局：
-     行1 = 封面 + 歌名/歌手；行2 = 时间+进度；行3 = 上一首/播放/下一首 + 循环 + 打开。 -->
+     与真实横版大卡同构的稳妥纯 LinearLayout，三行：
+     行1 = 封面 + 歌名/歌词；行2 = 时间+进度；行3 = 左(收藏)·中(三键)·右(循环+歌词)。
+     颜色随系统明暗主题（values vs values-night）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/previewRoot"
     android:layout_width="match_parent"
@@ -11,7 +12,7 @@
     android:background="@drawable/widget_bg"
     android:padding="14dp">
 
-    <!-- 行1：封面 + 歌名/歌手 -->
+    <!-- 行1：封面 + 歌名/歌词 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -35,7 +36,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="弦予音乐"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/widget_text_primary"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:singleLine="true"
@@ -46,7 +47,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
                 android:text="正在播放 / 将音乐给予你"
-                android:textColor="#B8FFFFFF"
+                android:textColor="@color/widget_text_secondary"
                 android:textSize="13sp"
                 android:singleLine="true"
                 android:ellipsize="end" />
@@ -66,7 +67,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="2dp"
             android:text="1:23"
-            android:textColor="#AAFFFFFF"
+            android:textColor="@color/widget_time"
             android:textSize="11sp" />
 
         <ProgressBar
@@ -87,54 +88,68 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="2dp"
             android:text="3:55"
-            android:textColor="#AAFFFFFF"
+            android:textColor="@color/widget_time"
             android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- 行3：上一首 / 播放 / 下一首 / 循环 / 打开（水平居中成排） -->
+    <!-- 行3：左(收藏)·中(上一首/播放/下一首)·右(循环+桌面歌词)，与真实组件同构 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal"
-        android:gravity="center_horizontal">
+        android:gravity="center_vertical">
 
-        <View
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="3dp"
-            android:background="@drawable/widget_preview_dot" />
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="start">
+            <TextView
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
 
-        <View
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:background="@drawable/widget_play_btn" />
-
-        <View
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginEnd="3dp"
-            android:background="@drawable/widget_preview_dot" />
-
-        <View
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/widget_preview_dot" />
-
-        <TextView
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:text="打开"
-            android:textColor="#E9FFFFFF"
-            android:textSize="12sp"
-            android:background="@drawable/widget_open_btn"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp" />
+            android:orientation="horizontal"
+            android:gravity="center">
+            <TextView
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/widget_preview_dot" />
+            <TextView
+                android:layout_width="50dp"
+                android:layout_height="50dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/widget_preview_dot" />
+            <TextView
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="end">
+            <TextView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/widget_preview_dot" />
+            <TextView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/widget_preview_dot" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>
