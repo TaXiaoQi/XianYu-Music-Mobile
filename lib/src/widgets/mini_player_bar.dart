@@ -11,6 +11,7 @@ import '../player/player_provider.dart';
 import 'cover_hero.dart';
 import 'cover_image.dart';
 import 'flying_cover.dart';
+import 'predictive_cover_return.dart';
 import 'glass_settings.dart';
 
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
@@ -26,6 +27,7 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
     this.onPanCancel,
     this.registerTarget = true,
     this.heroTag = 'player-cover',
+    this.returnTarget,
   });
 
   final GestureDragStartCallback? onPanStart;
@@ -47,6 +49,13 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
   /// 根页面与播放页时传 'player-cover' 作为 Hero 源。
   final String? heroTag;
 
+  /// 预测返回回拨的「目标」覆盖矩形。
+  ///
+  /// 仅 shell 播放条传入：指向它回到根页后的停靠位置。shell 条在二级页面处于
+  /// 隐藏低位，直接取当前布局矩形作目标会让回拨飞行几乎不可见（只差几像素）。
+  /// 用根页停靠位（比页面条高 ~70px）才能复现普通返回里页面条 → shell 条的可见飞行。
+  final Rect Function()? returnTarget;
+
   @override
   ConsumerState<MiniPlayerBar> createState() => _MiniPlayerBarState();
 }
@@ -64,6 +73,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   /// 本实例注册到 FlyingCover 的目标闭包（引用可变 [Rect]，布局更新无需重注册）。
   Rect _coverRect = Rect.zero;
   Rect Function()? _targetProvider;
+
+  /// 预测返回回拨的源/目标闭包（同为可变 [Rect] 的惰性引用）。
+  /// 页面内嵌播放条注册为「源」，shell 播放条注册为「目标」。
+  Rect Function()? _returnSourceProvider;
+  Rect Function()? _returnTargetProvider;
 
   /// 内建拖拽位置（绝对坐标，null = 默认位置）。
   ///
@@ -112,6 +126,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     _router?.routerDelegate.removeListener(_onRouteChanged);
     final p = _targetProvider;
     if (p != null) FlyingCover.instance.unregisterTarget(p);
+    final rs = _returnSourceProvider;
+    if (rs != null) PredictiveCoverReturn.instance.unregisterSource(rs);
+    final rt = _returnTargetProvider;
+    if (rt != null) PredictiveCoverReturn.instance.unregisterTarget(rt);
+    if (widget.returnTarget != null) {
+      PredictiveCoverReturn.instance.unregisterTarget(widget.returnTarget!);
+    }
     super.dispose();
   }
 
@@ -139,24 +160,58 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     }
   }
 
-  /// 布局完成后把封面全局位置注册为飞封面目标。
+  /// 布局完成后把封面全局位置用于两套注册：
+  /// - FlyingCover 目标（列表封面起飞落点）仅在 [MiniPlayerBar.registerTarget] 时注册；
+  /// - 预测返回回拨源（页面内嵌条）/目标（shell 条）按定位模式自动注册。
   void _updateCoverTarget() {
-    if (!widget.registerTarget) {
-      final p = _targetProvider;
-      if (p != null) {
-        FlyingCover.instance.unregisterTarget(p);
-        _targetProvider = null;
-      }
-      return;
-    }
     final ctx = _coverKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     _coverRect = box.localToGlobal(Offset.zero) & box.size;
     // Positioned 定位变化会触发重新布局，localToGlobal 自动跟随，无需手动叠加偏移。
-    _targetProvider ??= () => _coverRect;
-    FlyingCover.instance.registerTarget(_targetProvider!);
+
+    final fp = _targetProvider;
+    if (widget.registerTarget) {
+      _targetProvider ??= () => _coverRect;
+      FlyingCover.instance.registerTarget(_targetProvider!);
+    } else if (fp != null) {
+      FlyingCover.instance.unregisterTarget(fp);
+      _targetProvider = null;
+    }
+
+    _syncReturnRegistration();
+  }
+
+  /// 按定位模式维护预测返回的源/目标注册：
+  /// - 内部定位（页面内嵌条 `onPanUpdate == null`）→ 注册为「源」；
+  /// - 外部定位（shell 条）→ 注册为「目标」，二级页面仍存活可作回拨落点。
+  void _syncReturnRegistration() {
+    final internal = widget.onPanUpdate == null;
+    if (internal) {
+      final onPlayer =
+          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
+              '/player';
+      // 播放页打开时页面条隐藏，勿再充当回拨源；否则预测返回会从错误位置起飞。
+      if (onPlayer) {
+        final s = _returnSourceProvider;
+        if (s != null) {
+          PredictiveCoverReturn.instance.unregisterSource(s);
+          _returnSourceProvider = null;
+        }
+        return;
+      }
+      final provider = _returnSourceProvider ??= () => _coverRect;
+      final c = ref.read(playerProvider).current;
+      PredictiveCoverReturn.instance.registerSource(
+        songPath: c?.path,
+        networkUrl: c?.coverUrl,
+        rectProvider: provider,
+      );
+    } else {
+      final provider = widget.returnTarget ?? (_returnTargetProvider ??= () => _coverRect);
+      PredictiveCoverReturn.instance.registerTarget(provider);
+    }
   }
 
   /// 内建拖拽更新：以默认位置（left:18 / bottom:12+安全区）为基准，用绝对坐标计算边界。

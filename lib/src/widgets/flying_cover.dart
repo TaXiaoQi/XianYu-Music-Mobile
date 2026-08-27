@@ -43,6 +43,14 @@ class FlyingCover {
     _targets.remove(provider);
   }
 
+  /// 当前生效的迷你条封面目标矩形；无注册实例时返回 null。
+  ///
+  /// 供预测返回的封面回拨（PredictiveCoverReturnView）复用同一目标位。
+  Rect? get targetRect {
+    final provider = _targetProvider;
+    return provider?.call();
+  }
+
   /// 触发飞封面动画。返回的 Future 在封面落地时完成：
   /// - `true`：封面正常落地，可继续播放；
   /// - `false`：被更新的飞封面取代，不应再播放（新封面落地后自行触发播放）。

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/settings.dart';
 import '../core/application_logger.dart';
 import '../widgets/predictive_back_transitions.dart';
+import '../widgets/predictive_cover_return.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -95,8 +96,13 @@ final appRouter = GoRouter(
     // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
     GoRoute(
       path: '/library',
-      builder: (context, state) => LibraryPage(
-        initialTab: int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => LibraryPage(
+          initialTab:
+              int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        ),
+        key: state.pageKey,
       ),
     ),
     // 听歌识曲（从搜索页进入）。
@@ -160,7 +166,11 @@ final appRouter = GoRouter(
     // 我的歌单（从设置页进入）。
     GoRoute(
       path: '/playlists',
-      builder: (context, state) => const PlaylistsPage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const PlaylistsPage(),
+        key: state.pageKey,
+      ),
     ),
     // 导入歌单（从「我的」页进入）：备份文件 / 本地文件 / 云端导入。
     GoRoute(
@@ -172,15 +182,24 @@ final appRouter = GoRouter(
     // Navigator.pop 压进 branch 内部 Navigator，返回会被 shell 误判而直接退出。
     GoRoute(
       path: '/playlist/:id',
-      builder: (context, state) => PlaylistDetailPage(
-        playlistId: state.pathParameters['id'] ?? '',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => PlaylistDetailPage(
+          playlistId: state.pathParameters['id'] ?? '',
+        ),
+        key: state.pageKey,
       ),
     ),
     // 收藏 / 最近（主页网格与「我的」页进入）。收藏页 tab=0 单曲 / 1 歌单 / 2 专辑。
     GoRoute(
       path: '/favorites',
-      builder: (context, state) => FavoritesPage(
-        initialTab: int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => FavoritesPage(
+          initialTab:
+              int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        ),
+        key: state.pageKey,
       ),
     ),
     GoRoute(path: '/recent', builder: (context, state) => const RecentPage()),
@@ -254,6 +273,28 @@ String navTitle(BuildContext context, BottomNavItem item) {
     '/mine' => l?.navMine ?? tr('我的'),
     _ => l?.navEffects ?? tr('音效'),
   };
+}
+
+/// 构建带「预测返回封面回拨」的普通二级页 [Page]。
+///
+/// 供收藏/本地/歌单等含迷你播放条的列表页使用，让它们在预测返回手势中也
+/// 出现封面飞回播放条，与普通返回一致。读取全局预测返回开关。
+Page<void> _coverBackPage(
+  BuildContext context,
+  WidgetBuilder builder, {
+  LocalKey? key,
+}) {
+  final predictiveBack =
+      ProviderScope.containerOf(context, listen: false)
+          .read(settingsProvider)
+          .valueOrNull
+          ?.enablePredictiveBack ??
+      true;
+  return _CoverBackPage(
+    key: key,
+    builder: builder,
+    predictiveBack: predictiveBack,
+  );
 }
 
 /// 播放页「从下往上覆盖」转场的 Page 封装（谓词返回用 [Page] 而非 [PageRoute]）。
@@ -335,13 +376,20 @@ class _PlayerCoverRoute extends PageRoute<void> {
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
         if (popGestureInProgress) {
-          return PredictiveBackSharedElementPageTransition(
-            animation: animation,
-            phase: phase,
-            secondaryAnimation: secondaryAnimation,
-            startBackEvent: startBackEvent,
-            currentBackEvent: currentBackEvent,
-            child: child,
+          return Stack(
+            children: [
+              PredictiveBackSharedElementPageTransition(
+                animation: animation,
+                phase: phase,
+                secondaryAnimation: secondaryAnimation,
+                startBackEvent: startBackEvent,
+                currentBackEvent: currentBackEvent,
+                child: child,
+              ),
+              // 预测返回手势中叠加「封面飞回播放条」：随手指进度把大封面缩向
+              // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。
+              PredictiveCoverReturnView(animation: animation),
+            ],
           );
         }
         final curved = CurvedAnimation(
@@ -361,6 +409,107 @@ class _PlayerCoverRoute extends PageRoute<void> {
             child: child,
           ),
         );
+      },
+    );
+  }
+}
+
+/// 普通二级页面（收藏/本地/歌单…）预测返回的封面回拨包装。
+///
+/// 这些页面用主题默认转场（Android 下为 FadeForwards + 框架预测返回整屏缩放），
+/// 预测返回时封面不会飞回播放条。本包装让它们在保持既有 FadeForwards 观感的同时，
+/// 在预测返回手势中叠加 [PredictiveCoverReturnView]，复现普通返回的封面回拨。
+class _CoverBackPage extends Page<void> {
+  const _CoverBackPage({
+    super.key,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  @override
+  Route<void> createRoute(BuildContext context) {
+    return _CoverBackRoute(
+      settings: this,
+      builder: builder,
+      predictiveBack: predictiveBack,
+    );
+  }
+}
+
+class _CoverBackRoute extends PageRoute<void> {
+  _CoverBackRoute({
+    required super.settings,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  @override
+  bool get popGestureEnabled => isCurrent && predictiveBack;
+
+  @override
+  bool get opaque => true;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 450);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return builder(context);
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势；
+    // 手势中渲染官方 predictive 过渡（整屏缩放跟手）+ 封面回拨叠加，
+    // 非手势的打开/关闭沿用主题 FadeForwards，观感与普通页一致。
+    return PredictiveBackGestureDetector(
+      route: this,
+      builder: (context, phase, startBackEvent, currentBackEvent) {
+        if (popGestureInProgress) {
+          return Stack(
+            children: [
+              PredictiveBackSharedElementPageTransition(
+                animation: animation,
+                phase: phase,
+                secondaryAnimation: secondaryAnimation,
+                startBackEvent: startBackEvent,
+                currentBackEvent: currentBackEvent,
+                child: child,
+              ),
+              // 预测返回手势中叠加「封面飞回播放条」。
+              PredictiveCoverReturnView(animation: animation),
+            ],
+          );
+        }
+        return const FadeForwardsPageTransitionsBuilder()
+            .buildTransitions(this, context, animation, secondaryAnimation, child);
       },
     );
   }

@@ -30,6 +30,8 @@ import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/modern_dialog.dart';
+import '../../src/widgets/predictive_cover_return.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -210,7 +212,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                 ],
                               );
                             },
-                            child: _BigCover(current: current),
+                            child: CoverReturnSource(
+                              songPath: current?.path,
+                              networkUrl: current?.coverUrl,
+                              child: _BigCover(current: current),
+                            ),
                           ),
                         ),
                       ),
@@ -498,12 +504,16 @@ class _TraditionalPlayerLayoutState
                     ],
                   );
                 },
-                child: _TraditionalCover(
-                  size: coverSize,
-                  current: widget.current,
-                  eq: _eq,
-                  flash: _flashOn,
-                  playing: isPlaying,
+                child: CoverReturnSource(
+                  songPath: widget.current?.path,
+                  networkUrl: widget.current?.coverUrl,
+                  child: _TraditionalCover(
+                    size: coverSize,
+                    current: widget.current,
+                    eq: _eq,
+                    flash: _flashOn,
+                    playing: isPlaying,
+                  ),
                 ),
               ),
             ),
@@ -684,7 +694,7 @@ class _TraditionalPlayerLayoutState
             onTap: () {
               final c = current;
               if (c == null) return;
-              showSheetDialog<void>(
+              showBottomSheetDialog<void>(
                 context,
                 (_) => CommentSheet(songJson: c.onlineSongJson!),
               );
@@ -1876,7 +1886,7 @@ class _TitleRow extends ConsumerWidget {
         if (current.isOnline)
           IconButton(
             icon: const Icon(Icons.mode_comment_outlined),
-            onPressed: () => showSheetDialog<void>(
+            onPressed: () => showBottomSheetDialog<void>(
               context,
               (_) => CommentSheet(songJson: current.onlineSongJson),
             ),
@@ -1924,17 +1934,20 @@ Future<void> _shareCurrent(
 /// 打开音质选择弹窗（触发全量探测真实可用档位）。
 void _showQualitySheet(BuildContext context, WidgetRef ref) {
   final notifier = ref.read(playerProvider.notifier);
-  showSheetDialog<void>(context, (_) => _QualitySheet(notifier: notifier));
+  showBottomSheetDialog<void>(
+  context,
+  (_) => _QualitySheet(notifier: notifier),
+);
 }
 
 /// 打开下载音质选择弹窗（复用共享探针探测真实可用档位，选档后直接下载）。
 void _showDownloadQualitySheet(
     BuildContext context, WidgetRef ref, QueueItem song) {
   final notifier = ref.read(playerProvider.notifier);
-  showSheetDialog<void>(
-    context,
-    (_) => _DownloadQualitySheet(notifier: notifier, song: song),
-  );
+  showBottomSheetDialog<void>(
+  context,
+  (_) => _DownloadQualitySheet(notifier: notifier, song: song),
+);
 }
 
 /// 把 12 档内部键转成菜单/按钮上的人类可读标签。
@@ -1991,32 +2004,40 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 360,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              tr('音质选择'),
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                tr('音质选择'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<String>>(
+            const SizedBox(height: 12),
+            FutureBuilder<List<String>>(
               future: _future,
               builder: (ctx, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
                   );
                 }
                 final opts = snap.data ?? const <String>[];
-                debugPrint('[quality] sheet future done opts=$opts '
-                    'state=${snap.connectionState}');
                 // 兜底：future 返回空但状态里已有探测结果时展示状态结果，
                 // 避免探测时序导致菜单空态。
                 final fallbackOpts = ref.watch(
@@ -2024,49 +2045,54 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                 );
                 final shown = opts.isNotEmpty ? opts : fallbackOpts;
                 if (shown.isEmpty) {
-                  return   Center(child: Text(tr('暂无可切换音质')));
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: Text(tr('暂无可切换音质'))),
+                  );
                 }
                 final cur = ref.watch(
                   playerProvider.select((s) => s.currentQuality),
                 );
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: shown.length,
-                  itemBuilder: (ctx, i) {
-                    final q = shown[i];
-                    final active = q == cur;
-                    return ListTile(
-                      dense: true,
-                      title: Text(_qualityLabel(q)),
-                      trailing: Icon(
-                        active
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        size: 20,
-                        color: active ? scheme.primary : Colors.grey.shade400,
-                      ),
-                      onTap: active
-                          ? null
-                          : () async {
-                              final ok = await widget.notifier.switchQuality(q);
-                              if (!ctx.mounted) return;
-                              final overlay = Overlay.of(
-                                ctx,
-                                rootOverlay: true,
-                              );
-                              Navigator.of(ctx).pop();
-                              showXianYuToastByOverlay(
-                                overlay,
-                                ok ? '已切换为${_qualityLabel(q)}' : tr('音质切换失败'),
-                              );
-                            },
-                    );
-                  },
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final q in shown) ...[
+                        ModernOptionTile<String>(
+                          option: ModernChoiceOption(
+                            label: _qualityLabel(q),
+                            value: q,
+                          ),
+                          isSelected: q == cur,
+                          onTap: q == cur
+                              ? () {}
+                              : () async {
+                                  final ok =
+                                      await widget.notifier.switchQuality(q);
+                                  if (!ctx.mounted) return;
+                                  final overlay = Overlay.of(
+                                    ctx,
+                                    rootOverlay: true,
+                                  );
+                                  Navigator.of(ctx).pop();
+                                  showXianYuToastByOverlay(
+                                    overlay,
+                                    ok
+                                        ? '已切换为${_qualityLabel(q)}'
+                                        : tr('音质切换失败'),
+                                  );
+                                },
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                    ],
+                  ),
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2095,73 +2121,84 @@ class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     // 高亮当前播放音质；无播放音质时回退设置中的下载音质。
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
     final settingsQ = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.downloadQuality),
     );
-    return SizedBox(
-      height: 360,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              tr('下载音质'),
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                tr('下载音质'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<String>>(
+            const SizedBox(height: 12),
+            FutureBuilder<List<String>>(
               future: _future,
               builder: (ctx, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
                   );
                 }
                 final opts = snap.data ?? const <String>[];
                 if (opts.isEmpty) {
-                  return   Center(child: Text(tr('暂无可下载音质')));
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: Text(tr('暂无可下载音质'))),
+                  );
                 }
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: opts.length,
-                  itemBuilder: (ctx, i) {
-                    final q = opts[i];
-                    final active =
-                        q == cur || (cur == null && q == settingsQ);
-                    return ListTile(
-                      dense: true,
-                      title: Text(_qualityLabel(q)),
-                      trailing: Icon(
-                        active
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        size: 20,
-                        color: active ? scheme.primary : Colors.grey.shade400,
-                      ),
-                      onTap: () {
-                        final overlay = Overlay.of(ctx, rootOverlay: true);
-                        Navigator.of(ctx).pop();
-                        ref
-                            .read(downloadProvider.notifier)
-                            .download(widget.song, quality: q);
-                        showXianYuToastByOverlay(
-                          overlay,
-                          tr('开始下载：{title}（{quality}）', {'title': widget.song.title, 'quality': _qualityLabel(q)}),
-                        );
-                      },
-                    );
-                  },
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final q in opts) ...[
+                        ModernOptionTile<String>(
+                          option: ModernChoiceOption(
+                            label: _qualityLabel(q),
+                            value: q,
+                          ),
+                          isSelected: q == cur || (cur == null && q == settingsQ),
+                          onTap: () {
+                            final overlay = Overlay.of(ctx, rootOverlay: true);
+                            Navigator.of(ctx).pop();
+                            ref
+                                .read(downloadProvider.notifier)
+                                .download(widget.song, quality: q);
+                            showXianYuToastByOverlay(
+                              overlay,
+                              tr('开始下载：{title}（{quality}）', {'title': widget.song.title, 'quality': _qualityLabel(q)}),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                    ],
+                  ),
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2296,7 +2333,7 @@ class _Controls extends ConsumerWidget {
 
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。
   void _showQueueSheet(BuildContext context, WidgetRef ref) {
-    showSheetDialog<void>(
+    showBottomSheetDialog<void>(
         context, (_) => _QueueSheet(player: ref.read(playerProvider)));
   }
 }
@@ -3465,7 +3502,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
   static void _showFontSizeSheet(BuildContext context, WidgetRef ref) {
-    showSheetDialog<void>(context, (sheetCtx) {
+    showBottomSheetDialog<void>(context, (sheetCtx) {
       final notifier = ref.read(settingsProvider.notifier);
       var current = ref.read(settingsProvider).valueOrNull?.lyricFontSize ?? 1;
       return SafeArea(
@@ -3566,7 +3603,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 歌词偏移校正面板：粗调滑杆(-500~+500, 10ms) + 细调按钮(1/5/10/100ms)，
   /// 拖蓝/暂停时点按微调可精确定位，满足“偏移步进细化”。
   static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
-    showSheetDialog<void>(context, (sheetCtx) {
+    showBottomSheetDialog<void>(context, (sheetCtx) {
       final notifier = ref.read(settingsProvider.notifier);
       var value = ref.read(settingsProvider).valueOrNull?.lyricOffsetMs ?? 0;
 
