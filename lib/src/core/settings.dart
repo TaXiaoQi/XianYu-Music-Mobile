@@ -140,6 +140,7 @@ class AppSettings {
     this.floatingLyricsHideInLandscape = false,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
+    this.statusBarLyricsEnabled = false,
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
   });
@@ -308,6 +309,9 @@ class AppSettings {
   /// 悬浮歌词窗使用自定义歌词字体。
   final bool floatingLyricsUseLyricFont;
 
+  /// 状态栏/通知栏歌词：把播放页歌词推送到系统通知栏展示。
+  final bool statusBarLyricsEnabled;
+
   /// 悬浮歌词窗位置 X。
   final int floatingLyricsX;
 
@@ -381,6 +385,7 @@ class AppSettings {
     bool? floatingLyricsHideInLandscape,
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
+    bool? statusBarLyricsEnabled,
     int? floatingLyricsX,
     int? floatingLyricsY,
   }) {
@@ -475,6 +480,8 @@ class AppSettings {
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
       floatingLyricsUseLyricFont:
           floatingLyricsUseLyricFont ?? this.floatingLyricsUseLyricFont,
+      statusBarLyricsEnabled:
+          statusBarLyricsEnabled ?? this.statusBarLyricsEnabled,
       floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
       floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
     );
@@ -592,6 +599,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,
       floatingLyricsUseLyricFont:
           prefs.getBool('floatingLyricsUseLyricFont') ?? false,
+      statusBarLyricsEnabled:
+          prefs.getBool('statusBarLyricsEnabled') ?? false,
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
     );
@@ -714,6 +723,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           'floatingLyricsHideInLandscape', next.floatingLyricsHideInLandscape),
       prefs.setInt('floatingLyricsWidthPercent', next.floatingLyricsWidthPercent),
       prefs.setBool('floatingLyricsUseLyricFont', next.floatingLyricsUseLyricFont),
+      prefs.setBool('statusBarLyricsEnabled', next.statusBarLyricsEnabled),
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
     ]);
@@ -791,6 +801,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
   Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
+
+  /// 状态栏/通知栏歌词开关（独立于悬浮歌词窗）。
+  Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));
   Future<void> setFloatingLyricsTextColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsTextColor: v));
   Future<void> setFloatingLyricsOpacity(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsOpacity: v));

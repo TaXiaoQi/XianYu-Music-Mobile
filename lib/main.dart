@@ -16,6 +16,7 @@ import 'src/player/player_provider.dart';
 import 'src/player/player_widget_bridge.dart';
 import 'src/deeplink/deep_link_handler.dart';
 import 'src/lyrics/floating_lyrics.dart';
+import 'src/lyrics/status_bar_lyrics.dart';
 import 'src/navigation/routes.dart';
 
 Future<void> main() async {
@@ -51,6 +52,9 @@ Future<void> main() async {
 
   // 挂载悬浮歌词窗控制器：跟随设置与播放状态，向原生悬浮窗推送歌词/进度。
   container.read(floatingLyricsControllerProvider).init();
+
+  // 挂载状态栏/通知栏歌词控制器：把当前歌词行推送成系统通知（蓝牙/锁屏展示）。
+  container.read(statusBarLyricsControllerProvider).init();
 
   // 挂载桌面播放小组件桥：跟随播放状态写入组件数据，响应小组件按钮控制。
   container.read(playerWidgetControllerProvider).init();

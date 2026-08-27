@@ -236,6 +236,25 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, StatusBarLyricsNotification.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "show" -> {
+                        StatusBarLyricsNotification.show(
+                            this,
+                            call.argument<String>("title") ?: "",
+                            call.argument<String>("artist") ?: "",
+                            call.argument<String>("lyric") ?: "",
+                            call.argument<String>("coverPath"))
+                        result.success(null)
+                    }
+                    "cancel" -> {
+                        StatusBarLyricsNotification.cancel(this)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     /** 枚举全部输出音频设备，返回 JSON 数组 JSON。id 与 AAudio setDeviceId 一致。 */

@@ -452,6 +452,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      _sectionHeader(context, '状态栏歌词'),
+      _CardGroup(
+        children: [
+          _switchTile(
+            context,
+            icon: Icons.notifications_active_outlined,
+            title: '状态栏歌词',
+            subtitle: '把当前歌词行推送到系统通知栏 / 锁屏展示',
+            value: s?.statusBarLyricsEnabled ?? false,
+            onChanged: (v) => n.setStatusBarLyricsEnabled(v),
+          ),
+        ],
+      ),
     ];
   }
 
