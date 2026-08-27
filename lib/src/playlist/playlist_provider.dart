@@ -52,6 +52,21 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  /// 按指定 id 顺序重排歌单（未列出的歌单保持在队尾）。
+  Future<void> reorder(List<String> orderedIds) async {
+    final current = state.playlists;
+    final idSet = orderedIds.toSet();
+    final byId = {for (final p in current) p.id: p};
+    final result = <ImportedPlaylist>[
+      for (final id in orderedIds)
+        if (byId.containsKey(id)) byId[id]!,
+      for (final p in current)
+        if (!idSet.contains(p.id)) p,
+    ];
+    await _store.saveAll(result);
+    state = ImportedPlaylistState(playlists: result, loading: false);
+  }
+
   Future<void> create(String name) async {
     final playlists = await _store.createPlaylist(name);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
@@ -69,6 +84,12 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
 
   Future<void> removeSong(String id, String path) async {
     final playlists = await _store.removeSong(id, path);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
+  /// 重排歌单内歌曲顺序（按 path）。
+  Future<void> reorderSongs(String id, List<String> orderedPaths) async {
+    final playlists = await _store.reorderSongs(id, orderedPaths);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 

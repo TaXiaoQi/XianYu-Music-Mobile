@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../i18n/i18n.dart';
 
 /// 插件格式：LX（落雪）或 MusicFree。
 enum PluginFormat {
@@ -159,7 +160,7 @@ class EngineLoadResult {
       return EngineLoadResult.fromJson(
           jsonDecode(json) as Map<String, dynamic>);
     } catch (_) {
-      return EngineLoadResult(ok: false, error: '引擎返回解析失败');
+      return EngineLoadResult(ok: false, error: tr('引擎返回解析失败'));
     }
   }
 }
@@ -194,7 +195,7 @@ class EngineCallResult {
       return EngineCallResult.fromJson(
           jsonDecode(json) as Map<String, dynamic>);
     } catch (_) {
-      return EngineCallResult(ok: false, error: '引擎返回解析失败');
+      return EngineCallResult(ok: false, error: tr('引擎返回解析失败'));
     }
   }
 }

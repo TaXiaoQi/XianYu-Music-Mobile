@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 设置导航页：浅白底 + 纯白分类卡片，默认展示分类列表，点入详情。
 ///
@@ -16,75 +17,75 @@ class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   /// 分组：标题 -> 分类条目。每个条目的 path 指向分类详情页或既有页面。
-  static const _groups = <(String, List<_CategoryEntry>)>[
+  static get _groups => <(String, List<_CategoryEntry>)>[
     (
-      '账号',
+      tr('账号'),
       [
         _CategoryEntry(
-          '账号',
+          tr('账号'),
           Icons.account_circle_outlined,
-          '服务端设置、手动同步、自动同步',
+          tr('服务端设置、手动同步、自动同步'),
           '/settings/account',
         ),
       ],
     ),
     (
-      '偏好',
+      tr('偏好'),
       [
-        _CategoryEntry('常规', Icons.tune, '语言、反馈、存储', '/settings/general'),
+        _CategoryEntry(tr('常规'), Icons.tune, tr('语言、反馈、存储'), '/settings/general'),
         _CategoryEntry(
-          '外观',
+          tr('外观'),
           Icons.palette_outlined,
-          '主题、主题色、壁纸、液态玻璃、导航栏',
+          tr('主题、主题色、壁纸、液态玻璃、导航栏'),
           '/settings/appearance',
         ),
         _CategoryEntry(
-          '歌词',
+          tr('歌词'),
           Icons.lyrics_outlined,
-          '歌词显示、悬浮歌词窗',
+          tr('歌词显示、悬浮歌词窗'),
           '/settings/lyrics',
         ),
       ],
     ),
     (
-      '在线与音源',
+      tr('在线与音源'),
       [
         _CategoryEntry(
-          '音源',
+          tr('音源'),
           Icons.library_music_outlined,
-          '插件音源：导入、启用、更新、卸载',
+          tr('插件音源：导入、启用、更新、卸载'),
           '/plugin',
         ),
         _CategoryEntry(
-          '播放',
+          tr('播放'),
           Icons.play_circle_outline,
-          '音量、双击播放、在线音质、输出',
+          tr('音量、双击播放、在线音质、输出'),
           '/settings/playback',
         ),
         _CategoryEntry(
-          '下载',
+          tr('下载'),
           Icons.download_outlined,
-          '音质、路径、并发、嵌入',
+          tr('音质、路径、并发、嵌入'),
           '/settings/download',
         ),
       ],
     ),
     (
-      '系统',
+      tr('系统'),
       [
         _CategoryEntry(
-          '高级设置',
+          tr('高级设置'),
           Icons.settings_suggest_outlined,
-          '屏幕常亮、应用备份、预测返回',
+          tr('屏幕常亮、应用备份、预测返回'),
           '/settings/advanced',
         ),
         _CategoryEntry(
-          '意见反馈',
+          tr('意见反馈'),
           Icons.feedback_outlined,
-          '向我们反馈问题与建议',
+          tr('向我们反馈问题与建议'),
           '/feedback',
         ),
-        _CategoryEntry('关于', Icons.info_outline, '版本信息、项目主页', '/about'),
+        _CategoryEntry(tr('关于'), Icons.info_outline, tr('版本信息、项目主页'), '/about'),
       ],
     ),
   ];
@@ -94,7 +95,7 @@ class SettingsPage extends ConsumerWidget {
     final isDeveloperMode = ref.watch(developerModeProvider);
     final groups = _buildGroups(isDeveloperMode);
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           // 内容列表：顶部预留顶栏高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
@@ -125,7 +126,7 @@ class SettingsPage extends ConsumerWidget {
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: const Text('设置'),
+              title:   Text(tr('设置')),
             ),
           ),
         ],
@@ -146,10 +147,10 @@ class SettingsPage extends ConsumerWidget {
           header,
           [
             ...entries,
-            const _CategoryEntry(
-              '调试',
+              _CategoryEntry(
+              tr('调试'),
               Icons.bug_report_outlined,
-              '调试模式：弹窗测试、退出调试',
+              tr('调试模式：弹窗测试、退出调试'),
               '/debug',
             ),
           ],

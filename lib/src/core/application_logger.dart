@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../i18n/i18n.dart';
 
 /// 日志级别（与桌面端 applicationLogger 对齐）。
 enum LogLevel {
@@ -216,9 +217,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
         ? '检测到 ${counts[LogLevel.error]} 条错误日志'
         : counts[LogLevel.warn]! > 0
             ? '检测到 ${counts[LogLevel.warn]} 条警告日志'
-            : '未发现明显异常';
+            : tr('未发现明显异常');
     final buffer = StringBuffer()
-      ..writeln('弦予音乐调试日志')
+      ..writeln(tr('弦予音乐调试日志'))
       ..writeln('导出范围：${onlyErrors ? '错误日志' : '全部日志'}')
       ..writeln('导出时间：${DateTime.now().toIso8601String()}')
       ..writeln('日志数量：${selected.length}')

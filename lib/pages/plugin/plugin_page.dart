@@ -19,6 +19,7 @@ import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
 class PluginPage extends ConsumerStatefulWidget {
@@ -111,21 +112,21 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             .toList();
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：插件列表不再
       // 每帧重排重绘，彻底消除输入法动画掉帧（键盘弹出后面板由弹窗自行上移）。
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: const Text('音源'),
+        title:   Text(tr('音源')),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            tooltip: '插件设置',
+            tooltip: tr('插件设置'),
             onPressed: _showPluginSettingsSheet,
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: '安装插件',
+            tooltip: tr('安装插件'),
             onPressed: _installing ? null : _showInstallSheet,
           ),
         ],
@@ -171,14 +172,14 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                             ),
                           ),
                           const SizedBox(width: 7),
-                          const Text(
-                            '已安装插件',
+                            Text(
+                            tr('已安装插件'),
                             style: TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '已启用 ${sources.where((s) => s.enabled).length} / 共 ${sources.length}',
+                            tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
                             style: TextStyle(
                                 fontSize: 12, color: scheme.outline),
                           ),
@@ -203,8 +204,8 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 : const Icon(Icons.system_update_alt_outlined,
                                     size: 16),
                             label: Text(_checkingUpdates
-                                ? '检查中...'
-                                : '检查全部更新'),
+                                ? tr('检查中...')
+                                : tr('检查全部更新')),
                           ),
                         ],
                       ),
@@ -214,7 +215,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         controller: _searchCtrl,
                         onChanged: (v) => setState(() => _query = v),
                         decoration: InputDecoration(
-                          hintText: '搜索插件名称、平台或作者',
+                          hintText: tr('搜索插件名称、平台或作者'),
                           prefixIcon: const Icon(Icons.search, size: 20),
                           suffixIcon: _query.isEmpty
                               ? null
@@ -240,7 +241,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                           padding: const EdgeInsets.symmetric(vertical: 32),
                           child: Center(
                             child: Text(
-                              '未找到匹配的插件',
+                              tr('未找到匹配的插件'),
                               style: TextStyle(
                                   fontSize: 13, color: scheme.onSurfaceVariant),
                             ),
@@ -249,7 +250,10 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                     ],
                   ),
                   // 拖动代理样式与正常卡片保持一致（去掉默认拖拽阴影）
-                  proxyDecorator: (child, index, animation) => child,
+                  // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），卡片内 InkWell
+                  // 会以 debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
+                  proxyDecorator: (child, index, animation) =>
+                      Material(type: MaterialType.transparency, child: child),
                   itemBuilder: (context, i) {
                     final source = filtered[i];
                     // 点击最前方拖动图标即可拖拽；搜索过滤时禁用
@@ -301,19 +305,19 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('安装插件',
+              Text(tr('安装插件'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
-              '支持 LX（落雪）与 MusicFree 格式音源插件',
+              tr('支持 LX（落雪）与 MusicFree 格式音源插件'),
               style: TextStyle(
                   fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
             ),
             const SizedBox(height: 14),
             _InstallOption(
               icon: Icons.folder_open_outlined,
-              title: '本地文件',
-              subtitle: '选择本地的插件脚本（.js / .txt）',
+              title: tr('本地文件'),
+              subtitle: tr('选择本地的插件脚本（.js / .txt）'),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickLocalPlugin();
@@ -322,8 +326,8 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             const SizedBox(height: 10),
             _InstallOption(
               icon: Icons.cloud_download_outlined,
-              title: '在线链接',
-              subtitle: '输入 URL 安装，支持单个插件或插件集（JSON）批量',
+              title: tr('在线链接'),
+              subtitle: tr('输入 URL 安装，支持单个插件或插件集（JSON）批量'),
               onTap: () {
                 Navigator.pop(ctx);
                 _showUrlInstallSheet();
@@ -349,14 +353,14 @@ class _PluginPageState extends ConsumerState<PluginPage> {
         final bytes = await f.readAsBytes();
         if (!mounted) return;
         if (bytes.isEmpty) {
-          showXianYuToast(context, '读取「${f.name}」失败或文件为空');
+          showXianYuToast(context, tr('读取「{name}」失败或文件为空', {'name': f.name}));
           continue;
         }
         final script = utf8.decode(bytes, allowMalformed: true);
-        await _install(script, f.name.isNotEmpty ? f.name : '本地插件');
+        await _install(script, f.name.isNotEmpty ? f.name : tr('本地插件'));
       } catch (e) {
         if (!mounted) return;
-        showXianYuToast(context, '读取「${f.name}」失败：$e');
+        showXianYuToast(context, tr('读取「{name}」失败：{e}', {'name': f.name, 'e': e}));
       }
     }
   }
@@ -379,19 +383,19 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('插件设置',
+                Text(tr('插件设置'),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
-                '管理插件的自动化行为',
+                tr('管理插件的自动化行为'),
                 style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
               ),
               const SizedBox(height: 12),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('启动时自动更新',
+                title:   Text(tr('启动时自动更新'),
                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
-                subtitle: const Text('应用启动后静默检查并安装所有已启用插件的最新版本；被标记"跳过版本检查"的插件除外'),
+                subtitle:   Text(tr('应用启动后静默检查并安装所有已启用插件的最新版本；被标记"跳过版本检查"的插件除外')),
                 value: _autoUpdateOnStartup,
                 onChanged: _savingAutoUpdate
                     ? null
@@ -410,7 +414,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                 children: [
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('完成'),
+                    child:   Text(tr('完成')),
                   ),
                 ],
               ),
@@ -430,17 +434,17 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       if (!mounted) return;
       if (result.success) {
         final summary = result.failCount > 0
-            ? '成功 ${result.names.length} 个，失败 ${result.failCount} 个'
-            : '成功 ${result.names.length} 个：${result.names.join('、')}';
-        showXianYuToast(context, '插件安装完成，$summary');
+            ? tr('成功 {ok} 个，失败 {fail} 个', {'ok': result.names.length, 'fail': result.failCount})
+            : tr('成功 {ok} 个：{names}', {'ok': result.names.length, 'names': result.names.join('、')});
+        showXianYuToast(context, tr('插件安装完成，{summary}', {'summary': summary}));
       } else {
         final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
-        showXianYuToast(context, '所有插件安装失败$detail');
+        showXianYuToast(context, tr('所有插件安装失败{detail}', {'detail': detail}));
       }
     } catch (e) {
       if (!mounted) return;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      showXianYuToast(context, '安装失败：$msg');
+      showXianYuToast(context, tr('安装失败：{msg}', {'msg': msg}));
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -454,11 +458,11 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           .read(pluginManagerProvider.notifier)
           .installFromScript(script, fileName: name);
       if (!mounted) return;
-      showXianYuToast(context, '插件「${source.name}」安装成功');
+      showXianYuToast(context, tr('插件「{name}」安装成功', {'name': source.name}));
     } catch (e) {
       if (!mounted) return;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      showXianYuToast(context, '安装失败：$msg');
+      showXianYuToast(context, tr('安装失败：{msg}', {'msg': msg}));
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -480,12 +484,12 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       showXianYuToast(
         context,
         updateCount > 0
-            ? '发现 $updateCount 个插件可更新'
-            : '所有插件均为最新版本',
+            ? tr('发现 {n} 个插件可更新', {'n': updateCount})
+            : tr('所有插件均为最新版本'),
       );
     } catch (e) {
       if (!mounted) return;
-      showXianYuToast(context, '检查更新失败：$e');
+      showXianYuToast(context, tr('检查更新失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
     }
@@ -513,14 +517,14 @@ class _SubscriptionSection extends ConsumerWidget {
             Icon(Icons.rss_feed, size: 16, color: scheme.primary),
             const SizedBox(width: 6),
             Text(
-              '订阅链接 · ${subscriptions.length}',
+              tr('订阅链接 · {n}', {'n': subscriptions.length}),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          '随插件同步到云端，点击可重新导入最新版本',
+          tr('随插件同步到云端，点击可重新导入最新版本'),
           style: TextStyle(fontSize: 11, color: scheme.outline),
         ),
         const SizedBox(height: 8),
@@ -571,7 +575,7 @@ class _SubscriptionSection extends ConsumerWidget {
                       IconButton(
                         icon: Icon(Icons.delete_outline,
                             size: 20, color: scheme.outline),
-                        tooltip: '移除订阅',
+                        tooltip: tr('移除订阅'),
                         onPressed: () => ref
                             .read(pluginSubscriptionsProvider.notifier)
                             .remove(sub.id),
@@ -600,18 +604,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.extension_outlined, size: 56, color: scheme.outline),
           const SizedBox(height: 12),
-          Text('还没有安装音源插件',
+          Text(tr('还没有安装音源插件'),
               style: TextStyle(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Text(
-            '支持 LX / MusicFree 格式音源插件，在线搜索与播放需要音源支持',
+            tr('支持 LX / MusicFree 格式音源插件，在线搜索与播放需要音源支持'),
             style: TextStyle(fontSize: 12, color: scheme.outline),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onInstall,
             icon: const Icon(Icons.add),
-            label: const Text('安装音源'),
+            label:   Text(tr('安装音源')),
           ),
         ],
       ),
@@ -729,12 +733,12 @@ class _PluginCard extends ConsumerWidget {
 
     // 格式标签（落雪 / MusicFree / BakaMusic / 未知），与图标配色同源判定
     final tagLabel = source.format == PluginFormat.lx
-        ? '落雪'
+        ? tr('落雪')
         : source.format == PluginFormat.musicfree
             ? (source.author.toLowerCase().contains('toskysun')
                 ? 'BakaMusic'
                 : 'MusicFree')
-            : '未知';
+            : tr('未知');
 
     return Material(
       color: appCardColor(context),
@@ -836,21 +840,21 @@ class _PluginCard extends ConsumerWidget {
                 _action(
                   context,
                   Icons.info_outline,
-                  '详情',
+                  tr('详情'),
                   () => _openDetail(context, ref),
                 ),
                 const SizedBox(width: 4),
                 _action(
                   context,
                   Icons.system_update_alt_outlined,
-                  '更新',
+                  tr('更新'),
                   () => _checkUpdate(context, ref),
                 ),
                 const SizedBox(width: 4),
                 _action(
                   context,
                   Icons.delete_outline,
-                  '删除',
+                  tr('删除'),
                   () => _confirmRemove(context, manager),
                 ),
               ],
@@ -923,28 +927,27 @@ class _PluginCard extends ConsumerWidget {
     final result = await service.checkPluginUpdate(source);
     if (!context.mounted) return;
     if (result == null) {
-      showXianYuToast(context, '无可用更新源');
+      showXianYuToast(context, tr('无可用更新源'));
       return;
     }
     if (!result.hasUpdate) {
-      showXianYuToast(context, '「${source.name}」已是最新版本');
+      showXianYuToast(context, tr('「{name}」已是最新版本', {'name': source.name}));
       return;
     }
     final confirmed = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('发现新版本'),
+        title:   Text(tr('发现新版本')),
         content: Text(
-            '「${source.name}」\n当前版本：v${result.currentVersion}\n'
-            '新版本：v${result.newVersion}\n\n是否立即更新？'),
+            tr('「{name}」\n当前版本：v{cur}\n新版本：v{new}\n\n是否立即更新？', {'name': source.name, 'cur': result.currentVersion, 'new': result.newVersion})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('更新'),
+            child:   Text(tr('更新')),
           ),
         ],
       ),
@@ -959,19 +962,19 @@ class _PluginCard extends ConsumerWidget {
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('卸载插件'),
-        content: Text('确定要卸载「${source.name}」吗？'),
+        title:   Text(tr('卸载插件')),
+        content: Text(tr('确定要卸载「{name}」吗？', {'name': source.name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               manager.remove(source.id);
             },
-            child: const Text('卸载'),
+            child:   Text(tr('卸载')),
           ),
         ],
       ),
@@ -1059,7 +1062,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
           ? (_selectValues[v.name] ?? '')
           : (_controllers[v.name]?.text.trim() ?? '');
       if (value.isEmpty) {
-        showXianYuToast(context, '「${v.title ?? v.name}」为必填项');
+        showXianYuToast(context, tr('「{name}」为必填项', {'name': v.title ?? v.name}));
         return;
       }
     }
@@ -1075,10 +1078,10 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
           .read(pluginManagerProvider.notifier)
           .saveUserVars(source.id, values);
       if (!mounted) return;
-      showXianYuToast(context, '已保存用户变量，开始生效');
+      showXianYuToast(context, tr('已保存用户变量，开始生效'));
     } catch (e) {
       if (!mounted) return;
-      showXianYuToast(context, '保存失败：$e');
+      showXianYuToast(context, tr('保存失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1088,7 +1091,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final formatLabel =
-        source.format == PluginFormat.lx ? '落雪格式' : 'MusicFree 格式';
+        source.format == PluginFormat.lx ? tr('落雪格式') : tr('MusicFree 格式');
 
     Widget row(String label, String value) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -1157,9 +1160,9 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                 ],
               ),
               const Divider(height: 24),
-              row('版本', source.version.isEmpty ? '—' : 'v${source.version}'),
-              row('作者', source.author.isEmpty ? '—' : source.author),
-              if (source.description.isNotEmpty) row('描述', source.description),
+              row(tr('版本'), source.version.isEmpty ? '—' : 'v${source.version}'),
+              row(tr('作者'), source.author.isEmpty ? '—' : source.author),
+              if (source.description.isNotEmpty) row(tr('描述'), source.description),
               // 音源（插件链接）chips
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -1168,7 +1171,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                   children: [
                     SizedBox(
                       width: 64,
-                      child: Text('链接',
+                      child: Text(tr('链接'),
                           style: TextStyle(
                               fontSize: 13, color: scheme.onSurfaceVariant)),
                     ),
@@ -1208,8 +1211,8 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                     Icon(Icons.tune_outlined,
                         size: 18, color: scheme.primary),
                     const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text('用户变量',
+                      Expanded(
+                      child: Text(tr('用户变量'),
                           style: TextStyle(
                               fontSize: 14.5, fontWeight: FontWeight.w600)),
                     ),
@@ -1227,12 +1230,12 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                           textStyle: const TextStyle(fontSize: 13),
                         ),
                         onPressed: _save,
-                        child: const Text('保存'),
+                        child:   Text(tr('保存')),
                       ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text('保存后插件将重新加载并应用新的变量值',
+                Text(tr('保存后插件将重新加载并应用新的变量值'),
                     style: TextStyle(fontSize: 12, color: scheme.outline)),
                 const SizedBox(height: 12),
                 for (final v in _vars) _buildField(context, v),
@@ -1362,19 +1365,19 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('在线链接安装',
+              Text(tr('在线链接安装'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
-              '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）',
+              tr('支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）'),
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _urlCtrl,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '插件 URL',
+              decoration:   InputDecoration(
+                labelText: tr('插件 URL'),
                 hintText: 'https://example.com/plugin.js',
                 border: OutlineInputBorder(),
                 isDense: true,
@@ -1388,7 +1391,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
+                  child:   Text(tr('取消')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
@@ -1400,7 +1403,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.download, size: 18),
-                  label: const Text('安装'),
+                  label:   Text(tr('安装')),
                 ),
               ],
             ),

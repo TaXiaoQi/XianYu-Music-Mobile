@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 音源榜单页：插件来源切换 + 榜单网格（对齐桌面 TopLists）。
 class TopListsPage extends ConsumerStatefulWidget {
@@ -74,9 +74,9 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('音源榜单'),
+        title:   Text(tr('音源榜单')),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
@@ -120,7 +120,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
             const CircularProgressIndicator(strokeWidth: 2),
             const SizedBox(height: 12),
             Text(
-              _checking ? '正在检测可用音源…' : '正在加载榜单…',
+              _checking ? tr('正在检测可用音源…') : tr('正在加载榜单…'),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
           ],
@@ -131,11 +131,11 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
       return _empty(
         scheme,
         Icons.extension_outlined,
-        '暂无支持榜单的插件\n请先在「插件管理」安装支持排行榜的音源插件',
+        tr('暂无支持榜单的插件\n请先在「插件管理」安装支持排行榜的音源插件'),
       );
     }
     if (_boards.isEmpty) {
-      return _empty(scheme, Icons.library_music_outlined, '该音源暂无榜单\n试试切换其他音源');
+      return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(14, 8, 14, MediaQuery.of(context).padding.bottom + 24),

@@ -8,6 +8,7 @@ import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_preferences.dart';
 import 'plugin_provider.dart';
+import '../i18n/i18n.dart';
 
 /// 插件更新检查结果。
 class PluginUpdateCheckResult {
@@ -154,7 +155,7 @@ class PluginUpdateService {
       performPluginUpdate(
           PluginSource source, PluginUpdateCheckResult checkResult) async {
     if (checkResult.newScript == null) {
-      return (success: false, newSource: null, message: '无新脚本可更新');
+      return (success: false, newSource: null, message: tr('无新脚本可更新'));
     }
     try {
       final newSource = await manager.installFromScript(
@@ -168,11 +169,11 @@ class PluginUpdateService {
       return (
         success: true,
         newSource: newSource,
-        message: '${source.name} 已更新到 ${newSource.version}',
+        message: tr('{name} 已更新到 {version}', {'name': source.name, 'version': newSource.version}),
       );
     } catch (e) {
       final msg = e is PluginEngineException ? e.message : e.toString();
-      return (success: false, newSource: null, message: '更新失败: $msg');
+      return (success: false, newSource: null, message: tr('更新失败: {msg}', {'msg': msg}));
     }
   }
 
@@ -241,7 +242,7 @@ Future<void> runPluginAutoUpdateOnStartup(
     );
     final installed = await service.checkAndInstallAll();
     if (installed > 0 && log != null) {
-      log('启动自动更新：已更新 $installed 个插件');
+      log(tr('启动自动更新：已更新 {n} 个插件', {'n': installed}));
     }
   } catch (_) {
     // 启动静默自动更新失败不打扰用户

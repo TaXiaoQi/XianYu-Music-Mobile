@@ -22,6 +22,7 @@ import '../../src/widgets/committed_slider.dart';
 import '../../src/audio/audio_devices.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;
+import '../../src/i18n/i18n.dart';
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
@@ -42,12 +43,12 @@ enum SettingsCategory {
   };
 
   String get title => switch (this) {
-    SettingsCategory.general => '常规',
-    SettingsCategory.appearance => '外观',
-    SettingsCategory.lyrics => '歌词',
-    SettingsCategory.playback => '播放',
-    SettingsCategory.download => '下载',
-    SettingsCategory.advanced => '高级设置',
+    SettingsCategory.general => tr('常规'),
+    SettingsCategory.appearance => tr('外观'),
+    SettingsCategory.lyrics => tr('歌词'),
+    SettingsCategory.playback => tr('播放'),
+    SettingsCategory.download => tr('下载'),
+    SettingsCategory.advanced => tr('高级设置'),
   };
 }
 
@@ -80,7 +81,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     return Scaffold(
-      backgroundColor: settingsSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: Text(category.title)),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: ListView(
@@ -135,32 +136,32 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '语言'),
+      _sectionHeader(context, tr('语言')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.language_outlined,
-            title: '语言',
+            title: tr('语言'),
             trailing: Text(_languageLabel(s?.language ?? AppLanguage.system)),
             onTap: () => _pickLanguage(context, ref, s),
           ),
         ],
       ),
-      _sectionHeader(context, '反馈'),
+      _sectionHeader(context, tr('反馈')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.vibration_outlined,
-            title: '触觉反馈力度',
-            subtitle: '点击底部导航等操作的手感震动强度',
+            title: tr('触觉反馈力度'),
+            subtitle: tr('点击底部导航等操作的手感震动强度'),
             trailing: Text(_hapticLabel(s?.hapticStrength ?? 1)),
             onTap: () => _pickHaptic(context, ref, s),
           ),
         ],
       ),
-      _sectionHeader(context, '存储空间'),
+      _sectionHeader(context, tr('存储空间')),
       const _StorageSettingsGroup(),
     ];
   }
@@ -173,85 +174,85 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '主题'),
+      _sectionHeader(context, tr('主题')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.palette_outlined,
-            title: '主题模式',
+            title: tr('主题模式'),
             trailing: _themeLabel(s),
             onTap: () => _pickThemeMode(context, ref, s),
           ),
           _tile(
             context,
             icon: Icons.color_lens_outlined,
-            title: '主题色',
+            title: tr('主题色'),
             trailing: _ColorDot(color: Color(s?.accentColor ?? 0xFFEC4141)),
             onTap: () => _pickAccentColor(context, ref, s),
           ),
           _tile(
             context,
             icon: Icons.wallpaper_outlined,
-            title: '壁纸中心',
-            subtitle: '自定义背景与动态壁纸',
+            title: tr('壁纸中心'),
+            subtitle: tr('自定义背景与动态壁纸'),
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/wallpaper'),
           ),
           _switchTile(
             context,
             icon: Icons.blur_on_outlined,
-            title: '毛玻璃材质',
-            subtitle: '顶栏与底栏使用安卓原生高斯模糊磨砂',
+            title: tr('毛玻璃材质'),
+            subtitle: tr('顶栏与底栏使用安卓原生高斯模糊磨砂'),
             value: s?.frostedGlass ?? true,
             onChanged: (v) => n.setFrostedGlass(v),
           ),
           _switchTile(
             context,
             icon: Icons.gradient_outlined,
-            title: '液态玻璃',
-            subtitle: '悬浮导航 shader 折射光影，与毛玻璃二选一',
+            title: tr('液态玻璃'),
+            subtitle: tr('悬浮导航 shader 折射光影，与毛玻璃二选一'),
             value: s?.liquidGlass ?? false,
             onChanged: (v) => n.setLiquidGlass(v),
           ),
           _switchTile(
             context,
             icon: Icons.sync_alt_outlined,
-            title: '播放页液态玻璃',
-            subtitle: '播放页控制卡使用液态玻璃材质',
+            title: tr('播放页液态玻璃'),
+            subtitle: tr('播放页控制卡使用液态玻璃材质'),
             value: s?.playerLiquidGlass ?? true,
             onChanged: (v) => n.setPlayerLiquidGlass(v),
           ),
         ],
       ),
       // 播放页样式：高级模式（现代毛玻璃）/ 传统模式（经典布局）。
-      _sectionHeader(context, '播放页'),
+      _sectionHeader(context, tr('播放页')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.grid_view_outlined,
-            title: '播放页样式',
-            subtitle: '切换正在播放页的布局风格',
+            title: tr('播放页样式'),
+            subtitle: tr('切换正在播放页的布局风格'),
             trailing: Text(switch (s?.playerStyle ?? PlayerStyle.advanced) {
-              PlayerStyle.advanced => '高级模式',
-              PlayerStyle.traditional => '传统模式',
+              PlayerStyle.advanced => tr('高级模式'),
+              PlayerStyle.traditional => tr('传统模式'),
             }),
             onTap: () => _pickPlayerStyle(context, ref, s),
           ),
         ],
       ),
       // 导航栏与底栏样式：由「常规」页迁入外观。
-      _sectionHeader(context, '导航栏与底栏'),
+      _sectionHeader(context, tr('导航栏与底栏')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.navigation_outlined,
-            title: '导航栏位置',
+            title: tr('导航栏位置'),
             trailing: Text(switch (s?.navBarPosition ?? NavBarPosition.bottom) {
-              NavBarPosition.bottom => '底部导航',
-              NavBarPosition.side => '侧边悬浮',
+              NavBarPosition.bottom => tr('底部导航'),
+              NavBarPosition.side => tr('侧边悬浮'),
             }),
             onTap: () => _pickNavBarPosition(context, ref, s),
           ),
@@ -260,7 +261,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             _switchTile(
               context,
               icon: Icons.subtitles_outlined,
-              title: '悬浮式底栏',
+              title: tr('悬浮式底栏'),
               value: s?.floatingNavBar ?? true,
               onChanged: (v) => n.setFloatingNavBar(v),
             ),
@@ -268,24 +269,24 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             _tile(
               context,
               icon: Icons.swap_vert_outlined,
-              title: '侧边栏展开方向',
+              title: tr('侧边栏展开方向'),
               trailing: Text(switch (s?.sideBarExpandDirection ??
                   SideBarExpandDirection.down) {
-                SideBarExpandDirection.down => '向下展开',
-                SideBarExpandDirection.up => '向上展开',
+                SideBarExpandDirection.down => tr('向下展开'),
+                SideBarExpandDirection.up => tr('向上展开'),
               }),
               onTap: () => _pickSideBarExpandDirection(context, ref, s),
             ),
         ],
       ),
-      _sectionHeader(context, '列表'),
+      _sectionHeader(context, tr('列表')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.view_list_outlined,
-            title: '列表大小',
-            subtitle: '歌曲 / 歌手 / 专辑 / 歌单列表项尺寸',
+            title: tr('列表大小'),
+            subtitle: tr('歌曲 / 歌手 / 专辑 / 歌单列表项尺寸'),
             trailing: Text(listSizeLabel(
                 s?.listSize ?? ListSize.medium)),
             onTap: () => _pickListSize(context, ref, s),
@@ -303,33 +304,33 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '歌词显示'),
+      _sectionHeader(context, tr('歌词显示')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.translate_outlined,
-            title: '显示翻译',
+            title: tr('显示翻译'),
             value: s?.showLyricsTranslation ?? true,
             onChanged: (v) => n.setShowLyricsTranslation(v),
           ),
           _switchTile(
             context,
             icon: Icons.spellcheck_outlined,
-            title: '逐字动效',
+            title: tr('逐字动效'),
             value: s?.enableWordEffect ?? true,
             onChanged: (v) => n.setEnableWordEffect(v),
           ),
         ],
       ),
-      _sectionHeader(context, '悬浮歌词'),
+      _sectionHeader(context, tr('悬浮歌词')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
-            title: '悬浮歌词窗',
-            subtitle: '在其他应用上层显示卡拉OK逐字歌词',
+            title: tr('悬浮歌词窗'),
+            subtitle: tr('在其他应用上层显示卡拉OK逐字歌词'),
             value: s?.floatingLyricsEnabled ?? false,
             onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
           ),
@@ -337,32 +338,32 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _tile(
             context,
             icon: Icons.palette_outlined,
-            title: '文字颜色',
+            title: tr('文字颜色'),
             trailing: _floatingLyricsColorPicker(context, s, n),
           ),
           _tile(
             context,
             icon: Icons.opacity_outlined,
-            title: '不透明度',
+            title: tr('不透明度'),
             trailing: _floatingLyricsOpacitySlider(s, n),
           ),
           _tile(
             context,
             icon: Icons.text_fields_outlined,
-            title: '字号',
+            title: tr('字号'),
             trailing: _floatingLyricsFontSlider(s, n),
           ),
           _tile(
             context,
             icon: Icons.subtitles_outlined,
-            title: '副行字号',
+            title: tr('副行字号'),
             trailing: _floatingLyricsSecondarySlider(s, n),
           ),
           _switchTile(
             context,
             icon: Icons.font_download_outlined,
-            title: '使用歌词字体',
-            subtitle: '应用播放页设置的自定义歌词字体',
+            title: tr('使用歌词字体'),
+            subtitle: tr('应用播放页设置的自定义歌词字体'),
             value: s?.floatingLyricsUseLyricFont ?? false,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsUseLyricFont(v)
@@ -371,7 +372,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.translate_outlined,
-            title: '显示翻译',
+            title: tr('显示翻译'),
             value: s?.floatingLyricsShowTranslation ?? true,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsShowTranslation(v)
@@ -380,7 +381,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.spellcheck_outlined,
-            title: '显示罗马音',
+            title: tr('显示罗马音'),
             value: s?.floatingLyricsShowRomanization ?? false,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsShowRomanization(v)
@@ -389,7 +390,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.queue_music_outlined,
-            title: '显示背景歌词',
+            title: tr('显示背景歌词'),
             value: s?.floatingLyricsShowBackground ?? true,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsShowBackground(v)
@@ -398,7 +399,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.pause_outlined,
-            title: '暂停时隐藏',
+            title: tr('暂停时隐藏'),
             value: s?.floatingLyricsHideWhenPaused ?? false,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsHideWhenPaused(v)
@@ -407,7 +408,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.screen_lock_landscape_outlined,
-            title: '横屏时隐藏',
+            title: tr('横屏时隐藏'),
             value: s?.floatingLyricsHideInLandscape ?? false,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsHideInLandscape(v)
@@ -416,26 +417,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _tile(
             context,
             icon: Icons.width_full_outlined,
-            title: '宽度',
+            title: tr('宽度'),
             trailing: _floatingLyricsWidthSlider(s, n),
           ),
           _tile(
             context,
             icon: Icons.swap_horiz_outlined,
-            title: '水平位置',
+            title: tr('水平位置'),
             trailing: _floatingLyricsXSlider(context, s, n),
           ),
           _tile(
             context,
             icon: Icons.swap_vert_outlined,
-            title: '垂直位置',
+            title: tr('垂直位置'),
             trailing: _floatingLyricsYSlider(context, s, n),
           ),
           _switchTile(
             context,
             icon: Icons.lock_outline,
-            title: '锁定位置',
-            subtitle: '锁定后不可拖动，通知栏解锁',
+            title: tr('锁定位置'),
+            subtitle: tr('锁定后不可拖动，通知栏解锁'),
             value: s?.floatingLyricsLocked ?? false,
             onChanged: (s?.floatingLyricsEnabled ?? false)
                 ? (v) => n.setFloatingLyricsLocked(v)
@@ -444,7 +445,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _tile(
             context,
             icon: Icons.center_focus_strong_outlined,
-            title: '重置位置',
+            title: tr('重置位置'),
             trailing: const SizedBox.shrink(),
             onTap: (s?.floatingLyricsEnabled ?? false)
                 ? () => _resetFloatingLyricsPosition()
@@ -452,14 +453,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      _sectionHeader(context, '状态栏歌词'),
+      _sectionHeader(context, tr('状态栏歌词')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.notifications_active_outlined,
-            title: '状态栏歌词',
-            subtitle: '把当前歌词行推送到系统通知栏 / 锁屏展示',
+            title: tr('状态栏歌词'),
+            subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
             value: s?.statusBarLyricsEnabled ?? false,
             onChanged: (v) => n.setStatusBarLyricsEnabled(v),
           ),
@@ -477,36 +478,36 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     bool exclusivePlaying,
   ) {
     return [
-      _sectionHeader(context, '播放'),
+      _sectionHeader(context, tr('播放')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.volume_up_outlined,
-            title: exclusivePlaying ? '音量（直出已锁定）' : '音量',
+            title: exclusivePlaying ? tr('音量（直出已锁定）') : tr('音量'),
             trailing: _volumeSlider(s, n, locked: exclusivePlaying),
             subtitle: exclusivePlaying
-                ? 'Bit-perfect / DSD 直出中，音量由 DAC 控制'
+                ? tr('Bit-perfect / DSD 直出中，音量由 DAC 控制')
                 : null,
           ),
           _switchTile(
             context,
             icon: Icons.mouse_outlined,
-            title: '双击播放歌曲',
-            subtitle: '开启后双击歌曲播放，关闭后单击播放',
+            title: tr('双击播放歌曲'),
+            subtitle: tr('开启后双击歌曲播放，关闭后单击播放'),
             value: (s?.songClickAction ?? 'single') == 'double',
             onChanged: (v) => n.setSongClickAction(v ? 'double' : 'single'),
           ),
         ],
       ),
-      _sectionHeader(context, '音量平衡 (ReplayGain)'),
+      _sectionHeader(context, tr('音量平衡 (ReplayGain)')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.balance_outlined,
-            title: '音量平衡',
-            subtitle: '按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量',
+            title: tr('音量平衡'),
+            subtitle: tr('按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量'),
             value: s?.volumeBalanceEnabled ?? false,
             onChanged: (v) => n.setVolumeBalanceEnabled(v),
           ),
@@ -514,14 +515,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             _tile(
               context,
               icon: Icons.tune_outlined,
-              title: '整体增益偏移',
+              title: tr('整体增益偏移'),
               trailing: _gainOffsetSlider(s, n),
             ),
             _switchTile(
               context,
               icon: Icons.shield_outlined,
-              title: '防削波破音保护',
-              subtitle: '增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量',
+              title: tr('防削波破音保护'),
+              subtitle: tr('增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量'),
               value: s?.volumeBalancePreventClipping ?? true,
               onChanged: (v) => n.setVolumeBalancePreventClipping(v),
             ),
@@ -529,21 +530,21 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ],
       ),
       // 以下两组原属「音源」页，随重构并入播放页，与桌面端播放设置对齐。
-      _sectionHeader(context, '在线音质'),
+      _sectionHeader(context, tr('在线音质')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.high_quality_outlined,
-            title: '在线默认音质',
+            title: tr('在线默认音质'),
             trailing: Text(s?.onlineDefaultQuality ?? '320k'),
             onTap: () => _pickQuality(context, ref, s, isOnline: true),
           ),
           _tile(
             context,
             icon: Icons.play_disabled_outlined,
-            title: '起播失败行为',
-            subtitle: '在线音源完全无法播放时的处理方式',
+            title: tr('起播失败行为'),
+            subtitle: tr('在线音源完全无法播放时的处理方式'),
             trailing: Text(
               _failureBehaviorLabel(s?.onlineFailureBehavior ?? 'skip'),
             ),
@@ -552,8 +553,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _tile(
             context,
             icon: Icons.vertical_align_bottom_outlined,
-            title: '音质回退行为',
-            subtitle: '默认音质播放失败时如何切换音质档位',
+            title: tr('音质回退行为'),
+            subtitle: tr('默认音质播放失败时如何切换音质档位'),
             trailing: Text(
               _qualityFallbackLabel(
                 s?.onlineQualityFallbackBehavior ?? 'lower',
@@ -564,24 +565,24 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.swap_horiz_outlined,
-            title: '播放失败自动换源',
-            subtitle: '在线播放失败时自动在其他落雪音源搜索并播放同一首歌',
+            title: tr('播放失败自动换源'),
+            subtitle: tr('在线播放失败时自动在其他落雪音源搜索并播放同一首歌'),
             value: s?.autoSwitchSourceOnFailure ?? false,
             onChanged: (v) => n.setAutoSwitchSourceOnFailure(v),
           ),
         ],
       ),
       // 分享链接设置，与桌面端「播放 → 在线播放」下的分享设置对齐。
-      _sectionHeader(context, '分享'),
+      _sectionHeader(context, tr('分享')),
       _CardGroup(
         children: [
           _shareValidityTile(context, s, n),
           _tile(
             context,
             icon: Icons.link_outlined,
-            title: '分享链接播放失败行为',
+            title: tr('分享链接播放失败行为'),
             subtitle:
-                '通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌',
+                tr('通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌'),
             trailing: Text(
               _sharePlaybackFailureBehaviorLabel(
                 s?.sharePlaybackFailureBehavior ?? 'pause',
@@ -591,41 +592,41 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      _sectionHeader(context, '输出'),
+      _sectionHeader(context, tr('输出')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.speaker_outlined,
-            title: '输出设备',
-            subtitle: 'USB 独占 / DSD 直出到所选设备，可查看设备支持格式',
+            title: tr('输出设备'),
+            subtitle: tr('USB 独占 / DSD 直出到所选设备，可查看设备支持格式'),
             trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
             onTap: () => _pickOutputDevice(context, ref),
           ),
           _switchTile(
             context,
             icon: Icons.usb_outlined,
-            title: 'USB 独占输出 (Bit-perfect)',
+            title: tr('USB 独占输出 (Bit-perfect)'),
             subtitle:
-                '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+                tr('绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退'),
             value: s?.usbExclusiveOutput ?? false,
             onChanged: (v) => n.setUsbExclusiveOutput(v),
           ),
           _switchTile(
             context,
             icon: Icons.high_quality,
-            title: 'Bit-perfect 直出',
+            title: tr('Bit-perfect 直出'),
             subtitle:
-                'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+                tr('USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」'),
             value: s?.bitPerfectOutput ?? false,
             onChanged: (v) => n.setBitPerfectOutput(v),
           ),
           _switchTile(
             context,
             icon: Icons.graphic_eq_outlined,
-            title: 'DSD 原生直出',
+            title: tr('DSD 原生直出'),
             subtitle:
-                'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+                tr('dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定'),
             value: s?.dsdNativePassthrough ?? false,
             onChanged: (v) => n.setDsdNativePassthrough(v),
           ),
@@ -642,43 +643,43 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '下载'),
+      _sectionHeader(context, tr('下载')),
       _CardGroup(
         children: [
           _tile(
             context,
             icon: Icons.folder_outlined,
-            title: '下载路径',
+            title: tr('下载路径'),
             trailing: Text(
-              s?.downloadPath == null || s!.downloadPath.isEmpty ? '默认' : '自定义',
+              s?.downloadPath == null || s!.downloadPath.isEmpty ? tr('默认') : tr('自定义'),
             ),
             onTap: () => _pickDownloadPath(context, ref, s),
           ),
           _tile(
             context,
             icon: Icons.download_outlined,
-            title: '下载音质',
+            title: tr('下载音质'),
             trailing: Text(s?.downloadQuality ?? '320k'),
             onTap: () => _pickQuality(context, ref, s, isOnline: false),
           ),
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
-            title: '同时下载歌词',
+            title: tr('同时下载歌词'),
             value: s?.downloadLyrics ?? false,
             onChanged: (v) => n.setDownloadLyrics(v),
           ),
           _tile(
             context,
             icon: Icons.speed_outlined,
-            title: '批量并发数',
+            title: tr('批量并发数'),
             trailing: Text('${s?.downloadConcurrency ?? 3}'),
             onTap: () => _pickConcurrency(context, ref, s),
           ),
           _tile(
             context,
             icon: Icons.label_outline,
-            title: '文件名样式',
+            title: tr('文件名样式'),
             trailing: Text(
               _fileNameStyleLabel(s?.downloadFileNameStyle ?? 'artist-title'),
             ),
@@ -687,42 +688,42 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.file_copy_outlined,
-            title: '覆盖同名文件',
-            subtitle: '关闭时同名文件自动追加序号，避免覆盖',
+            title: tr('覆盖同名文件'),
+            subtitle: tr('关闭时同名文件自动追加序号，避免覆盖'),
             value: s?.overwriteExisting ?? false,
             onChanged: (v) => n.setOverwriteExisting(v),
           ),
           _tile(
             context,
             icon: Icons.download_done_outlined,
-            title: '下载管理',
+            title: tr('下载管理'),
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/download'),
           ),
         ],
       ),
-      _sectionHeader(context, '下载后嵌入'),
+      _sectionHeader(context, tr('下载后嵌入')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.info_outline,
-            title: '嵌入元数据',
+            title: tr('嵌入元数据'),
             value: s?.embedDownloadMetadata ?? true,
             onChanged: (v) => n.setEmbedDownloadMetadata(v),
           ),
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
-            title: '嵌入歌词',
-            subtitle: '需同时开启「同时下载歌词」',
+            title: tr('嵌入歌词'),
+            subtitle: tr('需同时开启「同时下载歌词」'),
             value: s?.embedDownloadLyrics ?? true,
             onChanged: (v) => n.setEmbedDownloadLyrics(v),
           ),
           _switchTile(
             context,
             icon: Icons.image_outlined,
-            title: '嵌入封面',
+            title: tr('嵌入封面'),
             value: s?.embedDownloadCover ?? true,
             onChanged: (v) => n.setEmbedDownloadCover(v),
           ),
@@ -739,30 +740,30 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     return [
-      _sectionHeader(context, '应用备份'),
+      _sectionHeader(context, tr('应用备份')),
       const _AppBackupGroup(),
-      _sectionHeader(context, '日志'),
+      _sectionHeader(context, tr('日志')),
       const _LogGroup(),
-      _sectionHeader(context, '系统'),
+      _sectionHeader(context, tr('系统')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.screen_lock_rotation_outlined,
-            title: '保持屏幕常亮',
+            title: tr('保持屏幕常亮'),
             value: s?.keepScreenOn ?? true,
             onChanged: (v) => n.setKeepScreenOn(v),
           ),
         ],
       ),
-      _sectionHeader(context, '导航'),
+      _sectionHeader(context, tr('导航')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.arrow_back_outlined,
-            title: '预测返回手势',
-            subtitle: '开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）',
+            title: tr('预测返回手势'),
+            subtitle: tr('开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）'),
             value: s?.enablePredictiveBack ?? true,
             onChanged: (v) => n.setEnablePredictiveBack(v),
           ),
@@ -838,23 +839,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
   Widget _themeLabel(AppSettings? s) {
     return Text(switch (s?.themeMode ?? ThemeModePreference.system) {
-      ThemeModePreference.system => '跟随系统',
-      ThemeModePreference.light => '浅色',
-      ThemeModePreference.dark => '深色',
+      ThemeModePreference.system => tr('跟随系统'),
+      ThemeModePreference.light => tr('浅色'),
+      ThemeModePreference.dark => tr('深色'),
     });
   }
 
   String _languageLabel(AppLanguage v) => switch (v) {
-    AppLanguage.system => '跟随系统',
-    AppLanguage.zhCN => '简体中文',
-    AppLanguage.zhTW => '繁體中文',
+    AppLanguage.system => tr('跟随系统'),
+    AppLanguage.zhCN => tr('简体中文'),
+    AppLanguage.zhTW => tr('繁體中文'),
     AppLanguage.en => 'English',
   };
 
   String _hapticLabel(int v) => switch (v) {
-    0 => '轻',
-    2 => '重',
-    _ => '正常',
+    0 => tr('轻'),
+    2 => tr('重'),
+    _ => tr('正常'),
   };
 
   Widget _volumeSlider(
@@ -915,16 +916,16 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         final go = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('悬浮歌词需要悬浮窗权限'),
-            content: const Text('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+            title:   Text(tr('悬浮歌词需要悬浮窗权限')),
+            content:   Text(tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
+                child:   Text(tr('取消')),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('去授权'),
+                child:   Text(tr('去授权')),
               ),
             ],
           ),
@@ -1007,7 +1008,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       context,
       (ctx) => _AccentColorSheet(
         current: cur,
-        title: '歌词文字颜色',
+        title: tr('歌词文字颜色'),
         presets: _AccentColorSheet.lyricPresets,
       ),
     );
@@ -1208,9 +1209,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       children: [
         ListTile(
           leading: const Icon(Icons.timer_outlined),
-          title: const Text('分享链接有效时长'),
+          title:   Text(tr('分享链接有效时长')),
           subtitle: Text(
-            '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）',
+            tr('分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
           trailing: Text(
@@ -1237,23 +1238,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   String _shareValidityLabel(int v) =>
-      v % 60 == 0 ? '${v ~/ 60} 小时' : '$v 分钟';
+      v % 60 == 0 ? tr('{h} 小时', {'h': v ~/ 60}) : tr('{m} 分钟', {'m': v});
 
   String _failureBehaviorLabel(String v) => switch (v) {
-    'stop' => '停止播放',
-    _ => '跳到下一首',
+    'stop' => tr('停止播放'),
+    _ => tr('跳到下一首'),
   };
 
   String _sharePlaybackFailureBehaviorLabel(String v) =>
-      v == 'pause' ? '暂停播放' : '替换播放';
+      v == 'pause' ? tr('暂停播放') : tr('替换播放');
 
   String _qualityFallbackLabel(String v) => switch (v) {
-    'pause' => '暂停',
-    'higher' => '播放更高音质',
-    _ => '播放更低音质',
+    'pause' => tr('暂停'),
+    'higher' => tr('播放更高音质'),
+    _ => tr('播放更低音质'),
   };
 
-  String _outputDeviceLabel(int id) => id == -1 ? '默认设备' : '设备 #$id';
+  String _outputDeviceLabel(int id) => id == -1 ? tr('默认设备') : '设备 #$id';
 
   String? _deviceFormatSubtitle(AudioOutputDevice? d) {
     if (d == null) return null;
@@ -1263,23 +1264,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final chans = d.channelCounts
         .map(
           (c) => c == 1
-              ? '单声道'
+              ? tr('单声道')
               : c == 2
-              ? '立体声'
+              ? tr('立体声')
               : '${c}ch',
         )
         .join('/');
     final parts = <String>[
-      if (rates.isNotEmpty) '采样率 $rates',
+      if (rates.isNotEmpty) tr('采样率 {rates}', {'rates': rates}),
       if (chans.isNotEmpty) chans,
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }
 
   String _fileNameStyleLabel(String v) => switch (v) {
-    'title-artist' => '标题 - 歌手',
-    'title-artist-album' => '标题 - 歌手 - 专辑',
-    _ => '歌手 - 标题',
+    'title-artist' => tr('标题 - 歌手'),
+    'title-artist-album' => tr('标题 - 歌手 - 专辑'),
+    _ => tr('歌手 - 标题'),
   };
 
   // ============ 各类选择器 ============
@@ -1292,10 +1293,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.navBarPosition ?? NavBarPosition.bottom;
     final choice = await showModernChoiceSheet<NavBarPosition>(
       context: context,
-      title: '导航栏位置',
-      options: const [
-        ModernChoiceOption(label: '底部导航', value: NavBarPosition.bottom, icon: Icons.subtitles_outlined),
-        ModernChoiceOption(label: '侧边悬浮', value: NavBarPosition.side, icon: Icons.navigation_outlined),
+      title: tr('导航栏位置'),
+      options:   [
+        ModernChoiceOption(label: tr('底部导航'), value: NavBarPosition.bottom, icon: Icons.subtitles_outlined),
+        ModernChoiceOption(label: tr('侧边悬浮'), value: NavBarPosition.side, icon: Icons.navigation_outlined),
       ],
       currentValue: cur,
     );
@@ -1314,10 +1315,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.sideBarExpandDirection ?? SideBarExpandDirection.down;
     final choice = await showModernChoiceSheet<SideBarExpandDirection>(
       context: context,
-      title: '侧边栏展开方向',
-      options: const [
-        ModernChoiceOption(label: '向下展开', value: SideBarExpandDirection.down, icon: Icons.arrow_downward),
-        ModernChoiceOption(label: '向上展开', value: SideBarExpandDirection.up, icon: Icons.arrow_upward),
+      title: tr('侧边栏展开方向'),
+      options:   [
+        ModernChoiceOption(label: tr('向下展开'), value: SideBarExpandDirection.down, icon: Icons.arrow_downward),
+        ModernChoiceOption(label: tr('向上展开'), value: SideBarExpandDirection.up, icon: Icons.arrow_upward),
       ],
       currentValue: cur,
     );
@@ -1336,11 +1337,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.language ?? AppLanguage.system;
     final choice = await showModernChoiceSheet<AppLanguage>(
       context: context,
-      title: '语言设置',
-      options: const [
-        ModernChoiceOption(label: '跟随系统', value: AppLanguage.system),
-        ModernChoiceOption(label: '简体中文', value: AppLanguage.zhCN),
-        ModernChoiceOption(label: '繁體中文', value: AppLanguage.zhTW),
+      title: tr('语言设置'),
+      options:   [
+        ModernChoiceOption(label: tr('跟随系统'), value: AppLanguage.system),
+        ModernChoiceOption(label: tr('简体中文'), value: AppLanguage.zhCN),
+        ModernChoiceOption(label: tr('繁體中文'), value: AppLanguage.zhTW),
         ModernChoiceOption(label: 'English', value: AppLanguage.en),
       ],
       currentValue: cur,
@@ -1363,11 +1364,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.hapticStrength ?? 1;
     final choice = await showModernChoiceSheet<int>(
       context: context,
-      title: '触觉反馈强度',
-      options: const [
-        ModernChoiceOption(label: '轻', value: 0),
-        ModernChoiceOption(label: '正常', value: 1),
-        ModernChoiceOption(label: '重', value: 2),
+      title: tr('触觉反馈强度'),
+      options:   [
+        ModernChoiceOption(label: tr('轻'), value: 0),
+        ModernChoiceOption(label: tr('正常'), value: 1),
+        ModernChoiceOption(label: tr('重'), value: 2),
       ],
       currentValue: cur,
     );
@@ -1386,11 +1387,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.listSize ?? ListSize.medium;
     final choice = await showModernChoiceSheet<ListSize>(
       context: context,
-      title: '列表项尺寸',
-      options: const [
-        ModernChoiceOption(label: '最小', value: ListSize.compact, subtitle: '紧凑布局，一行多看'),
-        ModernChoiceOption(label: '中等', value: ListSize.medium, subtitle: '默认标准高度'),
-        ModernChoiceOption(label: '最大', value: ListSize.large, subtitle: '大图标大字号'),
+      title: tr('列表项尺寸'),
+      options:   [
+        ModernChoiceOption(label: tr('最小'), value: ListSize.compact, subtitle: tr('紧凑布局，一行多看')),
+        ModernChoiceOption(label: tr('中等'), value: ListSize.medium, subtitle: tr('默认标准高度')),
+        ModernChoiceOption(label: tr('最大'), value: ListSize.large, subtitle: tr('大图标大字号')),
       ],
       currentValue: cur,
     );
@@ -1409,10 +1410,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.playerStyle ?? PlayerStyle.advanced;
     final choice = await showModernChoiceSheet<PlayerStyle>(
       context: context,
-      title: '正在播放页样式',
-      options: const [
-        ModernChoiceOption(label: '高级模式', value: PlayerStyle.advanced, subtitle: '含唱片光芒、沉浸流光背景与动感频谱'),
-        ModernChoiceOption(label: '传统模式', value: PlayerStyle.traditional, subtitle: '经典平铺高斯模糊样式'),
+      title: tr('正在播放页样式'),
+      options:   [
+        ModernChoiceOption(label: tr('高级模式'), value: PlayerStyle.advanced, subtitle: tr('含唱片光芒、沉浸流光背景与动感频谱')),
+        ModernChoiceOption(label: tr('传统模式'), value: PlayerStyle.traditional, subtitle: tr('经典平铺高斯模糊样式')),
       ],
       currentValue: cur,
     );
@@ -1431,11 +1432,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final cur = s?.themeMode ?? ThemeModePreference.system;
     final choice = await showModernChoiceSheet<ThemeModePreference>(
       context: context,
-      title: '外观模式',
-      options: const [
-        ModernChoiceOption(label: '跟随系统', value: ThemeModePreference.system, icon: Icons.brightness_auto),
-        ModernChoiceOption(label: '浅色模式', value: ThemeModePreference.light, icon: Icons.light_mode),
-        ModernChoiceOption(label: '深色模式', value: ThemeModePreference.dark, icon: Icons.dark_mode),
+      title: tr('外观模式'),
+      options:   [
+        ModernChoiceOption(label: tr('跟随系统'), value: ThemeModePreference.system, icon: Icons.brightness_auto),
+        ModernChoiceOption(label: tr('浅色模式'), value: ThemeModePreference.light, icon: Icons.light_mode),
+        ModernChoiceOption(label: tr('深色模式'), value: ThemeModePreference.dark, icon: Icons.dark_mode),
       ],
       currentValue: cur,
     );
@@ -1481,19 +1482,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final c in const [
-                _Choice('低清', 'mgg', subtitle: '96k · 极速云端试听'),
-                _Choice('普通', '128k', subtitle: '128k'),
-                _Choice('中等', '192k', subtitle: '192k'),
-                _Choice('HQ', '320k', subtitle: '高品质 · 320k'),
-                _Choice('SQ', 'flac', subtitle: '无损 · FLAC'),
-                _Choice('Hi-Res', 'flac24bit', subtitle: '高解析 · FLAC 24bit'),
-                _Choice('高解析度', 'hires', subtitle: 'Hi-Res 高解析无损'),
-                _Choice('黑胶', 'vinyl', subtitle: '黑胶音色 · 无损'),
-                _Choice('杜比全景声', 'dolby', subtitle: 'Dolby Atmos 沉浸环绕'),
-                _Choice('臻品音质', 'atmos', subtitle: '臻品立体空间声场'),
-                _Choice('臻品全景声', 'atmos_plus', subtitle: '臻品全空间沉浸声'),
-                _Choice('臻品母带', 'master', subtitle: '母带级无损臻品'),
+              for (final c in   [
+                _Choice(tr('低清'), 'mgg', subtitle: tr('96k · 极速云端试听')),
+                _Choice(tr('普通'), '128k', subtitle: '128k'),
+                _Choice(tr('中等'), '192k', subtitle: '192k'),
+                _Choice('HQ', '320k', subtitle: tr('高品质 · 320k')),
+                _Choice('SQ', 'flac', subtitle: tr('无损 · FLAC')),
+                _Choice('Hi-Res', 'flac24bit', subtitle: tr('高解析 · FLAC 24bit')),
+                _Choice(tr('高解析度'), 'hires', subtitle: tr('Hi-Res 高解析无损')),
+                _Choice(tr('黑胶'), 'vinyl', subtitle: tr('黑胶音色 · 无损')),
+                _Choice(tr('杜比全景声'), 'dolby', subtitle: tr('Dolby Atmos 沉浸环绕')),
+                _Choice(tr('臻品音质'), 'atmos', subtitle: tr('臻品立体空间声场')),
+                _Choice(tr('臻品全景声'), 'atmos_plus', subtitle: tr('臻品全空间沉浸声')),
+                _Choice(tr('臻品母带'), 'master', subtitle: tr('母带级无损臻品')),
               ])
                 ListTile(
                   title: Text(c.label),
@@ -1530,7 +1531,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       context,
       (_) => _choiceSheet(
         context,
-        const [_Choice('跳到下一首', 'skip'), _Choice('停止播放', 'stop')],
+          [_Choice(tr('跳到下一首'), 'skip'), _Choice(tr('停止播放'), 'stop')],
         cur,
         labelOf: (v) => _failureBehaviorLabel(v as String),
       ),
@@ -1552,9 +1553,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       context,
       (_) => _choiceSheet(
         context,
-        const [
-          _Choice('暂停播放', 'pause', subtitle: '分享歌曲起播失败时停止并显示错误'),
-          _Choice('替换播放', 'replace', subtitle: '按来源信息走插件换源重播同一首歌'),
+          [
+          _Choice(tr('暂停播放'), 'pause', subtitle: tr('分享歌曲起播失败时停止并显示错误')),
+          _Choice(tr('替换播放'), 'replace', subtitle: tr('按来源信息走插件换源重播同一首歌')),
         ],
         cur,
         labelOf: (v) => _sharePlaybackFailureBehaviorLabel(v as String),
@@ -1577,10 +1578,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       context,
       (_) => _choiceSheet(
         context,
-        const [
-          _Choice('暂停', 'pause'),
-          _Choice('播放更低音质', 'lower'),
-          _Choice('播放更高音质', 'higher'),
+          [
+          _Choice(tr('暂停'), 'pause'),
+          _Choice(tr('播放更低音质'), 'lower'),
+          _Choice(tr('播放更高音质'), 'higher'),
         ],
         cur,
         labelOf: (v) => _qualityFallbackLabel(v as String),
@@ -1604,7 +1605,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
     final choice = await showSheetDialog<int>(context, (dialogContext) {
       final list = <(String, int)>[
-        ('系统默认设备', -1),
+        (tr('系统默认设备'), -1),
         for (final d in devices) (d.displayName, d.id),
       ];
       return ConstrainedBox(
@@ -1616,7 +1617,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 2),
               child: Text(
-                '输出设备',
+                tr('输出设备'),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1627,7 +1628,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Text(
-                  !supported ? '仅 Android 支持设备枚举' : '未检测到可用的输出设备',
+                  !supported ? tr('仅 Android 支持设备枚举') : tr('未检测到可用的输出设备'),
                   style: TextStyle(
                     fontSize: 13,
                     color: scheme.onSurfaceVariant,
@@ -1712,10 +1713,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       context,
       (_) => _choiceSheet(
         context,
-        const [
-          _Choice('歌手 - 标题', 'artist-title'),
-          _Choice('标题 - 歌手', 'title-artist'),
-          _Choice('标题 - 歌手 - 专辑', 'title-artist-album'),
+          [
+          _Choice(tr('歌手 - 标题'), 'artist-title'),
+          _Choice(tr('标题 - 歌手'), 'title-artist'),
+          _Choice(tr('标题 - 歌手 - 专辑'), 'title-artist-album'),
         ],
         cur,
         labelOf: (v) => _fileNameStyleLabel(v as String),
@@ -1743,10 +1744,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('下载路径', style: TextStyle(fontWeight: FontWeight.w600)),
+              Text(tr('下载路径'), style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(
-              '留空使用默认下载目录',
+              tr('留空使用默认下载目录'),
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(ctx).colorScheme.outline,
@@ -1755,9 +1756,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             const SizedBox(height: 12),
             TextField(
               controller: controller,
-              decoration: const InputDecoration(
-                labelText: '路径',
-                hintText: '例如 /storage/emulated/0/Music',
+              decoration:   InputDecoration(
+                labelText: tr('路径'),
+                hintText: tr('例如 /storage/emulated/0/Music'),
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1767,12 +1768,12 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, 'default'),
-                  child: const Text('恢复默认'),
+                  child:   Text(tr('恢复默认')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                  child: const Text('确定'),
+                  child:   Text(tr('确定')),
                 ),
               ],
             ),
@@ -1944,35 +1945,35 @@ class _ColorDot extends StatelessWidget {
 /// 预设点击即选中关闭；自定义区支持 SV 二维取色板、色相条与 Hex 输入。
 /// 主题色与悬浮歌词颜色共用，通过 [title]/[presets] 区分。
 class _AccentColorSheet extends StatefulWidget {
-  const _AccentColorSheet({
+  _AccentColorSheet({
     required this.current,
     this.title = '主题色',
-    this.presets = _defaultPresets,
+    this.presets,
   });
   final int current;
   final String title;
-  final Map<int, String> presets;
+  final Map<int, String>? presets;
 
-  static const _defaultPresets = <int, String>{
-    0xFFEC4141: '经典红',
-    0xFFF9735B: '珊瑚',
-    0xFFF59E0B: '琥珀',
-    0xFF22C55E: '翡翠',
-    0xFF06B6D4: '青绿',
-    0xFF3B82F6: '湖蓝',
-    0xFF8B5CF6: '鸢尾紫',
-    0xFFEC4899: '蔷薇',
+  static get _defaultPresets => <int, String>{
+    0xFFEC4141: tr('经典红'),
+    0xFFF9735B: tr('珊瑚'),
+    0xFFF59E0B: tr('琥珀'),
+    0xFF22C55E: tr('翡翠'),
+    0xFF06B6D4: tr('青绿'),
+    0xFF3B82F6: tr('湖蓝'),
+    0xFF8B5CF6: tr('鸢尾紫'),
+    0xFFEC4899: tr('蔷薇'),
   };
 
   /// 与 RawS-Music DesktopLyricService.QUICK_COLORS 一致的歌词颜色预设。
-  static const lyricPresets = <int, String>{
-    0xFFFFFFFF: '纯白',
-    0xFFBFBFBF: '银灰',
-    0xFF91CDFF: '天蓝',
-    0xFFA6EBCB: '薄荷',
-    0xFFB388FF: '淡紫',
-    0xFFFFBCD6: '粉红',
-    0xFFFFE096: '暖黄',
+  static get lyricPresets => <int, String>{
+    0xFFFFFFFF: tr('纯白'),
+    0xFFBFBFBF: tr('银灰'),
+    0xFF91CDFF: tr('天蓝'),
+    0xFFA6EBCB: tr('薄荷'),
+    0xFFB388FF: tr('淡紫'),
+    0xFFFFBCD6: tr('粉红'),
+    0xFFFFE096: tr('暖黄'),
   };
 
   @override
@@ -2037,7 +2038,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(tr(widget.title), style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
             // 预设网格（学桌面端：色块 + 名称，四列两行）
             GridView.count(
@@ -2048,7 +2049,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
               crossAxisSpacing: 10,
               childAspectRatio: 1.5,
               children: [
-                for (final entry in widget.presets.entries)
+                for (final entry in (widget.presets ?? _AccentColorSheet._defaultPresets).entries)
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => Navigator.pop(context, entry.key),
@@ -2111,7 +2112,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
-                    '自定义颜色',
+                    tr('自定义颜色'),
                     style: TextStyle(fontSize: 12, color: scheme.outline),
                   ),
                 ),
@@ -2148,7 +2149,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                       counterText: '',
                       labelText: 'Hex',
                       hintText: '#EC4141',
-                      errorText: _hexError ? '格式应为 #RRGGBB' : null,
+                      errorText: _hexError ? tr('格式应为 #RRGGBB') : null,
                       border: const OutlineInputBorder(),
                     ),
                     onEditingComplete: _commitHex,
@@ -2158,7 +2159,7 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                 const SizedBox(width: 10),
                 FilledButton(
                   onPressed: () => Navigator.pop(context, _color.toARGB32()),
-                  child: const Text('应用'),
+                  child:   Text(tr('应用')),
                 ),
               ],
             ),
@@ -2408,20 +2409,20 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
     await showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('播放缓存上限'),
+        title:   Text(tr('播放缓存上限')),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入 1 - 10240 MB',
+          decoration:   InputDecoration(
+            hintText: tr('输入 1 - 10240 MB'),
             suffixText: ' MB',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           TextButton(
             onPressed: () {
@@ -2429,7 +2430,7 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
               chosen = (v ?? 500).clamp(_kMinMB, _kMaxMB);
               Navigator.of(ctx).pop();
             },
-            child: const Text('确定'),
+            child:   Text(tr('确定')),
           ),
         ],
       ),
@@ -2464,8 +2465,8 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
       children: [
         ListTile(
           leading: const Icon(Icons.sd_storage_outlined),
-          title: const Text('播放缓存上限'),
-          subtitle: const Text('在线播放的临时音源文件最大缓存量'),
+          title:   Text(tr('播放缓存上限')),
+          subtitle:   Text(tr('在线播放的临时音源文件最大缓存量')),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2481,15 +2482,15 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
         ),
         ListTile(
           leading: const Icon(Icons.cleaning_services_outlined),
-          title: const Text('清理在线播放缓存'),
+          title:   Text(tr('清理在线播放缓存')),
           subtitle: Text(
             cur == null
-                ? '读取中…'
-                : '当前 ${_fmtBytes(cur)} / 上限 ${_fmtBytes(max)}',
+                ? tr('读取中…')
+                : tr('当前 {cur} / 上限 {max}', {'cur': _fmtBytes(cur), 'max': _fmtBytes(max)}),
           ),
           trailing: TextButton(
             onPressed: (cur ?? 0) == 0 ? null : _clear,
-            child: Text(_busy ? '清理中…' : '清理'),
+            child: Text(_busy ? tr('清理中…') : tr('清理')),
           ),
         ),
       ],
@@ -2521,7 +2522,7 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
       final logs = ref.read(applicationLogsProvider);
       if (logs.isEmpty ||
           (onlyErrors && !logs.any((e) => e.level == LogLevel.error))) {
-        if (mounted) _toast(onlyErrors ? '暂无错误日志' : '暂无日志');
+        if (mounted) _toast(onlyErrors ? tr('暂无错误日志') : tr('暂无日志'));
         return;
       }
       final content = manager.formatExport(onlyErrors: onlyErrors);
@@ -2532,12 +2533,12 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
       final file = File('${docs.path}/$fileName');
       await file.writeAsString(content, flush: true);
       if (!mounted) return;
-      _toast(onlyErrors ? '错误日志已导出' : '全部日志已导出');
+      _toast(onlyErrors ? tr('错误日志已导出') : tr('全部日志已导出'));
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: '弦予音乐${onlyErrors ? '错误' : ''}日志'),
+        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐{type}日志', {'type': onlyErrors ? tr('错误') : ''})),
       );
     } catch (e) {
-      if (mounted) _toast('导出失败：$e');
+      if (mounted) _toast(tr('导出失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2547,29 +2548,29 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
     if (_busy) return;
     // 无日志时直接忽略，避免弹出无意义的确认框。
     if (ref.read(applicationLogsProvider).isEmpty) {
-      _toast('暂无日志');
+      _toast(tr('暂无日志'));
       return;
     }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清理日志'),
-        content: const Text('确定要清空全部应用日志吗？此操作不可恢复。'),
+        title:   Text(tr('清理日志')),
+        content:   Text(tr('确定要清空全部应用日志吗？此操作不可恢复。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清理'),
+            child:   Text(tr('清理')),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
     ApplicationLogManager.instance.clear();
-    if (mounted) _toast('日志已清理');
+    if (mounted) _toast(tr('日志已清理'));
   }
 
   Widget _action(
@@ -2598,13 +2599,13 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
         _action(
           context,
           icon: Icons.description_outlined,
-          title: logs.isEmpty ? '导出全部日志' : '导出全部日志（${logs.length} 条）',
+          title: logs.isEmpty ? tr('导出全部日志') : '导出全部日志（${logs.length} 条）',
           onTap: _busy ? () {} : () => _export(onlyErrors: false),
         ),
         _action(
           context,
           icon: Icons.error_outline,
-          title: errorCount == 0 ? '导出错误日志' : '导出错误日志（$errorCount 条）',
+          title: errorCount == 0 ? tr('导出错误日志') : '导出错误日志（$errorCount 条）',
           // 无错误日志时置灰不可点。
           onTap: errorCount == 0 || _busy
               ? null
@@ -2614,7 +2615,7 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
         _action(
           context,
           icon: Icons.delete_sweep_outlined,
-          title: '清理日志',
+          title: tr('清理日志'),
           onTap: _busy ? () {} : _clearLogs,
         ),
       ],
@@ -2647,13 +2648,13 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       final docs = await getApplicationDocumentsDirectory();
       final path = await writeBackupFile(docs.path, json);
       if (!mounted) return;
-      _toast('备份已导出');
+      _toast(tr('备份已导出'));
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(path)], text: '弦予音乐应用备份'),
+        ShareParams(files: [XFile(path)], text: tr('弦予音乐应用备份')),
       );
     } catch (e) {
       if (!mounted) return;
-      _toast('导出失败：$e');
+      _toast(tr('导出失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2677,7 +2678,7 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       } else {
         final bytes = await file.readAsBytes();
         if (bytes.isEmpty) {
-          _toast('无法读取所选文件');
+          _toast(tr('无法读取所选文件'));
           return;
         }
         content = utf8.decode(bytes);
@@ -2693,19 +2694,18 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
           includeFavorites: options.$2, includePlugins: options.$3, includeSettings: options.$4);
       if (!mounted) return;
       final parts = <String>[
-        if (options.$1) '歌单 ${result.importedPlaylists}',
-        if (options.$2) '收藏 ${result.importedFavorites}',
+        if (options.$1) tr('歌单 {n}', {'n': result.importedPlaylists}),
+        if (options.$2) tr('收藏 {n}', {'n': result.importedFavorites}),
         if (options.$3)
-          '插件 ${result.importedPlugins}'
-          '${result.skippedPlugins > 0 ? '（跳过 ${result.skippedPlugins}）' : ''}',
-        if (options.$4 && result.settingsApplied) '设置',
+          tr('插件 {n}', {'n': result.importedPlugins}) + (result.skippedPlugins > 0 ? tr('（跳过 {n}）', {'n': result.skippedPlugins}) : ''),
+        if (options.$4 && result.settingsApplied) tr('设置'),
       ];
-      _toast(parts.isEmpty ? '未导入任何内容' : '导入完成：${parts.join('，')}');
+      _toast(parts.isEmpty ? tr('未导入任何内容') : tr('导入完成：{parts}', {'parts': parts.join('，')}));
       if (result.errors.isNotEmpty && mounted) {
         await showPredictiveDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('部分内容导入失败'),
+            title:   Text(tr('部分内容导入失败')),
             content: SizedBox(
               width: double.maxFinite,
               child: ListView(
@@ -2723,7 +2723,7 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('知道了'),
+                child:   Text(tr('知道了')),
               ),
             ],
           ),
@@ -2734,7 +2734,7 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       _toast(e.message);
     } catch (e) {
       if (!mounted) return;
-      _toast('导入失败：$e');
+      _toast(tr('导入失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2751,33 +2751,33 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
             context: context,
             builder: (ctx) => StatefulBuilder(
               builder: (ctx, setDialog) => AlertDialog(
-                title: const Text('导入应用备份'),
+                title:   Text(tr('导入应用备份')),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (summary.createdAt.isNotEmpty)
                       Text(
-                          '备份时间：${summary.createdAt.length >= 19 ? summary.createdAt.substring(0, 19).replaceAll('T', ' ') : summary.createdAt}',
+                          tr('备份时间：{time}', {'time': summary.createdAt.length >= 19 ? summary.createdAt.substring(0, 19).replaceAll('T', ' ') : summary.createdAt}),
                           style: const TextStyle(fontSize: 12.5)),
                     const SizedBox(height: 6),
                     Text(
-                      '歌单 ${summary.playlistCount} 个（${summary.totalSongs} 首）\n'
-                      '收藏 ${summary.favoriteCount} 首、收藏集 ${summary.favoriteCollectionCount} 个\n'
-                      '插件 ${summary.pluginCount} 个${summary.hasSettings ? '\n含设置' : ''}',
+                      tr('歌单 {n} 个（{songs} 首）\n', {'n': summary.playlistCount, 'songs': summary.totalSongs}) +
+                      tr('收藏 {n} 首、收藏集 {m} 个\n', {'n': summary.favoriteCount, 'm': summary.favoriteCollectionCount}) +
+                      tr('插件 {n} 个', {'n': summary.pluginCount}) + (summary.hasSettings ? tr('\n含设置') : ''),
                       style: const TextStyle(fontSize: 12.5),
                     ),
                     const SizedBox(height: 10),
-                    const Text('选择导入内容：', style: TextStyle(fontSize: 12.5)),
-                    _backupCheck('歌单', playlists, summary.playlistCount > 0,
+                      Text(tr('选择导入内容：'), style: TextStyle(fontSize: 12.5)),
+                    _backupCheck(tr('歌单'), playlists, summary.playlistCount > 0,
                         (v) => setDialog(() => playlists = v ?? false)),
-                    _backupCheck('收藏', favorites,
+                    _backupCheck(tr('收藏'), favorites,
                         summary.favoriteCount + summary.favoriteCollectionCount > 0,
                         (v) => setDialog(() => favorites = v ?? false)),
-                    _backupCheck('插件', plugins, summary.pluginCount > 0,
+                    _backupCheck(tr('插件'), plugins, summary.pluginCount > 0,
                         (v) => setDialog(() => plugins = v ?? false)),
                     _backupCheck(
-                        '设置（覆盖当前设置）',
+                        tr('设置（覆盖当前设置）'),
                         settings,
                         summary.hasSettings,
                         (v) => setDialog(() => settings = v ?? false)),
@@ -2786,12 +2786,12 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('取消'),
+                    child:   Text(tr('取消')),
                   ),
                   FilledButton(
                     onPressed: () =>
                         Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
-                    child: const Text('导入'),
+                    child:   Text(tr('导入')),
                   ),
                 ],
               ),
@@ -2826,15 +2826,15 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       children: [
         ListTile(
           leading: const Icon(Icons.archive_outlined),
-          title: const Text('导出应用备份'),
-          subtitle: const Text('歌单、收藏、插件、设置备份为 JSON 并分享'),
+          title:   Text(tr('导出应用备份')),
+          subtitle:   Text(tr('歌单、收藏、插件、设置备份为 JSON 并分享')),
           trailing: trailing,
           onTap: _busy ? null : _exportBackup,
         ),
         ListTile(
           leading: const Icon(Icons.settings_backup_restore_outlined),
-          title: const Text('导入应用备份'),
-          subtitle: const Text('从备份文件恢复（支持选择导入内容）'),
+          title:   Text(tr('导入应用备份')),
+          subtitle:   Text(tr('从备份文件恢复（支持选择导入内容）')),
           trailing: trailing,
           onTap: _busy ? null : _importBackup,
         ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import 'auth_provider.dart';
 import 'server_models.dart';
+import '../i18n/i18n.dart';
 
 /// 应用版本（与 pubspec.yaml version 保持一致）。
 const appVersion = '1.0.0-beta7';
@@ -127,7 +128,7 @@ class AccountApi {
     final user = _auth.currentState.user;
     final ciyuanxiId = user?.ciyuanxiId?.trim();
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再提交反馈');
+      throw AuthException(tr('请先登录后再提交反馈'));
     }
     final payload = <String, dynamic>{
       'ciyuanxi_id': ciyuanxiId,
@@ -150,7 +151,7 @@ class AccountApi {
     final user = _auth.currentState.user;
     final ciyuanxiId = user?.ciyuanxiId?.trim();
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再查看反馈');
+      throw AuthException(tr('请先登录后再查看反馈'));
     }
     final data = await _action('list_my_feedback', {'ciyuanxi_id': ciyuanxiId});
     final list = (data['list'] as List?) ?? const [];
@@ -248,7 +249,7 @@ class AccountApi {
   Future<void> uploadSettings(AppSettings settings) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步设置');
+      throw AuthException(tr('请先登录后再同步设置'));
     }
     await _action('settings_sync_upload', {
       'user_id': ciyuanxiId,
@@ -261,7 +262,7 @@ class AccountApi {
   Future<Map<String, dynamic>?> downloadSettings() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步设置');
+      throw AuthException(tr('请先登录后再同步设置'));
     }
     final data = await _action('settings_sync_download', {
       'user_id': ciyuanxiId,
@@ -277,7 +278,7 @@ class AccountApi {
       downloadSettingsWithMeta() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步设置');
+      throw AuthException(tr('请先登录后再同步设置'));
     }
     final data = await _action('settings_sync_download', {
       'user_id': ciyuanxiId,
@@ -317,7 +318,7 @@ class AccountApi {
   Future<int> uploadFavorites(List<Map<String, dynamic>> favorites) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步收藏');
+      throw AuthException(tr('请先登录后再同步收藏'));
     }
     final data = await _action('favorites_sync_upload', {
       'user_id': ciyuanxiId,
@@ -330,7 +331,7 @@ class AccountApi {
   Future<List<Map<String, dynamic>>> downloadFavorites() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步收藏');
+      throw AuthException(tr('请先登录后再同步收藏'));
     }
     final data = await _action('favorites_sync_download', {
       'user_id': ciyuanxiId,
@@ -346,7 +347,7 @@ class AccountApi {
   Future<int> uploadHistory(List<Map<String, dynamic>> history) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步播放历史');
+      throw AuthException(tr('请先登录后再同步播放历史'));
     }
     final data = await _action('history_sync_upload', {
       'user_id': ciyuanxiId,
@@ -359,7 +360,7 @@ class AccountApi {
   Future<List<Map<String, dynamic>>> downloadHistory() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步播放历史');
+      throw AuthException(tr('请先登录后再同步播放历史'));
     }
     final data = await _action('history_sync_download', {
       'user_id': ciyuanxiId,
@@ -375,7 +376,7 @@ class AccountApi {
   Future<void> deleteCloudPlaylist(int playlistId) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步歌单');
+      throw AuthException(tr('请先登录后再同步歌单'));
     }
     await _action('delete_playlist', {
       'user_id': ciyuanxiId,
@@ -388,7 +389,7 @@ class AccountApi {
       List<Map<String, dynamic>> playlists) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步歌单');
+      throw AuthException(tr('请先登录后再同步歌单'));
     }
     await _action('file_sync_upload_start', {'user_id': ciyuanxiId},
         fetchTimeoutMs: 50000);
@@ -428,7 +429,7 @@ class AccountApi {
   Future<Map<String, dynamic>?> fileSyncDownload() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步歌单');
+      throw AuthException(tr('请先登录后再同步歌单'));
     }
     final data = await _action('file_sync_download', {'user_id': ciyuanxiId},
         fetchTimeoutMs: 30000);
@@ -445,7 +446,7 @@ class AccountApi {
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步插件');
+      throw AuthException(tr('请先登录后再同步插件'));
     }
     await _action('plugin_sync_upload_one', {
       'user_id': ciyuanxiId,
@@ -459,7 +460,7 @@ class AccountApi {
   Future<Map<String, dynamic>> downloadPluginSnapshot() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录后再同步插件');
+      throw AuthException(tr('请先登录后再同步插件'));
     }
     return _action('plugin_sync_download', {'user_id': ciyuanxiId},
         fetchTimeoutMs: 15000);
@@ -508,7 +509,7 @@ class AccountApi {
   Future<List<Map<String, dynamic>>> fetchMyWallpapers() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录账号后再查看我的上传');
+      throw AuthException(tr('请先登录账号后再查看我的上传'));
     }
     final data = await _auth.requestActionList('my_wallpapers', {
       'ciyuanxi_id': ciyuanxiId,
@@ -530,14 +531,14 @@ class AccountApi {
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('请先登录账号后再上传壁纸');
+      throw AuthException(tr('请先登录账号后再上传壁纸'));
     }
     await _action('upload_wallpaper', {
       'ciyuanxi_id': ciyuanxiId,
       'nickname': _auth.currentState.user?.nickname ?? '',
       'title': title,
       'description': description,
-      'category': category.trim().isEmpty ? '用户上传' : category.trim(),
+      'category': category.trim().isEmpty ? tr('用户上传') : category.trim(),
       'platform': 'mobile',
       'image_data': imageData,
     }, fetchTimeoutMs: 90000);

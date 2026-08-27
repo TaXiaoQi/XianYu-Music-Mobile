@@ -10,6 +10,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
 class AboutPage extends ConsumerStatefulWidget {
@@ -32,11 +33,11 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   DateTime? _lastDebugTap;
 
   /// 开发者名单（与桌面端一致），点击跳转 GitHub 主页。
-  static const _developers = <(String, String)>[
+  static get _developers => <(String, String)>[
     ('@ShenYichenCN', 'https://github.com/ShenYichenCN'),
     ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
-    ('@知难辞', 'https://github.com/88541'),
-    ('@绛狐', 'https://github.com/kaishui-server'),
+    (tr('@知难辞'), 'https://github.com/88541'),
+    (tr('@绛狐'), 'https://github.com/kaishui-server'),
   ];
 
   @override
@@ -56,12 +57,12 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     if (_debugTapCount >= _debugTapTarget) {
       _debugTapCount = 0;
       ref.read(developerModeProvider.notifier).enable();
-      showXianYuToast(context, '已进入调试模式');
+      showXianYuToast(context, tr('已进入调试模式'));
       return;
     }
     if (_debugTapCount >= _debugTapHintStart) {
       showXianYuToast(
-          context, '再点击 ${_debugTapTarget - _debugTapCount} 次即可进入调试模式');
+          context, tr('再点击 {n} 次即可进入调试模式', {'n': _debugTapTarget - _debugTapCount}));
     }
   }
 
@@ -78,14 +79,14 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       final latest = await ref.read(accountApiProvider).fetchServerUpdate();
       if (!mounted) return;
       if (latest == null) {
-        _toast('检查更新失败，请稍后重试');
+        _toast(tr('检查更新失败，请稍后重试'));
         return;
       }
       final cmp = _compareVersions(latest.version, appVersion);
       if (cmp > 0) {
         await _showUpdateDialog(latest);
       } else {
-        _toast('当前已是最新版本（$appVersion）');
+        _toast(tr('当前已是最新版本（{v}）', {'v': appVersion}));
       }
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
@@ -111,13 +112,13 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('发现新版本'),
+        title:   Text(tr('发现新版本')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('最新版本：${latest.version}',
+              Text(tr('最新版本：{v}', {'v': latest.version}),
                   style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
@@ -130,7 +131,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('暂不更新'),
+            child:   Text(tr('暂不更新')),
           ),
           if (latest.downloadUrl.isNotEmpty)
             FilledButton(
@@ -138,7 +139,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                 Navigator.pop(ctx);
                 await _openUrl(latest.downloadUrl);
               },
-              child: const Text('去下载'),
+              child:   Text(tr('去下载')),
             ),
         ],
       ),
@@ -151,9 +152,9 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     if (uri == null) return;
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) _toast('无法打开链接');
+      if (!ok) _toast(tr('无法打开链接'));
     } catch (_) {
-      _toast('无法打开链接');
+      _toast(tr('无法打开链接'));
     }
   }
 
@@ -167,17 +168,17 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     final scheme = Theme.of(context).colorScheme;
     final links = <({IconData icon, String label, String url})>[
       if (_config.officialSiteUrl.isNotEmpty)
-        (icon: Icons.language, label: _config.officialSiteText, url: _config.officialSiteUrl),
+        (icon: Icons.language, label: tr(_config.officialSiteText), url: _config.officialSiteUrl),
       if (_config.joinGroupUrl.isNotEmpty)
-        (icon: Icons.group, label: _config.joinGroupText, url: _config.joinGroupUrl),
+        (icon: Icons.group, label: tr(_config.joinGroupText), url: _config.joinGroupUrl),
       if (_config.projectUrl.isNotEmpty)
-        (icon: Icons.code, label: _config.projectText, url: _config.projectUrl),
+        (icon: Icons.code, label: tr(_config.projectText), url: _config.projectUrl),
       if (_config.referenceProjectUrl.isNotEmpty)
-        (icon: Icons.book_outlined, label: _config.referenceProjectText, url: _config.referenceProjectUrl),
+        (icon: Icons.book_outlined, label: tr(_config.referenceProjectText), url: _config.referenceProjectUrl),
     ];
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(title: const Text('关于')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title:   Text(tr('关于'))),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -205,21 +206,21 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           ),
           const SizedBox(height: 14),
-          const Center(
-            child: Text('弦予音乐',
+            Center(
+            child: Text(tr('弦予音乐'),
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 4),
           Center(
             child: _VersionTapBadge(
-              label: '版本 $appVersion',
+              label: tr('版本 {v}', {'v': appVersion}),
               onTap: _handleVersionTap,
             ),
           ),
           const SizedBox(height: 8),
           Center(
             child: Text(
-              '将音乐给予你',
+              tr('将音乐给予你'),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -235,7 +236,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.system_update_alt, size: 18),
-              label: Text(_checkingUpdate ? '检查中…' : _config.updateText),
+              label: Text(_checkingUpdate ? tr('检查中…') : tr(_config.updateText)),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -245,7 +246,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           if (links.isNotEmpty) ...[
             const SizedBox(height: 28),
-            Text('更多信息',
+            Text(tr('更多信息'),
                 style: TextStyle(
                     fontSize: 13,
                     color: scheme.primary,
@@ -279,7 +280,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           const SizedBox(height: 28),
           Center(
             child: Text(
-              '开发者名单（排名不分先后）',
+              tr('开发者名单（排名不分先后）'),
               style: TextStyle(
                   fontSize: 12.5, color: scheme.onSurfaceVariant),
             ),
@@ -297,7 +298,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           const SizedBox(height: 20),
           Center(
             child: Text(
-              '© 2026 弦予音乐 · Licensed under AGPL-3.0-only',
+              tr('© 2026 弦予音乐 · Licensed under AGPL-3.0-only'),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),

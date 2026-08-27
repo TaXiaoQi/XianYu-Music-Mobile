@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import '../player/media_url.dart';
 import '../rust/api.dart' as frb;
+import '../i18n/i18n.dart';
 import 'plugin_models.dart';
 import 'plugin_store.dart';
 
@@ -114,10 +115,10 @@ class PluginEngine {
   }) async {
     final bytes = utf8.encode(script);
     if (bytes.length > _maxPluginSize) {
-      throw PluginEngineException('插件大小超过 2MB');
+      throw PluginEngineException(tr('插件大小超过 2MB'));
     }
     if (script.trim().isEmpty) {
-      throw PluginEngineException('插件内容为空');
+      throw PluginEngineException(tr('插件内容为空'));
     }
 
     final result = EngineLoadResult.fromJsonString(await frb.pluginEngineLoadLx(
@@ -129,7 +130,7 @@ class PluginEngine {
     _emitLogs(result.logs);
     if (!result.ok) {
       _ready.remove(pluginId);
-      throw PluginEngineException(result.error ?? 'LX 插件初始化失败');
+      throw PluginEngineException(result.error ?? tr('LX 插件初始化失败'));
     }
     _ready.add(pluginId);
     _metadata[pluginId] = result.metadata ?? {};
@@ -144,10 +145,10 @@ class PluginEngine {
   }) async {
     final bytes = utf8.encode(script);
     if (bytes.length > _maxPluginSize) {
-      throw PluginEngineException('插件大小超过 2MB');
+      throw PluginEngineException(tr('插件大小超过 2MB'));
     }
     if (script.trim().isEmpty) {
-      throw PluginEngineException('插件内容为空');
+      throw PluginEngineException(tr('插件内容为空'));
     }
 
     final result = EngineLoadResult.fromJsonString(
@@ -160,7 +161,7 @@ class PluginEngine {
     _emitLogs(result.logs);
     if (!result.ok) {
       _ready.remove(pluginId);
-      throw PluginEngineException(result.error ?? '插件加载失败');
+      throw PluginEngineException(result.error ?? tr('插件加载失败'));
     }
     _ready.add(pluginId);
     _metadata[pluginId] = result.metadata ?? {};
@@ -177,7 +178,8 @@ class PluginEngine {
   }) async {
     final sandboxId = _resolveId(pluginId);
     if (!_ready.contains(sandboxId)) {
-      throw PluginEngineException('插件实例不存在: $pluginId');
+      throw PluginEngineException(
+          tr('插件实例不存在: {pluginId}', {'pluginId': pluginId}));
     }
     final result = EngineCallResult.fromJsonString(await frb.pluginEngineCall(
       dataDir: dataDir,
@@ -189,7 +191,7 @@ class PluginEngine {
     ));
     _emitLogs(result.logs);
     if (!result.ok) {
-      throw PluginEngineException(result.error ?? '方法调用失败');
+      throw PluginEngineException(result.error ?? tr('方法调用失败'));
     }
     return result.data;
   }

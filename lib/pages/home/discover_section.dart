@@ -8,6 +8,7 @@ import '../../src/home/top_lists_preview_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 首页发现区：统计 / 每日推荐 / 音源榜单三 tab 切换（对齐桌面 HomeDiscoverTabs）。
 class DiscoverSection extends ConsumerStatefulWidget {
@@ -30,10 +31,10 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
     setState(() => _index = i);
   }
 
-  static const _tabs = [
-    (key: 'statistics', label: '统计', route: '/leaderboard'),
-    (key: 'dailyRecommend', label: '每日推荐', route: '/home/daily'),
-    (key: 'topLists', label: '音源榜单', route: '/home/toplists'),
+  static get _tabs => [
+    (key: 'statistics', label: tr('统计'), route: '/leaderboard'),
+    (key: 'dailyRecommend', label: tr('每日推荐'), route: '/home/daily'),
+    (key: 'topLists', label: tr('音源榜单'), route: '/home/toplists'),
   ];
 
   @override
@@ -90,7 +91,7 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
                 child: Row(
                   children: [
                     Text(
-                      '查看全部',
+                      tr('查看全部'),
                       style: TextStyle(
                         fontSize: 13,
                         color: scheme.onSurfaceVariant,
@@ -140,7 +141,7 @@ class _StatsCard extends ConsumerWidget {
             child: _statCell(
               scheme,
               icon: Icons.headphones_outlined,
-              label: '累计听歌',
+              label: tr('累计听歌'),
               value: data?.totalDurationText ?? '—',
             ),
           ),
@@ -149,7 +150,7 @@ class _StatsCard extends ConsumerWidget {
             child: _statCell(
               scheme,
               icon: Icons.today_outlined,
-              label: '今日时长',
+              label: tr('今日时长'),
               value: data?.todayDurationText ?? '—',
             ),
           ),
@@ -158,8 +159,8 @@ class _StatsCard extends ConsumerWidget {
             child: _statCell(
               scheme,
               icon: Icons.audiotrack_outlined,
-              label: '今日首数',
-              value: data == null ? '—' : '${data.todayPlayCount} 首',
+              label: tr('今日首数'),
+              value: data == null ? '—' : tr('{n} 首', {'n': data.todayPlayCount}),
             ),
           ),
         ],
@@ -219,7 +220,7 @@ class _DailyCard extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                notLoggedIn ? '登录后解锁每日推荐' : '安装音源插件后生成推荐',
+                notLoggedIn ? tr('登录后解锁每日推荐') : tr('安装音源插件后生成推荐'),
                 style: TextStyle(
                     fontSize: 13, color: scheme.onSurfaceVariant),
               ),
@@ -319,7 +320,7 @@ class _TopListsBody extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '暂无支持榜单的音源插件，去安装',
+                tr('暂无支持榜单的音源插件，去安装'),
                 style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
               ),
             ),
@@ -338,7 +339,7 @@ class _TopListsBody extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '「${state.sourceName ?? '当前音源'}」暂无榜单',
+                tr('「{name}」暂无榜单', {'name': state.sourceName ?? tr('当前音源')}),
                 style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
               ),
             ),
@@ -354,7 +355,7 @@ class _TopListsBody extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 6),
             child: Text(
-              '来源：${state.sourceName}',
+              tr('来源：{name}', {'name': state.sourceName ?? ''}),
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ),

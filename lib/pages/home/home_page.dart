@@ -9,6 +9,7 @@ import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import 'discover_section.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 首页：顶栏（标题+搜索框）/ 封面轮播 / 发现 / 听过最多。
 ///
@@ -31,15 +32,15 @@ class HomePage extends ConsumerWidget {
           ListView(
             padding: EdgeInsets.fromLTRB(
                 18, GlassTopBar.height(context, bottom: searchBar), 18, ref.watch(navBarInsetProvider) + 24),
-            children: const [
+            children:   [
               SizedBox(height: 14),
               CoverCarousel(),
               SizedBox(height: 26),
-              _SectionHeader(title: '发现'),
+              _SectionHeader(title: tr('发现')),
               SizedBox(height: 12),
               DiscoverSection(),
               SizedBox(height: 26),
-              _SectionHeader(title: '听过最多'),
+              _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
               _MostPlayedList(),
             ],
@@ -50,12 +51,12 @@ class HomePage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              title: const Text.rich(
+              title:   Text.rich(
                 TextSpan(
                   children: [
-                    TextSpan(text: '弦予'),
+                    TextSpan(text: tr('弦予')),
                     TextSpan(
-                      text: '音乐',
+                      text: tr('音乐'),
                       style: TextStyle(
                         color: Color(0xFFEC4141),
                         fontWeight: FontWeight.w800,
@@ -126,7 +127,7 @@ class _SearchBar extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '搜索歌曲、歌手、专辑',
+                  tr('搜索歌曲、歌手、专辑'),
                   style: TextStyle(
                     fontSize: 14,
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -146,11 +147,11 @@ class _SearchBar extends StatelessWidget {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children:   [
                       Icon(Icons.mic_none, size: 16, color: Color(0xFFEC4141)),
                       SizedBox(width: 3),
                       Text(
-                        '识曲',
+                        tr('识曲'),
                         style: TextStyle(
                           fontSize: 12,
                           color: Color(0xFFEC4141),
@@ -207,7 +208,7 @@ class _MostPlayedList extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(vertical: 20),
             child: Center(
               child: Text(
-                '暂无播放记录',
+                tr('暂无播放记录'),
                 style: TextStyle(
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -291,7 +292,7 @@ class _MostPlayedRow extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '${entry.playCount} 次',
+                tr('{n} 次', {'n': entry.playCount}),
                 style: TextStyle(
                   fontSize: 12,
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.6),

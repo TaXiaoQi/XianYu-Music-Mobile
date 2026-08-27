@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'predictive_dialog_route.dart';
 import 'sheet_dialog.dart';
+import '../i18n/i18n.dart';
 
 /// 现代优雅弹窗组件与全局调用助手
 /// 包含：单选/多选居中面板 (ChoiceSheet)、确认提示框 (AlertDialog)、输入框 (InputDialog)
@@ -119,7 +120,7 @@ Future<bool> showModernConfirmDialog({
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(cancelText),
+                    child: Text(tr(cancelText)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -135,7 +136,7 @@ Future<bool> showModernConfirmDialog({
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(confirmText),
+                    child: Text(tr(confirmText)),
                   ),
                 ],
               ),
@@ -228,7 +229,7 @@ Future<String?> showModernInputDialog({
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(cancelText),
+                    child: Text(tr(cancelText)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -242,7 +243,7 @@ Future<String?> showModernInputDialog({
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(confirmText),
+                    child: Text(tr(confirmText)),
                   ),
                 ],
               ),

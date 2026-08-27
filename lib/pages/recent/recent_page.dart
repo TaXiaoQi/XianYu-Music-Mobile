@@ -2,7 +2,6 @@ import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
@@ -12,6 +11,7 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
 class RecentPage extends ConsumerWidget {
@@ -25,7 +25,7 @@ class RecentPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Padding(
@@ -43,7 +43,7 @@ class RecentPage extends ConsumerWidget {
                                       .withValues(alpha: 0.25)),
                               const SizedBox(height: 12),
                               Text(
-                                '暂无播放记录',
+                                tr('暂无播放记录'),
                                 style: TextStyle(
                                     fontSize: 14,
                                     color: scheme.onSurfaceVariant),
@@ -62,12 +62,12 @@ class RecentPage extends ConsumerWidget {
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title: const Text('最近播放'),
+                title:   Text(tr('最近播放')),
                 actions: [
                   if (recent.entries.isNotEmpty)
                     IconButton(
                       icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: '清空',
+                      tooltip: tr('清空'),
                       onPressed: () => _confirmClear(context, notifier),
                     ),
                 ],
@@ -84,19 +84,19 @@ class RecentPage extends ConsumerWidget {
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空最近播放'),
-        content: const Text('确定要清空全部播放记录吗？'),
+        title:   Text(tr('清空最近播放')),
+        content:   Text(tr('确定要清空全部播放记录吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               notifier.clear();
             },
-            child: const Text('清空'),
+            child:   Text(tr('清空')),
           ),
         ],
       ),
@@ -208,7 +208,7 @@ class _RecentTile extends ConsumerWidget {
         ),
         trailing: IconButton(
           icon: Icon(Icons.close, size: 18, color: scheme.outline),
-          tooltip: '移除',
+          tooltip: tr('移除'),
           onPressed: onRemove,
         ),
       ),
@@ -229,9 +229,9 @@ class _RecentTile extends ConsumerWidget {
     final day = DateTime(dt.year, dt.month, dt.day);
     final diff = today.difference(day).inDays;
     final hm = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    if (diff == 0) return '今天 $hm';
-    if (diff == 1) return '昨天 $hm';
-    if (diff < 7) return '${dt.month}月${dt.day}日 $hm';
-    return '${dt.year}年${dt.month}月${dt.day}日';
+    if (diff == 0) return tr('今天 {hm}', {'hm': hm});
+    if (diff == 1) return tr('昨天 {hm}', {'hm': hm});
+    if (diff < 7) return tr('{m}月{d}日 {hm}', {'m': dt.month, 'd': dt.day, 'hm': hm});
+    return tr('{y}年{m}月{d}日', {'y': dt.year, 'm': dt.month, 'd': dt.day});
   }
 }

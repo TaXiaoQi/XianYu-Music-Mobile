@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../player/player_provider.dart';
+import '../i18n/i18n.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 
@@ -35,15 +36,15 @@ class MfSheetItem {
   String get subtitle {
     final parts = <String>[
       if (artist.isNotEmpty) artist,
-      if (trackCount != null && trackCount! > 0) '$trackCount 首',
+      if (trackCount != null && trackCount! > 0) tr('{n} 首', {'n': trackCount!}),
       if (playCount != null && playCount! > 0) _formatCount(playCount!),
     ];
     return parts.join(' · ');
   }
 
   static String _formatCount(int n) {
-    if (n >= 100000000) return '${(n / 100000000).toStringAsFixed(1)}亿';
-    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}万';
+    if (n >= 100000000) return tr('{n}亿', {'n': (n / 100000000).toStringAsFixed(1)});
+    if (n >= 10000) return tr('{n}万', {'n': (n / 10000).toStringAsFixed(1)});
     return '$n';
   }
 }

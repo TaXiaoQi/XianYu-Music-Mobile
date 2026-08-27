@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:record/record.dart';
 
 import '../rust/api.dart' as frb;
+import '../i18n/i18n.dart';
 
 /// 单条识别匹配结果（酷狗识曲返回，映射为可播放的歌曲信息）。
 class RecognizeMatch {
@@ -49,7 +50,7 @@ class RecognizeService {
   }) async {
     _cancelled = false;
     if (!await _recorder.hasPermission()) {
-      throw const RecognizeException('需要麦克风权限，请在系统设置中授权');
+      throw   RecognizeException(tr('需要麦克风权限，请在系统设置中授权'));
     }
 
     // 采集 8000Hz/16bit/单声道 PCM，与 Rust 识别接口要求一致
@@ -89,11 +90,11 @@ class RecognizeService {
     _sub = null;
     await _recorder.stop();
 
-    if (_cancelled) throw const RecognizeException('识别已取消');
+    if (_cancelled) throw   RecognizeException(tr('识别已取消'));
 
     onRecorded?.call();
     if (chunks.isEmpty) {
-      throw const RecognizeException('未采集到音频，请靠近音源重试');
+      throw   RecognizeException(tr('未采集到音频，请靠近音源重试'));
     }
 
     // Rust 识别（酷狗指纹接口）
@@ -101,7 +102,7 @@ class RecognizeService {
     final response = jsonDecode(responseJson) as Map<String, dynamic>;
     final status = (response['status'] as num?)?.toInt() ?? 0;
     if (status != 200) {
-      throw RecognizeException('识别请求失败 (HTTP $status)');
+      throw RecognizeException(tr('识别请求失败 (HTTP {status})', {'status': status}));
     }
     return _parseResponse(response['body'] as String? ?? '');
   }
@@ -136,7 +137,7 @@ class RecognizeService {
     try {
       parsed = jsonDecode(body);
     } catch (_) {
-      throw const RecognizeException('识别响应解析失败');
+      throw   RecognizeException(tr('识别响应解析失败'));
     }
     if (parsed is! Map) return const [];
     // 酷狗成功状态 status === 1；非 1 视为无匹配
@@ -158,10 +159,10 @@ class RecognizeService {
     final distRaw = double.tryParse(item['dist']?.toString() ?? '0') ?? 0;
     final dist = distRaw.clamp(0.0, 1.0);
     final name = _pickString(
-        [item['songname'], item['filename'], item['name'], '未知歌曲']);
+        [item['songname'], item['filename'], item['name'], tr('未知歌曲')]);
     final singer = _pickString(
-        [item['singername'], item['author_name'], item['singer'], '未知歌手']);
-    if (name == '未知歌曲' && singer == '未知歌手') return null;
+        [item['singername'], item['author_name'], item['singer'], tr('未知歌手')]);
+    if (name == tr('未知歌曲') && singer == tr('未知歌手')) return null;
 
     final albumRecord = (item['album'] is List && (item['album'] as List).isNotEmpty)
         ? (item['album'] as List).first
@@ -171,7 +172,7 @@ class RecognizeService {
       albumMap['albumname'],
       item['album_name'],
       item['albumname'],
-      '未知专辑',
+      tr('未知专辑'),
     ]);
 
     final hash = _pickString([

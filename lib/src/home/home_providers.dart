@@ -7,6 +7,7 @@ import '../auth/auth_provider.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../rust/api.dart';
+import '../i18n/i18n.dart';
 
 /// 听过最多的单曲（本地曲库内，按播放次数倒序）。
 class MostPlayedEntry {
@@ -57,7 +58,7 @@ class ListenStatsData {
   String get todayDurationText => _formatDuration(todaySeconds);
 
   static String _formatDuration(int seconds) {
-    if (seconds <= 0) return '0 分钟';
+    if (seconds <= 0) return tr('0 分钟');
     final hours = seconds ~/ 3600;
     final mins = (seconds % 3600) ~/ 60;
     if (hours > 0) {

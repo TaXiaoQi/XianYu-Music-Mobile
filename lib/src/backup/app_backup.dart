@@ -10,6 +10,7 @@ import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
+import '../i18n/i18n.dart';
 
 const _kBackupSchema = 'xianyu-music.app-backup';
 const _kBackupVersion = 1;
@@ -139,14 +140,14 @@ class AppBackupService {
     try {
       data = jsonDecode(content);
     } catch (_) {
-      throw const FormatException('文件不是有效的 JSON 格式');
+      throw   FormatException(tr('文件不是有效的 JSON 格式'));
     }
     if (data is! Map || data['schema'] != _kBackupSchema) {
-      throw const FormatException('无法识别的备份格式，请选择本应用导出的备份文件');
+      throw   FormatException(tr('无法识别的备份格式，请选择本应用导出的备份文件'));
     }
     final inner = data['data'];
     if (inner is! Map) {
-      throw const FormatException('备份文件数据结构无效');
+      throw   FormatException(tr('备份文件数据结构无效'));
     }
     return data.cast<String, dynamic>();
   }
@@ -216,7 +217,8 @@ class AppBackupService {
           );
           importedPlugins++;
         } catch (e) {
-          errors.add('插件「${source.name}」导入失败：$e');
+          errors.add(tr('插件「{name}」导入失败：{e}',
+              {'name': source.name, 'e': e}));
           skippedPlugins++;
         }
       }
@@ -293,7 +295,7 @@ class AppBackupService {
           settingsApplied = true;
         }
       } catch (e) {
-        errors.add('设置导入失败：$e');
+        errors.add(tr('设置导入失败：{e}', {'e': e}));
       }
     }
 

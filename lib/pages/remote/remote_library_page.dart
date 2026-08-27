@@ -8,6 +8,7 @@ import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 远程音乐库管理页：WebDAV 源的添加/编辑/同步/删除与缓存管理。
 class RemoteLibraryPage extends ConsumerWidget {
@@ -19,13 +20,13 @@ class RemoteLibraryPage extends ConsumerWidget {
     final state = ref.watch(remoteLibraryProvider);
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(title: const Text('远程音乐库 (WebDAV)')),
+      appBar: AppBar(title:   Text(tr('远程音乐库 (WebDAV)'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSourceEditor(context, ref),
         icon: const Icon(Icons.add),
-        label: const Text('添加 WebDAV 音乐库'),
+        label:   Text(tr('添加 WebDAV 音乐库')),
       ),
       body: RepaintBoundary(child: Stack(
         children: [
@@ -35,7 +36,7 @@ class RemoteLibraryPage extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 10),
                 child: Text(
-                  '挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放',
+                  tr('挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放'),
                   style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 ),
               ),
@@ -66,13 +67,13 @@ class RemoteLibraryPage extends ConsumerWidget {
             Icon(Icons.cloud_off_outlined,
                 size: 44, color: scheme.outline.withValues(alpha: 0.6)),
             const SizedBox(height: 12),
-            Text('还没有远程音乐库',
+            Text(tr('还没有远程音乐库'),
                 style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: scheme.onSurfaceVariant)),
             const SizedBox(height: 4),
-            Text('点击下方按钮添加 WebDAV 服务器',
+            Text(tr('点击下方按钮添加 WebDAV 服务器'),
                 style: TextStyle(fontSize: 12, color: scheme.outline)),
           ],
         ),
@@ -91,7 +92,7 @@ class RemoteLibraryPage extends ConsumerWidget {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cached_outlined),
-            title: const Text('远程音频缓存',
+            title:   Text(tr('远程音频缓存'),
                 style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
             subtitle: Text(
               '${state.cacheUsage.bytesText} · ${state.cacheUsage.files} 个文件（上限 2GB，超出自动淘汰）',
@@ -107,8 +108,8 @@ class RemoteLibraryPage extends ConsumerWidget {
                     : () async {
                         final ok = await _confirm(
                           context,
-                          title: '清理远程缓存',
-                          message: '将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。',
+                          title: tr('清理远程缓存'),
+                          message: tr('将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。'),
                         );
                         if (ok != true) return;
                         try {
@@ -116,16 +117,16 @@ class RemoteLibraryPage extends ConsumerWidget {
                               .read(remoteLibraryProvider.notifier)
                               .clearCache();
                           if (context.mounted) {
-                            showXianYuToast(context, '远程缓存已清理');
+                            showXianYuToast(context, tr('远程缓存已清理'));
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            showXianYuToast(context, '清理失败：$e');
+                            showXianYuToast(context, tr('清理失败：{e}', {'e': e}));
                           }
                         }
                       },
                 icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                label: const Text('清理缓存'),
+                label:   Text(tr('清理缓存')),
               ),
             ],
           ),
@@ -153,11 +154,11 @@ class RemoteLibraryPage extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child:   Text(tr('确定')),
           ),
         ],
       ),
@@ -227,7 +228,7 @@ class _SourceCard extends ConsumerWidget {
                     color: scheme.primary.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text('已启用',
+                  child: Text(tr('已启用'),
                       style: TextStyle(
                           fontSize: 10.5,
                           color: scheme.primary,
@@ -241,7 +242,7 @@ class _SourceCard extends ConsumerWidget {
                     color: scheme.outline.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text('已停用',
+                  child: Text(tr('已停用'),
                       style: TextStyle(
                           fontSize: 10.5, color: scheme.onSurfaceVariant)),
                 ),
@@ -249,9 +250,9 @@ class _SourceCard extends ConsumerWidget {
                 icon: Icon(Icons.more_vert,
                     size: 20, color: scheme.onSurfaceVariant),
                 onSelected: (v) => _onMenu(context, ref, v),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('编辑')),
-                  PopupMenuItem(value: 'remove', child: Text('删除')),
+                itemBuilder: (_) =>   [
+                  PopupMenuItem(value: 'edit', child: Text(tr('编辑'))),
+                  PopupMenuItem(value: 'remove', child: Text(tr('删除'))),
                 ],
               ),
             ],
@@ -283,7 +284,7 @@ class _SourceCard extends ConsumerWidget {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.sync_outlined, size: 18),
-                label: Text(syncing ? '同步中…' : '同步'),
+                label: Text(syncing ? tr('同步中…') : tr('同步')),
               ),
             ],
           ),
@@ -302,19 +303,19 @@ class _SourceCard extends ConsumerWidget {
       final ok = await showPredictiveDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('删除远程源'),
+          title:   Text(tr('删除远程源')),
           content: Text(
               '将删除「${source.name}」及其在曲库中的全部远程歌曲（不删除服务器上的文件）。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child:   Text(tr('取消')),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(ctx).colorScheme.error),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('删除'),
+              child:   Text(tr('删除')),
             ),
           ],
         ),
@@ -324,11 +325,11 @@ class _SourceCard extends ConsumerWidget {
         await ref.read(remoteLibraryProvider.notifier).remove(source.id);
         ref.read(libraryProvider.notifier).load();
         if (context.mounted) {
-          showXianYuToast(context, '远程源已删除');
+          showXianYuToast(context, tr('远程源已删除'));
         }
       } catch (e) {
         if (context.mounted) {
-          showXianYuToast(context, '删除失败：$e');
+          showXianYuToast(context, tr('删除失败：{e}', {'e': e}));
         }
       }
     }
@@ -344,7 +345,7 @@ class _SourceCard extends ConsumerWidget {
     } catch (e) {
       // 刷新以显示 lastSyncError。
       ref.read(remoteLibraryProvider.notifier).refresh();
-      if (context.mounted) showXianYuToast(context, '同步失败：$e');
+      if (context.mounted) showXianYuToast(context, tr('同步失败：{e}', {'e': e}));
     }
   }
 }
@@ -407,7 +408,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
         );
       } else {
         await service.testConnection(
-          name: _name.text.trim().isEmpty ? '测试' : _name.text.trim(),
+          name: _name.text.trim().isEmpty ? tr('测试') : _name.text.trim(),
           baseUrl: _baseUrl.text.trim(),
           username: _username.text.trim(),
           password: _password.text,
@@ -415,10 +416,10 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
         );
       }
       if (!mounted) return;
-      showXianYuToast(context, '连接成功');
+      showXianYuToast(context, tr('连接成功'));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '连接失败：$e');
+      setState(() => _error = tr('连接失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -426,12 +427,12 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
 
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
-      setState(() => _error = '请填写名称');
+      setState(() => _error = tr('请填写名称'));
       return;
     }
     final url = _baseUrl.text.trim();
     if (!RegExp(r'^https?://').hasMatch(url)) {
-      setState(() => _error = '服务器地址需以 http:// 或 https:// 开头');
+      setState(() => _error = tr('服务器地址需以 http:// 或 https:// 开头'));
       return;
     }
     setState(() {
@@ -453,7 +454,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '保存失败：$e');
+      setState(() => _error = tr('保存失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -482,22 +483,22 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
               ),
             ),
             const SizedBox(height: 14),
-            Text(_isEditing ? '编辑远程音乐库' : '添加 WebDAV 音乐库',
+            Text(_isEditing ? tr('编辑远程音乐库') : tr('添加 WebDAV 音乐库'),
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
-            _field(controller: _name, label: '名称', hint: '如：我的 NAS 音乐'),
+            _field(controller: _name, label: tr('名称'), hint: tr('如：我的 NAS 音乐')),
             const SizedBox(height: 12),
             _field(
                 controller: _baseUrl,
-                label: '服务器地址',
+                label: tr('服务器地址'),
                 hint: 'https://dav.example.com/dav',
                 keyboard: TextInputType.url),
             const SizedBox(height: 12),
-            _field(controller: _username, label: '用户名（可选）', hint: 'username'),
+            _field(controller: _username, label: tr('用户名（可选）'), hint: 'username'),
             const SizedBox(height: 12),
             _field(
               controller: _password,
-              label: _isEditing ? '密码（留空保持不变）' : '密码（可选）',
+              label: _isEditing ? tr('密码（留空保持不变）') : tr('密码（可选）'),
               hint: 'password',
               obscure: _obscurePassword,
               onToggleObscure: () =>
@@ -506,12 +507,12 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
             const SizedBox(height: 12),
             _field(
                 controller: _rootPath,
-                label: '根目录',
+                label: tr('根目录'),
                 hint: '/',
                 keyboard: TextInputType.text),
             const SizedBox(height: 6),
             Text(
-              '从根目录开始递归扫描音频文件（mp3/flac/wav/m4a/aac/ogg/opus/aiff）',
+              tr('从根目录开始递归扫描音频文件（mp3/flac/wav/m4a/aac/ogg/opus/aiff）'),
               style: TextStyle(fontSize: 11, color: scheme.outline),
             ),
             if (_error != null) ...[
@@ -531,7 +532,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.wifi_tethering, size: 18),
-                    label: Text(_testing ? '测试中…' : '测试连接'),
+                    label: Text(_testing ? tr('测试中…') : tr('测试连接')),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -544,7 +545,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.check, size: 18),
-                    label: Text(_saving ? '保存中…' : '保存'),
+                    label: Text(_saving ? tr('保存中…') : tr('保存')),
                   ),
                 ),
               ],

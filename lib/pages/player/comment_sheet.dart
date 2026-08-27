@@ -6,6 +6,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/plugin/plugin_comments.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 歌曲评论弹层：分页加载 + 点赞/最新排序 + 二级评论展开。
 class CommentSheet extends ConsumerStatefulWidget {
@@ -157,17 +158,17 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
     // 秒级时间戳转毫秒
     final ms = ts < 100000000000 ? ts * 1000 : ts;
     final diff = DateTime.now().millisecondsSinceEpoch - ms;
-    if (diff < 60000) return '刚刚';
-    if (diff < 3600000) return '${diff ~/ 60000}分钟前';
-    if (diff < 86400000) return '${diff ~/ 3600000}小时前';
-    if (diff < 2592000000) return '${diff ~/ 86400000}天前';
+    if (diff < 60000) return tr('刚刚');
+    if (diff < 3600000) return tr('{n}分钟前', {'n': diff ~/ 60000});
+    if (diff < 86400000) return tr('{n}小时前', {'n': diff ~/ 3600000});
+    if (diff < 2592000000) return tr('{n}天前', {'n': diff ~/ 86400000});
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
   String _fmtLike(int? n) {
     if (n == null || n <= 0) return '';
-    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}万';
+    if (n >= 10000) return tr('{n}万', {'n': (n / 10000).toStringAsFixed(1)});
     return '$n';
   }
 
@@ -189,12 +190,12 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
               child: Row(
                 children: [
-                  Text('评论',
+                  Text(tr('评论'),
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700)),
                   if (_comments.isNotEmpty) ...[
                     const SizedBox(width: 6),
-                    Text('${_comments.length} 条',
+                    Text(tr('{n} 条', {'n': _comments.length}),
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant)),
                   ],
@@ -217,7 +218,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
   }
 
   Widget _buildSortToggle(ColorScheme scheme) {
-    const labels = ['最多赞', '最新'];
+    final labels = [tr('最多赞'), tr('最新')];
     return Container(
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -261,7 +262,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
       return _placeholder(
         scheme,
         icon: Icons.mode_comment_outlined,
-        text: '当前音源不支持评论',
+        text: tr('当前音源不支持评论'),
       );
     }
     if (_error != null) {
@@ -273,7 +274,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
             const SizedBox(height: 12),
             FilledButton.tonal(
               onPressed: () => _fetch(1),
-              child: const Text('重试'),
+              child:   Text(tr('重试')),
             ),
           ],
         ),
@@ -283,7 +284,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
       return _placeholder(
         scheme,
         icon: Icons.mode_comment_outlined,
-        text: '暂无评论',
+        text: tr('暂无评论'),
       );
     }
     return ListView.separated(
@@ -313,7 +314,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
             return Padding(
               padding: const EdgeInsets.all(16),
               child: Center(
-                child: Text('没有更多评论了',
+                child: Text(tr('没有更多评论了'),
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant)),
               ),
@@ -389,7 +390,7 @@ class _CommentTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        item.nickName.isEmpty ? '匿名用户' : item.nickName,
+                        item.nickName.isEmpty ? tr('匿名用户') : item.nickName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -435,7 +436,7 @@ class _CommentTile extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '${item.replies.length} 条回复',
+                          tr('{n} 条回复', {'n': item.replies.length}),
                           style: TextStyle(
                               fontSize: 12,
                               color: scheme.primary,
@@ -486,7 +487,7 @@ class _CommentTile extends StatelessWidget {
                                                   Expanded(
                                                     child: Text(
                                                       r.nickName.isEmpty
-                                                          ? '匿名用户'
+                                                          ? tr('匿名用户')
                                                           : r.nickName,
                                                       maxLines: 1,
                                                       overflow: TextOverflow

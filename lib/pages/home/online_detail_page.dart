@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -17,6 +16,7 @@ import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 enum OnlineDetailType { artist, album, playlist, toplist }
 
@@ -200,7 +200,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     if (item == null) return;
     final wasFav = ref.read(favoritesProvider).contains(item.path);
     ref.read(favoritesProvider.notifier).toggle(item);
-    showXianYuToast(context, wasFav ? '已取消收藏：${item.title}' : '已收藏：${item.title}');
+    showXianYuToast(context, wasFav ? tr('已取消收藏：{t}', {'t': item.title}) : tr('已收藏：{t}', {'t': item.title}));
   }
 
   void _toggleCollectionFavorite() {
@@ -240,16 +240,16 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             indicatorColor: scheme.primary,
             indicatorSize: TabBarIndicatorSize.label,
             dividerColor: Colors.transparent,
-            tabs: const [
-              Tab(text: '歌曲'),
-              Tab(text: '专辑'),
-              Tab(text: '简介'),
+            tabs:   [
+              Tab(text: tr('歌曲')),
+              Tab(text: tr('专辑')),
+              Tab(text: tr('简介')),
             ],
           )
         : null;
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           Padding(
@@ -260,19 +260,19 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                   title: a.title,
                   subtitle: a.subtitle.isNotEmpty
                       ? a.subtitle
-                      : (isArtist ? '歌手' : switch (a.type) {
-                          OnlineDetailType.album => '专辑',
-                          OnlineDetailType.toplist => '榜单',
-                          _ => '歌单',
+                      : (isArtist ? tr('歌手') : switch (a.type) {
+                          OnlineDetailType.album => tr('专辑'),
+                          OnlineDetailType.toplist => tr('榜单'),
+                          _ => tr('歌单'),
                         }),
                   coverUrl: a.coverUrl,
                   circular: isArtist,
                   songCount: _songs.length,
                   onPlayAll: _songs.isNotEmpty ? _playAll : null,
                   favoriteLabel: switch (a.type) {
-                    OnlineDetailType.album => '收藏整张专辑',
-                    OnlineDetailType.toplist => '收藏榜单',
-                    _ => '收藏整张歌单',
+                    OnlineDetailType.album => tr('收藏整张专辑'),
+                    OnlineDetailType.toplist => tr('收藏榜单'),
+                    _ => tr('收藏整张歌单'),
                   },
                   isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
                       '${a.type.name}:${a.pluginId}:${a.title}'),
@@ -328,7 +328,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
     if (_songs.isEmpty) {
       return Center(
-        child: Text('暂无歌曲', style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(tr('暂无歌曲'), style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
     return NotificationListener<ScrollNotification>(
@@ -350,7 +350,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Center(
                   child: Text(
-                    '已经到底啦',
+                    tr('已经到底啦'),
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant),
                   ),
@@ -420,7 +420,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                           size: 20,
                           color: isFav ? scheme.primary : scheme.onSurfaceVariant,
                         ),
-                        tooltip: '收藏',
+                        tooltip: tr('收藏'),
                         onPressed: () => _toggleFavorite(i),
                       ),
                       if (r.interval.isNotEmpty)
@@ -433,7 +433,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                       IconButton(
                         icon: const Icon(Icons.more_horiz, size: 22),
                         color: scheme.onSurfaceVariant,
-                        tooltip: '更多',
+                        tooltip: tr('更多'),
                         onPressed: () => _songActions(i),
                       ),
                     ],
@@ -450,7 +450,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   Widget _buildAlbumList(ColorScheme scheme) {
     if (_albums.isEmpty) {
       return Center(
-        child: Text('暂无专辑', style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(tr('暂无专辑'), style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
     final m = ListMetrics.ofRef(ref);
@@ -504,7 +504,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
     if (_intro.isEmpty) {
       return Center(
-        child: Text('暂无简介', style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(tr('暂无简介'), style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
     return ListView(
@@ -571,7 +571,7 @@ class _Header extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  songCount > 0 ? '$subtitle · $songCount 首' : subtitle,
+                  songCount > 0 ? tr('{sub} · {n} 首', {'sub': subtitle, 'n': songCount}) : subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
@@ -582,7 +582,7 @@ class _Header extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: onPlayAll,
                       icon: const Icon(Icons.play_arrow, size: 18),
-                      label: const Text('播放全部', style: TextStyle(fontSize: 13)),
+                      label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         minimumSize: const Size(0, 34),

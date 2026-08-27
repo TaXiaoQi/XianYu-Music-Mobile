@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../auth/server_models.dart';
+import '../i18n/i18n.dart';
 
 /// 公告已读指纹存储键。
 const _announcementDismissedKey = 'announcement_dismissed_id';
@@ -72,9 +73,8 @@ class NotificationService {
   Future<void> showAnnouncementForDebug(BuildContext context) async {
     final ann = Announcement(
       id: 'debug-announcement',
-      title: '公告展示框',
-      content: '这是一条调试用的公告内容，用于验证公告弹窗的展示效果。\n\n'
-          '公告支持多行文本、日期与类型样式（info / warning）。',
+      title: tr('公告展示框'),
+      content: tr('这是一条调试用的公告内容，用于验证公告弹窗的展示效果。\n\n') + tr('公告支持多行文本、日期与类型样式（info / warning）。'),
       type: 'info',
       date: '2026-08-26',
     );
@@ -111,18 +111,18 @@ class NotificationService {
     final isRejected = item.status == 'rejected';
     final operator = item.repliedBy.isNotEmpty
         ? item.repliedBy
-        : (item.assignee.isNotEmpty ? item.assignee : '管理员');
+        : (item.assignee.isNotEmpty ? item.assignee : tr('管理员'));
     final reason = isRejected ? item.rejectReason : item.resolveNote;
-    final reasonLabel = isRejected ? '拒绝理由' : '完成说明';
-    final content = '您提交的反馈「${item.title.isEmpty ? '无标题' : item.title}」'
-        '${isRejected ? '已被拒绝' : '已处理完成'}。\n\n'
-        '处理管理员：$operator\n'
-        '$reasonLabel：${reason.isEmpty ? '（无说明）' : reason}';
+    final reasonLabel = isRejected ? tr('拒绝理由') : tr('完成说明');
+    final content = tr('您提交的反馈「{title}」', {'title': item.title.isEmpty ? tr('无标题') : item.title}) +
+        tr('{status}。\n\n', {'status': isRejected ? tr('已被拒绝') : tr('已处理完成')}) +
+        tr('处理管理员：{operator}\n', {'operator': operator}) +
+        tr('{label}：{reason}', {'label': reasonLabel, 'reason': reason.isEmpty ? tr('（无说明）') : reason});
     await showPredictiveDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
-        title: isRejected ? '反馈已被拒绝' : '反馈处理完成',
+        title: isRejected ? tr('反馈已被拒绝') : tr('反馈处理完成'),
         content: content,
         type: isRejected ? 'warning' : 'info',
         date: _formatDate(item.repliedAt),
@@ -143,14 +143,14 @@ class NotificationService {
   /// 昵称变更通知：弹窗展示，关闭后确认已读并同步本地昵称。
   Future<void> _showNicknameChangeDialog(
       BuildContext context, NicknameChangeNotice notice) async {
-    final content = '管理员已将您的昵称修改为「${notice.newNickname}」。\n\n'
-        '原昵称：${notice.oldNickname.isEmpty ? '-' : notice.oldNickname}\n'
-        '修改原因：${notice.reason.isEmpty ? '（未填写）' : notice.reason}';
+    final content = tr('管理员已将您的昵称修改为「{nickname}」。\n\n', {'nickname': notice.newNickname}) +
+        tr('原昵称：{old}\n', {'old': notice.oldNickname.isEmpty ? '-' : notice.oldNickname}) +
+        tr('修改原因：{reason}', {'reason': notice.reason.isEmpty ? tr('（未填写）') : notice.reason});
     await showPredictiveDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _NotificationDialog(
-        title: '昵称已被修改',
+        title: tr('昵称已被修改'),
         content: content,
         type: 'info',
         date: _formatDate(notice.createdAt),
@@ -244,7 +244,7 @@ class _NotificationDialog extends StatelessWidget {
       actions: [
         FilledButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('知道了'),
+          child:   Text(tr('知道了')),
         ),
       ],
     );

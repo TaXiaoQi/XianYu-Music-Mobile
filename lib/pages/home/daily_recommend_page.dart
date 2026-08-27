@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
@@ -13,6 +12,7 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 每日推荐页：日期徽章 + 播放全部/换一批 + 推荐歌曲列表。
 class DailyRecommendPage extends ConsumerStatefulWidget {
@@ -32,43 +32,43 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
     final async = ref.watch(dailyRecommendProvider);
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
             child: async.when(
-              loading: () => const Center(
+              loading: () =>   Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircularProgressIndicator(strokeWidth: 2),
                     SizedBox(height: 14),
-                    Text('正在为你生成今日推荐…',
+                    Text(tr('正在为你生成今日推荐…'),
                         style: TextStyle(fontSize: 13, color: Colors.grey)),
                   ],
                 ),
               ),
               error: (e, _) => _CenterAction(
                 icon: Icons.error_outline,
-                message: '推荐生成失败：$e',
-                action: '重试',
+                message: tr('推荐生成失败：{e}', {'e': e}),
+                action: tr('重试'),
                 onTap: () => ref.invalidate(dailyRecommendProvider),
               ),
               data: (state) {
                 if (!state.loggedIn) {
                   return _CenterAction(
                     icon: Icons.person_outline,
-                    message: '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制',
-                    action: '去登录',
+                    message: tr('登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制'),
+                    action: tr('去登录'),
                     onTap: () => context.go('/account'),
                   );
                 }
                 if (state.items.isEmpty) {
                   return _CenterAction(
                     icon: Icons.music_off_outlined,
-                    message: '今天还没有推荐\n请先在「插件管理」中安装音源插件',
-                    action: '去安装插件',
+                    message: tr('今天还没有推荐\n请先在「插件管理」中安装音源插件'),
+                    action: tr('去安装插件'),
                     onTap: () => context.go('/plugin'),
                   );
                 }
@@ -90,7 +90,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: const Text('每日推荐'),
+              title:   Text(tr('每日推荐')),
             ),
           ),
           // 播放条显隐收敛为独立组件，播放状态变化不影响上方整页重建
@@ -121,16 +121,16 @@ class _Header extends ConsumerWidget {
 
   String get _dateLabel {
     final now = DateTime.now();
-    final week = ['一', '二', '三', '四', '五', '六', '日'][now.weekday - 1];
-    return '${now.month}月${now.day}日 · 周$week';
+    final week = [tr('一'), tr('二'), tr('三'), tr('四'), tr('五'), tr('六'), tr('日')][now.weekday - 1];
+    return tr('{m}月{d}日 · 周{w}', {'m': now.month, 'd': now.day, 'w': week});
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final reason = state.algorithm?.topArtistNames.isNotEmpty == true
-        ? '根据你常听的 ${state.algorithm!.topArtistNames.join('、')} 生成'
-        : '根据你的听歌记录生成';
+        ? tr('根据你常听的 {artists} 生成', {'artists': state.algorithm!.topArtistNames.join('、')})
+        : tr('根据你的听歌记录生成');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       child: Row(
@@ -176,7 +176,7 @@ class _Header extends ConsumerWidget {
           FilledButton.icon(
             onPressed: () => ref.read(dailyRecommendProvider.notifier).play(0),
             icon: const Icon(Icons.play_arrow, size: 18),
-            label: const Text('播放全部', style: TextStyle(fontSize: 13)),
+            label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               minimumSize: const Size(0, 36),
@@ -187,7 +187,7 @@ class _Header extends ConsumerWidget {
             onPressed: () =>
                 ref.read(dailyRecommendProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('换一批', style: TextStyle(fontSize: 13)),
+            label:   Text(tr('换一批'), style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               minimumSize: const Size(0, 36),
@@ -309,7 +309,7 @@ class _RecommendList extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.more_horiz, size: 22),
                       color: scheme.onSurfaceVariant,
-                      tooltip: '更多',
+                      tooltip: tr('更多'),
                       onPressed: openActions,
                     ),
                   ],

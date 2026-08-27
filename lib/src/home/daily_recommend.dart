@@ -9,6 +9,7 @@ import '../auth/auth_provider.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
+import '../i18n/i18n.dart';
 
 // ─── 算法 DSL 模型（与服务端 recommend.rs 对齐） ─────────────────
 
@@ -62,7 +63,7 @@ class DailyRecommendAlgorithm {
         .where((s) => s.queries.isNotEmpty && s.weight > 0)
         .toList();
     if (strategies.isEmpty) {
-      throw const FormatException('算法数据无效');
+      throw   FormatException(tr('算法数据无效'));
     }
     final exclusions =
         (((j['exclusions'] as Map<String, dynamic>?)?['songs']) as List? ??

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../i18n/i18n.dart';
 
 /// 10 段 EQ 频率标签（与 Rust equalizer.rs 的 EQ_FREQUENCIES 一致）。
 const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -13,16 +14,16 @@ class EqPreset {
   const EqPreset(this.name, this.gains);
 }
 
-const eqPresets = <EqPreset>[
-  EqPreset('默认', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-  EqPreset('流行', [-1, 0, 1, 2, 2, 1, 0, -1, -1, -1]),
-  EqPreset('摇滚', [3, 2, 1, 0, -1, -1, 0, 1, 2, 3]),
-  EqPreset('爵士', [2, 1, 0, 1, 1, 0, -1, 0, 1, 2]),
-  EqPreset('古典', [2, 1, 0, -1, -1, -1, 0, 1, 2, 3]),
-  EqPreset('电子', [3, 2, 1, 0, -1, 0, 1, 2, 3, 4]),
-  EqPreset('低音增强', [4, 3, 2, 1, 0, 0, 0, 0, 0, 0]),
-  EqPreset('人声', [-1, -1, -1, 1, 2, 3, 2, 1, 0, -1]),
-  EqPreset('高音增强', [0, 0, 0, 0, 0, 1, 2, 3, 4, 4]),
+get eqPresets => <EqPreset>[
+  EqPreset(tr('默认'), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+  EqPreset(tr('流行'), [-1, 0, 1, 2, 2, 1, 0, -1, -1, -1]),
+  EqPreset(tr('摇滚'), [3, 2, 1, 0, -1, -1, 0, 1, 2, 3]),
+  EqPreset(tr('爵士'), [2, 1, 0, 1, 1, 0, -1, 0, 1, 2]),
+  EqPreset(tr('古典'), [2, 1, 0, -1, -1, -1, 0, 1, 2, 3]),
+  EqPreset(tr('电子'), [3, 2, 1, 0, -1, 0, 1, 2, 3, 4]),
+  EqPreset(tr('低音增强'), [4, 3, 2, 1, 0, 0, 0, 0, 0, 0]),
+  EqPreset(tr('人声'), [-1, -1, -1, 1, 2, 3, 2, 1, 0, -1]),
+  EqPreset(tr('高音增强'), [0, 0, 0, 0, 0, 1, 2, 3, 4, 4]),
 ];
 
 /// 混响预设（卷积 IR 列表，与桌面端 convolutions 对齐）。
@@ -33,21 +34,21 @@ class ReverbPreset {
   const ReverbPreset(this.label, this.dry, this.wet);
 }
 
-const reverbPresets = <ReverbPreset>[
-  ReverbPreset('大厅', 80, 40),
-  ReverbPreset('房间', 85, 30),
-  ReverbPreset('浴室', 75, 50),
-  ReverbPreset('隧道', 70, 60),
-  ReverbPreset('峡谷', 65, 55),
-  ReverbPreset('教堂', 60, 45),
+get reverbPresets => <ReverbPreset>[
+  ReverbPreset(tr('大厅'), 80, 40),
+  ReverbPreset(tr('房间'), 85, 30),
+  ReverbPreset(tr('浴室'), 75, 50),
+  ReverbPreset(tr('隧道'), 70, 60),
+  ReverbPreset(tr('峡谷'), 65, 55),
+  ReverbPreset(tr('教堂'), 60, 45),
 ];
 
 /// 算法混响预设。
-const algoReverbPresets = <ReverbPreset>[
-  ReverbPreset('算法大厅', 85, 40),
-  ReverbPreset('算法房间', 90, 30),
-  ReverbPreset('算法板式', 80, 50),
-  ReverbPreset('算法弹簧', 88, 35),
+get algoReverbPresets => <ReverbPreset>[
+  ReverbPreset(tr('算法大厅'), 85, 40),
+  ReverbPreset(tr('算法房间'), 90, 30),
+  ReverbPreset(tr('算法板式'), 80, 50),
+  ReverbPreset(tr('算法弹簧'), 88, 35),
 ];
 
 /// 音效设置（camelCase，与 Rust SoundEffectSettings JSON 对齐，可部分省略）。
@@ -637,7 +638,7 @@ class CustomEqPreset {
   Map<String, dynamic> toJson() => {'name': name, 'gains': gains};
 
   factory CustomEqPreset.fromJson(Map<String, dynamic> j) => CustomEqPreset(
-        j['name'] as String? ?? '未命名',
+        j['name'] as String? ?? tr('未命名'),
         (j['gains'] as List? ?? const [])
             .map((e) => (e as num).toDouble())
             .toList(),

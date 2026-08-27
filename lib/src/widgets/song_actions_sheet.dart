@@ -8,6 +8,7 @@ import 'add_to_playlist_sheet.dart';
 import 'sheet_dialog.dart';
 import 'song_info_dialog.dart';
 import 'app_toast.dart';
+import '../i18n/i18n.dart';
 
 /// 通用歌曲操作弹层：收藏 / 添加到歌单 / 歌曲信息 / 下载。
 /// 任何来源的歌曲统一以 QueueItem 表示（本地或在线）。
@@ -40,7 +41,7 @@ Future<void> showSongActionsSheet(
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: Text(
-                item.artist.isEmpty ? '未知歌手' : item.artist,
+                item.artist.isEmpty ? tr('未知歌手') : item.artist,
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -49,7 +50,7 @@ Future<void> showSongActionsSheet(
             ListTile(
               leading: Icon(isFav ? Icons.favorite : Icons.favorite_border,
                   color: scheme.primary, size: 22),
-              title: Text(isFav ? '取消收藏' : '收藏'),
+              title: Text(isFav ? tr('取消收藏') : tr('收藏')),
               onTap: () {
                 Navigator.pop(ctx);
                 favorites.toggle(item);
@@ -57,16 +58,16 @@ Future<void> showSongActionsSheet(
             ),
             ListTile(
               leading: Icon(Icons.playlist_play, color: scheme.primary, size: 22),
-              title: const Text('下一首播放'),
+              title:   Text(tr('下一首播放')),
               onTap: () {
                 Navigator.pop(ctx);
                 ref.read(playerProvider.notifier).playNextShare(item);
-                showXianYuToast(ctx, '已添加至下一首播放');
+                showXianYuToast(ctx, tr('已添加至下一首播放'));
               },
             ),
             ListTile(
               leading: Icon(Icons.playlist_add, color: scheme.primary, size: 22),
-              title: const Text('添加到歌单'),
+              title:   Text(tr('添加到歌单')),
               onTap: () {
                 Navigator.pop(ctx);
                 showAddToPlaylistSheet(
@@ -76,7 +77,7 @@ Future<void> showSongActionsSheet(
             ListTile(
               leading: Icon(Icons.info_outline,
                   color: scheme.onSurfaceVariant, size: 22),
-              title: const Text('歌曲信息'),
+              title:   Text(tr('歌曲信息')),
               onTap: () {
                 Navigator.pop(ctx);
                 showSongInfoDialog(ctx, ref, item);
@@ -86,17 +87,17 @@ Future<void> showSongActionsSheet(
               ListTile(
                 leading:
                     Icon(Icons.download_outlined, color: scheme.primary, size: 22),
-                title: const Text('下载'),
+                title:   Text(tr('下载')),
                 onTap: () {
                   Navigator.pop(ctx);
                   ref.read(downloadProvider.notifier).download(item);
-                  showXianYuToast(ctx, '开始下载：${item.title}');
+                  showXianYuToast(ctx, tr('开始下载：{title}', {'title': item.title}));
                 },
               ),
             if (onPlay != null)
               ListTile(
                 leading: Icon(Icons.play_arrow, color: scheme.primary, size: 22),
-                title: const Text('播放'),
+                title:   Text(tr('播放')),
                 onTap: () {
                   Navigator.pop(ctx);
                   onPlay();

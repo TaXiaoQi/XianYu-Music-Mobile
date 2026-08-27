@@ -8,6 +8,7 @@ import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
 import 'song_list_view.dart';
+import '../i18n/i18n.dart';
 
 /// 分组项：某首字母对应的歌曲区间。
 class _IndexGroup {
@@ -67,7 +68,8 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
   /// 索引条；传 null 则退化为无表头无索引条的扁平渲染。
   final String Function(Song)? indexField;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
-  final EdgeInsetsGeometry? padding;
+  /// 用 [EdgeInsets] 以兼容内嵌 [SongsListView] 的 padding 入参类型。
+  final EdgeInsets? padding;
   final String? highlight;
   final bool enableActions;
   const LetterIndexSongList({
@@ -150,7 +152,7 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
   @override
   Widget build(BuildContext context) {
     final songs = widget.songs;
-    if (songs.isEmpty) return const Center(child: Text('暂无歌曲'));
+    if (songs.isEmpty) return   Center(child: Text(tr('暂无歌曲')));
     final field = widget.indexField;
     if (field == null) {
       return SongsListView(
@@ -244,7 +246,7 @@ class _HeaderTile extends StatelessWidget {
       alignment: Alignment.centerLeft,
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
       child: Text(
-        '$letter · $cou 首',
+        tr('{letter} · {n} 首', {'letter': letter, 'n': cou}),
         style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
@@ -344,7 +346,7 @@ class _SongRowItem extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.more_horiz, size: 22),
                   color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
-                  tooltip: '更多',
+                  tooltip: tr('更多'),
                   onPressed: openActions,
                 ),
             ],

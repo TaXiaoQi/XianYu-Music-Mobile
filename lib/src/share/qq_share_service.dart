@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tencent_kit/tencent_kit.dart';
+import '../i18n/i18n.dart';
 
 /// QQ 分享可能的结果。
 enum QqShareResult { success, canceled, failed, notInstalled }
@@ -51,7 +52,7 @@ class QqShareService {
         summary: summary,
         imageUri: imageUri,
         targetUrl: targetUrl,
-        appName: '弦予音乐',
+        appName: tr('弦予音乐'),
       );
     } catch (_) {
       if (!completer.isCompleted) completer.complete(QqShareResult.failed);

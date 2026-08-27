@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 弹出人机验证弹窗，返回验证通过的 payload；取消返回 null。
 Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
@@ -76,7 +77,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
       setState(() {
         _captcha = null;
         _loading = false;
-        _error = e is AuthException ? e.message : '验证题加载失败，请稍后重试';
+        _error = e is AuthException ? e.message : tr('验证题加载失败，请稍后重试');
       });
     }
   }
@@ -84,12 +85,12 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
   Future<void> _submit() async {
     final captcha = _captcha;
     if (captcha == null || captcha.captchaId.isEmpty) {
-      setState(() => _error = '请先加载验证题');
+      setState(() => _error = tr('请先加载验证题'));
       return;
     }
     final answer = _answerCtrl.text.trim();
     if (answer.isEmpty) {
-      setState(() => _error = '请输入验证答案');
+      setState(() => _error = tr('请输入验证答案'));
       return;
     }
     setState(() {
@@ -108,7 +109,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
       if (!mounted) return;
       setState(() {
         _verifying = false;
-        _error = e is AuthException ? e.message : '人机验证失败，请重试';
+        _error = e is AuthException ? e.message : tr('人机验证失败，请重试');
         _answerCtrl.clear();
       });
       // 验证失败后自动换一题（旧题可能已失效）。
@@ -142,17 +143,17 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
                 Expanded(
                   child: Text(
                     _loading
-                        ? '正在加载验证题…'
+                        ? tr('正在加载验证题…')
                         : (_captcha?.question.isNotEmpty == true
                             ? _captcha!.question
-                            : '验证题加载失败'),
+                            : tr('验证题加载失败')),
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                 ),
                 TextButton(
                   onPressed: _loading || _verifying ? null : _refresh,
-                  child: Text(_loading ? '刷新中…' : '换一题'),
+                  child: Text(_loading ? tr('刷新中…') : tr('换一题')),
                 ),
               ],
             ),
@@ -164,8 +165,8 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
             autofocus: true,
             enabled: !_loading && !_verifying && _captcha != null,
             decoration: InputDecoration(
-              labelText: '验证答案',
-              hintText: '请输入答案',
+              labelText: tr('验证答案'),
+              hintText: tr('请输入答案'),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -184,7 +185,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
       actions: [
         TextButton(
           onPressed: _verifying ? null : () => Navigator.pop(context, null),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: (_loading || _verifying || _captcha == null) ? null : _submit,
@@ -194,7 +195,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('验证并继续'),
+              :   Text(tr('验证并继续')),
         ),
       ],
     );

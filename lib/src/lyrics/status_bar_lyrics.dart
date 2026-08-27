@@ -7,6 +7,7 @@ import '../core/settings.dart';
 import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
+import '../i18n/i18n.dart';
 
 /// 状态栏/通知栏歌词控制器。
 ///
@@ -117,7 +118,7 @@ class StatusBarLyricsController {
         break;
       }
     }
-    line ??= '歌词滚动中…';
+    line ??= tr('歌词滚动中…');
     final meta = '${item.title}|${item.artist}';
     if (line == _lastPushedLine && meta == _lastPushedMeta) return;
     _lastPushedLine = line;

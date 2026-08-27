@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/rust/api.dart' as frb;
+import '../../src/i18n/i18n.dart';
 
 /// QMC 独立文件解密页：解密 QQ 音乐加密文件（.qmcflac/.mflac 等）。
 class QmcDecryptPage extends ConsumerStatefulWidget {
@@ -110,7 +111,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
     final path = item.outputPath;
     if (path == null || path.isEmpty || !File(path).existsSync()) return;
     await SharePlus.instance.share(
-      ShareParams(files: [XFile(path)], text: '已解密：${item.fileName}'),
+      ShareParams(files: [XFile(path)], text: tr('已解密：{name}', {'name': item.fileName})),
     );
   }
 
@@ -119,8 +120,8 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(title: const Text('QMC 文件解密')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title:   Text(tr('QMC 文件解密'))),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(
@@ -142,9 +143,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        '解密 QQ 音乐加密文件（.qmcflac / .qmcmp3 / .mflac / .mmp3 等）。\n'
-                        '优先使用文件内置 ekey（QMC2），老格式 .qmc 系列自动用固定密钥（QMC1）；'
-                        '解密后自动修正扩展名，可分享保存到任意位置。',
+                        tr('解密 QQ 音乐加密文件（.qmcflac / .qmcmp3 / .mflac / .mmp3 等）。\n') + tr('优先使用文件内置 ekey（QMC2），老格式 .qmc 系列自动用固定密钥（QMC1）；') + tr('解密后自动修正扩展名，可分享保存到任意位置。'),
                         style: TextStyle(
                             fontSize: 12.5, color: scheme.onSurfaceVariant,
                             height: 1.5),
@@ -158,8 +157,8 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                 TextField(
                   controller: _ekeyCtrl,
                   decoration: InputDecoration(
-                    labelText: 'ekey（可选，QMC2 加密密钥）',
-                    hintText: '留空则自动从文件尾部提取',
+                    labelText: tr('ekey（可选，QMC2 加密密钥）'),
+                    hintText: tr('留空则自动从文件尾部提取'),
                     isDense: true,
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12)),
@@ -180,12 +179,12 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                               child:
                                   CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.folder_open, size: 18),
-                      label: Text(_busy ? '解密中…' : '选择文件并解密'),
+                      label: Text(_busy ? tr('解密中…') : tr('选择文件并解密')),
                     ),
                   ),
                   const SizedBox(width: 10),
                   IconButton(
-                    tooltip: _showEkey ? '隐藏 ekey 输入' : '手动输入 ekey',
+                    tooltip: _showEkey ? tr('隐藏 ekey 输入') : tr('手动输入 ekey'),
                     isSelected: _showEkey,
                     onPressed: () => setState(() => _showEkey = !_showEkey),
                     icon: const Icon(Icons.vpn_key_outlined, size: 20),
@@ -213,9 +212,9 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
         .length;
     final fail = _results.where((r) => r.status == _DecryptStatus.failed).length;
     return Text(
-      '共 ${_results.length} 个文件：成功 $ok'
-      '${skip > 0 ? '，无需解密 $skip' : ''}'
-      '${fail > 0 ? '，失败 $fail' : ''}',
+      tr('共 {total} 个文件：成功 {ok}', {'total': _results.length, 'ok': ok}) +
+      (skip > 0 ? tr('，无需解密 {skip}', {'skip': skip}) : '') +
+      (fail > 0 ? tr('，失败 {fail}', {'fail': fail}) : ''),
       style: TextStyle(
           fontSize: 12.5,
           color: scheme.onSurfaceVariant,
@@ -225,13 +224,13 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
 
   Widget _buildResultCard(ColorScheme scheme, _DecryptResult item) {
     final (icon, color, text) = switch (item.status) {
-      _DecryptStatus.pending => (Icons.schedule, scheme.outline, '等待解密'),
-      _DecryptStatus.running => (Icons.sync, scheme.primary, '解密中…'),
+      _DecryptStatus.pending => (Icons.schedule, scheme.outline, tr('等待解密')),
+      _DecryptStatus.running => (Icons.sync, scheme.primary, tr('解密中…')),
       _DecryptStatus.decrypted => (Icons.check_circle, Colors.green.shade600,
-          '解密成功（${item.crypto ?? 'QMC'}${item.renamed ? '，已修正扩展名' : ''}）'),
+          tr('解密成功（{crypto}{renamed}）', {'crypto': item.crypto ?? 'QMC', 'renamed': item.renamed ? tr('，已修正扩展名') : ''})),
       _DecryptStatus.notEncrypted =>
-        (Icons.info_outline, scheme.outline, '未检测到加密信息（已是普通音频或缺密钥）'),
-      _DecryptStatus.failed => (Icons.error_outline, scheme.error, '失败：${item.error ?? '未知错误'}'),
+        (Icons.info_outline, scheme.outline, tr('未检测到加密信息（已是普通音频或缺密钥）')),
+      _DecryptStatus.failed => (Icons.error_outline, scheme.error, tr('失败：{error}', {'error': item.error ?? tr('未知错误')})),
     };
 
     return Container(
@@ -261,7 +260,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                 TextButton.icon(
                   onPressed: () => _share(item),
                   icon: const Icon(Icons.share_outlined, size: 17),
-                  label: const Text('分享'),
+                  label:   Text(tr('分享')),
                 ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/db_path.dart';
 import '../rust/api.dart';
 import 'server_models.dart';
+import '../i18n/i18n.dart';
 
 /// 默认后端地址与签名密钥（与桌面端一致）。
 const defaultAuthBaseUrl = 'https://api.xianyumusic.cn/api';
@@ -315,7 +316,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
     return (data['message'] as String?) ??
         (data['msg'] as String?) ??
-        '验证码已发送到邮箱';
+        tr('验证码已发送到邮箱');
   }
 
   /// 弦予号登录。
@@ -334,11 +335,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       });
       final token = data['token'];
       if (token == null || token.toString().isEmpty) {
-        throw AuthException('登录响应无效');
+        throw AuthException(tr('登录响应无效'));
       }
       await _saveAuth(token.toString(), data);
     } catch (e) {
-      state = state.copyWith(loading: false, error: _msg(e, '登录失败'));
+      state = state.copyWith(loading: false, error: _msg(e, tr('登录失败')));
     }
   }
 
@@ -364,11 +365,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       });
       final token = data['token'];
       if (token == null || token.toString().isEmpty) {
-        throw AuthException('注册响应无效');
+        throw AuthException(tr('注册响应无效'));
       }
       await _saveAuth(token.toString(), data);
     } catch (e) {
-      state = state.copyWith(loading: false, error: _msg(e, '注册失败'));
+      state = state.copyWith(loading: false, error: _msg(e, tr('注册失败')));
     }
   }
 
@@ -495,11 +496,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String password,
   }) async {
     final user = state.user;
-    if (user == null) throw AuthException('未登录');
+    if (user == null) throw AuthException(tr('未登录'));
     final ciyuanxiId = user.ciyuanxiId ?? user.id;
-    if (ciyuanxiId.isEmpty) throw AuthException('未获取到当前账号信息，请重新登录');
-    if (password.isEmpty) throw AuthException('请输入登录密码');
-    if (verifyCode.isEmpty) throw AuthException('请输入邮箱验证码');
+    if (ciyuanxiId.isEmpty) throw AuthException(tr('未获取到当前账号信息，请重新登录'));
+    if (password.isEmpty) throw AuthException(tr('请输入登录密码'));
+    if (verifyCode.isEmpty) throw AuthException(tr('请输入邮箱验证码'));
     await requestAction('preverify_delete_account', {
       'ciyuanxi_id': ciyuanxiId,
       'email': user.email,
@@ -514,10 +515,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String password,
   }) async {
     final user = state.user;
-    if (user == null) throw AuthException('未登录');
+    if (user == null) throw AuthException(tr('未登录'));
     final ciyuanxiId = user.ciyuanxiId ?? user.id;
-    if (ciyuanxiId.isEmpty) throw AuthException('未获取到当前账号信息，请重新登录');
-    if (password.isEmpty) throw AuthException('请输入登录密码');
+    if (ciyuanxiId.isEmpty) throw AuthException(tr('未获取到当前账号信息，请重新登录'));
+    if (password.isEmpty) throw AuthException(tr('请输入登录密码'));
     await requestAction('delete_account', {
       'ciyuanxi_id': ciyuanxiId,
       'email': user.email,
@@ -536,7 +537,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final user = state.user;
     final ciyuanxiId = user?.ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException('未获取到弦予号，无法修改密码，请重新登录');
+      throw AuthException(tr('未获取到弦予号，无法修改密码，请重新登录'));
     }
     await requestAction('change_password', {
       'ciyuanxi_id': ciyuanxiId,
@@ -573,7 +574,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final user = state.user;
     final token = _token;
     if (user == null || token == null || token.isEmpty) {
-      throw AuthException('未登录');
+      throw AuthException(tr('未登录'));
     }
     final data = await requestAction('update_profile', {
       'token': token,
@@ -638,7 +639,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// 上传头像（base64 data URL，走审核流程，不立即生效）。
   Future<void> uploadAvatar(String avatarData) async {
     final user = state.user;
-    if (user == null) throw AuthException('未登录');
+    if (user == null) throw AuthException(tr('未登录'));
     await requestAction('upload_avatar', {
       'ciyuanxi_id': user.ciyuanxiId ?? user.id,
       'avatar_data': avatarData,
@@ -700,9 +701,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (e is AuthException) return e.message;
     final s = e.toString();
     if (s.contains('network') || s.contains('Failed to fetch')) {
-      return '网络异常，请检查网络连接';
+      return tr('网络异常，请检查网络连接');
     }
-    if (s.contains('timeout')) return '请求超时，请稍后重试';
+    if (s.contains('timeout')) return tr('请求超时，请稍后重试');
     return fallback;
   }
 }

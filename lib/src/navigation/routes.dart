@@ -37,6 +37,7 @@ import '../../pages/recognize/recognize_page.dart';
 import '../../pages/debug/debug_page.dart';
 import 'animated_branch_container.dart';
 import 'shell.dart';
+import '../i18n/i18n.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
 final appNavigatorKey = GlobalKey<NavigatorState>();
@@ -238,9 +239,9 @@ class BottomNavItem {
   const BottomNavItem(this.title, this.icon, this.location);
 }
 
-const bottomNavItems = [
-  BottomNavItem('首页', Icons.home, '/home'),
-  BottomNavItem('我的', Icons.person_outline_rounded, '/mine'),
+get bottomNavItems => [
+  BottomNavItem(tr('首页'), Icons.home, '/home'),
+  BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine'),
 ];
 
 /// 底栏/侧栏导航项标题（跟随当前本地化语言）。
@@ -249,9 +250,9 @@ const bottomNavItems = [
 String navTitle(BuildContext context, BottomNavItem item) {
   final l = Localizations.of<AppLocalizations>(context, AppLocalizations);
   return switch (item.location) {
-    '/home' => l?.navHome ?? '首页',
-    '/mine' => l?.navMine ?? '我的',
-    _ => l?.navEffects ?? '音效',
+    '/home' => l?.navHome ?? tr('首页'),
+    '/mine' => l?.navMine ?? tr('我的'),
+    _ => l?.navEffects ?? tr('音效'),
   };
 }
 

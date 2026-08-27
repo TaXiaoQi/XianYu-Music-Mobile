@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/db_path.dart';
 import '../rust/api.dart' as frb;
+import '../i18n/i18n.dart';
 
 /// WebDAV 远程源配置（与 Rust RemoteSource 一致，不含密码）。
 class RemoteSourceInfo {
@@ -47,14 +48,14 @@ class RemoteSourceInfo {
   /// 上次同步时间文案（相对时间）。
   String get lastSyncText {
     final ts = lastSyncAt;
-    if (ts == null || ts <= 0) return '从未同步';
+    if (ts == null || ts <= 0) return tr('从未同步');
     final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return '刚刚同步';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前同步';
-    if (diff.inDays < 1) return '${diff.inHours} 小时前同步';
-    if (diff.inDays < 30) return '${diff.inDays} 天前同步';
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} 同步';
+    if (diff.inMinutes < 1) return tr('刚刚同步');
+    if (diff.inHours < 1) return tr('{n} 分钟前同步', {'n': diff.inMinutes});
+    if (diff.inDays < 1) return tr('{n} 小时前同步', {'n': diff.inHours});
+    if (diff.inDays < 30) return tr('{n} 天前同步', {'n': diff.inDays});
+    return tr('{date} 同步', {'date': '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'});
   }
 }
 
@@ -340,7 +341,7 @@ class RemoteLibraryNotifier extends StateNotifier<RemoteLibraryState> {
     try {
       final result = await _service.syncSource(sourceId);
       await refresh();
-      return '同步完成：解析 ${result.parsedSongs} 首（共 ${result.audioFiles} 个音频文件）';
+      return tr('同步完成：解析 {parsed} 首（共 {total} 个音频文件）', {'parsed': result.parsedSongs, 'total': result.audioFiles});
     } finally {
       state = state.copyWith(clearSyncing: true);
     }

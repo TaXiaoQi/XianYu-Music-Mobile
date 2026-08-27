@@ -9,10 +9,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/sync/sync_provider.dart' show syncProvider;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 账号认证页：未登录时展示登录/注册，已登录时展示个人资料。
 class AccountPage extends ConsumerStatefulWidget {
@@ -72,13 +74,13 @@ class _AccountPageState extends ConsumerState<AccountPage>
   Future<void> _sendCode() async {
     final email = _emailCtrl.text.trim();
     if (!email.contains('@')) {
-      _toast('请输入正确的邮箱');
+      _toast(tr('请输入正确的邮箱'));
       return;
     }
     // 发送验证码前先过人机验证。
     final captcha = await _requestHumanCaptcha(
-      title: '发送验证码前验证',
-      description: '完成验证后将向邮箱发送注册验证码。',
+      title: tr('发送验证码前验证'),
+      description: tr('完成验证后将向邮箱发送注册验证码。'),
     );
     if (captcha == null || !mounted) return;
     final notifier = ref.read(authProvider.notifier);
@@ -90,7 +92,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
       _startCountdown();
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '验证码发送失败');
+      _toast(e is AuthException ? e.message : tr('验证码发送失败'));
     }
   }
 
@@ -105,14 +107,14 @@ class _AccountPageState extends ConsumerState<AccountPage>
 
     // 注册时先做本地密码一致性校验，避免无谓的人机验证。
     if (!isLogin && _passwordCtrl.text != _confirmCtrl.text) {
-      notifier.setError('两次输入的密码不一致');
+      notifier.setError(tr('两次输入的密码不一致'));
       return;
     }
 
     // 登录/注册前先过人机验证。
     final captcha = await _requestHumanCaptcha(
-      title: isLogin ? '登录前验证' : '注册前验证',
-      description: isLogin ? '完成验证后将继续登录当前账号。' : '完成验证后将继续创建账号。',
+      title: isLogin ? tr('登录前验证') : tr('注册前验证'),
+      description: isLogin ? tr('完成验证后将继续登录当前账号。') : tr('完成验证后将继续创建账号。'),
     );
     if (captcha == null || !mounted) return;
 
@@ -131,6 +133,12 @@ class _AccountPageState extends ConsumerState<AccountPage>
         code: _codeCtrl.text,
         captcha: captcha,
       );
+    }
+
+    // 登录/注册成功后首次全量同步一次（仅首次，本地有数据且与云端冲突才弹窗口），
+    // 之后两端一致；后续自动同步以客户端为主，只上传新增数据。
+    if (mounted && ref.read(authProvider).user != null) {
+      await ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
     }
     // 错误已通过 authProvider.error 反映到内联错误条，无需再弹 SnackBar。
   }
@@ -183,7 +191,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: Text(auth.isLoggedIn ? '账号与安全' : '账号认证'),
+              title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
             ),
           ),
         ],
@@ -198,17 +206,17 @@ class _AccountPageState extends ConsumerState<AccountPage>
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('登录状态已失效'),
-        content: const Text('登录状态已失效，请重新登录。'),
+        title:   Text(tr('登录状态已失效')),
+        content:   Text(tr('登录状态已失效，请重新登录。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('确认'),
+            child:   Text(tr('确认')),
           ),
           FilledButton(
             // 本页即账号页，关闭弹窗后自动回到登录表单。
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('登录'),
+            child:   Text(tr('登录')),
           ),
         ],
       ),
@@ -220,16 +228,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定要退出当前账号吗？'),
+        title:   Text(tr('退出登录')),
+        content:   Text(tr('确定要退出当前账号吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('退出'),
+            child:   Text(tr('退出')),
           ),
         ],
       ),
@@ -269,10 +277,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
                 child: Icon(Icons.music_note, size: 34, color: scheme.onPrimary),
               ),
               const SizedBox(height: 12),
-              const Text('弦予音乐',
+                Text(tr('弦予音乐'),
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 2),
-              Text('登录后同步你的音乐与设置',
+              Text(tr('登录后同步你的音乐与设置'),
                   style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
             ],
           ),
@@ -297,7 +305,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
               labelColor: scheme.onPrimary,
               unselectedLabelColor: scheme.onSurfaceVariant,
               labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-              tabs: const [Tab(text: '登录'), Tab(text: '注册')],
+              tabs:   [Tab(text: tr('登录')), Tab(text: tr('注册'))],
             ),
           ),
         ),
@@ -317,13 +325,13 @@ class _AccountPageState extends ConsumerState<AccountPage>
   Widget _loginForm(BuildContext context, AuthState auth) {
     return _formScroll(
       children: [
-        _field(_idCtrl, '弦予号', hint: '请输入弦予号', icon: Icons.tag),
-        _field(_passwordCtrl, '密码',
-            hint: '请输入密码',
+        _field(_idCtrl, tr('弦予号'), hint: tr('请输入弦予号'), icon: Icons.tag),
+        _field(_passwordCtrl, tr('密码'),
+            hint: tr('请输入密码'),
             icon: Icons.lock,
             obscure: _obscure),
         _errorBanner(context, auth),
-        _submitButton(context, auth, '登录'),
+        _submitButton(context, auth, tr('登录')),
         const SizedBox(height: 8),
         Center(
           child: TextButton(
@@ -331,7 +339,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
                 ? null
                 : () => showForgotPasswordDialog(
                     context, ref.read(authProvider.notifier)),
-            child: const Text('忘记密码？'),
+            child:   Text(tr('忘记密码？')),
           ),
         ),
       ],
@@ -341,16 +349,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
   Widget _registerForm(BuildContext context, AuthState auth) {
     return _formScroll(
       children: [
-        _field(_idCtrl, '弦予号', hint: '6-20 位数字/字母', icon: Icons.tag),
-        _field(_nicknameCtrl, '昵称（可选）', hint: '留空使用默认昵称', icon: Icons.badge),
-        _field(_passwordCtrl, '密码', hint: '设置登录密码', icon: Icons.lock, obscure: _obscure),
-        _field(_confirmCtrl, '确认密码', hint: '再次输入密码', icon: Icons.lock, obscure: _obscure),
-        _field(_emailCtrl, '邮箱', hint: '用于接收验证码', icon: Icons.mail, keyboard: TextInputType.emailAddress),
+        _field(_idCtrl, tr('弦予号'), hint: tr('6-20 位数字/字母'), icon: Icons.tag),
+        _field(_nicknameCtrl, tr('昵称（可选）'), hint: tr('留空使用默认昵称'), icon: Icons.badge),
+        _field(_passwordCtrl, tr('密码'), hint: tr('设置登录密码'), icon: Icons.lock, obscure: _obscure),
+        _field(_confirmCtrl, tr('确认密码'), hint: tr('再次输入密码'), icon: Icons.lock, obscure: _obscure),
+        _field(_emailCtrl, tr('邮箱'), hint: tr('用于接收验证码'), icon: Icons.mail, keyboard: TextInputType.emailAddress),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _field(_codeCtrl, '邮箱验证码', hint: '请输入验证码', icon: Icons.verified),
+              child: _field(_codeCtrl, tr('邮箱验证码'), hint: tr('请输入验证码'), icon: Icons.verified),
             ),
             const SizedBox(width: 8),
             Padding(
@@ -359,14 +367,14 @@ class _AccountPageState extends ConsumerState<AccountPage>
                 height: 56,
                 child: OutlinedButton(
                   onPressed: _countdown > 0 ? null : _sendCode,
-                  child: Text(_countdown > 0 ? '${_countdown}s' : '发送验证码'),
+                  child: Text(_countdown > 0 ? '${_countdown}s' : tr('发送验证码')),
                 ),
               ),
             ),
           ],
         ),
         _errorBanner(context, auth),
-        _submitButton(context, auth, '注册'),
+        _submitButton(context, auth, tr('注册')),
       ],
     );
   }
@@ -532,21 +540,21 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     if (limit.todayBlocked || limit.status == 'pending') {
       await showProfileEditGate(
         context,
-        title: '头像暂不能修改',
+        title: tr('头像暂不能修改'),
         desc: limit.blockMessage.isNotEmpty
             ? limit.blockMessage
-            : (limit.status == 'pending' ? '头像正在审核中哦' : '今日已修改过啦'),
-        confirmText: '我知道了',
+            : (limit.status == 'pending' ? tr('头像正在审核中哦') : tr('今日已修改过啦')),
+        confirmText: tr('我知道了'),
         blocked: true,
       );
       return;
     }
     final proceed = await showProfileEditGate(
       context,
-      title: '更换头像提示',
-      desc: '头像每日只能修改 1 次，上传后需要等待管理员审核。审核通过前会继续显示当前头像。',
-      confirmText: '继续选择头像',
-      note: '请确认本次修改内容无误后再继续。',
+      title: tr('更换头像提示'),
+      desc: tr('头像每日只能修改 1 次，上传后需要等待管理员审核。审核通过前会继续显示当前头像。'),
+      confirmText: tr('继续选择头像'),
+      note: tr('请确认本次修改内容无误后再继续。'),
     );
     if (!mounted || !proceed) return;
     final file = await ImagePicker().pickImage(
@@ -558,7 +566,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
     if (bytes.length > 5 * 1024 * 1024) {
-      _toast('头像不能超过 5MB');
+      _toast(tr('头像不能超过 5MB'));
       return;
     }
     setState(() => _avatarUploading = true);
@@ -567,10 +575,10 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
       await _notifier.uploadAvatar(dataUrl);
       if (!mounted) return;
       setState(() => _avatarStatus = 'pending');
-      _toast('头像已上传，等待管理员审核');
+      _toast(tr('头像已上传，等待管理员审核'));
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '头像上传失败');
+      _toast(e is AuthException ? e.message : tr('头像上传失败'));
     } finally {
       if (mounted) setState(() => _avatarUploading = false);
     }
@@ -579,7 +587,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
   /// 压缩头像：256px 宽度、JPEG 质量 75%（与桌面端一致），输出 base64 data URL。
   Future<String> _compressAvatar(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw AuthException('无法解析图片');
+    if (decoded == null) throw AuthException(tr('无法解析图片'));
     final resized = img.copyResize(decoded, width: 256);
     final jpg = img.encodeJpg(resized, quality: 75);
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
@@ -592,21 +600,21 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     if (limit.todayBlocked || limit.status == 'pending') {
       await showProfileEditGate(
         context,
-        title: '昵称暂不能修改',
+        title: tr('昵称暂不能修改'),
         desc: limit.blockMessage.isNotEmpty
             ? limit.blockMessage
-            : (limit.status == 'pending' ? '昵称正在审核中哦' : '今日已修改过啦'),
-        confirmText: '我知道了',
+            : (limit.status == 'pending' ? tr('昵称正在审核中哦') : tr('今日已修改过啦')),
+        confirmText: tr('我知道了'),
         blocked: true,
       );
       return;
     }
     final proceed = await showProfileEditGate(
       context,
-      title: '修改昵称提示',
-      desc: '昵称每日只能修改 1 次，提交后需要等待管理员审核。审核通过前会继续显示当前昵称。',
-      confirmText: '继续修改昵称',
-      note: '请确认本次修改内容无误后再继续。',
+      title: tr('修改昵称提示'),
+      desc: tr('昵称每日只能修改 1 次，提交后需要等待管理员审核。审核通过前会继续显示当前昵称。'),
+      confirmText: tr('继续修改昵称'),
+      note: tr('请确认本次修改内容无误后再继续。'),
     );
     if (!mounted || !proceed) return;
     final result = await showChangeNicknameDialog(context, _notifier);
@@ -623,7 +631,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
 
   /// 邮箱中省略格式化（用户名超过4个字符时，保留前2位和后2位，中间用***代替）
   static String _formatEmail(String email) {
-    if (email.isEmpty) return '未绑定';
+    if (email.isEmpty) return tr('未绑定');
     final parts = email.split('@');
     if (parts.length != 2) return email;
     final username = parts[0];
@@ -641,7 +649,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已复制$label：$text'),
+        content: Text(tr('已复制{label}：{text}', {'label': label, 'text': text})),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -667,15 +675,15 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         // 头像/昵称审核状态
         _StatusBadge(
           status: _avatarStatus,
-          pendingText: '头像审核中',
-          rejectedText: '头像未通过',
+          pendingText: tr('头像审核中'),
+          rejectedText: tr('头像未通过'),
           onRefresh: _refreshStatus,
           refreshing: _refreshingStatus,
         ),
         _StatusBadge(
           status: _nicknameStatus,
-          pendingText: '改名审核中',
-          rejectedText: '改名未通过',
+          pendingText: tr('改名审核中'),
+          rejectedText: tr('改名未通过'),
           onRefresh: _refreshStatus,
           refreshing: _refreshingStatus,
         ),
@@ -683,23 +691,23 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         const SizedBox(height: 24),
 
         // 2. 「基本信息」分组卡片
-        _sectionTitle(context, '基本信息'),
+        _sectionTitle(context, tr('基本信息')),
         _GlassCard(
           children: [
             _GlassTile(
               icon: Icons.mail_outline_rounded,
-              title: '绑定邮箱',
+              title: tr('绑定邮箱'),
               value: _formatEmail(user.email),
               onTap: user.email.isEmpty
                   ? () => showBindEmailDialog(context, _notifier)
-                  : () => _copy(context, user.email, '绑定邮箱'),
+                  : () => _copy(context, user.email, tr('绑定邮箱')),
             ),
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
               _GlassTile(
                 icon: Icons.tag_rounded,
-                title: '弦予号',
+                title: tr('弦予号'),
                 value: user.ciyuanxiId!,
-                onTap: () => _copy(context, user.ciyuanxiId!, '弦予号'),
+                onTap: () => _copy(context, user.ciyuanxiId!, tr('弦予号')),
                 trailing: Icon(
                   Icons.copy_rounded,
                   size: 16,
@@ -712,13 +720,13 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         const SizedBox(height: 24),
 
         // 3. 「账号安全与隐私」分组卡片
-        _sectionTitle(context, '账号安全与隐私'),
+        _sectionTitle(context, tr('账号安全与隐私')),
         _GlassCard(
           children: [
             _GlassTile(
               icon: Icons.lock_reset_rounded,
-              title: '修改密码',
-              subtitle: '定期更新密码提升安全等级',
+              title: tr('修改密码'),
+              subtitle: tr('定期更新密码提升安全等级'),
               onTap: () => showChangePasswordDialog(context, _notifier),
               trailing: Icon(
                 Icons.chevron_right_rounded,
@@ -729,15 +737,15 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
             if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty)
               _GlassTile(
                 icon: Icons.tag_rounded,
-                title: '修改弦予号',
-                subtitle: '每月限一次',
+                title: tr('修改弦予号'),
+                subtitle: tr('每月限一次'),
                 onTap: () async {
                   final proceed = await showProfileEditGate(
                     context,
-                    title: '修改弦予号提示',
-                    desc: '弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。',
-                    confirmText: '继续修改弦予号',
-                    note: '请确认本次修改内容无误后再继续。',
+                    title: tr('修改弦予号提示'),
+                    desc: tr('弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。'),
+                    confirmText: tr('继续修改弦予号'),
+                    note: tr('请确认本次修改内容无误后再继续。'),
                   );
                   if (proceed && context.mounted) {
                     await showChangeCiyuanxiDialog(context, _notifier);
@@ -751,8 +759,8 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
               ),
             _GlassTile(
               icon: Icons.delete_outline_rounded,
-              title: '注销账号',
-              subtitle: '注销后数据将无法恢复',
+              title: tr('注销账号'),
+              subtitle: tr('注销后数据将无法恢复'),
               onTap: () => showDeleteAccountDialog(context, _notifier),
               trailing: Icon(
                 Icons.chevron_right_rounded,
@@ -790,7 +798,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                   size: 20, color: scheme.error),
             ),
             title: Text(
-              '退出登录',
+              tr('退出登录'),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
@@ -798,7 +806,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
               ),
             ),
             subtitle: Text(
-              '注销当前设备上的身份凭据',
+              tr('注销当前设备上的身份凭据'),
               style: TextStyle(
                 fontSize: 12,
                 color: scheme.error.withValues(alpha: 0.7),
@@ -972,7 +980,7 @@ class _ProfileHeaderCard extends StatelessWidget {
                 children: [
                   Flexible(
                     child: Text(
-                      user.nickname.isEmpty ? '弦予用户' : user.nickname,
+                      user.nickname.isEmpty ? tr('弦予用户') : user.nickname,
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -1014,7 +1022,7 @@ class _ProfileHeaderCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      user.role.isNotEmpty ? user.role : '标准会员',
+                      user.role.isNotEmpty ? user.role : tr('标准会员'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1027,7 +1035,7 @@ class _ProfileHeaderCard extends StatelessWidget {
               if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 InkWell(
-                  onTap: () => onCopy(context, user.ciyuanxiId!, '弦予号'),
+                  onTap: () => onCopy(context, user.ciyuanxiId!, tr('弦予号')),
                   borderRadius: BorderRadius.circular(999),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -1341,7 +1349,7 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
       setState(() {
         _captcha = null;
         _loading = false;
-        _error = e is AuthException ? e.message : '验证题加载失败，请稍后重试';
+        _error = e is AuthException ? e.message : tr('验证题加载失败，请稍后重试');
       });
     }
   }
@@ -1349,12 +1357,12 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
   Future<void> _submit() async {
     final captcha = _captcha;
     if (captcha == null || captcha.captchaId.isEmpty) {
-      setState(() => _error = '请先加载验证题');
+      setState(() => _error = tr('请先加载验证题'));
       return;
     }
     final answer = _answerCtrl.text.trim();
     if (answer.isEmpty) {
-      setState(() => _error = '请输入验证答案');
+      setState(() => _error = tr('请输入验证答案'));
       return;
     }
     setState(() {
@@ -1373,7 +1381,7 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
       if (!mounted) return;
       setState(() {
         _verifying = false;
-        _error = e is AuthException ? e.message : '人机验证失败，请重试';
+        _error = e is AuthException ? e.message : tr('人机验证失败，请重试');
         _answerCtrl.clear();
       });
       // 验证失败后自动换一题（旧题可能已失效）。
@@ -1407,17 +1415,17 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
                 Expanded(
                   child: Text(
                     _loading
-                        ? '正在加载验证题…'
+                        ? tr('正在加载验证题…')
                         : (_captcha?.question.isNotEmpty == true
                             ? _captcha!.question
-                            : '验证题加载失败'),
+                            : tr('验证题加载失败')),
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                 ),
                 TextButton(
                   onPressed: _loading || _verifying ? null : _refresh,
-                  child: Text(_loading ? '刷新中…' : '换一题'),
+                  child: Text(_loading ? tr('刷新中…') : tr('换一题')),
                 ),
               ],
             ),
@@ -1429,8 +1437,8 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
             autofocus: true,
             enabled: !_loading && !_verifying && _captcha != null,
             decoration: InputDecoration(
-              labelText: '验证答案',
-              hintText: '请输入答案',
+              labelText: tr('验证答案'),
+              hintText: tr('请输入答案'),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1449,7 +1457,7 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
       actions: [
         TextButton(
           onPressed: _verifying ? null : () => Navigator.pop(context, null),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: (_loading || _verifying || _captcha == null) ? null : _submit,
@@ -1459,7 +1467,7 @@ class _HumanCaptchaDialogState extends State<_HumanCaptchaDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('验证并继续'),
+              :   Text(tr('验证并继续')),
         ),
       ],
     );

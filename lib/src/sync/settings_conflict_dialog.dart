@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
+import '../i18n/i18n.dart';
 
 /// 冲突解决方向：保留本地 / 保留云端。
 enum SyncDirection { local, cloud }
@@ -97,9 +98,9 @@ class _ConflictOverallDialog extends StatelessWidget {
                       color: scheme.error, size: 22),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                  Expanded(
                   child: Text(
-                    '设置同步冲突',
+                    tr('设置同步冲突'),
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -111,7 +112,7 @@ class _ConflictOverallDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              '检测到本地设置与云端设置不一致，请选择要保留的版本。下一步可按类别精细调整。',
+              tr('检测到本地设置与云端设置不一致，请选择要保留的版本。下一步可按类别精细调整。'),
               style: TextStyle(
                 fontSize: 14,
                 height: 1.45,
@@ -121,13 +122,13 @@ class _ConflictOverallDialog extends StatelessWidget {
             const SizedBox(height: 16),
             _TimeRow(
               icon: Icons.smartphone_rounded,
-              label: '本地设置',
+              label: tr('本地设置'),
               time: _formatTime(localTime),
             ),
             const SizedBox(height: 8),
             _TimeRow(
               icon: Icons.cloud_rounded,
-              label: '云端设置',
+              label: tr('云端设置'),
               time: _formatTime(cloudTime),
             ),
             const SizedBox(height: 22),
@@ -145,7 +146,7 @@ class _ConflictOverallDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('取消'),
+                  child:   Text(tr('取消')),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
@@ -160,7 +161,7 @@ class _ConflictOverallDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('保留云端'),
+                  child:   Text(tr('保留云端')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
@@ -176,7 +177,7 @@ class _ConflictOverallDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('保留本地'),
+                  child:   Text(tr('保留本地')),
                 ),
               ],
             ),
@@ -275,9 +276,9 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
                       color: scheme.primary, size: 22),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                  Expanded(
                   child: Text(
-                    '按类别选择',
+                    tr('按类别选择'),
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -289,7 +290,7 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
             ),
             const SizedBox(height: 12),
             Text(
-              '请为每类数据选择保留本地还是云端。',
+              tr('请为每类数据选择保留本地还是云端。'),
               style: TextStyle(
                 fontSize: 14,
                 height: 1.45,
@@ -299,24 +300,24 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
             const SizedBox(height: 16),
             _CategoryRow(
               icon: Icons.settings_rounded,
-              label: '设置',
-              desc: '播放、歌词、外观等偏好配置',
+              label: tr('设置'),
+              desc: tr('播放、歌词、外观等偏好配置'),
               direction: _choices.settings,
               onChanged: (d) => setState(() => _choices = _choices.copyWith(settings: d)),
             ),
             const SizedBox(height: 10),
             _CategoryRow(
               icon: Icons.queue_music_rounded,
-              label: '歌单',
-              desc: '本地创建与编辑的歌单',
+              label: tr('歌单'),
+              desc: tr('本地创建与编辑的歌单'),
               direction: _choices.playlists,
               onChanged: (d) => setState(() => _choices = _choices.copyWith(playlists: d)),
             ),
             const SizedBox(height: 10),
             _CategoryRow(
               icon: Icons.extension_rounded,
-              label: '插件',
-              desc: '已安装的插件配置',
+              label: tr('插件'),
+              desc: tr('已安装的插件配置'),
               direction: _choices.plugins,
               onChanged: (d) => setState(() => _choices = _choices.copyWith(plugins: d)),
             ),
@@ -335,7 +336,7 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('取消'),
+                  child:   Text(tr('取消')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
@@ -350,7 +351,7 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('确认同步'),
+                  child:   Text(tr('确认同步')),
                 ),
               ],
             ),
@@ -452,13 +453,13 @@ class _DirectionToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _ToggleChip(
-            label: '本地',
+            label: tr('本地'),
             selected: direction == SyncDirection.local,
             onTap: () => onChanged(SyncDirection.local),
           ),
           const SizedBox(width: 3),
           _ToggleChip(
-            label: '云端',
+            label: tr('云端'),
             selected: direction == SyncDirection.cloud,
             onTap: () => onChanged(SyncDirection.cloud),
           ),

@@ -21,6 +21,7 @@ import '../../src/widgets/add_to_playlist_sheet.dart'
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 导入歌单页：备份文件 / 本地文件 / 云端导入 三种方式
 /// （对齐桌面端导入歌单弹窗，独立成页不与音源页共用）。
@@ -52,14 +53,14 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
   Widget build(BuildContext context) {
     final tabBar = TabBar(
       controller: _tabCtrl,
-      tabs: const [
-        Tab(text: '备份文件'),
-        Tab(text: '本地文件'),
-        Tab(text: '云端导入'),
+      tabs:   [
+        Tab(text: tr('备份文件')),
+        Tab(text: tr('本地文件')),
+        Tab(text: tr('云端导入')),
       ],
     );
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(
@@ -83,7 +84,7 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: const Text('导入歌单'),
+              title:   Text(tr('导入歌单')),
               bottom: tabBar,
             ),
           ),
@@ -149,10 +150,10 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       await _showResult(prepared, playlists.length);
     } on FormatException catch (e) {
       if (!mounted) return;
-      _toast('导入失败：${e.message}');
+      _toast(tr('导入失败：{e}', {'e': e.message}));
     } catch (e) {
       if (!mounted) return;
-      _toast('导入失败：$e');
+      _toast(tr('导入失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -183,7 +184,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     await showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('导入完成'),
+        title:   Text(tr('导入完成')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -191,14 +192,14 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
             children: [
               Text(
                 '$versionNote\n'
-                '新增 $createdCount 个歌单，'
-                '成功导入 ${prepared.importedSongCount} 首歌曲，'
-                '${prepared.failures.length} 首未导入。',
+                '${tr('新增 {n} 个歌单，', {'n': createdCount})}'
+                '${tr('成功导入 {n} 首歌曲，', {'n': prepared.importedSongCount})}'
+                '${tr('{n} 首未导入。', {'n': prepared.failures.length})}',
                 style: const TextStyle(fontSize: 14),
               ),
               if (prepared.missingPlugins.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Text('缺失插件：',
+                Text(tr('缺失插件：'),
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -206,7 +207,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
                 const SizedBox(height: 4),
                 for (final missing in prepared.missingPlugins)
                   Text(
-                    '· ${missing.platform}（${missing.songCount} 首）',
+                    tr('· {platform}（{n} 首）', {'platform': missing.platform, 'n': missing.songCount}),
                     style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(ctx).colorScheme.onSurfaceVariant),
@@ -214,13 +215,13 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
               ],
               if (prepared.associations.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                const Text('关联插件：',
+                  Text(tr('关联插件：'),
                     style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 for (final assoc in prepared.associations)
                   Text(
-                    '· ${assoc.pluginName} → ${assoc.platform}（${assoc.songCount} 首）',
+                    tr('· {plugin} → {platform}（{n} 首）', {'plugin': assoc.pluginName, 'platform': assoc.platform, 'n': assoc.songCount}),
                     style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(ctx).colorScheme.onSurfaceVariant),
@@ -232,7 +233,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('好的'),
+            child:   Text(tr('好的')),
           ),
         ],
       ),
@@ -252,7 +253,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       await _importFile(path, file.name);
     } catch (e) {
       if (!mounted) return;
-      _toast('读取文件失败：$e');
+      _toast(tr('读取文件失败：{e}', {'e': e}));
     }
   }
 
@@ -263,9 +264,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 '
-          'M3U/M3U8 播放列表、椒盐音乐 TXT 导出，自动匹配已安装音源插件，'
-          '本地路径歌曲匹配本地曲库导入。',
+          tr('支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 ') + tr('M3U/M3U8 播放列表、椒盐音乐 TXT 导出，自动匹配已安装音源插件，') + tr('本地路径歌曲匹配本地曲库导入。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),
@@ -273,9 +272,9 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
           child: OutlinedButton.icon(
             onPressed: _loading ? null : _pickLocalFile,
             icon: const Icon(Icons.folder_open, size: 24),
-            label: const Padding(
+            label:   Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text('选择本地备份文件', style: TextStyle(fontSize: 15)),
+              child: Text(tr('选择本地备份文件'), style: TextStyle(fontSize: 15)),
             ),
           ),
         ),
@@ -323,7 +322,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 
   Future<void> _pickFolder() async {
     if (!SafChannel.isSupported) {
-      showXianYuToast(context, '本地文件夹导入仅支持 Android 设备');
+      showXianYuToast(context, tr('本地文件夹导入仅支持 Android 设备'));
       return;
     }
     final uri = await SafChannel.chooseFolderTree();
@@ -348,7 +347,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     if (treeUri == null || _importing) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      showXianYuToast(context, '请输入歌单名称');
+      showXianYuToast(context, tr('请输入歌单名称'));
       return;
     }
 
@@ -362,7 +361,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       final files = await SafChannel.listAudioTree(treeUri, _audioExtensions);
       if (files.isEmpty) {
         if (!mounted) return;
-        _finish(false, '所选文件夹中没有支持的音乐文件');
+        _finish(false, tr('所选文件夹中没有支持的音乐文件'));
         return;
       }
       setState(() => _total = files.length);
@@ -402,7 +401,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 
       if (songs.isEmpty) {
         if (!mounted) return;
-        _finish(false, '未能解析出任何歌曲');
+        _finish(false, tr('未能解析出任何歌曲'));
         return;
       }
 
@@ -411,15 +410,15 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       final created = ref.read(playlistManagerProvider).playlists;
       if (created.isEmpty) {
         if (!mounted) return;
-        _finish(false, '歌单创建失败');
+        _finish(false, tr('歌单创建失败'));
         return;
       }
       await manager.addSongs(created.last.id, songs);
       if (!mounted) return;
-      _finish(true, '已创建歌单「$name」，共导入 ${songs.length} 首歌曲');
+      _finish(true, tr('已创建歌单「{name}」，共导入 {n} 首歌曲', {'name': name, 'n': songs.length}));
     } catch (e) {
       if (!mounted) return;
-      _finish(false, '导入失败：$e');
+      _finish(false, tr('导入失败：{e}', {'e': e}));
     }
   }
 
@@ -437,15 +436,15 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         TextField(
           controller: _nameCtrl,
           enabled: !_importing,
-          decoration: const InputDecoration(
-            labelText: '歌单名称 *',
-            hintText: '请输入新歌单名称',
+          decoration:   InputDecoration(
+            labelText: tr('歌单名称 *'),
+            hintText: tr('请输入新歌单名称'),
             border: OutlineInputBorder(),
             isDense: true,
           ),
         ),
         const SizedBox(height: 14),
-        Text('音乐文件夹 *',
+        Text(tr('音乐文件夹 *'),
             style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
         const SizedBox(height: 8),
         InkWell(
@@ -470,7 +469,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
                       Icon(Icons.folder_open_outlined,
                           size: 30, color: scheme.outline),
                       const SizedBox(height: 6),
-                      Text('点击选择包含音乐的文件夹',
+                      Text(tr('点击选择包含音乐的文件夹'),
                           style: TextStyle(
                               fontSize: 12.5, color: scheme.onSurfaceVariant)),
                     ],
@@ -497,7 +496,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         ),
         const SizedBox(height: 10),
         Text(
-          '将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。',
+          tr('将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         if (_importing) ...[
@@ -507,7 +506,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           ),
           const SizedBox(height: 6),
           Text(
-            _total > 0 ? '正在解析 $_parsed / $_total …' : '正在读取文件夹…',
+            _total > 0 ? '正在解析 $_parsed / $_total …' : tr('正在读取文件夹…'),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
@@ -521,7 +520,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.library_add_check_outlined, size: 18),
-          label: Text(_importing ? '导入中…' : '读取并创建'),
+          label: Text(_importing ? tr('导入中…') : tr('读取并创建')),
         ),
       ],
     );
@@ -575,11 +574,11 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   }
 
   /// 各平台匹配关键词（对标桌面端 parseLink 支持的网易云/QQ音乐/酷我/酷狗）。
-  static const Map<String, List<String>> _platformKeywords = {
-    'netease': ['网易云', 'netease', 'wy'],
-    'qq': ['qq音乐', 'qqmusic', '腾讯', 'tx', 'qq'],
-    'kuwo': ['kuwo', '酷我', 'kw'],
-    'kugou': ['kugou', '酷狗', 'kg'],
+  static Map<String, List<String>> get _platformKeywords => {
+    'netease': [tr('网易云'), 'netease', 'wy'],
+    'qq': [tr('qq音乐'), 'qqmusic', tr('腾讯'), 'tx', 'qq'],
+    'kuwo': ['kuwo', tr('酷我'), 'kw'],
+    'kugou': ['kugou', tr('酷狗'), 'kg'],
   };
 
   /// 从分享链接识别平台 key（netease/qq/kuwo/kugou），识别不出返回 null。
@@ -632,7 +631,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         source = _matchPluginByPlatform(canonical, plugins);
         if (source == null) {
           setState(() {
-            _error = '未找到支持该平台的音源插件，请先安装对应插件';
+            _error = tr('未找到支持该平台的音源插件，请先安装对应插件');
           });
           return;
         }
@@ -640,7 +639,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         source = plugins.first;
       } else {
         setState(() {
-          _error = '无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接';
+          _error = tr('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
         });
         return;
       }
@@ -662,11 +661,11 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       if (!mounted) return;
       setState(() {
         _sheets = sheets;
-        if (sheets.isEmpty) _error = '未找到匹配的歌单，换个关键词或链接试试';
+        if (sheets.isEmpty) _error = tr('未找到匹配的歌单，换个关键词或链接试试');
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '搜索失败：$e');
+      setState(() => _error = tr('搜索失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _searching = false);
     }
@@ -718,7 +717,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
 
       if (songs.isEmpty) {
         if (!mounted) return;
-        _toast('歌单为空或获取失败');
+        _toast(tr('歌单为空或获取失败'));
         return;
       }
 
@@ -729,15 +728,15 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       final created = ref.read(playlistManagerProvider).playlists;
       if (created.isEmpty) {
         if (!mounted) return;
-        _toast('歌单创建失败');
+        _toast(tr('歌单创建失败'));
         return;
       }
       await manager.addSongs(created.last.id, songs);
       if (!mounted) return;
-      _toast('已导入「$name」，共 ${songs.length} 首歌曲');
+      _toast(tr('已导入「{name}」，共 {n} 首歌曲', {'name': name, 'n': songs.length}));
     } catch (e) {
       if (!mounted) return;
-      _toast('导入失败：$e');
+      _toast(tr('导入失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _importing = false);
     }
@@ -761,11 +760,11 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
             children: [
               Icon(Icons.cloud_off_outlined, size: 52, color: scheme.outline),
               const SizedBox(height: 12),
-              Text('暂无可用的音源插件',
+              Text(tr('暂无可用的音源插件'),
                   style: TextStyle(color: scheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(
-                '先在 设置 → 音源 安装并启用插件，再回来导入在线歌单',
+                tr('先在 设置 → 音源 安装并启用插件，再回来导入在线歌单'),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: scheme.outline),
               ),
@@ -785,15 +784,15 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        Text('选择音源',
+        Text(tr('选择音源'),
             style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: selected ?? _autoKey,
           items: [
-            const DropdownMenuItem(
+              DropdownMenuItem(
               value: _autoKey,
-              child: Text('自动识别'),
+              child: Text(tr('自动识别')),
             ),
             for (final p in plugins)
               DropdownMenuItem(value: p.id, child: Text(p.name)),
@@ -812,9 +811,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           controller: _keywordCtrl,
           enabled: !_searching && !_importing,
           onSubmitted: (_) => _search(),
-          decoration: const InputDecoration(
-            labelText: '歌单分享链接或歌单 ID',
-            hintText: '粘贴歌单分享链接或输入歌单 ID',
+          decoration:   InputDecoration(
+            labelText: tr('歌单分享链接或歌单 ID'),
+            hintText: tr('粘贴歌单分享链接或输入歌单 ID'),
             border: OutlineInputBorder(),
             isDense: true,
           ),
@@ -823,16 +822,16 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         TextField(
           controller: _renameCtrl,
           enabled: !_importing,
-          decoration: const InputDecoration(
-            labelText: '歌单重命名（可选）',
-            hintText: '导入后给歌单起个新名字',
+          decoration:   InputDecoration(
+            labelText: tr('歌单重命名（可选）'),
+            hintText: tr('导入后给歌单起个新名字'),
             border: OutlineInputBorder(),
             isDense: true,
           ),
         ),
         const SizedBox(height: 10),
         Text(
-          '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。',
+          tr('选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 14),
@@ -845,7 +844,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.search, size: 18),
-          label: const Text('搜索歌单'),
+          label:   Text(tr('搜索歌单')),
         ),
         if (_error != null) ...[
           const SizedBox(height: 14),
@@ -862,7 +861,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         ],
         if (_sheets.isNotEmpty) ...[
           const SizedBox(height: 18),
-          Text('搜索结果 · ${_sheets.length}',
+          Text(tr('搜索结果 · {n}', {'n': _sheets.length}),
               style:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),

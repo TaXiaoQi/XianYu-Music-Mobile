@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -15,6 +14,7 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 下载管理页：进行中的下载任务 + 下载历史。
 class DownloadPage extends ConsumerWidget {
@@ -28,7 +28,7 @@ class DownloadPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Padding(
@@ -47,12 +47,12 @@ class DownloadPage extends ConsumerWidget {
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title: const Text('下载管理'),
+                title:   Text(tr('下载管理')),
                 actions: [
                   if (state.history.isNotEmpty)
                     IconButton(
                       icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: '清空记录',
+                      tooltip: tr('清空记录'),
                       onPressed: () => _confirmClear(context, notifier),
                     ),
                 ],
@@ -69,19 +69,19 @@ class DownloadPage extends ConsumerWidget {
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空下载记录'),
-        content: const Text('确定要清空全部下载记录吗？（不会删除已下载的文件）'),
+        title:   Text(tr('清空下载记录')),
+        content:   Text(tr('确定要清空全部下载记录吗？（不会删除已下载的文件）')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               notifier.clearHistory();
             },
-            child: const Text('清空'),
+            child:   Text(tr('清空')),
           ),
         ],
       ),
@@ -124,13 +124,13 @@ class _DownloadList extends ConsumerWidget {
       ),
       children: [
         if (active.isNotEmpty) ...[
-          _dlSectionHeader(context, '下载中'),
+          _dlSectionHeader(context, tr('下载中')),
           for (final t in active)
             _ActiveTaskTile(task: t),
           if (finished.isNotEmpty) const Divider(height: 24),
         ],
         if (finished.isNotEmpty) ...[
-          _dlSectionHeader(context, '最近完成'),
+          _dlSectionHeader(context, tr('最近完成')),
           for (final t in finished)
             _FinishedTaskTile(
               task: t,
@@ -138,7 +138,7 @@ class _DownloadList extends ConsumerWidget {
             ),
           const Divider(height: 24),
         ],
-        _dlSectionHeader(context, '下载记录'),
+        _dlSectionHeader(context, tr('下载记录')),
         if (state.history.isEmpty)
           _dlEmpty(context, scheme)
         else
@@ -156,7 +156,7 @@ class _DownloadList extends ConsumerWidget {
 void _dlPlay(BuildContext context, WidgetRef ref, DownloadHistoryEntry e) {
   final file = File(e.filePath);
   if (!file.existsSync()) {
-    showXianYuToast(context, '文件不存在：${e.fileName}');
+    showXianYuToast(context, tr('文件不存在：{name}', {'name': e.fileName}));
     return;
   }
   ref.read(playerProvider.notifier).playQueue([e.toQueueItem()], startIndex: 0);
@@ -182,7 +182,7 @@ Widget _dlEmpty(BuildContext context, ColorScheme scheme) => Padding(
               size: 48, color: scheme.onSurface.withValues(alpha: 0.25)),
           const SizedBox(height: 12),
           Text(
-            '暂无下载记录\n在搜索结果或播放页点击下载按钮即可下载',
+            tr('暂无下载记录\n在搜索结果或播放页点击下载按钮即可下载'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
           ),
@@ -218,7 +218,7 @@ class _ActiveTaskTile extends StatelessWidget {
       title: Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         task.status == DownloadStatus.waiting
-            ? '排队中 · ${task.quality}'
+            ? tr('排队中 · {quality}', {'quality': task.quality})
             : '${task.artist} · ${task.quality}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -247,7 +247,7 @@ class _FinishedTaskTile extends StatelessWidget {
       ),
       title: Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        ok ? '下载完成' : (task.error ?? '下载失败'),
+        ok ? tr('下载完成') : (task.error ?? tr('下载失败')),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -256,7 +256,7 @@ class _FinishedTaskTile extends StatelessWidget {
       ),
       trailing: IconButton(
         icon: Icon(Icons.close, size: 18, color: scheme.outline),
-        tooltip: '移除',
+        tooltip: tr('移除'),
         onPressed: onDismiss,
       ),
     );
@@ -317,7 +317,7 @@ class _HistoryTile extends ConsumerWidget {
           style: TextStyle(
               fontSize: m.titleSize, fontWeight: FontWeight.w600)),
       subtitle: Text(
-        '${entry.artist ?? ''}${entry.artist?.isNotEmpty == true ? ' · ' : ''}${entry.quality}${exists ? '' : ' · 文件缺失'}',
+        '${entry.artist ?? ''}${entry.artist?.isNotEmpty == true ? ' · ' : ''}${entry.quality}${exists ? '' : ' · ${tr('文件缺失')}'}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -330,12 +330,12 @@ class _HistoryTile extends ConsumerWidget {
         children: [
           IconButton(
             icon: Icon(Icons.play_arrow, size: 20, color: scheme.primary),
-            tooltip: '播放',
+            tooltip: tr('播放'),
             onPressed: play,
           ),
           IconButton(
             icon: Icon(Icons.close, size: 18, color: scheme.outline),
-            tooltip: '移除记录',
+            tooltip: tr('移除记录'),
             onPressed: onRemove,
           ),
         ],

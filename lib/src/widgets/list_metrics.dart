@@ -1,12 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../i18n/i18n.dart';
 
 /// 列表大小对应的中文名（外观设置弹窗展示）。
 String listSizeLabel(ListSize v) => switch (v) {
-      ListSize.compact => '最小',
-      ListSize.medium => '中等',
-      ListSize.large => '最大',
+      ListSize.compact => tr('最小'),
+      ListSize.medium => tr('中等'),
+      ListSize.large => tr('最大'),
     };
 
 /// 歌曲/歌手/专辑/歌单列表项的统一尺度。

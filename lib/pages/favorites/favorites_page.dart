@@ -3,19 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 收藏页：单曲 / 歌单 / 专辑三 tab（对齐桌面）。
 class FavoritesPage extends ConsumerStatefulWidget {
@@ -52,16 +53,16 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     final tabBar = TabBar(
       controller: _tab,
       onTap: (_) => setState(() {}),
-      tabs: const [
-        Tab(text: '单曲'),
-        Tab(text: '歌单'),
-        Tab(text: '专辑'),
+      tabs:   [
+        Tab(text: tr('单曲')),
+        Tab(text: tr('歌单')),
+        Tab(text: tr('专辑')),
       ],
     );
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Padding(
@@ -85,12 +86,12 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title: const Text('收藏'),
+                title:   Text(tr('收藏')),
                 actions: [
                   if (fav.entries.isNotEmpty && _tab.index == 0)
                     IconButton(
                       icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: '清空',
+                      tooltip: tr('清空'),
                       onPressed: () => _confirmClear(context, notifier),
                     ),
                 ],
@@ -108,19 +109,19 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空收藏'),
-        content: const Text('确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。'),
+        title:   Text(tr('清空收藏')),
+        content:   Text(tr('确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               notifier.clear();
             },
-            child: const Text('清空'),
+            child:   Text(tr('清空')),
           ),
         ],
       ),
@@ -128,7 +129,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   }
 }
 
-/// 单曲收藏列表。
+/// 单曲收藏列表：长按行首把手可拖动排序（顶级列表，拖到边缘自动滚动）。
 class _SongsTab extends ConsumerWidget {
   const _SongsTab({
     required this.fav,
@@ -142,7 +143,8 @@ class _SongsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    if (fav.entries.isEmpty) {
+    final entries = fav.entries;
+    if (entries.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -152,7 +154,7 @@ class _SongsTab extends ConsumerWidget {
                 color: scheme.onSurface.withValues(alpha: 0.25)),
             const SizedBox(height: 12),
             Text(
-              '暂无收藏歌曲',
+              tr('暂无收藏歌曲'),
               style:
                   TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
             ),
@@ -160,18 +162,51 @@ class _SongsTab extends ConsumerWidget {
         ),
       );
     }
-    return ListView.builder(
+
+    void onReorder(int oldIndex, int newIndex) {
+      if (newIndex < 0 || newIndex >= entries.length || newIndex == oldIndex) return;
+      final paths = entries.map((e) => e.path).toList();
+      final moved = paths.removeAt(oldIndex);
+      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
+      paths.insert(newIndex.clamp(0, paths.length), moved);
+      notifier.reorderEntries(paths);
+    }
+
+    return ReorderableListView.builder(
       padding: EdgeInsets.only(
         bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),
-      itemCount: fav.entries.length,
+      buildDefaultDragHandles: false,
+      // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell 会以
+      // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
+      proxyDecorator: (child, index, animation) =>
+          Material(type: MaterialType.transparency, child: child),
+      itemCount: entries.length,
+      onReorderItem: onReorder,
       itemBuilder: (context, i) {
-        final entry = fav.entries[i];
-        return _FavoriteTile(
-          entry: entry,
-          onPlay: () => notifier.play(i),
-          onRemove: () => notifier.remove(entry.path),
+        final entry = entries[i];
+        return RepaintBoundary(
+          key: ValueKey(entry.path),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 44),
+                child: _FavoriteTile(
+                  entry: entry,
+                  onPlay: () => notifier.play(i),
+                  onRemove: () => notifier.remove(entry.path),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                top: 0,
+                bottom: 0,
+                width: 36,
+                child: Center(child: DragHandle(index: i)),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -208,13 +243,13 @@ class _CollectionsTab extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              kind == 'album' ? '暂无收藏专辑' : '暂无收藏歌单',
+              kind == 'album' ? tr('暂无收藏专辑') : tr('暂无收藏歌单'),
               style:
                   TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
             Text(
-              '在在线详情页点击收藏按钮',
+              tr('在在线详情页点击收藏按钮'),
               style: TextStyle(
                   fontSize: 12, color: scheme.onSurfaceVariant),
             ),
@@ -261,7 +296,7 @@ class _CollectionsTab extends ConsumerWidget {
           trailing: IconButton(
             icon: Icon(Icons.favorite,
                 size: 20, color: scheme.primary),
-            tooltip: '取消收藏',
+            tooltip: tr('取消收藏'),
             onPressed: () => ref.read(favoritesProvider.notifier).toggleCollection(
                   kind: c.kind,
                   pluginId: c.pluginId,
@@ -358,7 +393,7 @@ class _FavoriteTile extends ConsumerWidget {
         trailing: IconButton(
           icon: Icon(Icons.favorite,
               size: 20, color: scheme.primary),
-          tooltip: '取消收藏',
+          tooltip: tr('取消收藏'),
           onPressed: onRemove,
         ),
       ),

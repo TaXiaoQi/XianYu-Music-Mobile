@@ -13,6 +13,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
@@ -62,7 +63,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Future<void> _pickImages() async {
     final remaining = _maxImages - _images.length;
     if (remaining <= 0) {
-      _toast('最多上传 $_maxImages 张图片');
+      _toast(tr('最多上传 {n} 张图片', {'n': _maxImages}));
       return;
     }
     final files = await ImagePicker().pickMultiImage(
@@ -77,7 +78,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         if (_images.length >= _maxImages) break;
         final bytes = await file.readAsBytes();
         if (bytes.length > 8 * 1024 * 1024) {
-          _toast('图片超过 8MB，已跳过');
+          _toast(tr('图片超过 8MB，已跳过'));
           continue;
         }
         final dataUrl = await _compressImage(bytes);
@@ -86,7 +87,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       }
     } catch (e) {
       if (!mounted) return;
-      _toast('图片处理失败');
+      _toast(tr('图片处理失败'));
     } finally {
       if (mounted) setState(() => _compressing = false);
     }
@@ -95,7 +96,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   /// 压缩图片：256px 宽度、JPEG 质量 75%（与桌面端一致）。
   Future<String> _compressImage(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw const FormatException('无法解析图片');
+    if (decoded == null) throw   FormatException(tr('无法解析图片'));
     final resized = img.copyResize(decoded, width: 256);
     final jpg = img.encodeJpg(resized, quality: 75);
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
@@ -105,15 +106,15 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (_submitting) return;
     final content = _contentCtrl.text.trim();
     if (content.isEmpty) {
-      _toast('请填写反馈内容');
+      _toast(tr('请填写反馈内容'));
       return;
     }
     if (content.length > 1000) {
-      _toast('内容不能超过 1000 字');
+      _toast(tr('内容不能超过 1000 字'));
       return;
     }
     final api = ref.read(accountApiProvider);
-    final title = _feedbackType == 'suggestion' ? '功能建议' : '问题反馈';
+    final title = _feedbackType == 'suggestion' ? tr('功能建议') : tr('问题反馈');
     final isProblem = _feedbackType == 'problem';
     // 勾选后格式化本地应用日志（仅问题反馈附带日志）。
     final errorLogs = isProblem && _attachErrorLogs
@@ -133,14 +134,14 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         images: _feedbackType == 'suggestion' ? [..._images] : null,
       );
       if (!mounted) return;
-      _toast('反馈已提交，感谢您的支持');
+      _toast(tr('反馈已提交，感谢您的支持'));
       setState(() {
         _contentCtrl.clear();
         _images.clear();
       });
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '提交失败');
+      _toast(e is AuthException ? e.message : tr('提交失败'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -149,7 +150,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Future<void> _loadMyFeedback() async {
     final auth = ref.read(authProvider);
     if (!auth.isLoggedIn) {
-      _toast('请先登录后再查看反馈');
+      _toast(tr('请先登录后再查看反馈'));
       return;
     }
     setState(() => _loadingFeedback = true);
@@ -159,7 +160,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       setState(() => _myFeedback = list);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '获取反馈失败');
+      _toast(e is AuthException ? e.message : tr('获取反馈失败'));
     } finally {
       if (mounted) setState(() => _loadingFeedback = false);
     }
@@ -173,13 +174,13 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: const Text('意见反馈'),
+        title:   Text(tr('意见反馈')),
         bottom: TabBar(
           controller: _tab,
-          tabs: const [Tab(text: '提交反馈'), Tab(text: '我的反馈')],
+          tabs:   [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
         ),
       ),
       body: RepaintBoundary(child: TabBarView(
@@ -200,8 +201,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
-        text: '登录后即可提交反馈',
-        action: () => _toast('请先登录'),
+        text: tr('登录后即可提交反馈'),
+        action: () => _toast(tr('请先登录')),
       );
     }
     return SingleChildScrollView(
@@ -218,8 +219,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             ),
             child: Row(
               children: [
-                _typeButton('problem', '问题反馈'),
-                _typeButton('suggestion', '功能建议'),
+                _typeButton('problem', tr('问题反馈')),
+                _typeButton('suggestion', tr('功能建议')),
               ],
             ),
           ),
@@ -230,8 +231,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             maxLength: 1000,
             decoration: InputDecoration(
               hintText: _feedbackType == 'suggestion'
-                  ? '请描述你的功能建议…'
-                  : '请描述你遇到的问题…',
+                  ? tr('请描述你的功能建议…')
+                  : tr('请描述你遇到的问题…'),
               filled: true,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -241,7 +242,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           if (_feedbackType == 'suggestion') ...[
             const SizedBox(height: 8),
             Text(
-              '可上传截图辅助说明（最多 $_maxImages 张）',
+              tr('可上传截图辅助说明（最多 {n} 张）', {'n': _maxImages}),
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
@@ -266,7 +267,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('提交反馈',
+                :   Text(tr('提交反馈'),
                     style:
                         TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),
@@ -296,7 +297,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 Icon(Icons.troubleshoot, size: 16, color: scheme.primary),
                 const SizedBox(width: 6),
                 Text(
-                  '附带诊断日志，便于定位问题',
+                  tr('附带诊断日志，便于定位问题'),
                   style: TextStyle(
                       fontSize: 12.5, color: scheme.onSurfaceVariant),
                 ),
@@ -308,7 +309,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             dense: true,
             value: _attachAllLogs,
             title: Text(
-              '全部日志（${logs.length} 条）',
+              tr('全部日志（{n} 条）', {'n': logs.length}),
               style: const TextStyle(fontSize: 14),
             ),
             secondary:
@@ -321,7 +322,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               dense: true,
               value: _attachErrorLogs,
               title: Text(
-                '错误日志（${errorLogs.length} 条）',
+                tr('错误日志（{n} 条）', {'n': errorLogs.length}),
                 style: const TextStyle(fontSize: 14),
               ),
               secondary:
@@ -436,8 +437,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
-        text: '登录后即可查看反馈',
-        action: () => _toast('请先登录'),
+        text: tr('登录后即可查看反馈'),
+        action: () => _toast(tr('请先登录')),
       );
     }
     if (_loadingFeedback) {
@@ -446,7 +447,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (_myFeedback.isEmpty) {
       return _emptyHint(
         icon: Icons.inbox_outlined,
-        text: '暂无反馈记录',
+        text: tr('暂无反馈记录'),
         action: _loadMyFeedback,
       );
     }
@@ -482,7 +483,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Text(text,
               style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: action, child: const Text('刷新')),
+          OutlinedButton(onPressed: action, child:   Text(tr('刷新'))),
         ],
       ),
     );
@@ -504,10 +505,10 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, bg) = switch (status) {
-      'pending' => ('待处理', const Color(0xFFB45309), const Color(0x1AB45309)),
-      'processing' => ('处理中', const Color(0xFF2563EB), const Color(0x1A2563EB)),
-      'resolved' => ('已完成', const Color(0xFF16A34A), const Color(0x1A16A34A)),
-      'rejected' => ('已拒绝', const Color(0xFFE11D48), const Color(0x1AE11D48)),
+      'pending' => (tr('待处理'), const Color(0xFFB45309), const Color(0x1AB45309)),
+      'processing' => (tr('处理中'), const Color(0xFF2563EB), const Color(0x1A2563EB)),
+      'resolved' => (tr('已完成'), const Color(0xFF16A34A), const Color(0x1A16A34A)),
+      'rejected' => (tr('已拒绝'), const Color(0xFFE11D48), const Color(0x1AE11D48)),
       _ => (status, const Color(0xFF6B7280), const Color(0x1A6B7280)),
     };
     return Container(
@@ -542,7 +543,7 @@ class _FeedbackCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      item.title.isEmpty ? '未命名反馈' : item.title,
+                      item.title.isEmpty ? tr('未命名反馈') : item.title,
                       style: const TextStyle(
                           fontSize: 15, fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
@@ -611,7 +612,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
-      title: Text(item.title.isEmpty ? '反馈详情' : item.title),
+      title: Text(item.title.isEmpty ? tr('反馈详情') : item.title),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -632,7 +633,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
                 style: const TextStyle(fontSize: 14, height: 1.5)),
             if (item.rejectReason.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text('拒绝理由',
+              Text(tr('拒绝理由'),
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -643,7 +644,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
             ],
             if (item.resolveNote.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text('完成说明',
+              Text(tr('完成说明'),
                   style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
@@ -652,7 +653,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
             ],
             if (item.resolveImages.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text('处理图片',
+              Text(tr('处理图片'),
                   style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
@@ -689,7 +690,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child:   Text(tr('关闭')),
         ),
       ],
     );

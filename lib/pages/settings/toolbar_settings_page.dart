@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 底栏与工具栏设置页：支持配置底栏位置（底部/侧边）、悬浮样式与液态玻璃。
 class ToolbarSettingsPage extends ConsumerStatefulWidget {
@@ -28,8 +29,8 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
         backgroundColor: Colors.transparent,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        title: const Text(
-          '底栏与工具栏',
+        title:   Text(
+          tr('底栏与工具栏'),
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
         ),
       ),
@@ -45,19 +46,19 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
               bottom: 40,
             ),
             children: [
-              _section(context, '悬浮与特效', [
+              _section(context, tr('悬浮与特效'), [
                 const _PerformanceModeTile(),
                 _GlassSwitchTile(
                   icon: Icons.blur_on,
-                  title: '液态玻璃',
-                  subtitle: '导航栏与迷你播放条使用 shader 折射与动态光影',
+                  title: tr('液态玻璃'),
+                  subtitle: tr('导航栏与迷你播放条使用 shader 折射与动态光影'),
                   value: settings?.liquidGlass ?? true,
                   onChanged: (v) => notifier.setLiquidGlass(v),
                 ),
                 _GlassSwitchTile(
                   icon: Icons.music_video,
-                  title: '歌曲详情页液态玻璃',
-                  subtitle: '正在播放页面的控制卡片使用 shader 折射与动态光效',
+                  title: tr('歌曲详情页液态玻璃'),
+                  subtitle: tr('正在播放页面的控制卡片使用 shader 折射与动态光效'),
                   value: settings?.playerLiquidGlass ?? true,
                   onChanged: (v) => notifier.setPlayerLiquidGlass(v),
                 ),
@@ -283,10 +284,10 @@ class _PerformanceModeTile extends ConsumerWidget {
             PerformanceMode.auto;
     final notifier = ref.read(settingsProvider.notifier);
 
-    const options = <(PerformanceMode, String, String)>[
-      (PerformanceMode.auto, '自动', '跟随设备性能'),
-      (PerformanceMode.full, '满特效', '开启全部动效'),
-      (PerformanceMode.performance, '性能优先', '关闭常驻模糊'),
+    final options = <(PerformanceMode, String, String)>[
+      (PerformanceMode.auto, tr('自动'), tr('跟随设备性能')),
+      (PerformanceMode.full, tr('满特效'), tr('开启全部动效')),
+      (PerformanceMode.performance, tr('性能优先'), tr('关闭常驻模糊')),
     ];
 
     return Padding(
@@ -299,7 +300,7 @@ class _PerformanceModeTile extends ConsumerWidget {
               Icon(Icons.speed, size: 18, color: scheme.primary),
               const SizedBox(width: 8),
               Text(
-                '性能模式',
+                tr('性能模式'),
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,

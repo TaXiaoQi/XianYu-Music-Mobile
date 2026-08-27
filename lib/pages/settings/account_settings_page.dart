@@ -13,6 +13,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 账号设置页：从「设置」页进入，参考桌面端 SettingsAccount。
 ///
@@ -35,16 +36,16 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定要退出当前账号吗？'),
+        title:   Text(tr('退出登录')),
+        content:   Text(tr('确定要退出当前账号吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('退出'),
+            child:   Text(tr('退出')),
           ),
         ],
       ),
@@ -59,7 +60,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     // 仅订阅 user 字段：loading/error/sessionExpired 等变化不重建整页。
     final user = ref.watch(authProvider.select((s) => s.user));
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(
@@ -73,7 +74,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
             ),
             children: [
               // 1. 账号状态
-              _sectionTitle(context, '账号状态'),
+              _sectionTitle(context, tr('账号状态')),
               _AccountStatusCard(
                 user: user,
                 onManage: () => context.push('/account'),
@@ -82,25 +83,25 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
               const SizedBox(height: 24),
 
               // 2. 服务端设置
-              _sectionTitle(context, '服务端设置'),
+              _sectionTitle(context, tr('服务端设置')),
               const _ServerConfigCard(),
               const SizedBox(height: 24),
 
               // 3. 上传
-              _sectionTitle(context, '上传'),
+              _sectionTitle(context, tr('上传')),
               _UploadConfigCard(),
               const SizedBox(height: 24),
 
               // 4. 手动同步
               if (user != null) ...[
-                _sectionTitle(context, '手动同步'),
+                _sectionTitle(context, tr('手动同步')),
                 _ManualSyncCard(),
                 const SizedBox(height: 24),
               ],
 
               // 5. 自动同步
               if (user != null) ...[
-                _sectionTitle(context, '自动同步'),
+                _sectionTitle(context, tr('自动同步')),
                 _AutoSyncCard(),
                 const SizedBox(height: 28),
               ],
@@ -112,7 +113,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: const Text('账号'),
+              title:   Text(tr('账号')),
             ),
           ),
         ],
@@ -206,8 +207,8 @@ class _AccountStatusCard extends ConsumerWidget {
                 children: [
                   Text(
                     isLoggedIn
-                        ? (user!.nickname.isEmpty ? '弦予用户' : user!.nickname)
-                        : '未登录',
+                        ? (user!.nickname.isEmpty ? tr('弦予用户') : user!.nickname)
+                        : tr('未登录'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -220,9 +221,9 @@ class _AccountStatusCard extends ConsumerWidget {
                     isLoggedIn
                         ? (user!.ciyuanxiId != null &&
                                 user!.ciyuanxiId!.isNotEmpty
-                            ? '弦予号：${user!.ciyuanxiId}'
-                            : (user!.email.isNotEmpty ? user!.email : '已登录'))
-                        : '登录后可同步个人资料到云端服务器',
+                            ? tr('弦予号：{id}', {'id': user!.ciyuanxiId ?? ''})
+                            : (user!.email.isNotEmpty ? user!.email : tr('已登录')))
+                        : tr('登录后可同步个人资料到云端服务器'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -239,13 +240,13 @@ class _AccountStatusCard extends ConsumerWidget {
                 onPressed: onLogout,
                 icon: Icon(Icons.logout_rounded,
                     size: 20, color: scheme.error),
-                tooltip: '退出登录',
+                tooltip: tr('退出登录'),
               ),
             IconButton(
               onPressed: onManage,
               icon: Icon(Icons.chevron_right_rounded,
                   size: 22, color: scheme.onSurfaceVariant),
-              tooltip: '账号与安全',
+              tooltip: tr('账号与安全'),
             ),
           ],
         ),
@@ -358,10 +359,10 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
         _initialBaseUrl = baseUrl.isEmpty ? defaultAuthBaseUrl : baseUrl;
         _initialSecret = secret;
       });
-      showXianYuToast(context, '后端连接配置已更新');
+      showXianYuToast(context, tr('后端连接配置已更新'));
     } catch (_) {
       if (!mounted) return;
-      showXianYuToast(context, '后端连接配置保存失败，请重试');
+      showXianYuToast(context, tr('后端连接配置保存失败，请重试'));
     }
   }
 
@@ -379,10 +380,10 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
         _initialBaseUrl = defaultAuthBaseUrl;
         _initialSecret = '';
       });
-      showXianYuToast(context, '已恢复默认后端连接配置');
+      showXianYuToast(context, tr('已恢复默认后端连接配置'));
     } catch (_) {
       if (!mounted) return;
-      showXianYuToast(context, '默认后端连接配置保存失败，请重试');
+      showXianYuToast(context, tr('默认后端连接配置保存失败，请重试'));
     }
   }
 
@@ -401,7 +402,7 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _label(context, '服务器 API'),
+          _label(context, tr('服务器 API')),
           const SizedBox(height: 6),
           TextField(
             controller: _baseUrlCtrl,
@@ -411,7 +412,7 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
                 hint: 'https://example.com/api'),
           ),
           const SizedBox(height: 14),
-          _label(context, '服务器密钥'),
+          _label(context, tr('服务器密钥')),
           const SizedBox(height: 6),
           Focus(
             onFocusChange: (v) => setState(() => _secretFocused = v),
@@ -421,7 +422,7 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: _inputDecoration(context,
-                  hint: 'API 签名密钥',
+                  hint: tr('API 签名密钥'),
                   suffixIcon: (_secretFocused && _secretCtrl.text.isNotEmpty)
                       ? IconButton(
                           icon: Icon(
@@ -446,7 +447,7 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
-                child: const Text('保存', style: TextStyle(fontSize: 13)),
+                child:   Text(tr('保存'), style: TextStyle(fontSize: 13)),
               ),
               const SizedBox(width: 10),
               OutlinedButton(
@@ -455,13 +456,13 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
-                child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
+                child:   Text(tr('恢复默认'), style: TextStyle(fontSize: 13)),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            '登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：$defaultAuthBaseUrl',
+            tr('登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{url}', {'url': defaultAuthBaseUrl}),
             style: TextStyle(
               fontSize: 11,
               height: 1.5,
@@ -525,29 +526,29 @@ class _UploadConfigCard extends ConsumerWidget {
     return _GlassCard(
       children: [
         _SwitchTile(
-          title: '歌单',
-          subtitle: '同步本地创建与编辑的歌单',
+          title: tr('歌单'),
+          subtitle: tr('同步本地创建与编辑的歌单'),
           value: config.playlists,
           onChanged: (v) =>
               notifier.updateUploadConfig(config.copyWith(playlists: v)),
         ),
         _SwitchTile(
-          title: '收藏',
-          subtitle: '同步我的收藏歌曲',
+          title: tr('收藏'),
+          subtitle: tr('同步我的收藏歌曲'),
           value: config.favorites,
           onChanged: (v) =>
               notifier.updateUploadConfig(config.copyWith(favorites: v)),
         ),
         _SwitchTile(
-          title: '插件',
-          subtitle: '同步已安装的插件配置',
+          title: tr('插件'),
+          subtitle: tr('同步已安装的插件配置'),
           value: config.plugins,
           onChanged: (v) =>
               notifier.updateUploadConfig(config.copyWith(plugins: v)),
         ),
         _SwitchTile(
-          title: '本地设置',
-          subtitle: '同步播放设置、歌词设置等偏好配置',
+          title: tr('本地设置'),
+          subtitle: tr('同步播放设置、歌词设置等偏好配置'),
           value: config.settings,
           onChanged: (v) =>
               notifier.updateUploadConfig(config.copyWith(settings: v)),
@@ -575,25 +576,25 @@ class _ManualSyncCard extends ConsumerWidget {
     return _GlassCard(
       children: [
         _SyncActionTile(
-          title: '歌单',
+          title: tr('歌单'),
           state: sync.$1,
           onUpload: notifier.syncPlaylistsUpload,
           onDownload: notifier.syncPlaylistsDownload,
         ),
         _SyncActionTile(
-          title: '收藏',
+          title: tr('收藏'),
           state: sync.$2,
           onUpload: notifier.syncFavoritesUpload,
           onDownload: notifier.syncFavoritesDownload,
         ),
         _SyncActionTile(
-          title: '插件',
+          title: tr('插件'),
           state: sync.$3,
           onUpload: notifier.syncPluginsUpload,
           onDownload: notifier.syncPluginsDownload,
         ),
         _SyncActionTile(
-          title: '设置',
+          title: tr('设置'),
           state: sync.$4,
           onUpload: notifier.syncSettingsUpload,
           onDownload: notifier.syncSettingsDownload,
@@ -617,27 +618,27 @@ class _AutoSyncCard extends ConsumerWidget {
     return _GlassCard(
       children: [
         _SwitchTile(
-          title: '启用自动同步',
-          subtitle: '后台定时增量同步',
+          title: tr('启用自动同步'),
+          subtitle: tr('后台定时增量同步'),
           value: config.enabled,
           onChanged: (v) =>
               notifier.updateAutoSyncConfig(config.copyWith(enabled: v)),
         ),
         if (config.enabled) ...[
           _DropdownTile(
-            title: '同步间隔',
+            title: tr('同步间隔'),
             value: config.syncIntervalSeconds,
             values: const [1800, 3600, 7200, 21600],
-            labels: const ['30 分钟', '1 小时', '2 小时', '6 小时'],
+            labels:   [tr('30 分钟'), tr('1 小时'), tr('2 小时'), tr('6 小时')],
             onChanged: (v) => notifier.updateAutoSyncConfig(
               config.copyWith(syncIntervalSeconds: v),
             ),
           ),
           _DropdownTile(
-            title: '繁忙延后上限',
+            title: tr('繁忙延后上限'),
             value: config.maxDelayMinutes,
             values: const [15, 30, 60],
-            labels: const ['15 分钟', '30 分钟', '1 小时'],
+            labels:   [tr('15 分钟'), tr('30 分钟'), tr('1 小时')],
             onChanged: (v) => notifier.updateAutoSyncConfig(
               config.copyWith(maxDelayMinutes: v),
             ),
@@ -732,7 +733,7 @@ class _SyncActionTile extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                       ),
-                      child: const Text('同步', style: TextStyle(fontSize: 12)),
+                      child:   Text(tr('同步'), style: TextStyle(fontSize: 12)),
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -742,7 +743,7 @@ class _SyncActionTile extends StatelessWidget {
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
-                    child: const Text('上传', style: TextStyle(fontSize: 12)),
+                    child:   Text(tr('上传'), style: TextStyle(fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
@@ -751,22 +752,22 @@ class _SyncActionTile extends StatelessWidget {
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
-                    child: const Text('下载', style: TextStyle(fontSize: 12)),
+                    child:   Text(tr('下载'), style: TextStyle(fontSize: 12)),
                   ),
                 ],
               ),
             ],
           ),
           if (state.syncing)
-            const Padding(
+              Padding(
               padding: EdgeInsets.only(top: 4),
-              child: Text('正在同步...', style: TextStyle(fontSize: 12, color: Colors.blue)),
+              child: Text(tr('正在同步...'), style: TextStyle(fontSize: 12, color: Colors.blue)),
             )
           else if (state.lastSummary != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '上次：${state.lastSummary}${lastTimeStr != null ? ' · $lastTimeStr' : ''}',
+                tr('上次：{summary}{time}', {'summary': state.lastSummary ?? '', 'time': lastTimeStr != null ? ' · $lastTimeStr' : ''}),
                 style: TextStyle(
                   fontSize: 12,
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
@@ -851,7 +852,7 @@ class _DropdownTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '后台定时增量同步时使用',
+                  tr('后台定时增量同步时使用'),
                   style: TextStyle(
                     fontSize: 11,
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.75),

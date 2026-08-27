@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../i18n/i18n.dart';
 
 /// 枚举到的输出音频设备。id 与 AAudio `setDeviceId` 一致，可传入独占播放。
 class AudioOutputDevice {
@@ -22,8 +23,8 @@ class AudioOutputDevice {
   factory AudioOutputDevice.fromJson(Map<String, dynamic> j) =>
       AudioOutputDevice(
         id: (j['id'] as num).toInt(),
-        name: j['name'] as String? ?? '未知设备',
-        type: j['type'] as String? ?? '其他',
+        name: j['name'] as String? ?? tr('未知设备'),
+        type: j['type'] as String? ?? tr('其他'),
         sampleRates: (j['sampleRates'] as List? ?? const [])
             .whereType<num>()
             .map((e) => e.toInt())

@@ -11,6 +11,7 @@ import '../playlist/playlist_store.dart';
 import '../plugin/plugin_backup_import.dart';
 import 'sheet_dialog.dart';
 import 'app_toast.dart';
+import '../i18n/i18n.dart';
 
 /// 把播放队列项转成歌单曲目（本地/在线通吃）。
 ImportedSong importedSongFromQueueItem(QueueItem item) {
@@ -83,13 +84,13 @@ Future<void> showAddToPlaylistSheet(
                   child: Row(
                     children: [
                       Text(
-                        '添加到歌单',
+                        tr('添加到歌单'),
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                       const Spacer(),
                       Text(
-                        '${songs.length} 首',
+                        tr('{n} 首', {'n': songs.length}),
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant),
                       ),
@@ -111,15 +112,15 @@ Future<void> showAddToPlaylistSheet(
                           ),
                           child: Icon(Icons.add, color: scheme.primary, size: 22),
                         ),
-                        title: const Text('新建歌单',
+                        title:   Text(tr('新建歌单'),
                             style: TextStyle(fontWeight: FontWeight.w600)),
                         onTap: () async {
-                          final name = await _promptName(context, '新建歌单');
+                          final name = await _promptName(context, tr('新建歌单'));
                           if (name == null || name.trim().isEmpty) return;
                           await manager.create(name.trim());
                           if (!context.mounted) return;
                           Navigator.of(context).pop();
-                          showXianYuToast(context, '已创建歌单「${name.trim()}」');
+                          showXianYuToast(context, tr('已创建歌单「{name}」', {'name': name.trim()}));
                         },
                       ),
                       for (final p in state.playlists)
@@ -137,14 +138,14 @@ Future<void> showAddToPlaylistSheet(
                           ),
                           title: Text(p.name,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text('${p.songs.length} 首',
+                          subtitle: Text(tr('{n} 首', {'n': p.songs.length}),
                               style: const TextStyle(fontSize: 12)),
                           onTap: () async {
                             await manager.addSongs(p.id, songs);
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
                             showXianYuToast(
-                                context, '已添加到「${p.name}」(${songs.length} 首)');
+                                context, tr('已添加到「{name}」({n} 首)', {'name': p.name, 'n': songs.length}));
                           },
                         ),
                     ],
@@ -170,16 +171,16 @@ Future<String?> _promptName(BuildContext context, String title,
         controller: ctrl,
         autofocus: true,
         maxLength: 30,
-        decoration: const InputDecoration(hintText: '歌单名称'),
+        decoration:   InputDecoration(hintText: tr('歌单名称')),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(ctrl.text),
-          child: const Text('确定'),
+          child:   Text(tr('确定')),
         ),
       ],
     ),
@@ -209,10 +210,10 @@ Future<void> showPlaylistActionsSheet(
           ),
           ListTile(
             leading: Icon(Icons.edit_outlined, color: scheme.primary),
-            title: const Text('重命名歌单'),
+            title:   Text(tr('重命名歌单')),
             onTap: () async {
               final name =
-                  await _promptName(context, '重命名歌单', initial: playlist.name);
+                  await _promptName(context, tr('重命名歌单'), initial: playlist.name);
               if (name == null || name.trim().isEmpty) return;
               await manager.rename(playlist.id, name.trim());
               if (context.mounted) Navigator.of(context).pop();
@@ -220,24 +221,24 @@ Future<void> showPlaylistActionsSheet(
           ),
           ListTile(
             leading: Icon(Icons.delete_outline, color: scheme.error),
-            title: Text('删除歌单', style: TextStyle(color: scheme.error)),
+            title: Text(tr('删除歌单'), style: TextStyle(color: scheme.error)),
             onTap: () async {
               final ok = await showPredictiveDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('删除歌单',
+                  title:   Text(tr('删除歌单'),
                       style: TextStyle(fontSize: 16)),
-                  content: Text('确定删除「${playlist.name}」？该操作不可恢复。'),
+                  content: Text(tr('确定删除「{name}」？该操作不可恢复。', {'name': playlist.name})),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('取消'),
+                      child:   Text(tr('取消')),
                     ),
                     FilledButton(
                       style: FilledButton.styleFrom(
                           backgroundColor: scheme.error),
                       onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('删除'),
+                      child:   Text(tr('删除')),
                     ),
                   ],
                 ),

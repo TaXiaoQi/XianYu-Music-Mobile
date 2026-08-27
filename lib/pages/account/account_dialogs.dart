@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../src/auth/auth_provider.dart';
 import 'human_captcha_dialog.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 账号相关弹窗集合：修改密码 / 绑定邮箱 / 修改昵称 / 修改弦予号 / 注销账号 / 找回密码。
 ///
@@ -62,14 +63,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   Future<void> _sendCode() async {
     final email = widget.notifier.currentState.user?.email;
     if (email == null || email.isEmpty) {
-      _toast('未获取到注册邮箱，请重新登录');
+      _toast(tr('未获取到注册邮箱，请重新登录'));
       return;
     }
     final captcha = await showHumanCaptchaDialog(
       context,
       notifier: widget.notifier,
-      title: '发送修改密码验证码前验证',
-      description: '完成验证后将向当前账号的注册邮箱发送修改密码验证码。',
+      title: tr('发送修改密码验证码前验证'),
+      description: tr('完成验证后将向当前账号的注册邮箱发送修改密码验证码。'),
     );
     if (captcha == null || !mounted) return;
     setState(() => _codeLoading = true);
@@ -82,7 +83,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       _startCountdown();
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '验证码发送失败');
+      _toast(e is AuthException ? e.message : tr('验证码发送失败'));
     } finally {
       if (mounted) setState(() => _codeLoading = false);
     }
@@ -94,15 +95,15 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     final confirm = _confirmCtrl.text;
     final code = _codeCtrl.text.trim();
     if (oldPwd.isEmpty || newPwd.isEmpty || confirm.isEmpty) {
-      _toast('请填写完整的密码信息');
+      _toast(tr('请填写完整的密码信息'));
       return;
     }
     if (newPwd != confirm) {
-      _toast('两次新密码不一致');
+      _toast(tr('两次新密码不一致'));
       return;
     }
     if (code.isEmpty) {
-      _toast('请输入邮箱验证码');
+      _toast(tr('请输入邮箱验证码'));
       return;
     }
     setState(() => _loading = true);
@@ -111,11 +112,11 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           .changePassword(oldPassword: oldPwd, newPassword: newPwd, code: code);
       await widget.notifier.logout();
       if (!mounted) return;
-      _toast('密码已修改，请重新登录');
+      _toast(tr('密码已修改，请重新登录'));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '修改密码失败');
+      _toast(e is AuthException ? e.message : tr('修改密码失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -129,26 +130,26 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final email = widget.notifier.currentState.user?.email ?? '未知邮箱';
+    final email = widget.notifier.currentState.user?.email ?? tr('未知邮箱');
     return AlertDialog(
-      title: const Text('修改密码'),
+      title:   Text(tr('修改密码')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '修改成功后需要重新登录，验证码将发送到注册邮箱：$email',
+              tr('修改成功后需要重新登录，验证码将发送到注册邮箱：{email}', {'email': email}),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
-            _pwdField(_oldCtrl, '当前密码', _obscureOld, (v) {
+            _pwdField(_oldCtrl, tr('当前密码'), _obscureOld, (v) {
               setState(() => _obscureOld = v);
             }),
-            _pwdField(_newCtrl, '新密码', _obscureNew, (v) {
+            _pwdField(_newCtrl, tr('新密码'), _obscureNew, (v) {
               setState(() => _obscureNew = v);
             }),
-            _pwdField(_confirmCtrl, '确认新密码', _obscureNew, (v) {
+            _pwdField(_confirmCtrl, tr('确认新密码'), _obscureNew, (v) {
               setState(() => _obscureNew = v);
             }),
             Row(
@@ -158,8 +159,8 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   child: TextField(
                     controller: _codeCtrl,
                     decoration: InputDecoration(
-                      labelText: '邮箱验证码',
-                      hintText: '请输入验证码',
+                      labelText: tr('邮箱验证码'),
+                      hintText: tr('请输入验证码'),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -176,10 +177,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                               ? null
                               : _sendCode,
                       child: Text(_codeLoading
-                          ? '发送中…'
+                          ? tr('发送中…')
                           : _countdown > 0
-                              ? '重新发送(${_countdown}s)'
-                              : '发送验证码'),
+                              ? tr('重新发送({n}s)', {'n': _countdown})
+                              : tr('发送验证码')),
                     ),
                   ),
                 ),
@@ -191,7 +192,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -201,7 +202,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('确认修改'),
+              :   Text(tr('确认修改')),
         ),
       ],
     );
@@ -276,14 +277,14 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
   Future<void> _sendCode() async {
     final email = _emailCtrl.text.trim();
     if (!email.contains('@')) {
-      _toast('请输入正确的邮箱');
+      _toast(tr('请输入正确的邮箱'));
       return;
     }
     final captcha = await showHumanCaptchaDialog(
       context,
       notifier: widget.notifier,
-      title: '发送绑定验证码前验证',
-      description: '完成验证后将向该邮箱发送绑定验证码。',
+      title: tr('发送绑定验证码前验证'),
+      description: tr('完成验证后将向该邮箱发送绑定验证码。'),
     );
     if (captcha == null || !mounted) return;
     setState(() => _codeLoading = true);
@@ -296,7 +297,7 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
       _startCountdown();
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '验证码发送失败');
+      _toast(e is AuthException ? e.message : tr('验证码发送失败'));
     } finally {
       if (mounted) setState(() => _codeLoading = false);
     }
@@ -308,15 +309,15 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
     final email = _emailCtrl.text.trim();
     final code = _codeCtrl.text.trim();
     if (ciyuanxiId.isEmpty) {
-      _toast('未获取到当前账号信息，请重新登录');
+      _toast(tr('未获取到当前账号信息，请重新登录'));
       return;
     }
     if (!email.contains('@')) {
-      _toast('请输入正确的邮箱');
+      _toast(tr('请输入正确的邮箱'));
       return;
     }
     if (code.isEmpty) {
-      _toast('请输入邮箱验证码');
+      _toast(tr('请输入邮箱验证码'));
       return;
     }
     setState(() => _loading = true);
@@ -324,11 +325,11 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
       await widget.notifier
           .bindEmail(ciyuanxiId: ciyuanxiId, email: email, verifyCode: code);
       if (!mounted) return;
-      _toast('邮箱绑定成功');
+      _toast(tr('邮箱绑定成功'));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '邮箱绑定失败');
+      _toast(e is AuthException ? e.message : tr('邮箱绑定失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -342,13 +343,13 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('绑定邮箱'),
+      title:   Text(tr('绑定邮箱')),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '绑定邮箱后可用于登录与找回密码，请填写常用且可接收邮件的地址。',
+            tr('绑定邮箱后可用于登录与找回密码，请填写常用且可接收邮件的地址。'),
             style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -358,8 +359,8 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
             controller: _emailCtrl,
             keyboardType: TextInputType.emailAddress,
             decoration: InputDecoration(
-              labelText: '邮箱',
-              hintText: '请输入邮箱',
+              labelText: tr('邮箱'),
+              hintText: tr('请输入邮箱'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
@@ -372,8 +373,8 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
                 child: TextField(
                   controller: _codeCtrl,
                   decoration: InputDecoration(
-                    labelText: '邮箱验证码',
-                    hintText: '请输入验证码',
+                    labelText: tr('邮箱验证码'),
+                    hintText: tr('请输入验证码'),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -390,10 +391,10 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
                             ? null
                             : _sendCode,
                     child: Text(_codeLoading
-                        ? '发送中…'
+                        ? tr('发送中…')
                         : _countdown > 0
-                            ? '重新发送(${_countdown}s)'
-                            : '发送验证码'),
+                            ? tr('重新发送({n}s)', {'n': _countdown})
+                            : tr('发送验证码')),
                   ),
                 ),
               ),
@@ -404,7 +405,7 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -414,7 +415,7 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('确认绑定'),
+              :   Text(tr('确认绑定')),
         ),
       ],
     );
@@ -461,18 +462,18 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
   Future<void> _submit() async {
     final nickname = _nicknameCtrl.text.trim();
     if (nickname.isEmpty) {
-      _toast('请输入昵称');
+      _toast(tr('请输入昵称'));
       return;
     }
     setState(() => _loading = true);
     try {
       final result = await widget.notifier.updateProfile(nickname: nickname);
       if (!mounted) return;
-      _toast(result.nicknamePending ? '昵称修改申请已提交，待审核通过后生效' : '昵称已更新');
+      _toast(result.nicknamePending ? tr('昵称修改申请已提交，待审核通过后生效') : tr('昵称已更新'));
       Navigator.pop(context, result.user.nickname);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '保存失败');
+      _toast(e is AuthException ? e.message : tr('保存失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -486,13 +487,13 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('修改昵称'),
+      title:   Text(tr('修改昵称')),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '昵称修改需管理员审核，审核通过后生效。',
+            tr('昵称修改需管理员审核，审核通过后生效。'),
             style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -502,8 +503,8 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
             controller: _nicknameCtrl,
             maxLength: 20,
             decoration: InputDecoration(
-              labelText: '新昵称',
-              hintText: '请输入新昵称',
+              labelText: tr('新昵称'),
+              hintText: tr('请输入新昵称'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
@@ -513,7 +514,7 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, null),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -523,7 +524,7 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('提交申请'),
+              :   Text(tr('提交申请')),
         ),
       ],
     );
@@ -569,19 +570,19 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
     final target = _newIdCtrl.text.trim();
     final pwd = _passwordCtrl.text;
     if (oldId.isEmpty) {
-      _toast('未获取到当前弦予号，请重新登录');
+      _toast(tr('未获取到当前弦予号，请重新登录'));
       return;
     }
     if (target.length < 6 || target.length > 20) {
-      _toast('弦予号需 6-20 位');
+      _toast(tr('弦予号需 6-20 位'));
       return;
     }
     if (!RegExp(r'^[a-zA-Z0-9]{6,20}$').hasMatch(target)) {
-      _toast('弦予号仅支持纯数字、纯字母或数字字母组合');
+      _toast(tr('弦予号仅支持纯数字、纯字母或数字字母组合'));
       return;
     }
     if (pwd.isEmpty) {
-      _toast('请输入登录密码');
+      _toast(tr('请输入登录密码'));
       return;
     }
     setState(() => _loading = true);
@@ -592,11 +593,11 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
         password: pwd,
       );
       if (!mounted) return;
-      _toast('弦予号修改成功');
+      _toast(tr('弦予号修改成功'));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '弦予号修改失败');
+      _toast(e is AuthException ? e.message : tr('弦予号修改失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -612,13 +613,13 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
     final user = widget.notifier.currentState.user;
     final oldId = user?.ciyuanxiId ?? user?.id ?? '';
     return AlertDialog(
-      title: const Text('修改弦予号'),
+      title:   Text(tr('修改弦予号')),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。',
+            tr('弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。'),
             style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -628,7 +629,7 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
             controller: TextEditingController(text: oldId),
             readOnly: true,
             decoration: InputDecoration(
-              labelText: '当前弦予号',
+              labelText: tr('当前弦予号'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
@@ -637,8 +638,8 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
           TextField(
             controller: _newIdCtrl,
             decoration: InputDecoration(
-              labelText: '新弦予号',
-              hintText: '6-20 位，支持纯数字、纯字母或组合',
+              labelText: tr('新弦予号'),
+              hintText: tr('6-20 位，支持纯数字、纯字母或组合'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
@@ -649,8 +650,8 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
             obscureText: _obscure,
             autocorrect: false,
             decoration: InputDecoration(
-              labelText: '登录密码',
-              hintText: '请输入当前登录密码',
+              labelText: tr('登录密码'),
+              hintText: tr('请输入当前登录密码'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
               suffixIcon: IconButton(
@@ -664,7 +665,7 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -674,7 +675,7 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('确认修改'),
+              :   Text(tr('确认修改')),
         ),
       ],
     );
@@ -730,14 +731,14 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
   Future<void> _sendCode() async {
     final email = widget.notifier.currentState.user?.email;
     if (email == null || email.isEmpty) {
-      _toast('未获取到注册邮箱，请重新登录');
+      _toast(tr('未获取到注册邮箱，请重新登录'));
       return;
     }
     final captcha = await showHumanCaptchaDialog(
       context,
       notifier: widget.notifier,
-      title: '发送注销验证码前验证',
-      description: '完成验证后将向当前账号的注册邮箱发送注销验证码。',
+      title: tr('发送注销验证码前验证'),
+      description: tr('完成验证后将向当前账号的注册邮箱发送注销验证码。'),
     );
     if (captcha == null || !mounted) return;
     setState(() => _codeLoading = true);
@@ -750,7 +751,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
       _startCountdown();
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '验证码发送失败');
+      _toast(e is AuthException ? e.message : tr('验证码发送失败'));
     } finally {
       if (mounted) setState(() => _codeLoading = false);
     }
@@ -760,11 +761,11 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
     final password = _passwordCtrl.text;
     final code = _codeCtrl.text.trim();
     if (password.isEmpty) {
-      _toast('请输入登录密码');
+      _toast(tr('请输入登录密码'));
       return;
     }
     if (code.isEmpty) {
-      _toast('请输入邮箱验证码');
+      _toast(tr('请输入邮箱验证码'));
       return;
     }
     setState(() => _loading = true);
@@ -780,11 +781,11 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
       await widget.notifier
           .deleteAccount(verifyCode: code, password: password);
       if (!mounted) return;
-      _toast('账号已注销');
+      _toast(tr('账号已注销'));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '注销账号失败');
+      _toast(e is AuthException ? e.message : tr('注销账号失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -795,19 +796,19 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认注销账号'),
-        content: const Text('注销后账号数据将被清除且无法恢复，确定要注销当前账号吗？'),
+        title:   Text(tr('确认注销账号')),
+        content:   Text(tr('注销后账号数据将被清除且无法恢复，确定要注销当前账号吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(ctx).colorScheme.error,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认注销'),
+            child:   Text(tr('确认注销')),
           ),
         ],
       ),
@@ -822,16 +823,16 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final email = widget.notifier.currentState.user?.email ?? '未知邮箱';
+    final email = widget.notifier.currentState.user?.email ?? tr('未知邮箱');
     return AlertDialog(
-      title: const Text('注销账号'),
+      title:   Text(tr('注销账号')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '注销后账号数据将被清除且无法恢复。验证码将发送到注册邮箱：$email',
+              tr('注销后账号数据将被清除且无法恢复。验证码将发送到注册邮箱：{email}', {'email': email}),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
@@ -840,8 +841,8 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
               obscureText: _obscure,
               autocorrect: false,
               decoration: InputDecoration(
-                labelText: '登录密码',
-                hintText: '请输入当前登录密码',
+                labelText: tr('登录密码'),
+                hintText: tr('请输入当前登录密码'),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
                 suffixIcon: IconButton(
@@ -858,8 +859,8 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
                   child: TextField(
                     controller: _codeCtrl,
                     decoration: InputDecoration(
-                      labelText: '邮箱验证码',
-                      hintText: '请输入验证码',
+                      labelText: tr('邮箱验证码'),
+                      hintText: tr('请输入验证码'),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -876,10 +877,10 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
                               ? null
                               : _sendCode,
                       child: Text(_codeLoading
-                          ? '发送中…'
+                          ? tr('发送中…')
                           : _countdown > 0
-                              ? '重新发送(${_countdown}s)'
-                              : '发送验证码'),
+                              ? tr('重新发送({n}s)', {'n': _countdown})
+                              : tr('发送验证码')),
                     ),
                   ),
                 ),
@@ -891,7 +892,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           style: FilledButton.styleFrom(
@@ -904,7 +905,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('注销账号'),
+              :   Text(tr('注销账号')),
         ),
       ],
     );
@@ -964,14 +965,14 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   Future<void> _sendCode() async {
     final email = _emailCtrl.text.trim();
     if (!email.contains('@')) {
-      _toast('请输入正确的邮箱');
+      _toast(tr('请输入正确的邮箱'));
       return;
     }
     final captcha = await showHumanCaptchaDialog(
       context,
       notifier: widget.notifier,
-      title: '发送重置验证码前验证',
-      description: '完成验证后将向该邮箱发送重置密码验证码。',
+      title: tr('发送重置验证码前验证'),
+      description: tr('完成验证后将向该邮箱发送重置密码验证码。'),
     );
     if (captcha == null || !mounted) return;
     setState(() => _codeLoading = true);
@@ -984,7 +985,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       _startCountdown();
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '验证码发送失败');
+      _toast(e is AuthException ? e.message : tr('验证码发送失败'));
     } finally {
       if (mounted) setState(() => _codeLoading = false);
     }
@@ -996,19 +997,19 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
     final newPwd = _newCtrl.text;
     final confirm = _confirmCtrl.text;
     if (!email.contains('@')) {
-      _toast('请输入正确的邮箱');
+      _toast(tr('请输入正确的邮箱'));
       return;
     }
     if (code.isEmpty) {
-      _toast('请输入邮箱验证码');
+      _toast(tr('请输入邮箱验证码'));
       return;
     }
     if (newPwd.isEmpty || confirm.isEmpty) {
-      _toast('请填写完整的新密码');
+      _toast(tr('请填写完整的新密码'));
       return;
     }
     if (newPwd != confirm) {
-      _toast('两次新密码不一致');
+      _toast(tr('两次新密码不一致'));
       return;
     }
     setState(() => _loading = true);
@@ -1019,11 +1020,11 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
         newPassword: newPwd,
       );
       if (!mounted) return;
-      _toast('密码已重置，请使用新密码登录');
+      _toast(tr('密码已重置，请使用新密码登录'));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      _toast(e is AuthException ? e.message : '重置密码失败');
+      _toast(e is AuthException ? e.message : tr('重置密码失败'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1037,14 +1038,14 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('找回密码'),
+      title:   Text(tr('找回密码')),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '输入注册邮箱，验证通过后设置新密码。',
+              tr('输入注册邮箱，验证通过后设置新密码。'),
               style: TextStyle(
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -1054,8 +1055,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
               controller: _emailCtrl,
               keyboardType: TextInputType.emailAddress,
               decoration: InputDecoration(
-                labelText: '邮箱',
-                hintText: '请输入注册邮箱',
+                labelText: tr('邮箱'),
+                hintText: tr('请输入注册邮箱'),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -1068,8 +1069,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
                   child: TextField(
                     controller: _codeCtrl,
                     decoration: InputDecoration(
-                      labelText: '邮箱验证码',
-                      hintText: '请输入验证码',
+                      labelText: tr('邮箱验证码'),
+                      hintText: tr('请输入验证码'),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -1086,10 +1087,10 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
                               ? null
                               : _sendCode,
                       child: Text(_codeLoading
-                          ? '发送中…'
+                          ? tr('发送中…')
                           : _countdown > 0
-                              ? '重新发送(${_countdown}s)'
-                              : '发送验证码'),
+                              ? tr('重新发送({n}s)', {'n': _countdown})
+                              : tr('发送验证码')),
                     ),
                   ),
                 ),
@@ -1101,8 +1102,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
               obscureText: _obscure,
               autocorrect: false,
               decoration: InputDecoration(
-                labelText: '新密码',
-                hintText: '设置新密码',
+                labelText: tr('新密码'),
+                hintText: tr('设置新密码'),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
                 suffixIcon: IconButton(
@@ -1117,8 +1118,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
               obscureText: _obscure,
               autocorrect: false,
               decoration: InputDecoration(
-                labelText: '确认新密码',
-                hintText: '再次输入新密码',
+                labelText: tr('确认新密码'),
+                hintText: tr('再次输入新密码'),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -1129,7 +1130,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       actions: [
         TextButton(
           onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: _loading ? null : _submit,
@@ -1139,7 +1140,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('重置密码'),
+              :   Text(tr('重置密码')),
         ),
       ],
     );
@@ -1257,7 +1258,7 @@ class ProfileEditGateDialog extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: const Text('取消'),
+                      child:   Text(tr('取消')),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1265,7 +1266,7 @@ class ProfileEditGateDialog extends StatelessWidget {
                 Expanded(
                   child: FilledButton(
                     onPressed: () => Navigator.pop(context, !blocked),
-                    child: Text(blocked ? '关闭' : confirmText),
+                    child: Text(blocked ? tr('关闭') : confirmText),
                   ),
                 ),
               ],

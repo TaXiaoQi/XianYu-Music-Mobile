@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
-import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -31,6 +30,7 @@ import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
 import '../library/song_list_page.dart';
+import '../../src/i18n/i18n.dart';
 
 // ==================== 来源模型 ====================
 
@@ -57,12 +57,12 @@ class _SourceItem {
 
 /// LX 插件声明的合法音源 key 及展示名（与桌面端对齐）。
 const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg'};
-const _lxSourceNames = <String, String>{
-  'kw': '小蜗音乐',
-  'kg': '小枸音乐',
-  'tx': '小秋音乐',
-  'wy': '小芸音乐',
-  'mg': '小蜜音乐',
+get _lxSourceNames => <String, String>{
+  'kw': tr('小蜗音乐'),
+  'kg': tr('小枸音乐'),
+  'tx': tr('小秋音乐'),
+  'wy': tr('小芸音乐'),
+  'mg': tr('小蜜音乐'),
 };
 
 // ==================== 结果模型 ====================
@@ -216,7 +216,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body，避免顶栏
       // BackdropFilter 背光被压缩变化反复重采样导致输入法动画掉帧。
       resizeToAvoidBottomInset: false,
@@ -239,7 +239,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
                 onChanged: _onChanged,
                 onSubmitted: (q) => _submitSearch(q),
                 decoration: InputDecoration(
-                  hintText: '搜索音乐、歌手、专辑、歌单',
+                  hintText: tr('搜索音乐、歌手、专辑、歌单'),
                   border: InputBorder.none,
                   suffixIcon: _ctrl.text.isEmpty
                       ? null
@@ -251,7 +251,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
               ),
               actions: [
                 IconButton(
-                  tooltip: '搜索',
+                  tooltip: tr('搜索'),
                   icon: const Icon(Icons.search),
                   style: IconButton.styleFrom(
                     backgroundColor: scheme.primary,
@@ -321,8 +321,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     }
     return _sources.isNotEmpty
         ? _sources.first
-        : const _SourceItem(
-            id: 'local', name: '本地', type: _SourceType.local);
+        :   _SourceItem(
+            id: 'local', name: tr('本地'), type: _SourceType.local);
   }
 
   /// 从插件音源构建来源列表；无插件时返回“本地”。
@@ -358,8 +358,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
       }
     }
     final result = items.isEmpty
-        ? const [
-            _SourceItem(id: 'local', name: '本地', type: _SourceType.local)
+        ?   [
+            _SourceItem(id: 'local', name: tr('本地'), type: _SourceType.local)
           ]
         : items;
     if (!mounted) return;
@@ -411,16 +411,16 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
 
     final tabBar = TabBar(
       controller: _tab,
-      tabs: const [
-        Tab(text: '单曲'),
-        Tab(text: '歌手'),
-        Tab(text: '专辑'),
-        Tab(text: '歌单'),
+      tabs:   [
+        Tab(text: tr('单曲')),
+        Tab(text: tr('歌手')),
+        Tab(text: tr('专辑')),
+        Tab(text: tr('歌单')),
       ],
     );
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
@@ -476,13 +476,13 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 readOnly: true,
                 onTap: _goToSearchPage,
                 decoration: InputDecoration(
-                  hintText: keyword.isEmpty ? '搜索音乐、歌手、专辑、歌单' : null,
+                  hintText: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
                   border: InputBorder.none,
                 ),
               ),
               actions: [
                 IconButton(
-                  tooltip: '返回搜索',
+                  tooltip: tr('返回搜索'),
                   icon: const Icon(Icons.search),
                   style: IconButton.styleFrom(
                     backgroundColor: scheme.primary,
@@ -533,7 +533,7 @@ class _IdleBody extends ConsumerWidget {
             Icon(Icons.history, size: 18, color: scheme.onSurfaceVariant),
             const SizedBox(width: 8),
             Text(
-              '搜索历史',
+              tr('搜索历史'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -550,7 +550,7 @@ class _IdleBody extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 4),
                   child: Text(
-                    '清空',
+                    tr('清空'),
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant),
                   ),
@@ -563,7 +563,7 @@ class _IdleBody extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              '暂无搜索历史',
+              tr('暂无搜索历史'),
               style: TextStyle(fontSize: 13, color: scheme.outline),
             ),
           )
@@ -578,7 +578,7 @@ class _IdleBody extends ConsumerWidget {
                 size: 18, color: scheme.primary),
             const SizedBox(width: 8),
             Text(
-              '大家都在搜',
+              tr('大家都在搜'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -718,7 +718,7 @@ class _HotTile extends ConsumerWidget {
               ),
             ),
             Text(
-              '${item.count}人搜',
+              tr('{n}人搜', {'n': item.count}),
               style: TextStyle(
                   fontSize: 11, color: scheme.outline),
             ),
@@ -738,7 +738,7 @@ class _EmptyHotHint extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
-        '暂无热搜',
+        tr('暂无热搜'),
         style: TextStyle(fontSize: 13, color: scheme.outline),
       ),
     );
@@ -867,7 +867,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final wasFav = ref.read(favoritesProvider).contains(item.path);
     ref.read(favoritesProvider.notifier).toggle(item);
     showXianYuToast(
-        context, wasFav ? '已取消收藏：${item.title}' : '已收藏：${item.title}');
+        context, wasFav ? tr('已取消收藏：{t}', {'t': item.title}) : tr('已收藏：{t}', {'t': item.title}));
   }
 
   QueueItem? _queueItem(int index) {
@@ -888,13 +888,13 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final favorites = ref.watch(favoritesProvider);
 
     if (q.isEmpty) {
-      return _emptyHint('输入关键词搜索音乐', scheme, source: widget.source.name);
+      return _emptyHint(tr('输入关键词搜索音乐'), scheme, source: widget.source.name);
     }
     if (_loading && _results.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_results.isEmpty) {
-      return _emptyHint('没有找到相关歌曲', scheme, source: widget.source.name);
+      return _emptyHint(tr('没有找到相关歌曲'), scheme, source: widget.source.name);
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
@@ -921,7 +921,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     style: TextStyle(
                         fontSize: m.titleSize, fontWeight: FontWeight.w600)),
                 subtitle: Text(
-                  [s.artist, s.album, '本地']
+                  [s.artist, s.album, tr('本地')]
                       .where((x) => x.isNotEmpty)
                       .join(' · '),
                   maxLines: 1,
@@ -985,7 +985,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     size: 20,
                     color: isFav ? scheme.primary : scheme.onSurfaceVariant,
                   ),
-                  tooltip: '收藏',
+                  tooltip: tr('收藏'),
                   onPressed: () => _toggleFavorite(i),
                 ),
                 Text(
@@ -996,7 +996,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                 IconButton(
                   icon: const Icon(Icons.more_horiz, size: 22),
                   color: scheme.onSurfaceVariant,
-                  tooltip: '更多',
+                  tooltip: tr('更多'),
                   onPressed: () => _openActions(i),
                 ),
               ],
@@ -1057,9 +1057,9 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   bool get wantKeepAlive => true;
 
   String _kindName(_CatalogKind k) => switch (k) {
-        _CatalogKind.artist => '歌手',
-        _CatalogKind.album => '专辑',
-        _CatalogKind.playlist => '歌单',
+        _CatalogKind.artist => tr('歌手'),
+        _CatalogKind.album => tr('专辑'),
+        _CatalogKind.playlist => tr('歌单'),
       };
 
   @override
@@ -1119,7 +1119,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   /// 本地库索引：按当前类型过滤歌手/专辑/歌单。
   List<_CatalogItem> _searchLocal(String q) {
     final lower = q.toLowerCase();
-    final tag = '本地';
+    final tag = tr('本地');
     final out = <_CatalogItem>[];
     try {
       switch (widget.kind) {
@@ -1130,7 +1130,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               out.add(_CatalogItem(
                 kind: 'artist',
                 title: a.name,
-                subtitle: '${a.count} 首',
+                subtitle: tr('{n} 首', {'n': a.count}),
                 sourceTag: tag,
                 localArtist: a,
               ));
@@ -1144,7 +1144,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               out.add(_CatalogItem(
                 kind: 'album',
                 title: a.name,
-                subtitle: '${a.artist} · ${a.count} 首',
+                subtitle: tr('{artist} · {n} 首', {'artist': a.artist, 'n': a.count}),
                 sourceTag: tag,
                 localAlbum: a,
               ));
@@ -1157,7 +1157,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               out.add(_CatalogItem(
                 kind: 'playlist',
                 title: p.name,
-                subtitle: '${p.songs.length} 首',
+                subtitle: tr('{n} 首', {'n': p.songs.length}),
                 sourceTag: tag,
                 localPlaylist: p,
               ));
@@ -1318,13 +1318,13 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     final name = _kindName(widget.kind);
 
     if (q.isEmpty) {
-      return _emptyHint('输入关键词搜索$name', scheme, source: widget.source.name);
+      return _emptyHint(tr('输入关键词搜索{name}', {'name': name}), scheme, source: widget.source.name);
     }
     if (_loading && _items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty) {
-      return _emptyHint('没有找到相关$name', scheme, source: widget.source.name);
+      return _emptyHint(tr('没有找到相关{name}', {'name': name}), scheme, source: widget.source.name);
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
@@ -1412,7 +1412,7 @@ Widget _emptyHint(String message, ColorScheme scheme,
         Text(message, style: TextStyle(color: scheme.onSurfaceVariant)),
         const SizedBox(height: 4),
         Text(
-          '结果来自 $source',
+          tr('结果来自 {source}', {'source': source}),
           style: TextStyle(fontSize: 12, color: scheme.outline),
         ),
       ],

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 目录树节点（由 MediaStore 音频路径聚合构建）。
 class _PathNode {
@@ -147,7 +147,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _adding = false);
-      showXianYuToast(context, '添加失败：$e');
+      showXianYuToast(context, tr('添加失败：{e}', {'e': e}));
     }
   }
 
@@ -156,12 +156,12 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     final scheme = Theme.of(context).colorScheme;
     final kept = _keptSelection;
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('选择音乐文件夹'),
+        title:   Text(tr('选择音乐文件夹')),
         actions: [
           IconButton(
-            tooltip: '刷新',
+            tooltip: tr('刷新'),
             icon: const Icon(Icons.refresh),
             onPressed: _loading || _adding ? null : _load,
           ),
@@ -174,13 +174,13 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('读取音频目录失败：$_error',
+                      Text(tr('读取音频目录失败：{e}', {'e': _error ?? ''}),
                           textAlign: TextAlign.center),
                       const SizedBox(height: 12),
                       FilledButton.icon(
                         onPressed: _load,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('重试'),
+                        label:   Text(tr('重试')),
                       ),
                     ],
                   ),
@@ -195,11 +195,11 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                             Icon(Icons.library_music,
                                 size: 48, color: scheme.onSurfaceVariant),
                             const SizedBox(height: 12),
-                            const Text('未发现包含音频的文件夹',
+                              Text(tr('未发现包含音频的文件夹'),
                                 style: TextStyle(fontWeight: FontWeight.w600)),
                             const SizedBox(height: 4),
                             Text(
-                              '若音乐存放在 DSD / USB 等特殊目录，\n请返回上一页使用顶栏的系统选择器添加',
+                              tr('若音乐存放在 DSD / USB 等特殊目录，\n请返回上一页使用顶栏的系统选择器添加'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   fontSize: 13,
@@ -215,7 +215,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                           child: Text(
-                            '勾选要扫描的文件夹（已授予音乐权限，无需再次授权）',
+                            tr('勾选要扫描的文件夹（已授予音乐权限，无需再次授权）'),
                             style: TextStyle(
                                 fontSize: 12, color: scheme.onSurfaceVariant),
                           ),
@@ -239,7 +239,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                         )
                       : const Icon(Icons.library_add_check),
                   label: Text(
-                      _adding ? '正在扫描…' : '添加 ${kept.length} 个目录并扫描'),
+                      _adding ? tr('正在扫描…') : '添加 ${kept.length} 个目录并扫描'),
                 ),
               ),
             ),
@@ -270,7 +270,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${node.subtreeCount} 首',
+                tr('{n} 首', {'n': node.subtreeCount}),
                 style: TextStyle(
                     fontSize: 12, color: Theme.of(context).colorScheme.outline),
               ),

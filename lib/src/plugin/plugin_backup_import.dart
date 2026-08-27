@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'plugin_models.dart';
+import '../i18n/i18n.dart';
 
 /// 导入的歌曲（本地文件或在线插件歌曲）。
 class ImportedSong {
@@ -179,41 +180,41 @@ class _PlatformDescriptor {
   });
 }
 
-const List<Map<String, Object?>> _platformAliases = [
+List<Map<String, Object?>> get _platformAliases => [
   {
     'canonical': 'netease',
-    'displayName': '网易云音乐',
+    'displayName': tr('网易云音乐'),
     'lxSource': 'wy',
-    'aliases': ['wy', 'netease', '网易', '网易云', '网易云音乐'],
+    'aliases': ['wy', 'netease', tr('网易'), tr('网易云'), tr('网易云音乐')],
   },
   {
     'canonical': 'qq',
-    'displayName': 'QQ音乐',
+    'displayName': tr('QQ音乐'),
     'lxSource': 'tx',
-    'aliases': ['tx', 'qq', 'qqmusic', '腾讯', '腾讯音乐', 'qq音乐'],
+    'aliases': ['tx', 'qq', 'qqmusic', tr('腾讯'), tr('腾讯音乐'), tr('qq音乐')],
   },
   {
     'canonical': 'kuwo',
-    'displayName': '酷我音乐',
+    'displayName': tr('酷我音乐'),
     'lxSource': 'kw',
-    'aliases': ['kw', 'kuwo', '酷我', '酷我音乐'],
+    'aliases': ['kw', 'kuwo', tr('酷我'), tr('酷我音乐')],
   },
   {
     'canonical': 'kugou',
-    'displayName': '酷狗音乐',
+    'displayName': tr('酷狗音乐'),
     'lxSource': 'kg',
-    'aliases': ['kg', 'kugou', '酷狗', '酷狗音乐'],
+    'aliases': ['kg', 'kugou', tr('酷狗'), tr('酷狗音乐')],
   },
   {
     'canonical': 'migu',
-    'displayName': '咪咕音乐',
+    'displayName': tr('咪咕音乐'),
     'lxSource': 'mg',
-    'aliases': ['mg', 'migu', '咪咕', '咪咕音乐'],
+    'aliases': ['mg', 'migu', tr('咪咕'), tr('咪咕音乐')],
   },
   {
     'canonical': 'bilibili',
-    'displayName': '哔哩哔哩',
-    'aliases': ['bilibili', 'b站', '哔哩哔哩'],
+    'displayName': tr('哔哩哔哩'),
+    'aliases': ['bilibili', tr('b站'), tr('哔哩哔哩')],
   },
 ];
 
@@ -245,7 +246,7 @@ _PlatformDescriptor _describePlatform(Object? value) {
   }
 
   return _PlatformDescriptor(
-    displayName: original.isEmpty ? '未知来源' : original,
+    displayName: original.isEmpty ? tr('未知来源') : original,
     normalized: normalized,
     canonical: normalized,
   );
@@ -345,7 +346,7 @@ String _extractArtist(Map<String, dynamic> rawSong) {
         .toList();
     if (names.isNotEmpty) return names.join(', ');
   }
-  return '未知歌手';
+  return tr('未知歌手');
 }
 
 String _extractAlbum(Map<String, dynamic> rawSong) {
@@ -356,7 +357,7 @@ String _extractAlbum(Map<String, dynamic> rawSong) {
   if (albumName is String && albumName.trim().isNotEmpty) return albumName.trim();
   final al = rawSong['al'];
   if (al is Map && al['name'] != null) return al['name'].toString();
-  return '未知专辑';
+  return tr('未知专辑');
 }
 
 Object? _pickRawSongId(Map<String, dynamic> rawSong) {
@@ -668,7 +669,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
       final songs = list['list'];
       if (songs is! List || songs.isEmpty) continue;
       sheets.add({
-        'name': list['name'] ?? '未命名歌单',
+        'name': list['name'] ?? tr('未命名歌单'),
         'musicList': songs
             .whereType<Map>()
             .map((e) => _flattenLxMeta(e.cast<String, dynamic>()))
@@ -679,7 +680,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
   }
 
   if (lxBackupType == 'setting_v2' || lxBackupType == 'setting') {
-    throw const FormatException('未找到可导入的歌单');
+    throw   FormatException(tr('未找到可导入的歌单'));
   }
 
   // 洛雪内部存储结构 / v3 全量备份
@@ -690,7 +691,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     final sheets = <Map<String, dynamic>>[];
     if (loveList is List && loveList.isNotEmpty) {
       sheets.add({
-        'name': '我的收藏',
+        'name': tr('我的收藏'),
         'musicList': loveList
             .whereType<Map>()
             .map((e) => _flattenLxMeta(e.cast<String, dynamic>()))
@@ -703,7 +704,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
         final songs = list['list'];
         if (songs is! List || songs.isEmpty) continue;
         sheets.add({
-          'name': list['name'] ?? '未命名歌单',
+          'name': list['name'] ?? tr('未命名歌单'),
           'musicList': songs
               .whereType<Map>()
               .map((e) => _flattenLxMeta(e.cast<String, dynamic>()))
@@ -713,7 +714,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     }
     if (defaultList is List && defaultList.isNotEmpty) {
       sheets.add({
-        'name': '试听列表',
+        'name': tr('试听列表'),
         'musicList': defaultList
             .whereType<Map>()
             .map((e) => _flattenLxMeta(e.cast<String, dynamic>()))
@@ -797,7 +798,7 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
         format: 'musicfree', sheets: topLevelSheets, version: version, restoreStringifiedIds: false);
   }
 
-  throw const FormatException('无法识别备份格式，请选择 BakaMusic、MusicFree 或洛雪音乐导出的备份文件');
+  throw   FormatException(tr('无法识别备份格式，请选择 BakaMusic、MusicFree 或洛雪音乐导出的备份文件'));
 }
 
 List<Map<String, dynamic>> _extractSheets(Map<String, dynamic> data) {
@@ -821,13 +822,13 @@ PreparedPluginBackupImport preparePluginBackupImport(
   try {
     final decoded = jsonDecode(jsonContent);
     if (decoded is! Map) {
-      throw const FormatException('备份文件不是有效的 JSON 对象');
+      throw   FormatException(tr('备份文件不是有效的 JSON 对象'));
     }
     data = decoded.cast<String, dynamic>();
   } on FormatException {
     rethrow;
   } catch (_) {
-    throw const FormatException('文件不是有效的 JSON 格式');
+    throw   FormatException(tr('文件不是有效的 JSON 格式'));
   }
 
   final detected = _detectBackup(data);
@@ -844,7 +845,7 @@ PreparedPluginBackupImport preparePluginBackupImport(
     final rawName = sheet['title'] ?? sheet['name'];
     final playlistName = (rawName?.toString() ?? '').trim().isNotEmpty
         ? rawName.toString().trim()
-        : '未命名歌单 ${sheetIndex + 1}';
+        : tr('未命名歌单 {n}', {'n': sheetIndex + 1});
     final rawSongs = sheet['musicList'] is List
         ? (sheet['musicList'] as List)
             .whereType<Map>()
@@ -863,10 +864,10 @@ PreparedPluginBackupImport preparePluginBackupImport(
       if (title.isEmpty) {
         failures.add(PluginBackupFailedSong(
           playlist: playlistName,
-          title: '未命名歌曲',
+          title: tr('未命名歌曲'),
           artist: artist,
           platform: platform.displayName,
-          reason: '歌曲缺少标题',
+          reason: tr('歌曲缺少标题'),
           reasonCode: 'invalid-song',
         ));
         continue;
@@ -883,10 +884,10 @@ PreparedPluginBackupImport preparePluginBackupImport(
         } else {
           associationMap['__local__'] = PluginBackupAssociation(
             pluginId: 'local',
-            pluginName: '本地文件',
+            pluginName: tr('本地文件'),
             pluginFormat: 'musicfree',
             enabled: true,
-            platform: '本地文件',
+            platform: tr('本地文件'),
             songCount: 1,
           );
         }
@@ -900,7 +901,7 @@ PreparedPluginBackupImport preparePluginBackupImport(
           title: title,
           artist: artist,
           platform: platform.displayName,
-          reason: platform.normalized.isNotEmpty ? '歌曲缺少平台歌曲 ID' : '歌曲缺少来源平台',
+          reason: platform.normalized.isNotEmpty ? tr('歌曲缺少平台歌曲 ID') : tr('歌曲缺少来源平台'),
           reasonCode: 'invalid-song',
         ));
         continue;
@@ -913,7 +914,7 @@ PreparedPluginBackupImport preparePluginBackupImport(
           title: title,
           artist: artist,
           platform: platform.displayName,
-          reason: '缺少可处理“${platform.displayName}”的插件',
+          reason: tr('缺少可处理“{platform}”的插件', {'platform': platform.displayName}),
           reasonCode: 'missing-plugin',
         ));
         final missing = missingPluginMap[platform.canonical];
@@ -1023,16 +1024,16 @@ ImportedSong _createSongFromPath(
       artist = baseName.substring(dashIdx + 1).trim();
     } else {
       title = baseName;
-      artist = '未知歌手';
+      artist = tr('未知歌手');
     }
   }
   if (title.isEmpty) title = fileName;
-  if (artist.isEmpty) artist = '未知歌手';
+  if (artist.isEmpty) artist = tr('未知歌手');
 
   return ImportedSong(
     title: title,
     artist: artist,
-    album: '未知专辑',
+    album: tr('未知专辑'),
     duration: duration,
     localPath: trimmedPath,
     path: trimmedPath,
@@ -1041,7 +1042,7 @@ ImportedSong _createSongFromPath(
 
 List<PluginBackupPlaylist> _parseM3UContent(String content, String fileName) {
   final base = _extractBaseName(fileName);
-  final playlistName = base.isEmpty ? '导入的歌单' : base;
+  final playlistName = base.isEmpty ? tr('导入的歌单') : base;
   final songs = <ImportedSong>[];
   var pendingDuration = 0;
   var pendingTitle = '';
@@ -1078,7 +1079,7 @@ List<PluginBackupPlaylist> _parseM3UContent(String content, String fileName) {
   }
 
   if (songs.isEmpty) {
-    throw const FormatException('M3U 文件中未找到有效的歌曲条目');
+    throw   FormatException(tr('M3U 文件中未找到有效的歌曲条目'));
   }
   return [
     PluginBackupPlaylist(
@@ -1089,7 +1090,7 @@ List<PluginBackupPlaylist> _parseM3UContent(String content, String fileName) {
 List<PluginBackupPlaylist> _parseSaltPlayerContent(
     String content, String fileName) {
   final base = _extractBaseName(fileName);
-  final playlistName = base.isEmpty ? '导入的歌单' : base;
+  final playlistName = base.isEmpty ? tr('导入的歌单') : base;
   final songs = <ImportedSong>[];
   for (final rawLine in content.split(RegExp(r'\r?\n'))) {
     final line = rawLine.trim();
@@ -1101,7 +1102,7 @@ List<PluginBackupPlaylist> _parseSaltPlayerContent(
     songs.add(_createSongFromPath(line, '', '', 0));
   }
   if (songs.isEmpty) {
-    throw const FormatException('文件中未找到有效的歌曲路径');
+    throw   FormatException(tr('文件中未找到有效的歌曲路径'));
   }
   return [
     PluginBackupPlaylist(
@@ -1191,10 +1192,10 @@ PreparedPluginBackupImport preparePlaylistFileImport(
     associations: [
       PluginBackupAssociation(
         pluginId: 'local',
-        pluginName: '本地文件',
+        pluginName: tr('本地文件'),
         pluginFormat: 'musicfree',
         enabled: true,
-        platform: '本地文件',
+        platform: tr('本地文件'),
         songCount: total,
       ),
     ],
@@ -1209,25 +1210,25 @@ String describeBackupVersion(PreparedPluginBackupImport prepared) {
   final formatName = switch (prepared.format) {
     'bakamusic' => 'BakaMusic',
     'musicfree' => 'MusicFree',
-    'lxmusic' => '洛雪音乐',
-    'm3u' => 'M3U 播放列表',
-    'txt' => '椒盐音乐',
-    _ => '未知格式',
+    'lxmusic' => tr('洛雪音乐'),
+    'm3u' => tr('M3U 播放列表'),
+    'txt' => tr('椒盐音乐'),
+    _ => tr('未知格式'),
   };
   if (prepared.format == 'm3u' || prepared.format == 'txt') {
     return formatName;
   }
   if (prepared.backupVersion == null) {
-    return '$formatName 备份（未标注版本）';
+    return tr('{name} 备份（未标注版本）', {'name': formatName});
   }
   final label = '$formatName v${prepared.backupVersion}';
   if (prepared.migratedTrackIds) {
     return prepared.migratedTrackIdCount > 0
-        ? '$label 旧版备份，已还原 ${prepared.migratedTrackIdCount} 首歌曲 ID 以恢复逐字歌词'
-        : '$label 旧版备份';
+        ? tr('{label} 旧版备份，已还原 {n} 首歌曲 ID 以恢复逐字歌词', {'label': label, 'n': prepared.migratedTrackIdCount})
+        : tr('{label} 旧版备份', {'label': label});
   }
   if (prepared.format == 'bakamusic' && prepared.backupVersion! >= _currentTrackIdBackupVersion) {
-    return '$label 新版备份';
+    return tr('{label} 新版备份', {'label': label});
   }
   return label;
 }

@@ -11,6 +11,7 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
+import '../i18n/i18n.dart';
 
 /// 下载任务状态。
 enum DownloadStatus { waiting, downloading, done, failed }
@@ -257,7 +258,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
           status: DownloadStatus.failed,
           error: e is PluginEngineException
               ? e.message
-              : '下载失败：${e.toString()}');
+              : tr('下载失败：{e}', {'e': e.toString()}));
     } finally {
       _active--;
       _drain();
@@ -279,7 +280,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     );
     final songJson = item.onlineSongJson ?? item.onlineInfoJson;
     if (songJson == null || songJson.isEmpty) {
-      throw StateError('在线歌曲信息缺失');
+      throw StateError(tr('在线歌曲信息缺失'));
     }
     final parsed = jsonDecode(songJson) as Map<String, dynamic>;
 
@@ -297,7 +298,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         break;
       }
     }
-    if (url == null) throw StateError('直链解析失败');
+    if (url == null) throw StateError(tr('直链解析失败'));
 
     // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理；移动端不转码，
     //    文件即直链源格式）。
@@ -417,12 +418,12 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final sourceKey = songJson['source'] as String? ?? '';
     final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
     final format = songJson['format'] as String? ?? 'lx';
-    if (pluginId == null || pluginId.isEmpty) throw StateError('插件信息缺失');
+    if (pluginId == null || pluginId.isEmpty) throw StateError(tr('插件信息缺失'));
 
     final engine = await _ref.read(pluginEngineProvider.future);
     final sources = await engine.store.loadSources();
     final source = sources.where((s) => s.id == pluginId).toList();
-    if (source.isEmpty) throw StateError('插件未启用');
+    if (source.isEmpty) throw StateError(tr('插件未启用'));
 
     if (format == 'musicfree') {
       // MusicFree 插件：getMediaSource + 内部音质降级映射。

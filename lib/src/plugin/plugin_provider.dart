@@ -12,6 +12,7 @@ import 'plugin_models.dart';
 import 'plugin_store.dart';
 import 'plugin_subscriptions.dart';
 import 'plugin_user_vars.dart';
+import '../i18n/i18n.dart';
 
 /// 插件引擎实例（懒加载，dataDir 就绪后创建）。
 final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
@@ -105,11 +106,11 @@ class PluginManager extends StateNotifier<PluginListState> {
     final engine = await _getEngine();
     final trimmed = script.trim();
     if (trimmed.isEmpty) {
-      throw PluginEngineException('插件内容为空');
+      throw PluginEngineException(tr('插件内容为空'));
     }
     final bytes = utf8.encode(trimmed);
     if (bytes.length > 2 * 1024 * 1024) {
-      throw PluginEngineException('插件大小超过 2MB');
+      throw PluginEngineException(tr('插件大小超过 2MB'));
     }
 
     final isLx = engine.isLxPluginScript(trimmed);
@@ -127,12 +128,12 @@ class PluginManager extends StateNotifier<PluginListState> {
     if (isLx) {
       metadata = await engine.loadLx(id, trimmed, scriptInfo: info);
       if (metadata == null) {
-        throw PluginEngineException('LX 插件初始化失败');
+        throw PluginEngineException(tr('LX 插件初始化失败'));
       }
     } else {
       metadata = await engine.loadMusicFree(id, trimmed);
       if (metadata == null) {
-        throw PluginEngineException('插件加载失败');
+        throw PluginEngineException(tr('插件加载失败'));
       }
     }
 
@@ -142,8 +143,8 @@ class PluginManager extends StateNotifier<PluginListState> {
     final sources = _extractSources(isLx, metadata);
     // 名称优先级：显式覆盖（批量 JSON 提供）> LX 头注释 > MusicFree platform > 文件名
     final fallbackName = isLx
-        ? (info['name'] ?? fileName ?? '未知插件')
-        : (metadata['platform'] ?? fileName ?? '未知插件');
+        ? (info['name'] ?? fileName ?? tr('未知插件'))
+        : (metadata['platform'] ?? fileName ?? tr('未知插件'));
     // 作者/版本/描述：LX 取头注释（@author/@version/@description）；MusicFree
     // 取插件声明的 metadata（桌面端同源），否则读不到作者/版本。
     final mAuthor = isLx
@@ -180,7 +181,7 @@ class PluginManager extends StateNotifier<PluginListState> {
   Future<PluginInstallResult> installFromUrl(String url) async {
     final script = await _fetchScript(url);
     if (script == null || script.isEmpty) {
-      throw PluginEngineException('无法获取插件脚本，请检查 URL 与网络');
+      throw PluginEngineException(tr('无法获取插件脚本，请检查 URL 与网络'));
     }
 
     // 批量 JSON 检测：{ "plugins": [{ "name", "url", "version" }] }
@@ -247,7 +248,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       try {
         final script = await _fetchScript(url);
         if (script == null || script.isEmpty) {
-          errors.add('$label: 获取脚本失败');
+          errors.add(tr('{label}: 获取脚本失败', {'label': label}));
           continue;
         }
         final source = await installFromScript(
@@ -260,7 +261,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       } on PluginEngineException catch (e) {
         errors.add('$label: ${e.message}');
       } catch (_) {
-        errors.add('$label: 安装失败');
+        errors.add(tr('{label}: 安装失败', {'label': label}));
       }
     }
     return PluginInstallResult(
@@ -347,7 +348,7 @@ class PluginManager extends StateNotifier<PluginListState> {
   /// 覆盖编辑插件脚本。脚本校验通过后整体替换，脚本内容变化则替换为新条目。
   Future<void> updateScript(String oldId, String newScript) async {
     final oldSource = state.sources.where((s) => s.id == oldId).toList();
-    if (oldSource.isEmpty) throw PluginEngineException('插件不存在');
+    if (oldSource.isEmpty) throw PluginEngineException(tr('插件不存在'));
     final engine = await _getEngine();
     final newSource = await installFromScript(
       newScript,

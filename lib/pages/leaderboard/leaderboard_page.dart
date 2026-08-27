@@ -11,6 +11,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/db_path.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 听歌排行榜：日榜/周榜/总榜切换，Top 列表 + 底部个人排名。
 class LeaderboardPage extends ConsumerStatefulWidget {
@@ -21,10 +22,10 @@ class LeaderboardPage extends ConsumerStatefulWidget {
 }
 
 class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
-  static const _periods = [
-    (value: 'daily', label: '日榜'),
-    (value: 'weekly', label: '周榜'),
-    (value: 'total', label: '总榜'),
+  static get _periods => [
+    (value: 'daily', label: tr('日榜')),
+    (value: 'weekly', label: tr('周榜')),
+    (value: 'total', label: tr('总榜')),
   ];
 
   String _period = 'daily';
@@ -91,9 +92,9 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
   }
 
   String get _periodLabel => switch (_period) {
-        'daily' => '单日听歌时长排行',
-        'weekly' => '本周听歌时长排行',
-        _ => '累计听歌时长排行',
+        'daily' => tr('单日听歌时长排行'),
+        'weekly' => tr('本周听歌时长排行'),
+        _ => tr('累计听歌时长排行'),
       };
 
   @override
@@ -103,8 +104,8 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
     final loggedIn = auth.isLoggedIn;
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(title: const Text('听歌排行榜')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title:   Text(tr('听歌排行榜'))),
       body: Column(
         children: [
           // 周期切换
@@ -170,17 +171,17 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
           children: [
             Icon(Icons.cloud_off, size: 44, color: scheme.outline),
             const SizedBox(height: 12),
-            Text('排行榜加载失败',
+            Text(tr('排行榜加载失败'),
                 style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 8),
-            TextButton(onPressed: _load, child: const Text('点击重试')),
+            TextButton(onPressed: _load, child:   Text(tr('点击重试'))),
           ],
         ),
       );
     }
     if (_entries.isEmpty) {
       return Center(
-        child: Text('暂无排行榜数据',
+        child: Text(tr('暂无排行榜数据'),
             style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
       );
     }
@@ -377,7 +378,7 @@ class _LeaderboardRow extends StatelessWidget {
                           color: scheme.primary,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text('你',
+                        child: Text(tr('你'),
                             style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -410,8 +411,8 @@ class _LeaderboardRow extends StatelessWidget {
   static String _formatDuration(int seconds) {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
-    if (h > 0) return m > 0 ? '$h小时$m分' : '$h小时';
-    return '$m分钟';
+    if (h > 0) return m > 0 ? tr('{h}小时{m}分', {'h': h, 'm': m}) : tr('{h}小时', {'h': h});
+    return tr('{m}分钟', {'m': m});
   }
 }
 
@@ -533,7 +534,7 @@ class _LoginRow extends StatelessWidget {
                   height: 36,
                   color: appCardColor(context),
                   alignment: Alignment.center,
-                  child: Text('未',
+                  child: Text(tr('未'),
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -545,18 +546,18 @@ class _LoginRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('未登录',
+                    Text(tr('未登录'),
                         style: const TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text('登录后查看个人排名',
+                    Text(tr('登录后查看个人排名'),
                         style: TextStyle(
                             fontSize: 11,
                             color: scheme.onSurfaceVariant)),
                   ],
                 ),
               ),
-              Text('去登录',
+              Text(tr('去登录'),
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

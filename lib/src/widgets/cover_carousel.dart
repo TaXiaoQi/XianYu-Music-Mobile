@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../home/home_providers.dart';
 import '../player/player_provider.dart';
 import 'cover_image.dart';
+import '../i18n/i18n.dart';
 
 /// 首页顶端轮播块：固定 2 页（第 1 页正在播放单曲，第 2 页听歌统计数据）。
 class CoverCarousel extends ConsumerStatefulWidget {
@@ -231,8 +232,8 @@ class _StatsCard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
-                '听歌数据统计',
+                Text(
+                tr('听歌数据统计'),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -250,15 +251,15 @@ class _StatsCard extends ConsumerWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-            error: (_, _) => const Text(
-              '暂无统计数据',
+            error: (_, _) =>   Text(
+              tr('暂无统计数据'),
               style: TextStyle(color: Colors.white54),
             ),
             data: (stats) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '累计听歌总时长',
+                  Text(
+                  tr('累计听歌总时长'),
                   style: TextStyle(fontSize: 12, color: Colors.white54),
                 ),
                 const SizedBox(height: 4),
@@ -277,15 +278,15 @@ class _StatsCard extends ConsumerWidget {
                     Expanded(
                       child: _SubStatItem(
                         icon: Icons.today,
-                        label: '今天听歌时长',
+                        label: tr('今天听歌时长'),
                         value: stats.todayDurationText,
                       ),
                     ),
                     Expanded(
                       child: _SubStatItem(
                         icon: Icons.queue_music,
-                        label: '今天已听',
-                        value: '${stats.todayPlayCount} 首',
+                        label: tr('今天已听'),
+                        value: tr('{n} 首', {'n': stats.todayPlayCount}),
                       ),
                     ),
                   ],
@@ -366,7 +367,7 @@ class _EmptyCarousel extends StatelessWidget {
           Icon(Icons.music_note, size: 44, color: scheme.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
-            '暂无播放',
+            tr('暂无播放'),
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
         ],
@@ -413,8 +414,8 @@ class _PlayingBadge extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          const Text(
-            '播放中',
+            Text(
+            tr('播放中'),
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,

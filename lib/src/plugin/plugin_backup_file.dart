@@ -10,6 +10,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import '../i18n/i18n.dart';
 
 /// 按扩展名/魔数从字节中提取备份 JSON 文本。扩展名未知时自动探测。
 String extractBackupJsonBytes(List<int> rawBytes, String fileName) {
@@ -54,7 +55,7 @@ List<int> _gunzip(List<int> bytes) {
   try {
     return GZipCodec().decode(bytes);
   } on FormatException {
-    throw FormatException('lxmc 备份解压失败：不是有效的 gzip 数据');
+    throw FormatException(tr('lxmc 备份解压失败：不是有效的 gzip 数据'));
   }
 }
 
@@ -108,7 +109,7 @@ Map<String, List<int>> _parseZip(Uint8List data) {
 
   final eocdOffset = _findEocd(data);
   if (eocdOffset == -1) {
-    throw const FormatException('ZIP 中未找到 End of Central Directory Record');
+    throw   FormatException(tr('ZIP 中未找到 End of Central Directory Record'));
   }
 
   var totalEntries = _u16(data, eocdOffset + 10);
@@ -243,6 +244,6 @@ String _extractJsonFromZip(Uint8List data) {
   }
 
   // 5. 友好错误，列出文件帮助排查。
-  final fileList = files.isNotEmpty ? files.map((f) => '"$f"').join(', ') : '(空)';
+  final fileList = files.isNotEmpty ? files.map((f) => '"$f"').join(', ') : tr('(空)');
   throw FormatException('ZIP 中未找到可识别的备份文件。包含: $fileList');
 }

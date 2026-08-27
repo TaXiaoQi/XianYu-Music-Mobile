@@ -12,6 +12,7 @@ import '../rust/music/types.dart';
 
 import 'predictive_dialog_route.dart';
 import 'app_toast.dart';
+import '../i18n/i18n.dart';
 
 /// 歌曲信息弹窗：查看 + 标签编辑 + 歌词编辑（对齐桌面端 SongInfoModal）。
 /// 用参与预测返回的路由承载，返回手势可跟手关闭。
@@ -117,7 +118,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         if (mounted) setState(() {});
       } catch (e) {
         if (mounted) {
-          setState(() => _error = '读取歌词失败：$e');
+          setState(() => _error = tr('读取歌词失败：{e}', {'e': e}));
         }
       }
     }
@@ -126,11 +127,11 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
   String _sourceLabel() {
     switch (_lyricsSource) {
       case LyricsStorageSource.embedded:
-        return '内嵌歌词';
+        return tr('内嵌歌词');
       case LyricsStorageSource.sidecar:
-        return '侧车文件（LRC）';
+        return tr('侧车文件（LRC）');
       case LyricsStorageSource.empty:
-        return '暂无歌词';
+        return tr('暂无歌词');
     }
   }
 
@@ -156,7 +157,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         _saving = false;
         _mode = _InfoMode.view;
       });
-      showXianYuToast(context, '歌词已保存');
+      showXianYuToast(context, tr('歌词已保存'));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -170,7 +171,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
     if (_saving) return;
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      setState(() => _error = '歌名不能为空');
+      setState(() => _error = tr('歌名不能为空'));
       return;
     }
     setState(() {
@@ -198,7 +199,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         _saving = false;
         _mode = _InfoMode.view;
       });
-      showXianYuToast(context, '歌曲信息已保存');
+      showXianYuToast(context, tr('歌曲信息已保存'));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -213,9 +214,9 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text(switch (_mode) {
-        _InfoMode.view => '歌曲信息',
-        _InfoMode.edit => '编辑歌曲信息',
-        _InfoMode.lyrics => '编辑歌词',
+        _InfoMode.view => tr('歌曲信息'),
+        _InfoMode.edit => tr('编辑歌曲信息'),
+        _InfoMode.lyrics => tr('编辑歌词'),
       }),
       content: SizedBox(
         width: double.maxFinite,
@@ -237,23 +238,23 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
             TextButton(
               onPressed: () =>
                   setState(() { _mode = _InfoMode.edit; _error = null; }),
-              child: const Text('编辑信息'),
+              child:   Text(tr('编辑信息')),
             ),
           if (widget.editable)
             TextButton(
               onPressed: _enterLyricsMode,
-              child: const Text('编辑歌词'),
+              child:   Text(tr('编辑歌词')),
             ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+            child:   Text(tr('关闭')),
           ),
         ];
       case _InfoMode.edit:
         return [
           TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: _saving ? null : _saveTags,
@@ -262,14 +263,14 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('保存'),
+                :   Text(tr('保存')),
           ),
         ];
       case _InfoMode.lyrics:
         return [
           TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: _saving ? null : _saveLyrics,
@@ -278,7 +279,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('保存'),
+                :   Text(tr('保存')),
           ),
         ];
     }
@@ -290,11 +291,11 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
     String sizeText = '--';
     String quality = item.onlineQuality ?? '--';
     String pathText = item.path;
-    String sourceText = '在线音源';
+    String sourceText = tr('在线音源');
 
     if (!item.isOnline) {
-      sourceText = '本地音乐';
-      quality = '原始音质';
+      sourceText = tr('本地音乐');
+      quality = tr('原始音质');
       try {
         final f = File(item.path);
         if (f.existsSync()) {
@@ -308,12 +309,12 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       } catch (_) {}
       final ext = item.path.split('.').last.toLowerCase();
       if (ext.isNotEmpty && ext.length <= 5) {
-        sourceText = '本地音乐 · ${ext.toUpperCase()}';
+        sourceText = tr('本地音乐 · {ext}', {'ext': ext.toUpperCase()});
       }
     } else if (item.path.startsWith('lx://')) {
-      sourceText = '洛雪音源 · ${item.source ?? ''}';
+      sourceText = tr('洛雪音源 · {source}', {'source': item.source ?? ''});
     } else {
-      sourceText = 'MusicFree 插件';
+      sourceText = tr('MusicFree 插件');
     }
 
     final duration = item.durationMs ~/ 1000;
@@ -321,13 +322,13 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         '${(duration ~/ 60).toString().padLeft(2, '0')}:${(duration % 60).toString().padLeft(2, '0')}';
 
     final rows = <Widget>[
-      _row('标题', item.title, scheme),
-      _row('歌手', item.artist.isEmpty ? '未知歌手' : item.artist, scheme),
-      _row('专辑', item.album.isEmpty ? '未知专辑' : item.album, scheme),
-      _row('时长', durationText, scheme),
-      _row('来源', sourceText, scheme),
-      _row('音质', quality, scheme),
-      _row('大小', sizeText, scheme),
+      _row(tr('标题'), item.title, scheme),
+      _row(tr('歌手'), item.artist.isEmpty ? tr('未知歌手') : item.artist, scheme),
+      _row(tr('专辑'), item.album.isEmpty ? tr('未知专辑') : item.album, scheme),
+      _row(tr('时长'), durationText, scheme),
+      _row(tr('来源'), sourceText, scheme),
+      _row(tr('音质'), quality, scheme),
+      _row(tr('大小'), sizeText, scheme),
     ];
 
     // 本地歌曲补充详情（流派/年份/音轨/碟号）
@@ -338,13 +339,13 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       final track = detail['trackNumber'] as String?;
       final disc = detail['discNumber'] as String?;
       if (genre != null && genre.isNotEmpty) {
-        rows.add(_row('流派', genre, scheme));
+        rows.add(_row(tr('流派'), genre, scheme));
       }
-      if (year != null && year.isNotEmpty) rows.add(_row('年份', year, scheme));
+      if (year != null && year.isNotEmpty) rows.add(_row(tr('年份'), year, scheme));
       if (track != null && track.isNotEmpty) {
-        rows.add(_row('音轨', track, scheme));
+        rows.add(_row(tr('音轨'), track, scheme));
       }
-      if (disc != null && disc.isNotEmpty) rows.add(_row('碟号', disc, scheme));
+      if (disc != null && disc.isNotEmpty) rows.add(_row(tr('碟号'), disc, scheme));
     }
 
     // 技术信息（采样率/位深/码率/编码/封装）对齐 RwaS 技术信息页，只对本地文件展示
@@ -356,16 +357,16 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       final fmt = (detail['format'] as String?)?.trim();
       final container = (detail['container'] as String?)?.trim();
       final codec = (detail['codec'] as String?)?.trim();
-      if (sr != null && sr > 0) tech.add(('采样率', _fmtSampleRate(sr)));
-      if (bd != null && bd > 0) tech.add(('位深', '${bd} bit'));
-      if (br != null && br > 0) tech.add(('码率', '${br} kbps'));
+      if (sr != null && sr > 0) tech.add((tr('采样率'), _fmtSampleRate(sr)));
+      if (bd != null && bd > 0) tech.add((tr('位深'), '${bd} bit'));
+      if (br != null && br > 0) tech.add((tr('码率'), '${br} kbps'));
       if (codec != null && codec.isNotEmpty) {
-        tech.add(('编码', codec.toUpperCase()));
+        tech.add((tr('编码'), codec.toUpperCase()));
       } else if (fmt != null && fmt.isNotEmpty) {
-        tech.add(('编码', fmt.toUpperCase()));
+        tech.add((tr('编码'), fmt.toUpperCase()));
       }
       if (container != null && container.isNotEmpty) {
-        tech.add(('封装', container.toUpperCase()));
+        tech.add((tr('封装'), container.toUpperCase()));
       }
       if (tech.isNotEmpty) {
         rows.add(_techHeader(scheme));
@@ -375,7 +376,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       }
     }
 
-    rows.add(_row('路径', pathText, scheme, selectable: true));
+    rows.add(_row(tr('路径'), pathText, scheme, selectable: true));
 
     if (_error != null) {
       rows.add(Padding(
@@ -399,19 +400,19 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _field('标题', _titleCtrl),
+          _field(tr('标题'), _titleCtrl),
           const SizedBox(height: 10),
-          _field('歌手', _artistCtrl),
+          _field(tr('歌手'), _artistCtrl),
           const SizedBox(height: 10),
-          _field('专辑', _albumCtrl),
+          _field(tr('专辑'), _albumCtrl),
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _field('音轨号', _trackCtrl, number: true)),
+              Expanded(child: _field(tr('音轨号'), _trackCtrl, number: true)),
               const SizedBox(width: 10),
-              Expanded(child: _field('碟号', _discCtrl, number: true)),
+              Expanded(child: _field(tr('碟号'), _discCtrl, number: true)),
               const SizedBox(width: 10),
-              Expanded(child: _field('年份', _yearCtrl, number: true)),
+              Expanded(child: _field(tr('年份'), _yearCtrl, number: true)),
             ],
           ),
           if (_error != null)
@@ -423,7 +424,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              '修改将写入音频文件标签（ID3/Vorbis/MP4）',
+              tr('修改将写入音频文件标签（ID3/Vorbis/MP4）'),
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -442,7 +443,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
                 size: 14, color: scheme.onSurfaceVariant),
             const SizedBox(width: 4),
             Text(
-              _lyricsLoaded ? _sourceLabel() : '读取歌词中…',
+              _lyricsLoaded ? _sourceLabel() : tr('读取歌词中…'),
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
           ],
@@ -456,7 +457,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
             expands: true,
             textAlignVertical: TextAlignVertical.top,
             decoration: InputDecoration(
-              hintText: '[00:00.00] 歌词内容…',
+              hintText: tr('[00:00.00] 歌词内容…'),
               border: const OutlineInputBorder(),
               isDense: true,
               enabled: !_saving,
@@ -530,7 +531,7 @@ Widget _techHeader(ColorScheme scheme) {
         const Expanded(
             child: Divider(height: 1)),
         const SizedBox(width: 8),
-        Text('技术信息',
+        Text(tr('技术信息'),
             style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w600,

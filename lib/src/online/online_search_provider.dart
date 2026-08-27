@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../player/player_provider.dart';
 import '../rust/api.dart';
+import '../i18n/i18n.dart';
 
 /// 在线音源定义。
 class OnlineSource {
@@ -13,12 +14,12 @@ class OnlineSource {
 }
 
 /// 支持的在线音源。顺序即 UI 上的展示顺序。
-const kOnlineSources = <OnlineSource>[
-  OnlineSource('kw', '酷我'),
-  OnlineSource('wy', '网易云'),
-  OnlineSource('kg', '酷狗'),
-  OnlineSource('tx', 'QQ音乐'),
-  OnlineSource('mg', '咪咕'),
+get kOnlineSources => <OnlineSource>[
+  OnlineSource('kw', tr('酷我')),
+  OnlineSource('wy', tr('网易云')),
+  OnlineSource('kg', tr('酷狗')),
+  OnlineSource('tx', tr('QQ音乐')),
+  OnlineSource('mg', tr('咪咕')),
 ];
 
 /// 在线搜索结果条目。
@@ -209,7 +210,7 @@ class OnlineSearchNotifier extends StateNotifier<OnlineSearchState> {
       state = state.copyWith(
         results: const [],
         loading: false,
-        error: '搜索失败，请检查网络或换个音源',
+        error: tr('搜索失败，请检查网络或换个音源'),
       );
     }
   }

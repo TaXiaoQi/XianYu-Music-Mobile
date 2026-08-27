@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/rust/api.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 批量重命名页面：按标签模板重命名本地音乐文件（对齐桌面端工具箱重命名）。
 class BatchRenamePage extends ConsumerStatefulWidget {
@@ -30,18 +30,18 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
   bool _hasScanned = false;
   String? _error;
 
-  static const _presets = [
-    ('歌名 - 歌手', '{title} - {artist}'),
-    ('歌手 - 歌名', '{artist} - {title}'),
-    ('轨道. 歌名', '{track}. {title}'),
+  static get _presets => [
+    (tr('歌名 - 歌手'), '{title} - {artist}'),
+    (tr('歌手 - 歌名'), '{artist} - {title}'),
+    (tr('轨道. 歌名'), '{track}. {title}'),
   ];
 
-  static const _variables = [
-    ('{title}', '标题'),
-    ('{artist}', '歌手'),
-    ('{album}', '专辑'),
-    ('{year}', '年份'),
-    ('{track}', '轨道号'),
+  static get _variables => [
+    ('{title}', tr('标题')),
+    ('{artist}', tr('歌手')),
+    ('{album}', tr('专辑')),
+    ('{year}', tr('年份')),
+    ('{track}', tr('轨道号')),
   ];
 
   @override
@@ -57,7 +57,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
   Future<void> _scan() async {
     final folder = _folder;
     if (folder == null) {
-      setState(() => _error = '请先选择目标文件夹');
+      setState(() => _error = tr('请先选择目标文件夹'));
       return;
     }
     setState(() {
@@ -99,16 +99,16 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认重命名'),
-        content: Text('将重命名 ${valid.length} 个文件，此操作不可撤销。'),
+        title:   Text(tr('确认重命名')),
+        content: Text(tr('将重命名 {n} 个文件，此操作不可撤销。', {'n': valid.length})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('重命名'),
+            child:   Text(tr('重命名')),
           ),
         ],
       ),
@@ -137,7 +137,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
         _hasScanned = false;
         _previews = [];
       });
-      showXianYuToast(context, '成功重命名 $count 个文件');
+      showXianYuToast(context, tr('成功重命名 {n} 个文件', {'n': count}));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -153,22 +153,22 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     final folders = ref.watch(libraryProvider).folders;
 
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
-      appBar: AppBar(title: const Text('批量重命名')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title:   Text(tr('批量重命名'))),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // 文件夹选择
-          Text('目标文件夹',
+          Text(tr('目标文件夹'),
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: scheme.onSurfaceVariant)),
           const SizedBox(height: 8),
           if (folders.isEmpty)
-            Text('本地还没有文件夹，请先在「本地 → 文件夹」页添加扫描目录',
+            Text(tr('本地还没有文件夹，请先在「本地 → 文件夹」页添加扫描目录'),
                 style: TextStyle(fontSize: 12, color: scheme.outline))
           else
             Wrap(
@@ -191,7 +191,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           const SizedBox(height: 16),
 
           // 模板
-          Text('命名模板',
+          Text(tr('命名模板'),
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -243,7 +243,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: const Text('移除轨道号前缀', style: TextStyle(fontSize: 13)),
+            title:   Text(tr('移除轨道号前缀'), style: TextStyle(fontSize: 13)),
             value: _removeTrackPrefix,
             onChanged: (v) => setState(() {
               _removeTrackPrefix = v;
@@ -253,7 +253,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: const Text('移除来源前缀', style: TextStyle(fontSize: 13)),
+            title:   Text(tr('移除来源前缀'), style: TextStyle(fontSize: 13)),
             value: _removeSourcePrefix,
             onChanged: (v) => setState(() {
               _removeSourcePrefix = v;
@@ -274,7 +274,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
                           height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.search, size: 18),
-                  label: Text(_scanning ? '扫描中…' : '扫描预览'),
+                  label: Text(_scanning ? tr('扫描中…') : tr('扫描预览')),
                 ),
               ),
               if (_validItems.isNotEmpty && _hasScanned) ...[
@@ -291,8 +291,8 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
                         : const Icon(Icons.drive_file_rename_outline,
                             size: 18),
                     label: Text(_applying
-                        ? '重命名中…'
-                        : '应用 (${_validItems.length})'),
+                        ? tr('重命名中…')
+                        : tr('应用 ({n})', {'n': _validItems.length})),
                   ),
                 ),
               ],
@@ -310,8 +310,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           if (_hasScanned) ...[
             const SizedBox(height: 16),
             Text(
-              '预览（${_validItems.length} 个可重命名，'
-              '${_previews.length - _validItems.length} 个跳过）',
+              tr('预览（{valid} 个可重命名，', {'valid': _validItems.length}) + tr('{skip} 个跳过）', {'skip': _previews.length - _validItems.length}),
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -322,7 +321,7 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Center(
-                  child: Text('没有需要重命名的文件',
+                  child: Text(tr('没有需要重命名的文件'),
                       style:
                           TextStyle(fontSize: 13, color: scheme.outline)),
                 ),

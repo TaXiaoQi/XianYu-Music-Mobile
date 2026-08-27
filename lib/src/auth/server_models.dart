@@ -1,5 +1,6 @@
 /// 服务端接口数据模型（与桌面端 authService.ts / usageStats.ts 对齐）。
 library;
+import '../i18n/i18n.dart';
 
 /// 公告（get_announcement 返回的单条公告）。
 class Announcement {
@@ -61,18 +62,18 @@ class AboutConfig {
 
   factory AboutConfig.fromJson(Map<String, dynamic> j) => AboutConfig(
         officialSiteUrl: (j['officialSiteUrl'] ?? '').toString(),
-        officialSiteText: (j['officialSiteText'] ?? '前往官网').toString(),
+        officialSiteText: (j['officialSiteText'] ?? tr('前往官网')).toString(),
         updateEnabled: (j['updateEnabled'] as bool?) ?? true,
-        updateText: (j['updateText'] ?? '检查更新').toString(),
+        updateText: (j['updateText'] ?? tr('检查更新')).toString(),
         projectUrl: (j['projectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Mobile')
             .toString(),
-        projectText: (j['projectText'] ?? '开源地址').toString(),
+        projectText: (j['projectText'] ?? tr('开源地址')).toString(),
         referenceProjectUrl:
             (j['referenceProjectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Desktop')
                 .toString(),
-        referenceProjectText: (j['referenceProjectText'] ?? '参考项目').toString(),
+        referenceProjectText: (j['referenceProjectText'] ?? tr('参考项目')).toString(),
         joinGroupUrl: (j['joinGroupUrl'] ?? '').toString(),
-        joinGroupText: (j['joinGroupText'] ?? '加入群组').toString(),
+        joinGroupText: (j['joinGroupText'] ?? tr('加入群组')).toString(),
       );
 }
 
@@ -116,7 +117,7 @@ class UserAgreement {
   const UserAgreement({this.title = '弦予音乐用户协议', this.content = ''});
 
   factory UserAgreement.fromJson(Map<String, dynamic> j) => UserAgreement(
-        title: (j['title'] ?? '弦予音乐用户协议').toString(),
+        title: (j['title'] ?? tr('弦予音乐用户协议')).toString(),
         content: (j['content'] ?? '').toString(),
       );
 }

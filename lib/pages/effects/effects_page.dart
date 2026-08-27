@@ -6,6 +6,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 音效页：EQ / 变速变调 / 混响 / 空间音效 / 高级音效。
 class EffectsPage extends ConsumerWidget {
@@ -52,7 +53,7 @@ class EffectsPage extends ConsumerWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Bit-perfect / DSD 直出中，音效已锁定',
+                              tr('Bit-perfect / DSD 直出中，音效已锁定'),
                               style: TextStyle(
                                   fontSize: 13, color: scheme.primary),
                             ),
@@ -60,21 +61,21 @@ class EffectsPage extends ConsumerWidget {
                         ],
                       ),
                     ),
-                  _sectionHeader(context, '均衡器'),
+                  _sectionHeader(context, tr('均衡器')),
                   _EqSection(settings: settings, notifier: notifier),
-                  _sectionHeader(context, '变速变调'),
+                  _sectionHeader(context, tr('变速变调')),
                   _PitchRateSection(settings: settings, notifier: notifier),
-                  _sectionHeader(context, '混响'),
+                  _sectionHeader(context, tr('混响')),
                   _ReverbSection(settings: settings, notifier: notifier),
-                  _sectionHeader(context, '空间音效'),
+                  _sectionHeader(context, tr('空间音效')),
                   _SpatialSection(settings: settings, notifier: notifier),
-                  _sectionHeader(context, '高级音效'),
+                  _sectionHeader(context, tr('高级音效')),
                   _AdvancedSection(settings: settings, notifier: notifier),
                   const SizedBox(height: 24),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。',
+                      tr('音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。'),
                       style: TextStyle(fontSize: 12, color: scheme.outline),
                     ),
                   ),
@@ -88,12 +89,12 @@ class EffectsPage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              title: const Text('音效'),
+              title:   Text(tr('音效')),
               actions: [
                 TextButton.icon(
                   onPressed: locked ? null : () => notifier.resetAll(),
                   icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('重置'),
+                  label:   Text(tr('重置')),
                 ),
               ],
             ),
@@ -142,7 +143,7 @@ class _EqSection extends ConsumerWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: ActionChip(
                   avatar: Icon(Icons.add, size: 18, color: scheme.primary),
-                  label: const Text('保存'),
+                  label:   Text(tr('保存')),
                   onPressed: () => _savePreset(context, manager),
                 ),
               ),
@@ -187,7 +188,7 @@ class _EqSection extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 2, 16, 6),
           child: Text(
-            customPresets.isEmpty ? '长按自定义预设可重命名或删除' : '预设 · 点按应用 · 长按编辑',
+            customPresets.isEmpty ? tr('长按自定义预设可重命名或删除') : tr('预设 · 点按应用 · 长按编辑'),
             style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
         ),
@@ -240,17 +241,17 @@ class _EqSection extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('保存均衡器预设', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            Text(tr('保存均衡器预设'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            Text('将当前 EQ 增益保存为自定义预设，同名将覆盖',
+            Text(tr('将当前 EQ 增益保存为自定义预设，同名将覆盖'),
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '预设名称',
-                hintText: '例如：我的流行',
+              decoration:   InputDecoration(
+                labelText: tr('预设名称'),
+                hintText: tr('例如：我的流行'),
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -261,14 +262,14 @@ class _EqSection extends ConsumerWidget {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('取消'),
+                  child:   Text(tr('取消')),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: () {
                     Navigator.pop(dialogContext, controller.text.trim());
                   },
-                  child: const Text('保存'),
+                  child:   Text(tr('保存')),
                 ),
               ],
             ),
@@ -280,7 +281,7 @@ class _EqSection extends ConsumerWidget {
     if (name != null && name.isNotEmpty) {
       await manager.saveCustomEqPreset(name);
       if (context.mounted) {
-        showXianYuToast(context, '已保存预设「$name」',
+        showXianYuToast(context, tr('已保存预设「{name}」', {'name': name}),
             duration: const Duration(seconds: 1));
       }
     }
@@ -297,19 +298,19 @@ class _EqSection extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text('预设「$name」',
+              title: Text(tr('预设「{name}」', {'name': name}),
                   style: const TextStyle(fontWeight: FontWeight.w600)),
               dense: true,
             ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.drive_file_rename_outline),
-              title: const Text('重命名'),
+              title:   Text(tr('重命名')),
               onTap: () => Navigator.pop(dialogContext, 'rename'),
             ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: scheme.error),
-              title: Text('删除', style: TextStyle(color: scheme.error)),
+              title: Text(tr('删除'), style: TextStyle(color: scheme.error)),
               onTap: () => Navigator.pop(dialogContext, 'delete'),
             ),
           ],
@@ -327,14 +328,14 @@ class _EqSection extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('重命名预设',
+              Text(tr('重命名预设'),
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '预设名称',
+                decoration:   InputDecoration(
+                  labelText: tr('预设名称'),
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -347,13 +348,13 @@ class _EqSection extends ConsumerWidget {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('取消'),
+                    child:   Text(tr('取消')),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: () =>
                         Navigator.pop(dialogContext, controller.text.trim()),
-                    child: const Text('保存'),
+                    child:   Text(tr('保存')),
                   ),
                 ],
               ),
@@ -368,7 +369,7 @@ class _EqSection extends ConsumerWidget {
     } else if (action == 'delete') {
       await manager.deleteCustomEqPreset(name);
       if (context.mounted) {
-        showXianYuToast(context, '已删除预设「$name」',
+        showXianYuToast(context, tr('已删除预设「{name}」', {'name': name}),
             duration: const Duration(seconds: 1));
       }
     }
@@ -388,7 +389,7 @@ class _PitchRateSection extends ConsumerWidget {
       child: Column(
         children: [
           _SliderTile(
-            label: '倍速',
+            label: tr('倍速'),
             value: settings.playbackRate,
             min: 50,
             max: 200,
@@ -396,7 +397,7 @@ class _PitchRateSection extends ConsumerWidget {
             onChanged: (v) => notifier.setPlaybackRate(v),
           ),
           _SliderTile(
-            label: '变调',
+            label: tr('变调'),
             value: settings.pitchShift,
             min: 50,
             max: 200,
@@ -405,7 +406,7 @@ class _PitchRateSection extends ConsumerWidget {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.music_note),
-            title: const Text('变速时保持音调'),
+            title:   Text(tr('变速时保持音调')),
             value: settings.preservesPitch,
             onChanged: (v) => notifier.setPreservesPitch(v),
           ),
@@ -454,7 +455,7 @@ class _ReverbSection extends ConsumerWidget {
           if (settings.reverbKind != 'none') ...[
             const SizedBox(height: 8),
             _SliderTile(
-              label: '干声',
+              label: tr('干声'),
               value: settings.reverbDry * 100,
               min: 0,
               max: 100,
@@ -464,7 +465,7 @@ class _ReverbSection extends ConsumerWidget {
                   settings.reverbWet),
             ),
             _SliderTile(
-              label: '湿声',
+              label: tr('湿声'),
               value: settings.reverbWet * 100,
               min: 0,
               max: 100,
@@ -497,12 +498,12 @@ class _SpatialSection extends ConsumerWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final m in const [
-                ('none', '关闭'),
-                ('surround3d', '3D 环绕'),
-                ('d8', '8D 环绕'),
-                ('d36', '36D 环绕'),
-                ('virtual', '虚拟环绕'),
+              for (final m in   [
+                ('none', tr('关闭')),
+                ('surround3d', tr('3D 环绕')),
+                ('d8', tr('8D 环绕')),
+                ('d36', tr('36D 环绕')),
+                ('virtual', tr('虚拟环绕')),
               ])
                 ChoiceChip(
                   label: Text(m.$2),
@@ -514,15 +515,15 @@ class _SpatialSection extends ConsumerWidget {
           ),
           if (mode == 'surround3d') ...[
             _SliderTile(
-              label: '旋转速度',
+              label: tr('旋转速度'),
               value: settings.spatialSpeed,
               min: 2,
               max: 20,
-              display: '${settings.spatialSpeed.toStringAsFixed(1)}s/圈',
+              display: tr('{v}s/圈', {'v': settings.spatialSpeed.toStringAsFixed(1)}),
               onChanged: (v) => notifier.setSpatial(mode, speed: v),
             ),
             _SliderTile(
-              label: '声源距离',
+              label: tr('声源距离'),
               value: settings.spatialRadius * 10,
               min: 1,
               max: 20,
@@ -532,15 +533,15 @@ class _SpatialSection extends ConsumerWidget {
           ],
           if (mode == 'd8' || mode == 'd36') ...[
             _SliderTile(
-              label: '旋转速度',
+              label: tr('旋转速度'),
               value: settings.spatialSpeed,
               min: 2,
               max: 60,
-              display: '${settings.spatialSpeed.round()}s/圈',
+              display: tr('{v}s/圈', {'v': settings.spatialSpeed.round()}),
               onChanged: (v) => notifier.setSpatial(mode, speed: v),
             ),
             _SliderTile(
-              label: '虚拟距离',
+              label: tr('虚拟距离'),
               value: settings.spatialRadius * 5,
               min: 1,
               max: 20,
@@ -550,7 +551,7 @@ class _SpatialSection extends ConsumerWidget {
           ],
           if (mode == 'virtual') ...[
             _SliderTile(
-              label: '声场宽度',
+              label: tr('声场宽度'),
               value: settings.virtualSurroundSpread,
               min: 1,
               max: 20,
@@ -579,21 +580,21 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.mic_off,
-            title: '消人声',
+            title: tr('消人声'),
             value: settings.vocalRemoval,
             onChanged: (v) => notifier.set(settings.copyWith(vocalRemoval: v)),
           ),
           _switchTile(
             context,
             icon: Icons.waves,
-            title: '颤音',
+            title: tr('颤音'),
             value: settings.vibratoEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(vibratoEnabled: v)),
           ),
           if (settings.vibratoEnabled) ...[
             _SliderTile(
-              label: '颤音速率',
+              label: tr('颤音速率'),
               value: settings.vibratoRate,
               min: 1,
               max: 20,
@@ -601,7 +602,7 @@ class _AdvancedSection extends ConsumerWidget {
               onChanged: (v) => notifier.set(settings.copyWith(vibratoRate: v)),
             ),
             _SliderTile(
-              label: '颤音深度',
+              label: tr('颤音深度'),
               value: settings.vibratoDepth,
               min: 0,
               max: 10,
@@ -612,14 +613,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.album,
-            title: '抖音效果器',
+            title: tr('抖音效果器'),
             value: settings.tremoloEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(tremoloEnabled: v)),
           ),
           if (settings.tremoloEnabled) ...[
             _SliderTile(
-              label: '速率',
+              label: tr('速率'),
               value: settings.tremoloRate,
               min: 1,
               max: 20,
@@ -627,7 +628,7 @@ class _AdvancedSection extends ConsumerWidget {
               onChanged: (v) => notifier.set(settings.copyWith(tremoloRate: v)),
             ),
             _SliderTile(
-              label: '深度',
+              label: tr('深度'),
               value: settings.tremoloDepth,
               min: 0,
               max: 100,
@@ -638,14 +639,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.speaker,
-            title: 'Bass 重低音增强',
+            title: tr('Bass 重低音增强'),
             value: settings.bassBoostEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(bassBoostEnabled: v)),
           ),
           if (settings.bassBoostEnabled) ...[
             _SliderTile(
-              label: '增益',
+              label: tr('增益'),
               value: settings.bassBoostGain,
               min: 0,
               max: 15,
@@ -655,7 +656,7 @@ class _AdvancedSection extends ConsumerWidget {
             ),
             SwitchListTile(
               secondary: const Icon(Icons.bolt),
-              title: const Text('动态低音回弹'),
+              title:   Text(tr('动态低音回弹')),
               value: settings.bassBoostDynamic,
               onChanged: (v) =>
                   notifier.set(settings.copyWith(bassBoostDynamic: v)),
@@ -664,14 +665,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.graphic_eq,
-            title: '高音增强',
+            title: tr('高音增强'),
             value: settings.trebleEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(trebleEnabled: v)),
           ),
           if (settings.trebleEnabled) ...[
             _SliderTile(
-              label: '增益',
+              label: tr('增益'),
               value: settings.trebleGain,
               min: 0,
               max: 15,
@@ -683,14 +684,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.auto_fix_high,
-            title: '失真',
+            title: tr('失真'),
             value: settings.distortionEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(distortionEnabled: v)),
           ),
           if (settings.distortionEnabled) ...[
             _SliderTile(
-              label: '失真强度',
+              label: tr('失真强度'),
               value: settings.distortionAmount,
               min: 1,
               max: 100,
@@ -700,7 +701,7 @@ class _AdvancedSection extends ConsumerWidget {
             ),
             SwitchListTile(
               secondary: const Icon(Icons.tune),
-              title: const Text('软失真'),
+              title:   Text(tr('软失真')),
               value: settings.distortionType == 'soft',
               onChanged: (v) => notifier.set(settings.copyWith(
                   distortionType: v ? 'soft' : 'hard')),
@@ -709,13 +710,13 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.repeat,
-            title: '延迟回声',
+            title: tr('延迟回声'),
             value: settings.delayEnabled,
             onChanged: (v) => notifier.set(settings.copyWith(delayEnabled: v)),
           ),
           if (settings.delayEnabled) ...[
             _SliderTile(
-              label: '延迟时间',
+              label: tr('延迟时间'),
               value: settings.delayTime,
               min: 50,
               max: 2000,
@@ -723,7 +724,7 @@ class _AdvancedSection extends ConsumerWidget {
               onChanged: (v) => notifier.set(settings.copyWith(delayTime: v)),
             ),
             _SliderTile(
-              label: '反馈',
+              label: tr('反馈'),
               value: settings.delayFeedback,
               min: 0,
               max: 90,
@@ -732,7 +733,7 @@ class _AdvancedSection extends ConsumerWidget {
                   notifier.set(settings.copyWith(delayFeedback: v)),
             ),
             _SliderTile(
-              label: '混合',
+              label: tr('混合'),
               value: settings.delayMix,
               min: 0,
               max: 100,
@@ -743,7 +744,7 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.layers,
-            title: '镶边',
+            title: tr('镶边'),
             value: settings.flangerEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(flangerEnabled: v)),
@@ -751,14 +752,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.blur_on,
-            title: '相位',
+            title: tr('相位'),
             value: settings.phaserEnabled,
             onChanged: (v) => notifier.set(settings.copyWith(phaserEnabled: v)),
           ),
           _switchTile(
             context,
             icon: Icons.compress,
-            title: '压缩器',
+            title: tr('压缩器'),
             value: settings.compressorEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(compressorEnabled: v)),
@@ -766,7 +767,7 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.volume_off,
-            title: '噪声门',
+            title: tr('噪声门'),
             value: settings.noiseGateEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(noiseGateEnabled: v)),
@@ -774,7 +775,7 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.vertical_align_top,
-            title: '限制器',
+            title: tr('限制器'),
             value: settings.limiterEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(limiterEnabled: v)),
@@ -782,7 +783,7 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.highlight,
-            title: '谐波激励器',
+            title: tr('谐波激励器'),
             value: settings.exciterEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(exciterEnabled: v)),
@@ -790,7 +791,7 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.speaker_group,
-            title: '次谐波低音增强',
+            title: tr('次谐波低音增强'),
             value: settings.subBassEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(subBassEnabled: v)),
@@ -798,14 +799,14 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.graphic_eq,
-            title: 'Lo-Fi 低保真',
+            title: tr('Lo-Fi 低保真'),
             value: settings.loFiEnabled,
             onChanged: (v) => notifier.set(settings.copyWith(loFiEnabled: v)),
           ),
           _switchTile(
             context,
             icon: Icons.space_bar,
-            title: '立体声拓宽',
+            title: tr('立体声拓宽'),
             value: settings.stereoWidenEnabled,
             onChanged: (v) =>
                 notifier.set(settings.copyWith(stereoWidenEnabled: v)),
@@ -813,21 +814,21 @@ class _AdvancedSection extends ConsumerWidget {
           _switchTile(
             context,
             icon: Icons.merge,
-            title: '单声道合并',
+            title: tr('单声道合并'),
             value: settings.monoMerge,
             onChanged: (v) => notifier.set(settings.copyWith(monoMerge: v)),
           ),
           _switchTile(
             context,
             icon: Icons.swap_horiz,
-            title: '左右声道交换',
+            title: tr('左右声道交换'),
             value: settings.channelSwap,
             onChanged: (v) => notifier.set(settings.copyWith(channelSwap: v)),
           ),
           _switchTile(
             context,
             icon: Icons.auto_awesome,
-            title: 'V4A 组合音效',
+            title: tr('V4A 组合音效'),
             value: settings.v4aEnabled,
             onChanged: (v) => notifier.set(settings.copyWith(v4aEnabled: v)),
           ),

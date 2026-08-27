@@ -28,6 +28,7 @@ import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import 'media_url.dart';
 import 'online_quality_probe.dart';
+import '../i18n/i18n.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
 XianYuAudioHandler? audioHandler;
@@ -63,9 +64,9 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     mediaItem.add(
       as_pkg.MediaItem(
         id: item.path,
-        album: item.album.isEmpty ? '弦予音乐' : item.album,
+        album: item.album.isEmpty ? tr('弦予音乐') : item.album,
         title: item.title,
-        artist: item.artist.isEmpty ? '未知歌手' : item.artist,
+        artist: item.artist.isEmpty ? tr('未知歌手') : item.artist,
         duration: Duration(milliseconds: (durationSecs * 1000).round()),
         artUri: artUri,
       ),
@@ -93,7 +94,7 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
             androidIcon: isFavorite
                 ? 'drawable/ic_notif_favorite_filled'
                 : 'drawable/ic_notif_favorite',
-            label: isFavorite ? '取消收藏' : '收藏',
+            label: isFavorite ? tr('取消收藏') : tr('收藏'),
             action: as_pkg.MediaAction.custom,
             customAction: const as_pkg.CustomMediaAction(name: 'toggleFavorite'),
           ),
@@ -133,9 +134,9 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
 
   /// 播放顺序对应的控制中心无障碍标签。
   String _playModeLabel(int mode) => switch (mode) {
-        1 => '单曲循环',
-        2 => '随机播放',
-        _ => '列表循环',
+        1 => tr('单曲循环'),
+        2 => tr('随机播放'),
+        _ => tr('列表循环'),
       };
 
   /// 控制中心自定义按键（收藏 / 播放顺序）。
@@ -975,14 +976,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(
             error: e is PluginEngineException
                 ? e.message
-                : '播放失败：${e.toString()}');
+                : tr('播放失败：{e}', {'e': e.toString()}));
       } else {
         // 本地歌曲失败同样透出：静默失败会让用户以为「点击没反应」。
         debugPrint('[play] 本地播放失败 path=${item.path} error=$e');
         state = state.copyWith(
             error: e is PluginEngineException
                 ? e.message
-                : '本地播放失败：${e.toString()}');
+                : tr('本地播放失败：{e}', {'e': e.toString()}));
       }
       _syncToSystemMediaSession();
     }
@@ -1021,11 +1022,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _refreshQualityMenuState(probe);
         return;
       }
-      throw StateError('直链解析失败');
+      throw StateError(tr('直链解析失败'));
     }
     // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
-    if (url == null) throw StateError('无法获取播放链接');
+    if (url == null) throw StateError(tr('无法获取播放链接'));
     state = state.copyWith(
       resolving: false,
       currentQuality: url.quality,
@@ -1422,7 +1423,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _updateRgGain(plan.cachedPath);
     } else {
       if (!RegExp(r'^https?://').hasMatch(plan.url)) {
-        throw StateError('远程源配置缺失或已失效');
+        throw StateError(tr('远程源配置缺失或已失效'));
       }
       await _player.setUrl(plan.url, headers: plan.headers);
       _rgGain = 1.0;
@@ -1446,7 +1447,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _startUrl(String url, {Map<String, String>? headers}) async {
     final clean = sanitizeMediaUrl(url);
-    if (clean.isEmpty) throw StateError('无效的播放链接');
+    if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
     // 合并插件 headers 与按域名补齐的防盗链头（Referer/Origin/Accept）。
     final h = normalizeMediaRequestHeaders(clean, headers);
     await _player.setUrl(clean, headers: h);
@@ -2050,7 +2051,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           state = state.copyWith(
             isPlaying: false,
             resolving: false,
-            error: '无法获取播放链接',
+            error: tr('无法获取播放链接'),
           );
           _syncToSystemMediaSession();
           return;
@@ -2067,7 +2068,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(
         isPlaying: false,
         resolving: false,
-        error: '在线播放失败',
+        error: tr('在线播放失败'),
       );
       _syncToSystemMediaSession();
     }

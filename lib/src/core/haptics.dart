@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../i18n/i18n.dart';
 
 /// 触觉反馈强度档位（与设置里的「触觉反馈力度」对应）。
 enum HapticStrength {
@@ -6,9 +7,9 @@ enum HapticStrength {
   normal('正常'),
   heavy('重');
 
-  const HapticStrength(this.label);
-
-  final String label;
+  const HapticStrength(this._label);
+  final String _label;
+  String get label => tr(_label);
 }
 
 /// 由设置存储的整数值解析强度档：0=轻，1=正常，2=重，越界兜底正常。

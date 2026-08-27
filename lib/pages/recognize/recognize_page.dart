@@ -13,6 +13,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 听歌识曲页（桌面端风格）：居中麦克风圆钮 + 脉冲/旋转 / 波形条，
 /// 识别成功后展示匹配度、封面、收藏、加歌单与重新识别。
@@ -69,7 +70,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         _matches = matches;
         _phase = _Phase.done;
         if (matches.isEmpty && _error == null) {
-          _error = '没有识别到匹配的歌曲，请靠近音源重试';
+          _error = tr('没有识别到匹配的歌曲，请靠近音源重试');
         }
       });
     } on RecognizeException catch (e) {
@@ -77,7 +78,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       setState(() {
         _phase = _Phase.idle;
         // 用户主动停止识别，不展示错误。
-        if (e.message == '识别已取消') {
+        if (e.message == tr('识别已取消')) {
           _error = null;
         } else {
           _error = e.message;
@@ -87,7 +88,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       if (!mounted) return;
       setState(() {
         _phase = _Phase.idle;
-        _error = '识别失败：$e';
+        _error = tr('识别失败：{e}', {'e': e});
       });
     }
   }
@@ -139,7 +140,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         .read(playerProvider.notifier)
         .playQueue([_toQueueItem(m)]);
     if (mounted) {
-      showXianYuToast(context, '正在解析播放链接…',
+      showXianYuToast(context, tr('正在解析播放链接…'),
           duration: const Duration(seconds: 1));
     }
   }
@@ -149,8 +150,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     showXianYuToast(
       context,
       ref.read(favoritesProvider).contains(_toQueueItem(m).path)
-          ? '已收藏'
-          : '已取消收藏',
+          ? tr('已收藏')
+          : tr('已取消收藏'),
       duration: const Duration(seconds: 1),
     );
   }
@@ -162,10 +163,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   String get _statusText => switch (_phase) {
         _Phase.recording =>
-          '正在聆听 ${(RecognizeService.maxSeconds * _progress).round()}s / ${RecognizeService.maxSeconds}s',
-        _Phase.recognizing => '识别中…',
-        _Phase.done => _matches.isEmpty ? '识别失败' : '识别到 ${_matches.length} 首匹配',
-        _Phase.idle => '点击麦克风开始识别',
+          tr('正在聆听 {cur}s / {max}s', {'cur': (RecognizeService.maxSeconds * _progress).round(), 'max': RecognizeService.maxSeconds}),
+        _Phase.recognizing => tr('识别中…'),
+        _Phase.done => _matches.isEmpty ? tr('识别失败') : tr('识别到 {n} 首匹配', {'n': _matches.length}),
+        _Phase.idle => tr('点击麦克风开始识别'),
       };
 
   @override
@@ -179,7 +180,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
           children: [
             Icon(Icons.mic, size: 18, color: const Color(0xFFEC4141)),
             const SizedBox(width: 8),
-            const Text('听歌识曲', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(tr('听歌识曲'), style: TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -339,7 +340,7 @@ class _MicView extends StatelessWidget {
           const SizedBox.shrink()
         else ...[
           Text(
-            '识别外放中的音乐，请先播放音乐，再点击识别按钮',
+            tr('识别外放中的音乐，请先播放音乐，再点击识别按钮'),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11.5,
@@ -349,7 +350,7 @@ class _MicView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            active ? '点击停止' : '需安装支持酷狗音源的插件后播放',
+            active ? tr('点击停止') : tr('需安装支持酷狗音源的插件后播放'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: scheme.outline),
           ),
@@ -456,7 +457,7 @@ class _MatchListView extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           color: appCardColor(context),
           child: Text(
-            '识别到 ${matches.length} 首匹配',
+            tr('识别到 {n} 首匹配', {'n': matches.length}),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ),
@@ -546,7 +547,7 @@ class _MatchRowState extends State<_MatchRow> {
                   ),
                 ),
                 Text(
-                  '匹配度',
+                  tr('匹配度'),
                   style: TextStyle(
                       fontSize: 9, color: scheme.onSurfaceVariant),
                 ),
@@ -602,7 +603,7 @@ class _MatchRowState extends State<_MatchRow> {
               IconButton(
                 icon: Icon(Icons.play_circle_fill,
                     size: 30, color: primary),
-                tooltip: '播放',
+                tooltip: tr('播放'),
                 onPressed: _handlePlay,
               ),
               IconButton(
@@ -611,13 +612,13 @@ class _MatchRowState extends State<_MatchRow> {
                   size: 22,
                   color: widget.fav ? primary : scheme.onSurfaceVariant,
                 ),
-                tooltip: widget.fav ? '已收藏' : '收藏',
+                tooltip: widget.fav ? tr('已收藏') : tr('收藏'),
                 onPressed: widget.onFavorite,
               ),
               IconButton(
                 icon: Icon(Icons.playlist_add,
                     size: 22, color: scheme.onSurfaceVariant),
-                tooltip: '添加到歌单',
+                tooltip: tr('添加到歌单'),
                 onPressed: widget.onAddToPlaylist,
               ),
             ],
@@ -646,13 +647,13 @@ class _ReRecognizeButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
-        child: const Row(
+        child:   Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.refresh, size: 18, color: Color(0xFFEC4141)),
             SizedBox(width: 6),
             Text(
-              '重新识别',
+              tr('重新识别'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,

@@ -15,6 +15,7 @@ import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_info_dialog.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../pages/account/account_dialogs.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 调试页：集中展示所有弹窗（对齐桌面端 SettingsDebug）。
 /// 通过「关于页」版本号连点 5 次进入。
@@ -22,31 +23,31 @@ class DebugPage extends ConsumerWidget {
   const DebugPage({super.key});
 
   /// 假在线歌曲，用于触发需要歌曲参数的弹窗调试。
-  static final _fakeQueueItem = QueueItem(
-    path: 'plugin://demo/测试歌曲',
-    title: '测试歌曲',
-    artist: '测试歌手',
-    album: '测试专辑',
+  static get _fakeQueueItem => QueueItem(
+    path: tr('plugin://demo/测试歌曲'),
+    title: tr('测试歌曲'),
+    artist: tr('测试歌手'),
+    album: tr('测试专辑'),
     durationMs: 240000,
     onlineQuality: '320k',
     source: 'kw',
     onlineSongJson: '{"pluginId":"mf_demo","source":"kw","musicInfo":{}}',
   );
 
-  static final _fakeImportedSong = ImportedSong(
-    title: '测试歌曲',
-    artist: '测试歌手',
-    album: '测试专辑',
+  static get _fakeImportedSong => ImportedSong(
+    title: tr('测试歌曲'),
+    artist: tr('测试歌手'),
+    album: tr('测试专辑'),
     duration: 240,
-    path: 'plugin://demo/测试歌曲',
+    path: tr('plugin://demo/测试歌曲'),
     pluginId: 'mf_demo',
     source: 'kw',
     format: 'lx',
   );
 
-  static final _fakePlaylist = ImportedPlaylist(
+  static get _fakePlaylist => ImportedPlaylist(
     id: 'demo-playlist-id',
-    name: '测试歌单',
+    name: tr('测试歌单'),
     songs: [_fakeImportedSong],
     importedAt: DateTime.now().millisecondsSinceEpoch,
   );
@@ -55,7 +56,7 @@ class DebugPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           ListView(
@@ -66,87 +67,87 @@ class DebugPage extends ConsumerWidget {
               92 + MediaQuery.of(context).padding.bottom,
             ),
             children: [
-              _sectionHeader(context, '开发者模式'),
+              _sectionHeader(context, tr('开发者模式')),
               _CardGroup(
                 children: [
                   ListTile(
-                    title: const Text('开发者模式'),
+                    title:   Text(tr('开发者模式')),
                     subtitle: Text(
-                      '当前已开启，退出后设置页将隐藏调试入口',
+                      tr('当前已开启，退出后设置页将隐藏调试入口'),
                       style: TextStyle(
                           fontSize: 12, color: scheme.onSurfaceVariant),
                     ),
                     trailing: FilledButton(
                       onPressed: () {
                         ref.read(developerModeProvider.notifier).disable();
-                        showXianYuToast(context, '已退出调试模式');
+                        showXianYuToast(context, tr('已退出调试模式'));
                       },
-                      child: const Text('退出'),
+                      child:   Text(tr('退出')),
                     ),
                   ),
                 ],
               ),
-              _sectionHeader(context, '通用弹窗'),
+              _sectionHeader(context, tr('通用弹窗')),
               _CardGroup(
                 children: [
                   _DebugRow(
-                    title: '通用确认弹窗',
-                    subtitle: '测试 ModernDialogCard 通用确认弹窗',
+                    title: tr('通用确认弹窗'),
+                    subtitle: tr('测试 ModernDialogCard 通用确认弹窗'),
                     onTap: () => showModernConfirmDialog(
                       context: context,
-                      title: '通用确认弹窗',
-                      message: '这是移动端通用确认弹窗的调试内容，用于验证弹窗样式与交互。',
+                      title: tr('通用确认弹窗'),
+                      message: tr('这是移动端通用确认弹窗的调试内容，用于验证弹窗样式与交互。'),
                       icon: Icons.help_outline,
                     ),
                   ),
                   _DebugRow(
-                    title: '危险确认弹窗',
-                    subtitle: '测试红色危险操作的确认弹窗',
+                    title: tr('危险确认弹窗'),
+                    subtitle: tr('测试红色危险操作的确认弹窗'),
                     onTap: () => showModernConfirmDialog(
                       context: context,
-                      title: '危险操作',
-                      message: '此操作不可恢复，确定要继续吗？',
-                      confirmText: '继续',
+                      title: tr('危险操作'),
+                      message: tr('此操作不可恢复，确定要继续吗？'),
+                      confirmText: tr('继续'),
                       isDanger: true,
                       icon: Icons.warning_amber_rounded,
                     ),
                   ),
                   _DebugRow(
-                    title: '通用输入弹窗',
-                    subtitle: '测试 ModernDialogCard 通用输入弹窗',
+                    title: tr('通用输入弹窗'),
+                    subtitle: tr('测试 ModernDialogCard 通用输入弹窗'),
                     onTap: () => showModernInputDialog(
                       context: context,
-                      title: '通用输入弹窗',
-                      subtitle: '请输入内容',
-                      hintText: '请输入内容',
-                      initialValue: '调试初始值',
+                      title: tr('通用输入弹窗'),
+                      subtitle: tr('请输入内容'),
+                      hintText: tr('请输入内容'),
+                      initialValue: tr('调试初始值'),
                     ),
                   ),
                   _DebugRow(
-                    title: '单选弹窗',
-                    subtitle: '测试居中单选列表弹窗',
+                    title: tr('单选弹窗'),
+                    subtitle: tr('测试居中单选列表弹窗'),
                     onTap: () => showModernChoiceSheet<String>(
                       context: context,
-                      title: '单选弹窗',
-                      subtitle: '请选择一个选项',
-                      options: const [
+                      title: tr('单选弹窗'),
+                      subtitle: tr('请选择一个选项'),
+                      options:   [
                         ModernChoiceOption(
-                            label: '选项一', value: '1', subtitle: '第一个选项'),
+                            label: tr('选项一'), value: '1', subtitle: tr('第一个选项')),
                         ModernChoiceOption(
-                            label: '选项二', value: '2', subtitle: '第二个选项'),
-                        ModernChoiceOption(label: '选项三', value: '3'),
+                            label: tr('选项二'), value: '2', subtitle: tr('第二个选项')),
+                        ModernChoiceOption(label: tr('选项三'), value: '3'),
                       ],
                       currentValue: '1',
                     ),
                   ),
                 ],
               ),
-              _sectionHeader(context, '账号与系统'),
+              _sectionHeader(context, tr('账号与系统')),
               _CardGroup(
                 children: [
                   _DebugRow(
-                    title: '设置同步冲突弹窗',
-                    subtitle: '测试云端设置冲突时的选择弹窗',
+                    title: tr('设置同步冲突弹窗'),
+                    subtitle: tr('测试云端设置冲突时的选择弹窗'),
                     onTap: () => showSettingsConflictDialog(
                       context: context,
                       localTime: DateTime.now(),
@@ -154,31 +155,31 @@ class DebugPage extends ConsumerWidget {
                     ),
                   ),
                   _DebugRow(
-                    title: '资料修改前置确认',
-                    subtitle: '测试修改资料前的次数限制与审核提示',
+                    title: tr('资料修改前置确认'),
+                    subtitle: tr('测试修改资料前的次数限制与审核提示'),
                     onTap: () => showProfileEditGate(
                       context,
-                      title: '更换头像',
-                      desc: '今日剩余修改机会：0 次。头像修改需管理员审核，审核通过后生效。',
-                      confirmText: '知道了',
+                      title: tr('更换头像'),
+                      desc: tr('今日剩余修改机会：0 次。头像修改需管理员审核，审核通过后生效。'),
+                      confirmText: tr('知道了'),
                       blocked: true,
                     ),
                   ),
                   _DebugRow(
-                    title: '公告展示框',
-                    subtitle: '测试公告弹窗显示',
+                    title: tr('公告展示框'),
+                    subtitle: tr('测试公告弹窗显示'),
                     onTap: () => ref
                         .read(notificationServiceProvider)
                         .showAnnouncementForDebug(context),
                   ),
                 ],
               ),
-              _sectionHeader(context, '歌曲相关'),
+              _sectionHeader(context, tr('歌曲相关')),
               _CardGroup(
                 children: [
                   _DebugRow(
-                    title: '歌曲操作弹层',
-                    subtitle: '测试收藏/加歌单/歌曲信息/下载操作弹窗（假歌曲）',
+                    title: tr('歌曲操作弹层'),
+                    subtitle: tr('测试收藏/加歌单/歌曲信息/下载操作弹窗（假歌曲）'),
                     onTap: () => showSongActionsSheet(
                       context,
                       ref: ref,
@@ -186,8 +187,8 @@ class DebugPage extends ConsumerWidget {
                     ),
                   ),
                   _DebugRow(
-                    title: '添加到歌单弹窗',
-                    subtitle: '测试选择歌单并添加歌曲的弹窗（假歌曲）',
+                    title: tr('添加到歌单弹窗'),
+                    subtitle: tr('测试选择歌单并添加歌曲的弹窗（假歌曲）'),
                     onTap: () => showAddToPlaylistSheet(
                       context,
                       ref,
@@ -195,34 +196,34 @@ class DebugPage extends ConsumerWidget {
                     ),
                   ),
                   _DebugRow(
-                    title: '歌曲信息弹窗',
-                    subtitle: '测试歌曲信息/标签/歌词查看弹窗（假歌曲）',
+                    title: tr('歌曲信息弹窗'),
+                    subtitle: tr('测试歌曲信息/标签/歌词查看弹窗（假歌曲）'),
                     onTap: () => showSongInfoDialog(context, ref, _fakeQueueItem),
                   ),
                   _DebugRow(
-                    title: '歌单操作菜单',
-                    subtitle: '测试歌单重命名/删除操作菜单（假歌单）',
+                    title: tr('歌单操作菜单'),
+                    subtitle: tr('测试歌单重命名/删除操作菜单（假歌单）'),
                     onTap: () => showPlaylistActionsSheet(context, ref, _fakePlaylist),
                   ),
                 ],
               ),
-              _sectionHeader(context, '消息提示'),
+              _sectionHeader(context, tr('消息提示')),
               _CardGroup(
                 children: [
                   _DebugRow(
-                    title: '成功提示',
-                    subtitle: '底部居中胶囊成功提示',
-                    onTap: () => showXianYuToast(context, '这是一条成功的提示消息'),
+                    title: tr('成功提示'),
+                    subtitle: tr('底部居中胶囊成功提示'),
+                    onTap: () => showXianYuToast(context, tr('这是一条成功的提示消息')),
                   ),
                   _DebugRow(
-                    title: '普通提示',
-                    subtitle: '底部居中胶囊普通提示',
-                    onTap: () => showXianYuToast(context, '这是一条普通提示消息'),
+                    title: tr('普通提示'),
+                    subtitle: tr('底部居中胶囊普通提示'),
+                    onTap: () => showXianYuToast(context, tr('这是一条普通提示消息')),
                   ),
                   _DebugRow(
-                    title: '失败提示',
-                    subtitle: '底部居中胶囊失败提示',
-                    onTap: () => showXianYuToast(context, '这是一条失败的提示消息'),
+                    title: tr('失败提示'),
+                    subtitle: tr('底部居中胶囊失败提示'),
+                    onTap: () => showXianYuToast(context, tr('这是一条失败的提示消息')),
                   ),
                 ],
               ),
@@ -234,7 +235,7 @@ class DebugPage extends ConsumerWidget {
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: const Text('调试'),
+              title:   Text(tr('调试')),
             ),
           ),
         ],
@@ -282,7 +283,7 @@ class _DebugRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          '弹出',
+          tr('弹出'),
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w600,

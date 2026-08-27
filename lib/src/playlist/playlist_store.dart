@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../plugin/plugin_backup_import.dart';
+import '../i18n/i18n.dart';
 
 /// 导入的歌单（备份导入产生，持久化到 SharedPreferences）。
 class ImportedPlaylist {
@@ -27,7 +28,7 @@ class ImportedPlaylist {
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
         id: j['id'] as String? ?? '',
-        name: j['name'] as String? ?? '未命名歌单',
+        name: j['name'] as String? ?? tr('未命名歌单'),
         songs: (j['songs'] as List? ?? [])
             .whereType<Map>()
             .map((e) => ImportedSong.fromJson(e.cast<String, dynamic>()))
@@ -174,6 +175,31 @@ class PlaylistStore {
         id: p.id,
         name: p.name,
         songs: p.songs.where((s) => s.path != path).toList(),
+        importedAt: p.importedAt,
+      );
+    }).toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 按指定 path 顺序重排歌单内歌曲（未列出的歌曲保持在队尾）。
+  Future<List<ImportedPlaylist>> reorderSongs(
+      String id, List<String> orderedPaths) async {
+    final all = await loadAll();
+    final pathSet = orderedPaths.toSet();
+    final result = all.map((p) {
+      if (p.id != id) return p;
+      final byPath = {for (final s in p.songs) s.path: s};
+      final next = <ImportedSong>[
+        for (final path in orderedPaths)
+          if (byPath.containsKey(path)) byPath[path]!,
+        for (final s in p.songs)
+          if (!pathSet.contains(s.path)) s,
+      ];
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: next,
         importedAt: p.importedAt,
       );
     }).toList();
