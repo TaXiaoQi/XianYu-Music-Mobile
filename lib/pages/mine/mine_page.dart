@@ -770,8 +770,8 @@ class _ImportPlaylistRow extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(6, 10, 14, 10),
         child: Row(
           children: [
-            // 与可排序条目左侧把手列对齐，保持封面列视觉一致。
-            const SizedBox(width: 28),
+            // 可排序歌单行为整行长按拖拽，左侧并无常驻把手列，
+            // 故与上方歌单行一致，封面直接贴着 6px 左边距，不留空缺。
             Container(
               width: 56,
               height: 56,
