@@ -98,7 +98,15 @@ Future<void> main() async {
 /// 除上报远端外，同时写入本地诊断日志（AppLogger 常驻环形缓冲，
 /// 开启「问题诊断」后导出的 txt 会包含崩溃堆栈），便于本地排查。
 void _installErrorReporting(ProviderContainer container) {
+  // 错误处理器自身一旦在“抛错→上报→再抛错”的同一波里被重入，会让
+  // ApplicationLogManager 在 build 期同步换 state → 再 notify → 再抛，
+  // 形成吞掉每帧、冻结触控的无限递归。用一个运行期标志抑制同波内的
+  // 二次错误，下一个 microtask 再复位，仍保留对后续真实错误的正常上报。
+  var reportingError = false;
   FlutterError.onError = (details) {
+    if (reportingError) return;
+    reportingError = true;
+    scheduleMicrotask(() => reportingError = false);
     final msg = details.exceptionAsString();
     final stack = details.stack?.toString() ?? '';
     AppLogger.instance
@@ -117,6 +125,9 @@ void _installErrorReporting(ProviderContainer container) {
     }
   };
   PlatformDispatcher.instance.onError = (error, stack) {
+    if (reportingError) return true;
+    reportingError = true;
+    scheduleMicrotask(() => reportingError = false);
     AppLogger.instance
         .log('fatal', '平台异常: $error\n$stack');
     AppLog.error('platform', '$error\n$stack');

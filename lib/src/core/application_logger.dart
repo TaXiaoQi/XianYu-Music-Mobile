@@ -83,6 +83,10 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   Timer? _persistDebounce;
   int _seq = 0;
 
+  /// 待批量 flush 的新日志条目。
+  final List<AppLogEntry> _pending = [];
+  bool _flushScheduled = false;
+
   /// 记录前加载历史（异步），避免阻塞首帧。
   void bootstrap() {
     unawaited(_restore());
@@ -92,16 +96,36 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
 
   void log(LogLevel level, String category, String message) {
     _seq++;
-    state = _retain([
-      ...state,
-      AppLogEntry(
-        id: '${DateTime.now().millisecondsSinceEpoch}_$_seq',
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-        level: level,
-        category: category,
-        message: message,
-      ),
-    ]);
+    _pending.add(AppLogEntry(
+      id: '${DateTime.now().millisecondsSinceEpoch}_$_seq',
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      level: level,
+      category: category,
+      message: message,
+    ));
+    _flushLater();
+  }
+
+  /// 把待写日志合并成一次 state 更新。
+  ///
+  /// 注意：绝不能同步发生在 build/draw 阶段。异常上报链路（FlutterError.onError
+  /// → AppLog.error → log → 换 state）正是由 build 期抛错触发；若在此同步通知
+  /// StateNotifier 的监听者，监听者 widget 会在 buildScope 期间重建并再次抛
+  /// "setState() called during build"，经 onError 再一次 log，形成无限递归，
+  /// 每帧都无法结束 → 程序在跑（解码线程正常）但触控/画面被冻死。
+  /// 这里把换 state 延后到当前事件栈跑完（microtask）再统一 flush，中断该循环。
+  void _flushLater() {
+    if (_flushScheduled) return;
+    _flushScheduled = true;
+    scheduleMicrotask(_flush);
+  }
+
+  void _flush() {
+    _flushScheduled = false;
+    if (_pending.isEmpty || !mounted) return;
+    final entries = _pending;
+    _pending.clear();
+    state = _retain([...state, ...entries]);
     _schedulePersist();
   }
 
@@ -127,6 +151,8 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   }
 
   void clear() {
+    _pending.clear();
+    _flushScheduled = false;
     state = const [];
     _schedulePersist();
   }
