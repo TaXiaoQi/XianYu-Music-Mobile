@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
@@ -8,6 +9,19 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import 'lyric_model.dart';
+
+/// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
+/// 避免重复网络请求与主线程 JSON 解析。上限防止长期播放后无界增长。
+final Map<String, List<LyricLine>> _lyricsCache = {};
+const int _lyricsCacheMax = 24;
+
+void _cacheLyrics(String path, List<LyricLine> lines) {
+  if (path.isEmpty || lines.isEmpty) return;
+  _lyricsCache[path] = lines;
+  if (_lyricsCache.length > _lyricsCacheMax) {
+    _lyricsCache.remove(_lyricsCache.keys.first);
+  }
+}
 
 /// 歌词仓库：统一从插件 / 内置音源 / 本地数据库获取歌词并解析为
 /// [LyricLine] 列表。播放页歌词视图与桌面歌词悬浮窗共用。
@@ -18,11 +32,17 @@ class LyricsRepository {
 
   /// 获取并解析指定曲目的歌词；无歌词返回空列表。
   Future<List<LyricLine>> fetchLyrics(QueueItem item) async {
+    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
+    final cached = _lyricsCache[item.path];
+    if (cached != null && cached.isNotEmpty) return cached;
     try {
       final jsonStr = await _fetchLyricsJson(item);
       if (jsonStr.isEmpty || jsonStr == 'null') return const [];
-      final lines = _parseLyricsJson(jsonStr);
-      return _normalizeBoundaries(lines);
+      // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
+      final parsed = await compute(_parseLyricsJson, jsonStr);
+      final lines = await compute(_normalizeBoundaries, parsed);
+      if (lines.isNotEmpty) _cacheLyrics(item.path, lines);
+      return lines;
     } catch (_) {
       return const [];
     }
@@ -104,126 +124,131 @@ class LyricsRepository {
       return '';
     }
   }
+}
 
-  /// 剥离所有音源内嵌的逐字时间戳与元数据标签。
-  String cleanLyricText(String raw) {
-    if (raw.isEmpty) return '';
-    String text = raw;
-    // 1. 过滤元数据控制头 [ar:xx], [ti:xx] 等。
-    text = text.replaceAll(
-      RegExp(
-        r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳。
-    text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
-    // 3. 过滤方括号内嵌逐字时间戳。
-    text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
-    // 4. 过滤尖括号时间戳。
-    text = text.replaceAll(RegExp(r'<[^>]*>'), '');
-    return text.trim();
-  }
+/// 剥离所有音源内嵌的逐字时间戳与元数据标签。
+String _cleanLyricText(String raw) {
+  if (raw.isEmpty) return '';
+  String text = raw;
+  // 1. 过滤元数据控制头 [ar:xx], [ti:xx] 等。
+  text = text.replaceAll(
+    RegExp(
+      r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳。
+  text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
+  // 3. 过滤方括号内嵌逐字时间戳。
+  text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
+  // 4. 过滤尖括号时间戳。
+  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+  return text.trim();
+}
 
-  /// 将歌词 JSON（displayLines/lines）解析为歌词行列表。
-  List<LyricLine> _parseLyricsJson(String jsonStr) {
-    final map = jsonDecode(jsonStr) as Map<String, dynamic>;
-    final rawLines =
-        (map['displayLines'] as List?) ??
-        (map['display_lines'] as List?) ??
-        (map['lines'] as List?) ??
-        [];
-    final lines = <LyricLine>[];
-    for (final item in rawLines) {
-      if (item is! Map<String, dynamic>) continue;
-      double timeSec = 0.0;
-      if (item['time'] is num) {
-        timeSec = (item['time'] as num).toDouble();
-      } else if (item['timeMs'] is num) {
-        timeSec = (item['timeMs'] as num).toDouble() / 1000.0;
-      } else if (item['startTime'] is num) {
-        timeSec = (item['startTime'] as num).toDouble();
-      } else if (item['startTimeMs'] is num) {
-        timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
-      }
+/// 将歌词 JSON（displayLines/lines）解析为歌词行列表。
+///
+/// 顶层函数以便 [compute] 在后台 isolate 中执行。
+List<LyricLine> _parseLyricsJson(String jsonStr) {
+  final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final rawLines =
+      (map['displayLines'] as List?) ??
+      (map['display_lines'] as List?) ??
+      (map['lines'] as List?) ??
+      [];
+  final lines = <LyricLine>[];
+  for (final item in rawLines) {
+    if (item is! Map<String, dynamic>) continue;
+    double timeSec = 0.0;
+    if (item['time'] is num) {
+      timeSec = (item['time'] as num).toDouble();
+    } else if (item['timeMs'] is num) {
+      timeSec = (item['timeMs'] as num).toDouble() / 1000.0;
+    } else if (item['startTime'] is num) {
+      timeSec = (item['startTime'] as num).toDouble();
+    } else if (item['startTimeMs'] is num) {
+      timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
+    }
 
-      double endTimeSec = 0.0;
-      final rawEndTime = item['endTime'] ?? item['end_time'];
-      if (rawEndTime is num) {
-        endTimeSec = rawEndTime.toDouble();
-      } else if (item['endTimeMs'] is num) {
-        endTimeSec = (item['endTimeMs'] as num).toDouble() / 1000.0;
-      }
+    double endTimeSec = 0.0;
+    final rawEndTime = item['endTime'] ?? item['end_time'];
+    if (rawEndTime is num) {
+      endTimeSec = rawEndTime.toDouble();
+    } else if (item['endTimeMs'] is num) {
+      endTimeSec = (item['endTimeMs'] as num).toDouble() / 1000.0;
+    }
 
-      final text = cleanLyricText((item['text'] as String?) ?? '');
-      final rawTrans = item['translation'] as String?;
-      final translation = rawTrans != null && rawTrans.trim().isNotEmpty
-          ? cleanLyricText(rawTrans)
-          : null;
-      final rawRomaji = (item['romaji'] as String?)?.trim();
-      final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
-          ? rawRomaji
-          : null;
+    final text = _cleanLyricText((item['text'] as String?) ?? '');
+    final rawTrans = item['translation'] as String?;
+    final translation = rawTrans != null && rawTrans.trim().isNotEmpty
+        ? _cleanLyricText(rawTrans)
+        : null;
+    final rawRomaji = (item['romaji'] as String?)?.trim();
+    final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
+        ? rawRomaji
+        : null;
 
-      // 富歌词：背景/副歌等次要歌词行。
-      final secondary = <String>[];
-      final rawSecondary = item['secondary'] as List?;
-      if (rawSecondary != null) {
-        for (final s in rawSecondary) {
-          if (s is String && s.trim().isNotEmpty) {
-            secondary.add(cleanLyricText(s));
-          }
+    // 富歌词：背景/副歌等次要歌词行。
+    final secondary = <String>[];
+    final rawSecondary = item['secondary'] as List?;
+    if (rawSecondary != null) {
+      for (final s in rawSecondary) {
+        if (s is String && s.trim().isNotEmpty) {
+          secondary.add(_cleanLyricText(s));
         }
-      }
-
-      final words = <LyricWord>[];
-      final rawWords = item['words'] as List?;
-      if (rawWords != null && rawWords.isNotEmpty) {
-        for (final w in rawWords) {
-          if (w is Map<String, dynamic>) {
-            final wText = cleanLyricText((w['text'] as String?) ?? '');
-            final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
-            final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
-            final wRomaji = (w['romaji'] as String?)?.trim();
-            if (wText.isNotEmpty) {
-              words.add(LyricWord(
-                text: wText,
-                start: wStart,
-                end: wEnd,
-                romaji: (wRomaji != null && wRomaji.isNotEmpty)
-                    ? wRomaji
-                    : null,
-              ));
-            }
-          }
-        }
-      }
-
-      if (text.isNotEmpty) {
-        lines.add(LyricLine(
-          timeMs: (timeSec * 1000).toInt(),
-          endTimeMs: (endTimeSec * 1000).round(),
-          text: text,
-          translation: translation,
-          romaji: romaji,
-          words: words,
-          secondary: secondary,
-          speaker: (item['speaker'] as String?)?.trim().isNotEmpty == true
-              ? (item['speaker'] as String).trim()
-              : null,
-          isBg: item['isBg'] == true,
-          isDuet: item['isDuet'] == true,
-          isDuetPartner: item['isDuetPartner'] == true,
-        ));
       }
     }
-    return lines;
-  }
 
-  /// 时间边界修正：行结束时间缺失时用下一行起点回推，逐字裁剪重叠，
-  /// 多字符词拆成逐字符子词（英文单词也能逐字母卡拉OK）。
-  List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
+    final words = <LyricWord>[];
+    final rawWords = item['words'] as List?;
+    if (rawWords != null && rawWords.isNotEmpty) {
+      for (final w in rawWords) {
+        if (w is Map<String, dynamic>) {
+          final wText = _cleanLyricText((w['text'] as String?) ?? '');
+          final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
+          final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
+          final wRomaji = (w['romaji'] as String?)?.trim();
+          if (wText.isNotEmpty) {
+            words.add(LyricWord(
+              text: wText,
+              start: wStart,
+              end: wEnd,
+              romaji: (wRomaji != null && wRomaji.isNotEmpty)
+                  ? wRomaji
+                  : null,
+            ));
+          }
+        }
+      }
+    }
+
+    if (text.isNotEmpty) {
+      lines.add(LyricLine(
+        timeMs: (timeSec * 1000).toInt(),
+        endTimeMs: (endTimeSec * 1000).round(),
+        text: text,
+        translation: translation,
+        romaji: romaji,
+        words: words,
+        secondary: secondary,
+        speaker: (item['speaker'] as String?)?.trim().isNotEmpty == true
+            ? (item['speaker'] as String).trim()
+            : null,
+        isBg: item['isBg'] == true,
+        isDuet: item['isDuet'] == true,
+        isDuetPartner: item['isDuetPartner'] == true,
+      ));
+    }
+  }
+  return lines;
+}
+
+/// 时间边界修正：行结束时间缺失时用下一行起点回推，逐字裁剪重叠，
+/// 多字符词拆成逐字符子词（英文单词也能逐字母卡拉OK）。
+///
+/// 顶层函数以便 [compute] 在后台 isolate 中执行。
+List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
     final result = <LyricLine>[];
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
@@ -288,7 +313,6 @@ class LyricsRepository {
     }
     return result;
   }
-}
 
 final lyricsRepositoryProvider = Provider<LyricsRepository>(
   (ref) => LyricsRepository(ref),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -30,6 +31,20 @@ import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/i18n/i18n.dart';
+
+/// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
+/// 避免重复网络请求与主线程 JSON 解析。上限防止长期播放后无界增长。
+final Map<String, List<_LyricLineItem>> _lyricsCache = {};
+const int _lyricsCacheMax = 24;
+
+void _cacheLyrics(String path, List<_LyricLineItem> lines) {
+  if (path.isEmpty || lines.isEmpty) return;
+  _lyricsCache[path] = lines;
+  if (_lyricsCache.length > _lyricsCacheMax) {
+    _lyricsCache.remove(_lyricsCache.keys.first);
+  }
+}
 
 /// 正在播放页：现代毛玻璃风格。
 /// 封面大圆角浮于流光背景之上，支持点击封面在“封面模式”与“歌词模式”间平滑切换。
@@ -52,11 +67,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 顶层只取除 position 之外的播放状态（position 每秒跳动会让整页每秒
-    // 重建，滑动歌词时全页跟着重绘变卡）。position 由进度条/歌词等需要
-    // 它的组件内部各自 select，实现「纯滑动不更新、只有进度在局部刷新」。
-    final player = ref.watch(playerProvider.select((s) => s.copyWith(position: 0)));
-    final current = player.current;
+    // 顶层只订阅当前歌曲（切歌才重建整页）；播放态/进度/音量等由各自叶子
+    // 组件内部 select 局部刷新，避免任何播放状态变化（暂停/切模式/解析中）
+    // 都触发整页重建。position 由进度条/歌词等需要它的组件内部各自 select。
+    final current = ref.watch(playerProvider.select((s) => s.current));
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
 
@@ -94,12 +108,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       child: _DragDismissSheet(
         child: playerStyle == PlayerStyle.traditional
             ? _TraditionalPlayerLayout(
-                player: player,
                 notifier: notifier,
                 current: current,
               )
             : _buildAdvancedBody(
-                player: player,
                 notifier: notifier,
                 current: current,
                 scheme: scheme,
@@ -115,7 +127,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
   /// 「高级模式」正在播放页（现代毛玻璃风格，原布局）。
   Widget _buildAdvancedBody({
-    required PlaybackState player,
     required PlayerNotifier notifier,
     required QueueItem? current,
     required ColorScheme scheme,
@@ -151,7 +162,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           ),
                           Expanded(
                             child: Text(
-                              _showLyrics ? '歌词' : '正在播放',
+                              _showLyrics ? tr('歌词') : tr('正在播放'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 15,
@@ -235,7 +246,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                         child: _GlassControlCard(
-                          player: player,
                           notifier: notifier,
                           current: current,
                         ),
@@ -286,11 +296,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 /// 顶栏用「封面/歌词」分段切换，也可点击封面切换歌词，封面可开启频谱「闪」动效。
 class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   const _TraditionalPlayerLayout({
-    required this.player,
     required this.notifier,
     required this.current,
   });
-  final PlaybackState player;
   final PlayerNotifier notifier;
   final QueueItem? current;
 
@@ -340,8 +348,8 @@ class _TraditionalPlayerLayoutState
   }
 
   /// 依据「闪」开关与播放状态启停频谱动效。
-  void _syncEq() {
-    final run = _flashOn && widget.player.isPlaying;
+  void _syncEq(bool isPlaying) {
+    final run = _flashOn && isPlaying;
     if (run && !_eq.isAnimating) {
       _eq.repeat();
     } else if (!run && _eq.isAnimating) {
@@ -352,9 +360,10 @@ class _TraditionalPlayerLayoutState
 
   @override
   Widget build(BuildContext context) {
-    final player = widget.player;
     final current = widget.current;
-    _syncEq();
+    // 播放态只在此局部订阅（驱动封面频谱与播放键），不随整页重建。
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
+    _syncEq(isPlaying);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -397,10 +406,10 @@ class _TraditionalPlayerLayoutState
                 RepaintBoundary(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 22),
-                    child: _ProgressBar(player: player, notifier: widget.notifier),
+                    child: _ProgressBar(notifier: widget.notifier),
                   ),
                 ),
-                _Controls(player: player, notifier: widget.notifier),
+                _Controls(notifier: widget.notifier),
                 // 底部留白：底部整块 UI 再上移一格，避免贴底
                 const SizedBox(height: 32),
               ],
@@ -424,7 +433,7 @@ class _TraditionalPlayerLayoutState
           Expanded(
             child: Center(
               child: _SegmentSwitcher(
-                items: const ['封面', '歌词'],
+                items:   [tr('封面'), tr('歌词')],
                 index: _showLyrics ? 1 : 0,
                 onChanged: _switchPage,
               ),
@@ -436,7 +445,7 @@ class _TraditionalPlayerLayoutState
               size: 28,
               color: Colors.white,
             ),
-            tooltip: '分享歌曲',
+            tooltip: tr('分享歌曲'),
             onPressed: () {
               final c = widget.current;
               if (c != null) _shareCurrent(context, ref, c);
@@ -448,6 +457,8 @@ class _TraditionalPlayerLayoutState
   }
 
   Widget _buildCoverSection(BuildContext context) {
+    // 播放态局部订阅：仅驱动封面频谱，不随整页重建。
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     return LayoutBuilder(
       builder: (context, cons) {
         // 封面取较紧凑尺寸，使上方信息条（歌名/作者/收藏）与中部的歌词预览
@@ -492,7 +503,7 @@ class _TraditionalPlayerLayoutState
                   current: widget.current,
                   eq: _eq,
                   flash: _flashOn,
-                  playing: widget.player.isPlaying,
+                  playing: isPlaying,
                 ),
               ),
             ),
@@ -613,7 +624,7 @@ class _TraditionalPlayerLayoutState
           Expanded(child: Center(child: _actionItem(
             context,
             icon: Icons.graphic_eq,
-            tooltip: '音效',
+            tooltip: tr('音效'),
             active: !bypass,
             // 点击打开音效页（原首页底部栏音效入口已迁入传统播放页）。
             onTap: () => context.push('/effects'),
@@ -631,7 +642,7 @@ class _TraditionalPlayerLayoutState
                 _showQualitySheet(context, ref);
               } else {
                 // 本地音乐按原文件音质直传，无需切换。
-                showXianYuToast(context, '本地音乐以原音质播放');
+                showXianYuToast(context, tr('本地音乐以原音质播放'));
               }
             },
           ))),
@@ -643,13 +654,13 @@ class _TraditionalPlayerLayoutState
             onTap: () {
               if (current == null) return;
               if (dlActive) {
-                showXianYuToast(context, '正在下载中…');
+                showXianYuToast(context, tr('正在下载中…'));
                 return;
               }
               if (dlDone) {
                 showXianYuToast(
                   context,
-                  isLocal ? '本地音乐已在设备' : '已下载，可到下载页查看',
+                  isLocal ? tr('本地音乐已在设备') : tr('已下载，可到下载页查看'),
                 );
                 return;
               }
@@ -667,7 +678,7 @@ class _TraditionalPlayerLayoutState
                   ? Colors.white.withValues(alpha: 0.85)
                   : Colors.white.withValues(alpha: 0.32),
             ),
-            tooltip: '评论',
+            tooltip: tr('评论'),
             // 本地歌曲无在线评论信息，置灰不可点
             enabled: current != null && current.isOnline,
             onTap: () {
@@ -691,7 +702,7 @@ class _TraditionalPlayerLayoutState
     final accent = Theme.of(context).colorScheme.primary;
     return IconButton(
       iconSize: 28,
-      tooltip: '桌面歌词',
+      tooltip: tr('桌面歌词'),
       icon: Container(
         width: 28,
         height: 28,
@@ -703,7 +714,7 @@ class _TraditionalPlayerLayoutState
               : Colors.transparent,
         ),
         child: Text(
-          '词',
+          tr('词'),
           style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.bold,
@@ -727,7 +738,7 @@ class _TraditionalPlayerLayoutState
   }) {
     return IconButton(
       iconSize: 28,
-      tooltip: dlDone ? '已下载' : (dlActive ? '下载中' : '下载'),
+      tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
       icon: dlActive
           ? SizedBox(
               width: 20,
@@ -756,7 +767,7 @@ class _TraditionalPlayerLayoutState
   }) {
     final accent = Theme.of(context).colorScheme.primary;
     return Tooltip(
-      message: '音质',
+      message: tr('音质'),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
@@ -1020,6 +1031,12 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     final item = widget.current;
     final path = item?.path ?? '';
     if (path.isEmpty || _loading || _lines.isNotEmpty) return;
+    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
+    final cached = _lyricsCache[path];
+    if (cached != null && cached.isNotEmpty) {
+      if (mounted) setState(() => _lines = cached);
+      return;
+    }
     _loading = true;
     try {
       String jsonStr = '';
@@ -1065,11 +1082,14 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
         final dbPath = await ref.read(dbPathProvider.future);
         jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
       }
+      // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
       final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
-          ? _parseLyricsJson(jsonStr)
+          ? await compute(_parseLyricsJson, jsonStr)
           : const <_LyricLineItem>[];
+      final lines = await compute(_normalizeBoundaries, parsed);
+      if (lines.isNotEmpty) _cacheLyrics(path, lines);
       if (!mounted) return;
-      setState(() => _lines = parsed);
+      setState(() => _lines = lines);
     } catch (_) {
       if (mounted) setState(() => _lines = const []);
     } finally {
@@ -1095,31 +1115,53 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
       _lines[active],
       active + 1 < _lines.length ? _lines[active + 1] : null,
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var j = 0; j < items.length; j++)
-          if (items[j] != null)
-            Padding(
-              padding: EdgeInsets.only(
-                top: j == 1 ? 3 : 1,
-                bottom: j == 1 ? 3 : 1,
-              ),
-              child: Text(
-                items[j]!.text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: j == 1
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.5),
-                  fontSize: j == 1 ? 14 : 12.5,
-                  height: 1.2,
+    // 三行窗口随换行整体滚动：旧行上移淡出、新行自下滑入（避免逐字硬切）。
+    // 进/出动画均由 AnimatedSwitcher 预先施加 switchIn/OutCurve，
+    // 以 ValueKey(active) 区分方向（旧行动画反向播放 1→0，故 tween 同形）。
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 380),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, anim) {
+        final isNew = (child.key as ValueKey<int>?)?.value == active;
+        final offset = isNew
+            ? Tween<Offset>(begin: const Offset(0, 0.6), end: Offset.zero)
+            : Tween<Offset>(begin: const Offset(0, -0.6), end: Offset.zero);
+        return FadeTransition(
+          opacity: anim,
+          child: SlideTransition(
+            position: anim.drive(offset),
+            child: child,
+          ),
+        );
+      },
+      child: Column(
+        key: ValueKey<int>(active),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var j = 0; j < items.length; j++)
+            if (items[j] != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: j == 1 ? 3 : 1,
+                  bottom: j == 1 ? 3 : 1,
+                ),
+                child: Text(
+                  items[j]!.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: j == 1
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.5),
+                    fontSize: j == 1 ? 14 : 12.5,
+                    height: 1.2,
+                  ),
                 ),
               ),
-            ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1644,11 +1686,9 @@ class _BigCover extends StatelessWidget {
 /// 毛玻璃控制卡：标题 + 进度 + 播放控制。
 class _GlassControlCard extends ConsumerWidget {
   const _GlassControlCard({
-    required this.player,
     required this.notifier,
     required this.current,
   });
-  final PlaybackState player;
   final PlayerNotifier notifier;
   final QueueItem? current;
 
@@ -1667,19 +1707,21 @@ class _GlassControlCard extends ConsumerWidget {
             ) ??
             true) &&
             !lowPerf;
+    // 错误态只在此局部订阅，不随整页重建。
+    final error = ref.watch(playerProvider.select((s) => s.error));
 
     final content = Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       child: current == null
-          ? const Padding(
+          ?   Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: Text('暂无播放')),
+              child: Center(child: Text(tr('暂无播放'))),
             )
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _TitleRow(current: current!),
-                if (player.error != null) ...[
+                if (error != null) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1687,7 +1729,7 @@ class _GlassControlCard extends ConsumerWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          player.error!,
+                          error,
                           style: TextStyle(fontSize: 12, color: scheme.error),
                         ),
                       ),
@@ -1697,10 +1739,10 @@ class _GlassControlCard extends ConsumerWidget {
                 const SizedBox(height: 14),
                 // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
                 RepaintBoundary(
-                  child: _ProgressBar(player: player, notifier: notifier),
+                  child: _ProgressBar(notifier: notifier),
                 ),
                 const SizedBox(height: 6),
-                _Controls(player: player, notifier: notifier),
+                _Controls(notifier: notifier),
               ],
             ),
     );
@@ -1823,7 +1865,7 @@ class _TitleRow extends ConsumerWidget {
         ),
         IconButton(
           icon: const Icon(Icons.ios_share),
-          tooltip: '分享歌曲',
+          tooltip: tr('分享歌曲'),
           onPressed: () => _shareCurrent(context, ref, current),
         ),
         if (current.isOnline)
@@ -1856,7 +1898,7 @@ class _TitleRow extends ConsumerWidget {
                     : Colors.transparent,
               ),
               child: Text(
-                '词',
+                tr('词'),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -1914,9 +1956,9 @@ String _qualityLabel(String? q) {
     case 'hires':
       return 'Hi-Res';
     case 'vinyl':
-      return '黑胶';
+      return tr('黑胶');
     case 'dolby':
-      return '杜比';
+      return tr('杜比');
     case 'atmos':
       return 'Atmos';
     case 'atmos_plus':
@@ -1959,7 +2001,7 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '音质选择',
+              tr('音质选择'),
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ),
@@ -1982,7 +2024,7 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                 );
                 final shown = opts.isNotEmpty ? opts : fallbackOpts;
                 if (shown.isEmpty) {
-                  return const Center(child: Text('暂无可切换音质'));
+                  return   Center(child: Text(tr('暂无可切换音质')));
                 }
                 final cur = ref.watch(
                   playerProvider.select((s) => s.currentQuality),
@@ -2015,7 +2057,7 @@ class _QualitySheetState extends ConsumerState<_QualitySheet> {
                               Navigator.of(ctx).pop();
                               showXianYuToastByOverlay(
                                 overlay,
-                                ok ? '已切换为${_qualityLabel(q)}' : '音质切换失败',
+                                ok ? '已切换为${_qualityLabel(q)}' : tr('音质切换失败'),
                               );
                             },
                     );
@@ -2068,7 +2110,7 @@ class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '下载音质',
+              tr('下载音质'),
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ),
@@ -2083,7 +2125,7 @@ class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
                 }
                 final opts = snap.data ?? const <String>[];
                 if (opts.isEmpty) {
-                  return const Center(child: Text('暂无可下载音质'));
+                  return   Center(child: Text(tr('暂无可下载音质')));
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2110,7 +2152,7 @@ class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
                             .download(widget.song, quality: q);
                         showXianYuToastByOverlay(
                           overlay,
-                          '开始下载：${widget.song.title}（${_qualityLabel(q)}）',
+                          tr('开始下载：{title}（{quality}）', {'title': widget.song.title, 'quality': _qualityLabel(q)}),
                         );
                       },
                     );
@@ -2126,8 +2168,7 @@ class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet> {
 }
 
 class _ProgressBar extends ConsumerWidget {
-  const _ProgressBar({required this.player, required this.notifier});
-  final PlaybackState player;
+  const _ProgressBar({required this.notifier});
   final PlayerNotifier notifier;
 
   String _fmt(double s) {
@@ -2140,9 +2181,10 @@ class _ProgressBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     // 进度条是唯一随播放进度每秒变化的区域，单独 select position 局部刷新，
-    // 不影响上层（顶层已另用 copyWith 免除 position 联动）。
+    // 不影响上层（顶层已只订阅 current，切歌才重建）。
     final position = ref.watch(playerProvider.select((s) => s.position));
-    final dur = player.duration <= 0 ? 1.0 : player.duration;
+    final dur = ref.watch(playerProvider.select((s) => s.duration));
+    final duration = dur <= 0 ? 1.0 : dur;
     return Column(
       children: [
         SliderTheme(
@@ -2156,9 +2198,9 @@ class _ProgressBar extends ConsumerWidget {
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
           child: CommittedSlider(
-            value: position.clamp(0, dur),
+            value: position.clamp(0, duration),
             min: 0,
-            max: dur,
+            max: duration,
             onCommit: (v) => notifier.seek(v),
           ),
         ),
@@ -2172,7 +2214,7 @@ class _ProgressBar extends ConsumerWidget {
                 style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
               Text(
-                _fmt(dur),
+                _fmt(duration),
                 style:
                     TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
@@ -2185,13 +2227,16 @@ class _ProgressBar extends ConsumerWidget {
 }
 
 class _Controls extends ConsumerWidget {
-  const _Controls({required this.player, required this.notifier});
-  final PlaybackState player;
+  const _Controls({required this.notifier});
   final PlayerNotifier notifier;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 播放态/播放模式/解析中仅在此局部订阅，不随整页重建。
+    final playMode = ref.watch(playerProvider.select((s) => s.playMode));
+    final resolving = ref.watch(playerProvider.select((s) => s.resolving));
+    final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2202,7 +2247,7 @@ class _Controls extends ConsumerWidget {
           Expanded(child: Center(child: IconButton(
             iconSize: 28,
             icon: _PlayModeIcon(
-              mode: player.playMode,
+              mode: playMode,
               color: scheme.onSurfaceVariant,
               size: 28,
             ),
@@ -2225,7 +2270,7 @@ class _Controls extends ConsumerWidget {
               ],
             ),
             // 在线曲目解析直链期间显示加载态，避免看起来无响应。
-            child: player.resolving
+            child: resolving
                 ? const Padding(
                     padding: EdgeInsets.all(18),
                     child: CircularProgressIndicator(
@@ -2235,7 +2280,7 @@ class _Controls extends ConsumerWidget {
                   )
                 : IconButton(
                     icon: Icon(
-                      player.isPlaying ? Icons.pause : Icons.play_arrow,
+                      isPlaying ? Icons.pause : Icons.play_arrow,
                       color: Colors.white,
                     ),
                     iconSize: 34,
@@ -2243,19 +2288,16 @@ class _Controls extends ConsumerWidget {
                   ),
           ))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next))),
-          Expanded(child: Center(child: IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref, player)))),
+          Expanded(child: Center(child: IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
         ],
       ),
     );
   }
 
   /// 播放队列弹窗：展示/点播/移除/拖拽排序。
-  void _showQueueSheet(
-    BuildContext context,
-    WidgetRef ref,
-    PlaybackState player,
-  ) {
-    showSheetDialog<void>(context, (_) => _QueueSheet(player: player));
+  void _showQueueSheet(BuildContext context, WidgetRef ref) {
+    showSheetDialog<void>(
+        context, (_) => _QueueSheet(player: ref.read(playerProvider)));
   }
 }
 
@@ -2387,17 +2429,17 @@ Future<void> _toggleFloatingLyrics(
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('悬浮歌词需要悬浮窗权限'),
-        content: const Text(
-            '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。'),
+        title:   Text(tr('悬浮歌词需要悬浮窗权限')),
+        content:   Text(
+            tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('去授权'),
+            child:   Text(tr('去授权')),
           ),
         ],
       ),
@@ -2520,6 +2562,85 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
   return lines;
 }
 
+/// 时间边界修正（移植自桌面端 converters.ts）：
+/// - 行结束时间缺失/无效时，用下一行起点回推（提前量 = min(300ms, 间隔×25%)，
+///   行最短 40ms）；最后一行给 5s 宽松结束
+/// - 词的 end 裁剪到下一词 start 与行结束之内（最短 20ms），
+///   避免相邻词重叠导致的填充回跳
+///
+/// 顶层函数以便 [compute] 在后台 isolate 中执行。
+List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
+  final result = <_LyricLineItem>[];
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final startMs = line.timeMs.toDouble();
+    final nextStartMs = i + 1 < lines.length
+        ? lines[i + 1].timeMs.toDouble()
+        : double.infinity;
+
+    var endMs = line.endTimeMs.toDouble();
+    if (endMs <= startMs) {
+      if (nextStartMs.isFinite) {
+        final gap = nextStartMs - startMs;
+        final leadIn = math.min(300.0, gap * 0.25);
+        endMs = nextStartMs - leadIn;
+      } else {
+        endMs = startMs + 5000;
+      }
+    }
+    endMs = math.max(endMs, startMs + 40);
+
+    final words = <_LyricWordItem>[];
+    for (var j = 0; j < line.words.length; j++) {
+      final w = line.words[j];
+      final wStartMs = w.start * 1000.0;
+      var wEndMs = w.end * 1000.0;
+      if (j + 1 < line.words.length) {
+        wEndMs = math.min(wEndMs, line.words[j + 1].start * 1000.0);
+      }
+      wEndMs = math.min(wEndMs, endMs);
+      wEndMs = math.max(wEndMs, wStartMs + 20);
+
+      // 移植 MusicFree splitWordToChars：多字符词拆成逐字符子词，
+      // 时长按字符数均分——英文单词也能逐字母卡拉OK
+      // （中文音源逐字数据通常已是单字，不受影响）。
+      final chars = w.text.runes.toList();
+      if (chars.length > 1) {
+        final durMs = (wEndMs - wStartMs) / chars.length;
+        for (var c = 0; c < chars.length; c++) {
+          words.add(
+            _LyricWordItem(
+              text: String.fromCharCode(chars[c]),
+              start: (wStartMs + durMs * c) / 1000.0,
+              end: (wStartMs + durMs * (c + 1)) / 1000.0,
+            ),
+          );
+        }
+      } else {
+        words.add(
+          _LyricWordItem(
+            text: w.text,
+            start: wStartMs / 1000.0,
+            end: wEndMs / 1000.0,
+          ),
+        );
+      }
+    }
+
+    result.add(
+      _LyricLineItem(
+        timeMs: line.timeMs,
+        endTimeMs: endMs.round(),
+        text: line.text,
+        translation: line.translation,
+        romaji: line.romaji,
+        words: words,
+      ),
+    );
+  }
+  return result;
+}
+
 /// 单字/单词逐字时间数据 (单位: 秒)
 class _LyricWordItem {
   final String text;
@@ -2616,12 +2737,19 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 当前帧用于渲染的平滑进度（秒）。
   double _displayPos = 0;
 
+  /// 逐字卡拉OK进度（秒），每帧更新；仅活动行染色订阅，避免整页每帧重建。
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
+
+  /// 当前 build 渲染的活动行索引；_onTick 据此判断是否需要重建列表（换行才重建）。
+  int _renderActiveIndex = -1;
+
   @override
   void initState() {
     super.initState();
     final p = ref.read(playerProvider).position;
     _anchorPos = p;
     _displayPos = p;
+    _progress.value = p;
     _ticker = createTicker(_onTick);
     _syncTicker();
     _fetchLyrics();
@@ -2635,7 +2763,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       final p = ref.read(playerProvider).position;
       _anchorPos = p;
       _displayPos = p;
+      _progress.value = p;
       _lastActiveIndex = -1;
+      _renderActiveIndex = -1;
       _draggingIndexTimer?.cancel();
       _draggingIndex = null;
       _lineLayouts.clear();
@@ -2656,18 +2786,27 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _recenterTimer?.cancel();
       _userInteracted = false;
       _displayPos = next;
+      _progress.value = next;
       _autoScrollToActiveLine(force: true);
     } else if (!isPlaying) {
       // 暂停态直接定格在新锚点
       _displayPos = next;
+      _progress.value = next;
     }
     _syncTicker();
     _autoScrollToActiveLine();
+    // 活动行切换时重建列表（seek/暂停跳行也即时刷新高亮）。
+    final idx = _activeIndexFor(_displayPos);
+    if (idx != _renderActiveIndex) {
+      _renderActiveIndex = idx;
+      if (mounted) setState(() {});
+    }
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    _progress.dispose();
     _recenterTimer?.cancel();
     _draggingIndexTimer?.cancel();
     _scrollCtrl.dispose();
@@ -2679,8 +2818,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final next = _anchorPos + _anchorWatch.elapsedMilliseconds / 1000.0;
     if ((next - _displayPos).abs() < 0.002) return;
     _displayPos = next;
+    _progress.value = next;
     _autoScrollToActiveLine();
-    setState(() {});
+    // 仅活动行切换时重建列表（换行才 setState，逐字染色走 ValueListenableBuilder）。
+    final idx = _activeIndexFor(_displayPos);
+    if (idx != _renderActiveIndex) {
+      _renderActiveIndex = idx;
+      if (mounted) setState(() {});
+    }
   }
 
   /// 根据播放/可见状态启停逐帧时钟。
@@ -2690,6 +2835,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (shouldRun && !_ticker.isActive) {
       _anchorPos = st.position;
       _displayPos = _anchorPos;
+      _progress.value = _anchorPos;
       _anchorWatch
         ..reset()
         ..start();
@@ -2700,6 +2846,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       if (!st.isPlaying) {
         // 暂停：定格在锚点
         _displayPos = _anchorPos;
+        _progress.value = _anchorPos;
       }
     }
   }
@@ -2806,6 +2953,21 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (item == null) return;
     if (_loadedPath == item.path && _lines.isNotEmpty) return;
 
+    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
+    final cached = _lyricsCache[item.path];
+    if (cached != null && cached.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadedPath = item.path;
+          _lines = cached;
+        });
+        _reportRomaji();
+        _autoScrollToActiveLine();
+      }
+      return;
+    }
+
     setState(() {
       _loading = true;
       _loadedPath = item.path;
@@ -2866,11 +3028,15 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       }
 
       if (jsonStr.isNotEmpty && jsonStr != 'null') {
-        final lines = _parseLyricsJson(jsonStr);
+        // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate，避免大歌词
+        // 阻塞 UI 线程造成卡顿。
+        final parsed = await compute(_parseLyricsJson, jsonStr);
+        final lines = await compute(_normalizeBoundaries, parsed);
 
         if (lines.isNotEmpty && mounted) {
+          _cacheLyrics(item.path, lines);
           setState(() {
-            _lines = _normalizeBoundaries(lines);
+            _lines = lines;
             _loading = false;
           });
           _reportRomaji();
@@ -2941,81 +3107,18 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 时间边界修正（移植自桌面端 converters.ts）：
-  /// - 行结束时间缺失/无效时，用下一行起点回推（提前量 = min(300ms, 间隔×25%)，
-  ///   行最短 40ms）；最后一行给 5s 宽松结束
-  /// - 词的 end 裁剪到下一词 start 与行结束之内（最短 20ms），
-  ///   避免相邻词重叠导致的填充回跳
-  List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
-    final result = <_LyricLineItem>[];
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final startMs = line.timeMs.toDouble();
-      final nextStartMs = i + 1 < lines.length
-          ? lines[i + 1].timeMs.toDouble()
-          : double.infinity;
-
-      var endMs = line.endTimeMs.toDouble();
-      if (endMs <= startMs) {
-        if (nextStartMs.isFinite) {
-          final gap = nextStartMs - startMs;
-          final leadIn = math.min(300.0, gap * 0.25);
-          endMs = nextStartMs - leadIn;
-        } else {
-          endMs = startMs + 5000;
-        }
+  /// 计算当前进度对应的活动行索引（build 与 ticker 共用）。
+  int _activeIndexFor(double pos) {
+    final curMs = ((pos - _offsetMs / 1000.0) * 1000).toInt();
+    int activeIndex = -1;
+    for (int i = 0; i < _lines.length; i++) {
+      if (_lines[i].timeMs <= curMs) {
+        activeIndex = i;
+      } else {
+        break;
       }
-      endMs = math.max(endMs, startMs + 40);
-
-      final words = <_LyricWordItem>[];
-      for (var j = 0; j < line.words.length; j++) {
-        final w = line.words[j];
-        final wStartMs = w.start * 1000.0;
-        var wEndMs = w.end * 1000.0;
-        if (j + 1 < line.words.length) {
-          wEndMs = math.min(wEndMs, line.words[j + 1].start * 1000.0);
-        }
-        wEndMs = math.min(wEndMs, endMs);
-        wEndMs = math.max(wEndMs, wStartMs + 20);
-
-        // 移植 MusicFree splitWordToChars：多字符词拆成逐字符子词，
-        // 时长按字符数均分——英文单词也能逐字母卡拉OK
-        // （中文音源逐字数据通常已是单字，不受影响）。
-        final chars = w.text.runes.toList();
-        if (chars.length > 1) {
-          final durMs = (wEndMs - wStartMs) / chars.length;
-          for (var c = 0; c < chars.length; c++) {
-            words.add(
-              _LyricWordItem(
-                text: String.fromCharCode(chars[c]),
-                start: (wStartMs + durMs * c) / 1000.0,
-                end: (wStartMs + durMs * (c + 1)) / 1000.0,
-              ),
-            );
-          }
-        } else {
-          words.add(
-            _LyricWordItem(
-              text: w.text,
-              start: wStartMs / 1000.0,
-              end: wEndMs / 1000.0,
-            ),
-          );
-        }
-      }
-
-      result.add(
-        _LyricLineItem(
-          timeMs: line.timeMs,
-          endTimeMs: endMs.round(),
-          text: line.text,
-          translation: line.translation,
-          romaji: line.romaji,
-          words: words,
-        ),
-      );
     }
-    return result;
+    return activeIndex;
   }
 
   void _autoScrollToActiveLine({bool force = false}) {
@@ -3057,11 +3160,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final current = _scrollCtrl.offset;
     if (!force && (targetOffset - current).abs() < 26) return;
 
-    // 柔和对称缓动：行与行之间是平滑长滑，换行不“生硬”。
+    // 柔和缓动：时长随滚动距离自适应（行间短滑轻快、长距 seek 舒缓，
+    // 下限 160ms 防近距闪跳），fastOutSlowIn 出发快、落位稳。
+    final distance = (targetOffset - current).abs();
+    final durationMs = (110 + distance * 0.9).clamp(160.0, 640.0).round();
     _scrollCtrl.animateTo(
       targetOffset,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOutCubic,
+      duration: Duration(milliseconds: durationMs),
+      curve: Curves.fastOutSlowIn,
     );
   }
 
@@ -3095,21 +3201,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final transFont = inactiveFont - 2;
     final romajiFont = inactiveFont - 1.5;
 
-    final curMs = ((_displayPos - _offsetMs / 1000.0) * 1000).toInt();
-
-    int activeIndex = -1;
-    for (int i = 0; i < _lines.length; i++) {
-      if (_lines[i].timeMs <= curMs) {
-        activeIndex = i;
-      } else {
-        break;
-      }
-    }
+    // 活动行索引：build 与 ticker 共用同一计算，ticker 据此判断换行才重建。
+    final activeIndex = _activeIndexFor(_displayPos);
+    _renderActiveIndex = activeIndex;
 
     Widget content;
     if (_loading) {
-      content = const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      content = const Center(
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+      );
     } else if (_lines.isEmpty) {
+      // 歌词页恒定白字（不受主题色控制），与模糊封面暗底适配。
       content = Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -3117,21 +3219,33 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             Icon(
               Icons.lyrics_outlined,
               size: 40,
-              color: scheme.onSurface.withValues(alpha: 0.35),
+              color: Colors.white.withValues(alpha: 0.35),
             ),
             const SizedBox(height: 10),
             Text(
-              '暂无歌词',
+              tr('暂无歌词'),
               style: TextStyle(
                 fontSize: 15,
-                color: scheme.onSurface.withValues(alpha: 0.5),
+                color: Colors.white.withValues(alpha: 0.5),
               ),
             ),
           ],
         ),
       );
     } else {
-      content = NotificationListener<ScrollNotification>(
+      // 头尾空白区 = 半视口 − 半行高：首句/末句也能精确落在视口中心，
+      // 不再被滚动边界 clamp 顶到上/下缘。行高按当前字号档位估算
+      // （主行 + 翻译/罗马音行），LayoutBuilder 取实际视口高。
+      final typicalH = activeFont * 1.4 + 20 +
+          (_showTranslation ? transFont * 1.4 + 4 : 0) +
+          (_showRomaji ? romajiFont * 1.2 + 4 : 0);
+      content = LayoutBuilder(
+        builder: (context, constraints) {
+          final viewport = constraints.maxHeight;
+          final blank = viewport / 2 - typicalH / 2;
+          final topPad = blank < 20 ? 20.0 : blank;
+          final bottomPad = blank < 40 ? 40.0 : blank;
+          return NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is UserScrollNotification) {
             _onUserScrollStart();
@@ -3144,18 +3258,31 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         },
         child: ListView.builder(
           controller: _scrollCtrl,
-          // 歌词列表内边距：工具栏已移至右上角，底部留空 40px 即可完全无遮挡展现
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-          // 限缓存/不保活离屏行，只构建视口附近歌词，减少滚动时的构建量与内存。
+          // 头尾空白区：正在唱的行始终可以居中（见上方 typicalH 注释）。
+          padding: EdgeInsets.fromLTRB(24, topPad, 24, bottomPad),
+          // 缓存视口外约 200px 的行：滚动时只搬运已构建/已测量（onMeasured 回调
+          // 已填充布局缓存）的行，拖动选行定位不依赖现建现量。
           scrollCacheExtent: ScrollCacheExtent.pixels(200),
           addAutomaticKeepAlives: false,
-          addRepaintBoundaries: false,
+          // 每行独立 RepaintBoundary：换行 setState 重建列表时，只有活动行
+          // 变化的两行重绘，其余行复用已缓存图层，避免整屏逐帧重绘抽帧。
+          addRepaintBoundaries: true,
           itemCount: _lines.length,
           itemBuilder: (context, idx) {
             final line = _lines[idx];
             final isActive = idx == activeIndex;
             final isPrimaryColor = isActive;
             final isDragging = idx == _draggingIndex;
+            // 距活动行越远越淡：近邻亮、远处暗，滚动时形成纵向景深渐变
+            // （配合 AnimatedDefaultTextStyle 颜色平滑过渡，不硬切）。
+            final dist = (idx - activeIndex).abs();
+            final inactiveAlpha = dist <= 1
+                ? 0.55
+                : dist == 2
+                    ? 0.45
+                    : dist == 3
+                        ? 0.34
+                        : 0.24;
 
             return _MeasuredLine(
               index: idx,
@@ -3166,21 +3293,26 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   children: [
                     // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
                     if (isActive && line.words.isNotEmpty)
-                      // 活动行 ShaderMask 独立成图层：逐字漫过只重绘这一行，
-                      // 不会连带重绘整份歌词列表。
+                      // 活动行 ShaderMask 独立成图层 + ValueListenableBuilder 局部刷新：
+                      // 逐字漫过只重建这一行的染色，不再整页每帧 setState。
                       RepaintBoundary(
-                        child: Wrap(
-                          alignment: WrapAlignment.center,
-                          children: [
-                            for (final w in line.words)
-                              _buildKaraokeWordWidget(
-                                w,
-                                _displayPos - _offsetMs / 1000.0,
-                                scheme,
-                                activeFont,
-                                lyricFontFamily,
-                              ),
-                          ],
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: _progress,
+                          builder: (context, pos, _) {
+                            return Wrap(
+                              alignment: WrapAlignment.center,
+                              children: [
+                                for (final w in line.words)
+                                  _buildKaraokeWordWidget(
+                                    w,
+                                    pos - _offsetMs / 1000.0,
+                                    scheme,
+                                    activeFont,
+                                    lyricFontFamily,
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       )
                     else
@@ -3191,12 +3323,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                           fontWeight: isActive
                               ? FontWeight.w700
                               : FontWeight.w500,
-                          // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）
+                          // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）；
+                          // 活动行品牌红，其余白色随距离渐淡（不受主题色控制）。
                           color: isDragging
                               ? Colors.white
                               : isPrimaryColor
                               ? const Color(0xFFEC4141)
-                              : scheme.onSurface.withValues(alpha: 0.45),
+                              : Colors.white.withValues(alpha: inactiveAlpha),
                           height: 1.4,
                           fontFamily: lyricFontFamily,
                         ),
@@ -3218,7 +3351,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                               ? Colors.white.withValues(alpha: 0.75)
                               : isPrimaryColor
                               ? const Color(0xFFEC4141).withValues(alpha: 0.75)
-                              : scheme.onSurface.withValues(alpha: 0.32),
+                              : Colors.white.withValues(alpha: inactiveAlpha * 0.7),
                           height: 1.2,
                           fontFamily: lyricFontFamily,
                         ),
@@ -3240,7 +3373,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                               ? Colors.white.withValues(alpha: 0.8)
                               : isPrimaryColor
                               ? const Color(0xFFEC4141).withValues(alpha: 0.8)
-                              : scheme.onSurface.withValues(alpha: 0.35),
+                              : Colors.white.withValues(alpha: inactiveAlpha * 0.78),
                         ),
                       ),
                     ],
@@ -3251,6 +3384,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           },
         ),
       );
+        },
+      );
     }
 
     return GestureDetector(
@@ -3260,6 +3395,28 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         alignment: Alignment.center,
         children: [
           content,
+
+          // 上下缘渐隐遮罩：歌词滚入/滚出视口时柔和淡出，不硬切边界
+          //（不拦截手势，纯装饰层）。
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, 0.07, 0.93, 1],
+                    colors: [
+                      Colors.black.withValues(alpha: 0.45),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
           // 拖动选行指示条（移植自 MusicFree draggingTime）：
           // 拖动歌词时在中央显示目标时间 + 播放按钮，点按从该行开始播放。
@@ -3318,8 +3475,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '歌词字号',
+                Text(
+                tr('歌词字号'),
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               StatefulBuilder(
@@ -3327,7 +3484,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   return Row(
                     children: [
                       ...List.generate(4, (i) {
-                        final labels = ['小', '标准', '大', '特大'];
+                        final labels = [tr('小'), tr('标准'), tr('大'), tr('特大')];
                         return Expanded(
                           child: InkWell(
                             onTap: () {
@@ -3380,8 +3537,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     color: Theme.of(context).colorScheme.outline,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    '自定义歌词字体',
+                    Text(
+                    tr('自定义歌词字体'),
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
@@ -3393,7 +3550,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               ),
               const SizedBox(height: 6),
               Text(
-                '支持 .ttf / .otf 字体文件，导入后立即应用到歌词',
+                tr('支持 .ttf / .otf 字体文件，导入后立即应用到歌词'),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.outline,
@@ -3428,8 +3585,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    '歌词偏移',
+                    Text(
+                    tr('歌词偏移'),
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   TextButton(
@@ -3437,7 +3594,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       notifier.setLyricOffsetMs(0);
                       Navigator.of(sheetCtx).pop();
                     },
-                    child: const Text('重置'),
+                    child:   Text(tr('重置')),
                   ),
                 ],
               ),
@@ -3449,10 +3606,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       // 当前偏移值
                       Text(
                         value > 0
-                            ? '提前 ${value}ms'
+                            ? tr('提前 {v}ms', {'v': value})
                             : value < 0
-                            ? '延后 ${-value}ms'
-                            : '无偏移',
+                            ? tr('延后 {v}ms', {'v': -value})
+                            : tr('无偏移'),
                         style: TextStyle(
                           fontSize: 13,
                           color: scheme.onSurfaceVariant,
@@ -3848,16 +4005,16 @@ class _FontImportAction extends ConsumerWidget {
             );
             if (imported == null) return;
             if (context.mounted) {
-              showXianYuToast(context, '已应用自定义歌词字体');
+              showXianYuToast(context, tr('已应用自定义歌词字体'));
             }
           } catch (e) {
             if (context.mounted) {
-              showXianYuToast(context, '字体导入失败：$e');
+              showXianYuToast(context, tr('字体导入失败：{e}', {'e': e}));
             }
           }
         },
         icon: const Icon(Icons.file_open_outlined, size: 18),
-        label: const Text('选择字体'),
+        label:   Text(tr('选择字体')),
       );
     }
 
@@ -3865,7 +4022,7 @@ class _FontImportAction extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '已应用',
+          tr('已应用'),
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(context).colorScheme.primary,
@@ -3878,7 +4035,7 @@ class _FontImportAction extends ConsumerWidget {
             await n.setLyricFontPath('');
           },
           icon: const Icon(Icons.refresh, size: 16),
-          label: const Text('恢复默认'),
+          label:   Text(tr('恢复默认')),
         ),
       ],
     );
@@ -3956,7 +4113,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
           child: Row(
             children: [
               Text(
-                '播放队列',
+                tr('播放队列'),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -3964,7 +4121,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
               ),
               const SizedBox(width: 8),
               Text(
-                '${queue.length} 首',
+                tr('{n} 首', {'n': queue.length}),
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const Spacer(),
@@ -3983,7 +4140,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 40),
             child: Text(
-              '队列为空',
+              tr('队列为空'),
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
           )
@@ -3993,6 +4150,10 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
               shrinkWrap: true,
               buildDefaultDragHandles: false,
               itemCount: queue.length,
+              // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 ListTile 会以
+              // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
+              proxyDecorator: (child, index, animation) =>
+                  Material(type: MaterialType.transparency, child: child),
               onReorderItem: (oldIndex, newIndex) {
                 ref
                     .read(playerProvider.notifier)
