@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,11 +17,13 @@ import '../../src/playlist/playlist_store.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../home/online_detail_page.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 「我的」页：搜索条 + 账号区 + 快捷入口四宫格（参考魅族音乐我的页布局）。
 ///
@@ -31,7 +35,8 @@ class MinePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      backgroundColor: appSurfaceBg(context),
+      // 背景交给 Shell 层统一渲染（自定义壁纸/默认底色），页面自身保持透明以透出壁纸。
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         children: [
@@ -42,7 +47,7 @@ class MinePage extends ConsumerWidget {
               16,
               ref.watch(navBarInsetProvider) + 24,
             ),
-            children: const [
+            children:   [
               _SearchEntry(),
               SizedBox(height: 18),
               _AccountArea(),
@@ -50,8 +55,8 @@ class MinePage extends ConsumerWidget {
               _QuickEntries(),
               SizedBox(height: 24),
               _MyPlaylistsSection(),
-              _FavoriteCollectionsSection(kind: 'playlist', title: '收藏歌单'),
-              _FavoriteCollectionsSection(kind: 'album', title: '收藏专辑'),
+              _FavoriteCollectionsSection(kind: 'playlist', title: tr('收藏歌单')),
+              _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
           Positioned(
@@ -59,11 +64,11 @@ class MinePage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              title: const Text('我的'),
+              title:   Text(tr('我的')),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.settings_outlined),
-                  tooltip: '设置',
+                  tooltip: tr('设置'),
                   onPressed: () => context.push('/settings'),
                 ),
               ],
@@ -103,7 +108,7 @@ class _SearchEntry extends StatelessWidget {
               Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
               const SizedBox(width: 10),
               Text(
-                '搜索歌曲、歌手、专辑',
+                tr('搜索歌曲、歌手、专辑'),
                 style: TextStyle(
                   fontSize: 13.5,
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -157,7 +162,7 @@ class _AccountArea extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '登录弦予音乐账号',
+                      tr('登录弦予音乐账号'),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -171,7 +176,7 @@ class _AccountArea extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '登录后同步你的歌单与设置',
+            tr('登录后同步你的歌单与设置'),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
@@ -210,7 +215,7 @@ class _AccountArea extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      user.nickname.isEmpty ? '未命名用户' : user.nickname,
+                      user.nickname.isEmpty ? tr('未命名用户') : user.nickname,
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -219,7 +224,7 @@ class _AccountArea extends ConsumerWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '管理账号与安全',
+                      tr('管理账号与安全'),
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,
@@ -228,7 +233,12 @@ class _AccountArea extends ConsumerWidget {
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: scheme.outline),
+              IconButton(
+                onPressed: () => context.push('/wallpaper'),
+                icon: Icon(Icons.wallpaper, color: scheme.outline),
+                tooltip: tr('壁纸中心'),
+                splashRadius: 20,
+              ),
             ],
           ),
         ),
@@ -334,25 +344,25 @@ class _QuickEntries extends ConsumerWidget {
           children: [
             entry(
               icon: Icons.favorite_rounded,
-              label: '喜欢',
+              label: tr('喜欢'),
               count: '$favCount',
               onTap: () => context.push('/favorites'),
             ),
             entry(
               icon: Icons.history_rounded,
-              label: '最近',
+              label: tr('最近'),
               count: '$recentCount',
               onTap: () => context.push('/recent'),
             ),
             entry(
               icon: Icons.library_music_rounded,
-              label: '本地',
+              label: tr('本地'),
               count: '$localCount',
               onTap: () => context.push('/library?tab=0'),
             ),
             entry(
               icon: Icons.download_rounded,
-              label: '下载',
+              label: tr('下载'),
               count: '$dlCount',
               onTap: () => context.push('/download'),
             ),
@@ -399,35 +409,66 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// 分组圆角卡片容器：条目间细分隔线（与封面-文字对齐）。
-class _CardGroup extends StatelessWidget {
-  const _CardGroup({required this.children});
-  final List<Widget> children;
+/// 内嵌滚动条中的可拖动排序卡片（shrinkWrap + NeverScrollable，供外层 ListView 使用）。
+/// 每项自带一条与封面-文字对齐的分隔线（末项除外），视觉对齐原 _CardGroup。
+class _ReorderCard extends StatelessWidget {
+  const _ReorderCard({
+    required this.itemCount,
+    required this.onReorder,
+    required this.itemKey,
+    required this.itemBuilder,
+  });
+
+  final int itemCount;
+  final ReorderCallback onReorder;
+
+  /// 每项稳定身份 Key（对应条目 id/key），供拖拽框架追踪 & 隔离合成层。
+  final Key Function(int index) itemKey;
+  final IndexedWidgetBuilder itemBuilder;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final items = <Widget>[];
-    for (var i = 0; i < children.length; i++) {
-      items.add(children[i]);
-      if (i != children.length - 1) {
-        items.add(
-          Divider(
-            height: 1,
-            indent: 82,
-            endIndent: 12,
-            thickness: 0.5,
-            color: scheme.onSurface.withValues(alpha: 0.06),
-          ),
-        );
-      }
-    }
-
     return Material(
       color: appCardColor(context),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
-      child: Column(children: items),
+      child: ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        buildDefaultDragHandles: false,
+        itemCount: itemCount,
+        onReorderItem: onReorder,
+        // 拖动代理样式与正常条目保持一致（去掉默认拖拽阴影）。
+        // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell/ListTile
+        // 会以 debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
+        proxyDecorator: (child, index, animation) =>
+            Material(type: MaterialType.transparency, child: child),
+        itemBuilder: (ctx, i) {
+          final row = itemBuilder(ctx, i);
+          final isLast = i == itemCount - 1;
+          // ReorderableListView 不像 ListView 那样自动给子项加 RepaintBoundary：
+          // 多条目时可见卡片每帧被整体重绘 → 抽帧。每项隔离为独立合成层后，
+          // 滑动只搬运已有图层，不重绘内容。
+          return RepaintBoundary(
+            key: itemKey(i),
+            child: Column(
+              children: [
+                row,
+                if (!isLast)
+                  Divider(
+                    height: 1,
+                    indent: 100,
+                    endIndent: 12,
+                    thickness: 0.5,
+                    color: scheme.onSurface.withValues(alpha: 0.06),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -441,17 +482,31 @@ class _MyPlaylistsSection extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     final manager = ref.read(playlistManagerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+    final playlists = state.playlists;
+    // 末尾固定「导入外部歌单」条目，不参与排序。
+    final itemCount = playlists.length + 1;
+
+    void onReorder(int oldIndex, int newIndex) {
+      if (newIndex < 0 || newIndex >= itemCount || newIndex == oldIndex) return;
+      // 仅允许在歌单条目间排序；末尾「导入」条目不可被移动。
+      if (oldIndex >= playlists.length) return;
+      final ids = playlists.map((p) => p.id).toList();
+      final moved = ids.removeAt(oldIndex);
+      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
+      ids.insert(newIndex.clamp(0, ids.length), moved);
+      manager.reorder(ids);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          title: '自建歌单',
-          count: state.playlists.length,
+          title: tr('自建歌单'),
+          count: playlists.length,
           action: OutlinedButton.icon(
             onPressed: () => _promptCreate(context, manager),
             icon: const Icon(Icons.add, size: 15),
-            label: const Text('新建', style: TextStyle(fontSize: 13)),
+            label:   Text(tr('新建'), style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
@@ -465,12 +520,22 @@ class _MyPlaylistsSection extends ConsumerWidget {
             ),
           ),
         ),
-        _CardGroup(
-          children: [
-            for (final playlist in state.playlists)
-              _PlaylistRow(playlist: playlist),
-            _ImportPlaylistRow(),
-          ],
+        _ReorderCard(
+          itemCount: itemCount,
+          onReorder: onReorder,
+          itemKey: (i) => i < playlists.length
+              ? ValueKey(playlists[i].id)
+              : const ValueKey('import'),
+          itemBuilder: (ctx, i) {
+            if (i < playlists.length) {
+              return _PlaylistRow(
+                playlist: playlists[i],
+                index: i,
+                dragEnabled: true,
+              );
+            }
+            return const _ImportPlaylistRow();
+          },
         ),
         const SizedBox(height: 24),
       ],
@@ -481,11 +546,11 @@ class _MyPlaylistsSection extends ConsumerWidget {
     BuildContext context,
     PlaylistManager manager,
   ) async {
-    final name = await _promptPlaylistName(context, '新建歌单');
+    final name = await _promptPlaylistName(context, tr('新建歌单'));
     if (name == null || name.trim().isEmpty) return;
     await manager.create(name.trim());
     if (!context.mounted) return;
-    showXianYuToast(context, '已创建歌单「${name.trim()}」');
+    showXianYuToast(context, tr('已创建歌单「{name}」', {'name': name.trim()}));
   }
 }
 
@@ -500,17 +565,17 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
         controller: controller,
         autofocus: true,
         maxLength: 40,
-        decoration: const InputDecoration(hintText: '歌单名称'),
+        decoration:   InputDecoration(hintText: tr('歌单名称')),
         onSubmitted: (v) => Navigator.pop(ctx, v),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, controller.text),
-          child: const Text('确定'),
+          child:   Text(tr('确定')),
         ),
       ],
     ),
@@ -520,8 +585,15 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
 /// 自建歌单条目：封面（取歌单第一首歌，无则占位）+ 名称 + 共N首歌。
 /// 点击进详情；右侧菜单提供重命名/删除。
 class _PlaylistRow extends ConsumerWidget {
-  const _PlaylistRow({required this.playlist});
+  const _PlaylistRow({
+    required this.playlist,
+    required this.index,
+    this.dragEnabled = true,
+  });
+
   final ImportedPlaylist playlist;
+  final int index;
+  final bool dragEnabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -533,9 +605,10 @@ class _PlaylistRow extends ConsumerWidget {
       // 否则返回会被 shell 的 canPop 逻辑误判而直接退出程序。
       onTap: () => context.push('/playlist/${playlist.id}'),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
         child: Row(
           children: [
+            DragHandle(index: index, enabled: dragEnabled),
             first == null
                 ? Container(
                     width: 56,
@@ -571,7 +644,7 @@ class _PlaylistRow extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '共${playlist.songs.length}首歌',
+                    tr('共{n}首歌', {'n': playlist.songs.length}),
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
@@ -582,7 +655,7 @@ class _PlaylistRow extends ConsumerWidget {
             ),
             IconButton(
               icon: Icon(Icons.more_vert, size: 20, color: scheme.outline),
-              tooltip: '歌单操作',
+              tooltip: tr('歌单操作'),
               onPressed: () => _sheetActions(context, ref),
             ),
           ],
@@ -610,10 +683,10 @@ class _PlaylistRow extends ConsumerWidget {
                   color: scheme.primary,
                   size: 22,
                 ),
-                title: const Text('重命名歌单'),
+                title:   Text(tr('重命名歌单')),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  final name = await _promptPlaylistName(context, '重命名歌单');
+                  final name = await _promptPlaylistName(context, tr('重命名歌单'));
                   if (name == null || name.trim().isEmpty) return;
                   await manager.rename(playlist.id, name.trim());
                 },
@@ -624,7 +697,7 @@ class _PlaylistRow extends ConsumerWidget {
                   color: const Color(0xFFEC4141),
                   size: 22,
                 ),
-                title: const Text('删除歌单'),
+                title:   Text(tr('删除歌单')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _confirmRemove(context, manager);
@@ -641,19 +714,19 @@ class _PlaylistRow extends ConsumerWidget {
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除歌单'),
-        content: Text('确定要删除「${playlist.name}」吗？'),
+        title:   Text(tr('删除歌单')),
+        content: Text(tr('确定要删除「{name}」吗？', {'name': playlist.name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               manager.remove(playlist.id);
             },
-            child: const Text('删除'),
+            child:   Text(tr('删除')),
           ),
         ],
       ),
@@ -672,9 +745,11 @@ class _ImportPlaylistRow extends StatelessWidget {
     return InkWell(
       onTap: () => context.push('/playlist-import'),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        padding: const EdgeInsets.fromLTRB(6, 10, 14, 10),
         child: Row(
           children: [
+            // 与可排序条目左侧把手列对齐，保持封面列视觉一致。
+            const SizedBox(width: 28),
             Container(
               width: 56,
               height: 56,
@@ -693,15 +768,15 @@ class _ImportPlaylistRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '导入外部歌单',
+                    Text(
+                    tr('导入外部歌单'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '备份文件 / 本地文件夹 / 云端导入',
+                    tr('备份文件 / 本地文件夹 / 云端导入'),
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
@@ -732,13 +807,29 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
     final fav = ref.watch(favoritesProvider);
     final items = fav.collections.where((c) => c.kind == kind).toList();
     if (items.isEmpty) return const SizedBox.shrink();
+    final manager = ref.read(favoritesProvider.notifier);
+
+    void onReorder(int oldIndex, int newIndex) {
+      if (newIndex < 0 || newIndex >= items.length || newIndex == oldIndex) return;
+      final moved = items[oldIndex];
+      final next = List.of(items)..removeAt(oldIndex);
+      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
+      next.insert(newIndex.clamp(0, next.length), moved);
+      manager.reorderCollections(next.map((c) => c.key).toList());
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(title: title, count: items.length),
-        _CardGroup(
-          children: [for (final c in items) _CollectionRow(collection: c)],
+        _ReorderCard(
+          itemCount: items.length,
+          onReorder: onReorder,
+          itemKey: (i) => ValueKey(items[i].key),
+          itemBuilder: (ctx, i) => _CollectionRow(
+            collection: items[i],
+            index: i,
+          ),
         ),
         const SizedBox(height: 24),
       ],
@@ -748,8 +839,10 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
 
 /// 收藏条目：在线封面 + 标题 + 来源副标题，右侧取消收藏。
 class _CollectionRow extends ConsumerWidget {
-  const _CollectionRow({required this.collection});
+  const _CollectionRow({required this.collection, required this.index});
+
   final FavoriteCollection collection;
+  final int index;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -771,9 +864,10 @@ class _CollectionRow extends ConsumerWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
         child: Row(
           children: [
+            DragHandle(index: index),
             OnlineCover(url: collection.coverUrl, size: 56, radius: 12),
             const SizedBox(width: 12),
             Expanded(
@@ -811,7 +905,7 @@ class _CollectionRow extends ConsumerWidget {
                 size: 20,
                 color: Color(0xFFEC4141),
               ),
-              tooltip: '取消收藏',
+              tooltip: tr('取消收藏'),
               onPressed: () => ref
                   .read(favoritesProvider.notifier)
                   .toggleCollection(

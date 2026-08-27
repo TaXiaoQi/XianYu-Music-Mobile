@@ -259,6 +259,21 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     state = FavoritesState(entries: entries, loading: false);
   }
 
+  /// 按指定 path 顺序重排收藏歌曲（未列出的歌曲保持在队尾）。
+  Future<void> reorderEntries(List<String> orderedPaths) async {
+    final current = state.entries;
+    final pathSet = orderedPaths.toSet();
+    final byPath = {for (final e in current) e.path: e};
+    final entries = <FavoriteEntry>[
+      for (final path in orderedPaths)
+        if (byPath.containsKey(path)) byPath[path]!,
+      for (final e in current)
+        if (!pathSet.contains(e.path)) e,
+    ];
+    await _store.saveAll(entries);
+    state = state.copyWith(entries: entries, loading: false);
+  }
+
   Future<void> clear() async {
     await _store.saveAll(const []);
     state = FavoritesState(
@@ -298,6 +313,21 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final next = [item, ...current];
     await _collectionStore.saveAll(next);
     state = state.copyWith(collections: next);
+  }
+
+  /// 按指定 key 顺序重排收藏集（未列出的收藏保持在队尾）。
+  Future<void> reorderCollections(List<String> orderedKeys) async {
+    final current = state.collections;
+    final keySet = orderedKeys.toSet();
+    final byKey = {for (final c in current) c.key: c};
+    final result = <FavoriteCollection>[
+      for (final k in orderedKeys)
+        if (byKey.containsKey(k)) byKey[k]!,
+      for (final c in current)
+        if (!keySet.contains(c.key)) c,
+    ];
+    await _collectionStore.saveAll(result);
+    state = state.copyWith(collections: result);
   }
 
   /// 播放收藏（从指定索引开始）。

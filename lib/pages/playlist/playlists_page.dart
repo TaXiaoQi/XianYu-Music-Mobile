@@ -12,11 +12,13 @@ import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 我的歌单：创建/重命名/删除歌单，查看与播放歌单内容（对齐桌面歌单体系）。
 class PlaylistsPage extends ConsumerWidget {
@@ -30,7 +32,7 @@ class PlaylistsPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
           children: [
@@ -46,12 +48,12 @@ class PlaylistsPage extends ConsumerWidget {
                               Icon(Icons.queue_music_outlined,
                                   size: 56, color: scheme.outline),
                               const SizedBox(height: 12),
-                              Text('还没有歌单',
+                              Text(tr('还没有歌单'),
                                   style:
                                       TextStyle(color: scheme.onSurfaceVariant)),
                               const SizedBox(height: 4),
                               Text(
-                                '点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入',
+                                tr('点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入'),
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                     fontSize: 12, color: scheme.outline),
@@ -60,14 +62,14 @@ class PlaylistsPage extends ConsumerWidget {
                               FilledButton.tonalIcon(
                                 onPressed: () => _promptCreate(context, manager),
                                 icon: const Icon(Icons.add, size: 18),
-                                label: const Text('新建歌单'),
+                                label:   Text(tr('新建歌单')),
                               ),
                               const SizedBox(height: 8),
                               TextButton.icon(
                                 onPressed: () => context.push('/playlist-import'),
                                 icon: const Icon(Icons.file_download_outlined,
                                     size: 16),
-                                label: const Text('导入歌单'),
+                                label:   Text(tr('导入歌单')),
                               ),
                             ],
                           ),
@@ -80,11 +82,11 @@ class PlaylistsPage extends ConsumerWidget {
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title: const Text('我的歌单'),
+                title:   Text(tr('我的歌单')),
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.add),
-                    tooltip: '新建歌单',
+                    tooltip: tr('新建歌单'),
                     onPressed: () => _promptCreate(context, manager),
                   ),
                 ],
@@ -100,11 +102,11 @@ class PlaylistsPage extends ConsumerWidget {
 
   Future<void> _promptCreate(
       BuildContext context, PlaylistManager manager) async {
-    final name = await _promptName(context, '新建歌单');
+    final name = await _promptName(context, tr('新建歌单'));
     if (name == null || name.trim().isEmpty) return;
     await manager.create(name.trim());
     if (!context.mounted) return;
-    showXianYuToast(context, '已创建歌单「${name.trim()}」');
+    showXianYuToast(context, tr('已创建歌单「{name}」', {'name': name.trim()}));
   }
 }
 
@@ -119,17 +121,17 @@ Future<String?> _promptName(BuildContext context, String title) {
         controller: controller,
         autofocus: true,
         maxLength: 40,
-        decoration: const InputDecoration(hintText: '歌单名称'),
+        decoration:   InputDecoration(hintText: tr('歌单名称')),
         onSubmitted: (v) => Navigator.pop(ctx, v),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
+          child:   Text(tr('取消')),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, controller.text),
-          child: const Text('确定'),
+          child:   Text(tr('确定')),
         ),
       ],
     ),
@@ -212,7 +214,7 @@ class _PlaylistCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${playlist.songs.length} 首歌曲',
+                      tr('{n} 首歌曲', {'n': playlist.songs.length}),
                       style: TextStyle(
                           fontSize: 12, color: scheme.onSurfaceVariant),
                     ),
@@ -221,13 +223,13 @@ class _PlaylistCard extends ConsumerWidget {
               ),
               IconButton(
                 icon: Icon(Icons.edit_outlined, size: 20, color: scheme.outline),
-                tooltip: '重命名',
+                tooltip: tr('重命名'),
                 onPressed: () => _rename(context, manager),
               ),
               IconButton(
                 icon: Icon(Icons.delete_outline,
                     size: 20, color: scheme.outline),
-                tooltip: '删除歌单',
+                tooltip: tr('删除歌单'),
                 onPressed: () => _confirmRemove(context, manager),
               ),
             ],
@@ -254,7 +256,7 @@ class _PlaylistCard extends ConsumerWidget {
               children: [
                 ListTile(
                   leading: Icon(Icons.edit_outlined, color: scheme.primary, size: 22),
-                  title: const Text('重命名歌单'),
+                  title:   Text(tr('重命名歌单')),
                   onTap: () {
                     Navigator.pop(ctx);
                     _rename(context, manager);
@@ -263,7 +265,7 @@ class _PlaylistCard extends ConsumerWidget {
                 ListTile(
                   leading: Icon(Icons.delete_outline,
                       color: scheme.error, size: 22),
-                  title: const Text('删除歌单'),
+                  title:   Text(tr('删除歌单')),
                   onTap: () {
                     Navigator.pop(ctx);
                     _confirmRemove(context, manager);
@@ -277,7 +279,7 @@ class _PlaylistCard extends ConsumerWidget {
   }
 
   Future<void> _rename(BuildContext context, PlaylistManager manager) async {
-    final name = await _promptName(context, '重命名歌单');
+    final name = await _promptName(context, tr('重命名歌单'));
     if (name == null || name.trim().isEmpty) return;
     await manager.rename(playlist.id, name.trim());
   }
@@ -286,19 +288,19 @@ class _PlaylistCard extends ConsumerWidget {
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除歌单'),
-        content: Text('确定要删除「${playlist.name}」吗？'),
+        title:   Text(tr('删除歌单')),
+        content: Text(tr('确定要删除「{name}」吗？', {'name': playlist.name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               manager.remove(playlist.id);
             },
-            child: const Text('删除'),
+            child:   Text(tr('删除')),
           ),
         ],
       ),
@@ -324,12 +326,12 @@ class PlaylistDetailPage extends ConsumerWidget {
     if (playlist == null) {
       return HideShellChrome(
         child: Scaffold(
-          backgroundColor: appSurfaceBg(context),
+          backgroundColor: Colors.transparent,
           body: Stack(
             children: [
               Padding(
                 padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-                child: const Center(child: Text('歌单已不存在')),
+                child:   Center(child: Text(tr('歌单已不存在'))),
               ),
               Positioned(
                 top: 0,
@@ -337,7 +339,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                 right: 0,
                 child: GlassTopBar(
                   leading: const BackButton(),
-                  title: const Text('歌单'),
+                  title:   Text(tr('歌单')),
                 ),
               ),
             ],
@@ -348,7 +350,7 @@ class PlaylistDetailPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Padding(
@@ -370,7 +372,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                     child: playlist.songs.isEmpty
                         ? Center(
                             child: Text(
-                              '歌单为空，可在歌曲菜单中选择「添加到歌单」',
+                              tr('歌单为空，可在歌曲菜单中选择「添加到歌单」'),
                               style: TextStyle(
                                   fontSize: 13, color: scheme.outline),
                             ),
@@ -395,9 +397,9 @@ class PlaylistDetailPage extends ConsumerWidget {
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.edit_outlined, size: 20),
-                    tooltip: '重命名',
+                    tooltip: tr('重命名'),
                     onPressed: () async {
-                      final name = await _promptName(context, '重命名歌单');
+                      final name = await _promptName(context, tr('重命名歌单'));
                       if (name == null || name.trim().isEmpty) return;
                       await manager.rename(playlist.id, name.trim());
                     },
@@ -469,7 +471,7 @@ class _AlbumHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$count 首',
+                  tr('{n} 首', {'n': count}),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -479,7 +481,7 @@ class _AlbumHeader extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onPlayAll,
                   icon: const Icon(Icons.play_arrow, size: 18),
-                  label: const Text('播放全部', style: TextStyle(fontSize: 13)),
+                  label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     minimumSize: const Size(0, 34),
@@ -494,7 +496,7 @@ class _AlbumHeader extends StatelessWidget {
   }
 }
 
-/// 歌单歌曲列表：按公告的列表项尺寸（ListSize）缩放。
+/// 歌单歌曲列表：按公告的列表项尺寸（ListSize）缩放；长按行首把手可拖动排序。
 class _PlaylistSongs extends ConsumerWidget {
   const _PlaylistSongs({
     required this.playlist,
@@ -511,73 +513,115 @@ class _PlaylistSongs extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    return ListView.builder(
+    final songs = playlist.songs;
+
+    void onReorder(int oldIndex, int newIndex) {
+      if (newIndex < 0 || newIndex >= songs.length || newIndex == oldIndex) return;
+      final paths = songs.map((s) => s.path).toList();
+      final moved = paths.removeAt(oldIndex);
+      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
+      paths.insert(newIndex.clamp(0, paths.length), moved);
+      manager.reorderSongs(playlist.id, paths);
+    }
+
+    return ReorderableListView.builder(
+      // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
       padding: EdgeInsets.only(
         bottom: (hasSong ? 92.0 : 150.0) +
             MediaQuery.of(context).padding.bottom,
       ),
-      itemCount: playlist.songs.length,
+      buildDefaultDragHandles: false,
+      // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
+      // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
+      // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
+      proxyDecorator: (child, index, animation) =>
+          Material(type: MaterialType.transparency, child: child),
+      itemCount: songs.length,
+      onReorderItem: onReorder,
       itemBuilder: (context, index) {
-        final song = playlist.songs[index];
-        return Builder(
-          builder: (rowContext) {
-            // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
-            BuildContext? coverCtx;
-            final g = songRowPlay(ref, onPlay: () async {
-              // 等封面落地后再播放：播放条封面随落地同步更新，
-              // 避免飞行过程中播放条封面提前切换。
-              final ok = await launchFlyCover(
-                rowContext,
-                coverContext: coverCtx,
-                coverSize: m.songCover,
-                vPad: m.vPad,
-                songPath: song.path,
-                networkUrl: song.coverUrl,
-                thumbPath: song.coverThumbPath,
-                radius: m.songRadius,
+        final song = songs[index];
+        // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
+        // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
+        // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
+        // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+        return RepaintBoundary(
+          key: ValueKey('${song.path}_$index'),
+          child: Builder(
+            builder: (rowContext) {
+              // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+              BuildContext? coverCtx;
+              final g = songRowPlay(ref, onPlay: () async {
+                // 等封面落地后再播放：播放条封面随落地同步更新，
+                // 避免飞行过程中播放条封面提前切换。
+                final ok = await launchFlyCover(
+                  rowContext,
+                  coverContext: coverCtx,
+                  coverSize: m.songCover,
+                  vPad: m.vPad,
+                  songPath: song.path,
+                  networkUrl: song.coverUrl,
+                  thumbPath: song.coverThumbPath,
+                  radius: m.songRadius,
+                );
+                if (ok) manager.play(playlist, index);
+              });
+              final row = g.wrap(
+                CoverRow(
+                  cover: Builder(
+                    builder: (c) {
+                      coverCtx = c;
+                      return CoverImage(
+                        songPath: song.path,
+                        networkUrl: song.coverUrl,
+                        thumbPath: song.coverThumbPath,
+                        width: m.songCover,
+                        height: m.songCover,
+                        radius: m.songRadius,
+                      );
+                    },
+                  ),
+                  onTap: g.onTap,
+                  verticalPadding: m.vPad,
+                  horizontalPadding: 0,
+                  title: Text(
+                    song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${song.artist} · ${song.album}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(Icons.close,
+                        size: 18, color: scheme.outline),
+                    tooltip: tr('从歌单移除'),
+                    onPressed: () => onRemove(index),
+                  ),
+                ),
               );
-              if (ok) manager.play(playlist, index);
-            });
-            return g.wrap(
-              CoverRow(
-                cover: Builder(
-                  builder: (c) {
-                    coverCtx = c;
-                    return CoverImage(
-                      songPath: song.path,
-                      networkUrl: song.coverUrl,
-                      thumbPath: song.coverThumbPath,
-                      width: m.songCover,
-                      height: m.songCover,
-                      radius: m.songRadius,
-                    );
-                  },
-                ),
-                onTap: g.onTap,
-                verticalPadding: m.vPad,
-                title: Text(
-                  song.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: m.titleSize, fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  '${song.artist} · ${song.album}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-                ),
-                trailing: IconButton(
-                  icon: Icon(Icons.close,
-                      size: 18, color: scheme.outline),
-                  tooltip: '从歌单移除',
-                  onPressed: () => onRemove(index),
-                ),
-              ),
-            );
-          },
+              return Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 44),
+                    child: row,
+                  ),
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    width: 36,
+                    child: Center(child: DragHandle(index: index)),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );

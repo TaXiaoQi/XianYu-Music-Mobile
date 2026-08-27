@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -210,8 +211,9 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
           .where((p) => p.isNotEmpty)
           .toList();
+      final parsedSongs = _parseSongs(songsJson);
       state = LibraryState(
-        songs: _parseSongs(songsJson),
+        songs: await _applyCustomOrder(parsedSongs),
         // getLibraryFolders 返回 [{path, song_count}, ...]，取出 path。
         folders: folders,
         artists: (jsonDecode(artistsJson) as List)
@@ -255,6 +257,46 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   List<Song> _parseSongs(String json) => (jsonDecode(json) as List)
       .map((e) => Song.fromJson(e as Map<String, dynamic>))
       .toList();
+
+  /// 本地歌曲自定义顺序的持久化 key。
+  static const _customOrderKey = 'localSongsCustomOrder';
+
+  Future<List<String>> _readCustomOrder() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_customOrderKey) ?? const [];
+  }
+
+  /// 把已保存的用户自定的本地歌曲顺序应用到扫描结果上：
+  /// 存在的路径按保存顺序排在前面，扫描新增的路径附加在队尾。
+  Future<List<Song>> _applyCustomOrder(List<Song> songs) async {
+    final saved = await _readCustomOrder();
+    if (saved.isEmpty) return songs;
+    final set = saved.toSet();
+    final byPath = {for (final s in songs) s.path: s};
+    return <Song>[
+      for (final p in saved)
+        if (byPath.containsKey(p)) byPath[p]!,
+      for (final s in songs)
+        if (!set.contains(s.path)) s,
+    ];
+  }
+
+  /// 按指定 path 顺序重排本地歌曲（拖拽排序），并持久化自定义顺序。
+  Future<void> reorderLocalSongs(List<String> orderedPaths) async {
+    final current = state.songs;
+    final pathSet = orderedPaths.toSet();
+    final byPath = {for (final s in current) s.path: s};
+    final reordered = <Song>[
+      for (final p in orderedPaths)
+        if (byPath.containsKey(p)) byPath[p]!,
+      for (final s in current)
+        if (!pathSet.contains(s.path)) s,
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        _customOrderKey, reordered.map((s) => s.path).toList());
+    state = state.copyWith(songs: reordered);
+  }
 
   /// 格式大类 → 实际扩展名白名单（与 Rust is_ext_allowed 对应）。
   static const _formatExtensions = <String, List<String>>{

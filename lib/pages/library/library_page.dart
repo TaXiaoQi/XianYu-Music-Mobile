@@ -27,6 +27,7 @@ import '../../src/widgets/song_list_view.dart';
 import '../settings/folder_picker_page.dart';
 import '../../src/widgets/letter_index_song_list.dart';
 import 'song_list_page.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 本地曲库：全部 / 歌手 / 专辑 / 文件夹（从「我的」页进入的二级页面）。
 ///
@@ -113,7 +114,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         textInputAction: TextInputAction.search,
         style: TextStyle(fontSize: 14.5, color: scheme.onSurface),
         decoration: InputDecoration(
-          hintText: '搜索歌曲、歌手、专辑',
+          hintText: tr('搜索歌曲、歌手、专辑'),
           hintStyle:
               TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
           prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
@@ -151,7 +152,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       return const Center(child: CircularProgressIndicator());
     }
     if (result.isEmpty) {
-      return const Center(child: Text('没有找到相关歌曲'));
+      return   Center(child: Text(tr('没有找到相关歌曲')));
     }
     return SongsListView(
       songs: result,
@@ -187,7 +188,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: appSurfaceBg(context),
+        backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
           children: [
@@ -250,7 +251,7 @@ class _ErrorView extends StatelessWidget {
           FilledButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label: const Text('重试'),
+            label:   Text(tr('重试')),
           ),
         ],
       ),
@@ -361,12 +362,12 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   value: _sort,
                   isExpanded: true,
                   underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: _SongSort.none, child: Text('默认排序')),
-                    DropdownMenuItem(value: _SongSort.title, child: Text('按标题')),
-                    DropdownMenuItem(value: _SongSort.artist, child: Text('按歌手')),
-                    DropdownMenuItem(value: _SongSort.album, child: Text('按专辑')),
-                    DropdownMenuItem(value: _SongSort.addedAt, child: Text('按添加时间')),
+                  items:   [
+                    DropdownMenuItem(value: _SongSort.none, child: Text(tr('默认排序'))),
+                    DropdownMenuItem(value: _SongSort.title, child: Text(tr('按标题'))),
+                    DropdownMenuItem(value: _SongSort.artist, child: Text(tr('按歌手'))),
+                    DropdownMenuItem(value: _SongSort.album, child: Text(tr('按专辑'))),
+                    DropdownMenuItem(value: _SongSort.addedAt, child: Text(tr('按添加时间'))),
                   ],
                   onChanged: (v) {
                     _sort = v ?? _SongSort.none;
@@ -376,7 +377,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               ),
               const SizedBox(width: 4),
               Tooltip(
-                message: _hideDuplicates ? '已隐藏重复歌曲' : '隐藏重复歌曲',
+                message: _hideDuplicates ? tr('已隐藏重复歌曲') : tr('隐藏重复歌曲'),
                 child: IconButton(
                   icon: Icon(
                     _hideDuplicates ? Icons.flip_to_front : Icons.flip_to_back,
@@ -390,7 +391,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
               ),
               IconButton(
                 icon: const Icon(Icons.bar_chart),
-                tooltip: '曲库统计',
+                tooltip: tr('曲库统计'),
                 onPressed: () => _showStats(context, lib),
               ),
             ],
@@ -398,25 +399,52 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         ),
         Expanded(
           child: songs.isEmpty
-              ? const Center(child: Text('没有匹配的歌曲'))
-              : LetterIndexSongList(
-                  songs: songs,
-                  // 仅按字母序字段排序时才启用 A-Z 索引条；默认/添加时间无意义。
-                  indexField: switch (_sort) {
-                    _SongSort.title => (Song s) => s.title,
-                    _SongSort.artist => (Song s) => s.artist,
-                    _SongSort.album => (Song s) => s.album,
-                    _SongSort.none || _SongSort.addedAt => null,
-                  },
-                  padding: EdgeInsets.only(
-                    bottom: (ref.watch(playerProvider.select((s) => s.current != null))
-                            ? 92.0
-                            : 16.0) +
-                        MediaQuery.of(context).padding.bottom,
-                  ),
-                  onPlay: (list, i) =>
-                      ref.read(libraryProvider.notifier).playList(list, i),
-                ),
+              ?   Center(child: Text(tr('没有匹配的歌曲')))
+              : _sort == _SongSort.none
+                  // 默认排序：支持长按把手拖动排序（顶级列表，拖到边缘自动滚动）。
+                  ? SongsListView(
+                      songs: songs,
+                      padding: EdgeInsets.only(
+                        bottom: (ref.watch(playerProvider.select((s) => s.current != null))
+                                ? 92.0
+                                : 16.0) +
+                            MediaQuery.of(context).padding.bottom,
+                      ),
+                      onPlay: (list, i) =>
+                          ref.read(libraryProvider.notifier).playList(list, i),
+                      onReorder: (oldIndex, newIndex) {
+                        if (newIndex < 0 ||
+                            newIndex >= songs.length ||
+                            newIndex == oldIndex) {
+                          return;
+                        }
+                        final paths = [for (final s in songs) s.path];
+                        final moved = paths.removeAt(oldIndex);
+                        // onReorderItem 的 newIndex 已随移除项调整。
+                        paths.insert(newIndex.clamp(0, paths.length), moved);
+                        ref
+                            .read(libraryProvider.notifier)
+                            .reorderLocalSongs(paths);
+                      },
+                    )
+                  : LetterIndexSongList(
+                      songs: songs,
+                      // 仅按字母序字段排序时才启用 A-Z 索引条；默认/添加时间无意义。
+                      indexField: switch (_sort) {
+                        _SongSort.title => (Song s) => s.title,
+                        _SongSort.artist => (Song s) => s.artist,
+                        _SongSort.album => (Song s) => s.album,
+                        _SongSort.none || _SongSort.addedAt => null,
+                      },
+                      padding: EdgeInsets.only(
+                        bottom: (ref.watch(playerProvider.select((s) => s.current != null))
+                                ? 92.0
+                                : 16.0) +
+                            MediaQuery.of(context).padding.bottom,
+                      ),
+                      onPlay: (list, i) =>
+                          ref.read(libraryProvider.notifier).playList(list, i),
+                    ),
         ),
       ],
     );
@@ -428,7 +456,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         lib.songs.fold<int>(0, (sum, s) => sum + s.duration * 1000);
     final formatMap = <String, int>{};
     for (final s in lib.songs) {
-      final f = s.format.isEmpty ? '未知' : s.format.toUpperCase();
+      final f = s.format.isEmpty ? tr('未知') : s.format.toUpperCase();
       formatMap[f] = (formatMap[f] ?? 0) + 1;
     }
     final formats = formatMap.entries.toList()
@@ -442,14 +470,14 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('曲库统计',
+              Text(tr('曲库统计'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
-            _StatRow(label: '歌曲总数', value: '$total 首'),
-            _StatRow(label: '总时长', value: _fmtDuration(durationMs)),
-            _StatRow(label: '歌手', value: '${lib.artists.length} 位'),
-            _StatRow(label: '专辑', value: '${lib.albums.length} 张'),
-            _StatRow(label: '文件夹', value: '${lib.folders.length} 个'),
+            _StatRow(label: tr('歌曲总数'), value: '$total 首'),
+            _StatRow(label: tr('总时长'), value: _fmtDuration(durationMs)),
+            _StatRow(label: tr('歌手'), value: '${lib.artists.length} 位'),
+            _StatRow(label: tr('专辑'), value: '${lib.albums.length} 张'),
+            _StatRow(label: tr('文件夹'), value: '${lib.folders.length} 个'),
             if (formats.isNotEmpty) ...[
               const SizedBox(height: 14),
               for (final f in formats)
@@ -459,7 +487,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
             Icon(TextDirection.ltr == TextDirection.ltr ? Icons.info_outline : Icons.info_outline,
               size: 14, color: Theme.of(ctx).colorScheme.outline),
             const SizedBox(height: 4),
-            Text('统计基于本地曲库', style: TextStyle(fontSize: 11, color: Theme.of(ctx).colorScheme.outline)),
+            Text(tr('统计基于本地曲库'), style: TextStyle(fontSize: 11, color: Theme.of(ctx).colorScheme.outline)),
           ],
         ),
       ),
@@ -509,7 +537,7 @@ class _ArtistsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
-    if (artists.isEmpty) return const Center(child: Text('暂无歌手'));
+    if (artists.isEmpty) return   Center(child: Text(tr('暂无歌手')));
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
@@ -579,7 +607,7 @@ class _AlbumsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
-    if (albums.isEmpty) return const Center(child: Text('暂无专辑'));
+    if (albums.isEmpty) return   Center(child: Text(tr('暂无专辑')));
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
@@ -690,7 +718,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               .push<int>(
                   MaterialPageRoute(builder: (_) => const FolderPickerPage()));
           if (count != null && mounted) {
-            _toast(count > 0 ? '已添加扫描目录，扫描到 $count 首' : '已添加扫描目录');
+            _toast(count > 0 ? '已添加扫描目录，扫描到 $count 首' : tr('已添加扫描目录'));
           }
           return;
         }
@@ -699,17 +727,17 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
       }
       final granted = await _ensureStoragePermission();
       if (!granted) {
-        _toast('未授予存储权限，无法扫描本地文件夹');
+        _toast(tr('未授予存储权限，无法扫描本地文件夹'));
         return;
       }
       final dir = await FilePicker.getDirectoryPath();
       if (dir == null) return;
       if (dir.startsWith('content://')) {
-        _toast('该位置无法直接访问，请选择本地存储（如音乐、Download）下的文件夹');
+        _toast(tr('该位置无法直接访问，请选择本地存储（如音乐、Download）下的文件夹'));
         return;
       }
       await ref.read(scanFoldersProvider.notifier).addFolder(dir);
-      _toast('已添加扫描目录');
+      _toast(tr('已添加扫描目录'));
     } catch (e) {
       _toast('添加失败：$e');
     } finally {
@@ -734,7 +762,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
       }
       if (mounted) _toast(msg);
     } catch (e) {
-      if (mounted) _toast('添加失败：$e');
+      if (mounted) _toast(tr('添加失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _adding = false);
     }
@@ -755,13 +783,13 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
       String msg;
       try {
         final count = await ref.read(libraryProvider.notifier).scanAllFolders();
-        msg = '重新授权成功，扫描到 $count 首';
+        msg = tr('重新授权成功，扫描到 {n} 首', {'n': count});
       } catch (e) {
-        msg = '重新授权完成，但扫描失败：$e';
+        msg = tr('重新授权完成，但扫描失败：{e}', {'e': e});
       }
       if (mounted) _toast(msg);
     } catch (e) {
-      if (mounted) _toast('重新授权失败：$e');
+      if (mounted) _toast(tr('重新授权失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _adding = false);
     }
@@ -773,16 +801,16 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('移除扫描目录'),
-        content: Text('确定移除该目录吗？\n$name'),
+        title:   Text(tr('移除扫描目录')),
+        content: Text(tr('确定移除该目录吗？\n{name}', {'name': name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child:   Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('移除'),
+            child:   Text(tr('移除')),
           ),
         ],
       ),
@@ -793,9 +821,9 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
       if (SafChannel.isSafTree(path)) {
         await SafChannel.releasePermission(path);
       }
-      _toast('已移除');
+      _toast(tr('已移除'));
     } catch (e) {
-      _toast('移除失败：$e');
+      _toast(tr('移除失败：{e}', {'e': e}));
     }
   }
 
@@ -847,8 +875,8 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     showXianYuToast(
       context,
       count > 0
-          ? '已将 $count 首歌曲导入到歌单「$name」'
-          : '「$name」下没有可导入的歌曲',
+          ? tr('已将 {n} 首歌曲导入到歌单「{name}」', {'n': count, 'name': name})
+          : tr('「{name}」下没有可导入的歌曲', {'name': name}),
       duration: const Duration(seconds: 2),
     );
   }
@@ -862,11 +890,11 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
     try {
       final count = await ref.read(libraryProvider.notifier).scanAllFolders();
       if (!mounted) return;
-      showXianYuToast(context, '扫描完成，共 $count 首',
+      showXianYuToast(context, tr('扫描完成，共 {n} 首', {'n': count}),
           duration: const Duration(seconds: 2));
     } catch (e) {
       if (!mounted) return;
-      showXianYuToast(context, '扫描失败：$e');
+      showXianYuToast(context, tr('扫描失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
@@ -883,11 +911,11 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('按时长过滤',
+                Text(tr('按时长过滤'),
                   style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
-                '过滤掉时长小于阈值的音频文件，重新扫描后生效',
+                tr('过滤掉时长小于阈值的音频文件，重新扫描后生效'),
                 style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(ctx).colorScheme.outline),
@@ -896,8 +924,8 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               for (final v in const [0, 10, 30, 60])
                 ListTile(
                   title: Text(switch (v) {
-                    0 => '不排除',
-                    _ => '$v 秒',
+                    0 => tr('不排除'),
+                    _ => tr('{v} 秒', {'v': v}),
                   }),
                   trailing: cur == v
                       ? Icon(Icons.check,
@@ -973,7 +1001,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (e, _) => Text('扫描目录加载失败：$e',
+            error: (e, _) => Text(tr('扫描目录加载失败：{e}', {'e': e}),
                 style: TextStyle(fontSize: 13, color: scheme.error)),
             data: (folders) => _ScanFoldersCard(
               folders: folders,
@@ -993,7 +1021,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
               child: Text(
-                '已扫描文件夹',
+                tr('已扫描文件夹'),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -1054,8 +1082,8 @@ class _ScanHero extends StatelessWidget {
               color: Colors.white, size: 40),
         ),
         const SizedBox(height: 14),
-        const Text(
-          '一键扫描手机内的歌曲文件',
+          Text(
+          tr('一键扫描手机内的歌曲文件'),
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 14),
@@ -1082,7 +1110,7 @@ class _ScanHero extends StatelessWidget {
                   const Icon(Icons.play_arrow_rounded, size: 22),
                 const SizedBox(width: 6),
                 Text(
-                  scanning ? '正在扫描…' : '开始扫描',
+                  scanning ? tr('正在扫描…') : tr('开始扫描'),
                   style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w600),
                 ),
@@ -1098,7 +1126,7 @@ class _ScanHero extends StatelessWidget {
               foregroundColor: scheme.primary,
               textStyle: const TextStyle(fontSize: 12),
             ),
-            child: const Text('看不到部分歌曲？试试系统选择器添加目录'),
+            child:   Text(tr('看不到部分歌曲？试试系统选择器添加目录')),
           ),
         ],
       ],
@@ -1127,11 +1155,11 @@ class _FilterCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         leading: Icon(Icons.timer_outlined, color: scheme.primary),
-        title: const Text('按时长过滤'),
+        title:   Text(tr('按时长过滤')),
         subtitle: Text(
           minDuration > 0
-              ? '已过滤时长小于 $minDuration 秒的音频文件'
-              : '可过滤掉时长过短的音频文件（点按调整阈值）',
+              ? tr('已过滤时长小于 {n} 秒的音频文件', {'n': minDuration})
+              : tr('可过滤掉时长过短的音频文件（点按调整阈值）'),
           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
         trailing: Switch(
@@ -1180,13 +1208,13 @@ class _ScanFoldersCard extends StatelessWidget {
                     size: 20, color: scheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  folders.isEmpty ? '扫描目录' : '扫描目录 · ${folders.length}',
+                  folders.isEmpty ? tr('扫描目录') : '扫描目录 · ${folders.length}',
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: '添加目录',
+                  tooltip: tr('添加目录'),
                   onPressed: onAdd,
                   icon: adding
                       ? const SizedBox(
@@ -1203,7 +1231,7 @@ class _ScanFoldersCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
               child: Text(
-                '还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）',
+                tr('还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）'),
                 style: TextStyle(
                     fontSize: 12, color: scheme.onSurfaceVariant),
               ),
@@ -1228,7 +1256,7 @@ class _ScanFoldersCard extends StatelessWidget {
                     ),
                   ),
                   subtitle: Text(
-                    isLost ? '授权已失效，点击钥匙重新授权' : '${f.songCount} 首',
+                    isLost ? tr('授权已失效，点击钥匙重新授权') : '${f.songCount} 首',
                     style: TextStyle(
                       fontSize: 12,
                       color: isLost ? scheme.error : scheme.onSurfaceVariant,
@@ -1239,13 +1267,13 @@ class _ScanFoldersCard extends StatelessWidget {
                     children: [
                       if (isLost)
                         IconButton(
-                          tooltip: '重新授权',
+                          tooltip: tr('重新授权'),
                           icon: Icon(Icons.key,
                               color: scheme.error, size: 20),
                           onPressed: () => onReauthorize(f.path),
                         ),
                       IconButton(
-                        tooltip: '移除',
+                        tooltip: tr('移除'),
                         icon: Icon(Icons.delete_outline,
                             color: scheme.error, size: 20),
                         onPressed: () => onRemove(f.path),
@@ -1295,7 +1323,7 @@ class _UnauthorizedBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '${lost.length} 个目录授权已失效，可在下方重新授权',
+                  tr('{n} 个目录授权已失效，可在下方重新授权', {'n': lost.length}),
                   style: TextStyle(
                       fontSize: 13,
                       color: scheme.onErrorContainer,
@@ -1337,7 +1365,7 @@ class _FolderTile extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
-        '${node.songCount} 首',
+        tr('{n} 首', {'n': node.songCount}),
         style: const TextStyle(fontSize: 12),
       ),
       trailing: Row(
@@ -1356,7 +1384,7 @@ class _FolderTile extends StatelessWidget {
             IconButton(icon: const Icon(Icons.play_arrow), onPressed: onOpen),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 20),
-            tooltip: '更多',
+            tooltip: tr('更多'),
             onSelected: (action) {
               if (action == 'import') onImport();
             },
@@ -1364,7 +1392,7 @@ class _FolderTile extends StatelessWidget {
               PopupMenuItem(
                 value: 'import',
                 enabled: node.songCount > 0,
-                child: const Text('导入为歌单'),
+                child:   Text(tr('导入为歌单')),
               ),
             ],
           ),
@@ -1388,9 +1416,9 @@ class _RemoteLibraryCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         leading: Icon(Icons.cloud_outlined, color: scheme.primary),
-        title: const Text('远程音乐库 (WebDAV)'),
+        title:   Text(tr('远程音乐库 (WebDAV)')),
         subtitle: Text(
-          '访问 WebDAV 服务器上的音乐资源',
+          tr('访问 WebDAV 服务器上的音乐资源'),
           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
         trailing: Icon(Icons.chevron_right, color: scheme.outline),
