@@ -30,7 +30,9 @@ class CustomBackgroundLayer extends StatelessWidget {
   }
 
   Widget _render(CustomBackground cb) {
-    if (!cb.active) return const SizedBox.shrink();
+    // 显式传入 background（编辑器草稿预览）时不校验 active：
+    // 未保存的草稿 enabled 仍为 false，但预览需透出图片。
+    // 全局背景层走 _SettingsBound，已在其内部完成 active 校验。
     final file = File(cb.imagePath);
     final blurSig = cb.blur * 0.6; // 0~40 → 0~24 sigma
     return LayoutBuilder(
