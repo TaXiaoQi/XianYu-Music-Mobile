@@ -548,10 +548,33 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
       _persistPositionDebounced();
       final dur = state.duration;
+      // USB DAC 热插拔断开检测：引擎工作线程已退出（设备拔出）。
+      // 用进度区分「自然放完」与「真拔出」——近末尾按自然结束衔接下一曲，
+      // 进度远离末尾才是设备拔出，回退普通播放续播当前曲。
+      final infoStr = await getUsbExclusiveDeviceInfo();
+      final info = jsonDecode(infoStr) as Map<String, dynamic>;
+      if (info['active'] != true) {
+        if (dur > 0 && pos >= dur - 0.3) {
+          await _onExclusiveTrackEnd();
+        } else {
+          await _onExclusiveDisconnect();
+        }
+        return;
+      }
       if (dur > 0 && pos >= dur - 0.3) {
         await _onExclusiveTrackEnd();
       }
     } catch (_) {}
+  }
+
+  /// USB DAC 拔出 / 独占输出中断：释放设备并在普通播放管线继续当前曲目。
+  Future<void> _onExclusiveDisconnect() async {
+    final cur = state.current;
+    _flushPlayStats();
+    if (cur != null) _reportBehavior(cur, 'usb_disconnect', 0);
+    await _stopExclusive();
+    if (cur == null) return;
+    await _playAt(state.queueIndex);
   }
 
   /// 独占播放自然结束：释放设备后按播放模式衔接。

@@ -459,6 +459,9 @@ struct AndroidExclusivePlayback {
     device_name: String,
     /// Bit-perfect 直出当前状态（供外部查询，工作线程持有同一 Arc）。
     bit_perfect: Arc<AtomicBool>,
+    /// 工作线程是否仍在运行（true=设备连接中且在播放循环内；
+    /// false=USB DAC 断开或播放结束已退出，供 Flutter 侧检测热插拔并自动回退）。
+    running: Arc<AtomicBool>,
 }
 
 impl Drop for AndroidExclusivePlayback {
@@ -496,11 +499,13 @@ pub fn start_exclusive_playback(
     let progress_clone = progress.clone();
     let bit_perfect = Arc::new(AtomicBool::new(request.bit_perfect));
     let bit_perfect_clone = bit_perfect.clone();
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
 
     let handle = thread::Builder::new()
         .name("xy-aaudio-exclusive".to_string())
         .spawn(move || {
-            run_exclusive_playback(request, rx, init_tx, progress_clone, bit_perfect_clone);
+            run_exclusive_playback(request, rx, init_tx, progress_clone, bit_perfect_clone, running_clone);
         })
         .map_err(|e| e.to_string())?;
 
@@ -527,6 +532,7 @@ pub fn start_exclusive_playback(
         progress,
         device_name: device_name.clone(),
         bit_perfect,
+        running,
     };
 
     let mut guard = instance().lock().map_err(|e| e.to_string())?;
@@ -643,10 +649,11 @@ pub fn is_exclusive_bit_perfect() -> bool {
 
 pub fn is_exclusive_active() -> bool {
     if let Ok(guard) = instance().lock() {
-        guard.is_some()
-    } else {
-        false
+        if let Some(playback) = guard.as_ref() {
+            return playback.running.load(Ordering::Relaxed);
+        }
     }
+    false
 }
 
 pub fn get_exclusive_position_secs() -> f64 {
@@ -682,13 +689,15 @@ pub fn get_exclusive_channels() -> u16 {
 }
 
 /// 查询当前独占播放输出设备/格式信息（用于前端展示已选输出）。
+/// `active` 反映工作线程真实运行态：USB DAC 拔出或播放结束后为 false，
+/// 供前端检测热插拔断开并自动回退到普通播放。
 /// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
 pub fn get_exclusive_device_info() -> String {
     let (active, device_name, sample_rate, channels, bit_perfect) =
         if let Ok(guard) = instance().lock() {
             if let Some(playback) = guard.as_ref() {
                 (
-                    true,
+                    playback.running.load(Ordering::Relaxed),
                     playback.device_name.clone(),
                     playback.progress.sample_rate.load(Ordering::Relaxed),
                     playback.progress.channels.load(Ordering::Relaxed) as u16,
@@ -720,6 +729,7 @@ fn run_exclusive_playback(
     init_tx: SyncSender<Result<(String, u32, u16), String>>,
     progress: Arc<ExclusiveProgress>,
     bit_perfect: Arc<AtomicBool>,
+    running: Arc<AtomicBool>,
 ) {
     // 1. 加载 AAudio 库
     let lib = match AAudioLib::load() {
@@ -734,7 +744,7 @@ fn run_exclusive_playback(
     // Bit-perfect 直出状态才走 DoP 打包（绕过解码器与 DSP，逐帧打包 24-bit）。
     // 关闭直通时 DSD 容器降级为 PCM 解码，走常规 DSP 管线。
     if request.dsd_native_passthrough && is_dsd_path(&request.path) {
-        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress, bit_perfect);
+        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress, bit_perfect, running);
         return;
     }
 
@@ -1011,7 +1021,9 @@ fn run_exclusive_playback(
         }
     }
 
-    // 10. 清理
+    // 10. 清理。设置 running=false 供 Flutter 检测设备断开/自然结束，
+    // 仅在工作线程真正退出时置位（Stop 命令 / USB DAC 拔出 / EOF）。
+    running.store(false, Ordering::Relaxed);
     unsafe {
         (lib.stream_request_stop)(stream);
         (lib.stream_close)(stream);
@@ -1033,6 +1045,7 @@ fn run_dsd_passthrough(
     init_tx: SyncSender<Result<(String, u32, u16), String>>,
     progress: Arc<ExclusiveProgress>,
     bit_perfect: Arc<AtomicBool>,
+    running: Arc<AtomicBool>,
 ) {
     let dsd = match parse_dsd_info(&request.path) {
         Ok(info) => info,
@@ -1187,6 +1200,7 @@ fn run_dsd_passthrough(
         }
     }
 
+    running.store(false, Ordering::Relaxed);
     unsafe {
         (lib.stream_request_stop)(stream);
         (lib.stream_close)(stream);
