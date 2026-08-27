@@ -7,10 +7,13 @@ import '../library/library_provider.dart';
 import '../navigation/routes.dart' show appNavigatorKey;
 import '../online/online_search_provider.dart';
 import '../player/player_provider.dart';
+import '../plugin/plugin_provider.dart';
+import '../plugin/plugin_search.dart';
 import '../core/app_logger.dart';
 import '../core/rust_init.dart';
 import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
+import '../i18n/i18n.dart';
 
 /// xianyu:// 深链处理。
 ///
@@ -83,6 +86,18 @@ class XianYuDeepLink {
     String raw,
   ) async {
     try {
+      // 组件/内部跳转链接：xianyu://open?target=xxx → 直接路由到对应页面。
+      // 目前支持 recognize（桌面组件右上识曲钮）。
+      final openUri = Uri.tryParse(raw);
+      if (openUri != null && openUri.host == 'open') {
+        final target = openUri.queryParameters['target'] ?? '';
+        if (target == 'recognize' &&
+            router.routerDelegate.currentConfiguration.uri.toString() != '/recognize') {
+          router.push('/recognize');
+        }
+        return;
+      }
+
       final p = _parseSong(raw);
       final name = p['name'] ?? '';
       if (name.isEmpty) return;
@@ -100,34 +115,132 @@ class XianYuDeepLink {
         return;
       }
       final localSong = _tryLocalMatch(container, name, artist, durationSec);
-      final sourceLabel = localSong != null
-          ? '本地音乐'
-          : _sourceLabel(source);
+      final isLocalShare = source == 'local' || source.isEmpty;
 
-      // 分享预览窗：点「播放/下一首播放」才执行对应动作
+      // 分享预览窗：不同形态渲染不同按钮
       final ctx = appNavigatorKey.currentContext;
       if (ctx == null || !ctx.mounted) {
         AppLogger.instance.log('deeplink', '无可用的导航上下文，跳过分享预览窗');
         return;
       }
       final overlay = Overlay.of(ctx, rootOverlay: true);
-      final action = await showShareLinkPreviewDialog(
-        context: ctx,
-        name: name,
-        artist: artist,
-        sourceLabel: sourceLabel,
-        cover: cover,
-      );
-      if (action == ShareLinkPreviewAction.cancel) return;
 
-      if (action == ShareLinkPreviewAction.playNext) {
-        await _playNext(container, overlay, name, artist, source, durationSec,
+      // 本地命中 → 现有「本地方案」：播放 / 下一首播放 / 取消
+      if (localSong != null) {
+        final action = await showShareLinkPreviewDialog(
+          context: ctx,
+          name: name,
+          artist: artist,
+          sourceLabel: tr('本地音乐'),
+          cover: cover,
+        );
+        if (action == ShareLinkPreviewAction.cancel) return;
+
+        if (action == ShareLinkPreviewAction.playNext) {
+          await _playNext(container, overlay, name, artist, source, durationSec,
+              localSong);
+          return;
+        }
+        await _playBySearch(container, router, name, artist, source, durationSec,
             localSong);
         return;
       }
 
-      await _playBySearch(container, router, name, artist, source, durationSec,
-          localSong);
+      // 本地音乐分享（source 为 local 或空）且本地库没有 → 在线预判：
+      // 在线可播放 → 「取消 + 本地无音源，前往在线播放」；在线也没有 → 「取消 + 前往导入音源」
+      if (isLocalShare) {
+        final online = await _searchOnlineShare(
+            container, name, artist, source, durationSec);
+        if (online != null) {
+          final dctx = appNavigatorKey.currentContext;
+          if (dctx == null || !dctx.mounted) return;
+          final action = await showShareLinkPreviewDialog(
+            context: dctx,
+            name: name,
+            artist: artist,
+            sourceLabel: tr('本地无音源'),
+            cover: cover,
+            mode: ShareLinkDialogMode.online,
+          );
+          if (action == ShareLinkPreviewAction.cancel) return;
+
+          if (action == ShareLinkPreviewAction.playNext) {
+            await container
+                .read(playerProvider.notifier)
+                .playNextShare(online);
+            showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
+            return;
+          }
+          await _playOnlineOnce(container, router, online);
+          return;
+        }
+
+        final dctx = appNavigatorKey.currentContext;
+        if (dctx == null || !dctx.mounted) return;
+        final action = await showShareLinkPreviewDialog(
+          context: dctx,
+          name: name,
+          artist: artist,
+          sourceLabel: tr('未找到在线音源'),
+          cover: cover,
+          mode: ShareLinkDialogMode.import,
+        );
+        if (action == ShareLinkPreviewAction.cancel) return;
+        if (action == ShareLinkPreviewAction.import) router.push('/plugin');
+        return;
+      }
+
+      // 在线音源/插件来源分享：按 source 标签判断本地是否能播该音源，三态展示
+      final ability = _resolveShareAbility(container, source);
+
+      // A：本地有能播该 source 的插件 → 原样「播放 / 下一首播放 / 取消」
+      if (ability.specified) {
+        final action = await showShareLinkPreviewDialog(
+          context: ctx,
+          name: name,
+          artist: artist,
+          sourceLabel: _sourceLabel(source),
+          cover: cover,
+        );
+        if (action == ShareLinkPreviewAction.cancel) return;
+        if (action == ShareLinkPreviewAction.playNext) {
+          await _playNext(container, overlay, name, artist, source, durationSec,
+              localSong);
+          return;
+        }
+        await _playBySearch(container, router, name, artist, source, durationSec,
+            localSong);
+        return;
+      }
+
+      // B：无对应标签音源但本地有其他音源插件 → 「取消 / 无指定音源，前往在线播放」（用其他可用源在线播放）
+      if (ability.any) {
+        final action = await showShareLinkPreviewDialog(
+          context: ctx,
+          name: name,
+          artist: artist,
+          sourceLabel: tr('无指定音源'),
+          cover: cover,
+          mode: ShareLinkDialogMode.online,
+          onlineActionLabel: tr('无指定音源，前往在线播放'),
+        );
+        if (action == ShareLinkPreviewAction.cancel) return;
+        await _playFallback(container, router, name, artist, source,
+            durationSec);
+        return;
+      }
+
+      // C：本地完全没有音源插件 → 「取消 / 前往导入音源」
+      final action = await showShareLinkPreviewDialog(
+        context: ctx,
+        name: name,
+        artist: artist,
+        sourceLabel: tr('无可用音源'),
+        cover: cover,
+        mode: ShareLinkDialogMode.import,
+      );
+      if (action == ShareLinkPreviewAction.cancel) return;
+      if (action == ShareLinkPreviewAction.import) router.push('/plugin');
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
     }
@@ -151,12 +264,12 @@ class XianYuDeepLink {
   /// 分享来源展示名：本地 → 本地音乐；lx 音源 → 平台名；
   /// 插件来源（深链携带插件名/id，如「酷我音乐」）→ 直接展示；其余 → 在线搜索。
   static String _sourceLabel(String source) {
-    if (source == 'local') return '本地音乐';
+    if (source == 'local') return tr('本地音乐');
     for (final s in kOnlineSources) {
       if (s.id == source) return s.label;
     }
     if (source.isNotEmpty) return source;
-    return '在线搜索';
+    return tr('在线搜索');
   }
 
   /// 等待 Rust 引擎就绪并确保本地曲库已加载（空曲库时主动加载一次）。
@@ -261,7 +374,7 @@ class XianYuDeepLink {
       if (localSong != null) {
         AppLogger.instance.log('deeplink', '本地匹配命中分享曲(下一首): ${localSong.path}');
         await playerNotifier.playNextShare(localSong.toQueueItem());
-        showXianYuToastByOverlay(overlay, '已添加至下一首播放');
+        showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
         return;
       }
 
@@ -274,18 +387,18 @@ class XianYuDeepLink {
         await searchNotifier.search(keyword);
       } catch (e) {
         AppLogger.instance.log('deeplink', '分享歌曲在线搜索失败: $e');
-        showXianYuToastByOverlay(overlay, '未找到分享的歌曲');
+        showXianYuToastByOverlay(overlay, tr('未找到分享的歌曲'));
         return;
       }
       final results = container.read(onlineSearchProvider).results;
       if (results.isEmpty) {
-        showXianYuToastByOverlay(overlay, '未找到分享的歌曲');
+        showXianYuToastByOverlay(overlay, tr('未找到分享的歌曲'));
         return;
       }
       final index = _bestMatch(results, name, artist);
       final track = results[index];
       await playerNotifier.playNextShare(track.toQueueItem());
-      showXianYuToastByOverlay(overlay, '已添加至下一首播放');
+      showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '添加到下一首播放异常: $e\n$st');
     }
@@ -297,6 +410,106 @@ class XianYuDeepLink {
       return;
     }
     router.push('/player');
+  }
+
+  /// 本地分享且本地无音源时在线定位：先 lx 在线音源（来源感知，默认 kw），
+  /// 无结果再遍历所有已启用音源插件搜索。返回可播放 [QueueItem] 或 null（在线也没有）。
+  static Future<QueueItem?> _searchOnlineShare(
+    ProviderContainer container,
+    String name,
+    String artist,
+    String source,
+    int durationSec,
+  ) async {
+    final keyword = artist.isEmpty ? name : '$name $artist';
+
+    // 1. lx 在线音源搜索
+    final searchNotifier = container.read(onlineSearchProvider.notifier);
+    final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
+    try {
+      await searchNotifier.setSource(src);
+      await searchNotifier.search(keyword);
+    } catch (_) {
+      // 音源搜索失败不阻塞插件搜索
+    }
+    final results = container.read(onlineSearchProvider).results;
+    if (results.isNotEmpty) {
+      return results[_bestMatch(results, name, artist)].toQueueItem();
+    }
+
+    // 2. 音源插件搜索
+    try {
+      final manager = container.read(pluginManagerProvider);
+      final engine = await container.read(pluginEngineProvider.future);
+      final service = PluginSearchService(engine, manager.sources);
+      final all = await service.searchAll(keyword, limit: 30);
+      for (final (ps, items) in all) {
+        if (items.isNotEmpty) return service.toQueueItem(ps, items.first);
+      }
+    } catch (_) {
+      // 插件未装/搜索异常视为在线无结果
+    }
+    return null;
+  }
+
+  /// 播放一个已解析好的在线 [QueueItem]（开关分享播放标记，浅层入队单曲并跳播放页）。
+  static Future<void> _playOnlineOnce(
+    ProviderContainer container,
+    GoRouter router,
+    QueueItem item,
+  ) async {
+    final playerNotifier = container.read(playerProvider.notifier);
+    try {
+      await playerNotifier.playQueue(
+        [item],
+        startIndex: 0,
+        shareLinkPlayback: true,
+      );
+      _openPlayerOnce(router);
+    } catch (e) {
+      AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+      _openPlayerOnce(router);
+    }
+  }
+
+  /// 按分享携带的 source 标签判定本地能否播放该音源：
+  /// - specified：存在能处理该 source 的已启用插件（插件名/id 匹配，或插件声明的 sources 含该 source）
+  /// - any：存在任意已启用插件（可作为其他可用源）。无任何插件时两者皆 false。
+  static ({bool specified, bool any}) _resolveShareAbility(
+    ProviderContainer container,
+    String source,
+  ) {
+    final plugins = container
+        .read(pluginManagerProvider)
+        .sources
+        .where((p) => p.enabled)
+        .toList();
+    if (plugins.isEmpty) return (specified: false, any: false);
+    var specified = false;
+    if (source.isNotEmpty) {
+      for (final p in plugins) {
+        if (p.name == source || p.id == source || p.sources.contains(source)) {
+          specified = true;
+          break;
+        }
+      }
+    }
+    return (specified: specified, any: true);
+  }
+
+  /// 无指定音源时用其他可用源在线播放（lx + 全部已启用插件兜底）。
+  static Future<void> _playFallback(
+    ProviderContainer container,
+    GoRouter router,
+    String name,
+    String artist,
+    String source,
+    int durationSec,
+  ) async {
+    final online = await _searchOnlineShare(
+        container, name, artist, source, durationSec);
+    if (online == null) return;
+    await _playOnlineOnce(container, router, online);
   }
 
   /// 优先最接近的歌名，再叠加歌手匹配；都无则默认第一条。
