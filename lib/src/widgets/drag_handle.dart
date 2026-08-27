@@ -71,6 +71,26 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
   }
 }
 
+/// 把整个条目包装成长按即拖拽的容器，不单独做把手 UI。
+///
+/// 与 [DragHandle] 共用同一套手势：0.3 秒延迟 + 触觉反馈，调用方把
+/// `child` 设为整行即可；行内 InkWell/按钮的轻按交互不受影响（拖拽需长按）。
+class ReorderableRowDragStart extends StatelessWidget {
+  const ReorderableRowDragStart({
+    super.key,
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _HoldDragStartListener(index: index, child: child);
+  }
+}
+
 /// 可拖动排序的拖动把手：长按图标 0.3 秒进入拖拽；[enabled] 为 false 时仅展示图标。
 class DragHandle extends StatelessWidget {
   const DragHandle({
