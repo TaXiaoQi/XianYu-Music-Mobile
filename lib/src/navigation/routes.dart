@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
 import '../core/application_logger.dart';
+import '../widgets/predictive_back_transitions.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -326,22 +327,40 @@ class _PlayerCoverRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    // 上滑覆盖 + 淡入淡出：打开时淡入上滑，收回时下移渐隐，
-    // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
-    return FadeTransition(
-      opacity: curved,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1),
-          end: Offset.zero,
-        ).animate(curved),
-        child: child,
-      ),
+    // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势，
+    // 否则边缘滑动无跟手行程直接 pop。手势中走官方 predictive 过渡（整屏缩放
+    // 跟手），非手势的打开/关闭保持「从下往上覆盖 + 淡入淡出」。
+    return PredictiveBackGestureDetector(
+      route: this,
+      builder: (context, phase, startBackEvent, currentBackEvent) {
+        if (popGestureInProgress) {
+          return PredictiveBackSharedElementPageTransition(
+            animation: animation,
+            phase: phase,
+            secondaryAnimation: secondaryAnimation,
+            startBackEvent: startBackEvent,
+            currentBackEvent: currentBackEvent,
+            child: child,
+          );
+        }
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        // 上滑覆盖 + 淡入淡出：打开时淡入上滑，收回时下移渐隐，
+        // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

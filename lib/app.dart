@@ -118,13 +118,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     _cachedAccent = accent;
     _cachedPredictiveBack = predictiveBack;
     final seed = Color(accent);
-    // 安卓切换特效统一使用 M3「向前淡入缩放」转场（FadeForwards）：新页面淡入 +
-    // 轻微缩放上移，返回时跟随手指淡出，带明显的淡入淡出又不生硬；相比默认的
-    // Zoom（从下往上滑+缩放、无淡入）更柔和。predictiveBack 只控制是否接管边缘
-    // 返回手势与路由弹栈本身（见 routes.dart / shell.dart），不影响此处转场。
+    // 安卓切换特效：开启预测返回时用 PredictiveBackPageTransitionsBuilder——
+    // 非手势的打开/关闭回退到 M3 FadeForwards（新页面淡入+轻微缩放上移，返回
+    // 淡出，柔和不生硬），手势中则整屏缩放跟手（预测返回行程）；关闭预测返回
+    // 时退化为纯 FadeForwards（无跟手，直接 pop）。
     final pageTransitions = PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: const FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.android: predictiveBack
+            ? const PredictiveBackPageTransitionsBuilder()
+            : const FadeForwardsPageTransitionsBuilder(),
         TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
       },
     );
