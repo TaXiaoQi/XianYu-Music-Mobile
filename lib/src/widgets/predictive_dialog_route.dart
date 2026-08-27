@@ -1,5 +1,3 @@
-import 'dart:ui' show clampDouble;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -120,10 +118,8 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
             PredictiveBackEvent? currentBackEvent,
           ) {
             if (popGestureInProgress) {
-              return _PredictiveBackSharedElementPageTransition(
+              return _DialogPredictiveBackTransition(
                 animation: animation,
-                phase: phase,
-                secondaryAnimation: secondaryAnimation,
                 startBackEvent: startBackEvent,
                 currentBackEvent: currentBackEvent,
                 child: child,
@@ -299,208 +295,72 @@ class _PredictiveBackGestureDetectorState extends State<_PredictiveBackGestureDe
   }
 }
 
-/// Android's predictive back page shared element transition.
-class _PredictiveBackSharedElementPageTransition extends StatefulWidget {
-  const _PredictiveBackSharedElementPageTransition({
+/// 弹窗的预测性返回跟手过渡。
+///
+/// 与「整页×圆角矩形」的系统式缩屏不同，居中小弹窗如果整屏缩进会很重，
+/// 还容易因提交阶段额外做一次朝右上角的位移而与手指脱节。这里改为一整段
+/// 与手指完全同步的单一进度：
+/// - 手势期间按 `animation.value`（== 1 - 系统 progress）一路跟手；
+/// - 居中轻缩放（1.0→0.90）+ 纵向微随手指 + 整体淡出；
+/// - 松手提交时沿同一曲线平滑收到终点（不再弹跳/跳角），观感连贯，接近
+///   系统/Edge/Telegram 那种「一路跟着缩小下去」的丝滑感。
+class _DialogPredictiveBackTransition extends StatefulWidget {
+  const _DialogPredictiveBackTransition({
     required this.animation,
-    required this.secondaryAnimation,
-    required this.phase,
     required this.startBackEvent,
     required this.currentBackEvent,
     required this.child,
   });
 
   final Animation<double> animation;
-  final Animation<double> secondaryAnimation;
-  final _PredictiveBackPhase phase;
   final PredictiveBackEvent? startBackEvent;
   final PredictiveBackEvent? currentBackEvent;
   final Widget child;
 
   @override
-  State<_PredictiveBackSharedElementPageTransition> createState() =>
-      _PredictiveBackSharedElementPageTransitionState();
+  State<_DialogPredictiveBackTransition> createState() =>
+      _DialogPredictiveBackTransitionState();
 }
 
-class _PredictiveBackSharedElementPageTransitionState
-    extends State<_PredictiveBackSharedElementPageTransition>
-    with SingleTickerProviderStateMixin {
-  // Constants as per the motion specs
-  // https://developer.android.com/design/ui/mobile/guides/patterns/predictive-back#motion-specs
-  static const double _kMinScale = 0.90;
-  static const double _kDivisionFactor = 20.0;
-  static const double _kMargin = 8.0;
-  static const double _kYPositionFactor = 0.1;
+class _DialogPredictiveBackTransitionState
+    extends State<_DialogPredictiveBackTransition> {
+  static const double _kShrink = 0.10; // 1.0 -> 0.90
+  static const double _kMaxShift = 36.0;
 
-  // The duration of the commit transition.
-  //
-  // This is not the same as PredictiveBackPageTransitionsBuilder's duration,
-  // which is the duration of widget.animation, so an Interval is used.
-  static const int _kCommitMilliseconds = 400;
-  static const Curve _kCurve = Curves.easeInOutCubicEmphasized;
-  static const Interval _kCommitInterval = Interval(
-    0.0,
-    _kCommitMilliseconds / FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds,
-    curve: _kCurve,
-  );
+  double _lastShiftY = 0;
 
-  // A fallback corner radius used when the display corner radii are
-  // unavailable (e.g., on Android API levels below 31, iOS, and other
-  // platforms).
-  static const double _kDeviceBorderRadius = 32.0;
-
-  // Provides a smooth transition between the default radius and the
-  // _kDeviceBorderRadius, when the display corner radii are unavailable.
-  final Tween<double> _borderRadiusTween = Tween<double>(begin: 0.0, end: _kDeviceBorderRadius);
-
-  // The route fades out after commit.
-  final Tween<double> _opacityTween = Tween<double>(begin: 1.0, end: 0.0);
-
-  // The route shrinks during the gesture and animates back to normal after
-  // commit.
-  final Tween<double> _scaleTween = Tween<double>(begin: 1.0, end: _kMinScale);
-
-  // An animation that stays constant at zero before the commit, and after the
-  // commit goes from zero to one.
-  final ProxyAnimation _commitAnimation = ProxyAnimation();
-
-  // An animation that goes from zero to a maximum of one during a predictive
-  // back gesture, and then at commit, it goes from its current value to zero.
-  // Used for animations that follow the gesture and then animate back to their
-  // original value after commit.
-  final ProxyAnimation _bounceAnimation = ProxyAnimation();
-  double _lastBounceAnimationValue = 0.0;
-
-  // An animation that proxies to widget.animation during the gesture and then
-  // to _commitAnimation after the commit. So, it goes from zero to a maximum of
-  // one before commit, and then after commit goes from zero to one again.
-  final ProxyAnimation _animation = ProxyAnimation();
-
-  /// The same as widget.animation but with a curve applied.
-  CurvedAnimation? _curvedAnimation;
-
-  /// The reverse of _curvedAnimation.
-  CurvedAnimation? _curvedAnimationReversed;
-
-  late Animation<Offset> _positionAnimation;
-
-  Offset _lastDrag = Offset.zero;
-
-  // This isn't done as an animation because it's based on the vertical drag
-  // amount, not the progression of the back gesture like widget.animation is.
-  double _getYShiftPosition(double screenHeight) {
-    final double startTouchY = widget.startBackEvent?.touchOffset?.dy ?? 0;
-    final double currentTouchY = widget.currentBackEvent?.touchOffset?.dy ?? 0;
-
-    final double yShiftMax = (screenHeight / _kDivisionFactor) - _kMargin;
-
-    final double rawYShift = currentTouchY - startTouchY;
-    final double easedYShift =
-        Curves.easeOut.transform(clampDouble(rawYShift.abs() / screenHeight, 0.0, 1.0)) *
-        rawYShift.sign *
-        yShiftMax;
-
-    return clampDouble(easedYShift, -yShiftMax, yShiftMax);
-  }
-
-  void _updateAnimations(Size screenSize) {
-    _animation.parent = switch (widget.phase) {
-      _PredictiveBackPhase.commit => _curvedAnimationReversed,
-      _ => widget.animation,
-    };
-
-    _bounceAnimation.parent = switch (widget.phase) {
-      _PredictiveBackPhase.commit => Tween<double>(
-        begin: 0.0,
-        end: _lastBounceAnimationValue,
-      ).animate(_curvedAnimation!),
-      _ => ReverseAnimation(widget.animation),
-    };
-
-    _commitAnimation.parent = switch (widget.phase) {
-      _PredictiveBackPhase.commit => _animation,
-      _ => kAlwaysDismissedAnimation,
-    };
-
-    final double xShift = (screenSize.width / _kDivisionFactor) - _kMargin;
-    _positionAnimation = _animation.drive(switch (widget.phase) {
-      _PredictiveBackPhase.commit => Tween<Offset>(
-        begin: _lastDrag,
-        end: Offset(screenSize.height * _kYPositionFactor, 0.0),
-      ),
-      _ => Tween<Offset>(
-        // The y position before commit is given by the vertical drag, not by an
-        // animation.
-        begin: switch (widget.currentBackEvent?.swipeEdge) {
-          SwipeEdge.left => Offset(xShift, _getYShiftPosition(screenSize.height)),
-          SwipeEdge.right => Offset(-xShift, _getYShiftPosition(screenSize.height)),
-          null => Offset(xShift, _getYShiftPosition(screenSize.height)),
-        },
-        end: Offset.zero,
-      ),
-    });
-  }
-
-  void _updateCurvedAnimations() {
-    _curvedAnimation?.dispose();
-    _curvedAnimationReversed?.dispose();
-    _curvedAnimation = CurvedAnimation(parent: widget.animation, curve: _kCommitInterval);
-    _curvedAnimationReversed = CurvedAnimation(
-      parent: ReverseAnimation(widget.animation),
-      curve: _kCommitInterval,
-    );
-  }
-
-  @override
-  void didUpdateWidget(_PredictiveBackSharedElementPageTransition oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (widget.animation != oldWidget.animation) {
-      _updateCurvedAnimations();
-    }
-    if (widget.phase != oldWidget.phase && widget.phase == _PredictiveBackPhase.commit) {
-      _updateAnimations(MediaQuery.sizeOf(context));
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _updateCurvedAnimations();
-    _updateAnimations(MediaQuery.sizeOf(context));
-  }
-
-  @override
-  void dispose() {
-    _curvedAnimation!.dispose();
-    _curvedAnimationReversed!.dispose();
-    super.dispose();
+  double _shiftY(double screenH) {
+    final from = widget.startBackEvent?.touchOffset?.dy;
+    final to = widget.currentBackEvent?.touchOffset?.dy;
+    // 提交阶段事件被清空，沿用抬手前最后一刻的位移，避免松手瞬间回弹跳位。
+    if (from == null || to == null) return _lastShiftY;
+    final raw = to - from;
+    final eased = Curves.easeOut.transform((raw.abs() / screenH).clamp(0.0, 1.0));
+    return _lastShiftY =
+        (eased * raw.sign * _kMaxShift).clamp(-_kMaxShift, _kMaxShift);
   }
 
   @override
   Widget build(BuildContext context) {
+    final screenH = MediaQuery.sizeOf(context).height;
     return AnimatedBuilder(
       animation: widget.animation,
-      builder: (BuildContext context, Widget? child) {
-        _lastBounceAnimationValue = _bounceAnimation.value;
-        return Transform.scale(
-          scale: _scaleTween.evaluate(_bounceAnimation),
+      builder: (context, child) {
+        // 手指未动时 animation.value 归一为 0，进/退过程中单调走到 1（收起），
+        // 提交时不额外起动画，同一进度一路收尾 → 连贯。
+        final t = widget.animation.value.clamp(0.0, 1.0).toDouble();
+        final eased = Curves.easeIn.transform(t);
+        final scale = 1.0 - _kShrink * eased;
+        final opacity = 1.0 - Curves.easeInOut.transform(t);
+        final shiftY = _shiftY(screenH) * (1 - 0.4 * t);
+        return Opacity(
+          opacity: opacity.clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: switch (widget.phase) {
-              _PredictiveBackPhase.commit => _positionAnimation.value,
-              _ => _lastDrag = Offset(
-                _positionAnimation.value.dx,
-                _getYShiftPosition(MediaQuery.heightOf(context)),
-              ),
-            },
-            child: Opacity(
-              opacity: _opacityTween.evaluate(_commitAnimation),
-              child: ClipRRect(
-                borderRadius:
-                    MediaQuery.displayCornerRadiiOf(context) ??
-                    BorderRadius.circular(_borderRadiusTween.evaluate(_bounceAnimation)),
-                child: child,
-              ),
+            offset: Offset(0, shiftY),
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.center,
+              child: child,
             ),
           ),
         );
