@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -10,6 +13,7 @@ import '../favorites/favorites_provider.dart';
 import '../library/saf_channel.dart';
 import '../lyrics/lyric_model.dart';
 import '../lyrics/lyrics_repository.dart';
+import '../online/cover_proxy.dart';
 import '../rust/api.dart';
 import 'player_provider.dart';
 
@@ -133,6 +137,23 @@ class PlayerWidgetController {
     });
   }
 
+  /// 当前活动行（歌词卡逐字播放）：返回该行逐字时间轴 {s,e,len}（毫秒/字符数）。
+  /// 顺序与行的歌词文字一致，供 Kotlin 侧按播放位逐字渲染。
+  List<Map<String, int>> _activeWords(PlaybackState s) {
+    if (_lyrics.isEmpty) return const [];
+    final ms = (s.position * 1000).round();
+    final line = TimingNavigator(_lyrics).find(ms);
+    if (line == null || line.words.isEmpty) return const [];
+    return [
+      for (final w in line.words)
+        <String, int>{
+          's': (w.start * 1000).round(),
+          'e': (w.end * 1000).round(),
+          'len': w.text.length,
+        },
+    ];
+  }
+
   void _applyState(PlaybackState s) {
     final item = s.current;
     final fav = item != null && _container.read(favoritesProvider).contains(item.path);
@@ -169,18 +190,66 @@ class PlayerWidgetController {
               dbPath: dbPath, cacheRoot: cacheRoot, path: item.path);
         }
       }
-      // 在线歌：封面 URL 也能经 Rust 缓存成本地高清路径。
+      // 在线歌：封面 URL 经代理取字节落盘为 cover_cache 本地文件，供组件 decodeFile
+      // （Rust 的 getSongCover 只处理本地文件/remote://，无法直接吃 HTTP URL）。
       if (p.isEmpty) {
         final url = item.coverUrl ?? '';
         if (url.isNotEmpty) {
-          p = await getSongCover(
-              dbPath: dbPath, cacheRoot: cacheRoot, path: url);
+          p = await _downloadOnlineCover(cacheRoot, url) ?? '';
         }
       }
       return p.isEmpty ? null : p;
     } catch (_) {
       return null;
     }
+  }
+
+  /// 在线封面：按 URL 的 md5 在 cover_cache 里查已有文件（重播同歌直接复用），
+  /// 否则经 [CoverProxy] 取字节并按魔数推断扩展名落盘，返回本地文件路径。
+  Future<String?> _downloadOnlineCover(String cacheRoot, String url) async {
+    final digest = md5.convert(utf8.encode(url)).toString();
+    try {
+      final reused = _findCoverFile(cacheRoot, digest);
+      if (reused != null) return reused;
+      final bytes = await CoverProxy.fetch(url);
+      if (bytes == null || bytes.isEmpty) return null;
+      final ext = _imageExt(bytes);
+      if (ext == null) return null;
+      final path = '$cacheRoot/${digest}_widget$ext';
+      await File(path).writeAsBytes(bytes, flush: true);
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 在 cover_cache 里按 `{digest}_widget*` 前缀找已落盘的在线封面文件。
+  String? _findCoverFile(String cacheRoot, String digest) {
+    try {
+      final dir = Directory(cacheRoot);
+      if (!dir.existsSync()) return null;
+      for (final e in dir.listSync(followLinks: false)) {
+        if (e is File && p.basename(e.path).startsWith('${digest}_widget')) {
+          return e.path;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 按图片字节魔数推断扩展名，供落盘组件封面文件；无法识别返回 null。
+  String? _imageExt(Uint8List b) {
+    if (b.length < 12) return null;
+    if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return '.jpg';
+    if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return '.png';
+    if (b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46 &&
+        b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50) {
+      return '.webp';
+    }
+    if (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x38) return '.gif';
+    return null;
   }
 
   Future<void> _pushState(PlaybackState s, String? cover) async {
@@ -200,6 +269,7 @@ class PlayerWidgetController {
       'artist': item?.artist ?? '',
       'lyric': lyric,
       'lyricWindow': window,
+      'activeWords': _activeWords(s),
       'playing': s.isPlaying,
       'progress': progress,
       'playMode': s.playMode,

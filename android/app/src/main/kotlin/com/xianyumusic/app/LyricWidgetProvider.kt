@@ -23,10 +23,11 @@ class LyricWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray,
     ) {
         val s = WidgetShared.stateJson(context) ?: JSONObject()
-        val views = WidgetShared.buildViews(
-            context, s, WidgetShared.MODE_LYRIC, LyricWidgetProvider::class.java, 5000)
         for (id in appWidgetIds) {
-            appWidgetManager.updateAppWidget(id, views)
+            appWidgetManager.updateAppWidget(
+                id, WidgetShared.buildViews(
+                    context, s, WidgetShared.MODE_LYRIC,
+                    LyricWidgetProvider::class.java, 5000, id))
         }
     }
 
@@ -44,7 +45,8 @@ class LyricWidgetProvider : AppWidgetProvider() {
                 WidgetShared.stateJson(context) ?: JSONObject(),
                 WidgetShared.MODE_LYRIC,
                 LyricWidgetProvider::class.java,
-                5000))
+                5000,
+                appWidgetId))
     }
 
     override fun onReceive(context: Context, intent: Intent) {

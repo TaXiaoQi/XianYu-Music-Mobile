@@ -7,10 +7,11 @@ import android.content.Intent
 import org.json.JSONObject
 
 /**
- * 桌面播放组件 · 方形 2×2 样式（独立组件入口，launcher 组件列表单独可选）。
+ * 桌面播放组件 · 方形（独立组件入口，launcher 组件列表单独可选）。
  *
- * 固定方形布局：上部大封面 + 下部歌名 + 右侧小播放键。
- * 控制链路与主组件共用（WidgetShared）。
+ * 多档自适应：随桌面上拖拽尺寸在 2×2 方形 / 4×2 横条 / 3×4 歌词卡 三档间切换
+ * （档位由 WidgetShared.squareCellMode 按网格尺寸判定，onAppWidgetOptionsChanged
+ * 落盘到 layout_<id>，onUpdate/refresh 按已存档档位构建）。
  */
 class SquareWidgetProvider : AppWidgetProvider() {
 
@@ -20,13 +21,8 @@ class SquareWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray,
     ) {
         val s = WidgetShared.stateJson(context) ?: JSONObject()
-        // 封面按各组件实际尺寸渲染（圆角绝对 24dp 对齐容器），逐 id 构建。
         for (id in appWidgetIds) {
-            appWidgetManager.updateAppWidget(
-                id,
-                WidgetShared.buildViews(
-                    context, s, WidgetShared.MODE_2X2, SquareWidgetProvider::class.java, 4000,
-                    WidgetShared.widgetSizeDp(appWidgetManager, id)))
+            appWidgetManager.updateAppWidget(id, WidgetShared.buildSquareViews(context, s, id))
         }
     }
 
@@ -36,16 +32,16 @@ class SquareWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) {
-        // 固定样式不随尺寸切换，但封面需按新尺寸重渲染对齐容器圆角。
+        // 按新尺寸判定档位并落盘，后续刷新按该档位构建。
+        val mode = WidgetShared.squareCellMode(newOptions)
+        context.getSharedPreferences(WidgetShared.SP_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(WidgetShared.LAYOUT_PREFIX + appWidgetId, mode)
+            .apply()
         appWidgetManager.updateAppWidget(
             appWidgetId,
-            WidgetShared.buildViews(
-                context,
-                WidgetShared.stateJson(context) ?: JSONObject(),
-                WidgetShared.MODE_2X2,
-                SquareWidgetProvider::class.java,
-                4000,
-                WidgetShared.sizeFromOptions(newOptions)))
+            WidgetShared.buildSquareViews(
+                context, WidgetShared.stateJson(context) ?: JSONObject(), appWidgetId))
     }
 
     override fun onReceive(context: Context, intent: Intent) {
