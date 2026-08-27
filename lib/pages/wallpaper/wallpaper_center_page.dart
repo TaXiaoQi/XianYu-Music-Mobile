@@ -14,8 +14,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
+import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/i18n/i18n.dart';
 
 /// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
 class WallpaperCenterPage extends ConsumerStatefulWidget {
@@ -28,7 +31,7 @@ class WallpaperCenterPage extends ConsumerStatefulWidget {
 
 class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 3, vsync: this);
+  late final TabController _tab = TabController(length: 4, vsync: this);
 
   @override
   void dispose() {
@@ -41,13 +44,16 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: const Text('壁纸中心'),
+        title:   Text(tr('壁纸中心')),
         bottom: TabBar(
           controller: _tab,
-          tabs: const [
-            Tab(text: '壁纸广场'),
-            Tab(text: '我的上传'),
-            Tab(text: '我的下载'),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs:   [
+            Tab(text: tr('壁纸广场')),
+            Tab(text: tr('我的上传')),
+            Tab(text: tr('我的下载')),
+            Tab(text: tr('自定义壁纸')),
           ],
         ),
       ),
@@ -57,6 +63,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
           _WallpaperBrowseTab(),
           _MyUploadsTab(),
           _MyDownloadsTab(),
+          _CustomWallpaperTab(),
         ],
         ),
       ),
@@ -128,7 +135,7 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
             const SizedBox(height: 12),
             FilledButton.tonal(
               onPressed: _load,
-              child: const Text('重试'),
+              child:   Text(tr('重试')),
             ),
           ],
         ),
@@ -136,7 +143,7 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
     }
     if (_wallpapers.isEmpty) {
       return Center(
-        child: Text('暂无壁纸', style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(tr('暂无壁纸'), style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
     return RefreshIndicator(
@@ -286,12 +293,12 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
     });
     try {
       final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
-      if (url.isEmpty) throw Exception('壁纸地址无效');
+      if (url.isEmpty) throw Exception(tr('壁纸地址无效'));
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
       final req = await client.getUrl(Uri.parse(url));
       final res = await req.close();
       if (res.statusCode != 200) {
-        throw Exception('下载失败（HTTP ${res.statusCode}）');
+        throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
       }
       final bytes = await consolidateBytes(res);
       // 保存目录：应用文档目录 Wallpapers/（缓存目录会被系统清理，不可持久化）。
@@ -308,13 +315,13 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveResult = '已保存：${file.path}';
+        _saveResult = tr('已保存：{path}', {'path': file.path});
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveResult = '保存失败：$e';
+        _saveResult = tr('保存失败：{e}', {'e': e});
       });
     }
   }
@@ -411,7 +418,7 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.download_outlined),
-                        label: Text(_saving ? '保存中…' : '保存壁纸'),
+                        label: Text(_saving ? tr('保存中…') : tr('保存壁纸')),
                       ),
                     ),
                   ] else
@@ -420,7 +427,7 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
                       child: FilledButton.tonalIcon(
                         onPressed: null,
                         icon: const Icon(Icons.check_circle_outline),
-                        label: const Text('已保存到本地'),
+                        label:   Text(tr('已保存到本地')),
                       ),
                     ),
                 ],
@@ -494,7 +501,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
 
   Future<void> _openUpload() async {
     if (_ciyuanxiId == null) {
-      showXianYuToast(context, '请先登录账号后再上传壁纸');
+      showXianYuToast(context, tr('请先登录账号后再上传壁纸'));
       return;
     }
     final ok = await showSheetDialog<bool>(
@@ -514,13 +521,13 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
   String _statusBadge(String status) {
     switch (status) {
       case 'normal':
-        return '已上架';
+        return tr('已上架');
       case 'pending':
-        return '待审核';
+        return tr('待审核');
       case 'rejected':
-        return '未通过';
+        return tr('未通过');
       case 'disabled':
-        return '已下架';
+        return tr('已下架');
       default:
         return status;
     }
@@ -535,7 +542,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '登录后可上传壁纸并在多端同步展示',
+            tr('登录后可上传壁纸并在多端同步展示'),
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -551,7 +558,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
           Center(child: Text(_error!, style: TextStyle(color: scheme.error)))
         else if (_mine.isEmpty)
           Center(
-            child: Text('还没有上传过壁纸',
+            child: Text(tr('还没有上传过壁纸'),
                 style: TextStyle(color: scheme.onSurfaceVariant)),
           )
         else
@@ -578,7 +585,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
           child: FloatingActionButton.extended(
             onPressed: _openUpload,
             icon: const Icon(Icons.upload_outlined),
-            label: const Text('上传壁纸'),
+            label:   Text(tr('上传壁纸')),
           ),
         ),
       ],
@@ -628,7 +635,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   Future<String> _compressToDataUrl(XFile file) async {
     final bytes = await file.readAsBytes();
     final image = img.decodeImage(bytes);
-    if (image == null) throw Exception('图片解析失败');
+    if (image == null) throw Exception(tr('图片解析失败'));
     var out = image;
     if (image.width > 1920) {
       final h = (image.height * 1920 / image.width).round();
@@ -641,11 +648,11 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      setState(() => _error = '请填写壁纸标题');
+      setState(() => _error = tr('请填写壁纸标题'));
       return;
     }
     if (_picked == null) {
-      setState(() => _error = '请选择壁纸图片');
+      setState(() => _error = tr('请选择壁纸图片'));
       return;
     }
     setState(() {
@@ -680,7 +687,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('上传壁纸',
+          Text(tr('上传壁纸'),
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
@@ -701,7 +708,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                         Icon(Icons.add_photo_alternate_outlined,
                             size: 40, color: scheme.onSurfaceVariant),
                         const SizedBox(height: 6),
-                        Text('点击选择图片（JPG / PNG / WEBP，30MB 以内）',
+                        Text(tr('点击选择图片（JPG / PNG / WEBP，30MB 以内）'),
                             style: TextStyle(
                                 fontSize: 12,
                                 color: scheme.onSurfaceVariant)),
@@ -719,16 +726,16 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
           TextField(
             controller: _titleCtrl,
             enabled: !_uploading,
-            decoration: const InputDecoration(
-                labelText: '标题', isDense: true, border: OutlineInputBorder()),
+            decoration:   InputDecoration(
+                labelText: tr('标题'), isDense: true, border: OutlineInputBorder()),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _descCtrl,
             enabled: !_uploading,
             maxLines: 2,
-            decoration: const InputDecoration(
-                labelText: '描述（可选）',
+            decoration:   InputDecoration(
+                labelText: tr('描述（可选）'),
                 isDense: true,
                 border: OutlineInputBorder()),
           ),
@@ -736,8 +743,8 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
           TextField(
             controller: _categoryCtrl,
             enabled: !_uploading,
-            decoration: const InputDecoration(
-                labelText: '分类（可选，默认「用户上传」）',
+            decoration:   InputDecoration(
+                labelText: tr('分类（可选，默认「用户上传」）'),
                 isDense: true,
                 border: OutlineInputBorder()),
           ),
@@ -756,7 +763,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : const Text('提交审核'),
+                :   Text(tr('提交审核')),
           ),
         ],
       ),
@@ -824,7 +831,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
     final scheme = Theme.of(context).colorScheme;
     if (_downloads.isEmpty) {
       return Center(
-        child: Text('还没有下载过壁纸',
+        child: Text(tr('还没有下载过壁纸'),
             style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
@@ -857,7 +864,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
           ),
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            exists ? path : '本地文件已不存在',
+            exists ? path : tr('本地文件已不存在'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
@@ -876,6 +883,302 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
           },
         );
       },
+    );
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// 自定义壁纸（对齐桌面端 CustomSkinModal）
+// ───────────────────────────────────────────────────────────
+
+class _CustomWallpaperTab extends ConsumerStatefulWidget {
+  const _CustomWallpaperTab();
+
+  @override
+  ConsumerState<_CustomWallpaperTab> createState() =>
+      _CustomWallpaperTabState();
+}
+
+class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
+  late CustomBackground _draft;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = ref.read(settingsProvider).valueOrNull?.customBackground ??
+        CustomBackground.none;
+  }
+
+  Future<void> _pickImage() async {
+    final picked =
+        await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'custom_background'));
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final ext = p.extension(picked.path).toLowerCase();
+      // 统一文件名，旧文件直接覆盖，避免每次选图都堆积一份。
+      final target = p.join(dir.path, 'wallpaper$ext');
+      await File(picked.path).copy(target);
+      if (!mounted) return;
+      setState(() => _draft = _draft.copyWith(imagePath: target));
+    } catch (_) {
+      if (mounted) showXianYuToast(context, tr('请先选择图片'));
+    }
+  }
+
+  Future<void> _apply() async {
+    if (_draft.imagePath.isEmpty) {
+      showXianYuToast(context, tr('请先选择图片'));
+      return;
+    }
+    final overlay = Overlay.of(context, rootOverlay: true);
+    await ref
+        .read(settingsProvider.notifier)
+        .setCustomBackground(_draft.copyWith(enabled: true));
+    showXianYuToastByOverlay(overlay, tr('已应用自定义壁纸'));
+  }
+
+  Future<void> _restore() async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    await ref
+        .read(settingsProvider.notifier)
+        .setCustomBackground(CustomBackground.none);
+    if (mounted) setState(() => _draft = CustomBackground.none);
+    showXianYuToastByOverlay(overlay, tr('已恢复默认背景'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasImage =
+        _draft.imagePath.isNotEmpty && File(_draft.imagePath).existsSync();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildPreview(scheme, hasImage),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.photo_library_outlined, size: 18),
+          label: Text(hasImage ? tr('更换图片') : tr('选择本地图片')),
+        ),
+        if (hasImage) ...[
+          const SizedBox(height: 20),
+          _ParamSlider(
+            icon: Icons.blur_on,
+            label: tr('模糊'),
+            value: _draft.blur,
+            min: 0,
+            max: 40,
+            divisions: 40,
+            onChanged: (v) =>
+                setState(() => _draft = _draft.copyWith(blur: v)),
+          ),
+          _ParamSlider(
+            icon: Icons.opacity,
+            label: tr('不透明度'),
+            value: _draft.opacity,
+            min: 10,
+            max: 100,
+            divisions: 90,
+            onChanged: (v) =>
+                setState(() => _draft = _draft.copyWith(opacity: v)),
+          ),
+          _ParamSlider(
+            icon: Icons.dark_mode_outlined,
+            label: tr('遮罩'),
+            value: _draft.maskAlpha,
+            min: 0,
+            max: 60,
+            divisions: 60,
+            suffix: tr('压暗'),
+            onChanged: (v) =>
+                setState(() => _draft = _draft.copyWith(maskAlpha: v)),
+          ),
+          _ParamSlider(
+            icon: Icons.zoom_out_map,
+            label: tr('缩放'),
+            value: _draft.scale,
+            min: 80,
+            max: 160,
+            divisions: 80,
+            onChanged: (v) =>
+                setState(() => _draft = _draft.copyWith(scale: v)),
+          ),
+          const SizedBox(height: 16),
+          Text(tr('前景样式'),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _styleChip(tr('亮字'), useLight: true, scheme: scheme),
+              const SizedBox(width: 10),
+              _styleChip(tr('暗字'), useLight: false, scheme: scheme),
+            ],
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _apply,
+            icon: const Icon(Icons.check, size: 18),
+            label: Text(tr('保存并使用')),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+              textStyle: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+          ),
+          TextButton(
+            onPressed:
+                _draft.active ? _restore : null,
+            child: Text(tr('恢复默认')),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPreview(ColorScheme scheme, bool hasImage) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        height: 208,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CustomBackgroundLayer(background: _draft),
+            if (!hasImage)
+              ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.wallpaper,
+                          size: 46, color: Colors.white60),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          tr('从相册选择一张图片作为应用背景'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: (_draft.useLightForeground
+                            ? Colors.black
+                            : Colors.white)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Aa 预览',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w600,
+                      color: _draft.useLightForeground
+                          ? Colors.white
+                          : Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _styleChip(String label,
+      {required bool useLight, required ColorScheme scheme}) {
+    final selected = _draft.useLightForeground == useLight;
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      selected: selected,
+      selectedColor: scheme.primary,
+      onSelected: (_) => setState(() =>
+          _draft = _draft.copyWith(
+              foregroundStyle: useLight ? 'light' : 'dark')),
+    );
+  }
+}
+
+/// 单条参数滑块：图标 + 名称 + 实时值，便于边调边看预览。
+class _ParamSlider extends StatelessWidget {
+  const _ParamSlider({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+    this.suffix,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final int min;
+  final int max;
+  final int divisions;
+  final String? suffix;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: const TextStyle(fontSize: 14)),
+              const Spacer(),
+              Text(
+                '$value${suffix ?? ''}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: value.toDouble(),
+            min: min.toDouble(),
+            max: max.toDouble(),
+            divisions: divisions,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -67,6 +67,72 @@ enum ListSize {
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff', 'dsf', 'dff'];
 
+/// 自定义壁纸背景（对齐桌面端 ThemeSettings.customBackground）。
+///
+/// 使用整型百分比便于 SharedPreferences 存取；渲染时再换算为 double。
+class CustomBackground {
+  final bool enabled;
+  final String imagePath;
+  /// 模糊度（0~40）。
+  final int blur;
+  /// 图片不透明度（0~100）。
+  final int opacity;
+  /// 遮罩深度（0~60，遮罩色为黑色，用于压暗背景保证前景可读）。
+  final int maskAlpha;
+  /// 画面缩放（80~160，100=原比例覆盖）。
+  final int scale;
+  /// 横向平移（-50~50，相对屏幕宽度百分比）。
+  final int translateX;
+  /// 纵向平移（-50~50，相对屏幕高度百分比）。
+  final int translateY;
+  /// 前景样式：'light' 亮字 / 'dark' 暗字（对齐桌面端 foregroundStyle）。
+  final String foregroundStyle;
+
+  const CustomBackground({
+    this.enabled = false,
+    this.imagePath = '',
+    this.blur = 20,
+    this.opacity = 100,
+    this.maskAlpha = 40,
+    this.scale = 100,
+    this.translateX = 0,
+    this.translateY = 0,
+    this.foregroundStyle = 'light',
+  });
+
+  /// 默认（未启用）。
+  static const none = CustomBackground();
+
+  /// 是否处于可用状态（已启用且存在图片路径）。
+  bool get active => enabled && imagePath.isNotEmpty;
+
+  bool get useLightForeground => foregroundStyle == 'light';
+
+  CustomBackground copyWith({
+    bool? enabled,
+    String? imagePath,
+    int? blur,
+    int? opacity,
+    int? maskAlpha,
+    int? scale,
+    int? translateX,
+    int? translateY,
+    String? foregroundStyle,
+  }) {
+    return CustomBackground(
+      enabled: enabled ?? this.enabled,
+      imagePath: imagePath ?? this.imagePath,
+      blur: blur ?? this.blur,
+      opacity: opacity ?? this.opacity,
+      maskAlpha: maskAlpha ?? this.maskAlpha,
+      scale: scale ?? this.scale,
+      translateX: translateX ?? this.translateX,
+      translateY: translateY ?? this.translateY,
+      foregroundStyle: foregroundStyle ?? this.foregroundStyle,
+    );
+  }
+}
+
 /// 全局设置（小而美：仅移动端必需项，key 语义与桌面端一致）。
 class AppSettings {
   const AppSettings({
@@ -76,6 +142,7 @@ class AppSettings {
     this.keepScreenOn = true,
     this.themeMode = ThemeModePreference.system,
     this.accentColor = 0xFFEC4141,
+    this.customBackground = CustomBackground.none,
     this.showQualityBadges = true,
     this.onlineDefaultQuality = '320k',
     this.libraryMinDurationSeconds = 0,
@@ -151,6 +218,7 @@ class AppSettings {
   final bool keepScreenOn;
   final ThemeModePreference themeMode;
   final int accentColor;
+  final CustomBackground customBackground;
   final bool showQualityBadges;
   final String onlineDefaultQuality;
   final int libraryMinDurationSeconds;
@@ -325,6 +393,7 @@ class AppSettings {
     bool? keepScreenOn,
     ThemeModePreference? themeMode,
     int? accentColor,
+    CustomBackground? customBackground,
     bool? showQualityBadges,
     String? onlineDefaultQuality,
     int? libraryMinDurationSeconds,
@@ -395,6 +464,7 @@ class AppSettings {
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       themeMode: themeMode ?? this.themeMode,
       accentColor: accentColor ?? this.accentColor,
+      customBackground: customBackground ?? this.customBackground,
       showQualityBadges: showQualityBadges ?? this.showQualityBadges,
       onlineDefaultQuality: onlineDefaultQuality ?? this.onlineDefaultQuality,
       libraryMinDurationSeconds:
@@ -603,6 +673,18 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('statusBarLyricsEnabled') ?? false,
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
+      customBackground: CustomBackground(
+        enabled: prefs.getBool('customBackgroundEnabled') ?? false,
+        imagePath: prefs.getString('customBackgroundImagePath') ?? '',
+        blur: prefs.getInt('customBackgroundBlur') ?? 20,
+        opacity: prefs.getInt('customBackgroundOpacity') ?? 100,
+        maskAlpha: prefs.getInt('customBackgroundMaskAlpha') ?? 40,
+        scale: prefs.getInt('customBackgroundScale') ?? 100,
+        translateX: prefs.getInt('customBackgroundTranslateX') ?? 0,
+        translateY: prefs.getInt('customBackgroundTranslateY') ?? 0,
+        foregroundStyle:
+            prefs.getString('customBackgroundForegroundStyle') ?? 'light',
+      ),
     );
   }
 
@@ -726,6 +808,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('statusBarLyricsEnabled', next.statusBarLyricsEnabled),
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
+      prefs.setBool('customBackgroundEnabled', next.customBackground.enabled),
+      prefs.setString('customBackgroundImagePath', next.customBackground.imagePath),
+      prefs.setInt('customBackgroundBlur', next.customBackground.blur),
+      prefs.setInt('customBackgroundOpacity', next.customBackground.opacity),
+      prefs.setInt('customBackgroundMaskAlpha', next.customBackground.maskAlpha),
+      prefs.setInt('customBackgroundScale', next.customBackground.scale),
+      prefs.setInt('customBackgroundTranslateX', next.customBackground.translateX),
+      prefs.setInt('customBackgroundTranslateY', next.customBackground.translateY),
+      prefs.setString('customBackgroundForegroundStyle', next.customBackground.foregroundStyle),
     ]);
   }
 
@@ -817,6 +908,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setFloatingLyricsWidthPercent(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsWidthPercent: v));
   Future<void> setFloatingLyricsUseLyricFont(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsUseLyricFont: v));
   Future<void> setFloatingLyricsPosition(int x, int y) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsX: x, floatingLyricsY: y));
+
+  /// 写入自定义壁纸背景。
+  Future<void> setCustomBackground(CustomBackground v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(customBackground: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

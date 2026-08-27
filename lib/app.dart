@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
+import 'src/core/app_colors.dart';
 import 'src/auth/account_api.dart';
+import 'src/i18n/i18n.dart';
 import 'src/navigation/routes.dart';
 import 'src/widgets/flying_cover.dart';
+import 'src/widgets/custom_background.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -40,7 +43,7 @@ class XianYuApp extends ConsumerStatefulWidget {
   ConsumerState<XianYuApp> createState() => _XianYuAppState();
 }
 
-class _XianYuAppState extends ConsumerState<XianYuApp> {
+class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
   int? _cachedAccent;
   bool? _cachedPredictiveBack;
   ThemeData? _lightTheme;
@@ -50,10 +53,26 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
   @override
   void initState() {
     super.initState();
+    // 系统语言变化时（跟随系统模式下）刷新界面语言。
+    WidgetsBinding.instance.addObserver(this);
     // 启动统计上报（fire-and-forget，失败静默）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(accountApiProvider).reportAppOpen();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    final settings = ref.read(settingsProvider).valueOrNull;
+    if ((settings?.language ?? AppLanguage.system) == AppLanguage.system) {
+      setState(() {});
+    }
   }
 
   /// 精确主题色 ColorScheme：primary/tertiary 家族直接取用户所选颜色。
@@ -134,8 +153,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
     _lightTheme = ThemeData(
       colorScheme: lightScheme,
-      // 统一页面底色与控件底色（对齐设置页规范）。
-      scaffoldBackgroundColor: const Color(0xFFF4F4F6),
+      // 页面底色交给根层统一渲染（自定义壁纸/默认底色）：Scaffold 本身透明，
+      // 由各页面背景透出根层。透明不改变 colorScheme.surface（卡片/输入底色不受影响）。
+      scaffoldBackgroundColor: Colors.transparent,
       // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFFF4F4F6),
@@ -164,8 +184,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
-      // 统一页面底色与控件底色（对齐设置页规范）。
-      scaffoldBackgroundColor: const Color(0xFF222222),
+      // 页面底色交给根层统一渲染（自定义壁纸/默认底色），Scaffold 本身透明以透出。
+      scaffoldBackgroundColor: Colors.transparent,
       // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF222222),
@@ -198,7 +218,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
     final theme = _lightTheme!;
     final darkTheme = _darkTheme!;
-    final locale = _localeFor(settings?.language ?? AppLanguage.system);
+    final language = settings?.language ?? AppLanguage.system;
+    final locale = _localeFor(language);
+    // 同步全局界面语言：tr() 无 context 查表依赖该模式（系统模式按系统 locale 解析）。
+    // 必须在计算 MaterialApp key 之前完成，保证 key 与语言一致。
+    I18n.setMode(_i18nModeFor(language));
     final l10nDelegates = [
       AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
@@ -227,7 +251,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
     // 增量路由 reconfigure，从而彻底规避该竞态。语言切换重挂载一次开销可接受。
     return init.hasError
         ? MaterialApp(
-            title: '弦予音乐',
+            title: tr('弦予音乐'),
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,
@@ -241,11 +265,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
             ),
           )
         : MaterialApp.router(
-            key: ValueKey('app-${locale ?? const Locale('system')}'),
-            // 必须用可空版 Localizations.of（生成的 AppLocalizations.of 内含 !，会空指针崩溃）。
-            title: Localizations.of<AppLocalizations>(context, AppLocalizations)
-                    ?.appTitle ??
-                '弦予音乐',
+            // key 随「解析后的界面语言」变化（覆盖系统模式下的系统语言切换），
+            // 强制整体重挂载刷新全部 tr() 文案。
+            key: ValueKey('app-${I18n.mode.name}'),
+            title: tr('弦予音乐'),
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,
@@ -260,7 +283,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
                 final overlay = appNavigatorKey.currentState?.overlay;
                 if (overlay != null) FlyingCover.instance.attach(overlay);
               });
-              return child!;
+              // 全局壁纸层：置于 Navigator 之下，作为所有页面（主 Tab + 二级页）
+              // 的统一底色。壁纸未启用时由 ColoredBox 提供原默认底色，视觉不变。
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: appSurfaceBg(context),
+                    child: const CustomBackgroundLayer(),
+                  ),
+                  child!,
+                ],
+              );
             },
           );
   }
@@ -271,6 +305,30 @@ class _XianYuAppState extends ConsumerState<XianYuApp> {
         AppLanguage.zhTW => const Locale('zh', 'TW'),
         AppLanguage.en => const Locale('en'),
       };
+
+  I18nMode _i18nModeFor(AppLanguage lang) => switch (lang) {
+        AppLanguage.zhCN => I18nMode.zhCn,
+        AppLanguage.zhTW => I18nMode.zhTw,
+        AppLanguage.en => I18nMode.en,
+        AppLanguage.system => _modeForSystemLocale(),
+      };
+
+  /// 系统语言解析：中文按地区分简繁（TW/HK/MO → 繁体），英文 → en，其余默认简体。
+  I18nMode _modeForSystemLocale() {
+    final locales = WidgetsBinding.instance.platformDispatcher.locales;
+    if (locales.isEmpty) return I18nMode.zhCn;
+    final first = locales.first;
+    switch (first.languageCode) {
+      case 'en':
+        return I18nMode.en;
+      case 'zh':
+        final cc = first.countryCode;
+        return (cc == 'TW' || cc == 'HK' || cc == 'MO')
+            ? I18nMode.zhTw
+            : I18nMode.zhCn;
+    }
+    return I18nMode.zhCn;
+  }
 }
 
 class _InitErrorScreen extends StatelessWidget {
@@ -288,14 +346,15 @@ class _InitErrorScreen extends StatelessWidget {
             children: [
               const Icon(Icons.error_outline, size: 48),
               const SizedBox(height: 16),
-              const Text('核心初始化失败', style: TextStyle(fontWeight: FontWeight.w600)),
+              Text(tr('核心初始化失败'),
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text('$error', textAlign: TextAlign.center),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+                label: Text(tr('重试')),
               ),
             ],
           ),
