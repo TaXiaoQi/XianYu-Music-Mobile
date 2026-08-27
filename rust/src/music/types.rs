@@ -125,6 +125,11 @@ pub struct SongDetail {
     pub container: Option<String>,
     pub codec: Option<String>,
     pub file_size: Option<u64>,
+    /// 技术信息（采样率/位深/码率/封装格式），用于移动端「歌曲详情」展示，对齐 RwaS 技术信息页。
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
+    pub bitrate: Option<u32>,
+    pub format: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

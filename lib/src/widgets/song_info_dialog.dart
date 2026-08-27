@@ -70,7 +70,8 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
   @override
   void initState() {
     super.initState();
-    if (widget.editable) _loadDetail();
+    // 无论查看/编辑都加载详情（技术信息只对本地文件有意义，在线歌曲取不到自然为空）。
+    _loadDetail();
   }
 
   Future<void> _loadDetail() async {
@@ -346,6 +347,34 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       if (disc != null && disc.isNotEmpty) rows.add(_row('碟号', disc, scheme));
     }
 
+    // 技术信息（采样率/位深/码率/编码/封装）对齐 RwaS 技术信息页，只对本地文件展示
+    if (detail != null) {
+      final tech = <(String, String)>[];
+      final sr = detail['sampleRate'] as num?;
+      final bd = detail['bitDepth'] as num?;
+      final br = detail['bitrate'] as num?;
+      final fmt = (detail['format'] as String?)?.trim();
+      final container = (detail['container'] as String?)?.trim();
+      final codec = (detail['codec'] as String?)?.trim();
+      if (sr != null && sr > 0) tech.add(('采样率', _fmtSampleRate(sr)));
+      if (bd != null && bd > 0) tech.add(('位深', '${bd} bit'));
+      if (br != null && br > 0) tech.add(('码率', '${br} kbps'));
+      if (codec != null && codec.isNotEmpty) {
+        tech.add(('编码', codec.toUpperCase()));
+      } else if (fmt != null && fmt.isNotEmpty) {
+        tech.add(('编码', fmt.toUpperCase()));
+      }
+      if (container != null && container.isNotEmpty) {
+        tech.add(('封装', container.toUpperCase()));
+      }
+      if (tech.isNotEmpty) {
+        rows.add(_techHeader(scheme));
+        for (final entry in tech) {
+          rows.add(_row(entry.$1, entry.$2, scheme));
+        }
+      }
+    }
+
     rows.add(_row('路径', pathText, scheme, selectable: true));
 
     if (_error != null) {
@@ -487,4 +516,35 @@ Widget _row(String label, String value, ColorScheme scheme,
       ],
     ),
   );
+}
+
+/// 技术信息区块的标题分隔线。
+Widget _techHeader(ColorScheme scheme) {
+  return Padding(
+    padding: const EdgeInsets.only(top: 6, bottom: 2),
+    child: Row(
+      children: [
+        Icon(Icons.memory_outlined,
+            size: 14, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 5),
+        const Expanded(
+            child: Divider(height: 1)),
+        const SizedBox(width: 8),
+        Text('技术信息',
+            style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant)),
+      ],
+    ),
+  );
+}
+
+/// 采样率美化：44.1 kHz / 192 kHz / DSD(2.82 MHz) 等。
+String _fmtSampleRate(num v) {
+  if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(2)} MHz';
+  final k = v / 1000;
+  return k == k.roundToDouble()
+      ? '${k.round()} kHz'
+      : '${k.toStringAsFixed(1)} kHz';
 }

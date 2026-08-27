@@ -669,15 +669,20 @@ pub fn get_song_detail(conn: &rusqlite::Connection, path: String) -> Result<Stri
         ..SongDetail::default()
     };
 
-    if let Some((container, codec, file_size)) = conn
+    if let Some((container, codec, file_size, bitrate, sample_rate, bit_depth, format)) = conn
         .query_row(
-            "SELECT container, codec, file_size FROM songs WHERE path = ?1 LIMIT 1",
+            "SELECT container, codec, file_size, bitrate, sample_rate, bit_depth, format
+             FROM songs WHERE path = ?1 LIMIT 1",
             params![&normalized_path],
             |row| {
                 Ok((
                     row.get::<_, Option<String>>(0)?,
                     row.get::<_, Option<String>>(1)?,
                     row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
                 ))
             },
         )
@@ -687,6 +692,14 @@ pub fn get_song_detail(conn: &rusqlite::Connection, path: String) -> Result<Stri
         detail.container = container.filter(|value| !value.trim().is_empty());
         detail.codec = codec.filter(|value| !value.trim().is_empty());
         detail.file_size = file_size.and_then(|value| u64::try_from(value).ok());
+        detail.bitrate = bitrate.and_then(|value| u32::try_from(value).ok()).filter(|v| *v > 0);
+        detail.sample_rate = sample_rate
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|v| *v > 0);
+        detail.bit_depth = bit_depth
+            .and_then(|value| u8::try_from(value).ok())
+            .filter(|v| *v > 0);
+        detail.format = format.filter(|value| !value.trim().is_empty());
     }
 
     if let Ok(metadata) = fs::metadata(path_obj) {
