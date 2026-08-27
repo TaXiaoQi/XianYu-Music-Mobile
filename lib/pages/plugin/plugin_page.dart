@@ -253,14 +253,19 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                   itemBuilder: (context, i) {
                     final source = filtered[i];
                     // 点击最前方拖动图标即可拖拽；搜索过滤时禁用
-                    return Padding(
+                    // ReorderableListView 不像 ListView 那样自动给子项加
+                    // RepaintBoundary：多插件时可见卡片每帧被整体重绘 → 抽帧。
+                    // 每卡隔离为独立合成层后，滑动只搬运已有图层，不重绘内容。
+                    return RepaintBoundary(
                       key: ValueKey(source.id),
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _PluginCard(
-                        source: source,
-                        index: i,
-                        dragEnabled: _query.isEmpty,
-                        hasVars: _hasVars[source.id] == true,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _PluginCard(
+                          source: source,
+                          index: i,
+                          dragEnabled: _query.isEmpty,
+                          hasVars: _hasVars[source.id] == true,
+                        ),
                       ),
                     );
                   },
