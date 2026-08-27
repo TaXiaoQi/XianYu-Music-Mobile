@@ -161,6 +161,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     );
     final lightScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
+    lightBaseScheme = lightScheme;
     _lightTheme = ThemeData(
       colorScheme: lightScheme,
       // 页面底色交给根层统一渲染（自定义壁纸/默认底色）：Scaffold 本身透明，
@@ -185,6 +186,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     );
     final darkScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
+    darkBaseScheme = darkScheme;
     _darkTheme = ThemeData(
       colorScheme: darkScheme.copyWith(
         surface: const Color(0xFF262626),
@@ -226,8 +228,28 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.system => ThemeMode.system,
     };
     _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
-    final theme = _lightTheme!;
-    final darkTheme = _darkTheme!;
+    // 自定义壁纸启用时，页面前景文字按「亮字/暗字」（前景样式）固定为亮色或暗色，
+    // 让壁纸上的正文/标题/图标始终清晰可读，而非跟随主题色而看不清。
+    ThemeData theme = _lightTheme!;
+    ThemeData darkTheme = _darkTheme!;
+    final cb = settings?.customBackground;
+    if (cb?.active == true) {
+      final useLight = cb!.useLightForeground;
+      final fg = useLight ? Colors.white : const Color(0xFF17181A);
+      final fgVariant = useLight ? Colors.white70 : Colors.black54;
+      theme = theme.copyWith(
+        colorScheme: theme.colorScheme.copyWith(
+          onSurface: fg,
+          onSurfaceVariant: fgVariant,
+        ),
+      );
+      darkTheme = darkTheme.copyWith(
+        colorScheme: darkTheme.colorScheme.copyWith(
+          onSurface: fg,
+          onSurfaceVariant: fgVariant,
+        ),
+      );
+    }
     final language = settings?.language ?? AppLanguage.system;
     final locale = _localeFor(language);
     // 同步全局界面语言：tr() 无 context 查表依赖该模式（系统模式按系统 locale 解析）。

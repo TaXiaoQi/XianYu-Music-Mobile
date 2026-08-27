@@ -106,9 +106,27 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
           ],
         ),
         const SizedBox(height: 6),
-        // 内容卡片：带入场动画的切换。
+        // 内容卡片：只对新卡片做纯淡入 + 轻微上移，旧卡片立即移除不参与叠加。
+        // 若用默认交叉淡入，两张半透明白玻璃卡片在过渡中叠加、亮度翻倍，
+        // 在无壁纸（纯色背景）下切换会闪一下；对齐桌面端瞬时切换以避免重排跳动。
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.02),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          // 只绘制当前（新）卡片：旧卡片不残留，杜绝交叉淡入的白闪与高度跳动。
+          layoutBuilder: (currentChild, previousChildren) =>
+              currentChild ?? const SizedBox.shrink(),
           child: KeyedSubtree(
             key: ValueKey(_tabs[_index].key),
             child: _buildContent(scheme),
