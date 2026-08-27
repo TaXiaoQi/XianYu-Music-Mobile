@@ -16,6 +16,7 @@ class CoverHeroShuttle extends StatelessWidget {
     this.networkUrl,
     this.fromRadius = 23,
     this.toRadius = 28,
+    this.highQuality = true,
   });
 
   final Animation<double> animation;
@@ -24,21 +25,31 @@ class CoverHeroShuttle extends StatelessWidget {
   final double fromRadius;
   final double toRadius;
 
+  /// 飞行中保持高清单像素：目标详情页大封面用 800px 高清，飞行中若退化为
+  /// 150px 缩略图会在放大到全屏时变糊、落地瞬间清晰导致跳变。缺省开启，
+  /// 与目标封面同质解码，实现像素级无缝衔接（RwaS 共享封面同款保留清晰度）。
+  final bool highQuality;
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        final radius =
-            lerpDouble(fromRadius, toRadius, animation.value) ?? toRadius;
-        return CoverImage(
-          songPath: songPath,
-          networkUrl: networkUrl,
-          width: double.infinity,
-          height: double.infinity,
-          radius: radius,
-        );
-      },
+    // 飞行封面收敛为独立合成层：路由滑动/下层重绘不会反复栅格化它，
+    // 消除飞行过程中因父层重建引发的闪烁（RwaS freezeBitmapUpdates 等价物）。
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final radius =
+              lerpDouble(fromRadius, toRadius, animation.value) ?? toRadius;
+          return CoverImage(
+            songPath: songPath,
+            networkUrl: networkUrl,
+            width: double.infinity,
+            height: double.infinity,
+            radius: radius,
+            highQuality: highQuality,
+          );
+        },
+      ),
     );
   }
 }
@@ -61,6 +72,7 @@ class PlayerCoverShuttle extends StatelessWidget {
     this.borderColor = const Color(0x2EFFFFFF),
     this.shadow,
     this.gradient,
+    this.highQuality = true,
   });
 
   final Animation<double> animation;
@@ -78,16 +90,21 @@ class PlayerCoverShuttle extends StatelessWidget {
   /// 占位渐变（无封面图时的回退），与目标封面一致。
   final List<Color>? gradient;
 
+  /// 飞行中保持高清，与目标大封面（800px）同质解码，避免放大全屏时变糊。
+  final bool highQuality;
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        final t = animation.value;
-        final radius =
-            lerpDouble(fromRadius, toRadius, t) ?? toRadius;
-        final sh = shadow;
-        return Container(
+    // 独立合成层：与 CoverHeroShuttle 同款，避免路由滑动/下层重绘反复栅格化飞行封面。
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final t = animation.value;
+          final radius =
+              lerpDouble(fromRadius, toRadius, t) ?? toRadius;
+          final sh = shadow;
+          return Container(
           decoration: BoxDecoration(
             // 描边在封面外缘 1px：目标封面外层圆角 = 内层 + 1。
             borderRadius: BorderRadius.circular(radius + 1),
@@ -116,10 +133,12 @@ class PlayerCoverShuttle extends StatelessWidget {
               height: double.infinity,
               radius: radius,
               gradient: gradient,
+              highQuality: highQuality,
             ),
           ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

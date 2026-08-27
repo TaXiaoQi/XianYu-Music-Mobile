@@ -331,12 +331,17 @@ class _PlayerCoverRoute extends PageRoute<void> {
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
-    return SlideTransition(
-      position: Tween<Offset>(
-        begin: const Offset(0, 1),
-        end: Offset.zero,
-      ).animate(curved),
-      child: child,
+    // 上滑覆盖 + 淡入淡出：打开时淡入上滑，收回时下移渐隐，
+    // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      ),
     );
   }
 }
