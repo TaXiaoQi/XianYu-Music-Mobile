@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件（横版，稳妥纯 LinearLayout 结构）。
-     参考桌面端 mini 窗的三行布局：
-     行1 = 封面 + 歌名/歌手；行2 = 时间+进度+时间；行3 = 上一首/播放/下一首(+循环/+打开)。
-     不叠加全卡背景/蒙版，最大化各 launcher RemoteViews 兼容。 -->
+<!-- 组件添加页实时预览（Android 12+ previewLayout）。
+     与真实组件同构的稳妥纯 LinearLayout，三行布局：
+     行1 = 封面 + 歌名/歌手；行2 = 时间+进度；行3 = 上一首/播放/下一首 + 循环 + 打开。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/root"
+    android:id="@+id/previewRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -12,7 +11,7 @@
     android:background="@drawable/widget_bg"
     android:padding="14dp">
 
-    <!-- 行1：封面 + 歌名/歌手（信息行，封面与文字垂直居中成组） -->
+    <!-- 行1：封面 + 歌名/歌手 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -20,12 +19,11 @@
         android:gravity="center_vertical">
 
         <ImageView
-            android:id="@+id/cover"
             android:layout_width="60dp"
             android:layout_height="60dp"
             android:layout_marginEnd="14dp"
             android:scaleType="centerCrop"
-            android:contentDescription="@string/widget_label" />
+            android:src="@drawable/widget_preview_cover" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -34,9 +32,9 @@
             android:orientation="vertical">
 
             <TextView
-                android:id="@+id/songText"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="弦予音乐"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold"
@@ -44,10 +42,10 @@
                 android:ellipsize="end" />
 
             <TextView
-                android:id="@+id/artistText"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
+                android:text="正在播放 / 将音乐给予你"
                 android:textColor="#B8FFFFFF"
                 android:textSize="13sp"
                 android:singleLine="true"
@@ -64,16 +62,14 @@
         android:gravity="center_vertical">
 
         <TextView
-            android:id="@+id/timeCur"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="2dp"
-            android:text="0:00"
+            android:text="1:23"
             android:textColor="#AAFFFFFF"
             android:textSize="11sp" />
 
         <ProgressBar
-            android:id="@+id/progress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -81,22 +77,21 @@
             android:layout_marginStart="8dp"
             android:layout_marginEnd="8dp"
             android:max="100"
-            android:progress="0"
+            android:progress="35"
             android:progressDrawable="@drawable/widget_progress_drawable"
             android:maxHeight="6dp"
             android:minHeight="6dp" />
 
         <TextView
-            android:id="@+id/timeDur"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="2dp"
-            android:text="0:00"
+            android:text="3:55"
             android:textColor="#AAFFFFFF"
             android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- 行3：上一首 / 播放 / 下一首 / 循环 / 打开（水平居中成排，避免 Space/weight 兼容问题） -->
+    <!-- 行3：上一首 / 播放 / 下一首 / 循环 / 打开（水平居中成排） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -104,51 +99,32 @@
         android:orientation="horizontal"
         android:gravity="center_horizontal">
 
-        <ImageButton
-            android:id="@+id/btnPrev"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:padding="7dp"
-            android:background="@null"
-            android:src="@drawable/ic_skip_previous"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
+        <View
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginStart="3dp"
+            android:background="@drawable/widget_preview_dot" />
 
-        <ImageButton
-            android:id="@+id/btnPlay"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
+        <View
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="10dp"
-            android:padding="11dp"
-            android:background="@drawable/widget_play_btn"
-            android:src="@drawable/ic_play"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
+            android:background="@drawable/widget_play_btn" />
 
-        <ImageButton
-            android:id="@+id/btnNext"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:padding="7dp"
-            android:background="@null"
-            android:src="@drawable/ic_skip_next"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
+        <View
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginEnd="3dp"
+            android:background="@drawable/widget_preview_dot" />
 
-        <ImageButton
-            android:id="@+id/btnMode"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
+        <View
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:layout_marginStart="10dp"
-            android:padding="4dp"
-            android:background="@null"
-            android:src="@drawable/ic_notif_mode_repeat"
-            android:scaleType="fitCenter"
-            android:contentDescription="@string/widget_label" />
+            android:background="@drawable/widget_preview_dot" />
 
         <TextView
-            android:id="@+id/btnOpen"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
@@ -159,7 +135,6 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:paddingTop="6dp"
-            android:paddingBottom="6dp"
-            android:contentDescription="@string/widget_label" />
+            android:paddingBottom="6dp" />
     </LinearLayout>
 </LinearLayout>

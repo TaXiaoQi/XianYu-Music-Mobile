@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 组件添加页静态预览图（Android 11 及以下用 previewImage）。
+     示意 4x2 横版卡：暗色圆角底 + 左上封面块 + 文字条 + 底部进度条。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 圆角暗卡底 -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#2E2E2E"
+                android:endColor="#1B1B1B"
+                android:angle="270" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+
+    <!-- 左封面块（品牌红渐变，圆角） -->
+    <item
+        android:width="64dp"
+        android:height="64dp"
+        android:left="16dp"
+        android:top="16dp"
+        android:bottom="16dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#EC4142"
+                android:centerColor="#7A2026"
+                android:endColor="#1F1012"
+                android:angle="45" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+
+    <!-- 歌名白条 -->
+    <item
+        android:width="96dp"
+        android:height="12dp"
+        android:left="96dp"
+        android:top="22dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+
+    <!-- 歌手浅条 -->
+    <item
+        android:width="60dp"
+        android:height="8dp"
+        android:left="96dp"
+        android:top="42dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <solid android:color="#B8FFFFFF" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+
+    <!-- 底部进度条轨道 -->
+    <item
+        android:height="4dp"
+        android:left="16dp"
+        android:right="16dp"
+        android:bottom="14dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <solid android:color="#2EFFFFFF" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+</layer-list>

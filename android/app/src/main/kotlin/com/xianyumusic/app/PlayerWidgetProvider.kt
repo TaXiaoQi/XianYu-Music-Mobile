@@ -79,12 +79,11 @@ class PlayerWidgetProvider : AppWidgetProvider() {
                     else -> R.drawable.ic_notif_mode_repeat
                 })
 
-            val cover = landscapeCover(ctx, s.optString("coverPath"))
+            val cover = roundedCover(ctx, s.optString("coverPath"))
             if (cover != null) {
-                views.setImageViewBitmap(R.id.bgCover, cover)
+                views.setImageViewBitmap(R.id.cover, cover)
             } else {
-                // 无封面：整卡回落到暗色渐变底（拉伸图形资源无副作用），不清不糊。
-                views.setImageViewResource(R.id.bgCover, R.drawable.widget_bg)
+                views.setImageViewResource(R.id.cover, R.drawable.ic_widget_music_note)
             }
 
             views.setOnClickPendingIntent(R.id.root, openPending(ctx, 1000))
@@ -110,35 +109,32 @@ class PlayerWidgetProvider : AppWidgetProvider() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        /** 封面 -> 圆角横版背景位图（无封面/失败返回 null）。 */
-        private fun landscapeCover(ctx: Context, path: String): Bitmap? {
+        /** 封面 -> 圆角方块位图（无封面/失败返回 null）。 */
+        private fun roundedCover(ctx: Context, path: String): Bitmap? {
             if (path.isBlank()) return null
             return try {
                 val bmp = BitmapFactory.decodeFile(path) ?: return null
                 val density = ctx.resources.displayMetrics.density
-                // 目标横版尺寸（2:1），radius 随卡片圆角；RemoteViews 无法裁剪子 View，
-                // 所以在位图里就把四角裁圆，fitXY 铺满时四角贴合圆角卡。
-                val w = (360 * density).toInt().coerceAtLeast(2)
-                val h = (180 * density).toInt().coerceAtLeast(2)
-
-                // centerCrop：封面按中心裁满横版，避免拉伸变形。
-                val srcW = bmp.width.toFloat()
-                val srcH = bmp.height.toFloat()
-                val scale = maxOf(w / srcW, h / srcH)
-                val cw = (w / scale).coerceAtMost(srcW)
-                val ch = (h / scale).coerceAtMost(srcH)
-                val sx = ((srcW - cw) / 2f).toInt()
-                val sy = ((srcH - ch) / 2f).toInt()
-                val crop = Bitmap.createBitmap(
-                    bmp, sx, sy, cw.toInt(), ch.toInt())
-                val scaled = Bitmap.createScaledBitmap(crop, w, h, true)
-
-                val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val size = (60 * density).toInt().coerceAtLeast(1)
+                val dim = minOf(bmp.width, bmp.height)
+                val sx = (bmp.width - dim) / 2f
+                val sy = (bmp.height - dim) / 2f
+                val crop = Bitmap.createBitmap(bmp, sx.toInt(), sy.toInt(), dim, dim)
+                val half = Bitmap.createScaledBitmap(crop, size, size, true)
+                val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                 val cv = Canvas(out)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                paint.setShader(BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
-                val r = 20 * density
-                cv.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, paint)
+                paint.setShader(BitmapShader(half, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+                // 圆角更圆润，匹配 App 封面比例；外加一圈白色细描边增强卡片感。
+                val r = size * 0.26f
+                val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
+                cv.drawRoundRect(rect, r, r, paint)
+                val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    color = 0x33FFFFFF
+                    strokeWidth = 1.5f * density
+                }
+                cv.drawRoundRect(rect, r, r, stroke)
                 out
             } catch (_: Throwable) {
                 null

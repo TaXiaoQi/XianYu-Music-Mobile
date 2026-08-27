@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 组件预览用的示意封面：品牌红→暗的柔和渐变，模拟真实专辑 art 铺满背景。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="#EC4142"
+        android:centerColor="#7A2026"
+        android:endColor="#201416"
+        android:angle="45" />
+    <corners android:radius="12dp" />
+</shape>
