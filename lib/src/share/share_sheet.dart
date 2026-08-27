@@ -9,10 +9,12 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 
+import '../online/cover_proxy.dart';
 import '../player/player_provider.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/app_toast.dart';
@@ -246,18 +248,22 @@ Future<void> _shareViaQQ(
     return;
   }
 
-  var cover = '';
+  var coverPath = '';
   try {
-    cover = await ref.read(shareServiceProvider).resolveCover(song);
+    final coverFile = await _localCoverFile(song);
+    if (coverFile != null) {
+      // QQ 卡片缩略图需本地文件且不宜过大，压缩到 ≤256px JPEG 后再分享。
+      coverPath = (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
+    }
   } catch (_) {}
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
   final result = await qq.share(
     scene: scene,
     title: song.title,
-    summary: tr('{artist} · 来自弦予音乐', {'artist': artist}),
+    summary: artist,
     targetUrl: url,
-    coverUrl: cover,
+    coverPath: coverPath,
   );
 
   switch (result) {
@@ -316,11 +322,54 @@ Future<File?> _localCoverFile(QueueItem song) async {
   ];
   for (final c in candidates) {
     if (c != null && c.isNotEmpty && _isRemoteHttp(c)) {
-      final f = await _downloadToTemp(c);
+      final f = await _downloadCoverToTemp(c);
       if (f != null) return f;
     }
   }
   return null;
+}
+
+/// 下载在线封面到临时文件：优先走后端代理（自动补 Referer 解防盗链 + 命中缓存），
+/// 失败再直连兜底。
+Future<File?> _downloadCoverToTemp(String url) async {
+  try {
+    final bytes = await CoverProxy.fetch(url);
+    if (bytes != null && bytes.isNotEmpty) {
+      final dir = await getTemporaryDirectory();
+      final file = File(
+          '${dir.path}/xiuxwe_share_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(bytes);
+      return file;
+    }
+  } catch (_) {}
+  return _downloadToTemp(url);
+}
+
+/// 压缩封面到 ≤256px JPEG（QQ 卡片缩略图规格，避免大图被 QQ 拒绝或拉取失败）。
+/// 压缩失败返回 null，调用方回退原文件。
+Future<File?> _resizeCoverForShare(File src) async {
+  try {
+    final decoded = img.decodeImage(await src.readAsBytes());
+    if (decoded == null) return null;
+    final longer =
+        decoded.width > decoded.height ? decoded.width : decoded.height;
+    img.Image out = decoded;
+    if (longer > 256) {
+      final scale = 256 / longer;
+      out = img.copyResize(
+        decoded,
+        width: (decoded.width * scale).round(),
+        height: (decoded.height * scale).round(),
+      );
+    }
+    final dir = await getTemporaryDirectory();
+    final file = File(
+        '${dir.path}/xiuxwe_qq_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await file.writeAsBytes(img.encodeJpg(out, quality: 85));
+    return file;
+  } catch (_) {
+    return null;
+  }
 }
 
 Future<File?> _downloadToTemp(String url) async {

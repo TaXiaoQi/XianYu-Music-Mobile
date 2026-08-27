@@ -24,12 +24,15 @@ class QqShareService {
   Completer<QqShareResult>? _pending;
 
   /// 发起一次分享（网页卡片）。失败时返回 failed，由调用方展示结果并兜底复制链接。
+  ///
+  /// [coverPath] 为本地封面文件路径（QQ SDK 无法可靠拉取带防盗链的远程 CDN
+  /// 封面，卡片缩略图需本地文件），为空则卡片不带封面。
   Future<QqShareResult> share({
     required int scene,
     required String title,
     required String summary,
     required String targetUrl,
-    String? coverUrl,
+    String? coverPath,
   }) async {
     if (!await _ensureInit()) return QqShareResult.failed;
 
@@ -40,12 +43,9 @@ class QqShareService {
     _pending = completer;
 
     try {
-      Uri? imageUri;
-      final url = coverUrl ?? '';
-      if (url.isNotEmpty &&
-          (url.startsWith('http://') || url.startsWith('https://'))) {
-        imageUri = Uri.tryParse(url);
-      }
+      // 本地路径转 file:// URI，插件侧取 path 写入 QQ 分享参数。
+      final path = coverPath ?? '';
+      final imageUri = path.isEmpty ? null : Uri.file(path);
       await TencentKitPlatform.instance.shareWebpage(
         scene: scene,
         title: title,
