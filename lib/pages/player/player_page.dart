@@ -1717,6 +1717,10 @@ class _GlassControlCard extends ConsumerWidget {
             ) ??
             true) &&
             !lowPerf;
+    // 毛玻璃材质开关：关闭时控制卡回退为高不透明度纯色（无模糊）。
+    final frosted = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? true),
+    );
     // 错误态只在此局部订阅，不随整页重建。
     final error = ref.watch(playerProvider.select((s) => s.error));
 
@@ -1757,8 +1761,8 @@ class _GlassControlCard extends ConsumerWidget {
             ),
     );
 
-    if (lowPerf) {
-      // 性能模式：更高不透明度纯色补偿模糊缺失，省去 premium shader 与 BackdropFilter。
+    if (lowPerf || !frosted) {
+      // 性能模式 / 关闭毛玻璃：更高不透明度纯色补偿模糊缺失，省去 premium shader 与 BackdropFilter。
       return Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
@@ -1772,13 +1776,17 @@ class _GlassControlCard extends ConsumerWidget {
     }
 
     if (playerLiquid) {
-      return AdaptiveGlass(
-        shape: const LiquidRoundedRectangle(borderRadius: 26),
-        settings: liquidGlassSettings(isDark),
-        // premium 折射+色差+幅散 shader 在整页转场/键盘弹起时逐帧重采样掉帧，
-        // 降到 standard 保留玻璃观感但去掉高成本折射效果（低性能另有纯色补偿分支）。
-        quality: GlassQuality.standard,
-        child: content,
+      return glassBorder(
+        context: context,
+        radius: 26,
+        child: AdaptiveGlass(
+          shape: const LiquidRoundedRectangle(borderRadius: 26),
+          settings: liquidGlassSettings(isDark),
+          // 渲染档位走设置：低=minimal 最省 / 中=standard 均衡（默认）/ 高=premium 真折射。
+          // premium 在整页转场/键盘弹起时逐帧重采样可能掉帧，由用户自行权衡选档。
+          quality: liquidGlassQualityFromRef(ref),
+          child: content,
+        ),
       );
     }
 

@@ -227,11 +227,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/wallpaper'),
           ),
+        ],
+      ),
+      // 材质：毛玻璃（伪毛玻璃）与液态玻璃是两种独立材质，默认交给玻璃表面渲染。
+      _sectionHeader(context, tr('材质')),
+      _CardGroup(
+        children: [
           _switchTile(
             context,
             icon: Icons.blur_on_outlined,
             title: tr('毛玻璃材质'),
-            subtitle: tr('顶栏与底栏使用安卓原生高斯模糊磨砂'),
+            subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
+            // 毛玻璃默认开启；关闭后在非壁纸场景回退为高不透明度纯色。
             value: s?.frostedGlass ?? true,
             onChanged: (v) => n.setFrostedGlass(v),
           ),
@@ -239,18 +246,27 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.gradient_outlined,
             title: tr('液态玻璃'),
-            subtitle: tr('悬浮导航 shader 折射光影，与毛玻璃二选一'),
+            subtitle: tr('开启时自动切换到悬浮式底栏，shader 折射光影'),
+            // 液态玻璃开关始终可点，不再因悬浮底栏关闭而强制置灰/归假：
+            // 打开时由 setLiquidGlass 联动打开悬浮底栏；关闭悬浮时由
+            // setFloatingNavBar 联动关闭液态玻璃，故此处跟随 liquidGlass 真实值。
             value: s?.liquidGlass ?? false,
             onChanged: (v) => n.setLiquidGlass(v),
           ),
-          _switchTile(
-            context,
-            icon: Icons.sync_alt_outlined,
-            title: tr('播放页液态玻璃'),
-            subtitle: tr('播放页控制卡使用液态玻璃材质'),
-            value: s?.playerLiquidGlass ?? true,
-            onChanged: (v) => n.setPlayerLiquidGlass(v),
-          ),
+          if (s?.liquidGlass ?? false)
+            _tile(
+              context,
+              icon: Icons.tune_outlined,
+              title: tr('液态玻璃效果'),
+              subtitle: tr('调整液态玻璃渲染强度与耗电'),
+              trailing: Text(switch (s?.liquidGlassQuality ??
+                  LiquidGlassQuality.medium) {
+                LiquidGlassQuality.low => tr('低 · 性能优先'),
+                LiquidGlassQuality.high => tr('高 · 极致渲染'),
+                LiquidGlassQuality.medium => tr('中 · 均衡'),
+              }),
+              onTap: () => _pickLiquidGlassQuality(context, ref, s),
+            ),
         ],
       ),
       // 播放页样式：高级模式（现代毛玻璃）/ 传统模式（经典布局）。
@@ -268,6 +284,16 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             }),
             onTap: () => _pickPlayerStyle(context, ref, s),
           ),
+          // 播放页液态玻璃：仅高级模式（玻璃材质卡片）下可用。
+          if ((s?.playerStyle ?? PlayerStyle.advanced) == PlayerStyle.advanced)
+            _switchTile(
+              context,
+              icon: Icons.sync_alt_outlined,
+              title: tr('播放页液态玻璃'),
+              subtitle: tr('播放页控制卡使用液态玻璃材质'),
+              value: s?.playerLiquidGlass ?? true,
+              onChanged: (v) => n.setPlayerLiquidGlass(v),
+            ),
         ],
       ),
       // 导航栏与底栏样式：由「常规」页迁入外观。
@@ -1474,6 +1500,41 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setPlayerStyle(choice);
+    }
+  }
+
+  Future<void> _pickLiquidGlassQuality(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.liquidGlassQuality ?? LiquidGlassQuality.medium;
+    final choice = await showModernChoiceSheet<LiquidGlassQuality>(
+      context: context,
+      title: tr('液态玻璃效果'),
+      options:   [
+        ModernChoiceOption(
+            label: tr('低 · 性能优先'),
+            subtitle: tr('纯高斯模糊+描边，续航最好'),
+            value: LiquidGlassQuality.low,
+            icon: Icons.battery_saver_outlined),
+        ModernChoiceOption(
+            label: tr('中 · 均衡'),
+            subtitle: tr('轻量片元着色器（默认）'),
+            value: LiquidGlassQuality.medium,
+            icon: Icons.tune_outlined),
+        ModernChoiceOption(
+            label: tr('高 · 极致渲染'),
+            subtitle: tr('完整折射与色散管线，观感最强'),
+            value: LiquidGlassQuality.high,
+            icon: Icons.auto_awesome_outlined),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setLiquidGlassQuality(choice);
     }
   }
 

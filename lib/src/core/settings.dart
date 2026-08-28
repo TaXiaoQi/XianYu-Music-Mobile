@@ -39,6 +39,14 @@ enum PlayerStyle {
   traditional,
 }
 
+/// 液态玻璃效果档位：low 性能优先（纯模糊+描边，最省电）/
+/// medium 均衡（轻量片元着色器，默认）/ high 极致渲染（真折射+色散，较耗能）。
+enum LiquidGlassQuality {
+  low,
+  medium,
+  high,
+}
+
 /// 判断是否应开启「动效降级」（性能模式生效）。
 /// 自动档按 CPU 核心数粗判，单核偏弱设备自动降级；手动档直接覆盖。
 bool performancePriority(AppSettings s) => switch (s.performanceMode) {
@@ -165,7 +173,8 @@ class AppSettings {
     this.lyricFontPath = '',
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
-    this.frostedGlass = false,
+    this.frostedGlass = true,
+    this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
     this.updateCheckMode = 'startup',
@@ -263,8 +272,13 @@ class AppSettings {
   final bool liquidGlass;
   final bool playerLiquidGlass;
 
-  /// 安卓原生毛玻璃材质：顶栏与固定底栏使用 BackdropFilter 高斯模糊磨砂。false 时回退纯色。
+  /// 毛玻璃（伪毛玻璃）材质开关：关闭后玻璃表面回退为高不透明度纯色。
+  /// 自定义壁纸启用时始终强制开启，保证壁纸下的玻璃透明度可见性。
   final bool frostedGlass;
+
+  /// 液态玻璃效果档位（见 [LiquidGlassQuality]）。
+  final LiquidGlassQuality liquidGlassQuality;
+
   /// 性能模式：auto 自动 / full 满特效 / performance 性能优先。决定动效是否降级。
   final PerformanceMode performanceMode;
   /// 触觉反馈力度：0=轻，1=正常，2=重。
@@ -420,6 +434,7 @@ class AppSettings {
     bool? liquidGlass,
     bool? playerLiquidGlass,
     bool? frostedGlass,
+    LiquidGlassQuality? liquidGlassQuality,
     PerformanceMode? performanceMode,
     int? hapticStrength,
     String? updateCheckMode,
@@ -496,6 +511,8 @@ class AppSettings {
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       frostedGlass: frostedGlass ?? this.frostedGlass,
+      liquidGlassQuality:
+          liquidGlassQuality ?? this.liquidGlassQuality,
       performanceMode: performanceMode ?? this.performanceMode,
       hapticStrength: hapticStrength ?? this.hapticStrength,
       updateCheckMode: updateCheckMode ?? this.updateCheckMode,
@@ -571,10 +588,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     final savedName = prefs.getString('lyricFontName') ?? '';
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
-    // 液态玻璃 与 毛玻璃材质 二选一（互斥）：毛玻璃（顶栏+底栏高斯模糊）优先。
     final liquidGlass = prefs.getBool('liquidGlass') ?? false;
-    final frostedGlass =
-        (prefs.getBool('frostedGlass') ?? false) && !liquidGlass;
+    final frostedGlass = prefs.getBool('frostedGlass') ?? true;
 
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
@@ -609,8 +624,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
       liquidGlass: liquidGlass,
-      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
       frostedGlass: frostedGlass,
+      playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
+      liquidGlassQuality:
+          _lgqFromString(prefs.getString('liquidGlassQuality') ?? 'medium'),
       performanceMode: _perfFromString(prefs.getString('performanceMode') ?? 'auto'),
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       updateCheckMode: prefs.getString('updateCheckMode') ?? 'startup',
@@ -718,6 +735,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         _ => PerformanceMode.auto,
       };
 
+  LiquidGlassQuality _lgqFromString(String v) => switch (v) {
+        'low' => LiquidGlassQuality.low,
+        'high' => LiquidGlassQuality.high,
+        _ => LiquidGlassQuality.medium,
+      };
+
   ThemeModePreference _themeFromInt(int v) {
     switch (v) {
       case 1:
@@ -764,8 +787,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('lyricFontSize', next.lyricFontSize),
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
       prefs.setBool('liquidGlass', next.liquidGlass),
-      prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
       prefs.setBool('frostedGlass', next.frostedGlass),
+      prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
+      prefs.setString('liquidGlassQuality', next.liquidGlassQuality.name),
       prefs.setString('performanceMode', next.performanceMode.name),
       prefs.setInt('hapticStrength', next.hapticStrength),
       prefs.setString('updateCheckMode', next.updateCheckMode),
@@ -858,17 +882,19 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           const AppSettings())
       .copyWith(
     liquidGlass: v,
-    frostedGlass: v ? false : null,
     // 打开液态玻璃时同步打开悬浮底栏（液态玻璃材质作用于悬浮底栏）；
     // 关闭液态玻璃不联动，保留用户当前的底栏样式。
     floatingNavBar: v ? true : null,
   ));
-  Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
-          const AppSettings())
-      .copyWith(frostedGlass: v, liquidGlass: v ? false : null));
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
-          const AppSettings())
+        const AppSettings())
       .copyWith(playerLiquidGlass: v));
+  Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
+        const AppSettings())
+      .copyWith(frostedGlass: v));
+  Future<void> setLiquidGlassQuality(LiquidGlassQuality q) => _save(
+      (state.valueOrNull ?? const AppSettings())
+          .copyWith(liquidGlassQuality: q));
   Future<void> setPerformanceMode(PerformanceMode m) => _save((state.valueOrNull ??
           const AppSettings())
       .copyWith(performanceMode: m));
@@ -882,7 +908,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           const AppSettings())
       .copyWith(streamCacheSizeMB: v));
   Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
-  Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingNavBar: v));
+  Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(
+        // 液态玻璃只属于悬浮底栏：关闭悬浮时把液态玻璃一并关闭，避免固定底栏变液态。
+        floatingNavBar: v,
+        liquidGlass: v ? (state.valueOrNull?.liquidGlass ?? false) : false,
+      ));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
   Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));

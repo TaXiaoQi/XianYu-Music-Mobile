@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
+import '../core/app_colors.dart';
 import '../player/player_provider.dart';
 import 'cover_hero.dart';
 import 'cover_image.dart';
@@ -297,12 +298,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
-    // 与底栏一致跟随「毛玻璃」材质设置：液态关闭时，仅当开启毛玻璃才用
-    // BackdropFilter 高斯模糊；关毛玻璃（且非液态）→ 高不透明纯色回退。
-    final frosted =
-        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
-            true) &&
-            !lowPerf;
 
     final cover = _RotatingDisc(
       key: _coverKey,
@@ -402,8 +397,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
-          : _frostedSurface(context, content,
-              frosted: frosted, lowPerf: lowPerf),
+          : _frostedSurface(context, content, lowPerf: lowPerf),
     );
 
     // 内建定位模式（页面内嵌播放条，未传 onPanUpdate）：自己返回 Stack + Positioned，
@@ -445,33 +439,42 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   /// 液态玻璃表面：与底栏同一套参数，保证两者观感一致。
   Widget _liquidSurface(BuildContext context, Widget content) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AdaptiveGlass(
-      // 高 58，圆角取一半成胶囊。
-      shape: const LiquidRoundedRectangle(borderRadius: 29),
-      settings: liquidGlassSettings(isDark),
-      // 常驻浮层：premium 全管线 shader 在二级页面滚动时持续重算会超 GPU 预算，
-      // 改用轻量 shader 的 standard（5-10x 更快，文档推荐滚动/常驻场景）。
-      quality: GlassQuality.standard,
-      child: SizedBox(height: 58, child: content),
+    return glassBorder(
+      context: context,
+      radius: 29,
+      child: AdaptiveGlass(
+        // 高 58，圆角取一半成胶囊。
+        shape: const LiquidRoundedRectangle(borderRadius: 29),
+        settings: liquidGlassSettings(isDark),
+        // 渲染档位走设置：低=minimal 最省 / 中=standard 均衡（默认）/ 高=premium 真折射。
+        quality: liquidGlassQualityFromRef(ref),
+        child: SizedBox(height: 58, child: content),
+      ),
     );
   }
 
-  /// 毛玻璃表面：液态玻璃关闭且开启「毛玻璃」材质时使用。
-  /// 关闭毛玻璃或低性能模式 → 高不透明度纯色回退（无高斯模糊）。
+  /// 伪毛玻璃表面：液态玻璃关闭时使用。
+  /// 透明 + 高斯模糊；低性能模式 → 高不透明度纯色回退（无模糊）。
   Widget _frostedSurface(BuildContext context,
       Widget content, {
-      bool frosted = true,
       bool lowPerf = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final solid = !frosted || lowPerf;
-    final bg = solid
-        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+    // 开启壁纸 → 半透明玻璃透出壁纸；否则关白底标准磨砂；关闭毛玻璃/低性能 → 纯色。
+    final wallpaper = ref.watch(wallpaperActiveProvider);
+    final solid =
+        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+    final bg = wallpaper
+        ? glassControlFill
+        : (solid
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final border = wallpaper
+        ? glassControlBorder
         : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.40);
+            ? Colors.white.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.40));
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(

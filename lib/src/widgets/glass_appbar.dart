@@ -5,12 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
+import 'glass_settings.dart';
 
-/// 顶栏毛玻璃条（安卓原生磨砂质感）。
+/// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
 ///
-/// 开启「毛玻璃材质」(frostedGlass) 时用 `BackdropFilter` 高斯模糊 + 半透明白/暗铺底，
+/// 默认用 `BackdropFilter` 高斯模糊 + 半透明白/暗铺底，
 /// 结合 `Stack` 把顶栏覆盖在内容之上，列表滚动到顶栏下方时即可看到内容被模糊穿透；
-/// 关闭时回退为与页面一致的纯色顶栏（布局不变）。
+/// 低性能模式回退为与页面一致的纯色顶栏（布局不变）。
 ///
 /// 用法（页面 Scaffold 的 body 改为 Stack）：
 /// ```dart
@@ -57,56 +58,39 @@ class GlassTopBar extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    final frosted =
-        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
-            true) &&
-            !lowPerf;
     // 自定义壁纸启用时，顶栏改为半透明白玻璃（对齐首页「发现」区卡片），透出壁纸。
     final wallpaper = ref.watch(wallpaperActiveProvider);
 
+    // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
+    final solid =
+        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+    final fill = wallpaper
+        ? glassControlFill
+        : (solid
+            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+            : (isDark
+                ? const Color(0xB8222222)
+                : const Color(0xCCF7F7F9)));
+    final divider = wallpaper
+        ? glassControlBorder
+        : scheme.onSurface.withValues(alpha: 0.06);
+
     final bar = _bar(context, statusBarHeight);
-    if (!frosted) {
-      // 关闭毛玻璃：纯色顶栏（与页面背景一致，无高斯模糊）。
-      // 启用自定义壁纸时同样改为半透明玻璃。
-      return Container(
-        decoration: BoxDecoration(
-          color: wallpaper
-              ? glassControlFill
-              : isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
-          border: Border(
-            bottom: BorderSide(
-              color: wallpaper
-                  ? glassControlBorder
-                  : scheme.onSurface.withValues(alpha: 0.06),
-            ),
-          ),
-        ),
-        child: bar,
-      );
-    }
+    final inner = Container(
+      decoration: BoxDecoration(
+        color: fill,
+        border: Border(bottom: BorderSide(color: divider)),
+      ),
+      child: bar,
+    );
+    if (solid) return inner;
 
     return ClipRect(
       child: BackdropFilter(
         // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
         // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感。
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: wallpaper
-                ? glassControlFill
-                : isDark
-                    ? const Color(0xB8222222)
-                    : const Color(0xCCF7F7F9),
-            border: Border(
-              bottom: BorderSide(
-                color: wallpaper
-                    ? glassControlBorder
-                    : scheme.onSurface.withValues(alpha: 0.06),
-              ),
-            ),
-          ),
-          child: bar,
-        ),
+        child: inner,
       ),
     );
   }

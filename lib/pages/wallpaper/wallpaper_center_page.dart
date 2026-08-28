@@ -1,4 +1,5 @@
 ﻿import 'dart:convert';
+import 'dart:ui';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -987,6 +988,12 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
     final panelBg = isDark
         ? const Color(0xDE262626)
         : const Color(0xEFFFFFFF);
+    // 已选图片（面板叠在壁纸草图上）：改为透明 + 高斯模糊毛玻璃，透出壁纸
+    // 又保证控件可读，避免壁纸状态下实色底板太「压」背景难看清。
+    final glassPanel = hasImage;
+    final panelColor = glassPanel
+        ? Colors.white.withValues(alpha: isDark ? 0.38 : 0.58)
+        : panelBg;
 
     return Stack(
       fit: StackFit.expand,
@@ -1013,10 +1020,13 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
           ),
         Align(
           alignment: Alignment.bottomCenter,
-          child: Container(
+          child: _FrostedSheet(
+            enabled: glassPanel,
+            radius: 28,
+            child: Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              color: panelBg,
+              color: panelColor,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(28),
                 topRight: Radius.circular(28),
@@ -1140,6 +1150,7 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
               ),
             ),
           ),
+          ),
         ),
       ],
     );
@@ -1161,6 +1172,35 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
       onSelected: (_) => setState(() =>
           _draft = _draft.copyWith(
               foregroundStyle: useLight ? 'light' : 'dark')),
+    );
+  }
+}
+
+/// 底部圆角面板的伪毛玻璃包装：开启时叠一层透明 + 高斯模糊（透出壁纸草图），
+/// 关闭时原样返回子组件（保持不透明实底）。圆角与面板顶部两角对齐。
+class _FrostedSheet extends StatelessWidget {
+  const _FrostedSheet({
+    required this.enabled,
+    required this.radius,
+    required this.child,
+  });
+
+  final bool enabled;
+  final double radius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ClipRRect(
+      borderRadius: BorderRadius.only(
+        topLeft: Radius.circular(radius),
+        topRight: Radius.circular(radius),
+      ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: child,
+      ),
     );
   }
 }
