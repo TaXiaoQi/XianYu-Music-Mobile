@@ -70,6 +70,9 @@ app.*.map.json
 # Flutter Rust Bridge generated cache
 *.g.dart.tmp
 
+# Native prebuilt libraries (built by cargo, regenerated every build — never commit)
+/android/app/src/main/jniLibs/
+
 # Flutter-generated ephemeral build metadata (machine-specific paths)
 **/Flutter/ephemeral/
 **/ephemeral/
