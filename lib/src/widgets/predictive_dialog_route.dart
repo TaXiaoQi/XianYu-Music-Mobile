@@ -1,7 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/app_colors.dart';
 import 'predictive_back_transitions.dart';
+
+/// 弹窗面板不透明（#FFF/#262626 等），文字须按面板明暗用基础前景（黑/白），
+/// 不能继承自定义壁纸启用的「亮字/暗字」整体前景（否则白底白字/黑底黑字）。
+/// 壁纸分支会对页面 textTheme 全局 apply，这里为弹窗 route 统一恢复
+/// 基础 colorScheme + textTheme，覆盖所有经 showPredictiveDialog 的弹窗，
+/// 避免逐弹窗手改而遗漏。
+Widget _restoreBaseTheme(BuildContext context, Widget child) {
+  final t = Theme.of(context);
+  final dark = t.brightness == Brightness.dark;
+  final scheme = dark ? darkBaseScheme : lightBaseScheme;
+  final tt = dark ? darkBaseTextTheme : lightBaseTextTheme;
+  if (scheme == null) return child;
+  return Theme(
+    data: t.copyWith(colorScheme: scheme, textTheme: tt ?? t.textTheme),
+    child: child,
+  );
+}
 
 /// 让弹窗参与 Android 预测返回的自定义页面路由。
 ///
@@ -90,7 +108,7 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
               onTap: dismissible ? () => Navigator.of(context).pop() : null,
               child: Container(color: scrim),
             ),
-            Center(child: builder(context)),
+            Center(child: _restoreBaseTheme(context, builder(context))),
           ],
         ),
       ),
@@ -238,7 +256,7 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
               alignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxWidth),
-                child: builder(context),
+                child: _restoreBaseTheme(context, builder(context)),
               ),
             ),
           ),

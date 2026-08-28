@@ -1975,14 +1975,13 @@ class _CardGroup extends ConsumerWidget {
 
     return Material(
       color: glass ? glassControlFill : settingsCardColor(context),
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
-      shape: glass
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: glassControlBorder),
-            )
-          : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: glass
+            ? BorderSide(color: glassControlBorder)
+            : BorderSide.none,
+      ),
       child: Column(children: items),
     );
   }

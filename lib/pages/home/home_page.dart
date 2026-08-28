@@ -109,7 +109,7 @@ class _SearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: Colors.white.withValues(alpha: 0.34),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
@@ -119,7 +119,7 @@ class _SearchBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
           ),
           child: Row(
             children: [
@@ -240,7 +240,7 @@ class _MostPlayedRow extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final song = entry.song;
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: Colors.white.withValues(alpha: 0.34),
       borderRadius: BorderRadius.circular(13),
       child: InkWell(
         onTap: () =>
@@ -251,7 +251,7 @@ class _MostPlayedRow extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
           ),
           child: Row(
             children: [

@@ -38,7 +38,8 @@ Future<T?> showSheetDialog<T>(
       );
       // 弹窗面板不透明（#FFF/#262626），其文字应保持明暗主题各自的内置前景，
       // 用基础配色恢复，避免自定义壁纸启用的「亮字/暗字」前景把弹窗文字也变成
-      // 白底白字/黑底黑字。
+      // 白底白字/黑底黑字。PredictiveBackDialogRoute 已统一恢复 colorScheme +
+      // textTheme，此处沿用 base colorScheme 语义，视觉一致。
       final base = Theme.of(dialogContext).brightness == Brightness.dark
           ? darkBaseScheme
           : lightBaseScheme;

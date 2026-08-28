@@ -189,7 +189,6 @@ class _AccountArea extends ConsumerWidget {
 
     return Material(
       color: glass ? glassControlFill : appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -346,7 +345,6 @@ class _QuickEntries extends ConsumerWidget {
 
     return Material(
       color: glass ? glassControlFill : appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -446,7 +444,6 @@ class _ReorderCard extends ConsumerWidget {
     final glass = ref.watch(wallpaperActiveProvider);
     return Material(
       color: glass ? glassControlFill : appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

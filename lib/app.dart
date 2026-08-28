@@ -184,6 +184,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
+    // 记录原始（未 apply 壁纸前景的）textTheme，供不透明弹窗在壁纸下恢复基础明暗字。
+    lightBaseTextTheme = _lightTheme!.textTheme;
     final darkScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
     darkBaseScheme = darkScheme;
@@ -215,6 +217,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       pageTransitionsTheme: pageTransitions,
       useMaterial3: true,
     );
+    darkBaseTextTheme = _darkTheme!.textTheme;
   }
 
   @override
@@ -237,17 +240,28 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       final useLight = cb!.useLightForeground;
       final fg = useLight ? Colors.white : const Color(0xFF17181A);
       final fgVariant = useLight ? Colors.white70 : Colors.black54;
+      // 仅改 colorScheme.onSurface 会让「未显式给 color 的裸 Text」仍读
+      // textTheme 里的旧前景色（亮/暗主题原本的黑/白反色字），因此必须对
+      // textTheme 整体 apply。displayColor 覆盖 display/headline/title 系，
+      // bodyColor 覆盖 body/label 系——即壁纸上全部正文/标题/标签统一为亮字
+      // 或暗字。M3 按钮/夹片文字走 colorScheme.onPrimary 等强调色，不受影响。
+      // 同时扩展覆盖 outline、outlineVariant、onInverseSurface、inverseSurface，
+      // 消灭其余借助语义色反色的文字/图标/占位与分割线。
+      ColorScheme fgScheme(ColorScheme cs) => cs.copyWith(
+            onSurface: fg,
+            onSurfaceVariant: fgVariant,
+            onInverseSurface: fg,
+            inverseSurface: fgVariant,
+            outline: fgVariant,
+            outlineVariant: fgVariant,
+          );
       theme = theme.copyWith(
-        colorScheme: theme.colorScheme.copyWith(
-          onSurface: fg,
-          onSurfaceVariant: fgVariant,
-        ),
+        textTheme: theme.textTheme.apply(bodyColor: fg, displayColor: fg),
+        colorScheme: fgScheme(theme.colorScheme),
       );
       darkTheme = darkTheme.copyWith(
-        colorScheme: darkTheme.colorScheme.copyWith(
-          onSurface: fg,
-          onSurfaceVariant: fgVariant,
-        ),
+        textTheme: darkTheme.textTheme.apply(bodyColor: fg, displayColor: fg),
+        colorScheme: fgScheme(darkTheme.colorScheme),
       );
     }
     final language = settings?.language ?? AppLanguage.system;

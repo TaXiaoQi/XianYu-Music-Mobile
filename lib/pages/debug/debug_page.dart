@@ -323,7 +323,6 @@ class _CardGroup extends ConsumerWidget {
 
     return Material(
       color: glass ? glassControlFill : appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

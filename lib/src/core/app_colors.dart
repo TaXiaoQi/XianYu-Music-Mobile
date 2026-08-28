@@ -18,10 +18,22 @@ final wallpaperActiveProvider = Provider<bool>((ref) {
 ColorScheme? lightBaseScheme;
 ColorScheme? darkBaseScheme;
 
+/// 与 [lightBaseScheme]/[darkBaseScheme] 配套的原始 textTheme。
+///
+/// 壁纸启用时页面文字整体 apply 为「亮字/暗字」，而不透明弹窗内的裸 Text 走
+/// textTheme 默认色，若也跟着 apply 会白底白字。弹窗封装恢复 colorScheme 时
+/// 一并恢复对应明暗的基础 textTheme，保证弹窗文字按面板明暗正确反色。
+TextTheme? lightBaseTextTheme;
+TextTheme? darkBaseTextTheme;
+
 /// 自定义壁纸启用时控件使用的半透明白玻璃填充 / 描边
-/// （对齐首页「发现」区卡片 _CardContainer：底 alpha 0.06、描边 alpha 0.08）。
-final Color glassControlFill = Colors.white.withValues(alpha: 0.06);
-final Color glassControlBorder = Colors.white.withValues(alpha: 0.08);
+/// （顶栏 GlassTopBar、固定/毛玻璃底栏、各页玻璃卡片与控件统一使用）。
+///
+/// 原 alpha 0.06 / 0.08 近乎全透，壁纸下顶栏/底栏/控件几乎隐形，即便已配合
+/// BackdropFilter 高斯模糊也看不出磨砂感。提升填充不透明度（0.34）让玻璃底
+/// 真正托起模糊与层次，描边稍增（0.14）使轮廓清晰可辨。
+final Color glassControlFill = Colors.white.withValues(alpha: 0.34);
+final Color glassControlBorder = Colors.white.withValues(alpha: 0.14);
 
 /// 全局统一页面底色。
 ///
