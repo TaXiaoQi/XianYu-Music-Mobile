@@ -95,7 +95,7 @@ class SettingsPage extends ConsumerWidget {
     final isDeveloperMode = ref.watch(developerModeProvider);
     final groups = _buildGroups(isDeveloperMode);
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           // 内容列表：顶部预留顶栏高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。

@@ -99,7 +99,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         (icon: Icons.book_outlined, label: tr(_config.referenceProjectText), url: _config.referenceProjectUrl),
     ];
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(

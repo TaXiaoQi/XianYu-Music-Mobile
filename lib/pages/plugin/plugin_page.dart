@@ -114,7 +114,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             .toList();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：插件列表不再
       // 每帧重排重绘，彻底消除输入法动画掉帧（键盘弹出后面板由弹窗自行上移）。
       resizeToAvoidBottomInset: false,

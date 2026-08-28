@@ -322,6 +322,30 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
   double? _playerTop;
   double? _playerLeft;
 
+  // 记录上一次底栏形态，用于检测「浮/固定/侧栏」切换：用户手动停靠的播放条
+  // 位置是按旧底栏几何锁定的，切到新底栏后可能压在底栏上（如贴住固定底栏后
+  // 切悬浮，条会被卡进悬浮底栏），形态变化时应回落默认停靠位重新贴合。
+  bool? _lastFloating;
+  bool? _lastSide;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final floating = ref.read(
+            settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
+        true;
+    final side = ref.read(settingsProvider
+            .select((s) => s.valueOrNull?.navBarPosition)) ==
+        NavBarPosition.side;
+    if ((_lastFloating != null && _lastFloating != floating) ||
+        (_lastSide != null && _lastSide != side)) {
+      _playerTop = null;
+      _playerLeft = null;
+    }
+    _lastFloating = floating;
+    _lastSide = side;
+  }
+
   bool _isPlayerDragging = false;
 
   void _onPlayerPanStart(DragStartDetails details) {
@@ -336,26 +360,20 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     EdgeInsets padding,
     double defaultLeft,
     double defaultTop,
-    bool hasBottomBar,
+    double maxTop,
   ) {
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
 
     // 实际宽度（与悬浮底栏一致的 18px 双侧边距），拖拽边界按真实尺寸夹取。
     final barW = screenSize.width - 36.0;
-    const barH = 58.0;
 
     final minLeft = 6.0;
     final maxLeft = screenSize.width - barW - 6.0;
     final minTop = padding.top + 6.0;
 
-    // 拖拽下限：
-    // - 有悬浮底栏(根页)时：播放条底边可拖到与底栏顶(screenSize.height-18-70)
-    //   贴合，基于底栏几何精确避让，不依赖手势区 height。
-    // - 无底栏(二级页)：向下限到屏幕底上方 12px。
-    final maxTop = hasBottomBar
-        ? (screenSize.height - 18.0 - 70.0 - barH)
-        : (screenSize.height - padding.bottom - barH - 12.0);
+    // 拖拽下限由调用方按底栏几何（悬浮 18+70 / 固定 safeBottom+64 / 二级页无底栏）
+    // 算好传入，确保常规底部栏下播放条也能拖到真正贴住底栏顶。
 
     setState(() {
       _playerLeft = (currentLeft + details.delta.dx).clamp(
@@ -450,6 +468,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
             ? (screenSize.height - 18.0 - 70.0 - 58.0)
             : (screenSize.height - safeBottom - 58.0 - 64.0));
 
+    // 播放条拖拽下限：与 defaultTop 停靠位一致，按底栏几何分支。
+    // 原来只按悬浮底栏参数(18 间隙+70 高)算，常规(固定式)底部栏下因缺计算
+    // safeBottom+64 导致播放条拖到底也与底栏贴近不了，这里按类型精确避让。
+    final dragMaxTop = () {
+      final barH = 58.0;
+      if (isSide) return screenSize.height - safeBottom - barH - 12.0;
+      if (floating) {
+        return hidden
+            ? (screenSize.height - padding.bottom - barH - 12.0)
+            : (screenSize.height - 18.0 - 70.0 - barH);
+      }
+      return hidden
+          ? (screenSize.height - padding.bottom - barH - 12.0)
+          : (screenSize.height - safeBottom - 64.0 - barH);
+    }();
+
     return Scaffold(
       body: Stack(
         children: [
@@ -470,7 +504,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
             child: MiniPlayerBar(
               onPanStart: _onPlayerPanStart,
               onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
-                  defaultLeft, defaultTop, !isSide && !hidden),
+                  defaultLeft, defaultTop, dragMaxTop),
               onPanEnd: (d) =>
                   _onPlayerPanEnd(d, defaultLeft, defaultTop),
               onPanCancel: _onPlayerPanCancel,
@@ -599,24 +633,12 @@ class _FixedNavBar extends ConsumerWidget {
       top: false,
       child: SizedBox(
         height: 64,
-        // 与悬浮底栏一致：左右留边，避免最外侧 tab 的选中色块贴屏幕边缘。
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Row(
-            children: [
-              for (var i = 0; i < bottomNavItems.length; i++)
-                Expanded(
-                  child: _NavTab(
-                    item: bottomNavItems[i],
-                    selected: i == index,
-                    onTap: () {
-                      triggerHaptic(haptic);
-                      onSelect(i);
-                    },
-                  ),
-                ),
-            ],
-          ),
+        child: _SlidingNavBottom(
+          index: index,
+          onSelect: (i) {
+            triggerHaptic(haptic);
+            onSelect(i);
+          },
         ),
       ),
     );
@@ -793,25 +815,13 @@ class _LiquidNavBar extends ConsumerWidget {
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
 
-    // 水平留 10px：选中色块占满整个 Expanded 宽度，不加内边距的话
-    // 最左/最右 tab 的色块会顶到胶囊两端，被玻璃圆角边界裁切。
-    final tabs = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: [
-          for (var i = 0; i < bottomNavItems.length; i++)
-            Expanded(
-              child: _NavTab(
-                item: bottomNavItems[i],
-                selected: i == index,
-                onTap: () {
-                  triggerHaptic(haptic);
-                  onSelect(i);
-                },
-              ),
-            ),
-        ],
-      ),
+    // 水平留 10px：滑动指示条与最左/最右 tab 让开，避免顶到玻璃圆角边界。
+    final tabs = _SlidingNavBottom(
+      index: index,
+      onSelect: (i) {
+        triggerHaptic(haptic);
+        onSelect(i);
+      },
     );
 
     if (liquid) return _liquidGlass(context, ref, tabs);
@@ -885,6 +895,71 @@ class _LiquidNavBar extends ConsumerWidget {
   }
 }
 
+/// 底部栏共享选中指示器：红色胶囊随所选 tab 横向滑动。
+///
+/// 原实现是每个 tab 内部各自原地淡入选中背景，切「首页/我的」时没有滑动感；
+/// 这里把指示条提升到底栏层，切换 tab 时用 [AnimatedPositioned] 平滑滑到目标格。
+class _SlidingNavBottom extends StatelessWidget {
+  const _SlidingNavBottom({
+    required this.index,
+    required this.onSelect,
+  });
+
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final items = bottomNavItems;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final maxH = constraints.maxHeight;
+        final tabW = (maxW - 20) / items.length;
+        final indH = (maxH * 0.6).clamp(40.0, 50.0);
+        return Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              left: 10 + index * tabW,
+              top: (maxH - indH) / 2,
+              bottom: (maxH - indH) / 2,
+              width: tabW,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: Row(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(
+                      child: _NavTab(
+                        item: items[i],
+                        selected: i == index,
+                        onTap: () => onSelect(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _NavTab extends StatelessWidget {
   const _NavTab({
     required this.item,
@@ -906,21 +981,8 @@ class _NavTab extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        // 纵向 padding 恒定：选中/未选中高度一致，图标+文字整体
-        // 由 Row 垂直居中（栏高 60 > 内容 47，切换不跳动）。
-        padding: EdgeInsets.symmetric(
-          horizontal: selected ? 14 : 4,
-          vertical: 4,
-        ),
-        decoration: BoxDecoration(
-          color: selected
-              ? primary.withValues(alpha: 0.14)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-        ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,

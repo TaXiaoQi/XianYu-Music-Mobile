@@ -5,6 +5,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
@@ -157,7 +158,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     final scheme = Theme.of(context).colorScheme;
     final kept = _keptSelection;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(

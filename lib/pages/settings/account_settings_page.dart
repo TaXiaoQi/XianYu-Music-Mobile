@@ -60,7 +60,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     // 仅订阅 user 字段：loading/error/sessionExpired 等变化不重建整页。
     final user = ref.watch(authProvider.select((s) => s.user));
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(

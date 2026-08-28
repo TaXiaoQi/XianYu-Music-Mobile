@@ -22,7 +22,7 @@ class RemoteLibraryPage extends ConsumerWidget {
 
     final glass = ref.watch(wallpaperActiveProvider);
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSourceEditor(context, ref),

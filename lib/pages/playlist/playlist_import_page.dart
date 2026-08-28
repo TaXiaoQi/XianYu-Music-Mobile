@@ -60,7 +60,7 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
       ],
     );
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(

@@ -331,7 +331,7 @@ class PlaylistDetailPage extends ConsumerWidget {
     if (playlist == null) {
       return HideShellChrome(
         child: Scaffold(
-          backgroundColor: Colors.transparent,
+          backgroundColor: appScaffoldBackground(context, ref),
           body: Stack(
             children: [
               Padding(
@@ -355,7 +355,7 @@ class PlaylistDetailPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
             Padding(

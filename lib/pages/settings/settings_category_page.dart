@@ -82,7 +82,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [

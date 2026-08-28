@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/download/download_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
@@ -28,7 +29,7 @@ class DownloadPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
             Padding(

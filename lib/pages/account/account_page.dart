@@ -167,7 +167,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
       });
     }
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         fit: StackFit.expand,

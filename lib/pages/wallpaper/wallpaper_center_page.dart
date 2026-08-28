@@ -56,7 +56,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [

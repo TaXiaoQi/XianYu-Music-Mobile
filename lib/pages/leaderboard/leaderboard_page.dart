@@ -106,7 +106,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
     final glass = ref.watch(wallpaperActiveProvider);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(

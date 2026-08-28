@@ -14,6 +14,7 @@ import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/custom_background.dart';
+import 'src/widgets/predictive_back_transitions.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -136,14 +137,16 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     }
     _cachedAccent = accent;
     final seed = Color(accent);
-    // 安卓切换特效：使用 Flutter 框架自带原生 `ZoomPageTransitionsBuilder`。
-    // 就是 Android 原生效果：新页从右侧滑入覆盖旧页，返回手势做整屏缩放跟手，
-    // 动画期间下层页面实时绘制，体验原生且不折腾。
-    // 转场时露出的底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），
-    // 与页面无壁纸时的底色一致，壁纸直接覆盖在这层实色之上，不需要透明占位。
+    // 安卓切换特效：抽屉覆盖式转场。不要用 ZoomPageTransitionsBuilder——
+    // 它是 M3 的缩放淡入，不是抽屉。抽屉覆盖（新页从右滑入盖住旧页、返回贴
+    // 手势露出下层）需要自定义覆盖滑动 builder；返回实时透出下层面板则依赖
+    // 二级页路由自身 `opaque=false`（见 routes.dart 的 _CoverBackRoute），
+    // 二者配合才还原 Android 原生抽屉覆盖手感。
+    // 转场露出底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），壁纸直接
+    // 覆盖在这层实色之上，不需要透明占位。
     PageTransitionsTheme transitions(Color base) => PageTransitionsTheme(
           builders: {
-            TargetPlatform.android: ZoomPageTransitionsBuilder(
+            TargetPlatform.android: CoverPageTransitionsBuilder(
               backgroundColor: base,
             ),
             TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),

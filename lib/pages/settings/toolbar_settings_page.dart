@@ -26,7 +26,7 @@ class _ToolbarSettingsPageState extends ConsumerState<ToolbarSettingsPage>
     final notifier = ref.read(settingsProvider.notifier);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(

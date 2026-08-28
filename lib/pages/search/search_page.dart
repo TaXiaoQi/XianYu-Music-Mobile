@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -216,7 +217,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body，避免顶栏
       // BackdropFilter 背光被压缩变化反复重采样导致输入法动画掉帧。
       resizeToAvoidBottomInset: false,
@@ -420,7 +421,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     );
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [

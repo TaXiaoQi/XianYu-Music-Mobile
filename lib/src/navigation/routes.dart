@@ -36,6 +36,7 @@ import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
+import '../../pages/deeplink/song_share_bridge.dart';
 import '../../pages/debug/debug_page.dart';
 import 'shell.dart';
 import '../i18n/i18n.dart';
@@ -80,15 +81,30 @@ final appRouter = GoRouter(
     // 设置页（从「我的」页菜单与首页顶栏进入，二级推入页）。
     GoRoute(
       path: '/settings',
-      builder: (context, state) => const SettingsPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const SettingsPage(),
+        key: state.pageKey,
+      ),
     ),
     // 音效页（原底部导航项，现为二级推入页，从传统播放页「音效」入口进入）。
     GoRoute(
       path: '/effects',
-      builder: (context, state) => const EffectsPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const EffectsPage(),
+        key: state.pageKey,
+      ),
     ),
     // 搜索页（从主页搜索栏进入），搜索结果页另用独立路由承载迷你播放条。
-    GoRoute(path: '/search', builder: (context, state) => const SearchPage()),
+    GoRoute(
+      path: '/search',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const SearchPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 搜索结果页（搜索页提交后进入，独立路由以承载迷你播放条）。
     GoRoute(
       path: '/search/result',
@@ -119,6 +135,15 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
+    // 瞬时桥接页：桌面组件「分享」钮拉起 App 后在此弹出当前歌曲分享菜单。
+    GoRoute(
+      path: '/shareBridge',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const SongShareBridgePage(),
+        key: state.pageKey,
+      ),
+    ),
     // 播放页为全屏覆盖，不占底部导航。
     // 统一使用「从下往上覆盖」转场：打开时整页上滑覆盖，关闭时从上往下收回。
     // 开启预测返回时接管边缘返回手势做跟手行程（关闭的覆盖方向跟随手指向上下滑）。
@@ -139,39 +164,83 @@ final appRouter = GoRouter(
       },
     ),
     // 账号页（从「我的」页进入）。
-    GoRoute(path: '/account', builder: (context, state) => const AccountPage()),
+    GoRoute(
+      path: '/account',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const AccountPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 账号设置页（从设置导航页进入）。需注册在 /settings/:category 之前，
     // 否则会被分类路由捕获。
     GoRoute(
       path: '/settings/account',
-      builder: (context, state) => const AccountSettingsPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const AccountSettingsPage(),
+        key: state.pageKey,
+      ),
     ),
     // 设置分类详情页（从设置导航页进入）。压在根 Navigator 上，
     // 避免 StatefulShellBranch 嵌套 Navigator 导致预测返回动画失效。
     GoRoute(
       path: '/settings/:category',
-      builder: (context, state) => SettingsCategoryPage(
-        category: SettingsCategory.fromPath(
-          state.pathParameters['category'] ?? 'general',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => SettingsCategoryPage(
+          category: SettingsCategory.fromPath(
+            state.pathParameters['category'] ?? 'general',
+          ),
         ),
+        key: state.pageKey,
       ),
     ),
     // 意见反馈页（从设置页进入）。
     GoRoute(
       path: '/feedback',
-      builder: (context, state) => const FeedbackPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const FeedbackPage(),
+        key: state.pageKey,
+      ),
     ),
     // 关于页（从设置页进入）。
-    GoRoute(path: '/about', builder: (context, state) => const AboutPage()),
+    GoRoute(
+      path: '/about',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const AboutPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 调试页（关于页版本号连点 5 次进入）。
-    GoRoute(path: '/debug', builder: (context, state) => const DebugPage()),
+    GoRoute(
+      path: '/debug',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const DebugPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 听歌排行榜（从设置页进入）。
     GoRoute(
       path: '/leaderboard',
-      builder: (context, state) => const LeaderboardPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const LeaderboardPage(),
+        key: state.pageKey,
+      ),
     ),
     // 插件管理（从设置页进入）。
-    GoRoute(path: '/plugin', builder: (context, state) => const PluginPage()),
+    GoRoute(
+      path: '/plugin',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const PluginPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 我的歌单（从设置页进入）。
     GoRoute(
       path: '/playlists',
@@ -184,7 +253,11 @@ final appRouter = GoRouter(
     // 导入歌单（从「我的」页进入）：备份文件 / 本地文件 / 云端导入。
     GoRoute(
       path: '/playlist-import',
-      builder: (context, state) => const PlaylistImportPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const PlaylistImportPage(),
+        key: state.pageKey,
+      ),
     ),
     // 自建歌单详情（从「我的」页与歌单列表进入）。注册为顶层 GoRoute 压在
     // root navigator 上，使 GoRouter.canPop() 如实反映栈深——若用裸
@@ -231,12 +304,20 @@ final appRouter = GoRouter(
     // 壁纸中心（从设置页进入）。
     GoRoute(
       path: '/wallpaper',
-      builder: (context, state) => const WallpaperCenterPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const WallpaperCenterPage(),
+        key: state.pageKey,
+      ),
     ),
     // 批量重命名（从设置页进入）。
     GoRoute(
       path: '/batch-rename',
-      builder: (context, state) => const BatchRenamePage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const BatchRenamePage(),
+        key: state.pageKey,
+      ),
     ),
     // 扫描目录管理已合并到本地库「文件夹」页（/library?tab=3），原独立页已删除。
     // 远程音乐库 WebDAV 管理（从设置页进入）。
@@ -251,7 +332,11 @@ final appRouter = GoRouter(
     // QMC 独立文件解密（从设置页进入）。
     GoRoute(
       path: '/qmc-decrypt',
-      builder: (context, state) => const QmcDecryptPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const QmcDecryptPage(),
+        key: state.pageKey,
+      ),
     ),
     // 每日推荐（首页发现区进入）。
     GoRoute(
@@ -265,7 +350,11 @@ final appRouter = GoRouter(
     // 音源榜单（首页发现区进入）。
     GoRoute(
       path: '/home/toplists',
-      builder: (context, state) => const TopListsPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const TopListsPage(),
+        key: state.pageKey,
+      ),
     ),
     // 在线详情：歌手/专辑/歌单/榜单（参数经 extra 传递）。
     GoRoute(
@@ -327,6 +416,139 @@ Page<void> _coverBackPage(
     builder: builder,
     predictiveBack: predictiveBack,
   );
+}
+
+/// 通用二级页抽屉覆盖式路由封装：无封面回拨、`opaque=false`。
+///
+/// 抽屉覆盖（新页从右滑入盖住旧页）+ 返回贴手势露出下层，必须是
+/// `opaque=false` 的路由，否则返回动画期间下层不绘制（MaterialPageRoute 固定
+/// opaque）。
+
+/// 读取全局预测返回开关。
+bool _enablePredictiveBack(BuildContext context) =>
+    ProviderScope.containerOf(context, listen: false)
+        .read(settingsProvider)
+        .valueOrNull
+        ?.enablePredictiveBack ??
+    true;
+
+/// 设置链路等普通二级页用抽屉覆盖路由（无封面回拨）。
+Page<void> _coverPage(
+  BuildContext context,
+  WidgetBuilder builder, {
+  LocalKey? key,
+}) {
+  return _CoverPage(
+    key: key,
+    builder: builder,
+    predictiveBack: _enablePredictiveBack(context),
+  );
+}
+
+/// 通用抽屉覆盖页（无封面回拨，供设置链路页面使用）。
+class _CoverPage extends Page<void> {
+  const _CoverPage({
+    super.key,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  @override
+  Route<void> createRoute(BuildContext context) {
+    return _CoverRoute(
+      settings: this,
+      builder: builder,
+      predictiveBack: predictiveBack,
+    );
+  }
+}
+
+/// 通用抽屉覆盖路由：覆盖滑动 + 预测返回，`opaque=false`。
+class _CoverRoute extends PageRoute<void> {
+  _CoverRoute({
+    required super.settings,
+    required this.builder,
+    required this.predictiveBack,
+  });
+
+  final WidgetBuilder builder;
+  final bool predictiveBack;
+
+  @override
+  bool get popGestureEnabled => isCurrent && predictiveBack;
+
+  // 非不透明：动画期间下层真实绘制并自带底色，返回时实时透出下层页面。
+  @override
+  bool get opaque => false;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 450);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
+    return builder(context);
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // 始终挂载预测返回手势认领；非手势走覆盖滑动。
+    return PredictiveBackGestureDetector(
+      route: this,
+      builder: (context, phase, startBackEvent, currentBackEvent) {
+        if (popGestureInProgress) {
+          return PredictiveBackSharedElementPageTransition(
+            animation: animation,
+            phase: phase,
+            secondaryAnimation: secondaryAnimation,
+            startBackEvent: startBackEvent,
+            currentBackEvent: currentBackEvent,
+            child: child,
+          );
+        }
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        // 抽屉覆盖：内容面板从右滑入盖住旧页。路由为 opaque=false，动画期间
+        // Navigator 实时绘制下层真实页面（自带底色），返回时下层跟随出现，
+        // 呈现「主页切换 tab」那种下层联动观感。不再手铺全屏底色——那会盖住
+        // 下层，导致下层要等新页完全退场才显示。
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 /// 播放页「从下往上覆盖」转场的 Page 封装（谓词返回用 [Page] 而非 [PageRoute]）。
@@ -510,6 +732,7 @@ class _CoverBackRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
     return builder(context);
   }
 
@@ -542,8 +765,8 @@ class _CoverBackRoute extends PageRoute<void> {
             ],
           );
         }
-        // 覆盖式滑动：本页从右滑入盖住旧页，旧页静止。路由为不透明（opaque）
-        // 关闭的覆盖式，动画期间下层绘制自带底色，无需再手动铺背景。
+        // 覆盖式滑动：内容面板从右滑入盖住旧页。路由为 opaque=false，动画期间
+        // Navigator 实时绘制下层真实页面，返回时下层跟随出现。
         final curved = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,
