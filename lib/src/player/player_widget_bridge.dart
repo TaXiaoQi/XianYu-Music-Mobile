@@ -39,8 +39,10 @@ class PlayerWidgetController {
   String? _prevPath;
   List<LyricLine> _lyrics = const [];
   int _lyricToken = 0;
-  // 封面切换方向：+1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
+  ///// 封面切换方向：+1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
   int _coverDir = 1;
+  int _coverToken = 0;      // 封面异步并发令牌（切歌/重载即递增，丢弃过期结果）
+  int _lastCoverTryAt = 0;  // 上次封面兜底尝试的时间戳（10s 节流）
 
   void init() {
     _channel.setMethodCallHandler(_onControl);
@@ -61,7 +63,16 @@ class PlayerWidgetController {
       if (_disposed) return;
       final s = _container.read(playerProvider);
       final item = s.current;
-      if (item != null && s.isPlaying) _pushState(s, _lastCover);
+      if (item == null) return;
+      // 封面缺失/上次加载失败时周期性兜底重试（10s 节流），避免「间歇无封面」长期停留，
+      // 本地懒生成或在线下载成功后自动补推真实封面。
+      if ((_lastCover ?? '').isEmpty) {
+        if (DateTime.now().millisecondsSinceEpoch - _lastCoverTryAt >= 10000) {
+          _loadCover(item);
+        }
+        return;
+      }
+      if (s.isPlaying) _pushState(s, _lastCover);
     });
   }
 
@@ -176,8 +187,10 @@ class PlayerWidgetController {
 
   Future<void> _loadCover(QueueItem? item) async {
     if (item == null || _disposed) return;
+    final t = ++_coverToken;
+    _lastCoverTryAt = DateTime.now().millisecondsSinceEpoch;
     final path = await _coverPath(item);
-    if (_disposed) return;
+    if (_disposed || t != _coverToken) return; // 期间又切歌/重启加载，丢弃过期结果。
     _lastCover = path;
     _pushState(_container.read(playerProvider), path);
   }

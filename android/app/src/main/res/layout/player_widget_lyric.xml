@@ -80,8 +80,11 @@
                 android:singleLine="true"
                 android:ellipsize="end" />
 
-            <!-- 歌词窗口：左对齐成一条线（贴封面侧），右端 marginEnd 递减，
-                 中间当前行最靠右（最凸），上下行对称收拢 → 以封面为圆心、右侧圆环散开。 -->
+            <!-- 歌词窗口：以封面(左)为原点向右形成放射扇状轮廓。
+                 中心当前行最贴封面、行首最左、最大最亮、行末伸最右(弧顶)；
+                 上下行行首向右外移(marginStart 递增)、行末向内收(marginEnd 递增)、
+                 字号/颜色依次递减，且行间距中心最紧凑、向两侧散开，
+                 共同构成「从封面原点向右张开」的扇面。 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
@@ -94,10 +97,10 @@
                     android:id="@+id/lyricLine1"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="30dp"
-                    android:minHeight="14dp"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginEnd="26dp"
                     android:textColor="@color/widget_lyric_far"
-                    android:textSize="10sp"
+                    android:textSize="9sp"
                     android:singleLine="true"
                     android:ellipsize="end" />
 
@@ -105,26 +108,24 @@
                     android:id="@+id/lyricLine2"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="1dp"
-                    android:layout_marginEnd="16dp"
-                    android:minHeight="15dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginEnd="12dp"
                     android:textColor="@color/widget_lyric_near"
-                    android:textSize="11sp"
+                    android:textSize="10.5sp"
                     android:singleLine="true"
                     android:ellipsize="end" />
 
-                <!-- 当前行：最靠右（圆心弧顶）、加粗主色 -->
+                <!-- 当前行：贴封面原点(行首最左)、最大最亮、伸到最右(弧顶) -->
                 <TextView
                     android:id="@+id/lyricLine3"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="1dp"
-                    android:layout_marginEnd="6dp"
-                    android:minHeight="17dp"
+                    android:layout_marginStart="0dp"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginEnd="0dp"
                     android:textColor="@color/widget_text_primary"
-                    android:textSize="13sp"
+                    android:textSize="13.5sp"
                     android:textStyle="bold"
                     android:singleLine="true"
                     android:ellipsize="end" />
@@ -133,12 +134,11 @@
                     android:id="@+id/lyricLine4"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="1dp"
-                    android:layout_marginEnd="16dp"
-                    android:minHeight="15dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginEnd="12dp"
                     android:textColor="@color/widget_lyric_near"
-                    android:textSize="11sp"
+                    android:textSize="10.5sp"
                     android:singleLine="true"
                     android:ellipsize="end" />
 
@@ -146,12 +146,11 @@
                     android:id="@+id/lyricLine5"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginTop="1dp"
-                    android:layout_marginEnd="30dp"
-                    android:minHeight="14dp"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginEnd="26dp"
                     android:textColor="@color/widget_lyric_far"
-                    android:textSize="10sp"
+                    android:textSize="9sp"
                     android:singleLine="true"
                     android:ellipsize="end" />
             </LinearLayout>
