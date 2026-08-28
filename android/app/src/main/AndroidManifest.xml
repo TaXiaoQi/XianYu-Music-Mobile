@@ -142,20 +142,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/recognize_widget_info" />
         </receiver>
-
-        <!-- 桌面播放小组件 · 歌词卡样式（4×4 固定：右上三圆钮+左封面+右五行渐变歌词+
-             底部歌名/进度），独立入口 -->
-        <receiver
-            android:name=".LyricWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_lyric_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/lyric_widget_info" />
-        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

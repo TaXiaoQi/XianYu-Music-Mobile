@@ -1,45 +1,89 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 方形组件添加页实时预览（Android 12+ previewLayout / 15+ setWidgetPreview），
-     与真实 2×2 方形布局同构：封面（fitCenter 圆角对齐容器） + 歌名 + 小播放键。 -->
+<!-- 方形 2×2 的静态预览（仅用于桌面组件选择面板）：
+     结构对真实方形卡(player_widget_2x2)：封面(居中) + 歌名/歌手 + 底部三大键，
+     预置演示文案与封面占位渐变，呈现一张可读的真实卡片。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/previewRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="10dp">
+    android:orientation="vertical"
+    android:padding="14dp">
 
-    <!-- 行1：封面（占上部权重，fitCenter 与真实 provider 渲染一致） -->
-    <ImageView
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="8dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/widget_preview_cover" />
+        android:gravity="center">
 
-    <!-- 行2：歌名(左) + 小播放键(右) -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:maxWidth="76dp"
+            android:maxHeight="76dp"
+            android:src="@drawable/widget_preview_cover"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_label" />
+    </FrameLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_horizontal"
+        android:text="@string/widget_preview_song"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:gravity="center_horizontal"
+        android:text="@string/widget_preview_artist"
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="10.5sp"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:orientation="horizontal">
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="弦予音乐"
-            android:textColor="@color/widget_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:singleLine="true"
-            android:ellipsize="middle" />
+        <ImageButton
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:padding="4dp"
+            android:background="@drawable/widget_btn_circle"
+            android:src="@drawable/ic_skip_previous"
+            android:tint="@color/widget_icon"
+            android:scaleType="centerInside"
+            android:contentDescription="@string/widget_label" />
 
-        <TextView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="10dp"
-            android:background="@drawable/widget_preview_dot" />
+        <ImageButton
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/widget_play_btn"
+            android:src="@drawable/ic_play"
+            android:scaleType="centerInside"
+            android:contentDescription="@string/widget_label" />
+
+        <ImageButton
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:padding="4dp"
+            android:background="@drawable/widget_btn_circle"
+            android:src="@drawable/ic_skip_next"
+            android:tint="@color/widget_icon"
+            android:scaleType="centerInside"
+            android:contentDescription="@string/widget_label" />
     </LinearLayout>
 </LinearLayout>

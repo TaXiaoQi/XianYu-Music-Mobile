@@ -29,7 +29,7 @@ import org.json.JSONObject
 
 /**
  * 桌面播放组件共享渲染与控制逻辑
- * （SquareWidgetProvider / RecognizeWidgetProvider / LyricWidgetProvider 共用）。
+ * （SquareWidgetProvider / RecognizeWidgetProvider 共用）。
  *
  * 渲染：读 SharedPreferences("player_widget"/"state") 的 JSON（由 Flutter 侧随播放状态
  * 写入），按组件尺寸/组件入口构建对应 RemoteViews。卡片/文字/图标颜色随系统明暗主题
@@ -46,26 +46,19 @@ internal object WidgetShared {
     const val MODE_TALL = "tall"
     const val MODE_2X2 = "2x2"
     const val MODE_4X2 = "4x2"
-    const val MODE_LYRIC = "lyric"
 
     // 尺寸估算：平均每格约 70dp、左右边距合计 16dp。
     private const val CELL_TARGET_DP = 70
     private const val CELL_MARGIN_DP = 16
 
-    // 封面位图边长（dp）：横版 60、2×2/识曲/歌词卡用大图保证清晰。
+    // 封面位图边长（dp）：横版 60、2×2/识曲用大图保证清晰。
     private const val COVER_TALL_DP = 60
     private const val COVER_RECOGNIZE_DP = 120
-    private const val COVER_LYRIC_DP = 112
     private const val COVER_2X2_SMALL_DP = 85
 
     // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
     // 避免按位图边长比例（0.26×）换算后随组件尺寸缩放导致的圆角错位。
     private const val CARD_CORNER_DP = 24f
-
-    // 歌词卡五行窗口的 TextView id（index 0..4，当前行固定在第 3 行，即 lyricLine3）。
-    private val LYRIC_LINE_IDS = intArrayOf(
-        R.id.lyricLine1, R.id.lyricLine2, R.id.lyricLine3,
-        R.id.lyricLine4, R.id.lyricLine5)
 
     // 识曲（已改分享）深链：右上按钮经拉起 App 分享当前歌曲。
     private const val RECOGNIZE_LINK = "xianyu://open?target=share"
@@ -77,18 +70,11 @@ internal object WidgetShared {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // ---- 歌词卡逐字播放（karaoke reveal）----
-    // RemoteViews 仅支持 API 28+ 的 ParcelableSpan 跨进程保留颜色；
-    // Flutter 侧推送当前活动行的逐字时间轴 {s,e,len}(毫秒/字符数)，
-    // 本端用上次上报 position + 墙钟外推估算实时位，仅局部刷新当前行 lyricLine2。
-    private const val REVEAL_INTERVAL_MS = 150L
-    private val revealOwner = HashMap<Int, Any>() // id -> token（换行/停止即失效）
     // 进度/时间实时外推：Flutter 仅在状态推送时上报 position，播放中按墙钟外推
     // 周期性地用 partiallyUpdateAppWidget 局部刷新 progress + 时间，
     // 让进度条随播放平滑前进，而非「唱完一句才跳一下」。
     private const val PROGRESS_INTERVAL_MS = 300L
     private val progressOwner = HashMap<Int, Any>() // id -> 外推 token（状态变化即失效）
-    private val revealLineCur = HashMap<Int, String>() // id -> 已渲染活动行文字（换行判淡入）
 
     // ---- 识曲/横条组件切歌时封面「平移 + 淡入淡出」----
     // RemoteViews 无补间动画：双封面叠层 + 多次局部 setAlpha/setTranslationX 逐帧推进；
@@ -110,137 +96,11 @@ internal object WidgetShared {
     private val coverLivePath = HashMap<Int, String>()   // id -> 已稳定显示的封面路径
     private val coverLiveBitmap = HashMap<Int, Bitmap>() // id -> 已稳定显示的封面位图（作旧封面）
 
-    /** 解析状态 JSON 的当前活动行逐字时间轴；无逐字数据返回空 list。 */
-    private fun activeWordsList(s: JSONObject): List<IntArray> {
-        val arr = s.optJSONArray("activeWords") ?: return emptyList()
-        val out = ArrayList<IntArray>(arr.length())
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            out.add(intArrayOf(o.optInt("s"), o.optInt("e"), o.optInt("len")))
-        }
-        return out
-    }
-
-    /** 按播放进度(ms)累计已亮起字符数：已结束字整字计入，当前字按时间占比推进。 */
-    private fun revealChars(words: List<IntArray>, posMs: Int): Int {
-        if (words.isEmpty()) return 0
-        var acc = 0
-        for (w in words) {
-            val s = w[0]; val e = w[1]; val len = w[2]
-            if (posMs >= e) { acc += len; continue }
-            if (posMs <= s || e <= s) break
-            acc += (len.toFloat() * (posMs - s) / (e - s)).toInt().coerceIn(0, len)
-            break
-        }
-        return acc
-    }
-
-    /** 逐字双色：已唱部分=品牌红（同播放详情页活动行），未唱剩余=清晰灰度，
-     *  两段都用显式 ForegroundColorSpan，避免依赖布局默认色在跨进程渲染丢失；
-     *  API<28 → 回退纯文本（整行默认色）。 */
-    private fun revealSpannable(ctx: Context, text: String, covered: Int): CharSequence {
-        if (Build.VERSION.SDK_INT < 28 || text.isEmpty()) return text
-        val from = covered.coerceIn(0, text.length)
-        if (from == 0) return text // 尚未唱到任何字：整行保持布局默认色
-        if (from >= text.length) return text
-        return try {
-            val r = ctx.resources
-            @Suppress("DEPRECATION")
-            val sung = r.getColor(R.color.widget_lyric_sung)
-            @Suppress("DEPRECATION")
-            val unread = r.getColor(R.color.widget_lyric_unread)
-            val sp = android.text.SpannableString(text)
-            sp.setSpan(
-                android.text.style.ForegroundColorSpan(sung),
-                0, from, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            sp.setSpan(
-                android.text.style.ForegroundColorSpan(unread),
-                from, text.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            sp
-        } catch (_: Throwable) {
-            text
-        }
-    }
-
-    /** 仅局部刷新当前歌词行（partiallyUpdate 只应用该 setText 动作）。 */
-    private fun setRevealText(ctx: Context, mgr: AppWidgetManager, id: Int, text: CharSequence) {
-        try {
-            val v = RemoteViews(ctx.packageName, R.layout.player_widget_lyric)
-            v.setTextViewText(R.id.lyricLine3, text)
-            mgr.partiallyUpdateAppWidget(id, v)
-        } catch (_: Exception) {}
-    }
-
-    private fun cancelReveal(id: Int) {
-        revealOwner.remove(id)
-    }
-
-    /** 换行淡入：三行窗口从透明(0)步进渐显到 255（RemoteViews 无补间，用多次局部 setAlpha）。 */
-    private fun fadeInLines(ctx: Context, mgr: AppWidgetManager, id: Int, steps: Int = 6) {
-        for (i in 0..steps) {
-            val idx = i
-            mainHandler.postDelayed({
-                try {
-                    val a = (idx * 255 / steps).coerceIn(0, 255)
-                    val v = RemoteViews(ctx.packageName, R.layout.player_widget_lyric)
-                    for (line in LYRIC_LINE_IDS) v.setInt(line, "setAlpha", a)
-                    mgr.partiallyUpdateAppWidget(id, v)
-                } catch (_: Exception) {}
-            }, idx * 40L)
-        }
-    }
-
-    /** 启动当前活动行逐字播放；播放中/无逐字/空行则不启动。
-     *  每次重建（新 push）重设锚点，行唱完或停止自动退出。 */
-    private fun scheduleReveal(
-        ctx: Context,
-        mgr: AppWidgetManager,
-        id: Int,
-        lineText: String,
-        words: List<IntArray>,
-        posMs: Int,
-        playing: Boolean,
-    ) {
-        cancelReveal(id)
-        if (!playing || words.isEmpty() || lineText.isEmpty()) return
-        // 仅当活动行文字真的切换时才做淡入（避免播放/收藏等无关 push 反复闪）。
-        if (revealLineCur[id] != lineText) {
-            revealLineCur[id] = lineText
-            fadeInLines(ctx, mgr, id)
-        }
-        val token = Any()
-        revealOwner[id] = token
-        val lastChars = IntArray(1) { -1 }
-        val r = object : Runnable {
-            val anchorPos = posMs
-            val anchorWall = System.currentTimeMillis()
-            override fun run() {
-                if (revealOwner[id] !== token) return
-                val est = anchorPos + (System.currentTimeMillis() - anchorWall).toInt()
-                if (est >= words[words.size - 1][1]) {
-                    // 行唱完：整行亮满并停止本行刷新。
-                    setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, lineText.length))
-                    revealOwner.remove(id)
-                    return
-                }
-                val chars = revealChars(words, est)
-                if (chars != lastChars[0]) {
-                    lastChars[0] = chars
-                    setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, chars))
-                }
-                mainHandler.postDelayed(this, REVEAL_INTERVAL_MS)
-            }
-        }
-        // 首帧立即按本次上报位渲染，避免等 150ms 才出现第一字。
-        setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, revealChars(words, posMs)))
-        mainHandler.postDelayed(r, REVEAL_INTERVAL_MS)
-    }
-
     /**
-     * 进度条/时间实时外推。Flutter 仅在状态推送时刻（如歌词行切换）上报
-     * position/progress，播放中本端以「上报 position + 墙钟流逝」周期性局部刷新
-     * progress 与当前时间，让进度条随播放平滑前进。封面切歌动画期间暂停外推，
-     * 避免与动画同帧更新干扰观感；状态变化会 replace token 使旧外推失效。
+     * 进度条/时间实时外推。Flutter 仅在状态推送时刻上报 position/progress，播放中
+     * 本端以「上报 position + 墙钟流逝」周期性局部刷新 progress 与当前时间，让进度条
+     * 随播放平滑前进。封面切歌动画期间暂停外推，避免与动画同帧更新干扰观感；
+     * 状态变化会 replace token 使旧外推失效。
      */
     private fun scheduleProgress(
         ctx: Context,
@@ -257,8 +117,6 @@ internal object WidgetShared {
         val layout = layoutOf(mode)
         val anchorPos = positionSec
         val anchorWall = System.currentTimeMillis()
-        // 歌词卡仅有进度条，无 timeCur/timeDur（4×2 与横版才有）。
-        val hasTime = mode != MODE_LYRIC
         val r = object : Runnable {
             override fun run() {
                 if (progressOwner[id] !== token) return
@@ -274,10 +132,8 @@ internal object WidgetShared {
                     val v = RemoteViews(ctx.packageName, layout)
                     v.setProgressBar(R.id.progress, 100,
                         (est * 100 / durationSec).coerceIn(0, 100), false)
-                    if (hasTime) {
-                        v.setTextViewText(R.id.timeCur, fmt(est))
-                        v.setTextViewText(R.id.timeDur, fmt(durationSec))
-                    }
+                    v.setTextViewText(R.id.timeCur, fmt(est))
+                    v.setTextViewText(R.id.timeDur, fmt(durationSec))
                     mgr.partiallyUpdateAppWidget(id, v)
                 } catch (_: Exception) {
                 }
@@ -302,15 +158,10 @@ internal object WidgetShared {
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)),
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)))
 
-    /** 多档判定（三个组件入口共用）：把任意拖拽格型量化为三种固定格式，杜绝
-        2×3 等中间格被封进宽度不足的歌词卡布局而渲染切割：
-        · 宽≥3 且 高≥3 → 3×4 歌词卡
-        · 宽≥3（矮）→ 4×2 横条（识别）
-        · 其余（含 2×3/2×4 等窄高格）→ 2×2 方形 */
+    /** 多档判定（两个组件入口共用，歌词卡已移除）：宽≥3 → 4×2 横条，其余 → 2×2 方形。 */
     fun squareCellMode(o: Bundle): String {
         val (cw, ch) = cellsOf(o)
         return when {
-            cw >= 3 && ch >= 3 -> MODE_LYRIC
             cw >= 3 -> MODE_4X2
             else -> MODE_2X2
         }
@@ -381,7 +232,6 @@ internal object WidgetShared {
         val defs = listOf(
             SquareWidgetProvider::class.java to R.layout.player_widget_2x2,
             RecognizeWidgetProvider::class.java to R.layout.player_widget_recognize,
-            LyricWidgetProvider::class.java to R.layout.player_widget_lyric,
         )
         var ok = 0
         for ((cls, layout) in defs) {
@@ -411,13 +261,9 @@ internal object WidgetShared {
             ComponentName(ctx, RecognizeWidgetProvider::class.java))) {
             mgr.updateAppWidget(id, buildEntry(ctx, s, id, RecognizeWidgetProvider::class.java, 2000, MODE_4X2, true))
         }
-        for (id in mgr.getAppWidgetIds(
-            ComponentName(ctx, LyricWidgetProvider::class.java))) {
-            mgr.updateAppWidget(id, buildEntry(ctx, s, id, LyricWidgetProvider::class.java, 5000, MODE_LYRIC, false))
-        }
     }
 
-    /** 按显式布局模式构建（方形/歌词卡固定样式共用）。id 用于歌词卡逐字局部刷新。 */
+    /** 按显式布局模式构建（方形/识别固定样式共用）。 */
     fun buildViews(
         ctx: Context,
         s: JSONObject,
@@ -430,7 +276,6 @@ internal object WidgetShared {
     ): RemoteViews {
         val layout = when (mode) {
             MODE_2X2 -> R.layout.player_widget_2x2
-            MODE_LYRIC -> R.layout.player_widget_lyric
             MODE_4X2 -> R.layout.player_widget_recognize
             else -> R.layout.player_widget
         }
@@ -438,20 +283,12 @@ internal object WidgetShared {
 
         val title = s.optString("title").takeUnless { it.isBlank() } ?: "弦予音乐"
         val artist = s.optString("artist").takeUnless { it.isBlank() } ?: "未在播放"
-        // 第二行：有歌词显示当前行歌词，否则回退歌手名（2×2 无此行）。
-        val lyric = s.optString("lyric")
         val playing = s.optBoolean("playing")
         val favorite = s.optBoolean("favorite")
         val floatingLyrics = s.optBoolean("floatingLyrics")
         val coverPath = s.optString("coverPath")
         views.setTextViewText(R.id.songText, title)
-        if (mode == MODE_2X2) {
-            // 2×2 三行版：第二行固定显示歌手，不占歌词行。
-            views.setTextViewText(R.id.artistText, artist)
-        } else {
-            views.setTextViewText(
-                R.id.artistText, lyric.takeUnless { it.isBlank() } ?: artist)
-        }
+        views.setTextViewText(R.id.artistText, artist)
         views.setImageViewResource(
             R.id.btnPlay, if (playing) R.drawable.ic_pause else R.drawable.ic_play)
 
@@ -470,53 +307,6 @@ internal object WidgetShared {
                     views.setImageViewBitmap(R.id.bgCover, blur2)
                     views.setTextColor(R.id.songText, WHITE)
                     views.setTextColor(R.id.artistText, WHITE_SECONDARY)
-                    views.setInt(R.id.btnPrev, "setColorFilter", WHITE)
-                    views.setInt(R.id.btnPlay, "setColorFilter", WHITE)
-                    views.setInt(R.id.btnNext, "setColorFilter", WHITE)
-                }
-            }
-
-            MODE_LYRIC -> {
-                // 第二行固定为「歌手 · 弦予音乐」（歌词在右侧五行窗口展示）。
-                views.setTextViewText(
-                    R.id.artistText,
-                    artist.takeUnless { it.isBlank() }?.let { "$it · 弦予音乐" }
-                        ?: "弦予音乐")
-                // 歌词窗口：当前行固定映射到 lyricLine3（布局中加粗主色），
-                // 上下邻行渐淡；无窗口/无歌词时中间行显示占位。
-                val window = s.optJSONArray("lyricWindow")
-                var hasLyric = false
-                for (i in 0 until 5) {
-                    val text = window?.optString(i)?.takeUnless { it.isBlank() } ?: ""
-                    if (text.isNotEmpty()) hasLyric = true
-                    views.setTextViewText(LYRIC_LINE_IDS[i], text)
-                }
-                if (!hasLyric) views.setTextViewText(R.id.lyricLine3, "暂无歌词")
-                // 逐字播放：当前活动行按逐字时间轴随播放进度逐步点亮（仅歌词卡）。
-                scheduleReveal(
-                    ctx, AppWidgetManager.getInstance(ctx), id,
-                    window?.optString(2).orEmpty(),
-                    activeWordsList(s), s.optInt("position") * 1000,
-                    playing && hasLyric)
-                views.setProgressBar(
-                    R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
-                scheduleProgress(
-                    ctx, AppWidgetManager.getInstance(ctx), id, MODE_LYRIC,
-                    s.optInt("position"), s.optInt("duration"), playing)
-                views.setOnClickPendingIntent(R.id.root, openPending(ctx, rc))
-                views.setOnClickPendingIntent(
-                    R.id.btnPrev, pending(ctx, "previous", rc + 1, provider))
-                views.setOnClickPendingIntent(
-                    R.id.btnPlay, pending(ctx, "toggle", rc + 2, provider))
-                views.setOnClickPendingIntent(
-                    R.id.btnNext, pending(ctx, "next", rc + 3, provider))
-                // 封面模糊作整卡底色（老传统：100% 模糊），歌词行/图标置白。
-                val blur3 = blurredBackground(ctx, coverPath, sizeDp)
-                if (blur3 != null) {
-                    views.setImageViewBitmap(R.id.bgCover, blur3)
-                    views.setTextColor(R.id.songText, WHITE)
-                    views.setTextColor(R.id.artistText, WHITE_SECONDARY)
-                    for (lid in LYRIC_LINE_IDS) views.setTextColor(lid, WHITE)
                     views.setInt(R.id.btnPrev, "setColorFilter", WHITE)
                     views.setInt(R.id.btnPlay, "setColorFilter", WHITE)
                     views.setInt(R.id.btnNext, "setColorFilter", WHITE)
@@ -603,7 +393,7 @@ internal object WidgetShared {
             }
         }
 
-        if (mode == MODE_2X2 || mode == MODE_4X2 || mode == MODE_LYRIC) {
+        if (mode == MODE_2X2 || mode == MODE_4X2) {
             // 带封面的组件形态：双封面叠层，切歌时做平移 + 淡入淡出。
             applyCoverSwap(
                 ctx,
@@ -652,7 +442,6 @@ internal object WidgetShared {
     /** 各组件形态对应的布局 res id（动画逐帧局部更新按此布局构建 RemoteViews）。 */
     private fun layoutOf(mode: String): Int = when (mode) {
         MODE_2X2 -> R.layout.player_widget_2x2
-        MODE_LYRIC -> R.layout.player_widget_lyric
         MODE_4X2 -> R.layout.player_widget_recognize
         else -> R.layout.player_widget
     }
@@ -667,8 +456,6 @@ internal object WidgetShared {
             MODE_2X2 -> roundedCover(ctx, path, COVER_2X2_SMALL_DP)
             // 4×2：固定尺寸方形封面（与卡片边缘留间距）。
             MODE_4X2 -> roundedCover(ctx, path, COVER_RECOGNIZE_DP)
-            // 歌词卡：固定方形。
-            MODE_LYRIC -> roundCover(ctx, path, COVER_LYRIC_DP) // 歌词卡：圆形封面
             else -> roundedCover(ctx, path, COVER_TALL_DP)
         }
     }
@@ -679,20 +466,12 @@ internal object WidgetShared {
         return when (mode) {
             MODE_2X2 -> COVER_2X2_SMALL_DP * density
             MODE_4X2 -> COVER_RECOGNIZE_DP * density
-            MODE_LYRIC -> COVER_LYRIC_DP * density
             else -> COVER_TALL_DP * density
         }
     }
 
     private fun coverPlaceholder(ctx: Context, views: RemoteViews, mode: String) {
         views.setImageViewResource(R.id.coverNew, R.drawable.ic_widget_music_note)
-        // 歌词卡浅色主题为浅底：白色音符占位需按主题图标色重着色才可见。
-        if (mode == MODE_LYRIC) {
-            @Suppress("DEPRECATION")
-            views.setInt(
-                R.id.coverNew, "setColorFilter",
-                ctx.resources.getColor(R.color.widget_icon))
-        }
         views.setViewVisibility(R.id.coverNew, View.VISIBLE)
     }
 
@@ -970,38 +749,6 @@ internal object WidgetShared {
                 strokeWidth = 1.5f * density
             }
             cv.drawRoundRect(rect, r, r, stroke)
-            out
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    /** 封面 -> 圆形位图（歌词卡专属，无封面/失败返回 null）。 */
-    private fun roundCover(ctx: Context, path: String, sizeDp: Int): Bitmap? {
-        if (path.isBlank()) return null
-        return try {
-            val bmp = BitmapFactory.decodeFile(path) ?: return null
-            val density = ctx.resources.displayMetrics.density
-            val size = (sizeDp * density).toInt().coerceAtLeast(1)
-            val dim = minOf(bmp.width, bmp.height)
-            val sx = (bmp.width - dim) / 2f
-            val sy = (bmp.height - dim) / 2f
-            val crop = Bitmap.createBitmap(bmp, sx.toInt(), sy.toInt(), dim, dim)
-            val half = Bitmap.createScaledBitmap(crop, size, size, true)
-            val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val cv = Canvas(out)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            paint.setShader(BitmapShader(half, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
-            val cx = size / 2f
-            val cy = size / 2f
-            val radius = size / 2f
-            cv.drawCircle(cx, cy, radius, paint)
-            val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                color = 0x33FFFFFF
-                strokeWidth = 1.5f * density
-            }
-            cv.drawCircle(cx, cy, radius - 0.75f * density, stroke)
             out
         } catch (_: Throwable) {
             null

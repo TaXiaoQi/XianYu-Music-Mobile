@@ -41,6 +41,7 @@ class PlayerWidgetController {
   int _lyricToken = 0;
   ///// 封面切换方向：+1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
   int _coverDir = 1;
+  bool _coverLoading = false; // 封面异步加载中：暂缓推送，避免先行空占位导致音符闪烁
   int _coverToken = 0;      // 封面异步并发令牌（切歌/重载即递增，丢弃过期结果）
   int _lastCoverTryAt = 0;  // 上次封面兜底尝试的时间戳（10s 节流）
 
@@ -64,6 +65,9 @@ class PlayerWidgetController {
       final s = _container.read(playerProvider);
       final item = s.current;
       if (item == null) return;
+      // 封面加载中：本周期完全不推、不重试，待封面就绪后由 _loadCover 一次性带封面到位，
+      // 避免心跳夹带空点位推、把就绪封面盖成黑色占位。
+      if (_coverLoading) return;
       // 封面缺失/上次加载失败时周期性兜底重试（10s 节流），避免「间歇无封面」长期停留，
       // 本地懒生成或在线下载成功后自动补推真实封面。
       if ((_lastCover ?? '').isEmpty) {
@@ -142,44 +146,17 @@ class PlayerWidgetController {
     return line?.text;
   }
 
-  /// 歌词卡组件的五行窗口：当前行固定居中（index 2），上下各两行邻行。
-  /// 前奏期（定位失败）当前行为空、后续行依次上移，越界补空串。
-  List<String> _lyricWindow(PlaybackState s) {
-    if (_lyrics.isEmpty) return const [];
-    final ms = (s.position * 1000).round();
-    final idx = TimingNavigator(_lyrics).findIndex(ms);
-    return List.generate(5, (i) {
-      final j = idx + i - 2;
-      return (j >= 0 && j < _lyrics.length) ? _lyrics[j].text : '';
-    });
-  }
-
-  /// 当前活动行（歌词卡逐字播放）：返回该行逐字时间轴 {s,e,len}（毫秒/字符数）。
-  /// 顺序与行的歌词文字一致，供 Kotlin 侧按播放位逐字渲染。
-  List<Map<String, int>> _activeWords(PlaybackState s) {
-    if (_lyrics.isEmpty) return const [];
-    final ms = (s.position * 1000).round();
-    final line = TimingNavigator(_lyrics).find(ms);
-    if (line == null || line.words.isEmpty) return const [];
-    return [
-      for (final w in line.words)
-        <String, int>{
-          's': (w.start * 1000).round(),
-          'e': (w.end * 1000).round(),
-          'len': w.text.length,
-        },
-    ];
-  }
-
   void _applyState(PlaybackState s) {
+    // 封面异步加载中暂缓推送：封面就绪后再一次性带封面更新，避免先推空占位
+    // 造成组件间歇性「封面消失变音符」。若封面确实拿不到，_loadCover 兜底仍会推送。
+    if (_coverLoading) return;
     final item = s.current;
     final fav = item != null && _container.read(favoritesProvider).contains(item.path);
     final lyric = _currentLyric(s) ?? '';
-    final window = _lyricWindow(s);
     final floatingLyrics =
         _container.read(settingsProvider).valueOrNull?.floatingLyricsEnabled ?? false;
     final sig = '${item?.path}|${item?.title}|${item?.artist}|${s.isPlaying}'
-        '|${s.playMode}|$fav|$floatingLyrics|$lyric|${window.join('|')}';
+        '|${s.playMode}|$fav|$floatingLyrics|$lyric';
     if (sig == _lastSignature) return;
     _lastSignature = sig;
     _pushState(s, _lastCover);
@@ -188,9 +165,11 @@ class PlayerWidgetController {
   Future<void> _loadCover(QueueItem? item) async {
     if (item == null || _disposed) return;
     final t = ++_coverToken;
+    _coverLoading = true; // 封面就绪前暂缓推送
     _lastCoverTryAt = DateTime.now().millisecondsSinceEpoch;
     final path = await _coverPath(item);
     if (_disposed || t != _coverToken) return; // 期间又切歌/重启加载，丢弃过期结果。
+    _coverLoading = false;
     _lastCover = path;
     _pushState(_container.read(playerProvider), path);
   }
@@ -280,15 +259,12 @@ class PlayerWidgetController {
     final favorite =
         item != null && _container.read(favoritesProvider).contains(item.path);
     final lyric = _currentLyric(s) ?? '';
-    final window = _lyricWindow(s);
     final floatingLyrics =
         _container.read(settingsProvider).valueOrNull?.floatingLyricsEnabled ?? false;
     final json = jsonEncode({
       'title': item?.title ?? '',
       'artist': item?.artist ?? '',
       'lyric': lyric,
-      'lyricWindow': window,
-      'activeWords': _activeWords(s),
       'playing': s.isPlaying,
       'progress': progress,
       'playMode': s.playMode,
