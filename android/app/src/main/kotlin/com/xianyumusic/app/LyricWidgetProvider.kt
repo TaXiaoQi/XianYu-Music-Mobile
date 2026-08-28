@@ -52,6 +52,10 @@ class LyricWidgetProvider : AppWidgetProvider() {
                 false))
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        for (id in appWidgetIds) WidgetShared.clearId(id)
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         WidgetShared.handleAction(context, intent)

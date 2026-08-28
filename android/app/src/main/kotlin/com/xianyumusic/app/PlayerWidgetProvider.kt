@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.RemoteViews
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
@@ -53,16 +54,13 @@ internal object WidgetShared {
 
     // 封面位图边长（dp）：横版 60、2×2/识曲/歌词卡用大图保证清晰。
     private const val COVER_TALL_DP = 60
-    private const val COVER_2X2_DP = 156
-    private const val COVER_RECOGNIZE_DP = 72
+    private const val COVER_RECOGNIZE_DP = 110
     private const val COVER_LYRIC_DP = 96
+    private const val COVER_2X2_SMALL_DP = 85
 
     // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
     // 避免按位图边长比例（0.26×）换算后随组件尺寸缩放导致的圆角错位。
     private const val CARD_CORNER_DP = 24f
-    // 2×2 封面区域外的竖向固定占用（dp）：上下 padding 10×2 + 底部信息行 40 + 封面下边距 8。
-    private const val SQUARE_PAD_DP = 10
-    private const val SQUARE_OVERHEAD_DP = 68
 
     // 歌词卡五行窗口的 TextView id（index 0..4，当前行固定在第 3 行，即 lyricLine3）。
     private val LYRIC_LINE_IDS = intArrayOf(
@@ -85,7 +83,32 @@ internal object WidgetShared {
     // 本端用上次上报 position + 墙钟外推估算实时位，仅局部刷新当前行 lyricLine2。
     private const val REVEAL_INTERVAL_MS = 150L
     private val revealOwner = HashMap<Int, Any>() // id -> token（换行/停止即失效）
+    // 进度/时间实时外推：Flutter 仅在状态推送时上报 position，播放中按墙钟外推
+    // 周期性地用 partiallyUpdateAppWidget 局部刷新 progress + 时间，
+    // 让进度条随播放平滑前进，而非「唱完一句才跳一下」。
+    private const val PROGRESS_INTERVAL_MS = 300L
+    private val progressOwner = HashMap<Int, Any>() // id -> 外推 token（状态变化即失效）
     private val revealLineCur = HashMap<Int, String>() // id -> 已渲染活动行文字（换行判淡入）
+
+    // ---- 识曲/横条组件切歌时封面「平移 + 淡入淡出」----
+    // RemoteViews 无补间动画：双封面叠层 + 多次局部 setAlpha/setTranslationX 逐帧推进；
+    // 用「起始墙钟 + 已流逝」重算中间帧，即使期间被 5s 心跳等全量重建打断也能续帧。
+    private const val COVER_ANIM_MS = 420L
+    private const val COVER_ANIM_FRAME_MS = 40L
+    // dir: +1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
+    private class CoverSwap(
+        val start: Long,
+        val duration: Long,
+        val slidePx: Float,
+        val dir: Int,
+        val layoutRes: Int,
+        val mode: String,
+        val sizeDp: Pair<Int, Int>?,
+    )
+    private val coverSwap = HashMap<Int, CoverSwap>()   // id -> 进行中的切歌动画（含起点）
+    private val coverFrameScheduled = HashSet<Int>()     // id -> 是否已排程下一帧（防重复链）
+    private val coverLivePath = HashMap<Int, String>()   // id -> 已稳定显示的封面路径
+    private val coverLiveBitmap = HashMap<Int, Bitmap>() // id -> 已稳定显示的封面位图（作旧封面）
 
     /** 解析状态 JSON 的当前活动行逐字时间轴；无逐字数据返回空 list。 */
     private fun activeWordsList(s: JSONObject): List<IntArray> {
@@ -213,6 +236,57 @@ internal object WidgetShared {
         mainHandler.postDelayed(r, REVEAL_INTERVAL_MS)
     }
 
+    /**
+     * 进度条/时间实时外推。Flutter 仅在状态推送时刻（如歌词行切换）上报
+     * position/progress，播放中本端以「上报 position + 墙钟流逝」周期性局部刷新
+     * progress 与当前时间，让进度条随播放平滑前进。封面切歌动画期间暂停外推，
+     * 避免与动画同帧更新干扰观感；状态变化会 replace token 使旧外推失效。
+     */
+    private fun scheduleProgress(
+        ctx: Context,
+        mgr: AppWidgetManager,
+        id: Int,
+        mode: String,
+        positionSec: Int,
+        durationSec: Int,
+        playing: Boolean,
+    ) {
+        val token = Any()
+        progressOwner[id] = token
+        if (!playing || durationSec <= 0) return
+        val layout = layoutOf(mode)
+        val anchorPos = positionSec
+        val anchorWall = System.currentTimeMillis()
+        // 歌词卡仅有进度条，无 timeCur/timeDur（4×2 与横版才有）。
+        val hasTime = mode != MODE_LYRIC
+        val r = object : Runnable {
+            override fun run() {
+                if (progressOwner[id] !== token) return
+                if (coverSwap[id] != null) {
+                    // 封面切歌动画进行中：延后一帧，避免与动画帧交错。
+                    mainHandler.postDelayed(this, PROGRESS_INTERVAL_MS)
+                    return
+                }
+                val est = (anchorPos +
+                    (System.currentTimeMillis() - anchorWall) / 1000L)
+                    .coerceAtMost(durationSec.toLong()).toInt()
+                try {
+                    val v = RemoteViews(ctx.packageName, layout)
+                    v.setProgressBar(R.id.progress, 100,
+                        (est * 100 / durationSec).coerceIn(0, 100), false)
+                    if (hasTime) {
+                        v.setTextViewText(R.id.timeCur, fmt(est))
+                        v.setTextViewText(R.id.timeDur, fmt(durationSec))
+                    }
+                    mgr.partiallyUpdateAppWidget(id, v)
+                } catch (_: Exception) {
+                }
+                mainHandler.postDelayed(this, PROGRESS_INTERVAL_MS)
+            }
+        }
+        mainHandler.postDelayed(r, PROGRESS_INTERVAL_MS)
+    }
+
     fun stateJson(ctx: Context): JSONObject? = try {
         val raw = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
             .getString(SP_KEY, null) ?: return null
@@ -228,12 +302,15 @@ internal object WidgetShared {
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)),
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)))
 
-    /** 多档判定（三个组件入口共用）：高≥3 行 → 4×3 歌词卡；
-        宽≥3 且高度 ≤2 行 → 4×2 横条；否则 → 2×2 方形。 */
+    /** 多档判定（三个组件入口共用）：把任意拖拽格型量化为三种固定格式，杜绝
+        2×3 等中间格被封进宽度不足的歌词卡布局而渲染切割：
+        · 宽≥3 且 高≥3 → 3×4 歌词卡
+        · 宽≥3（矮）→ 4×2 横条（识别）
+        · 其余（含 2×3/2×4 等窄高格）→ 2×2 方形 */
     fun squareCellMode(o: Bundle): String {
         val (cw, ch) = cellsOf(o)
         return when {
-            ch >= 3 -> MODE_LYRIC
+            cw >= 3 && ch >= 3 -> MODE_LYRIC
             cw >= 3 -> MODE_4X2
             else -> MODE_2X2
         }
@@ -253,7 +330,8 @@ internal object WidgetShared {
             .getString(LAYOUT_PREFIX + id, null) ?: defaultMode
         return buildViews(
             ctx, s, mode, provider, rc, id,
-            if (mode == MODE_2X2) widgetSizeDp(AppWidgetManager.getInstance(ctx), id) else null,
+            if (mode == MODE_2X2 || mode == MODE_4X2)
+                widgetSizeDp(AppWidgetManager.getInstance(ctx), id) else null,
             enableRecognize)
     }
 
@@ -283,7 +361,7 @@ internal object WidgetShared {
      * 推送一次；系统限速约 2 次/小时 → 每小时最多尝试一轮，全部成功后记版本号，
      * 预览布局有改动时递增 PREVIEW_GEN_VERSION 重新推送。
      */
-    private const val PREVIEW_GEN_VERSION = 7
+    private const val PREVIEW_GEN_VERSION = 11
     private const val PREVIEW_GEN_RETRY_MS = 55 * 60 * 1000L
 
     fun ensurePreviewGen(ctx: Context) {
@@ -359,8 +437,12 @@ internal object WidgetShared {
         val playing = s.optBoolean("playing")
         val favorite = s.optBoolean("favorite")
         val floatingLyrics = s.optBoolean("floatingLyrics")
+        val coverPath = s.optString("coverPath")
         views.setTextViewText(R.id.songText, title)
-        if (mode != MODE_2X2) {
+        if (mode == MODE_2X2) {
+            // 2×2 三行版：第二行固定显示歌手，不占歌词行。
+            views.setTextViewText(R.id.artistText, artist)
+        } else {
             views.setTextViewText(
                 R.id.artistText, lyric.takeUnless { it.isBlank() } ?: artist)
         }
@@ -371,7 +453,21 @@ internal object WidgetShared {
             MODE_2X2 -> {
                 views.setOnClickPendingIntent(R.id.root, openPending(ctx, rc))
                 views.setOnClickPendingIntent(
+                    R.id.btnPrev, pending(ctx, "previous", rc + 1, provider))
+                views.setOnClickPendingIntent(
                     R.id.btnPlay, pending(ctx, "toggle", rc + 2, provider))
+                views.setOnClickPendingIntent(
+                    R.id.btnNext, pending(ctx, "next", rc + 3, provider))
+                // 封面模糊作整卡底色（老传统：100% 模糊），有背景时文字/图标置白。
+                val blur2 = blurredBackground(ctx, coverPath, sizeDp)
+                if (blur2 != null) {
+                    views.setImageViewBitmap(R.id.bgCover, blur2)
+                    views.setTextColor(R.id.songText, WHITE)
+                    views.setTextColor(R.id.artistText, WHITE_SECONDARY)
+                    views.setInt(R.id.btnPrev, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnPlay, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnNext, "setColorFilter", WHITE)
+                }
             }
 
             MODE_LYRIC -> {
@@ -398,6 +494,9 @@ internal object WidgetShared {
                     playing && hasLyric)
                 views.setProgressBar(
                     R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
+                scheduleProgress(
+                    ctx, AppWidgetManager.getInstance(ctx), id, MODE_LYRIC,
+                    s.optInt("position"), s.optInt("duration"), playing)
                 views.setOnClickPendingIntent(R.id.root, openPending(ctx, rc))
                 views.setOnClickPendingIntent(
                     R.id.btnPrev, pending(ctx, "previous", rc + 1, provider))
@@ -405,6 +504,17 @@ internal object WidgetShared {
                     R.id.btnPlay, pending(ctx, "toggle", rc + 2, provider))
                 views.setOnClickPendingIntent(
                     R.id.btnNext, pending(ctx, "next", rc + 3, provider))
+                // 封面模糊作整卡底色（老传统：100% 模糊），歌词行/图标置白。
+                val blur3 = blurredBackground(ctx, coverPath, sizeDp)
+                if (blur3 != null) {
+                    views.setImageViewBitmap(R.id.bgCover, blur3)
+                    views.setTextColor(R.id.songText, WHITE)
+                    views.setTextColor(R.id.artistText, WHITE_SECONDARY)
+                    for (lid in LYRIC_LINE_IDS) views.setTextColor(lid, WHITE)
+                    views.setInt(R.id.btnPrev, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnPlay, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnNext, "setColorFilter", WHITE)
+                }
             }
 
             MODE_4X2 -> {
@@ -412,6 +522,23 @@ internal object WidgetShared {
                     R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
                 views.setTextViewText(R.id.timeCur, fmt(s.optInt("position")))
                 views.setTextViewText(R.id.timeDur, fmt(s.optInt("duration")))
+                scheduleProgress(
+                    ctx, AppWidgetManager.getInstance(ctx), id, MODE_4X2,
+                    s.optInt("position"), s.optInt("duration"), playing)
+                // 封面模糊作整卡底色（老传统：缩 24px 再放大 = 100% 模糊），
+                // 有背景时文字/图标置白；无封面回退主题平面底。
+                val blur = blurredBackground(ctx, coverPath, sizeDp)
+                if (blur != null) {
+                    views.setImageViewBitmap(R.id.bgCover, blur)
+                    views.setTextColor(R.id.songText, WHITE)
+                    views.setTextColor(R.id.artistText, WHITE_SECONDARY)
+                    views.setTextColor(R.id.timeCur, WHITE_TIME)
+                    views.setTextColor(R.id.timeDur, WHITE_TIME)
+                    views.setInt(R.id.btnPrev, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnPlay, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnNext, "setColorFilter", WHITE)
+                    views.setInt(R.id.btnRecognize, "setColorFilter", WHITE)
+                }
                 // 识曲入口显示右上听歌识曲钮（定位后经深链拉起识曲页），其他入口隐藏。
                 if (enableRecognize) {
                     views.setViewVisibility(R.id.btnRecognize, android.view.View.VISIBLE)
@@ -433,6 +560,9 @@ internal object WidgetShared {
                     R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
                 views.setTextViewText(R.id.timeCur, fmt(s.optInt("position")))
                 views.setTextViewText(R.id.timeDur, fmt(s.optInt("duration")))
+                scheduleProgress(
+                    ctx, AppWidgetManager.getInstance(ctx), id, mode,
+                    s.optInt("position"), s.optInt("duration"), playing)
 
                 views.setImageViewResource(
                     R.id.btnMode, when (s.optInt("playMode")) {
@@ -467,38 +597,32 @@ internal object WidgetShared {
             }
         }
 
-        val coverPath = s.optString("coverPath")
-        val cover = when (mode) {
-            // 2×2：按实际尺寸渲染矩形封面（填满卡片内封面区），圆角绝对 24dp 对齐容器；
-            // 尺寸未知时回退固定大图 + 比例圆角。
-            MODE_2X2 -> sizeDp?.let { sz ->
-                roundedCoverRect(
-                    ctx, coverPath,
-                    (sz.first - 2 * SQUARE_PAD_DP).coerceAtLeast(1),
-                    (sz.second - SQUARE_OVERHEAD_DP).coerceAtLeast(1),
-                    CARD_CORNER_DP)
-            } ?: roundedCover(ctx, coverPath, COVER_2X2_DP)
-            MODE_LYRIC -> roundedCover(ctx, coverPath, COVER_LYRIC_DP)
-            MODE_4X2 -> roundedCover(ctx, coverPath, COVER_RECOGNIZE_DP)
-            else -> roundedCover(ctx, coverPath, COVER_TALL_DP)
-        }
-        if (cover != null) {
-            views.setImageViewBitmap(R.id.cover, cover)
+        if (mode == MODE_2X2 || mode == MODE_4X2 || mode == MODE_LYRIC) {
+            // 带封面的组件形态：双封面叠层，切歌时做平移 + 淡入淡出。
+            applyCoverSwap(
+                ctx,
+                AppWidgetManager.getInstance(ctx),
+                views,
+                id,
+                coverPath,
+                s.optInt("coverDir", 1),
+                layoutOf(mode),
+                mode,
+                sizeDp)
         } else {
-            views.setImageViewResource(R.id.cover, R.drawable.ic_widget_music_note)
-            // 歌词卡浅色主题为浅底：白色音符占位需运行时按主题图标色重着色才可见。
-            if (mode == MODE_LYRIC) {
-                @Suppress("DEPRECATION")
-                views.setInt(
-                    R.id.cover, "setColorFilter",
-                    ctx.resources.getColor(R.color.widget_icon))
+            // 三行大卡等其余形态：单封面。
+            val cover = roundedCover(ctx, coverPath, COVER_TALL_DP)
+            if (cover != null) {
+                views.setImageViewBitmap(R.id.cover, cover)
+            } else {
+                views.setImageViewResource(R.id.cover, R.drawable.ic_widget_music_note)
             }
         }
 
         // 三行大卡：封面模糊 + 暗色蒙层作整卡背景（类播放详情页），
         // 有背景时文字/图标运行时置白；无封面回退主题平面底。
         if (mode == MODE_TALL) {
-            val blur = blurredBackground(ctx, coverPath)
+            val blur = blurredBackground(ctx, coverPath, sizeDp)
             if (blur != null) {
                 views.setImageViewBitmap(R.id.bgCover, blur)
                 views.setTextColor(R.id.songText, WHITE)
@@ -515,6 +639,195 @@ internal object WidgetShared {
             }
         }
         return views
+    }
+
+    // ---- 4×2 封面切歌动画（平移 + 淡入淡出）----
+
+    /** 各组件形态对应的布局 res id（动画逐帧局部更新按此布局构建 RemoteViews）。 */
+    private fun layoutOf(mode: String): Int = when (mode) {
+        MODE_2X2 -> R.layout.player_widget_2x2
+        MODE_LYRIC -> R.layout.player_widget_lyric
+        MODE_4X2 -> R.layout.player_widget_recognize
+        else -> R.layout.player_widget
+    }
+
+    /** 按形态渲染当前封面位图（清晰度与圆角随形态而定）。 */
+    private fun renderCoverBitmap(
+        ctx: Context, mode: String, path: String, sizeDp: Pair<Int, Int>?,
+    ): Bitmap? {
+        if (path.isBlank()) return null
+        return when (mode) {
+            // 2×2：缩小居中方形封面。
+            MODE_2X2 -> roundedCover(ctx, path, COVER_2X2_SMALL_DP)
+            // 4×2：固定尺寸方形封面（与卡片边缘留间距）。
+            MODE_4X2 -> roundedCover(ctx, path, COVER_RECOGNIZE_DP)
+            // 歌词卡：固定方形。
+            MODE_LYRIC -> roundedCover(ctx, path, COVER_LYRIC_DP)
+            else -> roundedCover(ctx, path, COVER_TALL_DP)
+        }
+    }
+
+    /** 封面平移滑距（px）：取各形态封面的显示宽度。 */
+    private fun coverSlidePx(ctx: Context, mode: String, sizeDp: Pair<Int, Int>?): Float {
+        val density = ctx.resources.displayMetrics.density
+        return when (mode) {
+            MODE_2X2 -> COVER_2X2_SMALL_DP * density
+            MODE_4X2 -> COVER_RECOGNIZE_DP * density
+            MODE_LYRIC -> COVER_LYRIC_DP * density
+            else -> COVER_TALL_DP * density
+        }
+    }
+
+    private fun coverPlaceholder(ctx: Context, views: RemoteViews, mode: String) {
+        views.setImageViewResource(R.id.coverNew, R.drawable.ic_widget_music_note)
+        // 歌词卡浅色主题为浅底：白色音符占位需按主题图标色重着色才可见。
+        if (mode == MODE_LYRIC) {
+            @Suppress("DEPRECATION")
+            views.setInt(
+                R.id.coverNew, "setColorFilter",
+                ctx.resources.getColor(R.color.widget_icon))
+        }
+        views.setViewVisibility(R.id.coverNew, View.VISIBLE)
+    }
+
+    /**
+     * 带封面组件（2×2 / 4×2 / 歌词卡）的双封面渲染：封面路径变化时起一次
+     * 「新封面自右/左滑入 + 淡入、旧封面反向滑出 + 淡出」的动画（滑向随切歌
+     * 方向 dir）；无变化直接绘制 coverNew、隐藏 coverOld。以「起始墙钟 + 已流逝」
+     * 在每次全量重建中重算中间帧，保证动画不被 5s 心跳等 rebuild 打断。
+     */
+    private fun applyCoverSwap(
+        ctx: Context,
+        mgr: AppWidgetManager,
+        views: RemoteViews,
+        id: Int,
+        newPath: String,
+        dir: Int,
+        layoutRes: Int,
+        mode: String,
+        sizeDp: Pair<Int, Int>?,
+    ) {
+        // 归一化到 ±1（默认向前）。
+        val d = if (dir >= 1) 1 else -1
+        val cur = coverSwap[id]
+        if (cur != null) {
+            // 动画进行中：按已流逝渲染中间帧。
+            val p = ((System.currentTimeMillis() - cur.start) / cur.duration.toFloat())
+                .coerceIn(0f, 1f)
+            if (p >= 1f) {
+                val newBmp = renderCoverBitmap(ctx, mode, newPath, sizeDp)
+                if (newBmp != null) views.setImageViewBitmap(R.id.coverNew, newBmp)
+                else coverPlaceholder(ctx, views, mode)
+                settleCoverSwap(ctx, mgr, id, layoutRes, newPath, newBmp)
+                return
+            }
+            // 2×2 为居中小封面，不做左右平移（避免打断残留偏位），仅交叉淡入淡出。
+            val shift = { v: Float -> if (mode == MODE_2X2) 0f else v }
+            val old = coverLiveBitmap[id]
+            if (old != null) {
+                views.setImageViewBitmap(R.id.coverOld, old)
+                views.setFloat(R.id.coverOld, "setAlpha", 1f - p)
+                views.setFloat(R.id.coverOld, "setTranslationX", shift(-p * cur.slidePx * cur.dir))
+            } else {
+                views.setViewVisibility(R.id.coverOld, View.GONE)
+            }
+            val np = renderCoverBitmap(ctx, mode, newPath, sizeDp)
+            if (np != null) views.setImageViewBitmap(R.id.coverNew, np)
+            else coverPlaceholder(ctx, views, mode)
+            views.setFloat(R.id.coverNew, "setAlpha", p)
+            views.setFloat(R.id.coverNew, "setTranslationX", shift((1f - p) * cur.slidePx * cur.dir))
+            scheduleCoverSwap(ctx, mgr, id)
+            return
+        }
+        if (newPath == coverLivePath[id] && newPath.isNotEmpty()) {
+            // 封面未变：兜底强制归位中心，直接绘制 coverNew、隐藏 coverOld。
+            val bmp = renderCoverBitmap(ctx, mode, newPath, sizeDp)
+            if (bmp != null) views.setImageViewBitmap(R.id.coverNew, bmp)
+            else coverPlaceholder(ctx, views, mode)
+            views.setFloat(R.id.coverNew, "setTranslationX", 0f)
+            views.setViewVisibility(R.id.coverOld, View.GONE)
+            return
+        }
+        // 封面变化（第一次渲染/切歌：无旧封面则仅淡入新封面）。
+        val newBmp = renderCoverBitmap(ctx, mode, newPath, sizeDp)
+        val old = coverLiveBitmap[id]
+        val slide = coverSlidePx(ctx, mode, sizeDp)
+        coverSwap[id] = CoverSwap(
+            System.currentTimeMillis(), COVER_ANIM_MS, slide, d, layoutRes, mode, sizeDp)
+        if (old != null) {
+            views.setImageViewBitmap(R.id.coverOld, old)
+            views.setFloat(R.id.coverOld, "setAlpha", 1f)
+            views.setFloat(R.id.coverOld, "setTranslationX", 0f)
+        } else {
+            views.setViewVisibility(R.id.coverOld, View.GONE)
+        }
+        if (newBmp != null) views.setImageViewBitmap(R.id.coverNew, newBmp)
+        else coverPlaceholder(ctx, views, mode)
+        views.setFloat(R.id.coverNew, "setAlpha", 0f)
+        // 2×2 居中小封面进场不平移（保持恒居中），仅淡入。
+        views.setFloat(
+            R.id.coverNew, "setTranslationX",
+            if (mode == MODE_2X2) 0f else d * slide)
+        scheduleCoverSwap(ctx, mgr, id)
+    }
+
+    /** 动画结束：双封面归位（coverNew 满显、coverOld 隐藏）并落库稳定封面。 */
+    private fun settleCoverSwap(
+        ctx: Context,
+        mgr: AppWidgetManager,
+        id: Int,
+        layoutRes: Int,
+        newPath: String,
+        newBmp: Bitmap?,
+    ) {
+        coverSwap.remove(id)
+        coverLivePath[id] = newPath
+        if (newBmp != null) coverLiveBitmap[id] = newBmp else coverLiveBitmap.remove(id)
+        try {
+            val v = RemoteViews(ctx.packageName, layoutRes)
+            v.setFloat(R.id.coverNew, "setAlpha", 1f)
+            v.setFloat(R.id.coverNew, "setTranslationX", 0f)
+            v.setFloat(R.id.coverOld, "setAlpha", 0f)
+            v.setFloat(R.id.coverOld, "setTranslationX", 0f)
+            v.setViewVisibility(R.id.coverOld, View.GONE)
+            mgr.partiallyUpdateAppWidget(id, v)
+        } catch (_: Exception) {}
+    }
+
+    /** 排程下一帧；同一 id 已排程则不重复入队，避免重建设下的帧链爆炸。 */
+    private fun scheduleCoverSwap(ctx: Context, mgr: AppWidgetManager, id: Int) {
+        if (!coverFrameScheduled.add(id)) return
+        mainHandler.postDelayed({
+            coverFrameScheduled.remove(id)
+            val cur = coverSwap[id] ?: return@postDelayed
+            val p = ((System.currentTimeMillis() - cur.start) / cur.duration.toFloat())
+                .coerceIn(0f, 1f)
+            if (p >= 1f) {
+                val curPath = stateJson(ctx)?.optString("coverPath").orEmpty()
+                settleCoverSwap(
+                    ctx, mgr, id, cur.layoutRes, curPath,
+                    renderCoverBitmap(ctx, cur.mode, curPath, cur.sizeDp))
+                return@postDelayed
+            }
+            try {
+                val v = RemoteViews(ctx.packageName, cur.layoutRes)
+                v.setFloat(R.id.coverNew, "setAlpha", p)
+                v.setFloat(R.id.coverNew, "setTranslationX", (1f - p) * cur.slidePx * cur.dir)
+                v.setFloat(R.id.coverOld, "setAlpha", 1f - p)
+                v.setFloat(R.id.coverOld, "setTranslationX", -p * cur.slidePx * cur.dir)
+                mgr.partiallyUpdateAppWidget(id, v)
+            } catch (_: Exception) {}
+            scheduleCoverSwap(ctx, mgr, id)
+        }, COVER_ANIM_FRAME_MS)
+    }
+
+    /** 组件被移除时清理封面动画/缓存状态，避免孤儿引用。 */
+    fun clearId(id: Int) {
+        coverSwap.remove(id)
+        coverFrameScheduled.remove(id)
+        coverLivePath.remove(id)
+        coverLiveBitmap.remove(id)
+        progressOwner.remove(id)
     }
 
     private fun pending(
@@ -571,23 +884,29 @@ internal object WidgetShared {
      * 极小尺寸下采样 + 双线性放大形成快速平滑模糊，叠加上浅下深暗色蒙层
      * （类播放详情页），并按宽度比例裁圆角对齐 widget_bg 的 20dp 圆角。
      */
-    private fun blurredBackground(ctx: Context, path: String): Bitmap? {
+    private fun blurredBackground(
+        ctx: Context, path: String, sizeDp: Pair<Int, Int>?,
+    ): Bitmap? {
         if (path.isBlank()) return null
         return try {
             val bmp = BitmapFactory.decodeFile(path) ?: return null
-            val w = 600
-            val h = 300
+            val density = ctx.resources.displayMetrics.density
+            // 位图宽高 = 卡片实际像素尺寸（与卡片同宽高比，fitXY 渲染零变形），
+            // 圆角用与卡片一致的绝对 24dp，避免往昔比例圆角+centerCrop 顶坏卡片圆角。
+            val w = ((sizeDp?.first ?: 300) * density).toInt().coerceAtLeast(1)
+            val h = ((sizeDp?.second ?: 150) * density).toInt().coerceAtLeast(1)
+            val radius = CARD_CORNER_DP * density
             val smallW = 24
             val smallH = (smallW.toLong() * bmp.height / bmp.width).toInt().coerceAtLeast(1)
             val small = Bitmap.createScaledBitmap(bmp, smallW, smallH, true)
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val cv = Canvas(out)
 
-            // 圆角裁剪（约 20dp 折算比例）。
+            // 圆角裁剪（卡片绝对 24dp）。
             val corner = Path().apply {
                 addRoundRect(
                     RectF(0f, 0f, w.toFloat(), h.toFloat()),
-                    w * 0.06f, w * 0.06f, Path.Direction.CW)
+                    radius, radius, Path.Direction.CW)
             }
             cv.clipPath(corner)
 
@@ -639,59 +958,6 @@ internal object WidgetShared {
             val r = size * 0.26f
             val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
             cv.drawRoundRect(rect, r, r, paint)
-            val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                color = 0x33FFFFFF
-                strokeWidth = 1.5f * density
-            }
-            cv.drawRoundRect(rect, r, r, stroke)
-            out
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    /**
-     * 封面 -> 指定宽高（dp）的圆角矩形位图：源图按 centerCrop 铺满，圆角取绝对 dp
-     * 值并对齐组件实际渲染尺寸（2×2 填满封面区 / 识曲顶满左缘），确保与卡片
-     * 24dp 容器圆角精确重合；外加一圈细描边增强卡片感。
-     */
-    private fun roundedCoverRect(
-        ctx: Context,
-        path: String,
-        wDp: Int,
-        hDp: Int,
-        radiusDp: Float,
-    ): Bitmap? {
-        if (path.isBlank()) return null
-        return try {
-            val bmp = BitmapFactory.decodeFile(path) ?: return null
-            val density = ctx.resources.displayMetrics.density
-            val w = (wDp * density).toInt().coerceAtLeast(1)
-            val h = (hDp * density).toInt().coerceAtLeast(1)
-            val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val cv = Canvas(out)
-            val r = radiusDp * density
-            val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
-
-            // centerCrop 语义：等比放大铺满，居中采样。
-            val scale = maxOf(w.toFloat() / bmp.width, h.toFloat() / bmp.height)
-            val matrix = Matrix().apply {
-                setScale(scale, scale)
-                postTranslate(
-                    (w - bmp.width * scale) / 2f, (h - bmp.height * scale) / 2f)
-            }
-            val paint = Paint(
-                Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                shader = BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                shader.setLocalMatrix(matrix)
-            }
-
-            val save = cv.save()
-            cv.clipPath(Path().apply { addRoundRect(rect, r, r, Path.Direction.CW) })
-            cv.drawRect(rect, paint)
-            cv.restoreToCount(save)
-
             val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 color = 0x33FFFFFF

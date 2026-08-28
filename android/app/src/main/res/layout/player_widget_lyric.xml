@@ -5,27 +5,52 @@
      五行歌词窗口 + 细进度条。
      歌词窗口：当前行固定映射到 lyricLine3（加粗主色，RemoteViews 无法运行时
      改字重，由 provider 滚动窗口让当前行永远落在该行），上下邻行渐淡。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="@drawable/widget_bg"
-    android:padding="12dp">
+    android:background="@drawable/widget_bg">
 
-    <!-- 左列：固定方形封面（垂直居中）+ 底部三控制钮 -->
+    <!-- 封面模糊背景层：封面缩 24px 再放大 = 100% 模糊作整卡底色。 -->
+    <ImageView
+        android:id="@+id/bgCover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@string/widget_label" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+    <!-- 左列：封面叠层（固定方形） + 底部三控制钮。coverNew 显示当前封面并做切歌动画，
+         coverOld 承载上一曲封面淡出/平移；无动画时 coverOld 隐藏。 -->
     <LinearLayout
         android:layout_width="96dp"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center_horizontal">
 
-        <ImageView
-            android:id="@+id/cover"
+        <FrameLayout
             android:layout_width="96dp"
-            android:layout_height="96dp"
-            android:scaleType="centerCrop"
-            android:contentDescription="@string/widget_label" />
+            android:layout_height="96dp">
+
+            <ImageView
+                android:id="@+id/coverOld"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/widget_label" />
+
+            <ImageView
+                android:id="@+id/coverNew"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/widget_label" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -175,4 +200,5 @@
             android:maxHeight="4dp"
             android:minHeight="4dp" />
     </LinearLayout>
-</LinearLayout>
+    </LinearLayout>
+</FrameLayout>

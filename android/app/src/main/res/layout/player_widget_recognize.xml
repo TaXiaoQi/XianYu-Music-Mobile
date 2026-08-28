@@ -1,26 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 桌面播放组件 · 识曲 4×2（独立组件入口，独立横条样式）：
-     左 = 方形封面(72dp)垂直居中；右列三块 == 歌名/歌手 + 右上识曲钮、
-     中部三大控制键平均展示、进度条 + 时间（时间在进度条下方左右）。
+     左 = 方形封面(130dp)垂直居中、与卡片边缘留间距，双封面叠层（coverNew 覆盖 coverOld），
+     切歌时经 Kotlin 侧逐帧 setAlpha/setTranslationX 做「左右平移 + 淡入淡出」；
+     右列三块 == 歌名/歌手 + 右上识曲钮、中部三大控制键平均展示、
+     进度条 + 时间（时间在进度条下方左右）。
      点击识曲钮经深链 xianyu://open?target=recognize 拉起识曲页。
      颜色随系统明暗主题（values vs values-night）。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/root"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="@drawable/widget_bg">
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp">
 
-    <!-- 左：封面（垂直居中） -->
-    <ImageView
-        android:id="@+id/cover"
-        android:layout_width="72dp"
-        android:layout_height="72dp"
-        android:layout_marginStart="12dp"
-        android:layout_gravity="center_vertical"
-        android:scaleType="centerCrop"
-        android:src="@drawable/ic_widget_music_note"
-        android:contentDescription="@string/widget_label" />
+    <!-- 卡片容器：带圆角底色但比 4×2 格子矮、上下居中留白（对齐多邻国观感）。 -->
+    <FrameLayout
+        android:id="@+id/root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_bg">
+
+        <!-- 封面模糊背景层：歌词卡同款「封面缩 24px 再放大 = 100% 模糊」作整卡底色。 -->
+        <ImageView
+            android:id="@+id/bgCover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:contentDescription="@string/widget_label" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+    <!-- 左：封面叠层容器（固定方形，四周留边距）。
+         coverNew 显示当前封面并做切歌动画，coverOld 承载上一曲封面淡出/左移；
+         无动画时 coverOld 隐藏。 -->
+    <FrameLayout
+        android:id="@+id/coverHost"
+        android:layout_width="110dp"
+        android:layout_height="110dp"
+        android:layout_marginStart="10dp"
+        android:layout_gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/coverOld"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_label" />
+
+        <ImageView
+            android:id="@+id/coverNew"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_label" />
+    </FrameLayout>
 
     <!-- 右：信息 + 控件 + 进度 -->
     <LinearLayout
@@ -29,15 +64,15 @@
         android:layout_weight="1"
         android:layout_marginStart="12dp"
         android:paddingEnd="10dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:orientation="vertical"
-        android:gravity="center_vertical">
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:orientation="vertical">
 
         <!-- 行1：歌名/歌手（左） + 听歌识曲按钮（右上角） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -84,43 +119,44 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:layout_marginTop="4dp"
             android:orientation="horizontal"
             android:gravity="center_horizontal">
 
             <ImageButton
                 android:id="@+id/btnPrev"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
-                android:padding="7dp"
-                android:background="@null"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="6dp"
+                android:background="@android:color/transparent"
                 android:src="@drawable/ic_skip_previous"
                 android:tint="@color/widget_icon"
-                android:scaleType="fitCenter"
+                android:scaleType="centerInside"
                 android:contentDescription="@string/widget_label" />
 
             <ImageButton
                 android:id="@+id/btnPlay"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_marginStart="12dp"
                 android:layout_marginEnd="12dp"
-                android:padding="7dp"
-                android:background="@null"
+                android:padding="6dp"
+                android:background="@android:color/transparent"
                 android:src="@drawable/ic_play"
-                android:tint="@color/widget_icon"
-                android:scaleType="fitCenter"
+                android:tint="#EC4142"
+                android:scaleType="centerInside"
                 android:contentDescription="@string/widget_label" />
 
             <ImageButton
                 android:id="@+id/btnNext"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
-                android:padding="7dp"
-                android:background="@null"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="6dp"
+                android:background="@android:color/transparent"
                 android:src="@drawable/ic_skip_next"
                 android:tint="@color/widget_icon"
-                android:scaleType="fitCenter"
+                android:scaleType="centerInside"
                 android:contentDescription="@string/widget_label" />
         </LinearLayout>
 
@@ -130,7 +166,7 @@
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="7dp"
             android:max="100"
             android:progress="0"
             android:progressDrawable="@drawable/widget_progress_drawable"
@@ -141,6 +177,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:layout_marginTop="2dp"
             android:orientation="horizontal">
 
@@ -165,4 +202,6 @@
                 android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+    </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

@@ -39,6 +39,8 @@ class PlayerWidgetController {
   String? _prevPath;
   List<LyricLine> _lyrics = const [];
   int _lyricToken = 0;
+  // 封面切换方向：+1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
+  int _coverDir = 1;
 
   void init() {
     _channel.setMethodCallHandler(_onControl);
@@ -99,6 +101,10 @@ class PlayerWidgetController {
     final item = s.current;
     final songChanged = item != null && item.path != _prevPath;
     if (songChanged) {
+      // 用队列序判定方向（上一首/下一首），供封面「左右平移」动效匹配导航方向。
+      final prevIdx = s.queue.indexWhere((q) => q.path == _prevPath);
+      final newIdx = s.queue.indexWhere((q) => q.path == item.path);
+      _coverDir = (prevIdx >= 0 && newIdx < prevIdx) ? -1 : 1;
       _prevPath = item.path;
       _lastCover = null;
       _loadCover(item);
@@ -278,6 +284,7 @@ class PlayerWidgetController {
       'position': s.position.round(),
       'duration': s.duration.round(),
       'coverPath': cover ?? '',
+      'coverDir': _coverDir,
     });
     try {
       // 状态经原生通道落盘到确定性 key(player_widget/state)，再触发组件刷新。

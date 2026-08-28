@@ -9,14 +9,19 @@
     android:orientation="horizontal"
     android:background="@drawable/widget_bg">
 
-    <!-- 左：方形封面（72dp）垂直居中 -->
-    <ImageView
-        android:layout_width="72dp"
-        android:layout_height="72dp"
-        android:layout_marginStart="12dp"
-        android:layout_gravity="center_vertical"
-        android:scaleType="centerCrop"
-        android:src="@drawable/widget_preview_cover" />
+    <!-- 左：方形封面（90dp），与卡片边缘留间距（对齐真实识别布局） -->
+    <FrameLayout
+        android:layout_width="90dp"
+        android:layout_height="90dp"
+        android:layout_marginStart="10dp"
+        android:layout_gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/widget_preview_cover" />
+    </FrameLayout>
 
     <!-- 右：信息 + 控件 + 进度 -->
     <LinearLayout

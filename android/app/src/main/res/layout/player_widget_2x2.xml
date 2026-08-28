@@ -1,55 +1,127 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件 · 2×2 方形（参考 QQ 音乐：两行）。
-     行1 = 封面（占满上部）；行2 = 歌名(左) + 小播放键(右)。
+<!-- 桌面播放组件 · 2×2 方形（三行）：
+     行1 = 封面（缩小居中；双封面叠层做切歌动画）；行2 = 歌名 + 歌手；
+     行3 = 上一首 / 播放 / 下一首 三大键居中。
      颜色随系统明暗主题。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_bg"
-    android:padding="10dp">
+    android:background="@drawable/widget_bg">
 
-    <!-- 行1：封面（占上部权重；provider 按组件实际尺寸渲染等比例矩形位图填满本区，
-         圆角为绝对 24dp，与卡片容器圆角对齐） -->
+    <!-- 封面模糊背景层：封面缩 24px 再放大 = 100% 模糊作整卡底色。 -->
     <ImageView
-        android:id="@+id/cover"
+        android:id="@+id/bgCover"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginBottom="8dp"
-        android:scaleType="fitCenter"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
         android:contentDescription="@string/widget_label" />
 
-    <!-- 行2：歌名(左) + 小播放键(右) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:gravity="center_vertical">
+
+    <!-- 行1：封面（缩小方形，居中）。coverNew 显示当前封面并做切歌动画，
+         coverOld 承载上一曲封面淡出/平移；无动画时 coverOld 隐藏。 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center">
+
+        <ImageView
+            android:id="@+id/coverOld"
+            android:layout_width="85dp"
+            android:layout_height="85dp"
+            android:layout_gravity="center"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_label" />
+
+        <ImageView
+            android:id="@+id/coverNew"
+            android:layout_width="85dp"
+            android:layout_height="85dp"
+            android:layout_gravity="center"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_label" />
+    </FrameLayout>
+
+    <!-- 行2：歌名 + 歌手 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_marginTop="3dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
 
         <TextView
             android:id="@+id/songText"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:textColor="@color/widget_text_primary"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:singleLine="true"
             android:ellipsize="end"
+            android:gravity="center"
+            android:contentDescription="@string/widget_label" />
+
+        <TextView
+            android:id="@+id/artistText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:contentDescription="@string/widget_label" />
+    </LinearLayout>
+
+    <!-- 行3：上一首 / 播放 / 下一首 三大键居中 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <ImageButton
+            android:id="@+id/btnPrev"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="3dp"
+            android:background="@drawable/widget_btn_circle"
+            android:src="@drawable/ic_skip_previous"
+            android:tint="@color/widget_icon"
+            android:scaleType="centerInside"
             android:contentDescription="@string/widget_label" />
 
         <ImageButton
             android:id="@+id/btnPlay"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="10dp"
-            android:padding="8dp"
-            android:background="@null"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/widget_play_btn"
             android:src="@drawable/ic_play"
+            android:padding="5dp"
+            android:scaleType="centerInside"
+            android:contentDescription="@string/widget_label" />
+
+        <ImageButton
+            android:id="@+id/btnNext"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="3dp"
+            android:background="@drawable/widget_btn_circle"
+            android:src="@drawable/ic_skip_next"
             android:tint="@color/widget_icon"
-            android:scaleType="fitCenter"
+            android:scaleType="centerInside"
             android:contentDescription="@string/widget_label" />
     </LinearLayout>
-</LinearLayout>
+    </LinearLayout>
+</FrameLayout>
