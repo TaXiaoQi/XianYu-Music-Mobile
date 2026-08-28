@@ -11,6 +11,8 @@ import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../core/app_logger.dart';
 import '../core/rust_init.dart';
+import '../auth/auth_provider.dart';
+import '../share/share_service.dart';
 import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
 import '../i18n/i18n.dart';
@@ -94,6 +96,15 @@ class XianYuDeepLink {
         if (target == 'recognize' &&
             router.routerDelegate.currentConfiguration.uri.toString() != '/recognize') {
           router.push('/recognize');
+          return;
+        }
+        if (target == 'share') {
+          // 打开当前歌曲分享菜单（经瞬时桥接页提供 WidgetRef）。
+          if (router.routerDelegate.currentConfiguration.uri.toString() !=
+              '/shareBridge') {
+            router.push('/shareBridge');
+          }
+          return;
         }
         return;
       }
