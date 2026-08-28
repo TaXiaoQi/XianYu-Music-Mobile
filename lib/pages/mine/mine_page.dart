@@ -243,8 +243,8 @@ class _AccountArea extends ConsumerWidget {
               ),
               IconButton(
                 onPressed: () => context.push('/wallpaper'),
-                icon: Icon(Icons.wallpaper, color: scheme.outline),
-                tooltip: tr('壁纸中心'),
+                icon: Icon(Icons.checkroom, color: scheme.outline),
+                tooltip: tr('皮肤'),
                 splashRadius: 20,
               ),
             ],

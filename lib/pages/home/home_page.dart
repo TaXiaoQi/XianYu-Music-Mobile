@@ -135,31 +135,17 @@ class _SearchBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // 听歌识曲入口：搜索框内右侧
+              // 听歌识曲入口：搜索框内右侧（仅标识）
               GestureDetector(
                 onTap: onRecognize,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEC4141).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children:   [
-                      Icon(Icons.mic_none, size: 16, color: Color(0xFFEC4141)),
-                      SizedBox(width: 3),
-                      Text(
-                        tr('识曲'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFEC4141),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: Icon(Icons.mic_none, size: 17, color: Color(0xFFEC4141)),
                 ),
               ),
             ],

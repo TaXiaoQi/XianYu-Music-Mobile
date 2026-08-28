@@ -1351,4 +1351,5 @@ const Map<String, String> enDictManual = {
   '设置导入失败：{e}': 'Settings import failed: {e}',
   '同步失败：{e}': 'Sync failed: {e}',
   '下载失败：{e}': 'Download failed: {e}',
+  '皮肤': 'Skin',
 };
