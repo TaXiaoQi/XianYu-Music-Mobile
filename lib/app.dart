@@ -14,7 +14,6 @@ import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/custom_background.dart';
-import 'src/widgets/predictive_back_transitions.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -49,7 +48,6 @@ class XianYuApp extends ConsumerStatefulWidget {
 
 class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
   int? _cachedAccent;
-  bool? _cachedPredictiveBack;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
@@ -132,28 +130,22 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     );
   }
 
-  void _ensureThemes(int accent, bool predictiveBack) {
-    if (_cachedAccent == accent &&
-        _cachedPredictiveBack == predictiveBack &&
-        _lightTheme != null) {
+  void _ensureThemes(int accent) {
+    if (_cachedAccent == accent && _lightTheme != null) {
       return;
     }
     _cachedAccent = accent;
-    _cachedPredictiveBack = predictiveBack;
     final seed = Color(accent);
-    // 安卓切换特效：统一使用覆盖式转场（新页从右侧滑入盖住旧页，旧页静止），
-    // 贴近 Android 原生覆盖式切换而非 M3 FadeForwards 的两页横切。预测返回
-    // 开启时接管边缘手势做整屏缩放跟手，非手势的打开/关闭仍用覆盖滑动；
-    // 关闭时退化为纯覆盖滑动（无跟手，直接 pop）。
-    // 转场/预测返回时露出的底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），
-    // 与页面无壁纸时的底色完全一致，不再是透明底。壁纸开启时由
-    // [CustomBackgroundLayer] 直接覆盖在这层底色之上——「壁纸盖在实色底色上」，
-    // 无需任何透明占位层。
+    // 安卓切换特效：使用 Flutter 框架自带原生 `ZoomPageTransitionsBuilder`。
+    // 就是 Android 原生效果：新页从右侧滑入覆盖旧页，返回手势做整屏缩放跟手，
+    // 动画期间下层页面实时绘制，体验原生且不折腾。
+    // 转场时露出的底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），
+    // 与页面无壁纸时的底色一致，壁纸直接覆盖在这层实色之上，不需要透明占位。
     PageTransitionsTheme transitions(Color base) => PageTransitionsTheme(
           builders: {
-            TargetPlatform.android: predictiveBack
-                ? CoverPageTransitionsBuilder(predictiveBack: true, backgroundColor: base)
-                : CoverPageTransitionsBuilder(predictiveBack: false, backgroundColor: base),
+            TargetPlatform.android: ZoomPageTransitionsBuilder(
+              backgroundColor: base,
+            ),
             TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
           },
         );
@@ -230,7 +222,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
+    _ensureThemes(accent);
     // 自定义壁纸启用时，页面前景文字按「亮字/暗字」（前景样式）固定为亮色或暗色，
     // 让壁纸上的正文/标题/图标始终清晰可读，而非跟随主题色而看不清。
     ThemeData theme = _lightTheme!;
