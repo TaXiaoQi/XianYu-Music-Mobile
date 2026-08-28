@@ -17,5 +17,8 @@
     <!-- 歌词卡组件 · 深色主题 -->
     <color name="widget_lyric_near">#99FFFFFF</color>
     <color name="widget_lyric_far">#54FFFFFF</color>
+    <!-- 逐字卡拉OK：已唱部分（品牌红） / 未唱剩余（清晰可读浅灰） -->
+    <color name="widget_lyric_sung">#EC4141</color>
+    <color name="widget_lyric_unread">#99FFFFFF</color>
     <color name="widget_circle_btn">#24FFFFFF</color>
 </resources>

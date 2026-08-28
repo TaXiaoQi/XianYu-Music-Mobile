@@ -9,9 +9,9 @@ import org.json.JSONObject
 /**
  * 桌面播放组件 · 方形（独立组件入口，launcher 组件列表单独可选）。
  *
- * 多档自适应：随桌面上拖拽尺寸在 2×2 方形 / 4×2 横条 / 3×4 歌词卡 三档间切换
- * （档位由 WidgetShared.squareCellMode 按网格尺寸判定，onAppWidgetOptionsChanged
- * 落盘到 layout_<id>，onUpdate/refresh 按已存档档位构建）。
+ * 多档自适应：拖拽在 2×2 方形 / 4×2 横条 / 4×3 歌词卡之间切换
+ * （档位判定见 WidgetShared.squareCellMode / buildEntry）。
+ * 控制链路与主组件共用（WidgetShared.handleAction）。
  */
 class SquareWidgetProvider : AppWidgetProvider() {
 
@@ -22,7 +22,10 @@ class SquareWidgetProvider : AppWidgetProvider() {
     ) {
         val s = WidgetShared.stateJson(context) ?: JSONObject()
         for (id in appWidgetIds) {
-            appWidgetManager.updateAppWidget(id, WidgetShared.buildSquareViews(context, s, id))
+            appWidgetManager.updateAppWidget(
+                id, WidgetShared.buildEntry(
+                    context, s, id, SquareWidgetProvider::class.java,
+                    4000, WidgetShared.MODE_2X2, false))
         }
     }
 
@@ -32,7 +35,6 @@ class SquareWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) {
-        // 按新尺寸判定档位并落盘，后续刷新按该档位构建。
         val mode = WidgetShared.squareCellMode(newOptions)
         context.getSharedPreferences(WidgetShared.SP_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -40,8 +42,14 @@ class SquareWidgetProvider : AppWidgetProvider() {
             .apply()
         appWidgetManager.updateAppWidget(
             appWidgetId,
-            WidgetShared.buildSquareViews(
-                context, WidgetShared.stateJson(context) ?: JSONObject(), appWidgetId))
+            WidgetShared.buildEntry(
+                context,
+                WidgetShared.stateJson(context) ?: JSONObject(),
+                appWidgetId,
+                SquareWidgetProvider::class.java,
+                4000,
+                WidgetShared.MODE_2X2,
+                false))
     }
 
     override fun onReceive(context: Context, intent: Intent) {

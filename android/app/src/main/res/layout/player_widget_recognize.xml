@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件 · 识曲样式（独立组件入口，参考 iOS 音乐横条）：
-     封面顶满容器上下（provider 按实际高度渲染方形位图，adjustViewBounds 自适应方形宽度
-     贴卡片左缘，圆角绝对 24dp 与卡片圆角重合）；
-     右列(歌名/当前歌词 + 右上角听歌识曲按钮、上一首/播放/下一首、进度时间行)。
-     点击右上识曲钮经深链 xianyu://open?target=recognize 拉起识曲页。
-     颜色随系统明暗主题（values vs values-night）。
-     歌名/歌手超长时跑马灯滚动（provider 侧 setSelected 激活）。 -->
+<!-- 桌面播放组件 · 识曲 4×2（独立组件入口，独立横条样式）：
+     左 = 方形封面(72dp)垂直居中；右列三块 == 歌名/歌手 + 右上识曲钮、
+     中部三大控制键平均展示、进度条 + 时间（时间在进度条下方左右）。
+     点击识曲钮经深链 xianyu://open?target=recognize 拉起识曲页。
+     颜色随系统明暗主题（values vs values-night）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -13,8 +11,7 @@
     android:orientation="horizontal"
     android:background="@drawable/widget_bg">
 
-    <!-- 左：封面顶满容器上下（provider 按实际高度渲染方形位图，adjustViewBounds
-         使宽度随高度撑满左缘；fitXY 保证顶满不露底；圆角绝对 24dp 与卡片圆角重合） -->
+    <!-- 左：封面（垂直居中） -->
     <ImageView
         android:id="@+id/cover"
         android:layout_width="72dp"
@@ -25,20 +22,19 @@
         android:src="@drawable/ic_widget_music_note"
         android:contentDescription="@string/widget_label" />
 
-    <!-- 右：信息 + 控件 + 进度（压缩内边距给大封面让位） -->
+    <!-- 右：信息 + 控件 + 进度 -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:layout_marginStart="12dp"
-        android:paddingStart="0dp"
         android:paddingEnd="10dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"
         android:orientation="vertical"
         android:gravity="center_vertical">
 
-        <!-- 行1：歌名/当前歌词（左） + 听歌识曲按钮（右上角） -->
+        <!-- 行1：歌名/歌手（左） + 听歌识曲按钮（右上角） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -84,7 +80,7 @@
                 android:contentDescription="@string/widget_label" />
         </LinearLayout>
 
-        <!-- 行2：上一首 / 播放 / 下一首 -->
+        <!-- 行2：上一首 / 播放 / 下一首（平均展示） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -96,8 +92,7 @@
                 android:id="@+id/btnPrev"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
-                android:layout_marginEnd="12dp"
-                android:padding="8dp"
+                android:padding="7dp"
                 android:background="@null"
                 android:src="@drawable/ic_skip_previous"
                 android:tint="@color/widget_icon"
@@ -110,7 +105,7 @@
                 android:layout_height="42dp"
                 android:layout_marginStart="12dp"
                 android:layout_marginEnd="12dp"
-                android:padding="9dp"
+                android:padding="7dp"
                 android:background="@null"
                 android:src="@drawable/ic_play"
                 android:tint="@color/widget_icon"
@@ -121,8 +116,7 @@
                 android:id="@+id/btnNext"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
-                android:layout_marginStart="12dp"
-                android:padding="8dp"
+                android:padding="7dp"
                 android:background="@null"
                 android:src="@drawable/ic_skip_next"
                 android:tint="@color/widget_icon"
@@ -130,7 +124,7 @@
                 android:contentDescription="@string/widget_label" />
         </LinearLayout>
 
-        <!-- 行3a：进度条（独立一行） -->
+        <!-- 行3：进度条（独立一行） -->
         <ProgressBar
             android:id="@+id/progress"
             style="?android:attr/progressBarStyleHorizontal"
@@ -143,7 +137,7 @@
             android:maxHeight="6dp"
             android:minHeight="6dp" />
 
-        <!-- 行3b：当前/总时长（进度条下方，左右分布） -->
+        <!-- 行4：当前/总时长（进度条下方，左右分布） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -7,13 +7,11 @@ import android.content.Intent
 import org.json.JSONObject
 
 /**
- * 桌面播放组件 · 歌词卡样式（独立组件入口，launcher 组件列表单独可选）。
+ * 桌面播放组件 · 歌词卡（独立组件入口，launcher 组件列表单独可选）。
  *
- * 固定 4×3 方卡（系统通知式平面底色，随系统明暗反转，参考酷狗 4×3 排布、
- * 控件与歌名互换）：左列大封面 + 底部三控制钮（上一首/品牌红播放/下一首）；
- * 右列歌名、歌手·弦予音乐、五行渐变歌词窗口（当前行固定居中加粗）、细进度条。
- * 歌词窗口数据来自状态 JSON 的 lyricWindow（Flutter 侧随播放滚动推送）。
- * 控制链路与主组件共用（WidgetShared）。
+ * 多档自适应：拖拽在 2×2 方形 / 4×2 横条 / 4×3 歌词卡之间切换；
+ * 4×3 档位为五行歌词窗口（当前行固定居中加粗），并支持逐字播放高亮。
+ * 控制链路与主组件共用（WidgetShared.handleAction）。
  */
 class LyricWidgetProvider : AppWidgetProvider() {
 
@@ -25,9 +23,9 @@ class LyricWidgetProvider : AppWidgetProvider() {
         val s = WidgetShared.stateJson(context) ?: JSONObject()
         for (id in appWidgetIds) {
             appWidgetManager.updateAppWidget(
-                id, WidgetShared.buildViews(
-                    context, s, WidgetShared.MODE_LYRIC,
-                    LyricWidgetProvider::class.java, 5000, id))
+                id, WidgetShared.buildEntry(
+                    context, s, id, LyricWidgetProvider::class.java,
+                    5000, WidgetShared.MODE_LYRIC, false))
         }
     }
 
@@ -37,16 +35,21 @@ class LyricWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) {
-        // 固定样式不随尺寸切换，尺寸变化后重渲染即可。
+        val mode = WidgetShared.squareCellMode(newOptions)
+        context.getSharedPreferences(WidgetShared.SP_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(WidgetShared.LAYOUT_PREFIX + appWidgetId, mode)
+            .apply()
         appWidgetManager.updateAppWidget(
             appWidgetId,
-            WidgetShared.buildViews(
+            WidgetShared.buildEntry(
                 context,
                 WidgetShared.stateJson(context) ?: JSONObject(),
-                WidgetShared.MODE_LYRIC,
+                appWidgetId,
                 LyricWidgetProvider::class.java,
                 5000,
-                appWidgetId))
+                WidgetShared.MODE_LYRIC,
+                false))
     }
 
     override fun onReceive(context: Context, intent: Intent) {

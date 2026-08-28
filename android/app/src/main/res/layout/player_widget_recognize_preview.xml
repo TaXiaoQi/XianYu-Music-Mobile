@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 识曲组件添加页实时预览（Android 12+ previewLayout），与真实布局同构：
-     封面顶满上下贴左缘 + 右列（歌名/歌手 + 识曲钮、三控制键、进度时间行）。 -->
+<!-- 识曲组件添加页实时预览（Android 12+ previewLayout / 15+ setWidgetPreview），
+     与真实 4×2 识曲布局同构：封面 + 右列（歌名/歌手 + 识曲钮、三控制键、
+     进度条独立行、时间在进度条下方左右）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/previewRoot"
     android:layout_width="match_parent"
@@ -8,12 +9,16 @@
     android:orientation="horizontal"
     android:background="@drawable/widget_bg">
 
+    <!-- 左：方形封面（72dp）垂直居中 -->
     <ImageView
-        android:layout_width="100dp"
-        android:layout_height="match_parent"
-        android:scaleType="fitCenter"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginStart="12dp"
+        android:layout_gravity="center_vertical"
+        android:scaleType="centerCrop"
         android:src="@drawable/widget_preview_cover" />
 
+    <!-- 右：信息 + 控件 + 进度 -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -25,6 +30,7 @@
         android:orientation="vertical"
         android:gravity="center_vertical">
 
+        <!-- 行1：歌名/歌手（左） + 听歌识曲按钮（右上角） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -59,12 +65,13 @@
             </LinearLayout>
 
             <TextView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/widget_preview_dot" />
+                android:background="@drawable/widget_btn_circle" />
         </LinearLayout>
 
+        <!-- 行2：上一首 / 播放 / 下一首 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -92,39 +99,42 @@
                 android:background="@drawable/widget_preview_dot" />
         </LinearLayout>
 
-        <LinearLayout
+        <!-- 行3：进度条（独立一行） -->
+        <ProgressBar
+            style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:max="100"
+            android:progress="38"
+            android:progressDrawable="@drawable/widget_progress_drawable"
+            android:maxHeight="6dp"
+            android:minHeight="6dp" />
+
+        <!-- 行4：当前/总时长（进度条下方，左右分布） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="1:23"
-                android:textColor="@color/widget_time"
-                android:textSize="11sp" />
-
-            <ProgressBar
-                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:layout_marginEnd="6dp"
-                android:max="100"
-                android:progress="38"
-                android:progressDrawable="@drawable/widget_progress_drawable"
-                android:maxHeight="6dp"
-                android:minHeight="6dp" />
+                android:gravity="start"
+                android:text="1:23"
+                android:textColor="@color/widget_time"
+                android:textSize="10sp" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
                 android:text="4:56"
                 android:textColor="@color/widget_time"
-                android:textSize="11sp" />
+                android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

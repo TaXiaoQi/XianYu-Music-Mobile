@@ -23,6 +23,9 @@
     <!-- 歌词卡组件（浅色主题；卡片底色与其他组件一致走系统通知平面色） -->
     <color name="widget_lyric_near">#8C202224</color>
     <color name="widget_lyric_far">#54202224</color>
+    <!-- 逐字卡拉OK：已唱部分（品牌红，同播放详情页活动行） / 未唱剩余（清晰可读灰度） -->
+    <color name="widget_lyric_sung">#EC4141</color>
+    <color name="widget_lyric_unread">#59202224</color>
     <!-- 圆形控制钮底色 -->
     <color name="widget_circle_btn">#14202224</color>
 </resources>

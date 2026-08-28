@@ -41,7 +41,6 @@ internal object WidgetShared {
     const val SP_NAME = "player_widget"
     private const val SP_KEY = "state"
     const val LAYOUT_PREFIX = "layout_"
-    const val PACKAGE = "com.xianyumusic.app"
 
     const val MODE_TALL = "tall"
     const val MODE_2X2 = "2x2"
@@ -56,7 +55,6 @@ internal object WidgetShared {
     private const val COVER_TALL_DP = 60
     private const val COVER_2X2_DP = 156
     private const val COVER_RECOGNIZE_DP = 72
-    private const val COVER_4X2_DP = 96
     private const val COVER_LYRIC_DP = 96
 
     // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
@@ -66,7 +64,7 @@ internal object WidgetShared {
     private const val SQUARE_PAD_DP = 10
     private const val SQUARE_OVERHEAD_DP = 68
 
-    // 歌词卡五行窗口的 TextView id（index 0..4，当前行固定在第 3 行）。
+    // 歌词卡五行窗口的 TextView id（index 0..4，当前行固定在第 3 行，即 lyricLine3）。
     private val LYRIC_LINE_IDS = intArrayOf(
         R.id.lyricLine1, R.id.lyricLine2, R.id.lyricLine3,
         R.id.lyricLine4, R.id.lyricLine5)
@@ -84,9 +82,10 @@ internal object WidgetShared {
     // ---- 歌词卡逐字播放（karaoke reveal）----
     // RemoteViews 仅支持 API 28+ 的 ParcelableSpan 跨进程保留颜色；
     // Flutter 侧推送当前活动行的逐字时间轴 {s,e,len}(毫秒/字符数)，
-    // 本端用上次上报 position + 墙钟外推估算实时位，仅局部刷新当前行 lyricLine3。
+    // 本端用上次上报 position + 墙钟外推估算实时位，仅局部刷新当前行 lyricLine2。
     private const val REVEAL_INTERVAL_MS = 150L
     private val revealOwner = HashMap<Int, Any>() // id -> token（换行/停止即失效）
+    private val revealLineCur = HashMap<Int, String>() // id -> 已渲染活动行文字（换行判淡入）
 
     /** 解析状态 JSON 的当前活动行逐字时间轴；无逐字数据返回空 list。 */
     private fun activeWordsList(s: JSONObject): List<IntArray> {
@@ -113,17 +112,26 @@ internal object WidgetShared {
         return acc
     }
 
-    /** 逐字双色：已亮部分走布局默认亮色，未亮部分叠暗色 span；API<28 → 回退纯文本。 */
+    /** 逐字双色：已唱部分=品牌红（同播放详情页活动行），未唱剩余=清晰灰度，
+     *  两段都用显式 ForegroundColorSpan，避免依赖布局默认色在跨进程渲染丢失；
+     *  API<28 → 回退纯文本（整行默认色）。 */
     private fun revealSpannable(ctx: Context, text: String, covered: Int): CharSequence {
         if (Build.VERSION.SDK_INT < 28 || text.isEmpty()) return text
         val from = covered.coerceIn(0, text.length)
+        if (from == 0) return text // 尚未唱到任何字：整行保持布局默认色
         if (from >= text.length) return text
         return try {
+            val r = ctx.resources
             @Suppress("DEPRECATION")
-            val unsung = ctx.resources.getColor(R.color.widget_lyric_near)
+            val sung = r.getColor(R.color.widget_lyric_sung)
+            @Suppress("DEPRECATION")
+            val unread = r.getColor(R.color.widget_lyric_unread)
             val sp = android.text.SpannableString(text)
             sp.setSpan(
-                android.text.style.ForegroundColorSpan(unsung),
+                android.text.style.ForegroundColorSpan(sung),
+                0, from, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sp.setSpan(
+                android.text.style.ForegroundColorSpan(unread),
                 from, text.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             sp
         } catch (_: Throwable) {
@@ -132,9 +140,9 @@ internal object WidgetShared {
     }
 
     /** 仅局部刷新当前歌词行（partiallyUpdate 只应用该 setText 动作）。 */
-    private fun setRevealText(mgr: AppWidgetManager, id: Int, text: CharSequence) {
+    private fun setRevealText(ctx: Context, mgr: AppWidgetManager, id: Int, text: CharSequence) {
         try {
-            val v = RemoteViews(PACKAGE, R.layout.player_widget_lyric)
+            val v = RemoteViews(ctx.packageName, R.layout.player_widget_lyric)
             v.setTextViewText(R.id.lyricLine3, text)
             mgr.partiallyUpdateAppWidget(id, v)
         } catch (_: Exception) {}
@@ -142,6 +150,21 @@ internal object WidgetShared {
 
     private fun cancelReveal(id: Int) {
         revealOwner.remove(id)
+    }
+
+    /** 换行淡入：三行窗口从透明(0)步进渐显到 255（RemoteViews 无补间，用多次局部 setAlpha）。 */
+    private fun fadeInLines(ctx: Context, mgr: AppWidgetManager, id: Int, steps: Int = 6) {
+        for (i in 0..steps) {
+            val idx = i
+            mainHandler.postDelayed({
+                try {
+                    val a = (idx * 255 / steps).coerceIn(0, 255)
+                    val v = RemoteViews(ctx.packageName, R.layout.player_widget_lyric)
+                    for (line in LYRIC_LINE_IDS) v.setInt(line, "setAlpha", a)
+                    mgr.partiallyUpdateAppWidget(id, v)
+                } catch (_: Exception) {}
+            }, idx * 40L)
+        }
     }
 
     /** 启动当前活动行逐字播放；播放中/无逐字/空行则不启动。
@@ -157,6 +180,11 @@ internal object WidgetShared {
     ) {
         cancelReveal(id)
         if (!playing || words.isEmpty() || lineText.isEmpty()) return
+        // 仅当活动行文字真的切换时才做淡入（避免播放/收藏等无关 push 反复闪）。
+        if (revealLineCur[id] != lineText) {
+            revealLineCur[id] = lineText
+            fadeInLines(ctx, mgr, id)
+        }
         val token = Any()
         revealOwner[id] = token
         val lastChars = IntArray(1) { -1 }
@@ -168,20 +196,20 @@ internal object WidgetShared {
                 val est = anchorPos + (System.currentTimeMillis() - anchorWall).toInt()
                 if (est >= words[words.size - 1][1]) {
                     // 行唱完：整行亮满并停止本行刷新。
-                    setRevealText(mgr, id, revealSpannable(ctx, lineText, lineText.length))
+                    setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, lineText.length))
                     revealOwner.remove(id)
                     return
                 }
                 val chars = revealChars(words, est)
                 if (chars != lastChars[0]) {
                     lastChars[0] = chars
-                    setRevealText(mgr, id, revealSpannable(ctx, lineText, chars))
+                    setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, chars))
                 }
                 mainHandler.postDelayed(this, REVEAL_INTERVAL_MS)
             }
         }
         // 首帧立即按本次上报位渲染，避免等 150ms 才出现第一字。
-        setRevealText(mgr, id, revealSpannable(ctx, lineText, revealChars(words, posMs)))
+        setRevealText(ctx, mgr, id, revealSpannable(ctx, lineText, revealChars(words, posMs)))
         mainHandler.postDelayed(r, REVEAL_INTERVAL_MS)
     }
 
@@ -200,23 +228,33 @@ internal object WidgetShared {
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)),
         cellCount(newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)))
 
-    /** 方形组件多档判定：≤2×2 方形、宽横条 4×2、≥3 行朝向 3×4 歌词卡。 */
+    /** 多档判定（三个组件入口共用）：高≥3 行 → 4×3 歌词卡；
+        宽≥3 且高度 ≤2 行 → 4×2 横条；否则 → 2×2 方形。 */
     fun squareCellMode(o: Bundle): String {
         val (cw, ch) = cellsOf(o)
         return when {
-            cw <= 2 && ch <= 2 -> MODE_2X2
-            ch <= 2 && cw >= 3 -> MODE_4X2
-            else -> MODE_LYRIC
+            ch >= 3 -> MODE_LYRIC
+            cw >= 3 -> MODE_4X2
+            else -> MODE_2X2
         }
     }
 
-    /** 按已存档位构建方形组件（onAppWidgetOptionsChanged 写入档位）。 */
-    fun buildSquareViews(ctx: Context, s: JSONObject, id: Int): RemoteViews {
+    /** 按已存档档位构建组件（onAppWidgetOptionsChanged 写入档位；无存档用默认档）。 */
+    fun buildEntry(
+        ctx: Context,
+        s: JSONObject,
+        id: Int,
+        provider: Class<out AppWidgetProvider>,
+        rc: Int,
+        defaultMode: String,
+        enableRecognize: Boolean,
+    ): RemoteViews {
         val mode = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
-            .getString(LAYOUT_PREFIX + id, null) ?: MODE_2X2
+            .getString(LAYOUT_PREFIX + id, null) ?: defaultMode
         return buildViews(
-            ctx, s, mode, SquareWidgetProvider::class.java, 4000, id,
-            if (mode == MODE_2X2) widgetSizeDp(AppWidgetManager.getInstance(ctx), id) else null)
+            ctx, s, mode, provider, rc, id,
+            if (mode == MODE_2X2) widgetSizeDp(AppWidgetManager.getInstance(ctx), id) else null,
+            enableRecognize)
     }
 
     /**
@@ -245,7 +283,7 @@ internal object WidgetShared {
      * 推送一次；系统限速约 2 次/小时 → 每小时最多尝试一轮，全部成功后记版本号，
      * 预览布局有改动时递增 PREVIEW_GEN_VERSION 重新推送。
      */
-    private const val PREVIEW_GEN_VERSION = 4
+    private const val PREVIEW_GEN_VERSION = 7
     private const val PREVIEW_GEN_RETRY_MS = 55 * 60 * 1000L
 
     fun ensurePreviewGen(ctx: Context) {
@@ -267,7 +305,7 @@ internal object WidgetShared {
                 mgr.setWidgetPreview(
                     ComponentName(ctx, cls),
                     AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN,
-                    RemoteViews(PACKAGE, layout))
+                    RemoteViews(ctx.packageName, layout))
                 ok++
             } catch (_: Exception) {
             }
@@ -283,17 +321,15 @@ internal object WidgetShared {
         val s = stateJson(ctx) ?: JSONObject()
         for (id in mgr.getAppWidgetIds(
             ComponentName(ctx, SquareWidgetProvider::class.java))) {
-            // 按已存档档位（2×2/4×2/3×4）构建，封面随各档实际尺寸渲染。
-            mgr.updateAppWidget(id, buildSquareViews(ctx, s, id))
+            mgr.updateAppWidget(id, buildEntry(ctx, s, id, SquareWidgetProvider::class.java, 4000, MODE_2X2, false))
         }
         for (id in mgr.getAppWidgetIds(
             ComponentName(ctx, RecognizeWidgetProvider::class.java))) {
-            mgr.updateAppWidget(id, buildRecognizeViews(ctx, s, widgetSizeDp(mgr, id)))
+            mgr.updateAppWidget(id, buildEntry(ctx, s, id, RecognizeWidgetProvider::class.java, 2000, MODE_4X2, true))
         }
         for (id in mgr.getAppWidgetIds(
             ComponentName(ctx, LyricWidgetProvider::class.java))) {
-            mgr.updateAppWidget(
-                id, buildViews(ctx, s, MODE_LYRIC, LyricWidgetProvider::class.java, 5000, id))
+            mgr.updateAppWidget(id, buildEntry(ctx, s, id, LyricWidgetProvider::class.java, 5000, MODE_LYRIC, false))
         }
     }
 
@@ -306,14 +342,15 @@ internal object WidgetShared {
         rc: Int,
         id: Int,
         sizeDp: Pair<Int, Int>? = null,
+        enableRecognize: Boolean = false,
     ): RemoteViews {
         val layout = when (mode) {
             MODE_2X2 -> R.layout.player_widget_2x2
             MODE_LYRIC -> R.layout.player_widget_lyric
-            MODE_4X2 -> R.layout.player_widget_bar
+            MODE_4X2 -> R.layout.player_widget_recognize
             else -> R.layout.player_widget
         }
-        val views = RemoteViews(PACKAGE, layout)
+        val views = RemoteViews(ctx.packageName, layout)
 
         val title = s.optString("title").takeUnless { it.isBlank() } ?: "弦予音乐"
         val artist = s.optString("artist").takeUnless { it.isBlank() } ?: "未在播放"
@@ -375,6 +412,13 @@ internal object WidgetShared {
                     R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
                 views.setTextViewText(R.id.timeCur, fmt(s.optInt("position")))
                 views.setTextViewText(R.id.timeDur, fmt(s.optInt("duration")))
+                // 识曲入口显示右上听歌识曲钮（定位后经深链拉起识曲页），其他入口隐藏。
+                if (enableRecognize) {
+                    views.setViewVisibility(R.id.btnRecognize, android.view.View.VISIBLE)
+                    views.setOnClickPendingIntent(R.id.btnRecognize, recognizePending(ctx, rc + 4))
+                } else {
+                    views.setViewVisibility(R.id.btnRecognize, android.view.View.GONE)
+                }
                 views.setOnClickPendingIntent(R.id.root, openPending(ctx, rc))
                 views.setOnClickPendingIntent(
                     R.id.btnPrev, pending(ctx, "previous", rc + 1, provider))
@@ -435,7 +479,7 @@ internal object WidgetShared {
                     CARD_CORNER_DP)
             } ?: roundedCover(ctx, coverPath, COVER_2X2_DP)
             MODE_LYRIC -> roundedCover(ctx, coverPath, COVER_LYRIC_DP)
-            MODE_4X2 -> roundedCover(ctx, coverPath, COVER_4X2_DP)
+            MODE_4X2 -> roundedCover(ctx, coverPath, COVER_RECOGNIZE_DP)
             else -> roundedCover(ctx, coverPath, COVER_TALL_DP)
         }
         if (cover != null) {
@@ -469,50 +513,6 @@ internal object WidgetShared {
                 if (!favorite) views.setInt(R.id.btnFavorite, "setColorFilter", WHITE)
                 if (!floatingLyrics) views.setInt(R.id.btnLyrics, "setColorFilter", WHITE)
             }
-        }
-        return views
-    }
-
-    /** 识曲样式组件（固定布局，不随尺寸切换；sizeDp 为实际尺寸，用于封面对齐容器）。 */
-    fun buildRecognizeViews(
-        ctx: Context,
-        s: JSONObject,
-        sizeDp: Pair<Int, Int>? = null,
-    ): RemoteViews {
-        val views = RemoteViews(PACKAGE, R.layout.player_widget_recognize)
-
-        val title = s.optString("title").takeUnless { it.isBlank() } ?: "弦予音乐"
-        val artist = s.optString("artist").takeUnless { it.isBlank() } ?: "未在播放"
-        val lyric = s.optString("lyric")
-        views.setTextViewText(R.id.songText, title)
-        views.setTextViewText(
-            R.id.artistText, lyric.takeUnless { it.isBlank() } ?: artist)
-
-        val playing = s.optBoolean("playing")
-        views.setImageViewResource(
-            R.id.btnPlay, if (playing) R.drawable.ic_pause else R.drawable.ic_play)
-
-        views.setProgressBar(
-            R.id.progress, 100, s.optInt("progress").coerceIn(0, 100), false)
-        views.setTextViewText(R.id.timeCur, fmt(s.optInt("position")))
-        views.setTextViewText(R.id.timeDur, fmt(s.optInt("duration")))
-
-        views.setOnClickPendingIntent(R.id.root, openPending(ctx, 2000))
-        views.setOnClickPendingIntent(
-            R.id.btnPrev, pending(ctx, "previous", 2001, RecognizeWidgetProvider::class.java))
-        views.setOnClickPendingIntent(
-            R.id.btnPlay, pending(ctx, "toggle", 2002, RecognizeWidgetProvider::class.java))
-        views.setOnClickPendingIntent(
-            R.id.btnNext, pending(ctx, "next", 2003, RecognizeWidgetProvider::class.java))
-        // 右上识曲钮：经深链拉起识曲页（冷/热启动都由 MainActivity 深链管道处理）。
-        views.setOnClickPendingIntent(R.id.btnRecognize, recognizePending(ctx, 2004))
-
-        // 封面固定小方形（不再顶满容器），圆角 24dp 对齐卡片，垂直居中于左侧。
-        val cover = roundedCover(ctx, s.optString("coverPath"), COVER_RECOGNIZE_DP)
-        if (cover != null) {
-            views.setImageViewBitmap(R.id.cover, cover)
-        } else {
-            views.setImageViewResource(R.id.cover, R.drawable.ic_widget_music_note)
         }
         return views
     }

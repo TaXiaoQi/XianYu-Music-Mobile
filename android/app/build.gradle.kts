@@ -60,7 +60,18 @@ android {
     }
 
     buildTypes {
+        // debug / flutter run 使用独立的包名后缀，与 release 正式包区分开：
+        // debug(debug.keystore) 与 release(key.properties 正式密钥) 签名不同，
+        // 若共用同一包名会因签名不一致被系统拒绝覆盖安装（需卸载重装）。
+        // 加后缀后两者可共存（applicationId = com.xianyumusic.app.debug），
+        // FileProvider authorities、QQ 回调等均随 ${applicationId} 自动跟随。
+        debug {
+            applicationIdSuffix = ".debug"
+            // debug 应用显示名加「·测试」后缀，与 release 正式版在一屏内可区分
+            manifestPlaceholders["appLabel"] = "弦予音乐·测试"
+        }
         release {
+            manifestPlaceholders["appLabel"] = "弦予音乐"
             // key.properties 存在时用专用 release 密钥签名，缺失时回退 debug 签名
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")

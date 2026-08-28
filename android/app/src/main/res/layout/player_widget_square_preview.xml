@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 方形 2×2 样式组件添加页实时预览（Android 12+），与真实方形布局同构。 -->
+<!-- 方形组件添加页实时预览（Android 12+ previewLayout / 15+ setWidgetPreview），
+     与真实 2×2 方形布局同构：封面（fitCenter 圆角对齐容器） + 歌名 + 小播放键。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/previewRoot"
     android:layout_width="match_parent"
@@ -8,14 +9,16 @@
     android:background="@drawable/widget_bg"
     android:padding="10dp">
 
+    <!-- 行1：封面（占上部权重，fitCenter 与真实 provider 渲染一致） -->
     <ImageView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginBottom="8dp"
-        android:scaleType="centerCrop"
+        android:scaleType="fitCenter"
         android:src="@drawable/widget_preview_cover" />
 
+    <!-- 行2：歌名(左) + 小播放键(右) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

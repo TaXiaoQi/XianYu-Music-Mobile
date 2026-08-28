@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面播放组件 · 歌词卡 4×3（独立组件入口，系统通知式平面底色，随系统明暗反转）。
-     结构（控件与歌名互换版，参考酷狗 4×3 排布）：
-     左列 = 大封面（占满上部）+ 底部三控制钮（上一首/品牌红播放/下一首）；
-     右列 = 顶部歌名 / 歌手·弦予音乐 + 五行歌词窗口 + 细进度条。
-     歌词窗口：当前行固定映射到 lyricLine3（加粗主色，RemoteViews 无法运行时改字重，
-     由 provider 滚动窗口让当前行永远落在该行），上下邻行渐淡。 -->
+<!-- 桌面播放组件 · 歌词卡 4×3（独立组件入口 + 方形组件切到较高尺寸复用，
+     系统通知式平面底色，随系统明暗反转）。
+     结构：左列 = 方形封面 + 底部三控制钮；右列 = 歌名 / 歌手·弦予音乐 +
+     五行歌词窗口 + 细进度条。
+     歌词窗口：当前行固定映射到 lyricLine3（加粗主色，RemoteViews 无法运行时
+     改字重，由 provider 滚动窗口让当前行永远落在该行），上下邻行渐淡。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -13,12 +13,12 @@
     android:background="@drawable/widget_bg"
     android:padding="12dp">
 
-    <!-- 左列：固定方形封面（垂直居中，与右列信息块中心对齐）+ 底部三控制钮 -->
+    <!-- 左列：固定方形封面（垂直居中）+ 底部三控制钮 -->
     <LinearLayout
         android:layout_width="96dp"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:gravity="center">
+        android:gravity="center_horizontal">
 
         <ImageView
             android:id="@+id/cover"
@@ -38,6 +38,7 @@
                 android:id="@+id/btnPrev"
                 android:layout_width="30dp"
                 android:layout_height="30dp"
+                android:padding="3dp"
                 android:background="@drawable/widget_btn_circle"
                 android:src="@drawable/ic_skip_previous"
                 android:tint="@color/widget_icon"
@@ -48,8 +49,8 @@
                 android:id="@+id/btnPlay"
                 android:layout_width="38dp"
                 android:layout_height="38dp"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
+                android:layout_marginStart="7dp"
+                android:layout_marginEnd="7dp"
                 android:background="@drawable/widget_play_btn"
                 android:src="@drawable/ic_play"
                 android:scaleType="centerInside"
@@ -59,6 +60,7 @@
                 android:id="@+id/btnNext"
                 android:layout_width="30dp"
                 android:layout_height="30dp"
+                android:padding="3dp"
                 android:background="@drawable/widget_btn_circle"
                 android:src="@drawable/ic_skip_next"
                 android:tint="@color/widget_icon"
@@ -83,7 +85,7 @@
             android:textSize="14sp"
             android:textStyle="bold"
             android:singleLine="true"
-                android:ellipsize="end" />
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/artistText"
@@ -100,7 +102,7 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="3dp"
             android:orientation="vertical"
             android:gravity="center_vertical">
 
@@ -166,7 +168,7 @@
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="3dp"
             android:max="100"
             android:progress="0"
             android:progressDrawable="@drawable/widget_progress_drawable"
