@@ -1,5 +1,6 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/navigation/shell.dart';
@@ -115,17 +116,26 @@ class _RecentList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    return ListView.separated(
+    final m = ListMetrics.ofRef(ref);
+    // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
+    // 跳过逐行布局测量，大列表快速滑动更省 CPU（对齐统一 SongsListView）。
+    final rowExtent = m.songCover + 2 * m.vPad;
+    return ListView.builder(
       padding: EdgeInsets.only(
         bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),
+      itemExtent: rowExtent,
+      // 提前半屏预缓存，避免新行进场时突然解码封面掉帧（对齐 SongsListView）。
+      scrollCacheExtent: ScrollCacheExtent.pixels(500),
+      // 行不保留状态（封面/标题均无状态构建），离屏即弃，省内存与重建。
+      addAutomaticKeepAlives: false,
       itemCount: recent.entries.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final entry = recent.entries[i];
         return _RecentTile(
           entry: entry,
+          isLast: i == recent.entries.length - 1,
           onPlay: () => notifier.play(i),
           onRemove: () => notifier.remove(entry.songPath),
         );
@@ -139,15 +149,20 @@ class _RecentTile extends ConsumerWidget {
     required this.entry,
     required this.onPlay,
     required this.onRemove,
+    this.isLast = false,
   });
 
   final RecentEntry entry;
   final VoidCallback onPlay;
   final VoidCallback onRemove;
 
+  /// 是否为列表末项：末项不画底部分隔线。
+  final bool isLast;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final divider = scheme.outlineVariant.withValues(alpha: 0.4);
     final m = ListMetrics.ofRef(ref);
     final item = entry.toQueueItem();
     final title = item?.title ?? _titleFromPath(entry.songPath);
@@ -168,49 +183,59 @@ class _RecentTile extends ConsumerWidget {
       );
       if (ok) onPlay();
     });
-    return g.wrap(
-      CoverRow(
-        horizontalPadding: 16,
-        verticalPadding: m.vPad,
-        onTap: g.onTap,
-        onLongPress: () => onRemove(),
-        cover: Builder(
-          builder: (c) {
-            coverCtx = c;
-            return CoverImage(
-              songPath: entry.songPath,
-              networkUrl: item?.coverUrl,
-              width: m.songCover,
-              height: m.songCover,
-              radius: m.songRadius,
-              icon: Icons.music_note,
-            );
-          },
-        ),
-        title: Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: m.titleSize,
-            fontWeight: FontWeight.w600,
+    return Container(
+      // 末项隐藏底部分隔线，其余行底对齐分割（原 Divider(height:1)）。
+      decoration: isLast
+          ? null
+          : BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: divider, width: 1),
+              ),
+            ),
+      child: g.wrap(
+        CoverRow(
+          horizontalPadding: 16,
+          verticalPadding: m.vPad,
+          onTap: g.onTap,
+          onLongPress: () => onRemove(),
+          cover: Builder(
+            builder: (c) {
+              coverCtx = c;
+              return CoverImage(
+                songPath: entry.songPath,
+                networkUrl: item?.coverUrl,
+                width: m.songCover,
+                height: m.songCover,
+                radius: m.songRadius,
+                icon: Icons.music_note,
+              );
+            },
           ),
-        ),
-        subtitle: Text(
-          artist.isEmpty
-              ? _timeText(entry.playedAt)
-              : '$artist · ${_timeText(entry.playedAt)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: m.subtitleSize,
-            color: scheme.onSurfaceVariant,
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: m.titleSize,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.close, size: 18, color: scheme.outline),
-          tooltip: tr('移除'),
-          onPressed: onRemove,
+          subtitle: Text(
+            artist.isEmpty
+                ? _timeText(entry.playedAt)
+                : '$artist · ${_timeText(entry.playedAt)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: m.subtitleSize,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          trailing: IconButton(
+            icon: Icon(Icons.close, size: 18, color: scheme.outline),
+            tooltip: tr('移除'),
+            onPressed: onRemove,
+          ),
         ),
       ),
     );
