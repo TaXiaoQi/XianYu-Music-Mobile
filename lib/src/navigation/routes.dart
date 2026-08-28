@@ -6,6 +6,7 @@ import '../core/settings.dart';
 import '../core/application_logger.dart';
 import '../widgets/predictive_back_transitions.dart';
 import '../widgets/predictive_cover_return.dart';
+import '../widgets/predictive_back_tab_switch.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -36,7 +37,6 @@ import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
 import '../../pages/debug/debug_page.dart';
-import 'animated_branch_container.dart';
 import 'shell.dart';
 import '../i18n/i18n.dart';
 
@@ -52,7 +52,8 @@ final appRouter = GoRouter(
         return AppShell(navigationShell: navigationShell);
       },
       navigatorContainerBuilder: (context, navigationShell, children) {
-        return AnimatedBranchContainer(
+        return PredictiveBackTabContainer(
+          navigationShell: navigationShell,
           currentIndex: navigationShell.currentIndex,
           children: children,
         );
@@ -91,7 +92,11 @@ final appRouter = GoRouter(
     // 搜索结果页（搜索页提交后进入，独立路由以承载迷你播放条）。
     GoRoute(
       path: '/search/result',
-      builder: (context, state) => const SearchResultPage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const SearchResultPage(),
+        key: state.pageKey,
+      ),
     ),
     // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
     GoRoute(
@@ -108,7 +113,11 @@ final appRouter = GoRouter(
     // 听歌识曲（从搜索页进入）。
     GoRoute(
       path: '/recognize',
-      builder: (context, state) => const RecognizePage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const RecognizePage(),
+        key: state.pageKey,
+      ),
     ),
     // 播放页为全屏覆盖，不占底部导航。
     // 统一使用「从下往上覆盖」转场：打开时整页上滑覆盖，关闭时从上往下收回。
@@ -202,11 +211,22 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
-    GoRoute(path: '/recent', builder: (context, state) => const RecentPage()),
+    GoRoute(
+      path: '/recent',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const RecentPage(),
+        key: state.pageKey,
+      ),
+    ),
     // 下载管理（从设置页进入）。
     GoRoute(
       path: '/download',
-      builder: (context, state) => const DownloadPage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const DownloadPage(),
+        key: state.pageKey,
+      ),
     ),
     // 壁纸中心（从设置页进入）。
     GoRoute(
@@ -222,7 +242,11 @@ final appRouter = GoRouter(
     // 远程音乐库 WebDAV 管理（从设置页进入）。
     GoRoute(
       path: '/remote-library',
-      builder: (context, state) => const RemoteLibraryPage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const RemoteLibraryPage(),
+        key: state.pageKey,
+      ),
     ),
     // QMC 独立文件解密（从设置页进入）。
     GoRoute(
@@ -232,7 +256,11 @@ final appRouter = GoRouter(
     // 每日推荐（首页发现区进入）。
     GoRoute(
       path: '/home/daily',
-      builder: (context, state) => const DailyRecommendPage(),
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const DailyRecommendPage(),
+        key: state.pageKey,
+      ),
     ),
     // 音源榜单（首页发现区进入）。
     GoRoute(
@@ -242,9 +270,13 @@ final appRouter = GoRouter(
     // 在线详情：歌手/专辑/歌单/榜单（参数经 extra 传递）。
     GoRoute(
       path: '/online-detail',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final args = state.extra as OnlineDetailArgs;
-        return OnlineDetailPage(args: args);
+        return _coverBackPage(
+          context,
+          (_) => OnlineDetailPage(args: args),
+          key: state.pageKey,
+        );
       },
     ),
   ],

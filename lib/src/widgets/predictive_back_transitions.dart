@@ -309,7 +309,13 @@ class _PredictiveBackSharedElementPageTransitionState
     if (widget.animation != oldWidget.animation) {
       _updateCurvedAnimations();
     }
-    if (widget.phase != oldWidget.phase && widget.phase == PredictiveBackPhase.commit) {
+    // 另一路由的手势进行期间（popGestureInProgress 是 navigator 全局的）本组件
+    // 可能以 null 的 back event 被重建，_positionAnimation 由空事件算出（默认左缘）。
+    // 真正手势到达且 swipeEdge 变化时不会触发 commit 分支，方向 tween 永远错——
+    // 故 swipeEdge 变化时也重新计算动画（对齐 PiliNara 的框架补丁做法）。
+    if ((widget.phase != oldWidget.phase && widget.phase == PredictiveBackPhase.commit) ||
+        (widget.currentBackEvent != null &&
+            widget.currentBackEvent?.swipeEdge != oldWidget.currentBackEvent?.swipeEdge)) {
       _updateAnimations(MediaQuery.sizeOf(context));
     }
   }

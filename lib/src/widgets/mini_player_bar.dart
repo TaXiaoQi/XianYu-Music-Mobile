@@ -297,6 +297,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
+    // 与底栏一致跟随「毛玻璃」材质设置：液态关闭时，仅当开启毛玻璃才用
+    // BackdropFilter 高斯模糊；关毛玻璃（且非液态）→ 高不透明纯色回退。
+    final frosted =
+        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
+            true) &&
+            !lowPerf;
 
     final cover = _RotatingDisc(
       key: _coverKey,
@@ -396,7 +402,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? _liquidSurface(context, content)
-          : _frostedSurface(context, content, lowPerf: lowPerf),
+          : _frostedSurface(context, content,
+              frosted: frosted, lowPerf: lowPerf),
     );
 
     // 内建定位模式（页面内嵌播放条，未传 onPanUpdate）：自己返回 Stack + Positioned，
@@ -449,10 +456,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     );
   }
 
-  /// 毛玻璃表面：液态玻璃关闭时使用。
-  Widget _frostedSurface(BuildContext context, Widget content, {bool lowPerf = false}) {
+  /// 毛玻璃表面：液态玻璃关闭且开启「毛玻璃」材质时使用。
+  /// 关闭毛玻璃或低性能模式 → 高不透明度纯色回退（无高斯模糊）。
+  Widget _frostedSurface(BuildContext context,
+      Widget content, {
+      bool frosted = true,
+      bool lowPerf = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = lowPerf
+    final solid = !frosted || lowPerf;
+    final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (isDark
             ? Colors.white.withValues(alpha: 0.10)
@@ -476,7 +488,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       ),
       child: content,
     );
-    if (lowPerf) return surface;
+    if (solid) return surface;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(

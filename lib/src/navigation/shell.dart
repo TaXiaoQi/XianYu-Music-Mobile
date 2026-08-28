@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart' show kBackMouseButton;
@@ -44,11 +43,14 @@ final navBarInsetProvider = Provider<double>((ref) {
 ///
 /// 极低底色遮罩 + 适当轻模糊 + 高饱和透光 + 强烈边缘高光与折射，呈现如 iOS 18/26 般水润透亮的液态玻璃。
 LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
-      glassColor: isDark
-          ? const Color.fromARGB(10, 255, 255, 255)
-          // 亮色：提高玻璃白度，避免 premium 折射把底色压成深/黑（默认太透明的老问题）。
-          : const Color.fromARGB(130, 255, 255, 255),
-      blur: isDark ? 6.5 : 5.0,
+      glassColor:
+          // 提升底色不透明度：暗色从 alpha 10(≈0.04) 提到 80(≈0.31)、
+          // 亮色从 130(≈0.51) 提到 175(≈0.69)，让液态底栏/侧栏不透明到能
+          // 托起折射高光、透出模糊层次；亮色避免过高压暗底色（老问题）。
+          isDark
+          ? const Color.fromARGB(80, 255, 255, 255)
+          : const Color.fromARGB(175, 255, 255, 255),
+      blur: isDark ? 9.0 : 7.0,
       thickness: 22,
       refractiveIndex: 1.38,
       chromaticAberration: 0.035,
@@ -343,9 +345,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final maxLeft = screenSize.width - barW - 6.0;
     final minTop = padding.top + 6.0;
 
-    // 当底栏显示 (hasBottomBar) 时，拖拽下限物理截断在底栏上方 (80px)，绝对防止播放栏与底栏重合！
-    final double bottomInset = hasBottomBar ? 80.0 : 12.0;
-    final maxTop = screenSize.height - padding.bottom - barH - bottomInset;
+    // 拖拽下限：
+    // - 有悬浮底栏(根页)时：播放条底边卡在底栏顶(screenSize.height-18-70)
+    //   上方 8px，基于底栏几何精确避让，不依赖手势区 height——原先 80px 截断
+    //   叠加手势区小会允许播放条探到底栏上，形成「吸过去」。
+    // - 无底栏(二级页)：向下限到屏幕底上方 12px。
+    final maxTop = hasBottomBar
+        ? (screenSize.height - 18.0 - 70.0 - 8.0 - barH)
+        : (screenSize.height - padding.bottom - barH - 12.0);
 
     setState(() {
       _playerLeft = (currentLeft + details.delta.dx).clamp(
@@ -368,18 +375,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
       _isPlayerDragging = false;
     });
 
-    // 磁吸检测：若松手位置距默认吸附点 < 60px，自动平滑磁吸回归默认位置
-    if (_playerLeft != null && _playerTop != null) {
-      final dx = _playerLeft! - defaultLeft;
-      final dy = _playerTop! - defaultTop;
-      final dist = math.sqrt(dx * dx + dy * dy);
-      if (dist < 60.0) {
-        setState(() {
-          _playerLeft = null;
-          _playerTop = null;
-        });
-      }
-    }
+    // 完全自由停放：松手后播放条停留在拖到的位置，不再被 60px 磁吸拉回
+    // 靠近底栏的停靠位（原先「靠近底栏就会吸过去」即由此造成）。
   }
 
   void _onPlayerPanCancel() {
@@ -432,7 +429,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
         : (floating
             ? (miniBarLow
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                : (screenSize.height - safeBottom - 58.0 - 82.0))
+                // 根页停靠：悬浮底栏顶(screenSize.height-18-70)上方固定 10px 间隙。
+                // 原先用 safeBottom 会因手势返回区高度小而让间隙趋零/重叠，
+                // 表现为「播放条贴着悬浮底栏吸在一起」。
+                : (screenSize.height - 18.0 - 70.0 - 10.0 - 58.0))
             : (screenSize.height - safeBottom - 58.0 - 70.0));
 
     final actualLeft = _playerLeft ?? defaultLeft;
@@ -444,7 +444,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final rootBarTop = isSide
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
-            ? (screenSize.height - safeBottom - 58.0 - 82.0)
+            ? (screenSize.height - 18.0 - 70.0 - 10.0 - 58.0)
             : (screenSize.height - safeBottom - 58.0 - 70.0));
 
     return Scaffold(
