@@ -113,6 +113,8 @@ class AutoSyncService {
       // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏。
       await notifier.syncFavoritesUpload();
     }
+    // 累计听歌统计同步（保证线上累计时长持续上传、离线数据回归时合并）。
+    await notifier.syncListenStats();
     if (upload.settings) {
       await notifier.syncSettingsUpload();
     }

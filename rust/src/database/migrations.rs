@@ -278,17 +278,17 @@ fn migrate_play_history(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE play_history ADD COLUMN played_seconds INTEGER DEFAULT 0",
             [],
         )
-        .ok();
+        .map_err(|e| format!("migrate play_history.played_seconds: {e}"))?;
     }
 
     if !columns.iter().any(|column| column == "song_id") {
         conn.execute("ALTER TABLE play_history ADD COLUMN song_id INTEGER", [])
-            .ok();
+            .map_err(|e| format!("migrate play_history.song_id: {e}"))?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_play_history_song_id ON play_history(song_id)",
             [],
         )
-        .ok();
+        .map_err(|e| format!("create idx_play_history_song_id: {e}"))?;
     }
 
     Ok(())

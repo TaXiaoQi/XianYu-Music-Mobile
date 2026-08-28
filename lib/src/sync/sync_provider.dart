@@ -12,7 +12,9 @@ import '../core/app_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
+import '../home/home_providers.dart';
 import '../library/library_provider.dart';
+import '../notifications/notification_service.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../player/player_provider.dart' show QueueItem;
@@ -241,6 +243,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (upload.favorites) {
         await syncFavoritesDownload();
         await syncFavoritesUpload();
+      }
+      // 累计听歌统计同步（4 规则：上传/累加合并/下发/清零），新设备登录后恢复累计时长。
+      await syncListenStats();
+      // 若本次同步触发了后台清零，即时弹窗告知原因（幂等，避免与启动检查重复弹）。
+      if (context.mounted) {
+        await _ref.read(notificationServiceProvider).showPendingListenResetNotice(context);
       }
       if (upload.settings) {
         // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
@@ -1214,6 +1222,143 @@ class SyncNotifier extends StateNotifier<SyncState> {
         errors: [err],
       ),
     );
+  }
+
+  // ==================== 听歌累计统计同步 ====================
+
+  /// 判断统计快照是否包含真实听歌数据（累计时长/首数或每日明细非空）。
+  bool _statsNonZero(Map<String, dynamic> stats) {
+    final global = (stats['global'] as Map<String, dynamic>?) ?? {};
+    final totalMs = (global['total_play_time_ms'] as num?)?.toInt() ?? 0;
+    final totalCount = (global['total_play_count'] as num?)?.toInt() ?? 0;
+    final daily = stats['daily'] as List? ?? const [];
+    return totalMs > 0 || totalCount > 0 || daily.isNotEmpty;
+  }
+
+  /// 本机最近一次已应用的清零时间点。
+  Future<int> _getLastListenResetAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('last_listen_reset_at') ?? 0;
+  }
+
+  Future<void> _setLastListenResetAt(int ts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_listen_reset_at', ts);
+  }
+
+  /// 关键：后台清零后把「待弹窗通知书」落到本地，供 NotificationService 启动时展示原因。
+  Future<void> _storePendingListenResetNotice(int resetAt, String reason) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('pending_listen_reset_at', resetAt);
+    await prefs.setString('pending_listen_reset_reason', reason);
+  }
+
+  /// 同步累计听歌统计到服务器，规则：
+  /// 1. 服务器无数据 → 上传本地（新注册，本地有/无均上传）；
+  /// 2. 双端都有数据 → 累加合并一次（老用户回归未及时登录），并标记 merged；
+  /// 3. 服务器有、本地无 → 下发到本地（老用户换新设备）；
+  /// 4. 服务器后台清零（reset_at 比本机已应用的更新）→ 本地清零下发一次（制裁违规用户），
+  ///    记录该时间点后用户可重新累计，不会被永久清零。
+  Future<void> syncListenStats() async {
+    if (!_ref.read(authProvider).isLoggedIn) return;
+    final dbPath = await _ref.read(dbPathProvider.future);
+    try {
+      final localJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+      final localStats = jsonDecode(localJson) as Map<String, dynamic>;
+      final cloud = await _api.downloadListenStats();
+      if (cloud == null) return;
+      final cloudMerged = (cloud['merged'] as bool?) ?? false;
+      final resetAt = (cloud['resetAt'] as int?) ?? 0;
+      final cloudStats = cloud['listenStats'] as Map<String, dynamic>?;
+
+      // 规则4：服务器后台清零（仅当云端清零时间点更新于本机已应用的）。
+      final lastResetAt = await _getLastListenResetAt();
+      if (resetAt > lastResetAt) {
+        await rust.statsClearListenStats(dbPath: dbPath);
+        await _setLastListenResetAt(resetAt);
+        await _storePendingListenResetNotice(resetAt, cloud['reason'] as String? ?? '');
+        final zeroJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+        await _api.uploadListenStats(
+          jsonDecode(zeroJson) as Map<String, dynamic>,
+          merged: true,
+          resetAt: resetAt,
+        );
+        _finishListenStatsSync();
+        return;
+      }
+
+      // 规则1：服务器无快照 → 上传本地（初次注册）。
+      if (cloudStats == null) {
+        await _api.uploadListenStats(localStats, resetAt: resetAt);
+        _finishListenStatsSync();
+        return;
+      }
+
+      final cloudNonZero = _statsNonZero(cloudStats);
+      final localNonZero = _statsNonZero(localStats);
+
+      // 规则3：服务器有、本地无 → 下发（MAX 合并，本地为空即采用云端值）。
+      if (cloudNonZero && !localNonZero) {
+        await rust.statsImportListenSnapshot(
+          dbPath: dbPath,
+          snapshotJson: jsonEncode(cloudStats),
+        );
+        final mergedJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+        await _api.uploadListenStats(
+          jsonDecode(mergedJson) as Map<String, dynamic>,
+          merged: true,
+          resetAt: resetAt,
+        );
+        _finishListenStatsSync();
+        return;
+      }
+
+      // 规则2：双端都有数据。
+      if (cloudNonZero && localNonZero) {
+        if (cloudMerged) {
+          // 已并入过 → 取两端较大值刷新（避免重复累加）。
+          await rust.statsImportListenSnapshot(
+            dbPath: dbPath,
+            snapshotJson: jsonEncode(cloudStats),
+          );
+        } else {
+          // 老用户回归未及时登录：累加合并一次并标记 merged。
+          await rust.statsImportListenSnapshotAdd(
+            dbPath: dbPath,
+            snapshotJson: jsonEncode(cloudStats),
+          );
+        }
+        final mergedJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+        await _api.uploadListenStats(
+          jsonDecode(mergedJson) as Map<String, dynamic>,
+          merged: true,
+          resetAt: resetAt,
+        );
+        _finishListenStatsSync();
+        return;
+      }
+
+      // 云端仅存空存根（非清零）→ 视为规则1，上传本地。
+      await _api.uploadListenStats(localStats, resetAt: resetAt);
+      _finishListenStatsSync();
+    } catch (e) {
+      AppLogger.instance.log('sync', '听歌统计同步失败: $e');
+    }
+  }
+
+  void _finishListenStatsSync() async {
+    final dbPath = await _ref.read(dbPathProvider.future);
+    try {
+      final localJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+      final global = ((jsonDecode(localJson) as Map<String, dynamic>)['global']
+              as Map<String, dynamic>? ??
+          {});
+      final totalSecs = ((global['total_play_time_ms'] as num?)?.toInt() ?? 0) ~/ 1000;
+      _ref.read(serverTotalDurationProvider.notifier).state = totalSecs;
+      _ref.invalidate(listenStatsProvider);
+    } catch (_) {
+      _ref.invalidate(listenStatsProvider);
+    }
   }
 }
 

@@ -1749,10 +1749,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
-        // 刷新最近播放列表，使新播放立即可见（对齐 sync 导入后的 refresh）。
-        try {
-          await _ref.read(recentProvider.notifier).refresh();
-        } catch (_) {}
+        // 使最近播放角标/列表实时刷新：invalidate 在下次 watch 时让 provider
+        // 重建并从 DB 重读（对齐首页统计的实时刷新模式），否则要等重启后
+        // RecentManager 构造时 refresh 才会更新。
+        _ref.invalidate(recentProvider);
       } catch (e) {
         debugPrint('[stats] 最近播放写入失败: $e');
       }

@@ -341,6 +341,49 @@ class AccountApi {
         .toList();
   }
 
+  // ─── 听歌统计同步 ───────────────────────────────────────
+
+  /// 从云端下载听歌统计快照；服务器无记录时返回 null。
+  /// 返回 { merged, cleared, resetAt, listenStats }，listenStats 为 null 表示服务器无快照。
+  Future<Map<String, dynamic>?> downloadListenStats() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      return null;
+    }
+    final data = await _action('listen_stats_sync_download', {
+      'user_id': ciyuanxiId,
+    }, fetchTimeoutMs: 15000);
+    final stats = data['listen_stats'];
+    return {
+      'merged': (data['merged'] as bool?) ?? false,
+      'cleared': (data['cleared'] as bool?) ?? false,
+      'resetAt': (data['reset_at'] as num?)?.toInt(),
+      'reason': (data['reason'] as String?) ?? '',
+      'listenStats': stats is Map<String, dynamic> ? stats : null,
+    };
+  }
+
+  /// 上传听歌统计快照（含 merged/cleared/resetAt 状态）到云端。
+  Future<bool> uploadListenStats(
+    Map<String, dynamic> listenStats, {
+    bool merged = false,
+    bool cleared = false,
+    int? resetAt,
+  }) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      return false;
+    }
+    final data = await _action('listen_stats_sync_upload', {
+      'user_id': ciyuanxiId,
+      'listen_stats': listenStats,
+      'merged': merged,
+      'cleared': cleared,
+      'reset_at': ?resetAt,
+    }, fetchTimeoutMs: 15000);
+    return (data['updated'] as bool?) ?? false;
+  }
+
   // ─── 播放历史同步 ───────────────────────────────────────
 
   /// 上传播放历史到云端。

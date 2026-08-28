@@ -1937,6 +1937,236 @@ pub fn import_statistics_file(
     })
 }
 
+/// 听歌统计同步快照（累计全局 + 每日明细），用于跨设备累计听歌时长同步。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenStatsSnapshot {
+    pub global: PortableGlobalStats,
+    pub daily: Vec<PortableDailyStats>,
+}
+
+/// 听歌统计快照导入结果。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenStatsSyncResult {
+    /// 合并后累计总听歌时长（毫秒）
+    pub total_play_time_ms: i64,
+    /// 合并后累计播放次数
+    pub total_play_count: i64,
+    /// 本次合并的每日明细条数
+    pub merged_days: usize,
+}
+
+/// 导出全局 + 每日听歌统计快照，用于上传服务端跨设备同步。
+pub fn export_listen_stats_snapshot(
+    conn: &rusqlite::Connection,
+) -> Result<ListenStatsSnapshot, String> {
+    ensure_statistics_aggregates(&conn)?;
+    Ok(ListenStatsSnapshot {
+        global: query_global_stats(&conn)?,
+        daily: query_daily_stats(&conn)?,
+    })
+}
+
+/// 云端 MAX 合并全局统计：累计时长/首数取较大值，避免跨设备重复累加。
+fn cloud_max_merge_global(
+    tx: &rusqlite::Transaction<'_>,
+    global: &PortableGlobalStats,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
+         ON CONFLICT(id) DO NOTHING",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE global_stats SET
+            total_play_count = MAX(total_play_count, ?1),
+            total_play_time_ms = MAX(total_play_time_ms, ?2),
+            first_played_at = CASE
+                WHEN first_played_at IS NULL THEN ?3
+                WHEN ?3 IS NOT NULL AND ?3 < first_played_at THEN ?3
+                ELSE first_played_at END,
+            last_played_at = CASE
+                WHEN last_played_at IS NULL THEN ?4
+                WHEN ?4 IS NOT NULL AND ?4 > last_played_at THEN ?4
+                ELSE last_played_at END
+         WHERE id = 1",
+        rusqlite::params![
+            global.total_play_count,
+            global.total_play_time_ms,
+            global.first_played_at,
+            global.last_played_at
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 云端 MAX 合并每日明细：按日期取较大值，避免重复计数。
+fn cloud_max_upsert_daily(
+    tx: &rusqlite::Transaction<'_>,
+    daily: &PortableDailyStats,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO daily_stats (date, play_count, play_time_ms, unique_songs, unique_artists)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(date) DO UPDATE SET
+            play_count = MAX(daily_stats.play_count, excluded.play_count),
+            play_time_ms = MAX(daily_stats.play_time_ms, excluded.play_time_ms),
+            unique_songs = MAX(daily_stats.unique_songs, excluded.unique_songs),
+            unique_artists = MAX(daily_stats.unique_artists, excluded.unique_artists)",
+        rusqlite::params![
+            daily.date,
+            daily.play_count,
+            daily.play_time_ms,
+            daily.unique_songs,
+            daily.unique_artists
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 导入（MAX 合并）全局 + 每日听歌统计快照，返回合并后累计数据。
+pub fn import_listen_stats_snapshot(
+    conn: &mut rusqlite::Connection,
+    snapshot: &ListenStatsSnapshot,
+) -> Result<ListenStatsSyncResult, String> {
+    ensure_statistics_aggregates(&conn)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    cloud_max_merge_global(&tx, &snapshot.global)?;
+    for daily in &snapshot.daily {
+        cloud_max_upsert_daily(&tx, daily)?;
+    }
+    let total_play_time_ms: i64 = tx
+        .query_row(
+            "SELECT COALESCE(total_play_time_ms, 0) FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let total_play_count: i64 = tx
+        .query_row(
+            "SELECT COALESCE(total_play_count, 0) FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let merged_days = snapshot.daily.len();
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(ListenStatsSyncResult {
+        total_play_time_ms,
+        total_play_count,
+        merged_days,
+    })
+}
+
+/// 云端累加合并全局统计：两端的累计时长/首数相加（老用户回归未及时登录合并）。
+fn cloud_add_merge_global(
+    tx: &rusqlite::Transaction<'_>,
+    global: &PortableGlobalStats,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
+         ON CONFLICT(id) DO NOTHING",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE global_stats SET
+            total_play_count = total_play_count + ?1,
+            total_play_time_ms = total_play_time_ms + ?2,
+            first_played_at = CASE
+                WHEN first_played_at IS NULL THEN ?3
+                WHEN ?3 IS NOT NULL AND ?3 < first_played_at THEN ?3
+                ELSE first_played_at END,
+            last_played_at = CASE
+                WHEN last_played_at IS NULL THEN ?4
+                WHEN ?4 IS NOT NULL AND ?4 > last_played_at THEN ?4
+                ELSE last_played_at END
+         WHERE id = 1",
+        rusqlite::params![
+            global.total_play_count,
+            global.total_play_time_ms,
+            global.first_played_at,
+            global.last_played_at
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 云端累加合并每日明细：按日期两端相加（对应 global 累加合并）。
+fn cloud_add_upsert_daily(
+    tx: &rusqlite::Transaction<'_>,
+    daily: &PortableDailyStats,
+) -> Result<(), String> {
+    tx.execute(
+        "INSERT INTO daily_stats (date, play_count, play_time_ms, unique_songs, unique_artists)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(date) DO UPDATE SET
+            play_count = daily_stats.play_count + excluded.play_count,
+            play_time_ms = daily_stats.play_time_ms + excluded.play_time_ms,
+            unique_songs = MAX(daily_stats.unique_songs, excluded.unique_songs),
+            unique_artists = MAX(daily_stats.unique_artists, excluded.unique_artists)",
+        rusqlite::params![
+            daily.date,
+            daily.play_count,
+            daily.play_time_ms,
+            daily.unique_songs,
+            daily.unique_artists
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 导入（累加合并）全局 + 每日听歌统计快照，用于老用户离线数据的并入。
+pub fn import_listen_stats_snapshot_add(
+    conn: &mut rusqlite::Connection,
+    snapshot: &ListenStatsSnapshot,
+) -> Result<ListenStatsSyncResult, String> {
+    ensure_statistics_aggregates(&conn)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    cloud_add_merge_global(&tx, &snapshot.global)?;
+    for daily in &snapshot.daily {
+        cloud_add_upsert_daily(&tx, daily)?;
+    }
+    let total_play_time_ms: i64 = tx
+        .query_row(
+            "SELECT COALESCE(total_play_time_ms, 0) FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let total_play_count: i64 = tx
+        .query_row(
+            "SELECT COALESCE(total_play_count, 0) FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let merged_days = snapshot.daily.len();
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(ListenStatsSyncResult {
+        total_play_time_ms,
+        total_play_count,
+        merged_days,
+    })
+}
+
+/// 清零本地累计 + 每日听歌统计（服务端后台清零后下发，用于制裁违规用户）。
+pub fn clear_listen_stats(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE global_stats SET total_play_count = 0, total_play_time_ms = 0,
+            first_played_at = NULL, last_played_at = NULL WHERE id = 1",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM daily_stats", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn get_favorite_artist_catalog(
     conn: &rusqlite::Connection,
     favorite_paths: Vec<String>,

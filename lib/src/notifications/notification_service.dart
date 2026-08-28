@@ -24,8 +24,9 @@ class NotificationService {
   AccountApi get _api => _ref.read(accountApiProvider);
 
   bool _checking = false;
+  bool _listenResetShown = false;
 
-  /// 应用启动后调用：依次检查公告、反馈通知与昵称变更通知，避免多个弹窗叠加。
+  /// 应用启动后调用：依次检查公告、反馈通知、昵称变更与待弹窗的清零通知，避免多个弹窗叠加。
   Future<void> checkOnStartup(BuildContext context) async {
     if (_checking) return;
     _checking = true;
@@ -44,10 +45,54 @@ class NotificationService {
       final nicknameNotices = await _api.getNicknameChangeNotices();
       if (nicknameNotices.isNotEmpty && context.mounted) {
         await _showNicknameChangeDialog(context, nicknameNotices.first);
+        return;
       }
+      await showPendingListenResetNotice(context);
     } finally {
       _checking = false;
     }
+  }
+
+  /// 展示待处理的「听歌时长被清理」通知（原因由管理后台填写下发）。
+  ///
+  /// 幂等：已展示过或本地无待弹窗记录则直接返回；展示后清除本地待弹窗记录，
+  /// 故启动检查与登录完成两处触发也只会弹一次。复用统一通知弹窗（warning 风格）。
+  Future<void> showPendingListenResetNotice(BuildContext context) async {
+    if (_listenResetShown) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final resetAt = prefs.getInt('pending_listen_reset_at') ?? 0;
+      final reason = prefs.getString('pending_listen_reset_reason') ?? '';
+      if (resetAt <= 0 || reason.isEmpty) return;
+      if (!context.mounted) return;
+      _listenResetShown = true;
+      await _showListenResetDialog(context, resetAt, reason);
+      await prefs.remove('pending_listen_reset_at');
+      await prefs.remove('pending_listen_reset_reason');
+    } catch (_) {}
+  }
+
+  Future<void> _showListenResetDialog(
+      BuildContext context, int resetAt, String reason) {
+    final date = DateTime.fromMillisecondsSinceEpoch(resetAt * 1000);
+    final content = tr('您的累计听歌时长已被清理，将从零开始重新累计。\n\n') +
+        tr('清除原因：{reason}',
+            {'reason': reason.isEmpty ? tr('（未填写）') : reason});
+    return showPredictiveDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _NotificationDialog(
+        title: tr('听歌时长已被清理'),
+        content: content,
+        type: 'warning',
+        date: _formatDate(_pad(date)),
+      ),
+    );
+  }
+
+  String _pad(DateTime d) {
+    String pad(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${pad(d.month)}-${pad(d.day)}';
   }
 
   Future<bool> _isAnnouncementDismissed(Announcement ann) async {
