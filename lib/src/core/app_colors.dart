@@ -10,6 +10,15 @@ final wallpaperActiveProvider = Provider<bool>((ref) {
   );
 });
 
+/// 页面默认底色：未启用自定义壁纸时使用根层真实底色 [appSurfaceBg]（与设置页/
+/// 我的页一致，实色不像「没底色」）；启用壁纸时保持透明以透出根层的壁纸遮罩。
+/// 二者均为「实色底色之上直接覆盖壁纸」的模型，无需额外垫透明层。
+Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
+  return ref.watch(wallpaperActiveProvider)
+      ? Colors.transparent
+      : appSurfaceBg(context);
+}
+
 /// 未受「自定义壁纸前景覆盖」影响的原始 ColorScheme（亮/暗各一，app.dart 构建主题时写入）。
 ///
 /// 壁纸启用时页面前景会按「亮字/暗字」覆盖为固定色；而弹窗面板是不透明的

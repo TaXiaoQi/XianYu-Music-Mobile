@@ -14,6 +14,7 @@ import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/custom_background.dart';
+import 'src/widgets/predictive_back_transitions.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -140,25 +141,24 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     _cachedAccent = accent;
     _cachedPredictiveBack = predictiveBack;
     final seed = Color(accent);
-    // 安卓切换特效：开启预测返回时用 PredictiveBackPageTransitionsBuilder——
-    // 非手势的打开/关闭回退到 M3 FadeForwards（新页面淡入+轻微缩放上移，返回
-    // 淡出，柔和不生硬），手势中则整屏缩放跟手（预测返回行程）；关闭预测返回
-    // 时退化为纯 FadeForwards（无跟手，直接 pop）。
-    final pageTransitions = PageTransitionsTheme(
-      builders: {
-        TargetPlatform.android: predictiveBack
-            ? const PredictiveBackPageTransitionsBuilder(
-                // 应用为透明 Scaffold + 根层背景（自定义壁纸/默认底色）垫底，
-                // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
-                // 置为透明让下方根层背景自然透出，消除背景闪烁。
-                fallbackColor: Colors.transparent,
-              )
-            : const FadeForwardsPageTransitionsBuilder(
-                backgroundColor: Colors.transparent,
-              ),
-        TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
-      },
-    );
+    // 安卓切换特效：统一使用覆盖式转场（新页从右侧滑入盖住旧页，旧页静止），
+    // 贴近 Android 原生覆盖式切换而非 M3 FadeForwards 的两页横切。预测返回
+    // 开启时接管边缘手势做整屏缩放跟手，非手势的打开/关闭仍用覆盖滑动；
+    // 关闭时退化为纯覆盖滑动（无跟手，直接 pop）。
+    // 转场/预测返回时露出的底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），
+    // 与页面无壁纸时的底色完全一致，不再是透明底。壁纸开启时由
+    // [CustomBackgroundLayer] 直接覆盖在这层底色之上——「壁纸盖在实色底色上」，
+    // 无需任何透明占位层。
+    PageTransitionsTheme transitions(Color base) => PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: predictiveBack
+                ? CoverPageTransitionsBuilder(predictiveBack: true, backgroundColor: base)
+                : CoverPageTransitionsBuilder(predictiveBack: false, backgroundColor: base),
+            TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
+          },
+        );
+    final lightTransitions = transitions(const Color(0xFFF4F4F6));
+    final darkTransitions = transitions(const Color(0xFF222222));
     final lightScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
     lightBaseScheme = lightScheme;
@@ -181,7 +181,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       dialogTheme: const DialogThemeData(backgroundColor: Color(0xFFFFFFFF)),
       // 全局消息提示：底部居中的小胶囊 toast（对齐大众 toast 设计），替换默认长横条。
       snackBarTheme: _toastTheme,
-      pageTransitionsTheme: pageTransitions,
+      pageTransitionsTheme: lightTransitions,
       useMaterial3: true,
     );
     // 记录原始（未 apply 壁纸前景的）textTheme，供不透明弹窗在壁纸下恢复基础明暗字。
@@ -214,7 +214,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       dialogTheme:
           const DialogThemeData(backgroundColor: Color(0xFF262626)),
       snackBarTheme: _toastTheme,
-      pageTransitionsTheme: pageTransitions,
+      pageTransitionsTheme: darkTransitions,
       useMaterial3: true,
     );
     darkBaseTextTheme = _darkTheme!.textTheme;

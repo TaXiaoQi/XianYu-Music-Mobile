@@ -36,14 +36,14 @@ class MinePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       // 背景交给 Shell 层统一渲染（自定义壁纸/默认底色），页面自身保持透明以透出壁纸。
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         children: [
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              GlassTopBar.height(context),
+              GlassTopBar.height(context) + 10,
               16,
               ref.watch(navBarInsetProvider) + 24,
             ),

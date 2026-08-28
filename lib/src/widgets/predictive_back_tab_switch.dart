@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/app_logger.dart';
 import '../core/settings.dart';
-import '../navigation/animated_branch_container.dart';
+import '../navigation/page_switch_tab_view.dart';
 import 'predictive_back_transitions.dart';
 
 /// 两个根 Tab 之间的「预测返回」。
@@ -52,6 +52,16 @@ class _PredictiveBackTabContainerState
   static const _cancelDuration = Duration(milliseconds: 200);
 
   bool get _inTransition => _phase != PredictiveBackPhase.idle;
+
+  /// 手指拖动切换整页停留后回调：把当前索引同步给 GoRouter 底栏，
+  /// 并让 `currentIndex` 变化去驱动收藏/底栏高亮等派生 UI。
+  void _onPageSettled(int index) {
+    if (index == widget.currentIndex) return;
+    widget.navigationShell.goBranch(
+      index,
+      initialLocation: index == widget.currentIndex,
+    );
+  }
 
   @override
   void initState() {
@@ -140,9 +150,10 @@ class _PredictiveBackTabContainerState
   @override
   Widget build(BuildContext context) {
     if (!_inTransition) {
-      return AnimatedBranchContainer(
+      return PageSwitchTabView(
         currentIndex: widget.currentIndex,
         children: widget.children,
+        onPageSettled: _onPageSettled,
       );
     }
     final exit = _exitIndex < widget.children.length

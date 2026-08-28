@@ -12,11 +12,12 @@ import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
+import '../widgets/glass_settings.dart';
+import '../widgets/app_toast.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart';
-import '../widgets/app_toast.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
 
@@ -56,9 +57,12 @@ LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
       chromaticAberration: 0.035,
       lightIntensity: isDark ? 1.45 : 1.15,
       ambientStrength: 0.25,
-      glowIntensity: 0.85,
+      glowIntensity: 1.1,
       saturation: 1.28,
-      shadowElevation: 2.2,
+      shadow: const [],
+      // ambientRim/edgeAbsorption 仅 premium(高)档消费：全周边亮环 + 边缘雕刻暗带。
+      ambientRim: 0.5,
+      edgeAbsorption: 0.12,
     );
 
 /// 请求隐藏底栏与迷你播放条的页面计数。
@@ -346,12 +350,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final minTop = padding.top + 6.0;
 
     // 拖拽下限：
-    // - 有悬浮底栏(根页)时：播放条底边卡在底栏顶(screenSize.height-18-70)
-    //   上方 8px，基于底栏几何精确避让，不依赖手势区 height——原先 80px 截断
-    //   叠加手势区小会允许播放条探到底栏上，形成「吸过去」。
+    // - 有悬浮底栏(根页)时：播放条底边可拖到与底栏顶(screenSize.height-18-70)
+    //   贴合，基于底栏几何精确避让，不依赖手势区 height。
     // - 无底栏(二级页)：向下限到屏幕底上方 12px。
     final maxTop = hasBottomBar
-        ? (screenSize.height - 18.0 - 70.0 - 8.0 - barH)
+        ? (screenSize.height - 18.0 - 70.0 - barH)
         : (screenSize.height - padding.bottom - barH - 12.0);
 
     setState(() {
@@ -429,11 +432,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
         : (floating
             ? (miniBarLow
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                // 根页停靠：悬浮底栏顶(screenSize.height-18-70)上方固定 10px 间隙。
-                // 原先用 safeBottom 会因手势返回区高度小而让间隙趋零/重叠，
-                // 表现为「播放条贴着悬浮底栏吸在一起」。
-                : (screenSize.height - 18.0 - 70.0 - 10.0 - 58.0))
-            : (screenSize.height - safeBottom - 58.0 - 70.0));
+                // 根页停靠：播放条底边与悬浮底栏顶(screenSize.height-18-70)贴合，
+                // 消除二者之间的缝隙。
+                : (screenSize.height - 18.0 - 70.0 - 58.0))
+            // 固定式：播放条底边与固定底栏顶(screenSize.height-safeBottom-64)贴合。
+            : (screenSize.height - safeBottom - 58.0 - 64.0));
 
     final actualLeft = _playerLeft ?? defaultLeft;
     final actualTop = _playerTop ?? defaultTop;
@@ -444,8 +447,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final rootBarTop = isSide
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
-            ? (screenSize.height - 18.0 - 70.0 - 10.0 - 58.0)
-            : (screenSize.height - safeBottom - 58.0 - 70.0));
+            ? (screenSize.height - 18.0 - 70.0 - 58.0)
+            : (screenSize.height - safeBottom - 58.0 - 64.0));
 
     return Scaffold(
       body: Stack(
@@ -578,25 +581,17 @@ class _FixedNavBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // 性能模式：一次性关闭常驻玻璃/液态玻璃，回退到高不透明度纯色（更实底色补偿模糊缺失）。
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    final frosted =
-        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.frostedGlass)) ??
-            true) &&
-            !lowPerf;
-    final liquid =
-        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-            false) &&
-            !lowPerf;
+    // 固定底栏不使用液态玻璃 shader：液态玻璃只属于悬浮底栏（floating==true）。
+    // _FixedNavBar 仅在 floating==false 时被渲染，固定底栏保持其常规圆角样式即可。
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
-    // 自定义壁纸启用时，底栏改为半透明白玻璃（对齐首页「发现」区卡片），透出壁纸。
     final wallpaper = ref.watch(wallpaperActiveProvider);
 
     // 固定底栏内容（与材质设置无关，共用布局）。
@@ -626,60 +621,30 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    // 液态玻璃（固定底栏）：与悬浮底栏同一套材质，折射 + 高光。
-    if (liquid) {
-      return AdaptiveGlass(
-        shape: const LiquidRoundedRectangle(borderRadius: 26),
-        settings: liquidGlassSettings(isDark),
-        quality: GlassQuality.standard,
-        child: bar,
-      );
+    // 液态玻璃仅属于悬浮底栏；固定底栏保持下方常规圆角样式，不走 shader。
+    // 伪毛玻璃（液态/未开 默认）：半透明 + BackdropFilter 高斯模糊；
+    // 低性能模式或关闭「毛玻璃」→ 高不透明度纯色回退（无模糊）。
+    final solid =
+        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+    final fill = wallpaper
+        ? glassControlFill
+        : (solid
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : (isDark
+                ? const Color(0xCC222222)
+                : const Color(0xD9F7F7F9)));
+    // 固定底栏顶部不再画横向分隔线（玻璃态的分隔条 / 实色态的 border）：
+    // 迷你播放条停靠时正好落在底栏顶边，画线会在播放条底缘形成一条可见
+    // 接缝，视觉上就像"播放条贴不住底栏、中间有空"。去掉后二者无缝贴合。
+    final barBox = Container(color: fill, child: bar);
+    if (solid) {
+      return barBox;
     }
-
-    if (!frosted) {
-      // 关闭毛玻璃：纯色底栏。
-      // 启用自定义壁纸时同样改为半透明玻璃。
-      return Container(
-        decoration: BoxDecoration(
-          color: wallpaper
-              ? glassControlFill
-              : isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6),
-          border: Border(
-            top: BorderSide(
-              color: wallpaper
-                  ? glassControlBorder
-                  : scheme.onSurface.withValues(alpha: 0.08),
-            ),
-          ),
-        ),
-        child: bar,
-      );
-    }
-
-    // 毛玻璃：半透明白/暗 + BackdropFilter 高斯模糊（安卓原生磨砂质感）。
-    // 启用自定义壁纸时铺底改得更透明以透出壁纸。
+    // 伪毛玻璃：半透明白/暗 + 高斯模糊（安卓原生磨砂质感），壁纸时更透。
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          color: wallpaper
-              ? glassControlFill
-              : isDark
-                  ? const Color(0xCC222222)
-                  : const Color(0xD9F7F7F9),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: 1,
-                color: wallpaper
-                    ? glassControlBorder
-                    : scheme.onSurface.withValues(alpha: 0.08),
-              ),
-              bar,
-            ],
-          ),
-        ),
+        child: barBox,
       ),
     );
   }
@@ -849,37 +814,50 @@ class _LiquidNavBar extends ConsumerWidget {
       ),
     );
 
-    if (liquid) return _liquidGlass(context, tabs);
-    return _frostedGlass(context, tabs, lowPerf: lowPerf);
+    if (liquid) return _liquidGlass(context, ref, tabs);
+    return _frostedGlass(context, ref, tabs, lowPerf: lowPerf);
   }
 
   /// 液态玻璃：shader 折射 + 高光，胶囊形状。
-  Widget _liquidGlass(BuildContext context, Widget tabs) {
+  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AdaptiveGlass(
-      // 胶囊 = 圆角矩形且圆角为高度一半。
-      // 不能用 LiquidOval：那是真椭圆，宽高比大时两端会被压成尖角。
-      shape: const LiquidRoundedRectangle(borderRadius: 30),
-      settings: liquidGlassSettings(isDark),
-      // standard：轻量 shader（折射保留但改轻采样），常驻底栏/二级页面滚动
-      // 下更省 GPU；换 premium 全管线会放大卡顿。
-      quality: GlassQuality.standard,
-      child: SizedBox(height: 70, child: tabs),
+    return glassBorder(
+      context: context,
+      radius: 30,
+      child: AdaptiveGlass(
+        // 胶囊 = 圆角矩形且圆角为高度一半。
+        // 不能用 LiquidOval：那是真椭圆，宽高比大时两端会被压成尖角。
+        shape: const LiquidRoundedRectangle(borderRadius: 30),
+        settings: liquidGlassSettings(isDark),
+        // 渲染档位走设置：低=minimal / 中=standard 均衡（默认）/ 高=premium 真折射。
+        quality: liquidGlassQualityFromRef(ref),
+        child: SizedBox(height: 70, child: tabs),
+      ),
     );
   }
 
-  /// 毛玻璃：轻量回退方案。
-  Widget _frostedGlass(BuildContext context, Widget tabs, {bool lowPerf = false}) {
+  /// 伪毛玻璃：液态玻璃关闭时的默认样式。
+  ///
+  /// 规则：开启壁纸 → 半透明玻璃 + 高斯模糊（透出壁纸，与设置组件/播放条一致）；
+  /// 低性能模式（或关闭壁纸）→ 标准半透明磨砂；低性能 → 高不透明度纯色。
+  Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
+      {bool lowPerf = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 性能模式：用更高不透明度纯色补偿模糊缺失，省去常驻 BackdropFilter 高斯模糊。
-    final bg = lowPerf
-        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+    final wallpaper = ref.watch(wallpaperActiveProvider);
+    final solid =
+        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+    final bg = wallpaper
+        ? glassControlFill
+        : (solid
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final border = wallpaper
+        ? glassControlBorder
         : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.white.withValues(alpha: 0.40);
+            ? Colors.white.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.40));
     final capsule = Container(
       height: 70,
       decoration: BoxDecoration(
@@ -896,7 +874,7 @@ class _LiquidNavBar extends ConsumerWidget {
       ),
       child: tabs,
     );
-    if (lowPerf) return capsule;
+    if (solid) return capsule;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
@@ -1291,11 +1269,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
 
         Widget panelWidget;
         if (liquid) {
-          panelWidget = AdaptiveGlass(
-            shape: const LiquidRoundedRectangle(borderRadius: 24),
-            settings: liquidGlassSettings(isDark),
-            quality: GlassQuality.standard,
-            child: SizedBox(width: panelWidth, child: panelBody),
+          panelWidget = glassBorder(
+            context: context,
+            radius: 24,
+            child: AdaptiveGlass(
+              shape: const LiquidRoundedRectangle(borderRadius: 24),
+              settings: liquidGlassSettings(isDark),
+              quality: liquidGlassQualityFromRef(ref),
+              child: SizedBox(width: panelWidth, child: panelBody),
+            ),
           );
         } else if (lowPerf) {
           // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。

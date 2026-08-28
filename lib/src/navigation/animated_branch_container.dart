@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 
-/// 底部导航分支容器：带淡入淡出 + 轻微缩放的过渡。
+/// 底部导航分支容器：左右弹簧横滑过渡（参考 PiliNara 首页 Tab 切换）。
 ///
 /// 替代 `StatefulShellRoute.indexedStack` 默认的 `IndexedStack`（瞬间切换、
-/// 无动画）。所有分支始终保留在 widget 树中以维持各 tab 的滚动位置与状态；
-/// 非活跃分支淡出后用 `Offstage` 移出布局与绘制，避免持续开销。
-class AnimatedBranchContainer extends StatelessWidget {
+/// 无动画）。所有分支始终保留在 widget 树中以维持各 tab 的滚动位置与状态。
+///
+/// 切换手感：旧分支向一侧平滑滑出、新分支从另一侧同步滑入，二者始终互补覆盖
+/// 全屏（无背景闪烁）；动画用 [AnimatedBuilder] 只做位移变换、不复建页面子树，
+/// 避免切 tab 掉帧。过渡结束后离屏分支转 `Offstage` 移出布局与绘制，降低常驻开销。
+class AnimatedBranchContainer extends StatefulWidget {
   const AnimatedBranchContainer({
     super.key,
     required this.currentIndex,
     required this.children,
-    this.duration = const Duration(milliseconds: 300),
+    this.duration = const Duration(milliseconds: 320),
   });
 
   final int currentIndex;
@@ -18,76 +21,113 @@ class AnimatedBranchContainer extends StatelessWidget {
   final Duration duration;
 
   @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        for (var i = 0; i < children.length; i++)
-          _BranchLayer(
-            key: ValueKey(i),
-            isActive: i == currentIndex,
-            duration: duration,
-            child: children[i],
-          ),
-      ],
-    );
+  State<AnimatedBranchContainer> createState() => _AnimatedBranchContainerState();
+}
+
+class _AnimatedBranchContainerState extends State<AnimatedBranchContainer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late int _prevIndex;
+  late List<Widget> _children;
+  late final CurvedAnimation _curve;
+
+  @override
+  void initState() {
+    super.initState();
+    _prevIndex = widget.currentIndex;
+    _children = List.of(widget.children);
+    _ctrl = AnimationController(vsync: this, value: 1.0);
+    _curve = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
   }
-}
-
-/// 单个分支层：驱动显隐动画，并在淡出结束后移出布局。
-class _BranchLayer extends StatefulWidget {
-  const _BranchLayer({
-    super.key,
-    required this.isActive,
-    required this.duration,
-    required this.child,
-  });
-
-  final bool isActive;
-  final Duration duration;
-  final Widget child;
 
   @override
-  State<_BranchLayer> createState() => _BranchLayerState();
-}
-
-class _BranchLayerState extends State<_BranchLayer> {
-  /// 是否参与布局与绘制。激活时立即为 true；失活时等淡出动画结束再置 false，
-  /// 保证淡出过程可见。
-  late bool _visible = widget.isActive;
-
-  @override
-  void didUpdateWidget(_BranchLayer old) {
+  void didUpdateWidget(covariant AnimatedBranchContainer old) {
     super.didUpdateWidget(old);
-    if (widget.isActive && !_visible) {
-      setState(() => _visible = true);
+    if (!identical(old.children, widget.children)) {
+      _children = List.of(widget.children);
+    }
+    if (widget.currentIndex != old.currentIndex) {
+      _prevIndex = old.currentIndex;
+      // 从 0 平滑滑到 1；沿用当前帧（已为静止 1.0）时可重新 forward。
+      _ctrl
+        ..duration = widget.duration
+        ..value = 0
+        ..forward();
     }
   }
 
   @override
+  void dispose() {
+    _curve.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 前进（index 增大）新页从右侧滑入、旧页滑出到左侧；后退相反。
+    final inDir = (widget.currentIndex > _prevIndex) ? 1.0 : -1.0;
+    return ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var i = 0; i < _children.length; i++)
+            _BranchPane(
+              key: ValueKey(i),
+              animation: _curve,
+              inDir: inDir,
+              isCurrent: i == widget.currentIndex,
+              isPrev: i == _prevIndex && _curve.value < 1.0,
+              child: _children[i],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 单个分支层：按 role（当前页 / 上一页）跟随滑动手势做水平位移。
+class _BranchPane extends StatelessWidget {
+  const _BranchPane({
+    super.key,
+    required this.animation,
+    required this.inDir,
+    required this.isCurrent,
+    required this.isPrev,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final double inDir;
+  final bool isCurrent;
+  final bool isPrev;
+  final Widget child;
+
+  @override
   Widget build(BuildContext context) {
     return Offstage(
-      offstage: !_visible,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(end: widget.isActive ? 1.0 : 0.0),
-        duration: widget.duration,
-        curve: Curves.easeOutCubic,
-        onEnd: () {
-          if (mounted && !widget.isActive && _visible) {
-            setState(() => _visible = false);
+      offstage: !(isCurrent || isPrev),
+      child: AnimatedBuilder(
+        animation: animation,
+        child: child,
+        builder: (context, child) {
+          final w = MediaQuery.sizeOf(context).width;
+          final t = animation.value;
+          final Offset offset;
+          if (isCurrent) {
+            // 新页从 inDir 侧滑入到原位。
+            offset = Offset(inDir * w * (1 - t), 0);
+          } else if (isPrev) {
+            // 旧页滑出到相反一侧。
+            offset = Offset(-inDir * w * t, 0);
+          } else {
+            offset = Offset.zero;
           }
-        },
-        builder: (context, t, child) {
-          // 非活跃分支不接收手势，避免隐藏页面误响应点击。
-          return IgnorePointer(
-            ignoring: !widget.isActive,
-            child: Opacity(
-              opacity: t,
-              // 轻微缩放：入场从 0.98 放大到 1.0，观感更顺滑。
-              child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
-            ),
+          return Transform.translate(
+            offset: offset,
+            child: IgnorePointer(ignoring: !isCurrent, child: child!),
           );
         },
-        child: widget.child,
       ),
     );
   }

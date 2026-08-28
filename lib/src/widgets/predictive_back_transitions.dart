@@ -119,6 +119,94 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   }
 }
 
+/// 覆盖式安卓转场 [PageTransitionsBuilder]。
+///
+/// 非手势的打开/关闭用「新页从右侧滑入覆盖旧页、旧页静止」的经典覆盖式动画
+/// （贴近 Android 原生 Nagivate 覆盖，区别于 M3 FadeForwards 的「两页并排
+/// 横切+淡入」）。开启预测返回时（[PredictiveBackPageTransitionsBuilder] 之外
+/// 也可用本类），手势中走官方整屏缩放跟手，非手势沿用覆盖滑动。
+class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
+  const CoverPageTransitionsBuilder({this.predictiveBack = true, this.backgroundColor});
+
+  /// 是否在 Android 13+ 接管预测返回手势做跟手行程。
+  final bool predictiveBack;
+
+  /// 转场/预测返回时露出的底色（对齐根层真实底色），防止切换瞬间露出透底层。
+  final Color? backgroundColor;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 420);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (!predictiveBack) {
+      return _coverSlide(context, animation, child);
+    }
+    return PredictiveBackGestureDetector(
+      route: route,
+      builder: (context, phase, startBackEvent, currentBackEvent) {
+        if (route.popGestureInProgress) {
+          // 手势跟手中整屏缩放，会露出本页透底层，故同样铺根层底色，
+          // 避免出现透明/黑底闪烁。
+          return _withBackground(
+            context,
+            PredictiveBackSharedElementPageTransition(
+              animation: animation,
+              phase: phase,
+              secondaryAnimation: secondaryAnimation,
+              startBackEvent: startBackEvent,
+              currentBackEvent: currentBackEvent,
+              child: child,
+            ),
+          );
+        }
+        return _coverSlide(context, animation, child);
+      },
+    );
+  }
+
+  /// 铺一层根层真实底色（与 [CoverPageTransitionsBuilder.backgroundColor] 一致）。
+  Widget _withBackground(BuildContext context, Widget layer) {
+    final Color background =
+        backgroundColor ?? Theme.of(context).scaffoldBackgroundColor;
+    return DecoratedBox(decoration: BoxDecoration(color: background), child: layer);
+  }
+
+  /// 覆盖滑动：本页从右滑入盖住旧页，旧页不动（不参与 secondaryAnimation，
+  /// 因而 push 时上一页原地静止、pop 时本页右滑退场）。底部铺一层根层底色，
+  /// 让切换全程稳定填充、不露透。
+  Widget _coverSlide(BuildContext context, Animation<double> animation, Widget child) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    final Color background = backgroundColor ?? Theme.of(context).scaffoldBackgroundColor;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 底色固定在底层，不随页面滑动，仅作为切换期间的稳定背景。
+        DecoratedBox(
+          decoration: BoxDecoration(color: background),
+        ),
+        SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
 /// The phases of a predictive back gesture.
 enum PredictiveBackPhase {
   /// There is no active predictive back gesture in progress.

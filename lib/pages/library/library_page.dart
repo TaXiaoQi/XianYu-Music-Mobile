@@ -188,7 +188,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: appScaffoldBackground(context, ref),
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
           children: [

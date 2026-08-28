@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/navigation/shell.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
@@ -25,7 +26,7 @@ class RecentPage extends ConsumerWidget {
 
     return HideShellChrome(
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
             Padding(

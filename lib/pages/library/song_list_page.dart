@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -17,7 +18,7 @@ class SongListPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return HideShellChrome(
       child: Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(

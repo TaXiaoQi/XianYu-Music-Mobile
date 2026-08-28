@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
@@ -249,7 +250,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         : null;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(
