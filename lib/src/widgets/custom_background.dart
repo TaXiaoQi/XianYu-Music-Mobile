@@ -34,6 +34,7 @@ class CustomBackgroundLayer extends StatelessWidget {
     // 未保存的草稿 enabled 仍为 false，但预览需透出图片。
     // 全局背景层走 _SettingsBound，已在其内部完成 active 校验。
     final file = File(cb.imagePath);
+    final hasImage = file.path.isNotEmpty;
     final blurSig = cb.blur * 0.6; // 0~40 → 0~24 sigma
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -46,27 +47,32 @@ class CustomBackgroundLayer extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ClipRect(
-                  child: Transform.translate(
-                    offset: Offset(dx, dy),
-                    child: Transform.scale(
-                      scale: cb.scale / 100,
-                      alignment: Alignment.center,
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(
-                            sigmaX: blurSig, sigmaY: blurSig),
-                        child: Opacity(
-                          opacity: cb.opacity / 100,
-                          child: Image.file(
-                            file,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                // 用 ValueKey(路径) 强制「路径变化时重建全新图片流」：否则从空路径
+                // 草稿切到真实路径时，Image 会复用旧的空路径 FileImage 错误流，
+                // errorBuilder 触发后壁纸不渲染（仅默认底色）。
+                if (hasImage)
+                  ClipRect(
+                    child: Transform.translate(
+                      offset: Offset(dx, dy),
+                      child: Transform.scale(
+                        scale: cb.scale / 100,
+                        alignment: Alignment.center,
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                              sigmaX: blurSig, sigmaY: blurSig),
+                          child: Opacity(
+                            opacity: cb.opacity / 100,
+                            child: Image.file(
+                              key: ValueKey('wallpaper-${file.path}'),
+                              file,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
                 if (cb.maskAlpha > 0)
                   Container(
                     color: Colors.black

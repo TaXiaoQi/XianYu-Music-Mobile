@@ -2,6 +2,9 @@ import 'dart:ui' show clampDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/app_colors.dart';
 
 /// 让任意 [PageRoute] 参与 Android 预测返回的公共转场组件。
 ///
@@ -173,9 +176,10 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
 
   /// 铺一层根层真实底色（与 [CoverPageTransitionsBuilder.backgroundColor] 一致）。
   Widget _withBackground(BuildContext context, Widget layer) {
-    final Color background =
-        backgroundColor ?? Theme.of(context).scaffoldBackgroundColor;
-    return DecoratedBox(decoration: BoxDecoration(color: background), child: layer);
+    return _TransitionBackdrop(
+      backgroundColor: backgroundColor,
+      child: layer,
+    );
   }
 
   /// 覆盖滑动：本页从右滑入盖住旧页，旧页不动（不参与 secondaryAnimation，
@@ -187,14 +191,11 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
-    final Color background = backgroundColor ?? Theme.of(context).scaffoldBackgroundColor;
     return Stack(
       fit: StackFit.expand,
       children: [
         // 底色固定在底层，不随页面滑动，仅作为切换期间的稳定背景。
-        DecoratedBox(
-          decoration: BoxDecoration(color: background),
-        ),
+        const _TransitionBackdrop(),
         SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(1, 0),
@@ -203,6 +204,37 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
           child: child,
         ),
       ],
+    );
+  }
+}
+
+/// 转场/预测返回手势中铺在路由底部的「根层底色」垫底。
+///
+/// 未启用自定义壁纸：铺 [backgroundColor]（无值时退回 scaffoldBackgroundColor），
+/// 保证 opaque 路由不露出 Navigator 之外的透底层。
+///
+/// 启用自定义壁纸：**必须不铺**。本层位于 Navigator 内、根壁纸层
+/// （MaterialApp.builder 底部 Stack）之上，而全部页面 Scaffold 均为透明，
+/// 静态时页面露出的是根层「默认底色 + 壁纸」；若这里常驻实色，壁纸会被整层
+/// 盖住（表现为「设置了壁纸但界面始终是默认底色」）。不铺实色后，转场全程
+/// 露出的与静态时一致（下层路由 / 根层壁纸），壁纸模式不受转场影响。
+class _TransitionBackdrop extends ConsumerWidget {
+  const _TransitionBackdrop({this.backgroundColor, this.child});
+
+  final Color? backgroundColor;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final Color? color = ref.watch(wallpaperActiveProvider)
+        ? null
+        : (backgroundColor ?? Theme.of(context).scaffoldBackgroundColor);
+    if (color == null) {
+      return child ?? const SizedBox.shrink();
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(color: color),
+      child: child,
     );
   }
 }

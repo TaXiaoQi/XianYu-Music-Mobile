@@ -480,9 +480,16 @@ class _CoverRoute extends PageRoute<void> {
   @override
   bool get popGestureEnabled => isCurrent && predictiveBack;
 
-  // 非不透明：动画期间下层真实绘制并自带底色，返回时实时透出下层页面。
+  // 覆盖转场用 opaque=true：Flutter Overlay 对 opaque 路由在「转场动画期间」仍会
+  // 绘制其下层（Cupertino 覆盖式转场即如此），动画结束后才隐藏下层。故声明
+  // opaque=true 能同时满足——
+  //  · 动画期间：下层真实绘制，返回时新页滑出、下层联动透出（抽屉覆盖效果保留）；
+  //  · 静态：Overlay 跳过下层路由不绘制，页面的透明背景透出的是「根层壁纸/底色」，
+  //    而非下层页面内容。
+  // 此前用 opaque=false 会导致静态时下层路由持续绘制：壁纸(透明)模式下页面背景
+  // 透明，下层「我的」等内容便永久穿透到设置页等二级页之上（「被覆盖的页面不消失」）。
   @override
-  bool get opaque => false;
+  bool get opaque => true;
 
   @override
   Color? get barrierColor => null;
