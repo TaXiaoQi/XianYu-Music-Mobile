@@ -135,7 +135,6 @@ class _RecentList extends ConsumerWidget {
         final entry = recent.entries[i];
         return _RecentTile(
           entry: entry,
-          isLast: i == recent.entries.length - 1,
           onPlay: () => notifier.play(i),
           onRemove: () => notifier.remove(entry.songPath),
         );
@@ -149,20 +148,15 @@ class _RecentTile extends ConsumerWidget {
     required this.entry,
     required this.onPlay,
     required this.onRemove,
-    this.isLast = false,
   });
 
   final RecentEntry entry;
   final VoidCallback onPlay;
   final VoidCallback onRemove;
 
-  /// 是否为列表末项：末项不画底部分隔线。
-  final bool isLast;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final divider = scheme.outlineVariant.withValues(alpha: 0.4);
     final m = ListMetrics.ofRef(ref);
     final item = entry.toQueueItem();
     final title = item?.title ?? _titleFromPath(entry.songPath);
@@ -183,59 +177,49 @@ class _RecentTile extends ConsumerWidget {
       );
       if (ok) onPlay();
     });
-    return Container(
-      // 末项隐藏底部分隔线，其余行底对齐分割（原 Divider(height:1)）。
-      decoration: isLast
-          ? null
-          : BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: divider, width: 1),
-              ),
-            ),
-      child: g.wrap(
-        CoverRow(
-          horizontalPadding: 16,
-          verticalPadding: m.vPad,
-          onTap: g.onTap,
-          onLongPress: () => onRemove(),
-          cover: Builder(
-            builder: (c) {
-              coverCtx = c;
-              return CoverImage(
-                songPath: entry.songPath,
-                networkUrl: item?.coverUrl,
-                width: m.songCover,
-                height: m.songCover,
-                radius: m.songRadius,
-                icon: Icons.music_note,
-              );
-            },
+    return g.wrap(
+      CoverRow(
+        horizontalPadding: 16,
+        verticalPadding: m.vPad,
+        onTap: g.onTap,
+        onLongPress: () => onRemove(),
+        cover: Builder(
+          builder: (c) {
+            coverCtx = c;
+            return CoverImage(
+              songPath: entry.songPath,
+              networkUrl: item?.coverUrl,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            );
+          },
+        ),
+        title: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: m.titleSize,
+            fontWeight: FontWeight.w600,
           ),
-          title: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: m.titleSize,
-              fontWeight: FontWeight.w600,
-            ),
+        ),
+        subtitle: Text(
+          artist.isEmpty
+              ? _timeText(entry.playedAt)
+              : '$artist · ${_timeText(entry.playedAt)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: m.subtitleSize,
+            color: scheme.onSurfaceVariant,
           ),
-          subtitle: Text(
-            artist.isEmpty
-                ? _timeText(entry.playedAt)
-                : '$artist · ${_timeText(entry.playedAt)}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: m.subtitleSize,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          trailing: IconButton(
-            icon: Icon(Icons.close, size: 18, color: scheme.outline),
-            tooltip: tr('移除'),
-            onPressed: onRemove,
-          ),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.close, size: 18, color: scheme.outline),
+          tooltip: tr('移除'),
+          onPressed: onRemove,
         ),
       ),
     );
