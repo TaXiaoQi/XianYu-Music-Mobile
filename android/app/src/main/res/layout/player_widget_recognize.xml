@@ -9,8 +9,8 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:paddingTop="14dp"
-    android:paddingBottom="14dp">
+    android:paddingTop="20dp"
+    android:paddingBottom="20dp">
 
     <!-- 卡片容器：带圆角底色但比 4×2 格子矮、上下居中留白（对齐多邻国观感）。 -->
     <FrameLayout
@@ -37,8 +37,8 @@
          无动画时 coverOld 隐藏。 -->
     <FrameLayout
         android:id="@+id/coverHost"
-        android:layout_width="110dp"
-        android:layout_height="110dp"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
         android:layout_marginStart="10dp"
         android:layout_gravity="center_vertical">
 
@@ -54,6 +54,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
+            android:src="@drawable/widget_preview_cover"
             android:contentDescription="@string/widget_label" />
     </FrameLayout>
 
@@ -105,12 +106,12 @@
 
             <ImageButton
                 android:id="@+id/btnRecognize"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:layout_marginStart="8dp"
-                android:padding="6dp"
-                android:background="@drawable/widget_btn_circle"
-                android:src="@drawable/ic_notif_recognize"
+                android:padding="4dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_notif_share"
                 android:scaleType="fitCenter"
                 android:contentDescription="@string/widget_label" />
         </LinearLayout>

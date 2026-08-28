@@ -4,10 +4,17 @@
      行3 = 上一首 / 播放 / 下一首 三大键居中。
      颜色随系统明暗主题。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg">
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp">
+
+    <!-- 卡片容器：带圆角底色但比 2×2 格子窄、水平居中留白（与识曲矮卡片同款策略）。 -->
+    <FrameLayout
+        android:id="@+id/root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_bg">
 
     <!-- 封面模糊背景层：封面缩 24px 再放大 = 100% 模糊作整卡底色。 -->
     <ImageView
@@ -45,6 +52,7 @@
             android:layout_height="85dp"
             android:layout_gravity="center"
             android:scaleType="centerCrop"
+            android:src="@drawable/widget_preview_cover"
             android:contentDescription="@string/widget_label" />
     </FrameLayout>
 
@@ -124,4 +132,5 @@
             android:contentDescription="@string/widget_label" />
     </LinearLayout>
     </LinearLayout>
+</FrameLayout>
 </FrameLayout>

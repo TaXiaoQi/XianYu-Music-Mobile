@@ -54,8 +54,8 @@ internal object WidgetShared {
 
     // 封面位图边长（dp）：横版 60、2×2/识曲/歌词卡用大图保证清晰。
     private const val COVER_TALL_DP = 60
-    private const val COVER_RECOGNIZE_DP = 110
-    private const val COVER_LYRIC_DP = 96
+    private const val COVER_RECOGNIZE_DP = 120
+    private const val COVER_LYRIC_DP = 112
     private const val COVER_2X2_SMALL_DP = 85
 
     // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
@@ -67,8 +67,8 @@ internal object WidgetShared {
         R.id.lyricLine1, R.id.lyricLine2, R.id.lyricLine3,
         R.id.lyricLine4, R.id.lyricLine5)
 
-    // 识曲深链：右上识曲钮经此拉起 App 识曲页。
-    private const val RECOGNIZE_LINK = "xianyu://open?target=recognize"
+    // 识曲（已改分享）深链：右上按钮经拉起 App 分享当前歌曲。
+    private const val RECOGNIZE_LINK = "xianyu://open?target=share"
 
     // 模糊背景态的固定白字/白图标色（类播放详情页暗底白字）。
     private const val WHITE = -0x1
@@ -328,11 +328,17 @@ internal object WidgetShared {
     ): RemoteViews {
         val mode = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE)
             .getString(LAYOUT_PREFIX + id, null) ?: defaultMode
-        return buildViews(
-            ctx, s, mode, provider, rc, id,
-            if (mode == MODE_2X2 || mode == MODE_4X2)
-                widgetSizeDp(AppWidgetManager.getInstance(ctx), id) else null,
-            enableRecognize)
+        val mgr = AppWidgetManager.getInstance(ctx)
+        // 模糊背景按卡片实际显示尺寸生成，fitXY 铺满卡片时零拉伸，保证圆形圆角不会长成椭圆。
+        val raw = widgetSizeDp(mgr, id)
+        val cardDp = when (mode) {
+            // 识别矮卡：扣上下留白 20×2（卡片比格子矮）。
+            MODE_4X2 -> raw?.let { it.first to (it.second - 40).coerceAtLeast(1) }
+            // 方块窄卡：扣左右留白 14×2（卡片比格子窄）。
+            MODE_2X2 -> raw?.let { (it.first - 28).coerceAtLeast(1) to it.second }
+            else -> raw
+        }
+        return buildViews(ctx, s, mode, provider, rc, id, cardDp, enableRecognize)
     }
 
     /**
@@ -361,7 +367,7 @@ internal object WidgetShared {
      * 推送一次；系统限速约 2 次/小时 → 每小时最多尝试一轮，全部成功后记版本号，
      * 预览布局有改动时递增 PREVIEW_GEN_VERSION 重新推送。
      */
-    private const val PREVIEW_GEN_VERSION = 11
+    private const val PREVIEW_GEN_VERSION = 12
     private const val PREVIEW_GEN_RETRY_MS = 55 * 60 * 1000L
 
     fun ensurePreviewGen(ctx: Context) {
@@ -373,9 +379,9 @@ internal object WidgetShared {
         prefs.edit().putLong("preview_gen_attempt_ts", now).apply()
         val mgr = AppWidgetManager.getInstance(ctx)
         val defs = listOf(
-            SquareWidgetProvider::class.java to R.layout.player_widget_square_preview,
-            RecognizeWidgetProvider::class.java to R.layout.player_widget_recognize_preview,
-            LyricWidgetProvider::class.java to R.layout.player_widget_lyric_preview,
+            SquareWidgetProvider::class.java to R.layout.player_widget_2x2,
+            RecognizeWidgetProvider::class.java to R.layout.player_widget_recognize,
+            LyricWidgetProvider::class.java to R.layout.player_widget_lyric,
         )
         var ok = 0
         for ((cls, layout) in defs) {
@@ -662,7 +668,7 @@ internal object WidgetShared {
             // 4×2：固定尺寸方形封面（与卡片边缘留间距）。
             MODE_4X2 -> roundedCover(ctx, path, COVER_RECOGNIZE_DP)
             // 歌词卡：固定方形。
-            MODE_LYRIC -> roundedCover(ctx, path, COVER_LYRIC_DP)
+            MODE_LYRIC -> roundCover(ctx, path, COVER_LYRIC_DP) // 歌词卡：圆形封面
             else -> roundedCover(ctx, path, COVER_TALL_DP)
         }
     }
@@ -721,13 +727,12 @@ internal object WidgetShared {
                 settleCoverSwap(ctx, mgr, id, layoutRes, newPath, newBmp)
                 return
             }
-            // 2×2 为居中小封面，不做左右平移（避免打断残留偏位），仅交叉淡入淡出。
-            val shift = { v: Float -> if (mode == MODE_2X2) 0f else v }
+            // 平移 + 淡入淡出（二层一致，位移掩盖小图 alpha 抖动）。
             val old = coverLiveBitmap[id]
             if (old != null) {
                 views.setImageViewBitmap(R.id.coverOld, old)
                 views.setFloat(R.id.coverOld, "setAlpha", 1f - p)
-                views.setFloat(R.id.coverOld, "setTranslationX", shift(-p * cur.slidePx * cur.dir))
+                views.setFloat(R.id.coverOld, "setTranslationX", -p * cur.slidePx * cur.dir)
             } else {
                 views.setViewVisibility(R.id.coverOld, View.GONE)
             }
@@ -735,7 +740,7 @@ internal object WidgetShared {
             if (np != null) views.setImageViewBitmap(R.id.coverNew, np)
             else coverPlaceholder(ctx, views, mode)
             views.setFloat(R.id.coverNew, "setAlpha", p)
-            views.setFloat(R.id.coverNew, "setTranslationX", shift((1f - p) * cur.slidePx * cur.dir))
+            views.setFloat(R.id.coverNew, "setTranslationX", (1f - p) * cur.slidePx * cur.dir)
             scheduleCoverSwap(ctx, mgr, id)
             return
         }
@@ -764,10 +769,7 @@ internal object WidgetShared {
         if (newBmp != null) views.setImageViewBitmap(R.id.coverNew, newBmp)
         else coverPlaceholder(ctx, views, mode)
         views.setFloat(R.id.coverNew, "setAlpha", 0f)
-        // 2×2 居中小封面进场不平移（保持恒居中），仅淡入。
-        views.setFloat(
-            R.id.coverNew, "setTranslationX",
-            if (mode == MODE_2X2) 0f else d * slide)
+        views.setFloat(R.id.coverNew, "setTranslationX", d * slide)
         scheduleCoverSwap(ctx, mgr, id)
     }
 
@@ -896,7 +898,7 @@ internal object WidgetShared {
             val w = ((sizeDp?.first ?: 300) * density).toInt().coerceAtLeast(1)
             val h = ((sizeDp?.second ?: 150) * density).toInt().coerceAtLeast(1)
             val radius = CARD_CORNER_DP * density
-            val smallW = 24
+            val smallW = 12
             val smallH = (smallW.toLong() * bmp.height / bmp.width).toInt().coerceAtLeast(1)
             val small = Bitmap.createScaledBitmap(bmp, smallW, smallH, true)
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -926,10 +928,14 @@ internal object WidgetShared {
             cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
 
             // 暗色蒙层：上浅下深，保证底部控件/进度条可读。
+            // 桌面歌词页氛围：全局压暗一层收敛明亮封面色，再叠上浅下深渐变出深底观感。
+            val dim = Paint().apply { color = 0x38000000.toInt() }
+            cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), dim)
+
             val scrim = Paint().apply {
                 shader = LinearGradient(
                     0f, 0f, 0f, h.toFloat(),
-                    0x8C000000.toInt(), 0xC0000000.toInt(), Shader.TileMode.CLAMP)
+                    0x88000000.toInt(), 0xE6000000.toInt(), Shader.TileMode.CLAMP)
             }
             cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), scrim)
             out
@@ -954,8 +960,8 @@ internal object WidgetShared {
             val cv = Canvas(out)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             paint.setShader(BitmapShader(half, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
-            // 圆角更圆润，匹配 App 封面比例；外加一圈细描边增强卡片感。
-            val r = size * 0.26f
+            // 圆角固定为卡片容器圆角（widget_bg 24dp），与卡片精确重合；外加一圈细描边增强卡片感。
+            val r = CARD_CORNER_DP * density
             val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
             cv.drawRoundRect(rect, r, r, paint)
             val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -964,6 +970,38 @@ internal object WidgetShared {
                 strokeWidth = 1.5f * density
             }
             cv.drawRoundRect(rect, r, r, stroke)
+            out
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** 封面 -> 圆形位图（歌词卡专属，无封面/失败返回 null）。 */
+    private fun roundCover(ctx: Context, path: String, sizeDp: Int): Bitmap? {
+        if (path.isBlank()) return null
+        return try {
+            val bmp = BitmapFactory.decodeFile(path) ?: return null
+            val density = ctx.resources.displayMetrics.density
+            val size = (sizeDp * density).toInt().coerceAtLeast(1)
+            val dim = minOf(bmp.width, bmp.height)
+            val sx = (bmp.width - dim) / 2f
+            val sy = (bmp.height - dim) / 2f
+            val crop = Bitmap.createBitmap(bmp, sx.toInt(), sy.toInt(), dim, dim)
+            val half = Bitmap.createScaledBitmap(crop, size, size, true)
+            val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(out)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.setShader(BitmapShader(half, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+            val cx = size / 2f
+            val cy = size / 2f
+            val radius = size / 2f
+            cv.drawCircle(cx, cy, radius, paint)
+            val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                color = 0x33FFFFFF
+                strokeWidth = 1.5f * density
+            }
+            cv.drawCircle(cx, cy, radius - 0.75f * density, stroke)
             out
         } catch (_: Throwable) {
             null
