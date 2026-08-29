@@ -43,7 +43,6 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
   /// 横屏 out-in 切换状态：out 阶段旧页在 PageView 上整体淡出，完成后跳页，
   /// in 阶段新页淡入。对齐桌面版 page-fade（0.22s，expo-out，±6/8px + 0.996）。
   bool _animating = false;
-  bool _outPhase = false;
   int _pendingIndex = -1;
 
   static const _fadeDuration = Duration(milliseconds: 220);
@@ -63,6 +62,24 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
     return size.width >= size.height * 1.05;
   }
 
+  int _fromIndex = 0;
+  int _gen = 0;
+
+  void _startFadeTransition() {
+    setState(() {
+      _animating = true;
+    });
+    final gen = ++_gen;
+    _anim.value = 0;
+    _anim.forward().whenComplete(() {
+      if (!mounted || gen != _gen) return;
+      setState(() {
+        _animating = false;
+        _fromIndex = _pendingIndex;
+      });
+    });
+  }
+
   @override
   void didUpdateWidget(covariant PageSwitchTabView old) {
     super.didUpdateWidget(old);
@@ -72,15 +89,9 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
         if (_controller.hasClients) _controller.jumpToPage(widget.currentIndex);
         return;
       }
-      // 桌面版 page-fade 同款 out-in。pending 始终同步为最新目标（不设
-      // page 守卫，避免 A→B→A 快速切换时 pending 滞后导致循环跳页）。
+      _fromIndex = old.currentIndex;
       _pendingIndex = widget.currentIndex;
-      if (_animating) {
-        // out 阶段并入当前周期；in 阶段被打断则重启一轮 out。
-        if (!_outPhase) _beginOut();
-      } else if (_controller.hasClients) {
-        _beginOut();
-      }
+      _startFadeTransition();
     } else if (_controller.hasClients &&
         _controller.page?.round() != widget.currentIndex) {
       _controller.animateToPage(
@@ -91,53 +102,6 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
     }
   }
 
-  /// out 阶段：旧页淡出（上移 6px、缩至 0.996），完成后跳到目标页进入 in 阶段。
-  ///
-  /// [_gen] 代数守卫：_anim.value 赋值会强停运行中的 ticker，被打断的旧
-  /// forward 的 whenComplete 会以 TickerCanceled 触发，必须忽略，否则会把
-  /// 刚置位的 _animating 清掉导致动效失效。
-  int _gen = 0;
-
-  void _beginOut() {
-    _animating = true;
-    _outPhase = true;
-    final gen = ++_gen;
-    // 关键：同步把动画值归零再 forward。forward(from: 0) 不会同步修改 value，
-    // 若 value 仍停留在上一轮 in 结束的 1.0，本帧 paint 时 out 映射
-    // opacity = 1 - 1 = 0，旧页会先满帧消失一拍（硬闪）。
-    _anim.value = 0;
-    _anim.forward().whenComplete(() {
-      if (!mounted || gen != _gen) return;
-      _onOutComplete();
-    });
-  }
-
-  void _onOutComplete() {
-    if (!mounted) return;
-    final target = _pendingIndex;
-    // 先同步切到 in 映射并把 value 归零、再跳页：跳页后的首帧新页以 opacity 0
-    // 出现。否则 value 仍为 1.0、in 映射 opacity = 1，新页会满帧闪现一拍。
-    _outPhase = false;
-    _anim.value = 0;
-    _controller.jumpToPage(target);
-    if (target != widget.currentIndex) {
-      // out 期间目标又变了：再来一轮 out。
-      _beginOut();
-      return;
-    }
-    // in 阶段：新页自下方 8px、scale 0.996 淡入归位。
-    final gen = _gen;
-    _anim.forward().whenComplete(() {
-      if (!mounted || gen != _gen) return;
-      _onInComplete();
-    });
-  }
-
-  void _onInComplete() {
-    if (!mounted) return;
-    setState(() => _animating = false);
-  }
-
   @override
   void dispose() {
     _curved.dispose();
@@ -146,14 +110,85 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
     super.dispose();
   }
 
+  /// 恒定挂载的分支层：所有分支永远在树上，仅通过透明度/偏移驱动过渡，
+  /// 绝不因动画状态增删子节点，从根源杜绝 Element 树 remount 闪烁。
+  Widget _buildBranchLayer(int i, double t) {
+    final child = widget.children[i];
+
+    // 非动画状态：仅当前页可见，其余全部 Offstage 隐藏
+    if (!_animating) {
+      final isCurrent = i == widget.currentIndex;
+      return Positioned.fill(
+        key: ValueKey(i),
+        child: Offstage(
+          offstage: !isCurrent,
+          child: IgnorePointer(ignoring: !isCurrent, child: child),
+        ),
+      );
+    }
+
+    // 动画期间：旧页垫底保持不透明，新页顶层淡入，其余隐藏
+    final isFrom = i == _fromIndex;
+    final isTo = i == _pendingIndex;
+
+    if (!isFrom && !isTo) {
+      return Positioned.fill(
+        key: ValueKey(i),
+        child: Offstage(offstage: true, child: child),
+      );
+    }
+
+    if (isFrom) {
+      return Positioned.fill(
+        key: ValueKey(i),
+        child: Offstage(
+          offstage: false,
+          child: IgnorePointer(child: child),
+        ),
+      );
+    }
+
+    // isTo：顶层向上 8px 平滑淡入覆盖。底色不参与淡入，避免旧页透出。
+    final opacity = t.clamp(0.0, 1.0);
+    return Positioned.fill(
+      key: ValueKey(i),
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.translate(
+          offset: Offset(0, 8 * (1 - t)),
+          child: Transform.scale(
+            scale: 0.996 + 0.004 * t,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pageView = PageView(
+    if (_landscape) {
+      // 所有分支恒定挂载（数量与顺序永不改变，杜绝 Element 树 remount 导致的闪烁）
+      return Container(
+        color: Theme.of(context).colorScheme.surface,
+        child: AnimatedBuilder(
+          animation: _curved,
+          builder: (context, _) {
+            final t = _curved.value;
+            return Stack(
+              children: [
+                for (var i = 0; i < widget.children.length; i++)
+                  _buildBranchLayer(i, t),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
+    return PageView(
       controller: _controller,
-      // 横屏侧边栏模式下禁用横滑手势，竖屏保持弹簧吸附横滑。
-      physics: _landscape
-          ? const NeverScrollableScrollPhysics()
-          : const _TabPageScrollPhysics(),
+      physics: const _TabPageScrollPhysics(),
       onPageChanged: (page) {
         if (page != widget.currentIndex) {
           widget.onPageSettled?.call(page);
@@ -162,37 +197,6 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
       children: [
         for (final child in widget.children) _KeepAlivePage(child: child),
       ],
-    );
-
-    if (!_animating) return pageView;
-    return AnimatedBuilder(
-      animation: _anim,
-      child: pageView,
-      builder: (context, child) {
-        final t = _curved.value;
-        final double opacity;
-        final double dy;
-        final double scale;
-        if (_outPhase) {
-          opacity = 1 - t;
-          dy = -6 * t;
-          scale = 1 - 0.004 * t;
-        } else {
-          opacity = t;
-          dy = 8 * (1 - t);
-          scale = 0.996 + 0.004 * t;
-        }
-        return Opacity(
-          opacity: opacity.clamp(0.0, 1.0),
-          child: Transform.translate(
-            offset: Offset(0, dy),
-            child: Transform.scale(
-              scale: scale,
-              child: _outPhase ? IgnorePointer(child: child) : child,
-            ),
-          ),
-        );
-      },
     );
   }
 }

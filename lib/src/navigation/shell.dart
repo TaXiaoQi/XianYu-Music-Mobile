@@ -481,6 +481,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
         : child;
   }
 
+  /// 音乐库面板的固定 trigger：面板内部是 IndexedStack（四页常驻挂载），
+  /// 切换条目是瞬时的、无需转场。若把 libSel 当 trigger，每次切条目都会重播
+  /// 一次 opacity 0→1 的淡入，而这是叠在主分支之上的覆盖层，淡入期间整层半透明，
+  /// 底下的导航分支页会透出来——即「横屏音乐库里切换时闪一下导航页」。
+  /// 用常量让淡入只在面板首次打开时播放一次。
+  static const _kLibraryPaneTrigger = 'library-pane';
+
   // 横屏容器（音乐库/下载/歌单详情）切入切换：从下往上轻微滑动 + 淡进淡出，
   // 类似桌面端切换效果。关闭「横屏切换动画」时保持硬切。
   Widget _landscapeSlide({
@@ -773,13 +780,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
                                       ),
                                       child: _landscapeSlide(
                                         enabled: landscapeFadeEnabled,
-                                        trigger: libSel,
+                                        trigger: _kLibraryPaneTrigger,
                                         child: _MusicLibraryPane(index: libSel),
                                       ),
                                     )
                                   : _landscapeSlide(
                                       enabled: landscapeFadeEnabled,
-                                      trigger: libSel,
+                                      trigger: _kLibraryPaneTrigger,
                                       child: _MusicLibraryPane(index: libSel),
                                     ),
                               ),
