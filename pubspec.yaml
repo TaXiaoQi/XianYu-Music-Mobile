@@ -80,6 +80,14 @@ dependencies:
   tencent_kit: ^6.2.0
   pinyin: ^3.3.0
 
+# 本地 vendor 的 tencent_kit（third_party/tencent_kit）：
+# pub 官方版 6.2.0 打包的 QQ OpenSDK 仍为 3.5.17.3，此副本已替换为官方
+# 3.5.19（android/libs/open_sdk_3.5.19_r9483ffc7_lite.jar）。若未来插件
+# 上游更新 SDK，可移除本 override 改回 pub 版本。
+dependency_overrides:
+  tencent_kit:
+    path: third_party/tencent_kit
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

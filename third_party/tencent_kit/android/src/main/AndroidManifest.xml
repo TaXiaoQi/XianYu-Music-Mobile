@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="io.github.v7lin.tencent_kit">
+    <application>
+        <provider
+            android:name=".TencentKitFileProvider"
+            android:authorities="${applicationId}.tencent_kit.TencentKitFileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/tencent_kit_file_paths" />
+        </provider>
+    </application>
+</manifest>

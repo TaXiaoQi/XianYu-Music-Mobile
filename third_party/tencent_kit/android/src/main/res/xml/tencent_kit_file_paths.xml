@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--suppress AndroidDomInspection -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="opensdk_external" path="Images/tmp"/>
+    <root-path name="opensdk_root" path=""/>
+</paths>

@@ -1,0 +1,35 @@
+name: tencent_kit_example
+description: Demonstrates how to use the tencent_kit plugin.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.2 <4.0.0'
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  tencent_kit:
+    path: ../
+
+  cupertino_icons: ^1.0.2
+  flutter_cache_manager: ^3.3.0
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: any
+
+  build_runner: ^2.0.0
+  json_serializable: ^6.7.0
+
+flutter:
+  uses-material-design: true
+
+tencent_kit:
+  app_id: 123456789
+  universal_link: https://www.yourdomain.com/universal_link/example_app/qq_conn/123456789/ # 可选项目

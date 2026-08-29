@@ -14,3 +14,7 @@
 # 但插件未声明 okhttp 依赖；SDK 运行时缺 okhttp 会回退 HttpURLConnection
 # （debug 构建无 okhttp 也能正常分享），故仅跳过 R8 缺失类检查，不额外引入依赖。
 -dontwarn okhttp3.**
+
+# QQ OpenSDK 3.5.19 运行时硬编码调用 android.support.v4.content.FileProvider
+# （app 内有对应的继承 androidx 的存根类），防止 R8 误删
+-keep class android.support.v4.content.FileProvider { *; }
