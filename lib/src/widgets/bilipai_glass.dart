@@ -28,6 +28,8 @@ class BiliPaiGlass extends StatefulWidget {
     required this.blurSigma,
     required this.backgroundColor,
     required this.specular,
+    required this.edgeAmount,
+    this.saturation = 1.0,
     required this.child,
   });
 
@@ -40,7 +42,8 @@ class BiliPaiGlass extends StatefulWidget {
   /// 色差强度：RGB 通道分离幅度。
   final double chroma;
 
-  /// 轻量模糊 sigma（逻辑像素），0=不模糊。
+  /// 主体模糊 sigma（逻辑像素）：由 compose 的 inner 真高斯（GPU 高斯，无
+  /// 重影上限）承担，shader 内仅 σ1.5 微模糊平滑。
   final double blurSigma;
 
   /// 预乘混合底色（铺在波浪扭曲后的背景上，保证可读性）。
@@ -48,6 +51,13 @@ class BiliPaiGlass extends StatefulWidget {
 
   /// 表面流动高光强度（滚动时在玻璃上扫过的反光带，纯色背景上提供动感）。
   final double specular;
+
+  /// 边缘透镜折射幅度（逻辑像素）：内容靠近玻璃边界时沿外向法线被拉向外侧
+  /// 的「弯折量」（meniscus），静止也可见，是 BiliPai 贴边观感的关键。
+  final double edgeAmount;
+
+  /// 饱和度增益（BiliPai balanced 档 1.5，水晶透亮感来源），1.0=不变。
+  final double saturation;
 
   final Widget child;
 
@@ -58,16 +68,30 @@ class BiliPaiGlass extends StatefulWidget {
 class _BiliPaiGlassState extends State<BiliPaiGlass> {
   ui.FragmentShader? _shader;
 
+  /// 进程内共享的已加载 program：BiliPaiGlass 会在容器/顶栏切换时频繁重新
+  /// 挂载（如横屏各容器覆盖层顶栏都是独立实例），若每次都异步重载 shader，
+  /// 新实例首帧走纯色回退 → 顶栏「掉玻璃闪纯色一帧」。缓存后新实例在
+  /// initState 同步创建 shader，首帧即为玻璃。
+  static ui.FragmentProgram? _cachedProgram;
+  static Future<ui.FragmentProgram>? _programFuture;
+
   @override
   void initState() {
     super.initState();
+    final cached = _cachedProgram;
+    if (cached != null) {
+      _shader = cached.fragmentShader();
+      return;
+    }
     _load();
   }
 
   Future<void> _load() async {
     try {
-      final program =
-          await ui.FragmentProgram.fromAsset('assets/shaders/bilipai_liquid.frag');
+      _programFuture ??= ui.FragmentProgram.fromAsset(
+          'assets/shaders/bilipai_liquid.frag');
+      final program = await _programFuture!;
+      _cachedProgram = program;
       if (!mounted) return;
       setState(() => _shader = program.fragmentShader());
     } catch (_) {
@@ -102,6 +126,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass> {
       blurSigma: widget.blurSigma,
       backgroundColor: widget.backgroundColor,
       specular: widget.specular,
+      edgeAmount: widget.edgeAmount,
+      saturation: widget.saturation,
       child: widget.child,
     );
   }
@@ -116,6 +142,8 @@ class _BiliPaiGlassRender extends SingleChildRenderObjectWidget {
     required this.blurSigma,
     required this.backgroundColor,
     required this.specular,
+    required this.edgeAmount,
+    required this.saturation,
     required super.child,
   });
 
@@ -126,6 +154,8 @@ class _BiliPaiGlassRender extends SingleChildRenderObjectWidget {
   final double blurSigma;
   final Color backgroundColor;
   final double specular;
+  final double edgeAmount;
+  final double saturation;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
@@ -137,6 +167,8 @@ class _BiliPaiGlassRender extends SingleChildRenderObjectWidget {
       blurSigma: blurSigma,
       backgroundColor: backgroundColor,
       specular: specular,
+      edgeAmount: edgeAmount,
+      saturation: saturation,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -154,6 +186,8 @@ class _BiliPaiGlassRender extends SingleChildRenderObjectWidget {
       ..blurSigma = blurSigma
       ..backgroundColor = backgroundColor
       ..specular = specular
+      ..edgeAmount = edgeAmount
+      ..saturation = saturation
       ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
@@ -165,14 +199,20 @@ class _BiliPaiGlassRender extends SingleChildRenderObjectWidget {
 /// 扭曲，再在顶部绘制子组件内容。
 ///
 /// uniform 布局（按声明顺序，sampler 不计入 float 索引）：
-///   槽 0-1  uSize             —— 背景纹理（全屏）物理尺寸
-///   槽 2    uScrollOffset     —— 全局滚动偏移
-///   槽 3    uRefract          —— 折射强度
-///   槽 4    uChroma           —— 色差强度
-///   槽 5    uBlurSigma        —— 模糊 sigma（物理像素）
-///   槽 6-9  uBackgroundColor  —— 预乘底色
-///   槽 10   uSpecular         —— 表面流动高光强度
-///   采样器0 uImage            —— 引擎绑定的实时背景
+///   槽 0-1  uSize            —— 背景纹理（全屏）物理尺寸
+///   槽 2    uScrollOffset    —— 全局滚动偏移
+///   槽 3    uRefract         —— 折射强度
+///   槽 4    uChroma          —— 色差强度
+///   槽 5    uBlurSigma       —— shader 内微模糊 sigma（固定 1.5×dpr；主体
+///                              模糊由 compose 的 inner 真高斯承担）
+///   槽 6-9  uBackgroundColor —— 预乘底色
+///   槽 10   uSpecular        —— 表面流动高光强度
+///   槽 11   uRadius          —— 胶囊圆角半径（物理像素）
+///   槽 12-13 uGlassOrigin    —— 玻璃表面左上角（屏幕物理像素）
+///   槽 14-15 uGlassSize      —— 玻璃表面尺寸（物理像素）
+///   槽 16   uEdgeAmount      —— 边缘透镜折射幅度（物理像素）
+///   槽 17   uSaturation      —— 饱和度增益
+///   采样器0 uImage           —— 引擎绑定的实时背景
 class RenderBiliPaiGlass extends RenderProxyBox {
   RenderBiliPaiGlass({
     required ui.FragmentShader shader,
@@ -182,6 +222,8 @@ class RenderBiliPaiGlass extends RenderProxyBox {
     required double blurSigma,
     required Color backgroundColor,
     required double specular,
+    required double edgeAmount,
+    required double saturation,
     required double dpr,
   })  : _shader = shader,
         _radius = radius,
@@ -190,6 +232,8 @@ class RenderBiliPaiGlass extends RenderProxyBox {
         _blurSigma = blurSigma,
         _backgroundColor = backgroundColor,
         _specular = specular,
+        _edgeAmount = edgeAmount,
+        _saturation = saturation,
         _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -248,6 +292,22 @@ class RenderBiliPaiGlass extends RenderProxyBox {
     markNeedsPaint();
   }
 
+  double _edgeAmount;
+  double get edgeAmount => _edgeAmount;
+  set edgeAmount(double value) {
+    if (_edgeAmount == value) return;
+    _edgeAmount = value;
+    markNeedsPaint();
+  }
+
+  double _saturation;
+  double get saturation => _saturation;
+  set saturation(double value) {
+    if (_saturation == value) return;
+    _saturation = value;
+    markNeedsPaint();
+  }
+
   double _devicePixelRatio;
   double get devicePixelRatio => _devicePixelRatio;
   set devicePixelRatio(double value) {
@@ -271,6 +331,10 @@ class RenderBiliPaiGlass extends RenderProxyBox {
       LayerHandle<BackdropFilterLayer>();
   final LayerHandle<ClipPathLayer> _clipHandle = LayerHandle<ClipPathLayer>();
 
+  /// compose(shader, blur) filter 缓存，按 sigma 失效，避免每帧重建。
+  ui.ImageFilter? _cachedFilter;
+  double _cachedFilterSigma = -1;
+
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
@@ -293,7 +357,19 @@ class RenderBiliPaiGlass extends RenderProxyBox {
     final dpr = _devicePixelRatio;
     final screen = _screenSize;
 
-    // 更新着色器 uniform：滚动偏移 / 折射 / 色差 / 模糊 / 预乘底色。
+    // 玻璃表面在屏幕空间的物理像素位置/尺寸：SDF 以玻璃局部坐标计算，才能
+    // 让「贴近边」的透镜折射/边缘光精确贴合胶囊边缘（而非全屏边缘）。
+    final globalPos = localToGlobal(Offset.zero);
+    final glassOrigin = Offset(globalPos.dx * dpr, globalPos.dy * dpr);
+    final glassSize = Size(size.width * dpr, size.height * dpr);
+
+    // 更新着色器 uniform：滚动偏移 / 折射 / 色差 / 微模糊 / 预乘底色 / 几何。
+    // 模糊分工：shader 作为 compose 的 inner 先跑——直接在「原始清晰背景」上
+    // 做边缘涟漪/透镜折射（弯折清晰可见），之后引擎的 outer 真高斯（σ=blurSigma）
+    // 整体糊上去；模糊不撤销位移，边缘拉弯的内容糊后仍可见，中心则是纯净高斯。
+    // 注意方向不能反：compose(outer: shader, inner: blur) 在 Impeller 上
+    // shader 采到未初始化纹理，整块渲染成雪花噪声（实测）。
+    // shader 内不承担模糊（uBlurSigma=0，单点采样），tap 大模糊必出重影。
     final bg = _backgroundColor;
     final a = bg.a;
     _shader
@@ -302,15 +378,32 @@ class RenderBiliPaiGlass extends RenderProxyBox {
       ..setFloat(2, globalScrollOffset.value)
       ..setFloat(3, _refract)
       ..setFloat(4, _chroma)
-      ..setFloat(5, _blurSigma * dpr)
+      ..setFloat(5, 0.0)
       ..setFloat(6, bg.r * a)
       ..setFloat(7, bg.g * a)
       ..setFloat(8, bg.b * a)
       ..setFloat(9, a)
-      ..setFloat(10, _specular);
+      ..setFloat(10, _specular)
+      ..setFloat(11, _radius * dpr)
+      ..setFloat(12, glassOrigin.dx)
+      ..setFloat(13, glassOrigin.dy)
+      ..setFloat(14, glassSize.width)
+      ..setFloat(15, glassSize.height)
+      ..setFloat(16, _edgeAmount * dpr)
+      ..setFloat(17, _saturation);
+
+    // compose filter 按 sigma 缓存，滚动每帧重建太贵（对齐包内做法）。
+    final targetSigma = _blurSigma * dpr;
+    if (_cachedFilter == null || _cachedFilterSigma != targetSigma) {
+      _cachedFilter = ui.ImageFilter.compose(
+        outer: ui.ImageFilter.blur(sigmaX: targetSigma, sigmaY: targetSigma),
+        inner: ui.ImageFilter.shader(_shader),
+      );
+      _cachedFilterSigma = targetSigma;
+    }
 
     final backdrop = _backdropHandle.layer ??= BackdropFilterLayer();
-    backdrop.filter = ui.ImageFilter.shader(_shader);
+    backdrop.filter = _cachedFilter!;
 
     final clipPath = Path()
       ..addRRect(RRect.fromRectAndRadius(
@@ -335,6 +428,7 @@ class RenderBiliPaiGlass extends RenderProxyBox {
     _backdropHandle.layer?.filter = ui.ImageFilter.blur(sigmaX: 0, sigmaY: 0);
     _backdropHandle.layer = null;
     _clipHandle.layer = null;
+    _cachedFilter = null;
     super.dispose();
   }
 }

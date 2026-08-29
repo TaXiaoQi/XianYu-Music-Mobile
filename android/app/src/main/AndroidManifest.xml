@@ -26,12 +26,13 @@
         android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
-        <!-- 关闭 Impeller 渲染器（参考 PiliNara）：Impeller 的损伤追踪问题会导致
-             预测返回手势期间页面只出现圆角而不跟随手指（手势进度事件已到达
-             框架、动画控制器已更新，但重绘不生效），回退 Skia 后正常 -->
+        <!-- 开启 Impeller 渲染器：BiliPai 液态玻璃依赖 ImageFilter.shader
+             （自定义背景着色器仅 Impeller 支持，Skia 下无法运行）。
+             注意：旧版 Flutter 的 Impeller 损伤追踪曾致预测返回手势期间
+             页面不跟随手指重绘；若当前版本仍出现该问题，需回退 Skia -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+            android:value="true" />
 
         <!-- audio_service 后台媒体前台服务支持 -->
         <service android:name="com.ryanheise.audioservice.AudioService"
