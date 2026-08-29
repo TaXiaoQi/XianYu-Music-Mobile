@@ -103,7 +103,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     final state = ref.watch(pluginManagerProvider);
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
 
     final sources = state.sources;
     final q = _query.trim().toLowerCase();
@@ -223,12 +222,10 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 ),
                           isDense: true,
                           filled: true,
-                          fillColor: glass ? glassControlFill : appCardColor(context),
+                          fillColor: appCardColor(context),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: glass
-                                ? BorderSide(color: glassControlBorder)
-                                : BorderSide.none,
+                            borderSide: BorderSide.none,
                           ),
                         ),
                       ),
@@ -530,7 +527,6 @@ class _SubscriptionSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -554,13 +550,11 @@ class _SubscriptionSection extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                side: glass
-                    ? BorderSide(color: glassControlBorder)
-                    : BorderSide.none,
+                side: BorderSide.none,
               ),
               child: InkWell(
                 onTap: () => onReinstall(sub.url),
@@ -730,7 +724,6 @@ class _PluginCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final manager = ref.read(pluginManagerProvider.notifier);
 
     // 图标/开关按插件格式分类配色（对齐桌面端，不随主题色变化）。
@@ -769,13 +762,11 @@ class _PluginCard extends ConsumerWidget {
             : tr('未知');
 
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: glass
-            ? BorderSide(color: glassControlBorder)
-            : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: Stack(
         children: [
@@ -1465,15 +1456,12 @@ class _InstallOption extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: glass
-            ? BorderSide(color: glassControlBorder)
-            : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: InkWell(
         onTap: onTap,

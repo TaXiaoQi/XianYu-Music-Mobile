@@ -90,7 +90,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final links = <({IconData icon, String label, String url})>[
       if (_config.officialSiteUrl.isNotEmpty)
         (icon: Icons.language, label: tr(_config.officialSiteText), url: _config.officialSiteUrl),
@@ -183,9 +182,8 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: glass ? glassControlFill : appCardColor(context),
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(14),
-                border: glass ? Border.all(color: glassControlBorder) : null,
               ),
               child: Column(
                 children: [
@@ -274,7 +272,6 @@ class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
@@ -290,12 +287,12 @@ class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
           decoration: BoxDecoration(
             color: _pressed
                 ? scheme.primary.withValues(alpha: 0.14)
-                : (glass ? glassControlFill : appCardColor(context)),
+                : appCardColor(context),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: _pressed
                   ? scheme.primary.withValues(alpha: 0.5)
-                  : (glass ? glassControlBorder : scheme.outlineVariant),
+                  : scheme.outlineVariant,
             ),
           ),
           child: Text(

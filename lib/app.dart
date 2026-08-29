@@ -236,46 +236,20 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.system => ThemeMode.system,
     };
     _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
-    // 自定义壁纸启用时，页面前景文字按「亮字/暗字」（前景样式）固定为亮色或暗色，
-    // 让壁纸上的正文/标题/图标始终清晰可读，而非跟随主题色而看不清。
-    ThemeData theme = _lightTheme!;
-    ThemeData darkTheme = _darkTheme!;
+    // 壁纸模型：壁纸只是替换根层底色（CustomBackgroundLayer），页面文字、
+    // 玻璃开关、卡片样式全部与普通模式一致，不再对主题做任何前景覆盖。
+    final ThemeData theme = _lightTheme!;
+    final ThemeData darkTheme = _darkTheme!;
     final cb = settings?.customBackground;
     if (cb?.active == true) {
-      // 预缓存壁纸图片：抽屉覆盖转场的壁纸垫底复用同一 FileImage，提前解码
-      // 入缓存，切换瞬间即时显示壁纸，避免「约 1 秒先露原底再出壁纸」的闪烁。
+      // 预缓存壁纸图片：根层壁纸层复用同一 FileImage，提前解码入缓存，
+      // 启用瞬间即时显示壁纸，避免「先露原底再出壁纸」的闪烁。
       final bgPath = cb!.imagePath;
       if (bgPath.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           precacheImage(FileImage(File(bgPath)), this.context);
         });
       }
-      final useLight = cb.useLightForeground;
-      final fg = useLight ? Colors.white : const Color(0xFF17181A);
-      final fgVariant = useLight ? Colors.white70 : Colors.black54;
-      // 仅改 colorScheme.onSurface 会让「未显式给 color 的裸 Text」仍读
-      // textTheme 里的旧前景色（亮/暗主题原本的黑/白反色字），因此必须对
-      // textTheme 整体 apply。displayColor 覆盖 display/headline/title 系，
-      // bodyColor 覆盖 body/label 系——即壁纸上全部正文/标题/标签统一为亮字
-      // 或暗字。M3 按钮/夹片文字走 colorScheme.onPrimary 等强调色，不受影响。
-      // 同时扩展覆盖 outline、outlineVariant、onInverseSurface、inverseSurface，
-      // 消灭其余借助语义色反色的文字/图标/占位与分割线。
-      ColorScheme fgScheme(ColorScheme cs) => cs.copyWith(
-            onSurface: fg,
-            onSurfaceVariant: fgVariant,
-            onInverseSurface: fg,
-            inverseSurface: fgVariant,
-            outline: fgVariant,
-            outlineVariant: fgVariant,
-          );
-      theme = theme.copyWith(
-        textTheme: theme.textTheme.apply(bodyColor: fg, displayColor: fg),
-        colorScheme: fgScheme(theme.colorScheme),
-      );
-      darkTheme = darkTheme.copyWith(
-        textTheme: darkTheme.textTheme.apply(bodyColor: fg, displayColor: fg),
-        colorScheme: fgScheme(darkTheme.colorScheme),
-      );
     }
     final language = settings?.language ?? AppLanguage.system;
     final locale = _localeFor(language);

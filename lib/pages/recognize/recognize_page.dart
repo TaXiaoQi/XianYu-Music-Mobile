@@ -461,14 +461,13 @@ class _MatchListView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       children: [
         // 结果提示条
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: glass ? glassControlFill : appCardColor(context),
+          color: appCardColor(context),
           child: Text(
             tr('识别到 {n} 首匹配', {'n': matches.length}),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),

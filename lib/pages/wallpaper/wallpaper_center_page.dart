@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
 import 'dart:typed_data';
@@ -197,18 +197,14 @@ class _WallpaperCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final thumb = (wallpaper['thumbnailUrl'] as String?) ?? '';
     final title = (wallpaper['title'] as String?) ?? '';
     final uploader = (wallpaper['uploaderNickname'] as String?) ?? '';
     return Material(
       clipBehavior: Clip.antiAlias,
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: glass
-            ? BorderSide(color: glassControlBorder)
-            : BorderSide.none,
       ),
       child: InkWell(
         onTap: () => _openPreview(context),
@@ -1118,22 +1114,6 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
                         onChanged: (v) => setState(
                             () => _draft = _draft.copyWith(scale: v)),
                       ),
-                      const Divider(height: 24),
-                      Text(tr('前景样式'),
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: scheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _styleChip(tr('亮字'),
-                              useLight: true, scheme: scheme),
-                          const SizedBox(width: 10),
-                          _styleChip(tr('暗字'),
-                              useLight: false, scheme: scheme),
-                        ],
-                      ),
                       const SizedBox(height: 20),
                       FilledButton.icon(
                         onPressed: _apply,
@@ -1154,25 +1134,6 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _styleChip(String label,
-      {required bool useLight, required ColorScheme scheme}) {
-    final selected = _draft.useLightForeground == useLight;
-    return ChoiceChip(
-      label: Text(
-        label,
-        style: TextStyle(
-          color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
-      selected: selected,
-      selectedColor: scheme.primary,
-      onSelected: (_) => setState(() =>
-          _draft = _draft.copyWith(
-              foregroundStyle: useLight ? 'light' : 'dark')),
     );
   }
 }

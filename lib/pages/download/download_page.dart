@@ -18,8 +18,13 @@ import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 下载管理页：进行中的下载任务 + 下载历史。
+///
+/// [embedded] 用于横屏右侧容器内嵌（壳层 [_DownloadPane]），不开二级路由：
+/// 顶栏由全局横屏顶栏承接（搜索框左侧回退按钮负责闭合容器）。
 class DownloadPage extends ConsumerWidget {
-  const DownloadPage({super.key});
+  const DownloadPage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -42,24 +47,26 @@ class DownloadPage extends ConsumerWidget {
                       scheme: scheme,
                     ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-                title:   Text(tr('下载管理')),
-                actions: [
-                  if (state.history.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: tr('清空记录'),
-                      onPressed: () => _confirmClear(context, notifier),
-                    ),
-                ],
+            // 内嵌模式由全局顶栏承接（搜索框左侧带回退），本页不渲染自身顶栏。
+            if (!embedded)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title:   Text(tr('下载管理')),
+                  actions: [
+                    if (state.history.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        tooltip: tr('清空记录'),
+                        onPressed: () => _confirmClear(context, notifier),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            const BottomPlayBarSlot(),
+            if (!embedded) const BottomPlayBarSlot(),
           ],
         ),
       ),

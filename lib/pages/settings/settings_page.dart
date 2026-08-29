@@ -7,6 +7,7 @@ import '../../src/core/developer_mode.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
 import '../feedback/feedback_page.dart';
 import '../plugin/plugin_page.dart';
@@ -45,12 +46,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final isDeveloperMode = ref.watch(developerModeProvider);
     final groups = _buildGroups(isDeveloperMode);
 
-    final size = MediaQuery.of(context).size;
-    final landscape = size.width >= size.height * 1.05;
-    if (landscape) {
-      return _buildLandscape(context, groups);
-    }
-    return _buildPortrait(context, groups);
+    // 横屏重排为 master-detail（左导航 + 右内嵌详情），两套 UI 完全分开。
+    return LandscapeGate(
+      portrait: _buildPortrait(context, groups),
+      landscape: _buildLandscape(context, groups),
+    );
   }
 
   Widget _buildPortrait(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
@@ -448,7 +448,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
 
   /// 分组：标题 -> 分类条目。每个条目的 path 指向分类详情页或既有页面。
-  static get _groups => <(String, List<_CategoryEntry>)>[
+  static List<(String, List<_CategoryEntry>)> get _groups => [
     (
       tr('账号'),
       [

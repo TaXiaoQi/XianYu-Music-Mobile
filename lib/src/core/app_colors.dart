@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'settings.dart';
 
-/// 是否启用自定义壁纸。启用时设置页/我的页等控件切换为玻璃透明样式以透出壁纸。
+/// 是否启用自定义壁纸。启用时仅替换根层底色（app.dart 铺 CustomBackgroundLayer、
+/// 页面 Scaffold 底色透明透出壁纸），其余样式与普通模式完全一致。
 final wallpaperActiveProvider = Provider<bool>((ref) {
   return ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.customBackground.active ?? false),
@@ -11,7 +12,7 @@ final wallpaperActiveProvider = Provider<bool>((ref) {
 });
 
 /// 页面默认底色：未启用自定义壁纸时使用根层真实底色 [appSurfaceBg]（与设置页/
-/// 我的页一致，实色不像「没底色」）；启用壁纸时保持透明以透出根层的壁纸遮罩。
+/// 我的页一致，实色不像「没底色」）；启用壁纸时保持透明以透出根层的壁纸。
 /// 二者均为「实色底色之上直接覆盖壁纸」的模型，无需额外垫透明层。
 Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
   return ref.watch(wallpaperActiveProvider)
@@ -19,30 +20,16 @@ Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
       : appSurfaceBg(context);
 }
 
-/// 未受「自定义壁纸前景覆盖」影响的原始 ColorScheme（亮/暗各一，app.dart 构建主题时写入）。
+/// 未受主题前景覆盖影响的原始 ColorScheme（亮/暗各一，app.dart 构建主题时写入）。
 ///
-/// 壁纸启用时页面前景会按「亮字/暗字」覆盖为固定色；而弹窗面板是不透明的
-/// （#FFFFFF / #262626），其文字应保持各自的明暗前景，不能跟着前景覆盖变成
-/// 白底白字/黑底黑字。showSheetDialog 等弹窗封装据此恢复基础配色。
+/// 当前主题构建不做任何前景覆盖，恢复机制等于原样取回；保留全局指针供
+/// showSheetDialog 等弹窗封装在主题变更时回退到基础配色。
 ColorScheme? lightBaseScheme;
 ColorScheme? darkBaseScheme;
 
 /// 与 [lightBaseScheme]/[darkBaseScheme] 配套的原始 textTheme。
-///
-/// 壁纸启用时页面文字整体 apply 为「亮字/暗字」，而不透明弹窗内的裸 Text 走
-/// textTheme 默认色，若也跟着 apply 会白底白字。弹窗封装恢复 colorScheme 时
-/// 一并恢复对应明暗的基础 textTheme，保证弹窗文字按面板明暗正确反色。
 TextTheme? lightBaseTextTheme;
 TextTheme? darkBaseTextTheme;
-
-/// 自定义壁纸启用时控件使用的半透明白玻璃填充 / 描边
-/// （顶栏 GlassTopBar、固定/毛玻璃底栏、各页玻璃卡片与控件统一使用）。
-///
-/// 原 alpha 0.06 / 0.08 近乎全透，壁纸下顶栏/底栏/控件几乎隐形，即便已配合
-/// BackdropFilter 高斯模糊也看不出磨砂感。提升填充不透明度（0.34）让玻璃底
-/// 真正托起模糊与层次，描边稍增（0.14）使轮廓清晰可辨。
-final Color glassControlFill = Colors.white.withValues(alpha: 0.34);
-final Color glassControlBorder = Colors.white.withValues(alpha: 0.14);
 
 /// 全局统一页面底色。
 ///

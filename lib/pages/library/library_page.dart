@@ -169,6 +169,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
+    // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
+    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -193,7 +195,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         body: RepaintBoundary(child: Stack(
           children: [
             Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context, bottom: tabBar)),
+              // 面板模式下仍保留 TabBar，故内容顶部始终按顶栏高度（含 TabBar）避让。
+              padding: EdgeInsets.only(
+                top: GlassTopBar.height(context, bottom: tabBar),
+              ),
               child: lib.loading
                   ? const Center(child: CircularProgressIndicator())
                   : lib.error != null
@@ -214,18 +219,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                               ],
                             ),
             ),
+            // 面板模式下保留 TabBar，仅去掉 leading / title（搜索框）/ actions。
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: GlassTopBar(
-                leading: const BackButton(),
+                leading: inMusicPane ? null : const BackButton(),
                 titleSpacing: 4,
-                title: _buildSearchField(context),
+                title: inMusicPane ? null : _buildSearchField(context),
                 bottom: tabBar,
               ),
             ),
-            if (lib.songs.isNotEmpty)
+            // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
+            if (!inMusicPane && lib.songs.isNotEmpty)
               const MiniPlayerBar(),
           ],
         ),
@@ -964,7 +971,7 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
             ?.libraryMinDurationSeconds ??
         0;
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
 
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
@@ -1037,13 +1044,11 @@ class _FoldersTabState extends ConsumerState<_FoldersTab> {
               ),
             ),
             Material(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: glass
-                    ? BorderSide(color: glassControlBorder)
-                    : BorderSide.none,
+                side: BorderSide.none,
               ),
               child: Column(children: tiles),
             ),
@@ -1161,13 +1166,13 @@ class _FilterCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: ListTile(
         leading: Icon(Icons.timer_outlined, color: scheme.primary),
@@ -1209,13 +1214,13 @@ class _ScanFoldersCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1430,13 +1435,13 @@ class _RemoteLibraryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: ListTile(
         leading: Icon(Icons.cloud_outlined, color: scheme.primary),

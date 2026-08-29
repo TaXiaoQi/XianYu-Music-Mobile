@@ -103,7 +103,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final loggedIn = auth.isLoggedIn;
-    final glass = ref.watch(wallpaperActiveProvider);
+
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -129,11 +129,8 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                       Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
-                          color: glass ? glassControlFill : appCardColor(context),
+                          color: appCardColor(context),
                           borderRadius: BorderRadius.circular(10),
-                          border: glass
-                              ? Border.all(color: glassControlBorder)
-                              : null,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -171,7 +168,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
   }
 
   Widget _buildBody(ColorScheme scheme, bool loggedIn) {
-    final glass = ref.watch(wallpaperActiveProvider);
+
     if (_loading) {
       // 骨架行复用同一原型：prototypeItem 让 Sliver 直接按固定行高估算滚动范围，
       // 避免首帧逐行测量再布局（对齐 PiliNara 的 prototypeItem 骨架屏）。
@@ -179,9 +176,8 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
         height: 56,
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: glass ? glassControlFill : appCardColor(context),
+          color: appCardColor(context),
           borderRadius: BorderRadius.circular(12),
-          border: glass ? Border.all(color: glassControlBorder) : null,
         ),
         child: _skeletonRow(scheme),
       );
@@ -252,7 +248,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
   }
 
   Widget _skeletonRow(ColorScheme scheme) {
-    final glass = ref.watch(wallpaperActiveProvider);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
@@ -261,7 +257,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
@@ -270,7 +266,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               shape: BoxShape.circle,
             ),
           ),
@@ -284,7 +280,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 120,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: glass ? glassControlFill : appCardColor(context),
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -293,7 +289,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   width: 80,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: glass ? glassControlFill : appCardColor(context),
+                    color: appCardColor(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -363,7 +359,7 @@ class _LeaderboardRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     final name = entry.nickname.isNotEmpty ? entry.nickname : entry.username;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -373,11 +369,11 @@ class _LeaderboardRow extends ConsumerWidget {
             ? scheme.primary.withValues(alpha: 0.08)
             : (highlight
                 ? scheme.primary.withValues(alpha: 0.04)
-                : (glass ? glassControlFill : appCardColor(context))),
+                : (appCardColor(context))),
         borderRadius: BorderRadius.circular(12),
         border: isMe
             ? Border.all(color: scheme.primary.withValues(alpha: 0.3))
-            : (glass ? Border.all(color: glassControlBorder) : null),
+            : null,
       ),
       child: Row(
         children: [
@@ -453,12 +449,12 @@ class _RankBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     final (Color bg, Color fg) = switch (rank) {
       1 => (const Color(0xFFFFA500), Colors.white),
       2 => (const Color(0xFFA8A8A8), Colors.white),
       3 => (const Color(0xFFA0522D), Colors.white),
-      _ => (glass ? glassControlFill : appCardColor(context), scheme.onSurfaceVariant),
+      _ => (appCardColor(context), scheme.onSurfaceVariant),
     };
     return Container(
       width: 28,
@@ -493,7 +489,7 @@ class _Avatar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     final char = name.isEmpty
         ? '?'
         : String.fromCharCode(name.runes.first).toUpperCase();
@@ -504,18 +500,18 @@ class _Avatar extends ConsumerWidget {
         child: avatar.isNotEmpty
             ? UserAvatarImage(
                 avatar: avatar,
-                fallback: _fallback(context, scheme, glass, char),
+                fallback: _fallback(context, scheme, char),
                 size: 36,
               )
-            : _fallback(context, scheme, glass, char),
+            : _fallback(context, scheme, char),
       ),
     );
   }
 
   Widget _fallback(
-      BuildContext context, ColorScheme scheme, bool glass, String char) {
+      BuildContext context, ColorScheme scheme, String char) {
     return Container(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       alignment: Alignment.center,
       child: Text(
         char,
@@ -533,7 +529,7 @@ class _LoginRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     return Material(
       color: scheme.primary.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(12),
@@ -553,7 +549,7 @@ class _LoginRow extends ConsumerWidget {
                 height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: glass ? glassControlFill : appCardColor(context),
+                  color: appCardColor(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('—',
@@ -567,7 +563,7 @@ class _LoginRow extends ConsumerWidget {
                 child: Container(
                   width: 36,
                   height: 36,
-                  color: glass ? glassControlFill : appCardColor(context),
+                  color: appCardColor(context),
                   alignment: Alignment.center,
                   child: Text(tr('未'),
                       style: TextStyle(

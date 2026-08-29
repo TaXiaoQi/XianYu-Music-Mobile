@@ -430,7 +430,6 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
@@ -454,14 +453,12 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           child: Container(
             height: 92,
             decoration: BoxDecoration(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: glass
-                    ? glassControlBorder
-                    : (_treeUri != null
-                        ? scheme.primary.withValues(alpha: 0.5)
-                        : scheme.outlineVariant.withValues(alpha: 0.5)),
+                color: _treeUri != null
+                    ? scheme.primary.withValues(alpha: 0.5)
+                    : scheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             alignment: Alignment.center,
@@ -752,7 +749,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final plugins = _plugins;
 
     if (plugins.isEmpty) {
@@ -873,13 +869,11 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
-                color: glass ? glassControlFill : appCardColor(context),
+                color: appCardColor(context),
                 clipBehavior: Clip.antiAlias,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: glass
-                      ? BorderSide(color: glassControlBorder)
-                      : BorderSide.none,
+                  side: BorderSide.none,
                 ),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),

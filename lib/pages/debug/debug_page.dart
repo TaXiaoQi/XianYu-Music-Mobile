@@ -304,7 +304,6 @@ class _CardGroup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
@@ -322,11 +321,11 @@ class _CardGroup extends ConsumerWidget {
     }
 
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: Column(children: items),
     );

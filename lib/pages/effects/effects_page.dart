@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/effects/sound_effect_provider.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -19,7 +20,17 @@ class EffectsPage extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final locked = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
+    // 横屏摄像头挖孔避让（参考主页侧边栏机制）：底色随根层铺满全屏、
+    // 可以透到摄像头下方；内容（列表与顶栏文字/按钮）避开挖孔区。
+    final mq = MediaQuery.of(context);
+    final isLandscape = mq.size.width >= mq.size.height * 1.05;
+    final cutLeft = isLandscape ? mq.padding.left : 0.0;
+    final cutRight = isLandscape ? mq.padding.right : 0.0;
+
     return Scaffold(
+      // 用标准页面底色（壁纸感知）：此前用全局 scaffoldBackgroundColor（透明），
+      // 从播放页等自带背景的页面切换过来时动画中会透出下层页面。
+      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         children: [
@@ -29,8 +40,12 @@ class EffectsPage extends ConsumerWidget {
               opacity: locked ? 0.5 : 1.0,
               child: ListView(
                 // 顶部预留顶栏高度：静止时内容位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
+                // 横屏下左右额外避让摄像头挖孔区。
                 padding: EdgeInsets.only(
-                    top: GlassTopBar.height(context), bottom: 150),
+                    top: GlassTopBar.height(context),
+                    left: 16 + cutLeft,
+                    right: 16 + cutRight,
+                    bottom: 150),
                 children: [
                   if (locked)
                     Container(
@@ -83,19 +98,22 @@ class EffectsPage extends ConsumerWidget {
               ),
             ),
           ),
-          // 顶栏高斯模糊毛玻璃。
+          // 顶栏高斯模糊毛玻璃（背景全宽铺满；内容经占位避开挖孔）。
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: GlassTopBar(
               title:   Text(tr('音效')),
+              leading: cutLeft > 0 ? SizedBox(width: cutLeft) : null,
+              titleSpacing: 16,
               actions: [
                 TextButton.icon(
                   onPressed: locked ? null : () => notifier.resetAll(),
                   icon: const Icon(Icons.restart_alt, size: 18),
                   label:   Text(tr('重置')),
                 ),
+                if (cutRight > 0) SizedBox(width: cutRight),
               ],
             ),
           ),

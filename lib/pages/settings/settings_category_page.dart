@@ -224,7 +224,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
-    final wallpaper = ref.watch(wallpaperActiveProvider);
     return [
       _sectionHeader(context, tr('主题')),
       _CardGroup(
@@ -257,20 +256,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, tr('材质')),
       _CardGroup(
         children: [
-          // 壁纸模式下强制开启毛玻璃（保证壁纸可读性），因此隐藏开关、只留强度调节。
-          if (!wallpaper)
-            _switchTile(
-              context,
-              icon: Icons.blur_on_outlined,
-              title: tr('毛玻璃材质'),
-              subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
-              // 毛玻璃默认开启；关闭后在非壁纸场景回退为高不透明度纯色。
-              value: s?.frostedGlass ?? true,
-              onChanged: (v) => n.setFrostedGlass(v),
-            ),
-          // 毛玻璃强度调节：毛玻璃开启（或壁纸模式强制开启）时才显示；
-          // 打开液态玻璃会联动关闭毛玻璃，此入口随之隐藏。
-          if (wallpaper || (s?.frostedGlass ?? true))
+          _switchTile(
+            context,
+            icon: Icons.blur_on_outlined,
+            title: tr('毛玻璃材质'),
+            subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
+            // 毛玻璃默认开启；关闭后回退为高不透明度纯色。壁纸模式行为一致
+            // （壁纸只是替换底色，不改变玻璃开关）。
+            value: s?.frostedGlass ?? true,
+            onChanged: (v) => n.setFrostedGlass(v),
+          ),
+          // 毛玻璃强度调节：毛玻璃开启时才显示。
+          // 与液态玻璃共存：液态只覆盖固定几个控件，其余表面由毛玻璃负责，
+          // 因此液态玻璃开启时此入口仍然可见、可调。
+          if (s?.frostedGlass ?? true)
             _tile(
               context,
               icon: Icons.tune_outlined,
@@ -288,17 +287,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.gradient_outlined,
             title: tr('液态玻璃'),
-            subtitle: tr('开启时自动切换到悬浮式底栏，shader 折射光影'),
+            subtitle: tr(
+                '开启时自动切换到悬浮式底栏；底栏、迷你条、搜索框与播放页控制卡优先液态，其余表面由毛玻璃补齐'),
             // 液态玻璃开关始终可点，不再因悬浮底栏关闭而强制置灰/归假：
-            // 打开时由 setLiquidGlass 联动打开悬浮底栏；关闭悬浮时由
-            // setFloatingNavBar 联动关闭液态玻璃，故此处跟随 liquidGlass 真实值。
-            // 液态与毛玻璃互斥：开液态时自动关毛玻璃，关液态自动恢复毛玻璃。
+            // 打开时由 setLiquidGlass 联动打开悬浮底栏。
+            // 液态与毛玻璃可共存：液态优先覆盖固定几个控件，毛玻璃补齐
+            // 其余表面；两个开关互不联动，开启顺序无关。
             value: s?.liquidGlass ?? false,
-            onChanged: (v) {
-              n.setLiquidGlass(v);
-              // 与毛玻璃互斥联动：开液态关毛玻璃；关液态恢复毛玻璃。
-              if (!v) n.setFrostedGlass(wallpaper ? true : (s?.frostedGlass ?? true));
-            },
+            onChanged: (v) => n.setLiquidGlass(v),
           ),
           if (s?.liquidGlass ?? false)
             _tile(
@@ -330,6 +326,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             }),
             onTap: () => _pickNavBarPosition(context, ref, s),
           ),
+          _tile(
+            context,
+            icon: Icons.screen_rotation_alt_outlined,
+            title: tr('竖屏切换动画'),
+            subtitle: tr('覆盖：新页盖住旧页；平滑：新旧两页平行平移'),
+            trailing: Text(switch (s?.pageTransitionStyle ??
+                PageTransitionStyle.cover) {
+              PageTransitionStyle.cover => tr('覆盖'),
+              PageTransitionStyle.smooth => tr('平滑'),
+            }),
+            onTap: () => _pickPageTransitionStyle(context, ref, s),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.animation_outlined,
+            title: tr('横屏切换动画'),
+            subtitle: tr('横屏下首页/我的在右侧容器切换时淡进淡出'),
+            value: s?.landscapeTransitionEnabled ?? true,
+            onChanged: (v) => n.setLandscapeTransitionEnabled(v),
+          ),
           if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
               NavBarPosition.bottom)
             _switchTile(
@@ -342,8 +358,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.manage_search_outlined,
-            title: tr('悬浮搜索框'),
-            subtitle: tr('首页和我的页搜索框悬浮显示，应用液态玻璃时同步生效'),
+            title: tr('悬浮顶部栏'),
+            subtitle: tr('首页、我的页与横屏顶栏改为悬浮显示（控件独立悬浮），应用液态玻璃时同步生效'),
             value: s?.floatingSearchBar ?? false,
             onChanged: (v) => n.setFloatingSearchBar(v),
           ),
@@ -1036,8 +1052,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       final granted = await FloatingLyricsController.isPermissionGranted();
       if (!granted) {
         if (!context.mounted) return;
-        final go = await showDialog<bool>(
+        final go = await showPredictiveDialog<bool>(
           context: context,
+          barrierDismissible: false,
           builder: (ctx) => AlertDialog(
             title:   Text(tr('悬浮歌词需要悬浮窗权限')),
             content:   Text(tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
@@ -1427,6 +1444,28 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setNavBarPosition(choice);
+    }
+  }
+
+  Future<void> _pickPageTransitionStyle(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.pageTransitionStyle ?? PageTransitionStyle.cover;
+    final choice = await showModernChoiceSheet<PageTransitionStyle>(
+      context: context,
+      title: tr('竖屏切换动画'),
+      options:   [
+        ModernChoiceOption(label: tr('覆盖'), value: PageTransitionStyle.cover, icon: Icons.layers_outlined),
+        ModernChoiceOption(label: tr('平滑'), value: PageTransitionStyle.smooth, icon: Icons.sort_outlined),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setPageTransitionStyle(choice);
     }
   }
 
@@ -2773,8 +2812,9 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
       _toast(tr('暂无日志'));
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showPredictiveDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title:   Text(tr('清理日志')),
         content:   Text(tr('确定要清空全部应用日志吗？此操作不可恢复。')),

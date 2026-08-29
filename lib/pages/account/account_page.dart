@@ -18,8 +18,14 @@ import 'human_captcha_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 账号认证页：未登录时展示登录/注册，已登录时展示个人资料。
+///
+/// [embedded] 用于横屏右侧容器内嵌（壳层 [_AccountPane]），不开二级路由：
+/// 顶栏返回键改为触发 [onBack] 闭合内嵌面板，不进导航栈。
 class AccountPage extends ConsumerStatefulWidget {
-  const AccountPage({super.key});
+  const AccountPage({super.key, this.embedded = false, this.onBack});
+
+  final bool embedded;
+  final VoidCallback? onBack;
 
   @override
   ConsumerState<AccountPage> createState() => _AccountPageState();
@@ -212,7 +218,12 @@ class _AccountPageState extends ConsumerState<AccountPage>
             left: 0,
             right: 0,
             child: GlassTopBar(
-              leading: const BackButton(),
+              leading: widget.embedded
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: widget.onBack,
+                    )
+                  : const BackButton(),
               title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
             ),
           ),
@@ -271,7 +282,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
 
   Widget _buildAuthForm(BuildContext context, AuthState auth) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Column(
       children: [
         // 品牌头部
@@ -313,7 +323,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Container(
             decoration: BoxDecoration(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(4),
@@ -1036,16 +1046,13 @@ class _ProfileHeaderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(24),
-        border: glass
-            ? Border.all(color: glassControlBorder)
-            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Column(
         children: [
@@ -1264,7 +1271,6 @@ class _GlassCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
 
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
@@ -1284,11 +1290,9 @@ class _GlassCard extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: glass
-            ? Border.all(color: glassControlBorder)
-            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Column(children: items),
     );

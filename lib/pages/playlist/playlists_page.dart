@@ -19,6 +19,7 @@ import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/responsive/landscape.dart';
 
 /// 我的歌单：创建/重命名/删除歌单，查看与播放歌单内容（对齐桌面歌单体系）。
 class PlaylistsPage extends ConsumerWidget {
@@ -27,6 +28,8 @@ class PlaylistsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(playlistManagerProvider);
+    // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
+    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
 
@@ -37,7 +40,10 @@ class PlaylistsPage extends ConsumerWidget {
         body: RepaintBoundary(child: Stack(
           children: [
             Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+              padding: EdgeInsets.only(
+                // 面板模式下胶囊顶栏仍覆盖顶部，内容统一按顶栏高度避让。
+                top: GlassTopBar.height(context),
+              ),
               child: state.loading
                   ? const Center(child: CircularProgressIndicator())
                   : state.playlists.isEmpty
@@ -76,23 +82,25 @@ class PlaylistsPage extends ConsumerWidget {
                         )
                       : _PlaylistList(state: state),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-                title:   Text(tr('我的歌单')),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    tooltip: tr('新建歌单'),
-                    onPressed: () => _promptCreate(context, manager),
+            if (!inMusicPane)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title:   Text(tr('我的歌单')),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: tr('新建歌单'),
+                      onPressed: () => _promptCreate(context, manager),
+                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-            const BottomPlayBarSlot(),
+                ),
+            // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
+            if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
         ),
@@ -169,20 +177,20 @@ class _PlaylistCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
+
     final manager = ref.read(playlistManagerProvider.notifier);
     final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+      color: appCardColor(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openPlaylist(context, playlist.id),
+        onTap: () => _openPlaylist(context, ref, playlist.id),
         onLongPress: () => _sheetActions(context, manager),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
@@ -244,7 +252,12 @@ class _PlaylistCard extends ConsumerWidget {
     );
   }
 
-  void _openPlaylist(BuildContext context, String id) {
+  void _openPlaylist(BuildContext context, WidgetRef ref, String id) {
+    // 横屏：右侧容器内嵌歌单详情，不开二级路由。
+    if (useLandscape(ref)) {
+      ref.read(landscapePlaylistOpenProvider.notifier).state = id;
+      return;
+    }
     // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致。
     context.push('/playlist/$id');
   }
@@ -315,8 +328,16 @@ class _PlaylistCard extends ConsumerWidget {
 
 /// 歌单详情：从 provider 实时取最新数据，增删歌曲即时刷新。
 class PlaylistDetailPage extends ConsumerWidget {
-  const PlaylistDetailPage({super.key, required this.playlistId});
+  const PlaylistDetailPage({
+    super.key,
+    required this.playlistId,
+    this.embedded = false,
+  });
   final String playlistId;
+
+  /// 横屏右侧容器内嵌（壳层 [_PlaylistDetailPane]），不开二级路由：
+  /// 顶栏由全局横屏顶栏承接（搜索框左侧回退按钮负责闭合容器）。
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -338,15 +359,16 @@ class PlaylistDetailPage extends ConsumerWidget {
                 padding: EdgeInsets.only(top: GlassTopBar.height(context)),
                 child:   Center(child: Text(tr('歌单已不存在'))),
               ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: GlassTopBar(
-                  leading: const BackButton(),
-                  title:   Text(tr('歌单')),
+              if (!embedded)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: GlassTopBar(
+                    leading: const BackButton(),
+                    title:   Text(tr('歌单')),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -392,27 +414,28 @@ class PlaylistDetailPage extends ConsumerWidget {
                 ],
               ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-                title: Text(playlist.name),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 20),
-                    tooltip: tr('重命名'),
-                    onPressed: () async {
-                      final name = await _promptName(context, tr('重命名歌单'));
-                      if (name == null || name.trim().isEmpty) return;
-                      await manager.rename(playlist.id, name.trim());
-                    },
-                  ),
-                ],
+            if (!embedded)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title: Text(playlist.name),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      tooltip: tr('重命名'),
+                      onPressed: () async {
+                        final name = await _promptName(context, tr('重命名歌单'));
+                        if (name == null || name.trim().isEmpty) return;
+                        await manager.rename(playlist.id, name.trim());
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const BottomPlayBarSlot(),
+            if (!embedded) const BottomPlayBarSlot(),
           ],
         ),
       ),

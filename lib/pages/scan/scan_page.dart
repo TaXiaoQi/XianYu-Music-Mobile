@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/predictive_dialog_route.dart';
 
 /// 扫码登录：扫描桌面端登录页二维码，确认后在该桌面端完成登录。
 ///
@@ -76,7 +77,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
   }
 
   Future<bool> _confirm(String title, String content, {String ok = '确定', String cancel = '取消', bool danger = false}) async {
-    return await showDialog<bool>(
+    return await showPredictiveDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
@@ -116,7 +117,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
 
     // 未登录：引导去登录。
     if (user == null) {
-      final go = await showDialog<bool>(
+      final go = await showPredictiveDialog<bool>(
         context: ctx,
         barrierDismissible: false,
         builder: (dctx) => AlertDialog(
@@ -158,7 +159,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       return;
     }
     if (scanError != null || info == null) {
-      await showDialog<void>(
+      await showPredictiveDialog<void>(
         context: ctx,
         barrierDismissible: false,
         builder: (dctx) => AlertDialog(
@@ -193,7 +194,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     }
 
     // 确认成功：桌面端已登录，提示后返回。
-    await showDialog<void>(
+    await showPredictiveDialog<void>(
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(

@@ -236,7 +236,6 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
   }
 
   Widget _buildResultCard(ColorScheme scheme, _DecryptResult item) {
-    final glass = ref.watch(wallpaperActiveProvider);
     final (icon, color, text) = switch (item.status) {
       _DecryptStatus.pending => (Icons.schedule, scheme.outline, tr('等待解密')),
       _DecryptStatus.running => (Icons.sync, scheme.primary, tr('解密中…')),
@@ -251,9 +250,8 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 4),
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(14),
-        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

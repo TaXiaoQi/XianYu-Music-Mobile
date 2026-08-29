@@ -50,6 +50,8 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   @override
   Widget build(BuildContext context) {
     final fav = ref.watch(favoritesProvider);
+    // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
+    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
     final notifier = ref.read(favoritesProvider.notifier);
     final tabBar = TabBar(
       controller: _tab,
@@ -67,6 +69,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
         body: Stack(
           children: [
             Padding(
+              // 面板模式下仍保留 TabBar，故内容顶部始终按顶栏高度（含 TabBar）避让。
               padding: EdgeInsets.only(
                 top: GlassTopBar.height(context, bottom: tabBar),
               ),
@@ -81,25 +84,29 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                       ],
                     ),
             ),
+            // 面板模式下保留 TabBar，仅去掉 leading / title / actions。
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: GlassTopBar(
-                leading: const BackButton(),
-                title:   Text(tr('收藏')),
-                actions: [
-                  if (fav.entries.isNotEmpty && _tab.index == 0)
-                    IconButton(
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: tr('清空'),
-                      onPressed: () => _confirmClear(context, notifier),
-                    ),
-                ],
+                leading: inMusicPane ? null : const BackButton(),
+                title: inMusicPane ? null : Text(tr('收藏')),
+                actions: inMusicPane
+                    ? null
+                    : [
+                        if (fav.entries.isNotEmpty && _tab.index == 0)
+                          IconButton(
+                            icon: const Icon(Icons.delete_sweep_outlined),
+                            tooltip: tr('清空'),
+                            onPressed: () => _confirmClear(context, notifier),
+                          ),
+                      ],
                 bottom: tabBar,
               ),
             ),
-            const BottomPlayBarSlot(),
+            // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
+            if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
       ),

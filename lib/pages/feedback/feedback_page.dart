@@ -238,7 +238,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final logs = ref.watch(applicationLogsProvider);
-    final glass = ref.watch(wallpaperActiveProvider);
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
@@ -255,9 +254,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: glass ? glassControlFill : appCardColor(context),
+              color: appCardColor(context),
               borderRadius: BorderRadius.circular(16),
-              border: glass ? Border.all(color: glassControlBorder) : null,
             ),
             child: Row(
               children: [
@@ -276,15 +274,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   ? tr('请描述你的功能建议…')
                   : tr('请描述你遇到的问题…'),
               filled: true,
-              fillColor: glass ? glassControlFill : null,
-              border: glass
-                  ? OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: glassControlBorder),
-                    )
-                  : OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
           ),
           if (_feedbackType == 'suggestion') ...[
@@ -329,12 +321,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       BuildContext context, ColorScheme scheme, List<AppLogEntry> logs) {
     final errorLogs = logs.where((e) => e.level == LogLevel.error).toList();
     if (logs.isEmpty) return const SizedBox.shrink();
-    final glass = ref.watch(wallpaperActiveProvider);
     return Container(
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -413,7 +403,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
 
   Widget _buildImageGrid() {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -464,11 +453,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: glass ? glassControlFill : appCardColor(context),
+                color: appCardColor(context),
                 borderRadius: BorderRadius.circular(10),
-                border: glass
-                    ? Border.all(color: glassControlBorder)
-                    : Border.all(color: scheme.outlineVariant),
+                border: Border.all(color: scheme.outlineVariant),
               ),
               child: _compressing
                   ? const Center(
@@ -581,16 +568,9 @@ class _FeedbackCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     return Material(
-      color: glass ? glassControlFill : appCardColor(context),
-      borderRadius: glass ? null : BorderRadius.circular(16),
-      shape: glass
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: glassControlBorder),
-            )
-          : null,
+      color: appCardColor(context),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),

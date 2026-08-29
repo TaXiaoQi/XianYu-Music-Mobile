@@ -20,7 +20,6 @@ class RemoteLibraryPage extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(remoteLibraryProvider);
 
-    final glass = ref.watch(wallpaperActiveProvider);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -46,12 +45,12 @@ class RemoteLibraryPage extends ConsumerWidget {
                       ),
                     ),
                     if (state.sources.isEmpty && !state.loading)
-                      _buildEmptyHint(context, scheme, glass)
+                      _buildEmptyHint(context, scheme)
                     else
                       for (final source in state.sources)
                         _SourceCard(source: source),
                     const SizedBox(height: 20),
-                    _buildCacheCard(context, ref, state, glass),
+                    _buildCacheCard(context, ref, state),
                   ],
                 ),
                 const BottomPlayBarSlot(),
@@ -70,12 +69,11 @@ class RemoteLibraryPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme, bool glass) => Container(
+  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme) => Container(
         padding: const EdgeInsets.symmetric(vertical: 36),
         decoration: BoxDecoration(
-          color: glass ? glassControlFill : appCardColor(context),
+          color: appCardColor(context),
           borderRadius: BorderRadius.circular(16),
-          border: glass ? Border.all(color: glassControlBorder) : null,
         ),
         child: Column(
           children: [
@@ -95,13 +93,12 @@ class RemoteLibraryPage extends ConsumerWidget {
       );
 
   Widget _buildCacheCard(
-      BuildContext context, WidgetRef ref, RemoteLibraryState state, bool glass) {
+      BuildContext context, WidgetRef ref, RemoteLibraryState state) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         children: [
@@ -190,7 +187,6 @@ class _SourceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final state = ref.watch(remoteLibraryProvider);
     final syncing = state.syncingSourceId == source.id;
 
@@ -198,9 +194,8 @@ class _SourceCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
+        color: appCardColor(context),
         borderRadius: BorderRadius.circular(16),
-        border: glass ? Border.all(color: glassControlBorder) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

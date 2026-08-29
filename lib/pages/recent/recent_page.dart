@@ -22,6 +22,8 @@ class RecentPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recent = ref.watch(recentProvider);
+    // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
+    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
 
@@ -31,7 +33,10 @@ class RecentPage extends ConsumerWidget {
         body: Stack(
           children: [
             Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+              padding: EdgeInsets.only(
+                // 面板模式下胶囊顶栏仍覆盖顶部，内容统一按顶栏高度避让。
+                top: GlassTopBar.height(context),
+              ),
               child: recent.loading
                   ? const Center(child: CircularProgressIndicator())
                   : recent.entries.isEmpty
@@ -58,24 +63,26 @@ class RecentPage extends ConsumerWidget {
                           notifier: notifier,
                         ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-                title:   Text(tr('最近播放')),
-                actions: [
-                  if (recent.entries.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      tooltip: tr('清空'),
-                      onPressed: () => _confirmClear(context, notifier),
-                    ),
-                ],
+            if (!inMusicPane)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title:   Text(tr('最近播放')),
+                  actions: [
+                    if (recent.entries.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        tooltip: tr('清空'),
+                        onPressed: () => _confirmClear(context, notifier),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            const BottomPlayBarSlot(),
+            // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
+            if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
       ),
