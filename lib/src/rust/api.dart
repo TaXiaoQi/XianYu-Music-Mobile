@@ -46,6 +46,35 @@ Future<String> lxSearch({
   limit: limit,
 );
 
+/// QQ 专辑搜索（签名 Desktop 接口 search_type=2）。
+/// 返回原始专辑条目数组的 JSON；失败返回错误信息。
+Future<String> txSearchAlbums({
+  required String keyword,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiTxSearchAlbums(
+  keyword: keyword,
+  page: page,
+  limit: limit,
+);
+
+/// QQ 专辑曲目（签名 AlbumSongList 接口，按 albumMid）。
+/// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
+Future<String> txAlbumSongs({
+  required String albumMid,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiTxAlbumSongs(
+  albumMid: albumMid,
+  page: page,
+  limit: limit,
+);
+
+/// 批量查询 QQ 歌曲时长（UniformRuleCtrl，按 songid，每批≤50）。
+/// 入参为 songid 数组 JSON（如 `[123,456]`），返回 `{ "id": 秒 }` 的 JSON。
+Future<String> txBatchTrackInterval({required String songIdsJson}) =>
+    RustLib.instance.api.crateApiTxBatchTrackInterval(songIdsJson: songIdsJson);
+
 /// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
 Future<String> pluginList({required String dataDir}) =>
     RustLib.instance.api.crateApiPluginList(dataDir: dataDir);

@@ -61,6 +61,28 @@ pub async fn lx_search(source: String, keyword: String, limit: u32) -> Result<St
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
+/// QQ 专辑搜索（签名 Desktop 接口 search_type=2）。
+/// 返回原始专辑条目数组的 JSON；失败返回错误信息。
+pub async fn tx_search_albums(keyword: String, page: u32, limit: u32) -> Result<String, String> {
+    let items = crate::music::lx_search::tx_search_albums(&keyword, page, limit).await?;
+    serde_json::to_string(&items).map_err(|e| e.to_string())
+}
+
+/// QQ 专辑曲目（签名 AlbumSongList 接口，按 albumMid）。
+/// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
+pub async fn tx_album_songs(album_mid: String, page: u32, limit: u32) -> Result<String, String> {
+    let items = crate::music::lx_search::tx_album_songs(&album_mid, page, limit).await?;
+    serde_json::to_string(&items).map_err(|e| e.to_string())
+}
+
+/// 批量查询 QQ 歌曲时长（UniformRuleCtrl，按 songid，每批≤50）。
+/// 入参为 songid 数组 JSON（如 `[123,456]`），返回 `{ "id": 秒 }` 的 JSON。
+pub async fn tx_batch_track_interval(song_ids_json: String) -> Result<String, String> {
+    let song_ids: Vec<String> = serde_json::from_str(&song_ids_json).map_err(|e| e.to_string())?;
+    let map = crate::music::lx_search::tx_batch_track_interval(&song_ids).await?;
+    serde_json::to_string(&map).map_err(|e| e.to_string())
+}
+
 // =========================================================================
 // 音源插件管理
 // =========================================================================
@@ -80,8 +102,7 @@ pub async fn plugin_install_script(
     script: String,
     origin: String,
 ) -> Result<String, String> {
-    let info =
-        crate::plugins::manager::install_plugin(&data_dir, &script, &origin).await?;
+    let info = crate::plugins::manager::install_plugin(&data_dir, &script, &origin).await?;
     serde_json::to_string(&info).map_err(|e| e.to_string())
 }
 
@@ -139,8 +160,7 @@ pub async fn fetch_lyric_from_source(
 ) -> Result<String, String> {
     let song_info: crate::music::lyric_fetcher::LyricSongInfo =
         serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let result =
-        crate::music::lyric_fetcher::fetch_lyric_from_source(source, song_info).await?;
+    let result = crate::music::lyric_fetcher::fetch_lyric_from_source(source, song_info).await?;
     match result {
         Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
         None => Ok("null".to_string()),
@@ -152,7 +172,9 @@ pub async fn fetch_lyric_from_source(
 // =========================================================================
 
 /// 解析 WebDAV 源 JSON 为凭据结构。
-fn parse_remote_source(json: &str) -> Result<crate::remote::types::RemoteSourceCredentials, String> {
+fn parse_remote_source(
+    json: &str,
+) -> Result<crate::remote::types::RemoteSourceCredentials, String> {
     serde_json::from_str(json).map_err(|e| format!("WebDAV 源 JSON 无效: {e}"))
 }
 
@@ -292,7 +314,10 @@ pub fn stats_get_listen_durations(db_path: String) -> Result<String, String> {
 /// 获取行为统计（Top 歌曲/歌手/专辑、时段分布、近期活跃）。
 ///
 /// - `time_range_json`：[`TimeRange`] 的 JSON（如 `{"type":"Days30"}`）
-pub fn stats_get_behavior_stats(db_path: String, time_range_json: String) -> Result<String, String> {
+pub fn stats_get_behavior_stats(
+    db_path: String,
+    time_range_json: String,
+) -> Result<String, String> {
     let tr: crate::statistics::TimeRange =
         serde_json::from_str(&time_range_json).map_err(|e| e.to_string())?;
     let conn = open_stats_conn(&db_path)?;
@@ -331,7 +356,10 @@ pub fn stats_remove_from_recent_history(
 /// 导出统计备份到 JSON 文件。
 ///
 /// - `options_json`：[`StatisticsExportOptions`] 的 JSON（camelCase，含 `filePath`/`includeRecentPlays`）
-pub fn stats_export_statistics_file(db_path: String, options_json: String) -> Result<String, String> {
+pub fn stats_export_statistics_file(
+    db_path: String,
+    options_json: String,
+) -> Result<String, String> {
     let options: crate::statistics::StatisticsExportOptions =
         serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
     let conn = open_stats_conn(&db_path)?;
@@ -355,7 +383,10 @@ pub fn stats_preview_statistics_import(
 ///
 /// - `options_json`：[`StatisticsImportOptions`] 的 JSON（camelCase，
 ///   含 `filePath`/`mode`("overwrite"|"merge")/`continueDuplicateImport`）
-pub fn stats_import_statistics_file(db_path: String, options_json: String) -> Result<String, String> {
+pub fn stats_import_statistics_file(
+    db_path: String,
+    options_json: String,
+) -> Result<String, String> {
     let options: crate::statistics::StatisticsImportOptions =
         serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
     let mut conn = open_stats_conn(&db_path)?;
@@ -389,12 +420,16 @@ pub fn scan_music_folder(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let options = crate::music::scanner::ScanOptions::new(
-        minimum_duration_seconds,
-        allowed_formats,
-    );
+    let options =
+        crate::music::scanner::ScanOptions::new(minimum_duration_seconds, allowed_formats);
     let songs = crate::music::scanner::scan_single_directory_internal(
-        folder_path, db_conn, None, None, 1, 1, options,
+        folder_path,
+        db_conn,
+        None,
+        None,
+        1,
+        1,
+        options,
     )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
@@ -443,8 +478,9 @@ pub fn parse_audio_from_path_android(
     format: String,
 ) -> Result<String, String> {
     let path = std::path::Path::new(&file_path);
-    let song = crate::music::scanner::parse_song_from_file_with_name(path, &file_name, &path_key, &format)
-        .ok_or_else(|| format!("无法解析音频（file={file_path}）"))?;
+    let song =
+        crate::music::scanner::parse_song_from_file_with_name(path, &file_name, &path_key, &format)
+            .ok_or_else(|| format!("无法解析音频（file={file_path}）"))?;
     serde_json::to_string(&song).map_err(|e| e.to_string())
 }
 
@@ -523,12 +559,9 @@ pub async fn sync_remote_source(
     let conn = open_scan_conn(&db_path)?;
     let source = crate::remote::repository::get_source(&conn, &source_id)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let result = crate::remote::scanner::sync_source(
-        std::path::Path::new(&cache_root),
-        db_conn,
-        source,
-    )
-    .await?;
+    let result =
+        crate::remote::scanner::sync_source(std::path::Path::new(&cache_root), db_conn, source)
+            .await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -564,8 +597,7 @@ pub async fn auth_authed_request(
     body_json: String,
     fetch_timeout_ms: Option<u64>,
 ) -> Result<String, String> {
-    let body: serde_json::Value =
-        serde_json::from_str(&body_json).map_err(|e| e.to_string())?;
+    let body: serde_json::Value = serde_json::from_str(&body_json).map_err(|e| e.to_string())?;
     let payload = crate::music::auth::authed_request(
         std::path::Path::new(&data_dir),
         action,
@@ -582,8 +614,7 @@ pub fn auth_save_credentials(
     token: String,
     user_json: String,
 ) -> Result<(), String> {
-    let user: serde_json::Value =
-        serde_json::from_str(&user_json).map_err(|e| e.to_string())?;
+    let user: serde_json::Value = serde_json::from_str(&user_json).map_err(|e| e.to_string())?;
     crate::music::auth::save_auth_credentials(std::path::Path::new(&data_dir), token, user)
 }
 
@@ -745,12 +776,7 @@ pub async fn get_song_cover(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    crate::music::covers::get_song_cover(
-        std::path::PathBuf::from(&cache_root),
-        db_conn,
-        path,
-    )
-    .await
+    crate::music::covers::get_song_cover(std::path::PathBuf::from(&cache_root), db_conn, path).await
 }
 
 /// 扫描 SAF 歌曲时从已打开的 fd 提取内嵌封面并写入封面缓存。
@@ -946,11 +972,8 @@ pub fn refresh_folder_songs(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let songs = crate::toolbox::refresh_folder_songs(
-        db_conn,
-        folder_path,
-        minimum_duration_seconds,
-    )?;
+    let songs =
+        crate::toolbox::refresh_folder_songs(db_conn, folder_path, minimum_duration_seconds)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -967,8 +990,15 @@ pub fn resolve_download_full_path(
     overwrite_existing: bool,
 ) -> Result<String, String> {
     crate::toolbox::resolve_download_full_path(
-        directory, title, artist, album, url, quality,
-        keep_source_filename, file_name_style, overwrite_existing,
+        directory,
+        title,
+        artist,
+        album,
+        url,
+        quality,
+        keep_source_filename,
+        file_name_style,
+        overwrite_existing,
     )
 }
 
@@ -1035,7 +1065,10 @@ pub fn resume_usb_exclusive() {
 /// 跳转到指定位置（秒）。
 pub fn seek_usb_exclusive(time_secs: f64, is_playing: bool) {
     crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Seek { time_secs, is_playing },
+        crate::player::commands::PlaybackCommand::Seek {
+            time_secs,
+            is_playing,
+        },
     )
     .ok();
 }
@@ -1105,12 +1138,11 @@ pub async fn download_online_song(
     ekey: Option<String>,
     headers_json: String,
 ) -> Result<String, String> {
-    let headers: std::collections::HashMap<String, String> =
-        if headers_json.trim().is_empty() {
-            std::collections::HashMap::new()
-        } else {
-            serde_json::from_str(&headers_json).map_err(|e| e.to_string())?
-        };
+    let headers: std::collections::HashMap<String, String> = if headers_json.trim().is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        serde_json::from_str(&headers_json).map_err(|e| e.to_string())?
+    };
     crate::toolbox::download_online_song(url, dest_path, ekey, Some(headers)).await
 }
 
@@ -1184,10 +1216,7 @@ pub async fn download_video_to_cache(
 
 /// 清理本功能创建的后台视频缓存文件。
 /// `cache_dir` 必须与下载时传入的缓存根目录一致。
-pub async fn remove_cached_background_video(
-    cache_dir: String,
-    path: String,
-) -> Result<(), String> {
+pub async fn remove_cached_background_video(cache_dir: String, path: String) -> Result<(), String> {
     crate::plugins::remove_cached_background_video(cache_dir, path).await
 }
 
@@ -1240,7 +1269,12 @@ pub fn verify_fallback_module_signature(
     code: String,
     signature: String,
 ) -> Result<bool, String> {
-    crate::fallback_verify::verify_fallback_module_signature(&module_key, version, &code, &signature)
+    crate::fallback_verify::verify_fallback_module_signature(
+        &module_key,
+        version,
+        &code,
+        &signature,
+    )
 }
 
 // =========================================================================
@@ -1273,7 +1307,9 @@ pub async fn plugin_engine_load_musicfree(
     user_vars_json: String,
 ) -> Result<String, String> {
     let engine = crate::plugin_host::global_engine(&data_dir);
-    let result = engine.load_musicfree(&plugin_id, &script, &user_vars_json).await;
+    let result = engine
+        .load_musicfree(&plugin_id, &script, &user_vars_json)
+        .await;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -1288,7 +1324,13 @@ pub async fn plugin_engine_call(
 ) -> Result<String, String> {
     let engine = crate::plugin_host::global_engine(&data_dir);
     let result = engine
-        .call(&plugin_id, &method, &args_json, user_vars_json.as_deref(), timeout_ms)
+        .call(
+            &plugin_id,
+            &method,
+            &args_json,
+            user_vars_json.as_deref(),
+            timeout_ms,
+        )
         .await;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
@@ -1497,7 +1539,10 @@ pub async fn clear_lx_url_cache() -> Result<(), String> {
 
 /// 清除 LX 音源全部缓存（URL 直链 + 搜索结果）。
 pub async fn clear_lx_all_cache() -> Result<(), String> {
-    if crate::music::url_resolver::clear_lx_url_cache().await.is_err() {
+    if crate::music::url_resolver::clear_lx_url_cache()
+        .await
+        .is_err()
+    {
         return Err("清除 URL 缓存失败".to_string());
     }
     crate::music::lx_search::clear_lx_all_cache().await
@@ -1530,7 +1575,8 @@ pub async fn resolve_lx_with_quality_fallback(
 ) -> Result<String, String> {
     let song_info: LxUrlSongInfo =
         serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let v = crate::music::url_resolver::resolve_lx_with_quality_fallback(song_info, qualities).await?;
+    let v =
+        crate::music::url_resolver::resolve_lx_with_quality_fallback(song_info, qualities).await?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1603,9 +1649,12 @@ pub async fn list_remote_directory(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let source = crate::remote::repository::get_source(&conn, &source_id)?;
-    let entries =
-        crate::remote::webdav::list_directory(crate::remote::webdav::shared_client(), &source, &path)
-            .await?;
+    let entries = crate::remote::webdav::list_directory(
+        crate::remote::webdav::shared_client(),
+        &source,
+        &path,
+    )
+    .await?;
     serde_json::to_string(&entries).map_err(|e| e.to_string())
 }
 
@@ -1744,11 +1793,7 @@ pub fn batch_move_music_files(
 }
 
 /// 移动单个音乐文件到新路径（同步数据库路径）。
-pub fn move_music_file(
-    db_path: String,
-    old_path: String,
-    new_path: String,
-) -> Result<(), String> {
+pub fn move_music_file(db_path: String, old_path: String, new_path: String) -> Result<(), String> {
     let mut conn = open_scan_conn(&db_path)?;
     crate::music::files::move_music_file(&mut conn, old_path, new_path)
 }
@@ -1792,10 +1837,7 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
 }
 
 /// 保存下载歌词文本到目标路径（创建父目录），返回目标路径。
-pub async fn save_download_lyrics(
-    content: String,
-    dest_path: String,
-) -> Result<String, String> {
+pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
     crate::toolbox::save_download_lyrics(content, dest_path).await
 }
 
@@ -1858,11 +1900,7 @@ pub fn update_loudness_settings(
             song_id.unwrap(),
             song_path.as_ref().unwrap(),
         )?;
-        crate::player::loudness::calculate_playback_gain(
-            &record,
-            gain_offset_db,
-            prevent_clipping,
-        )
+        crate::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
     } else {
         1.0
     };
@@ -1884,7 +1922,10 @@ pub fn stats_export_listen_snapshot(db_path: String) -> Result<String, String> {
 }
 
 /// 导入（MAX 合并）服务端听歌统计快照（JSON），返回 [`ListenStatsSyncResult`] JSON。
-pub fn stats_import_listen_snapshot(db_path: String, snapshot_json: String) -> Result<String, String> {
+pub fn stats_import_listen_snapshot(
+    db_path: String,
+    snapshot_json: String,
+) -> Result<String, String> {
     let snapshot: crate::statistics::ListenStatsSnapshot =
         serde_json::from_str(&snapshot_json).map_err(|e| e.to_string())?;
     let mut conn = open_stats_conn(&db_path)?;
@@ -1916,7 +1957,10 @@ pub fn stats_clear_listen_stats(db_path: String) -> Result<(), String> {
 // =========================================================================
 
 /// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
-pub async fn plugin_engine_store_import(data_dir: String, payload_json: String) -> Result<(), String> {
+pub async fn plugin_engine_store_import(
+    data_dir: String,
+    payload_json: String,
+) -> Result<(), String> {
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct StoreImportPayload {
@@ -1926,7 +1970,9 @@ pub async fn plugin_engine_store_import(data_dir: String, payload_json: String) 
     let payload: StoreImportPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
     let engine = crate::plugin_host::global_engine(&data_dir);
-    engine.store().import_local(payload.cookies, payload.storage);
+    engine
+        .store()
+        .import_local(payload.cookies, payload.storage);
     Ok(())
 }
 

@@ -995,6 +995,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 在线歌曲：解析直链后播放。失败抛异常由调用方处理。
   Future<void> _playOnline(QueueItem item) async {
     final json = item.onlineSongJson;
+    debugPrint('[playOnline] ${item.title} path=${item.path} '
+        'onlineSongJson=${json?.isNotEmpty ?? false}');
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
       final s0 = _ref.read(settingsProvider).valueOrNull;
@@ -1003,6 +1005,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           s0?.onlineDefaultQuality ??
           '320k';
       final candidates = _qualityCandidates(preferred, fb0);
+      debugPrint('[playOnline] pluginId=${songJson['pluginId']} '
+          'source=${songJson['source']} format=${songJson['format']} '
+          'preferred=$preferred candidates=$candidates');
 
       // 共享探测：同歌一轮，起播优先、档位菜单/下载复用。
       final key = _songProbeKey(songJson, item);
@@ -1014,6 +1019,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final start = await probe
           .startBest(preferred, candidates)
           .timeout(const Duration(seconds: 12), onTimeout: () => null);
+      debugPrint('[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
+          'available=${probe.availableQualities} probing=${probe.probing}');
       if (start != null) {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);

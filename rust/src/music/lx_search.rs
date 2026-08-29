@@ -106,8 +106,10 @@ fn evict_search_cache(cache: &mut HashMap<String, SearchCacheEntry>, now: Instan
     if excess == 0 {
         return;
     }
-    let mut keys: Vec<(String, Instant)> =
-        cache.iter().map(|(k, e)| (k.clone(), e.last_access)).collect();
+    let mut keys: Vec<(String, Instant)> = cache
+        .iter()
+        .map(|(k, e)| (k.clone(), e.last_access))
+        .collect();
     keys.sort_unstable_by_key(|(_, t)| *t);
     for (k, _) in keys.into_iter().take(excess) {
         cache.remove(&k);
@@ -676,9 +678,13 @@ fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
         songmid: raw
             .get("Audioid")
             .and_then(|v| v.as_str())
-            .or_else(|| raw.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-            .unwrap_or("")
-            .to_string(),
+            .map(|s| s.to_string())
+            .or_else(|| {
+                raw.get("Audioid")
+                    .and_then(|v| v.as_i64())
+                    .map(|n| n.to_string())
+            })
+            .unwrap_or_default(),
         source: "kg".into(),
         interval: format_play_time(duration),
         img,
@@ -701,8 +707,13 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
             let audioid = item
                 .get("Audioid")
                 .and_then(|v| v.as_str())
-                .or_else(|| item.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-                .unwrap_or("");
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    item.get("Audioid")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n.to_string())
+                })
+                .unwrap_or_default();
             let file_hash = item.get("FileHash").and_then(|v| v.as_str()).unwrap_or("");
             let key = format!("{}{}", audioid, file_hash);
             if ids.contains(&key) {
@@ -717,8 +728,14 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
                     let child_audioid = child
                         .get("Audioid")
                         .and_then(|v| v.as_str())
-                        .or_else(|| child.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-                        .unwrap_or("");
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            child
+                                .get("Audioid")
+                                .and_then(|v| v.as_i64())
+                                .map(|n| n.to_string())
+                        })
+                        .unwrap_or_default();
                     let child_hash = child.get("FileHash").and_then(|v| v.as_str()).unwrap_or("");
                     let child_key = format!("{}{}", child_audioid, child_hash);
                     if ids.contains(&child_key) {
@@ -739,16 +756,35 @@ async fn search_kg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         urlencoding::encode(keyword),
         limit
     );
-    let result = http_get_json(&url, &[]).await?;
-
-    if result.get("error_code").and_then(|v| v.as_i64()) != Some(0) {
-        return Err("KG search: error_code != 0".to_string());
+    // 酷狗接口偶发 error_code != 0 / 无列表，最多重试 3 次（对齐桌面端 searchKg）
+    for attempt in 1..=3 {
+        if attempt > 1 {
+            tokio::time::sleep(Duration::from_millis(300 * attempt as u64)).await;
+        }
+        let result = match http_get_json(&url, &[]).await {
+            Ok(r) => r,
+            Err(e) => {
+                if attempt >= 3 {
+                    return Err(e);
+                }
+                continue;
+            }
+        };
+        if result.get("error_code").and_then(|v| v.as_i64()) != Some(0) {
+            if attempt >= 3 {
+                return Err("KG search: error_code != 0".to_string());
+            }
+            continue;
+        }
+        let Some(lists) = result.pointer("/data/lists") else {
+            if attempt >= 3 {
+                return Err("KG search: no lists".to_string());
+            }
+            continue;
+        };
+        return Ok(kg_handle_result(lists));
     }
-
-    let lists = result
-        .pointer("/data/lists")
-        .unwrap_or(&serde_json::Value::Null);
-    Ok(kg_handle_result(lists))
+    Err("KG search: unknown error".to_string())
 }
 
 fn tx_string_field(item: &serde_json::Value, keys: &[&str]) -> String {
@@ -813,10 +849,7 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
         // 放宽过滤：仅要求 mid 或 id 存在即可（与前端 txHandleResult、parseTxSong 对齐）。
         // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
         // 导致搜索结果被全部静默过滤 → 列表为空。
-        let songmid = tx_string_field(
-            item,
-            &["mid", "songmid", "songMid", "strMediaMid", "id"],
-        );
+        let songmid = tx_string_field(item, &["mid", "songmid", "songMid", "strMediaMid", "id"]);
         let has_mid = !songmid.is_empty();
         let has_id = item.get("id").is_some();
         if !has_mid && !has_id {
@@ -915,9 +948,7 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
             .get("mid")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                tx_string_field(item, &["albumMid", "albummid", "albumid"])
-            });
+            .unwrap_or_else(|| tx_string_field(item, &["albumMid", "albummid", "albumid"]));
         let album_name = album
             .get("name")
             .and_then(|v| v.as_str())
@@ -1037,14 +1068,15 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     }
 
     // Desktop 接口通常返回 body.song.list；部分环境会返回 body.songlist 或 item_song。
-    let data = body.pointer("/req/data").unwrap_or(&serde_json::Value::Null);
+    let data = body
+        .pointer("/req/data")
+        .unwrap_or(&serde_json::Value::Null);
     let mut result = tx_pick_search_raw_list(data)
         .map(tx_handle_result)
         .unwrap_or_default();
     if !result.is_empty() {
         return Ok(result);
     }
-
 
     let mobile_request_data = serde_json::json!({
         "comm": {
@@ -1069,10 +1101,7 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     let mobile_request_str =
         serde_json::to_string(&mobile_request_data).map_err(|e| e.to_string())?;
     let mobile_sign = zzc_sign(&mobile_request_str);
-    let mobile_url = format!(
-        "https://u.y.qq.com/cgi-bin/musics.fcg?sign={}",
-        mobile_sign
-    );
+    let mobile_url = format!("https://u.y.qq.com/cgi-bin/musics.fcg?sign={}", mobile_sign);
     let mobile_body = http_post_json(
         &mobile_url,
         &mobile_request_str,
@@ -1116,10 +1145,7 @@ async fn search_tx_soso(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, 
 
     let body = http_get_json(
         &url,
-        &[
-            ("User-Agent", MOBILE_UA),
-            ("Referer", "https://y.qq.com/"),
-        ],
+        &[("User-Agent", MOBILE_UA), ("Referer", "https://y.qq.com/")],
     )
     .await?;
 
@@ -1146,6 +1172,239 @@ fn chrono_like_random() -> u64 {
     val
 }
 
+/// QQ 专辑搜索（签名 Desktop 接口 search_type=2）内置实现。
+///
+/// 对齐桌面端 createTxDesktopSearchRequestData，按请求随机 guid/wid 与移动端
+/// 搜索分属不同风控池。返回原始专辑条目（albumMID/albumID/albumName/albumPic/
+/// publicTime/singerName 等），供 QQ 插件专辑搜索兜底消费。
+pub async fn tx_search_albums(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<serde_json::Value>, String> {
+    let request_data = serde_json::json!({
+        "comm": {
+            "_channelid": "0",
+            "_os_version": "6.2.9200-2",
+            "ct": "19",
+            "cv": "2151",
+            "guid": random_tx_guid(),
+            "patch": "118",
+            "psrf_access_token_expiresAt": 0,
+            "psrf_qqaccess_token": "",
+            "psrf_qqopenid": "",
+            "psrf_qqunionid": "",
+            "tmeAppID": "qqmusic",
+            "tmeLoginType": 0,
+            "uin": "0",
+            "wid": random_tx_wid(),
+        },
+        "req": {
+            "module": "music.search.SearchCgiService",
+            "method": "DoSearchForQQMusicDesktop",
+            "param": {
+                "grp": 1,
+                "num_per_page": limit,
+                "page_num": page,
+                "query": keyword,
+                "remoteplace": "txt.newclient.top",
+                "search_type": 2,
+                "searchid": format!("{}{:05}", random_tx_guid(), random_5_digits()),
+            },
+        },
+    });
+    let request_str = serde_json::to_string(&request_data).map_err(|e| e.to_string())?;
+    let sign = zzc_sign(&request_str);
+    let url = format!("https://u.y.qq.com/cgi-bin/musics.fcg?sign={}", sign);
+    let body = http_post_json(
+        &url,
+        &request_str,
+        &[
+            ("User-Agent", "QQMusic 14090508(android 12)"),
+            ("Content-Type", "application/json"),
+            ("Referer", "https://y.qq.com/"),
+        ],
+    )
+    .await?;
+    if body.get("code").and_then(|v| v.as_i64()) != Some(0)
+        || body.pointer("/req/code").and_then(|v| v.as_i64()) != Some(0)
+    {
+        return Err("TX album search: invalid response code".to_string());
+    }
+    let data = body
+        .pointer("/req/data")
+        .unwrap_or(&serde_json::Value::Null);
+    Ok(tx_pick_album_raw_list(data))
+}
+
+/// 提取专辑搜索结果列表：Desktop 响应的专辑在 body.album.list（无签名接口才是
+/// item_album），再兜底兼容直接返回数组的形态。
+fn tx_pick_album_raw_list(data: &serde_json::Value) -> Vec<serde_json::Value> {
+    for path in ["/body/album/list", "/body/item_album/list"] {
+        if let Some(arr) = data.pointer(path).and_then(|v| v.as_array()) {
+            if !arr.is_empty() {
+                return arr.clone();
+            }
+        }
+    }
+    if let Some(arr) = data.as_array() {
+        return arr.clone();
+    }
+    Vec::new()
+}
+
+/// QQ 专辑曲目（签名 AlbumSongList 接口，按 albumMid）。
+///
+/// 模块必须用 music.musichallAlbum.AlbumSongList（PlaySingerSongs 是歌手接口，
+/// 组合 GetAlbumSongList 会返回 500003）。songList 每项可能包在 songInfo 里。
+/// 结果经 tx_handle_result 映射回 LxSearchItem（songmid/qualities）。
+pub async fn tx_album_songs(
+    album_mid: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
+    let request_data = serde_json::json!({
+        "comm": { "ct": "24", "cv": "0" },
+        "req": {
+            "module": "music.musichallAlbum.AlbumSongList",
+            "method": "GetAlbumSongList",
+            "param": {
+                "albumMid": album_mid,
+                "albumID": 0,
+                "begin": (page - 1) * limit,
+                "num": limit,
+                "order": 2,
+            },
+        },
+    });
+    let request_str = serde_json::to_string(&request_data).map_err(|e| e.to_string())?;
+    let sign = zzc_sign(&request_str);
+    let url = format!("https://u.y.qq.com/cgi-bin/musics.fcg?sign={}", sign);
+    let body = http_post_json(
+        &url,
+        &request_str,
+        &[
+            ("User-Agent", "Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36"),
+            ("Content-Type", "application/json"),
+            ("Referer", "https://y.qq.com/"),
+        ],
+    )
+    .await?;
+    if body.get("code").and_then(|v| v.as_i64()) != Some(0)
+        || body.pointer("/req/code").and_then(|v| v.as_i64()) != Some(0)
+    {
+        return Err("TX album songs: invalid response code".to_string());
+    }
+    let song_list = body
+        .pointer("/req/data/songList")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let normalized: Vec<serde_json::Value> = song_list
+        .into_iter()
+        .map(|s| s.get("songInfo").cloned().unwrap_or(s))
+        .collect();
+    Ok(tx_handle_result(&serde_json::Value::Array(normalized)))
+}
+
+/// 批量查询 QQ 歌曲时长（UniformRuleCtrl CgiGetTrackInfo，按 songid）。
+///
+/// 每批最多 50 条，单批失败不影响其余批次。返回 id → 秒。
+pub async fn tx_batch_track_interval(song_ids: &[String]) -> Result<HashMap<String, u64>, String> {
+    let mut duration_map = HashMap::new();
+    const CHUNK_SIZE: usize = 50;
+    for chunk in song_ids.chunks(CHUNK_SIZE) {
+        let ids: Vec<u64> = chunk
+            .iter()
+            .filter_map(|id| id.parse::<u64>().ok())
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let types: Vec<u32> = ids.iter().map(|_| 1).collect();
+        let request_data = serde_json::json!({
+            "comm": { "ct": "19", "cv": "1859", "uin": "0" },
+            "req": {
+                "module": "music.trackInfo.UniformRuleCtrl",
+                "method": "CgiGetTrackInfo",
+                "param": { "types": types, "ids": ids, "ctx": 0 },
+            },
+        });
+        let request_str = match serde_json::to_string(&request_data) {
+            Ok(s) => s,
+            Err(e) => return Err(e.to_string()),
+        };
+        if let Ok(resp) = http_post_json(
+            "https://u.y.qq.com/cgi-bin/musicu.fcg",
+            &request_str,
+            &[
+                ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36"),
+                ("Content-Type", "application/json"),
+                ("Referer", "https://y.qq.com/"),
+                ("Cookie", "uin="),
+            ],
+        )
+        .await
+        {
+            if let Some(tracks) = resp
+                .pointer("/req/data/tracks")
+                .and_then(|v| v.as_array())
+            {
+                for track in tracks {
+                    let interval = track
+                        .get("interval")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let id = track
+                        .get("id")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v.to_string());
+                    if let Some(id) = id {
+                        if interval > 0 {
+                            duration_map.insert(id, interval as u64);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(duration_map)
+}
+
+/// Desktop 接口随机 guid：32 位大写 hex
+fn random_tx_guid() -> String {
+    let mut state = chrono_like_random();
+    let mut s = String::with_capacity(32);
+    for _ in 0..32 {
+        s.push(
+            char::from_digit((state % 16) as u32, 16)
+                .unwrap()
+                .to_ascii_uppercase(),
+        );
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+    }
+    s
+}
+
+/// Desktop 接口随机 wid：19 位数字（首位非零）
+fn random_tx_wid() -> String {
+    let mut state = chrono_like_random().wrapping_mul(76263).wrapping_add(17);
+    let mut s = String::with_capacity(19);
+    s.push(char::from_digit(1 + (state % 9) as u32, 10).unwrap());
+    while s.len() < 19 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        s.push(char::from_digit((state % 10) as u32, 10).unwrap());
+    }
+    s
+}
+
+/// Desktop 接口随机 searchid 尾号：5 位数字
+fn random_5_digits() -> u64 {
+    chrono_like_random().wrapping_mul(7919).wrapping_add(104729) % 100000
+}
+
 async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let url = format!(
         "https://music.163.com/api/search/get/web?s={}&type=1&offset=0&limit={}",
@@ -1153,19 +1412,37 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         limit
     );
 
-    let result = http_get_json(
-        &url,
-        &[
-            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"),
-            ("Referer", "https://music.163.com"),
-            ("Cookie", "MUSIC_A=1"),
-        ],
-    )
-    .await?;
-
-    if result.get("code").and_then(|v| v.as_i64()) != Some(200) {
-        return Err("WY search: code != 200".to_string());
-    }
+    // 网易云接口偶发 code != 200 / 网络抖动，最多重试 3 次（对齐桌面端 searchWy）
+    let result = {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            match http_get_json(
+                &url,
+                &[
+                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"),
+                    ("Referer", "https://music.163.com"),
+                    ("Cookie", "MUSIC_A=1"),
+                ],
+            )
+            .await
+            {
+                Ok(r) if r.get("code").and_then(|v| v.as_i64()) == Some(200) => break r,
+                Ok(r) => {
+                    let msg = format!("WY search: code != 200 ({:?})", r.get("code"));
+                    if attempt >= 3 {
+                        return Err(msg);
+                    }
+                }
+                Err(e) => {
+                    if attempt >= 3 {
+                        return Err(e);
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(300 * attempt as u64)).await;
+        }
+    };
 
     let songs = result
         .pointer("/result/songs")
@@ -1178,47 +1455,42 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         let mut types = Vec::new();
         let mut lx_types = HashMap::new();
 
-        if song.get("hq").is_some() {
+        // 网易云搜索接口多数场景不返回 hq/sq 标志（旧版字段），若仅依赖它们，
+        // types 会只剩 128k，导致可选音质与播放都只有最低档。网易云歌曲普遍提供
+        // 320k 与 flac（无损），在 hq/sq 之外补充声明，由播放时的音质回退链实测
+        // 过滤出真正可用的档位（对齐桌面端 searchWy）。
+        let hq = song.get("hq").is_some();
+        let sq = song.get("sq").is_some();
+        let mut push_type = |quality_type: &str| {
             types.push(LxTypeTuple {
-                quality_type: "320k".into(),
+                quality_type: quality_type.into(),
                 size: None,
                 hash: None,
             });
             lx_types.insert(
-                "320k".into(),
+                quality_type.into(),
                 LxTypeEntry {
                     size: None,
                     hash: None,
                 },
             );
+        };
+        if hq {
+            push_type("320k");
         }
-        if song.get("sq").is_some() {
-            types.push(LxTypeTuple {
-                quality_type: "flac".into(),
-                size: None,
-                hash: None,
-            });
-            lx_types.insert(
-                "flac".into(),
-                LxTypeEntry {
-                    size: None,
-                    hash: None,
-                },
-            );
+        if sq {
+            push_type("flac");
         }
-        types.push(LxTypeTuple {
-            quality_type: "128k".into(),
-            size: None,
-            hash: None,
-        });
-        lx_types.insert(
-            "128k".into(),
-            LxTypeEntry {
-                size: None,
-                hash: None,
-            },
-        );
-        // 构建顺序为高→低（hq→sq→128k），反转为低→高（128k 在前），与前端展示一致
+        push_type("128k");
+        if !hq {
+            push_type("320k");
+        }
+        if !sq {
+            push_type("flac");
+        }
+        push_type("flac24bit");
+        push_type("master");
+        // 构建顺序为高→低，反转为低→高（128k 在前），与前端展示一致
         types.reverse();
 
         let ar = song
@@ -1945,5 +2217,27 @@ mod tests {
         let it = &items[0];
         let types: Vec<&str> = it.types.iter().map(|t| t.quality_type.as_str()).collect();
         assert_eq!(types, vec!["320k", "flac24bit"]);
+    }
+
+    // ===== 真实网络探测（仅本地调试用，CI 不跑）=====
+
+    #[tokio::test]
+    #[ignore]
+    async fn probe_kg_wy_network_search() {
+        for source in ["kg", "wy"] {
+            let r = lx_search(source, "周杰伦", 10).await;
+            match r {
+                Ok(items) => {
+                    eprintln!("[probe] {source} ok, count={}", items.len());
+                    for it in items.iter().take(3) {
+                        eprintln!(
+                            "[probe] {source} name={} songmid='{}' hash={:?} interval='{}'",
+                            it.name, it.songmid, it.hash, it.interval
+                        );
+                    }
+                }
+                Err(e) => eprintln!("[probe] {source} err: {e}"),
+            }
+        }
     }
 }
