@@ -61,6 +61,12 @@
     error: function () { __xyNativeLog('error', joinArgs(arguments)); },
     info: function () { __xyNativeLog('log', joinArgs(arguments)); },
     debug: function () { __xyNativeLog('log', joinArgs(arguments)); },
+    // [修复] 部分插件（如 ikun 音源）用 console.group/groupEnd 组织日志，
+    // 宿主缺失这些方法时调用会抛 "not a function"，导致整个 musicUrl 解析失败。
+    // 提供无害空实现以兜底所有依赖 console group API 的插件。
+    group: function () {},
+    groupCollapsed: function () {},
+    groupEnd: function () {},
   };
 
   // ==================== timers ====================
@@ -648,6 +654,19 @@
         throw new TypeError('Failed to parse URL from ' + urlStr);
       }
 
+      // 对直接拼接在 URL 中的 Query 参数自动补全 type <-> quality
+      if (urlStr.indexOf('type=') >= 0 && urlStr.indexOf('quality=') < 0) {
+        var matchType = urlStr.match(/[?&]type=([^&]+)/);
+        if (matchType && matchType[1]) {
+          urlStr += '&quality=' + matchType[1];
+        }
+      } else if (urlStr.indexOf('quality=') >= 0 && urlStr.indexOf('type=') < 0) {
+        var matchQual = urlStr.match(/[?&]quality=([^&]+)/);
+        if (matchQual && matchQual[1]) {
+          urlStr += '&type=' + matchQual[1];
+        }
+      }
+
       var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
       var headers = {};
       var h = init.headers || (input && input.headers);
@@ -990,6 +1009,49 @@
 
   // ==================== axios 代理适配器（对齐 worker tauriAdapter）====================
 
+  // 部分插件（如汽水音乐）用 axios.post(url, Buffer, { transformRequest: [d => d] })
+  // 发送签名请求体（UTF-8 编码的 JSON 字节）。若直接 JSON.stringify,Buffer 会被序列化成
+  // {"type":"Buffer","data":[...]} 而损坏,导致服务端验签失败。这里按 UTF-8 还原成字符串,
+  // Rust 侧再以 UTF-8 重编码,字节保持一致。普通对象/数组仍走 JSON.stringify。
+  function toBodyUtf8String(data) {
+    if (typeof data === 'string') return data;
+    var u8 = data;
+    if (data instanceof ArrayBuffer) {
+      u8 = new Uint8Array(data);
+    } else if (typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(data)) {
+      u8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (!u8 || typeof u8.length !== 'number') {
+      try { return JSON.stringify(data); } catch (e) { return String(data); }
+    }
+    if (typeof TextDecoder !== 'undefined') {
+      try { return new TextDecoder('utf-8').decode(u8); } catch (e) { /* fallthrough */ }
+    }
+    // TextDecoder 不可用时的手动 UTF-8 解码
+    var out = '', i = 0;
+    while (i < u8.length) {
+      var c0 = u8[i++];
+      var cp;
+      if (c0 < 0x80) { out += String.fromCharCode(c0); continue; }
+      if (c0 >= 0xF0 && i + 3 <= u8.length) {
+        cp = ((c0 & 0x07) << 18) | ((u8[i++] & 0x3F) << 12) | ((u8[i++] & 0x3F) << 6) | (u8[i++] & 0x3F);
+        if (cp > 0xFFFF) {
+          cp -= 0x10000;
+          out += String.fromCharCode((cp >> 10) + 0xD800, (cp & 0x3FF) + 0xDC00);
+        } else { out += String.fromCharCode(cp); }
+      } else if (c0 >= 0xE0 && i + 2 <= u8.length) {
+        cp = ((c0 & 0x0F) << 12) | ((u8[i++] & 0x3F) << 6) | (u8[i++] & 0x3F);
+        out += String.fromCharCode(cp);
+      } else if (c0 >= 0xC0 && i + 1 <= u8.length) {
+        cp = ((c0 & 0x1F) << 6) | (u8[i++] & 0x3F);
+        out += String.fromCharCode(cp);
+      } else {
+        out += String.fromCharCode(c0);
+      }
+    }
+    return out;
+  }
+
   function xyAxiosAdapter(config) {
     return Promise.resolve().then(function () {
       var method = (config.method || 'GET').toUpperCase();
@@ -1004,11 +1066,30 @@
         for (var key in config.params) {
           if (!Object.prototype.hasOwnProperty.call(config.params, key)) continue;
           var value = config.params[key];
-          // 数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值数组的行为
+          // 数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值行为
           cleanParams[key] = Array.isArray(value) ? value[0] : value;
+        }
+        // 兼容音源服务端 v1：自动对齐 type 与 quality 字段
+        if (cleanParams.type && !cleanParams.quality) {
+          cleanParams.quality = cleanParams.type;
+        } else if (cleanParams.quality && !cleanParams.type) {
+          cleanParams.type = cleanParams.quality;
         }
         var paramStr = pkgs.qs.stringify(cleanParams);
         url += (url.indexOf('?') >= 0 ? '&' : '?') + paramStr;
+      }
+
+      // 对直接拼接在 URL 中的 Query 参数同样自动补全 type <-> quality
+      if (url.indexOf('type=') >= 0 && url.indexOf('quality=') < 0) {
+        var matchType = url.match(/[?&]type=([^&]+)/);
+        if (matchType && matchType[1]) {
+          url += '&quality=' + matchType[1];
+        }
+      } else if (url.indexOf('quality=') >= 0 && url.indexOf('type=') < 0) {
+        var matchQual = url.match(/[?&]quality=([^&]+)/);
+        if (matchQual && matchQual[1]) {
+          url += '&type=' + matchQual[1];
+        }
       }
 
       var headers = {};
@@ -1030,7 +1111,27 @@
 
       var body;
       if (config.data !== undefined && config.data !== null) {
-        body = typeof config.data === 'string' ? config.data : JSON.stringify(config.data);
+        var reqData = config.data;
+        // 自动适配对齐音源服务端：若数据为对象，同时填充 type 与 quality，兼容仅认 quality 的 v1 接口
+        if (typeof reqData === 'object' && reqData !== null) {
+          try {
+            if (reqData.type && !reqData.quality) {
+              reqData.quality = reqData.type;
+            } else if (reqData.quality && !reqData.type) {
+              reqData.type = reqData.quality;
+            }
+          } catch (e) { /* ignore */ }
+        } else if (typeof reqData === 'string' && reqData.indexOf('{') >= 0) {
+          try {
+            var parsed = JSON.parse(reqData);
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.type && !parsed.quality) parsed.quality = parsed.type;
+              else if (parsed.quality && !parsed.type) parsed.type = parsed.quality;
+              reqData = JSON.stringify(parsed);
+            }
+          } catch (e) { /* ignore */ }
+        }
+        body = toBodyUtf8String(reqData);
         if (body && body.length > 256 * 1024) {
           body = body.substring(0, 256 * 1024);
         }
@@ -1480,6 +1581,9 @@
           try {
             var body = response.body;
             try { body = JSON.parse(response.body); } catch (e) { /* 保持原始字符串 */ }
+            var ct = '';
+            try { ct = (response.headers && (response.headers['content-type'] || response.headers['Content-Type'])) || ''; } catch (e) {}
+            G.console.log('HTTP 响应: ' + response.statusCode + ' ' + ct + ' ' + String(response.body).substring(0, 240));
             callback(null, {
               statusCode: response.statusCode,
               statusMessage: response.statusMessage,
@@ -1495,6 +1599,7 @@
             }
           }
         }, function (err) {
+          try { G.console.error('HTTP 请求失败: ' + ((err && err.message) || String(err))); } catch (e2) { /* ignore */ }
           try { callback(err, null, null); } catch (e) { /* ignore */ }
         });
         return function () { /* cancel noop */ };
@@ -1514,7 +1619,15 @@
             handleInit(data);
             resolve(undefined);
           } else if (eventName === EVENT_NAMES.updateAlert) {
-            G.console.log('updateAlert ignored');
+            // 参考 BakaMusic：LX 插件可自报更新（updateAlert），载荷通常是
+            // { updateUrl, log }。当前更新检查以"重取插件脚本 filePath + 订阅清单版本"
+            // 为准，这里不再静默丢弃，而是记录通告信息便于排查。
+            try {
+              G.console.log('[updateAlert] ' + (String(data && data.log || '').substring(0, 200)));
+              if (data && data.updateUrl) {
+                G.console.log('[updateAlert] updateUrl: ' + String(data.updateUrl).substring(0, 512));
+              }
+            } catch (e) { /* ignore */ }
             resolve(undefined);
           } else {
             reject(new Error('Unknown event name: ' + eventName));
@@ -1654,6 +1767,13 @@
       G.console.log('LX request(action=' + (data && data.action) + ') 返回: type=' + typeof result +
         ' len=' + (typeof result === 'string' ? result.length : 'n/a') + ' preview=' + preview);
       return result;
+    }, function (e) {
+      // 诊断：输出堆栈（含插件脚本行号），定位插件内部 "not a function" 等错误
+      try {
+        G.console.error('LX request(action=' + (data && data.action) + ') 堆栈: ' +
+          ((e && e.stack) ? String(e.stack) : String((e && e.message) || e)));
+      } catch (e2) { /* ignore */ }
+      throw e;
     });
   };
 })();

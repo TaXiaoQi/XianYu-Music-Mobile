@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../core/application_logger.dart';
 import '../player/media_url.dart';
 import '../rust/api.dart' as frb;
 import '../i18n/i18n.dart';
@@ -218,7 +219,10 @@ class PluginEngine {
   Future<Map<String, dynamic>?> _doEnsureLoaded(PluginSource source) async {
     try {
       final script = await store.readScript(source.id);
-      if (script == null || script.isEmpty) return null;
+      if (script == null || script.isEmpty) {
+        AppLog.warn('plugin', '${source.name}(${source.id}) 脚本为空或不存在');
+        return null;
+      }
       final isLx = source.format == PluginFormat.lx;
       final info = isLx
           ? await loadLx(source.id, script, scriptInfo: parseLxScriptInfo(script))
@@ -227,6 +231,10 @@ class PluginEngine {
               script,
               userVars: await userVarsProvider?.call(source.id),
             );
+      if (info != null) {
+        AppLog.info('plugin',
+            '${source.name}(${source.id}) 加载成功 (${isLx ? 'lx' : 'musicfree'})');
+      }
       if (info != null && info['id'] != null && info['id'] != source.id) {
         // 重新加载得到的 hash 与存储 ID 不一致时注册别名
         final newId = info['id'].toString();
@@ -235,12 +243,17 @@ class PluginEngine {
         }
       }
       return info;
-    } catch (_) {
+    } catch (e) {
+      AppLog.error('plugin', '${source.name}(${source.id}) 加载失败: $e');
       return null;
     }
   }
 
   // ==================== LX 请求协议 ====================
+
+  /// 内部音质键 → LX 插件音质串（对齐桌面端 qualityKeyToLxQuality）：
+  /// LX 体系没有 96k/mgg 概念，mgg 取最低标准档 128k；其余档位同名直传。
+  static String lxQualityKeyFor(String q) => q == 'mgg' ? '128k' : q;
 
   /// 向 LX 插件发送请求（source/action/info 协议）。
   Future<dynamic> lxRequest(
@@ -251,7 +264,11 @@ class PluginEngine {
   }) async {
     if (!source.enabled) return null;
     final info = await ensureLoaded(source);
-    if (info == null) return null;
+    if (info == null) {
+      AppLog.warn('plugin',
+          '[lxRequest] ${source.name}/$action 跳过：插件未加载或未启用');
+      return null;
+    }
 
     try {
       final response = await call(
@@ -270,9 +287,12 @@ class PluginEngine {
         ],
         timeoutMs: timeoutMs,
       );
+      AppLog.debug('plugin',
+          '[lxRequest] ${source.name}/$action source=${data['source']} type=${data['type']} 完成');
       return response;
     } catch (e) {
       final msg = e is PluginEngineException ? e.message : e.toString();
+      AppLog.warn('plugin', '[lxRequest] ${source.name}/$action 失败: $msg');
       if (action == 'lyric' &&
           RegExp(r'action\s+not\s+support|not\s+support', caseSensitive: false)
               .hasMatch(msg)) {
@@ -690,7 +710,7 @@ class PluginEngine {
   ) async {
     final response = await lxRequest(source, 'musicUrl', {
       'source': sourceKey,
-      'type': quality,
+      'type': lxQualityKeyFor(quality),
       'musicInfo': songInfo,
     });
     if (response == null) return null;
@@ -712,8 +732,12 @@ class PluginEngine {
         url.isEmpty ||
         url.length > 2048 ||
         !RegExp(r'^https?:').hasMatch(url)) {
+      AppLog.error('plugin',
+          '[musicUrl] ${source.name}/$sourceKey $quality 返回非法直链');
       throw PluginEngineException('Invalid musicUrl response');
     }
+    AppLog.info('plugin',
+        '[musicUrl] ${source.name}/$sourceKey $quality -> ${type == quality ? type : '$type(declared $quality)'}');
     return {
       'type': type,
       'url': url,
@@ -891,10 +915,15 @@ class PluginEngine {
 
   void _emitLogs(List<EngineLog> logs) {
     for (final entry in logs) {
-      // 日志回放：错误级别输出到控制台
-      if (entry.level == 'error') {
-        // ignore: avoid_print
-        print('[plugin] ${entry.message}');
+      // 引擎侧 JS console 日志统一接入应用日志系统（错误/警告常驻可导出，
+      // 调试级进入 200 条环形缓冲），同时经 AppLog 双写控制台。
+      switch (entry.level) {
+        case 'error':
+          AppLog.error('plugin', '[plugin:js] ${entry.message}');
+        case 'warn':
+          AppLog.warn('plugin', '[plugin:js] ${entry.message}');
+        default:
+          AppLog.debug('plugin', '[plugin:js] ${entry.message}');
       }
     }
   }

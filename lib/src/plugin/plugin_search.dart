@@ -71,6 +71,10 @@ class PluginSearchService {
       coverUrl: r.img,
       onlineSongJson: songJson,
       onlineQuality: _bestQuality(r),
+      // 歌词兜底用：插件 lyric 失败时走 Rust 内置各源直连歌词（LyricSongInfo 格式，
+      // 与落雪在线搜索的 toQueueItem 保持一致；camelCase，多余字段被 serde 忽略）。
+      source: r.source,
+      onlineInfoJson: jsonEncode(r.toJson()),
     );
   }
 
