@@ -79,3 +79,10 @@ app.*.map.json
 
 # 音源脚本取样：含用户私有 API 密钥，仅供本地验证，不得入库
 /rust/examples/fixtures/
+
+# Flutter 构建自动生成物
+**/GeneratedPluginRegistrant.*
+
+# 调试遗留（截图/空文件）
+/flutter_*.png
+/null
