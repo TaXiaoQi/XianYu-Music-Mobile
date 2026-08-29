@@ -23,16 +23,21 @@ class QqShareService {
   /// 当前一次分享的回调接收器（respStream 异步回传结果）。
   Completer<QqShareResult>? _pending;
 
-  /// 发起一次分享（网页卡片）。失败时返回 failed，由调用方展示结果并兜底复制链接。
+  /// 发起一次分享。失败时返回 failed，由调用方展示结果并兜底复制链接。
   ///
   /// [coverPath] 为本地封面文件路径（QQ SDK 无法可靠拉取带防盗链的远程 CDN
   /// 封面，卡片缩略图需本地文件），为空则卡片不带封面。
+  ///
+  /// [musicUrl] 非空时走「音乐卡片」类型（QQ_SHARE_TYPE_AUDIO，仅 QQ 好友
+  /// 场景支持）：封面在左、歌名/歌手在右的对齐卡片；为空时走普通网页卡片
+  /// （文字在左、小缩略图在右）。
   Future<QqShareResult> share({
     required int scene,
     required String title,
     required String summary,
     required String targetUrl,
     String? coverPath,
+    String? musicUrl,
   }) async {
     if (!await _ensureInit()) return QqShareResult.failed;
 
@@ -46,14 +51,27 @@ class QqShareService {
       // 本地路径转 file:// URI，插件侧取 path 写入 QQ 分享参数。
       final path = coverPath ?? '';
       final imageUri = path.isEmpty ? null : Uri.file(path);
-      await TencentKitPlatform.instance.shareWebpage(
-        scene: scene,
-        title: title,
-        summary: summary,
-        imageUri: imageUri,
-        targetUrl: targetUrl,
-        appName: tr('弦予音乐'),
-      );
+      final useMusicCard = musicUrl != null && musicUrl.isNotEmpty;
+      if (useMusicCard) {
+        await TencentKitPlatform.instance.shareMusic(
+          scene: scene,
+          title: title,
+          summary: summary,
+          imageUri: imageUri,
+          musicUrl: musicUrl,
+          targetUrl: targetUrl,
+          appName: tr('弦予音乐'),
+        );
+      } else {
+        await TencentKitPlatform.instance.shareWebpage(
+          scene: scene,
+          title: title,
+          summary: summary,
+          imageUri: imageUri,
+          targetUrl: targetUrl,
+          appName: tr('弦予音乐'),
+        );
+      }
     } catch (_) {
       if (!completer.isCompleted) completer.complete(QqShareResult.failed);
     }

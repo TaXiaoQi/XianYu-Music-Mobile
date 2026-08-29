@@ -266,6 +266,9 @@ Future<void> _shareViaQQ(
     summary: artist,
     targetUrl: url,
     coverPath: coverPath,
+    // QQ 好友走「音乐卡片」类型（封面左、歌名右的对齐样式）；
+    // QQ 空间不支持音乐卡片，维持普通网页卡片。
+    musicUrl: scene == TencentScene.kScene_QQ ? url : null,
   );
 
   switch (result) {
