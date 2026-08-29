@@ -74,6 +74,8 @@ dependencies:
   # 诊断日志分享（Android 系统分享面板）
   share_plus: ^13.3.0
   record: ^7.1.1
+  # 扫码登录：首页右上角扫码入口（桌面端二维码）
+  mobile_scanner: ^7.1.0
   # QQ 互联分享（歌曲分享到 QQ 好友 / QQ 空间），Android 配置见下方顶层 tencent_kit 块
   tencent_kit: ^6.2.0
   pinyin: ^3.3.0
@@ -125,6 +127,10 @@ flutter:
 
   assets:
     - assets/icon/
+
+  shaders:
+    - assets/shaders/liquid_wave.frag
+    - assets/shaders/bilipai_liquid.frag
 
   # To add assets to your application, add an assets section, like this:
   # assets:

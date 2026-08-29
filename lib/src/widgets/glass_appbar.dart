@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
+import 'blur_budget.dart';
 import 'glass_settings.dart';
 
 /// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
@@ -62,15 +63,23 @@ class GlassTopBar extends ConsumerWidget {
     final wallpaper = ref.watch(wallpaperActiveProvider);
 
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
-    final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+    // 全局 blur 预算（header 档：滚动/转场时保持模糊，仅缩小输入）。
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    final sigma = surfaceBlurSigma(
+      base: 16,
+      budget: budget,
+      type: BlurSurfaceType.header,
+    );
     final fill = wallpaper
         ? glassControlFill
         : (solid
             ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
             : (isDark
-                ? const Color(0xB8222222)
-                : const Color(0xCCF7F7F9)));
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final glassFill =
+        solid ? fill : surfaceFillWithBudget(fill, budget);
     final divider = wallpaper
         ? glassControlBorder
         : scheme.onSurface.withValues(alpha: 0.06);
@@ -78,7 +87,7 @@ class GlassTopBar extends ConsumerWidget {
     final bar = _bar(context, statusBarHeight);
     final inner = Container(
       decoration: BoxDecoration(
-        color: fill,
+        color: glassFill,
         border: Border(bottom: BorderSide(color: divider)),
       ),
       child: bar,
@@ -88,8 +97,8 @@ class GlassTopBar extends ConsumerWidget {
     return ClipRect(
       child: BackdropFilter(
         // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
-        // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感。
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感；按预算缩放。
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: inner,
       ),
     );

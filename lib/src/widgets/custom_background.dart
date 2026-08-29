@@ -100,3 +100,19 @@ class _SettingsBound extends ConsumerWidget {
     return CustomBackgroundLayer(background: cb);
   }
 }
+
+/// 页面底色层：回退为透明，页面透出根层壁纸/底色。
+///
+/// 纯平移转场（FadeForwards）下不在此烘焙壁纸，壁纸由根层
+/// [CustomBackgroundLayer] 统一渲染；转场期间则由 [TransitionBackdrop] 铺壁纸
+/// 垫底，避免透见下层造成「穿模」。
+class AppPageBackground extends ConsumerWidget {
+  const AppPageBackground({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return child;
+  }
+}

@@ -11,6 +11,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/sync/sync_provider.dart' show syncProvider;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/user_agreement.dart';
 import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
@@ -35,6 +36,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
   final _codeCtrl = TextEditingController();
   bool _obscure = true;
   int _countdown = 0;
+  // 登录/注册前须勾选同意用户协议（对齐桌面端，服务端下发协议内容）。
+  bool _agreed = false;
+  // 登录页登录方式：false=密码登录，true=邮箱验证码登录。
+  bool _loginByEmail = false;
 
   @override
   void initState() {
@@ -80,12 +85,15 @@ class _AccountPageState extends ConsumerState<AccountPage>
     // 发送验证码前先过人机验证。
     final captcha = await _requestHumanCaptcha(
       title: tr('发送验证码前验证'),
-      description: tr('完成验证后将向邮箱发送注册验证码。'),
+      description: tr('完成验证后将向邮箱发送验证码。'),
     );
     if (captcha == null || !mounted) return;
     final notifier = ref.read(authProvider.notifier);
+    // 登录页的「邮箱登录」走 type='login'（服务端校验该邮箱已注册）；注册走 register。
+    final isEmailLogin = _tab.index == 0 && _loginByEmail;
     try {
-      final msg = await notifier.sendCode(email, 'register', captcha: captcha);
+      final msg = await notifier
+          .sendCode(email, isEmailLogin ? 'login' : 'register', captcha: captcha);
       if (!mounted) return;
       _toast(msg);
       if (msg.toLowerCase().contains('失败') || msg.contains('错误')) return;
@@ -105,6 +113,12 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final notifier = ref.read(authProvider.notifier);
     final isLogin = _tab.index == 0;
 
+    // 未勾选用户协议禁止提交（对齐桌面端 onSubmit）。
+    if (!_agreed) {
+      notifier.setError(tr('请先勾选同意用户协议'));
+      return;
+    }
+
     // 注册时先做本地密码一致性校验，避免无谓的人机验证。
     if (!isLogin && _passwordCtrl.text != _confirmCtrl.text) {
       notifier.setError(tr('两次输入的密码不一致'));
@@ -119,11 +133,19 @@ class _AccountPageState extends ConsumerState<AccountPage>
     if (captcha == null || !mounted) return;
 
     if (isLogin) {
-      await notifier.login(
-        ciyuanxiId: _idCtrl.text,
-        password: _passwordCtrl.text,
-        captcha: captcha,
-      );
+      if (_loginByEmail) {
+        await notifier.loginByEmail(
+          email: _emailCtrl.text,
+          code: _codeCtrl.text,
+          captcha: captcha,
+        );
+      } else {
+        await notifier.login(
+          ciyuanxiId: _idCtrl.text,
+          password: _passwordCtrl.text,
+          captcha: captcha,
+        );
+      }
     } else {
       await notifier.register(
         ciyuanxiId: _idCtrl.text,
@@ -324,14 +346,44 @@ class _AccountPageState extends ConsumerState<AccountPage>
   }
 
   Widget _loginForm(BuildContext context, AuthState auth) {
+    final scheme = Theme.of(context).colorScheme;
     return _formScroll(
       children: [
-        _field(_idCtrl, tr('弦予号'), hint: tr('请输入弦予号'), icon: Icons.tag),
-        _field(_passwordCtrl, tr('密码'),
-            hint: tr('请输入密码'),
-            icon: Icons.lock,
-            obscure: _obscure),
+        _loginMethodToggle(scheme),
+        if (!_loginByEmail) ...[
+          _field(_idCtrl, tr('弦予号'), hint: tr('请输入弦予号'), icon: Icons.tag),
+          _field(_passwordCtrl, tr('密码'),
+              hint: tr('请输入密码'),
+              icon: Icons.lock,
+              obscure: _obscure),
+        ] else ...[
+          _field(_emailCtrl, tr('邮箱'), hint: tr('请输入注册邮箱'),
+              icon: Icons.mail, keyboard: TextInputType.emailAddress),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _field(_codeCtrl, tr('邮箱验证码'), hint: tr('请输入验证码'), icon: Icons.verified),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 56,
+                  child: OutlinedButton(
+                    onPressed: _countdown > 0 ? null : _sendCode,
+                    child: Text(_countdown > 0 ? '${_countdown}s' : tr('发送验证码')),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         _errorBanner(context, auth),
+        UserAgreementCheckbox(
+          initialAgreed: _agreed,
+          onChanged: (v) => setState(() => _agreed = v),
+        ),
         _submitButton(context, auth, tr('登录')),
         const SizedBox(height: 8),
         Center(
@@ -344,6 +396,61 @@ class _AccountPageState extends ConsumerState<AccountPage>
           ),
         ),
       ],
+    );
+  }
+
+  /// 登录方式切换：密码登录 / 邮箱验证码。
+  Widget _loginMethodToggle(ColorScheme scheme) {
+    Widget item(String label, bool selected, VoidCallback onTap) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? scheme.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            item(tr('密码登录'), !_loginByEmail, () {
+              if (_loginByEmail) {
+                ref.read(authProvider.notifier).clearError();
+                setState(() => _loginByEmail = false);
+              }
+            }),
+            item(tr('邮箱验证码'), _loginByEmail, () {
+              if (!_loginByEmail) {
+                ref.read(authProvider.notifier).clearError();
+                setState(() => _loginByEmail = true);
+              }
+            }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -375,6 +482,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
           ],
         ),
         _errorBanner(context, auth),
+        UserAgreementCheckbox(
+          initialAgreed: _agreed,
+          onChanged: (v) => setState(() => _agreed = v),
+        ),
         _submitButton(context, auth, tr('注册')),
       ],
     );

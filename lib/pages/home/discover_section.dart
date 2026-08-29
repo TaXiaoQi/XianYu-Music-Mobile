@@ -6,6 +6,7 @@ import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/top_lists_preview_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
@@ -430,28 +431,29 @@ class _TopListsBody extends ConsumerWidget {
   }
 }
 
-/// 发现区卡片容器（半透明玻璃卡片，与首页其余卡片一致）。
-class _CardContainer extends StatelessWidget {
+/// 发现区卡片容器：伪毛玻璃卡片，跟随全局毛玻璃开关（开→磨砂，关/低性能→纯色）。
+class _CardContainer extends ConsumerWidget {
   const _CardContainer({required this.child, this.onTap});
 
   final Widget child;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.34),
-      borderRadius: BorderRadius.circular(13),
-      child: InkWell(
-        onTap: onTap,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 13,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(13),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            child: child,
           ),
-          child: child,
         ),
       ),
     );

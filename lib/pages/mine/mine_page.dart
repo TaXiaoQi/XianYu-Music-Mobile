@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -18,6 +19,8 @@ import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
+import '../../src/widgets/floating_search_bar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -34,6 +37,15 @@ class MinePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final floating = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final searchBar = _SearchBarBottom(onTap: () => context.push('/search'));
+    // 悬浮搜索框：顶栏标题行下方悬浮胶囊，内容从其下方穿过被玻璃模糊。
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final searchTop = statusBar + kToolbarHeight + 8;
+    final topInset = floating
+        ? searchTop + 44 + 12
+        : GlassTopBar.height(context, bottom: searchBar);
     return Scaffold(
       // 背景交给 Shell 层统一渲染（自定义壁纸/默认底色），页面自身保持透明以透出壁纸。
       backgroundColor: appScaffoldBackground(context, ref),
@@ -43,12 +55,11 @@ class MinePage extends ConsumerWidget {
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              GlassTopBar.height(context) + 10,
+              topInset,
               16,
               ref.watch(navBarInsetProvider) + 24,
             ),
             children:   [
-              _SearchEntry(),
               SizedBox(height: 18),
               _AccountArea(),
               SizedBox(height: 22),
@@ -72,8 +83,18 @@ class MinePage extends ConsumerWidget {
                   onPressed: () => context.push('/settings'),
                 ),
               ],
+              bottom: floating ? null : searchBar,
             ),
           ),
+          if (floating)
+            Positioned(
+              top: searchTop,
+              left: 16,
+              right: 16,
+              child: FloatingSearchBar(
+                onTap: () => context.push('/search'),
+              ),
+            ),
         ],
         ),
       ),
@@ -81,31 +102,44 @@ class MinePage extends ConsumerWidget {
   }
 }
 
+/// 顶栏搜索框扩展区（PreferredSizeWidget 以便 GlassTopBar 计算 height）。
+class _SearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
+  const _SearchBarBottom({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(58);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+      child: _SearchEntry(
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
 /// 顶部搜索条：点击进入搜索页（参考图布局）。
 class _SearchEntry extends ConsumerWidget {
-  const _SearchEntry();
+  const _SearchEntry({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
-    return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+    final capsule = Material(
+      color: contrastSearchColor(context),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
-        onTap: () => context.push('/search'),
+        onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: glass
-                  ? glassControlBorder
-                  : scheme.outlineVariant.withValues(alpha: 0.3),
-            ),
-          ),
           child: Row(
             children: [
               Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
@@ -122,6 +156,8 @@ class _SearchEntry extends ConsumerWidget {
         ),
       ),
     );
+    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃页面形成对比。
+    return capsule;
   }
 }
 
@@ -133,7 +169,6 @@ class _AccountArea extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
-    final glass = ref.watch(wallpaperActiveProvider);
     final user = auth.user;
     final loggedIn = auth.isLoggedIn && user != null;
 
@@ -187,12 +222,12 @@ class _AccountArea extends ConsumerWidget {
       );
     }
 
-    return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+    final accountCard = Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: InkWell(
         onTap: () => context.push('/account'),
@@ -252,6 +287,9 @@ class _AccountArea extends ConsumerWidget {
         ),
       ),
     );
+    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
+    return frostedCardSurface(
+        context: context, ref: ref, radius: 16, child: accountCard);
   }
 
   Widget _fallback(ColorScheme scheme, String nickname) {
@@ -278,7 +316,6 @@ class _QuickEntries extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final favCount = ref.watch(
       favoritesProvider.select((s) => s.entries.length),
     );
@@ -343,12 +380,12 @@ class _QuickEntries extends ConsumerWidget {
       );
     }
 
-    return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+    final entriesCard = Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -382,6 +419,9 @@ class _QuickEntries extends ConsumerWidget {
         ),
       ),
     );
+    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
+    return frostedCardSurface(
+        context: context, ref: ref, radius: 16, child: entriesCard);
   }
 }
 
@@ -441,13 +481,12 @@ class _ReorderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
-    return Material(
-      color: glass ? glassControlFill : appCardColor(context),
+    final reorderCard = Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: glass ? BorderSide(color: glassControlBorder) : BorderSide.none,
+        side: BorderSide.none,
       ),
       child: ReorderableListView.builder(
         shrinkWrap: true,
@@ -486,6 +525,9 @@ class _ReorderCard extends ConsumerWidget {
         },
       ),
     );
+    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
+    return frostedCardSurface(
+        context: context, ref: ref, radius: 16, child: reorderCard);
   }
 }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,7 @@ import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/custom_background.dart';
-import 'src/widgets/predictive_back_transitions.dart';
+import 'src/widgets/liquid_wave.dart';
 import 'l10n/gen/app_localizations.dart';
 
 /// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
@@ -49,6 +50,7 @@ class XianYuApp extends ConsumerStatefulWidget {
 
 class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
   int? _cachedAccent;
+  bool? _cachedPredictiveBack;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
@@ -131,29 +133,37 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     );
   }
 
-  void _ensureThemes(int accent) {
-    if (_cachedAccent == accent && _lightTheme != null) {
+  void _ensureThemes(int accent, bool predictiveBack) {
+    if (_cachedAccent == accent &&
+        _cachedPredictiveBack == predictiveBack &&
+        _lightTheme != null) {
       return;
     }
     _cachedAccent = accent;
+    _cachedPredictiveBack = predictiveBack;
     final seed = Color(accent);
-    // 安卓切换特效：抽屉覆盖式转场。不要用 ZoomPageTransitionsBuilder——
-    // 它是 M3 的缩放淡入，不是抽屉。抽屉覆盖（新页从右滑入盖住旧页、返回贴
-    // 手势露出下层）需要自定义覆盖滑动 builder；返回实时透出下层面板则依赖
-    // 二级页路由自身 `opaque=false`（见 routes.dart 的 _CoverBackRoute），
-    // 二者配合才还原 Android 原生抽屉覆盖手感。
-    // 转场露出底色 = 根层真实底色（亮 #FFF4F4F6 / 暗 #FF222222），壁纸直接
-    // 覆盖在这层实色之上，不需要透明占位。
-    PageTransitionsTheme transitions(Color base) => PageTransitionsTheme(
+    // 安卓切换特效：纯平移转场。开启预测返回时用 PredictiveBackPageTransitionsBuilder——
+    // 非手势的打开/关闭回退到 M3 FadeForwards（新页右滑入 + 旧页左移的纯平移），
+    // 手势中则整屏缩放跟手（预测返回行程）；关闭预测返回时退化为纯 FadeForwards。
+    PageTransitionsTheme transitions() => PageTransitionsTheme(
           builders: {
-            TargetPlatform.android: CoverPageTransitionsBuilder(
-              backgroundColor: base,
-            ),
+            // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
+            // 置为透明让下方根层背景（自定义壁纸/默认底色）自然透出，消除背景闪烁。
+            TargetPlatform.android: predictiveBack
+                ? const PredictiveBackPageTransitionsBuilder(
+                    // 应用为透明 Scaffold + 根层背景（自定义壁纸/默认底色）垫底，
+                    // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
+                    // 置为透明让下方根层背景自然透出，消除背景闪烁。
+                    fallbackColor: Colors.transparent,
+                  )
+                : const FadeForwardsPageTransitionsBuilder(
+                    backgroundColor: Colors.transparent,
+                  ),
             TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
           },
         );
-    final lightTransitions = transitions(const Color(0xFFF4F4F6));
-    final darkTransitions = transitions(const Color(0xFF222222));
+    final lightTransitions = transitions();
+    final darkTransitions = transitions();
     final lightScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
     lightBaseScheme = lightScheme;
@@ -225,14 +235,22 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    _ensureThemes(accent);
+    _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
     // 自定义壁纸启用时，页面前景文字按「亮字/暗字」（前景样式）固定为亮色或暗色，
     // 让壁纸上的正文/标题/图标始终清晰可读，而非跟随主题色而看不清。
     ThemeData theme = _lightTheme!;
     ThemeData darkTheme = _darkTheme!;
     final cb = settings?.customBackground;
     if (cb?.active == true) {
-      final useLight = cb!.useLightForeground;
+      // 预缓存壁纸图片：抽屉覆盖转场的壁纸垫底复用同一 FileImage，提前解码
+      // 入缓存，切换瞬间即时显示壁纸，避免「约 1 秒先露原底再出壁纸」的闪烁。
+      final bgPath = cb!.imagePath;
+      if (bgPath.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          precacheImage(FileImage(File(bgPath)), this.context);
+        });
+      }
+      final useLight = cb.useLightForeground;
       final fg = useLight ? Colors.white : const Color(0xFF17181A);
       final fgVariant = useLight ? Colors.white70 : Colors.black54;
       // 仅改 colorScheme.onSurface 会让「未显式给 color 的裸 Text」仍读
@@ -328,6 +346,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               });
               // 全局壁纸层：置于 Navigator 之下，作为所有页面（主 Tab + 二级页）
               // 的统一底色。壁纸未启用时由 ColoredBox 提供原默认底色，视觉不变。
+              // ScrollOffsetCapture：全局捕获任意页面的竖直滚动，驱动 blur 预算
+              // 在滚动期间统一降级（覆盖主 Tab 与推入 root navigator 的二级页）。
               return Stack(
                 fit: StackFit.expand,
                 children: [
@@ -335,7 +355,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                     color: appSurfaceBg(context),
                     child: const CustomBackgroundLayer(),
                   ),
-                  child!,
+                  ScrollOffsetCapture(child: child!),
                 ],
               );
             },

@@ -25,6 +25,7 @@ import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
@@ -233,21 +234,37 @@ class _SearchPageState extends ConsumerState<SearchPage>
             right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title: TextField(
-                controller: _ctrl,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: _onChanged,
-                onSubmitted: (q) => _submitSearch(q),
-                decoration: InputDecoration(
-                  hintText: tr('搜索音乐、歌手、专辑、歌单'),
-                  border: InputBorder.none,
-                  suffixIcon: _ctrl.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: _clearInput,
-                        ),
+              // 固定对比色搜索框：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
+              title: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: contrastSearchColor(context),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                alignment: Alignment.centerLeft,
+                child: TextField(
+                  controller: _ctrl,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 15),
+                  onChanged: _onChanged,
+                  onSubmitted: (q) => _submitSearch(q),
+                  decoration: InputDecoration(
+                    hintText: tr('搜索音乐、歌手、专辑、歌单'),
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                    suffixIcon: _ctrl.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints:
+                                const BoxConstraints.tightFor(width: 32, height: 40),
+                            onPressed: _clearInput,
+                          ),
+                  ),
                 ),
               ),
               actions: [
@@ -331,6 +348,11 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final plugins = ref.read(pluginManagerProvider).sources;
     // 按用户拖拽排序展示（插件管理页顺序），未排序项用安装顺序兜底
     final enabled = sortPluginSources(plugins.where((p) => p.enabled).toList());
+    debugPrint('[searchSources] enabled plugins=${enabled.length}');
+    for (final p in enabled) {
+      debugPrint('[searchSources]   plugin=${p.name} format=${p.format} '
+          'sources=${p.sources.toList()} id=${p.id}');
+    }
     final items = <_SourceItem>[];
     for (final p in enabled) {
       if (p.format == PluginFormat.musicfree) {
@@ -472,13 +494,27 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
             child: GlassTopBar(
               leading: const BackButton(),
               // 结果页输入框只读：点击返回搜索页，不在结果页内联搜索。
-              title: TextField(
-                controller: _queryCtrl,
-                readOnly: true,
-                onTap: _goToSearchPage,
-                decoration: InputDecoration(
-                  hintText: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
-                  border: InputBorder.none,
+              // 固定对比色搜索框：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
+              title: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: contrastSearchColor(context),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                alignment: Alignment.centerLeft,
+                child: TextField(
+                  controller: _queryCtrl,
+                  readOnly: true,
+                  onTap: _goToSearchPage,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText:
+                        keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    border: InputBorder.none,
+                  ),
                 ),
               ),
               actions: [

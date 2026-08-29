@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +5,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 底栏与工具栏设置页：支持配置底栏位置（底部/侧边）、悬浮样式与液态玻璃。
@@ -153,46 +152,33 @@ class _GlassCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
-    final color = lowPerf
-        ? (isDark ? const Color(0xE0343438) : const Color(0xF7FFFFFF))
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.55));
-    final card = Container(
-      decoration: BoxDecoration(
-        color: color,
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 18,
+      lowPerf: lowPerf,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-            color: Colors.white.withValues(alpha: isDark ? 0.10 : 0.5)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            children[i],
-            if (i != children.length - 1)
-              Divider(
-                height: 1,
-                thickness: 1,
-                indent: 56,
-                color: scheme.onSurface.withValues(alpha: 0.06),
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              children[i],
+              if (i != children.length - 1)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 56,
+                  color: scheme.onSurface.withValues(alpha: 0.06),
+                ),
+            ],
           ],
-        ],
-      ),
-    );
-    if (lowPerf) return card;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: card,
+        ),
       ),
     );
   }

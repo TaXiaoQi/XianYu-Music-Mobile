@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart' show kBackMouseButton;
@@ -13,11 +14,13 @@ import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/glass_settings.dart';
+import '../widgets/blur_budget.dart';
 import '../widgets/app_toast.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart';
+import '../widgets/bilipai_glass.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
 
@@ -27,15 +30,25 @@ import '../i18n/i18n.dart';
 /// 弹窗、列表等需要避让它的地方统一引用此常量，改动底栏尺寸时只需改这里。
 const double kFloatingNavBarInset = 90;
 
+/// 横屏固定左缘侧栏宽度。内容区整体右移避让，避免侧栏遮挡根页面内容。
+const double kLandscapeRailWidth = 64;
+
+/// 全局横屏感知：由 AppShell 的 MediaQuery 检测写入，供各页面响应横屏布局。
+///
+/// 横屏时导航自动切换为侧边形态、无底部栏，页面底部只需为准占播放条留白，
+/// 侧边栏浮层不参与布局，故左缘由需要避让的页面自行判断。
+final isLandscapeProvider = StateProvider<bool>((ref) => false);
+
 /// 分支根页面需要的底部避让高度。
 ///
 /// - 悬浮式：底栏与播放条都是浮层（顶端到屏幕底部约 165px），页面留出 175px 保证末项完全露出。
 /// - 固定式：底栏由 `Scaffold` 收缩内容区，但播放条仍是浮层，
 ///   页面只需为播放条留白 (82px)。
-/// - 侧边栏：导航移到左侧，底部仅剩浮层播放条，页面同样只需留出 82px。
+/// - 侧边栏（含横屏自动切换）：导航移到侧边，底部仅剩浮层播放条，页面只需留出 82px。
 final navBarInsetProvider = Provider<double>((ref) {
+  final landscape = ref.watch(isLandscapeProvider);
   final s = ref.watch(settingsProvider).valueOrNull;
-  if (s?.navBarPosition == NavBarPosition.side) return 82;
+  if (landscape || s?.navBarPosition == NavBarPosition.side) return 82;
   final floating = s?.floatingNavBar ?? true;
   return floating ? 175 : 82;
 });
@@ -334,9 +347,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final floating = ref.read(
             settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
         true;
-    final side = ref.read(settingsProvider
-            .select((s) => s.valueOrNull?.navBarPosition)) ==
-        NavBarPosition.side;
+    // 形态检测并入横屏：竖屏↔横屏切换同样会改变底栏几何，需重置迷你条停靠位。
+    final screen = MediaQuery.maybeOf(context);
+    final landscape = screen == null ||
+        screen.size.width >= screen.size.height * 1.05;
+    final side = landscape ||
+        (ref.read(settingsProvider
+                .select((s) => s.valueOrNull?.navBarPosition)) ==
+            NavBarPosition.side);
     if ((_lastFloating != null && _lastFloating != floating) ||
         (_lastSide != null && _lastSide != side)) {
       _playerTop = null;
@@ -344,7 +362,35 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     }
     _lastFloating = floating;
     _lastSide = side;
+
+    // 横屏沉浸式全屏：一并隐藏系统状态栏与导航条，让界面满铺并越过摄像头挖孔区；
+    // 仅在地面方向变化时切换，避免反复设置系统 UI。
+    if (_lastImmersive != landscape) {
+      _lastImmersive = landscape;
+      _applyLandscapeImmersive(landscape);
+    }
   }
+
+  /// 横屏进入沉浸式全屏（无系统栏），竖屏还原显示状态栏/导航栏。
+  Future<void> _applyLandscapeImmersive(bool landscape) async {
+    try {
+      if (landscape) {
+        await SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.immersiveSticky);
+      } else {
+        // 还原系统栏：Android 12+ 为 edge-to-edge（透明状态栏），低版本强制显示系统栏。
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.manual,
+          overlays: SystemUiOverlay.values,
+        );
+      }
+    } catch (_) {
+      // 忽略：部分 ROM/仿真器可能不支持指定 UI 模式。
+    }
+  }
+
+  /// 最近一次是否已应用沉浸式全屏，避免方向未变时反复设置系统 UI。
+  bool _lastImmersive = false;
 
   bool _isPlayerDragging = false;
 
@@ -413,9 +459,25 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     final padding = MediaQuery.of(context).padding;
     final safeBottom = padding.bottom;
 
+    // 横屏判定：宽 > 高（含大屏/平板）。检测结果回写全局 provider，供各页面
+    // 响应横屏布局；值未变化时不写，避免无谓的 provider 通知。
+    final landscape = screenSize.width >= screenSize.height * 1.05;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final noti = ref.read(isLandscapeProvider.notifier);
+      if (noti.state != landscape) noti.state = landscape;
+    });
+
     final floating =
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
+
+    // 横屏使用摄像头区域：开启时壳内各页面不再为摄像头挖孔保留安全区，
+    // 内容可铺满到短边摄像头（迷你条避让仍用原始 padding，不受影响）。
+    final useCameraArea = landscape &&
+        ref.watch(
+            settingsProvider.select(
+                (s) => s.valueOrNull?.landscapeCameraArea ?? true));
 
     // 用「当前是否为根路径」而非 canPop 判断是否处于二级页：canPop 在整个返回
     // 过渡动画期间一直为 true（被退路由动画结束才从 _history 移除），会让底栏
@@ -428,10 +490,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
           initialLocation: i == widget.index,
         );
 
-    final isSide = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.navBarPosition)) ==
-        NavBarPosition.side;
+    // 横屏自动切换为侧边导航（复用「侧边栏模式」布局几何，隐藏底部栏）。
+    // 前提：横屏前必须先有被测量的 MediaQuery——本 State 作为壳层必然已完成首帧。
+    final isSide = landscape ||
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.navBarPosition)) ==
+            NavBarPosition.side);
 
+    // 侧边栏模式下的展开状态（横屏走固定左缘侧栏 [_LandscapeRail]，不使用此展开态）。
     final expanded = ref.watch(sideBarExpandedProvider);
 
     // 检测当前路由：全屏歌曲详情页 /player 时不隐藏迷你条（见下），
@@ -443,8 +509,27 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     // 否则位置变化会打断「底栏封面飞播放页」的飞行）；其余情况沿用 hidden 下沉。
     final miniBarLow = hiddenCount > 0 || (!_isRootPath && !isPlayerPage);
 
+    // 迷你条宽度：竖屏占满（两侧各 18）；横屏限宽停靠右缘，避免占满整宽。
+    final miniBarW = landscape
+        ? math.min(screenSize.width * 0.55, 520.0)
+        : (screenSize.width - 36.0);
+
+    // 挖孔屏避让：横屏沉浸时 `padding.left/right` 含摄像头切口，迷你条停靠须避开，
+    // 否则右缘探进挖孔会导致「底栏被摄像头遮住、显示不全」。
+    final leftCutout = landscape ? padding.left : 0.0;
+    final rightCutout = landscape ? padding.right : 0.0;
+
     // 默认定位坐标（不受软键盘影响，始终保持在底部稳定避让区）
-    final defaultLeft = 18.0;
+    late final double defaultLeft;
+    if (landscape) {
+      // 横屏尽量靠右停靠，但左不越过侧栏/左挖孔、右不撞进右挖孔。
+      final leftBound = math.max(leftCutout, kLandscapeRailWidth + 10);
+      final rightBound =
+          screenSize.width - miniBarW - (rightCutout > 0 ? rightCutout + 12 : 16);
+      defaultLeft = rightBound > leftBound ? rightBound : leftBound;
+    } else {
+      defaultLeft = 18.0;
+    }
     final defaultTop = isSide
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
@@ -487,7 +572,28 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     return Scaffold(
       body: Stack(
         children: [
-          widget.navigationShell,
+          // 横屏时左缘固定侧栏占位，内容整体右移避让；二级页（hidden）侧栏淡出，
+          // 内容不偏移以享受全宽。播放页是推入 root navigator 的独立路由，不受此影响。
+          // 滚动检测由 app.dart 根层 ScrollOffsetCapture 统一捕获，波浪扭曲已内聚到
+          // 迷你播放条/悬浮底栏的 AdaptiveGlass 自身负责液态玻璃渲染，
+          // 无需再整页包裹 LiquidWave 离屏捕获。
+          Padding(
+            // 横屏：左缘固定侧栏占位，内容右移避让；开关开启时不再为右侧
+            // 摄像头挖孔预留安全区（所有页面使用摄像头区域）。
+            padding: EdgeInsets.only(
+              left: landscape && !hidden ? kLandscapeRailWidth : 0,
+              right: (landscape && !useCameraArea) ? padding.right : 0,
+            ),
+            child: useCameraArea
+                // 抑制摄像头切口内边距：壳内各页面 SafeArea 不再为挖孔留安全区。
+                ? MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      padding: padding.copyWith(left: 0, right: 0),
+                    ),
+                    child: widget.navigationShell,
+                  )
+                : widget.navigationShell,
+          ),
 
           // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
           // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让
@@ -500,7 +606,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
             curve: Curves.easeOutCubic,
             left: actualLeft,
             top: actualTop,
-            width: screenSize.width - 36.0,
+            width: miniBarW,
             child: MiniPlayerBar(
               onPanStart: _onPlayerPanStart,
               onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
@@ -525,8 +631,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
             ),
           ),
 
-          // 侧边栏悬浮层
-          if (isSide)
+          // 侧边栏悬浮层（竖屏「侧边栏模式」用）
+          if (isSide && !landscape)
             _SideNavRail(
               index: widget.index,
               hidden: hidden,
@@ -535,6 +641,27 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
                 ref.read(sideBarExpandedProvider.notifier).state = !expanded;
               },
               onSelect: select,
+            ),
+
+          // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）
+          if (landscape)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: kLandscapeRailWidth,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                opacity: hidden ? 0.0 : 1.0,
+                child: IgnorePointer(
+                  ignoring: hidden,
+                  child: _LandscapeRail(
+                    index: widget.index,
+                    onSelect: select,
+                  ),
+                ),
+              ),
             ),
 
           // 悬浮底栏（仅在 4 个主 Tab 根页面展示，二级页面 hidden 时优雅淡出缩小隐去）
@@ -647,25 +774,33 @@ class _FixedNavBar extends ConsumerWidget {
     // 伪毛玻璃（液态/未开 默认）：半透明 + BackdropFilter 高斯模糊；
     // 低性能模式或关闭「毛玻璃」→ 高不透明度纯色回退（无模糊）。
     final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+        glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final fill = wallpaper
         ? glassControlFill
         : (solid
             ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
             : (isDark
-                ? const Color(0xCC222222)
-                : const Color(0xD9F7F7F9)));
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final glassFill =
+        solid ? fill : surfaceFillWithBudget(fill, budget);
     // 固定底栏顶部不再画横向分隔线（玻璃态的分隔条 / 实色态的 border）：
     // 迷你播放条停靠时正好落在底栏顶边，画线会在播放条底缘形成一条可见
     // 接缝，视觉上就像"播放条贴不住底栏、中间有空"。去掉后二者无缝贴合。
-    final barBox = Container(color: fill, child: bar);
+    final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
     }
     // 伪毛玻璃：半透明白/暗 + 高斯模糊（安卓原生磨砂质感），壁纸时更透。
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(
+          sigmaX: surfaceBlurSigma(
+              base: 14, budget: budget, type: BlurSurfaceType.bottomBar),
+          sigmaY: surfaceBlurSigma(
+              base: 14, budget: budget, type: BlurSurfaceType.bottomBar),
+        ),
         child: barBox,
       ),
     );
@@ -814,6 +949,8 @@ class _LiquidNavBar extends ConsumerWidget {
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
+    // 全局 blur 预算：滚动/转场时悬浮底栏玻璃降级。
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
     // 水平留 10px：滑动指示条与最左/最右 tab 让开，避免顶到玻璃圆角边界。
     final tabs = _SlidingNavBottom(
@@ -824,23 +961,44 @@ class _LiquidNavBar extends ConsumerWidget {
       },
     );
 
-    if (liquid) return _liquidGlass(context, ref, tabs);
-    return _frostedGlass(context, ref, tabs, lowPerf: lowPerf);
+    if (liquid) {
+      // 液态玻璃低档：不跑 shader，用伪液态毛玻璃伪造（透明底 + 淡模糊）。
+      if (liquidUseFrosted(ref)) {
+        return pseudoLiquidSurface(
+          context: context,
+          ref: ref,
+          radius: 999,
+          child: SizedBox(height: 70, child: tabs),
+          lowPerf: lowPerf,
+          surfaceType: BlurSurfaceType.bottomBar,
+          budget: budget,
+        );
+      }
+      return _liquidGlass(context, ref, tabs);
+    }
+    return _frostedGlass(context, ref, tabs,
+        lowPerf: lowPerf, budget: budget);
   }
 
-  /// 液态玻璃：shader 折射 + 高光，胶囊形状。
+  /// BiliPai 化液态玻璃：实时背景采样 + 滚动波浪扭曲 + 色差 + 轻量模糊，胶囊形状。
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final quality = liquidGlassQualitySetting(ref);
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     return glassBorder(
       context: context,
       radius: 30,
-      child: AdaptiveGlass(
-        // 胶囊 = 圆角矩形且圆角为高度一半。
-        // 不能用 LiquidOval：那是真椭圆，宽高比大时两端会被压成尖角。
-        shape: const LiquidRoundedRectangle(borderRadius: 30),
-        settings: liquidGlassSettings(isDark),
-        // 渲染档位走设置：低=minimal / 中=standard 均衡（默认）/ 高=premium 真折射。
-        quality: liquidGlassQualityFromRef(ref),
+      child: BiliPaiGlass(
+        radius: 30,
+        refract: bilipaiRefractOf(quality),
+        chroma: bilipaiChromaOf(quality),
+        blurSigma: surfaceBlurSigma(
+          base: 1.5,
+          budget: budget,
+          type: BlurSurfaceType.bottomBar,
+        ),
+        backgroundColor: bilipaiGlassTint(isDark),
+        specular: bilipaiSpecularOf(quality),
         child: SizedBox(height: 70, child: tabs),
       ),
     );
@@ -851,11 +1009,11 @@ class _LiquidNavBar extends ConsumerWidget {
   /// 规则：开启壁纸 → 半透明玻璃 + 高斯模糊（透出壁纸，与设置组件/播放条一致）；
   /// 低性能模式（或关闭壁纸）→ 标准半透明磨砂；低性能 → 高不透明度纯色。
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
-      {bool lowPerf = false}) {
+      {bool lowPerf = false, BlurBudget? budget}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final wallpaper = ref.watch(wallpaperActiveProvider);
     final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+        glassShouldUseSolid(ref, lowPerf: lowPerf);
     final bg = wallpaper
         ? glassControlFill
         : (solid
@@ -863,6 +1021,14 @@ class _LiquidNavBar extends ConsumerWidget {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
+    final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
+    final sigma = budget == null
+        ? 14.0
+        : surfaceBlurSigma(
+            base: 14,
+            budget: budget,
+            type: BlurSurfaceType.bottomBar,
+          );
     final border = wallpaper
         ? glassControlBorder
         : (isDark
@@ -871,7 +1037,7 @@ class _LiquidNavBar extends ConsumerWidget {
     final capsule = Container(
       height: 70,
       decoration: BoxDecoration(
-        color: bg,
+        color: fill,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
         boxShadow: [
@@ -888,8 +1054,143 @@ class _LiquidNavBar extends ConsumerWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: capsule,
+      ),
+    );
+  }
+}
+
+/// 横屏固定左缘侧栏：玻璃竖条 + 顶部三线 logo + 4 个主 Tab 竖排。
+///
+/// 横屏时取代底部/悬浮底栏，贴合屏幕左缘（内容区已右移避让）。
+/// 选中态用淡红色胶囊 + 主题色图标/文字，竖排布局充分利用横屏高度。
+class _LandscapeRail extends ConsumerWidget {
+  const _LandscapeRail({required this.index, required this.onSelect});
+
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final lowPerf = ref.watch(
+      settingsProvider.select(
+          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+    );
+    final wallpaper = ref.watch(wallpaperActiveProvider);
+    final solid =
+        glassShouldUseSolid(ref, lowPerf: lowPerf);
+
+    final bg = wallpaper
+        ? glassControlFill
+        : (solid
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.55)));
+    final border = wallpaper
+        ? glassControlBorder
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.32));
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    final fill = solid ? bg : surfaceFillWithBudget(bg, budget);
+    final sigma = surfaceBlurSigma(
+      base: 12,
+      budget: budget,
+      type: BlurSurfaceType.bottomBar,
+    );
+
+    final rail = SafeArea(
+      right: false,
+      child: SizedBox(
+        width: kLandscapeRailWidth,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: fill,
+            border: Border(right: BorderSide(color: border)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 14),
+              _ThreeBarsIcon(color: scheme.onSurface.withValues(alpha: 0.7)),
+              const SizedBox(height: 4),
+              const Spacer(),
+              for (var i = 0; i < bottomNavItems.length; i++)
+                _LandscapeTab(
+                  item: bottomNavItems[i],
+                  selected: i == index,
+                  onTap: () => onSelect(i),
+                ),
+              const SizedBox(height: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (solid) return rail;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: rail,
+      ),
+    );
+  }
+}
+
+class _LandscapeTab extends StatelessWidget {
+  const _LandscapeTab({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final BottomNavItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected
+        ? scheme.primary
+        : scheme.onSurfaceVariant.withValues(alpha: 0.55);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 3, 8, 3),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          width: 48,
+          height: 52,
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(item.icon, size: 22, color: color),
+              const SizedBox(height: 3),
+              Text(
+                navTitle(context, item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1203,6 +1504,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
+    // 全局 blur 预算：滚动/转场时侧栏面板玻璃降级（drawerOrSheet 档）。
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
     // 展开面板预估高度 (用于方向判断)
     const double approxExpandedH = 295.0;
@@ -1331,16 +1634,29 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
 
         Widget panelWidget;
         if (liquid) {
-          panelWidget = glassBorder(
-            context: context,
-            radius: 24,
-            child: AdaptiveGlass(
-              shape: const LiquidRoundedRectangle(borderRadius: 24),
-              settings: liquidGlassSettings(isDark),
-              quality: liquidGlassQualityFromRef(ref),
+          if (liquidUseFrosted(ref)) {
+            // 液态玻璃低档：伪液态毛玻璃面板（透明底 + 淡模糊），不跑 shader。
+            panelWidget = pseudoLiquidSurface(
+              context: context,
+              ref: ref,
+              radius: 24,
               child: SizedBox(width: panelWidth, child: panelBody),
-            ),
-          );
+              lowPerf: lowPerf,
+              surfaceType: BlurSurfaceType.drawerOrSheet,
+              budget: budget,
+            );
+          } else {
+            panelWidget = glassBorder(
+              context: context,
+              radius: 24,
+              child: AdaptiveGlass(
+                shape: const LiquidRoundedRectangle(borderRadius: 24),
+                settings: liquidGlassSettings(isDark),
+                quality: liquidGlassQualityFromRef(ref),
+                child: SizedBox(width: panelWidth, child: panelBody),
+              ),
+            );
+          }
         } else if (lowPerf) {
           // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
           panelWidget = Container(
@@ -1366,16 +1682,29 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             child: panelBody,
           );
         } else {
+          final panelBg = isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.white.withValues(alpha: 0.35);
+          final panelFill = surfaceFillWithBudget(panelBg, budget);
           panelWidget = ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              filter: ImageFilter.blur(
+                sigmaX: surfaceBlurSigma(
+                  base: 8 * frostedBlurScale(ref),
+                  budget: budget,
+                  type: BlurSurfaceType.drawerOrSheet,
+                ),
+                sigmaY: surfaceBlurSigma(
+                  base: 8 * frostedBlurScale(ref),
+                  budget: budget,
+                  type: BlurSurfaceType.drawerOrSheet,
+                ),
+              ),
               child: Container(
                 width: panelWidth,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : Colors.white.withValues(alpha: 0.35),
+                  color: panelFill,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: isDark

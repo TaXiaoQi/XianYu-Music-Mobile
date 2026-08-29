@@ -47,6 +47,16 @@ enum LiquidGlassQuality {
   high,
 }
 
+/// 毛玻璃（伪毛玻璃）模糊强度档位：
+/// strongest = 最强（当前默认，sigma 顶栏 16 / 播放条 10）
+/// medium = 中等（收敛模糊，减低 sigma 与铺底透明度）
+/// light = 轻度（近乎轻微磨砂，最低 sigma）。
+enum FrostedGlassLevel {
+  strongest,
+  medium,
+  light,
+}
+
 /// 判断是否应开启「动效降级」（性能模式生效）。
 /// 自动档按 CPU 核心数粗判，单核偏弱设备自动降级；手动档直接覆盖。
 bool performancePriority(AppSettings s) => switch (s.performanceMode) {
@@ -174,6 +184,7 @@ class AppSettings {
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
     this.frostedGlass = true,
+    this.frostedGlassLevel = FrostedGlassLevel.strongest,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
@@ -181,6 +192,7 @@ class AppSettings {
     this.streamCacheSizeMB = 500,
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = false,
+    this.floatingSearchBar = false,
     this.navBarPosition = NavBarPosition.bottom,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
     this.usbExclusiveOutput = false,
@@ -215,11 +227,14 @@ class AppSettings {
     this.floatingLyricsShowBackground = true,
     this.floatingLyricsHideWhenPaused = false,
     this.floatingLyricsHideInLandscape = false,
+    // 横屏时允许各页面使用摄像头(挖孔)区域，不再为其保留安全区。
+    this.landscapeCameraArea = true,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
     this.statusBarLyricsEnabled = false,
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
+    this.watchLinkageEnabled = true,
   });
 
   final double volume;
@@ -276,6 +291,9 @@ class AppSettings {
   /// 自定义壁纸启用时始终强制开启，保证壁纸下的玻璃透明度可见性。
   final bool frostedGlass;
 
+  /// 毛玻璃模糊强度档位（见 [FrostedGlassLevel]，默认最强）。
+  final FrostedGlassLevel frostedGlassLevel;
+
   /// 液态玻璃效果档位（见 [LiquidGlassQuality]）。
   final LiquidGlassQuality liquidGlassQuality;
 
@@ -292,6 +310,9 @@ class AppSettings {
 
   /// 底栏样式：true 为悬浮毛玻璃胶囊，false 为固定式底栏。
   final bool floatingNavBar;
+
+  /// 首页与我的页搜索框悬浮显示；开启液态玻璃时同步套用玻璃材质。
+  final bool floatingSearchBar;
 
   /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
   final NavBarPosition navBarPosition;
@@ -388,6 +409,10 @@ class AppSettings {
   /// 横屏时隐藏悬浮歌词窗。
   final bool floatingLyricsHideInLandscape;
 
+  /// 横屏时允许各页面使用摄像头(挖孔)区域：开启后页面不再为摄像头保留
+  /// 安全区，内容可铺满到短边摄像头（窗口侧仍需系统允许绘制进挖孔）。
+  final bool landscapeCameraArea;
+
   /// 悬浮歌词窗宽度占屏百分比（40-100）。
   final int floatingLyricsWidthPercent;
 
@@ -402,6 +427,9 @@ class AppSettings {
 
   /// 悬浮歌词窗位置 Y。
   final int floatingLyricsY;
+
+  /// 手表联动总开关：开启后在登录且连接手表时上报播放信息并执行手表控制命令。
+  final bool watchLinkageEnabled;
 
   AppSettings copyWith({
     double? volume,
@@ -434,6 +462,7 @@ class AppSettings {
     bool? liquidGlass,
     bool? playerLiquidGlass,
     bool? frostedGlass,
+    FrostedGlassLevel? frostedGlassLevel,
     LiquidGlassQuality? liquidGlassQuality,
     PerformanceMode? performanceMode,
     int? hapticStrength,
@@ -441,6 +470,7 @@ class AppSettings {
     int? streamCacheSizeMB,
     List<String>? scanFormats,
     bool? floatingNavBar,
+    bool? floatingSearchBar,
     NavBarPosition? navBarPosition,
     SideBarExpandDirection? sideBarExpandDirection,
     bool? usbExclusiveOutput,
@@ -471,11 +501,13 @@ class AppSettings {
     bool? floatingLyricsShowBackground,
     bool? floatingLyricsHideWhenPaused,
     bool? floatingLyricsHideInLandscape,
+    bool? landscapeCameraArea,
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
     bool? statusBarLyricsEnabled,
     int? floatingLyricsX,
     int? floatingLyricsY,
+    bool? watchLinkageEnabled,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -511,6 +543,7 @@ class AppSettings {
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       frostedGlass: frostedGlass ?? this.frostedGlass,
+      frostedGlassLevel: frostedGlassLevel ?? this.frostedGlassLevel,
       liquidGlassQuality:
           liquidGlassQuality ?? this.liquidGlassQuality,
       performanceMode: performanceMode ?? this.performanceMode,
@@ -519,6 +552,7 @@ class AppSettings {
       streamCacheSizeMB: streamCacheSizeMB ?? this.streamCacheSizeMB,
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
+      floatingSearchBar: floatingSearchBar ?? this.floatingSearchBar,
       navBarPosition: navBarPosition ?? this.navBarPosition,
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
@@ -568,6 +602,8 @@ class AppSettings {
           floatingLyricsHideWhenPaused ?? this.floatingLyricsHideWhenPaused,
       floatingLyricsHideInLandscape:
           floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
+      landscapeCameraArea:
+          landscapeCameraArea ?? this.landscapeCameraArea,
       floatingLyricsWidthPercent:
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
       floatingLyricsUseLyricFont:
@@ -576,6 +612,7 @@ class AppSettings {
           statusBarLyricsEnabled ?? this.statusBarLyricsEnabled,
       floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
       floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
+      watchLinkageEnabled: watchLinkageEnabled ?? this.watchLinkageEnabled,
     );
   }
 }
@@ -625,6 +662,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
       liquidGlass: liquidGlass,
       frostedGlass: frostedGlass,
+      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'strongest'),
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
       liquidGlassQuality:
           _lgqFromString(prefs.getString('liquidGlassQuality') ?? 'medium'),
@@ -634,6 +672,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
+      floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
       navBarPosition:
           (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
               ? NavBarPosition.side
@@ -688,6 +727,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('floatingLyricsHideWhenPaused') ?? false,
       floatingLyricsHideInLandscape:
           prefs.getBool('floatingLyricsHideInLandscape') ?? false,
+      landscapeCameraArea: prefs.getBool('landscapeCameraArea') ?? true,
       floatingLyricsWidthPercent:
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,
       floatingLyricsUseLyricFont:
@@ -696,6 +736,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('statusBarLyricsEnabled') ?? false,
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
+      watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,
       customBackground: CustomBackground(
         enabled: prefs.getBool('customBackgroundEnabled') ?? false,
         imagePath: prefs.getString('customBackgroundImagePath') ?? '',
@@ -739,6 +780,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         'low' => LiquidGlassQuality.low,
         'high' => LiquidGlassQuality.high,
         _ => LiquidGlassQuality.medium,
+      };
+
+  FrostedGlassLevel _fglFromString(String v) => switch (v) {
+        'light' => FrostedGlassLevel.light,
+        'medium' => FrostedGlassLevel.medium,
+        _ => FrostedGlassLevel.strongest,
       };
 
   ThemeModePreference _themeFromInt(int v) {
@@ -788,6 +835,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
       prefs.setBool('liquidGlass', next.liquidGlass),
       prefs.setBool('frostedGlass', next.frostedGlass),
+      prefs.setString('frostedGlassLevel', next.frostedGlassLevel.name),
       prefs.setBool('playerLiquidGlass', next.playerLiquidGlass),
       prefs.setString('liquidGlassQuality', next.liquidGlassQuality.name),
       prefs.setString('performanceMode', next.performanceMode.name),
@@ -796,6 +844,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('streamCacheSizeMB', next.streamCacheSizeMB),
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
+      prefs.setBool('floatingSearchBar', next.floatingSearchBar),
       prefs.setString('navBarPosition', next.navBarPosition.name),
       prefs.setString(
           'sideBarExpandDirection', next.sideBarExpandDirection.name),
@@ -834,11 +883,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           'floatingLyricsHideWhenPaused', next.floatingLyricsHideWhenPaused),
       prefs.setBool(
           'floatingLyricsHideInLandscape', next.floatingLyricsHideInLandscape),
+      prefs.setBool('landscapeCameraArea', next.landscapeCameraArea),
       prefs.setInt('floatingLyricsWidthPercent', next.floatingLyricsWidthPercent),
       prefs.setBool('floatingLyricsUseLyricFont', next.floatingLyricsUseLyricFont),
       prefs.setBool('statusBarLyricsEnabled', next.statusBarLyricsEnabled),
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
+      prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
       prefs.setBool('customBackgroundEnabled', next.customBackground.enabled),
       prefs.setString('customBackgroundImagePath', next.customBackground.imagePath),
       prefs.setInt('customBackgroundBlur', next.customBackground.blur),
@@ -854,6 +905,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setVolume(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volume: v));
   Future<void> setPlayMode(int m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playMode: m));
   Future<void> setLastTab(int t) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lastTab: t));
+  Future<void> setWatchLinkageEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkageEnabled: v));
   Future<void> setKeepScreenOn(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepScreenOn: v));
   Future<void> setEnablePredictiveBack(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enablePredictiveBack: v));
   Future<void> setThemeMode(ThemeModePreference m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(themeMode: m));
@@ -879,19 +931,35 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ??
-          const AppSettings())
+        const AppSettings())
       .copyWith(
     liquidGlass: v,
     // 打开液态玻璃时同步打开悬浮底栏（液态玻璃材质作用于悬浮底栏）；
     // 关闭液态玻璃不联动，保留用户当前的底栏样式。
     floatingNavBar: v ? true : null,
+    // 毛玻璃与液态玻璃全局互斥：开液态关毛玻璃；关液态恢复毛玻璃（壁纸下
+    // 仍由壁纸强制开启，互斥在壁纸模式由渲染层保证显式开启）。
+    frostedGlass: v ? false : true,
+    playerLiquidGlass: v ? true : false,
   ));
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
         const AppSettings())
-      .copyWith(playerLiquidGlass: v));
+      .copyWith(
+    playerLiquidGlass: v,
+    // 与毛玻璃互斥：开播放页液态关毛玻璃；关则恢复毛玻璃。
+    frostedGlass: v ? false : true,
+  ));
   Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
         const AppSettings())
-      .copyWith(frostedGlass: v));
+      .copyWith(
+    frostedGlass: v,
+    // 毛玻璃与液态玻璃是全局互斥材质：开毛玻璃时联动关闭液态玻璃（含播放页）。
+    liquidGlass: v ? false : null,
+    playerLiquidGlass: v ? false : null,
+  ));
+  Future<void> setFrostedGlassLevel(FrostedGlassLevel l) => _save(
+      (state.valueOrNull ?? const AppSettings())
+          .copyWith(frostedGlassLevel: l));
   Future<void> setLiquidGlassQuality(LiquidGlassQuality q) => _save(
       (state.valueOrNull ?? const AppSettings())
           .copyWith(liquidGlassQuality: q));
@@ -913,6 +981,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         floatingNavBar: v,
         liquidGlass: v ? (state.valueOrNull?.liquidGlass ?? false) : false,
       ));
+  Future<void> setFloatingSearchBar(bool v) => _save(
+      (state.valueOrNull ?? const AppSettings())
+          .copyWith(floatingSearchBar: v));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
   Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));
@@ -945,12 +1016,21 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setFloatingLyricsShowBackground(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsShowBackground: v));
   Future<void> setFloatingLyricsHideWhenPaused(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsHideWhenPaused: v));
   Future<void> setFloatingLyricsHideInLandscape(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsHideInLandscape: v));
+  Future<void> setLandscapeCameraArea(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(landscapeCameraArea: v));
   Future<void> setFloatingLyricsWidthPercent(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsWidthPercent: v));
   Future<void> setFloatingLyricsUseLyricFont(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsUseLyricFont: v));
   Future<void> setFloatingLyricsPosition(int x, int y) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsX: x, floatingLyricsY: y));
 
   /// 写入自定义壁纸背景。
-  Future<void> setCustomBackground(CustomBackground v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(customBackground: v));
+  Future<void> setCustomBackground(CustomBackground v) => _save(
+      (state.valueOrNull ?? const AppSettings()).copyWith(customBackground: v,
+      // 壁纸启用后强制开启毛玻璃：否则透明玻璃在壁纸上会糊成纯色。
+      // 关闭壁纸（none）时保持原毛玻璃状态（含关闭）。
+      frostedGlass: v.enabled ? true : null,
+      // 壁纸与液态玻璃冲突时自动切回毛玻璃（介质互斥，壁纸需透明玻璃）。
+      liquidGlass: v.enabled ? false : null,
+      playerLiquidGlass: v.enabled ? false : null,
+    ));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

@@ -5,9 +5,11 @@ import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -49,6 +51,22 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
+        // 开启挖孔(cutout)窗口模式：允许 UI/背景绘制进摄像头区域。
+        // 全程沉浸全屏（含横屏）时若不开此模式，Flutter 渲染会被限制在
+        // 摄像头清除安全区之外，挖孔那条只能留黑/被截断，表现为「摄像头位置不可显示 UI」。
+        // 这属于窗口布局模式，并非权限授权。API 30+ 用 ALWAYS（任意边均可绘制进挖孔），
+        // 28-29 回退 SHORT_EDGES（仅短边，横屏摄像头即落在短边）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         // Android 15+ 组件选择面板「生成的预览」（幂等 + 限速重试）。
         WidgetShared.ensurePreviewGen(this)
         // 冷启动：Flutter 的 MethodChannel handler 尚未注册，若此时走 onDeepLink

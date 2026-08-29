@@ -14,7 +14,10 @@ import '../../src/i18n/i18n.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
 class AboutPage extends ConsumerStatefulWidget {
-  const AboutPage({super.key});
+  const AboutPage({super.key, this.embedded = false});
+
+  /// 横屏嵌入 mode：由 master-detail 右侧薄顶栏接管标题，隐藏自带顶栏与顶部避让。
+  final bool embedded;
 
   @override
   ConsumerState<AboutPage> createState() => _AboutPageState();
@@ -103,7 +106,8 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+                top: widget.embedded ? 0 : GlassTopBar.height(context)),
             child: ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -232,15 +236,16 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         ],
       ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title:   Text(tr('关于')),
+          if (!widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title:   Text(tr('关于')),
+              ),
             ),
-          ),
         ],
       ),
     );

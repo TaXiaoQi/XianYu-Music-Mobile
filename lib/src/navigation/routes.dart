@@ -4,9 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
 import '../core/application_logger.dart';
+import '../auth/auth_provider.dart';
 import '../widgets/predictive_back_transitions.dart';
 import '../widgets/predictive_cover_return.dart';
 import '../widgets/predictive_back_tab_switch.dart';
+import '../widgets/blur_budget.dart';
+import '../widgets/custom_background.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 import '../../pages/home/home_page.dart';
@@ -36,6 +39,8 @@ import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
+import '../../pages/scan/scan_page.dart';
+import '../../pages/scan/tv_login_confirm_page.dart';
 import '../../pages/deeplink/song_share_bridge.dart';
 import '../../pages/debug/debug_page.dart';
 import 'shell.dart';
@@ -45,7 +50,8 @@ import '../i18n/i18n.dart';
 final appNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
-  observers: [AppLogRouteObserver()],
+  // TransitionTracker：push/pop 时标记全局转场，供 blur 预算在转场窗口降级。
+  observers: [AppLogRouteObserver(), TransitionTracker()],
   initialLocation: '/home',
   routes: [
     StatefulShellRoute(
@@ -64,7 +70,8 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (context, state) => const HomePage(),
+              builder: (context, state) =>
+                  const AppPageBackground(child: HomePage()),
             ),
           ],
         ),
@@ -72,38 +79,27 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/mine',
-              builder: (context, state) => const MinePage(),
+              builder: (context, state) =>
+                  const AppPageBackground(child: MinePage()),
             ),
           ],
         ),
       ],
     ),
     // 设置页（从「我的」页菜单与首页顶栏进入，二级推入页）。
-    GoRoute(
-      path: '/settings',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const SettingsPage(),
-        key: state.pageKey,
-      ),
-    ),
+GoRoute(
+  path: '/settings',
+  builder: (context, state) => const SettingsPage(),
+),
     // 音效页（原底部导航项，现为二级推入页，从传统播放页「音效」入口进入）。
     GoRoute(
       path: '/effects',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const EffectsPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const EffectsPage(),
     ),
     // 搜索页（从主页搜索栏进入），搜索结果页另用独立路由承载迷你播放条。
     GoRoute(
       path: '/search',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const SearchPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const SearchPage(),
     ),
     // 搜索结果页（搜索页提交后进入，独立路由以承载迷你播放条）。
     GoRoute(
@@ -132,6 +128,30 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverBackPage(
         context,
         (_) => const RecognizePage(),
+        key: state.pageKey,
+      ),
+    ),
+    // 扫码登录（从首页标题栏右侧扫码入口进入，扫描桌面端二维码）。
+    GoRoute(
+      path: '/scan',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const ScanPage(),
+        key: state.pageKey,
+      ),
+    ),
+    // 扫码确认登录（移动端扫到桌面端二维码后进入确认页）。
+    GoRoute(
+      path: '/tv-login-confirm',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) {
+          final extra = state.extra;
+          final code = (extra is Map ? extra['code'] : null) as String? ?? '';
+          final info =
+              (extra is Map ? extra['info'] : null) as TvLoginScanInfo?;
+          return TvLoginConfirmPage(code: code, info: info ?? const TvLoginScanInfo());
+        },
         key: state.pageKey,
       ),
     ),
@@ -166,80 +186,48 @@ final appRouter = GoRouter(
     // 账号页（从「我的」页进入）。
     GoRoute(
       path: '/account',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AccountPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const AccountPage(),
     ),
     // 账号设置页（从设置导航页进入）。需注册在 /settings/:category 之前，
     // 否则会被分类路由捕获。
     GoRoute(
       path: '/settings/account',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AccountSettingsPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const AccountSettingsPage(),
     ),
     // 设置分类详情页（从设置导航页进入）。压在根 Navigator 上，
     // 避免 StatefulShellBranch 嵌套 Navigator 导致预测返回动画失效。
     GoRoute(
       path: '/settings/:category',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => SettingsCategoryPage(
-          category: SettingsCategory.fromPath(
-            state.pathParameters['category'] ?? 'general',
-          ),
+      builder: (context, state) => SettingsCategoryPage(
+        category: SettingsCategory.fromPath(
+          state.pathParameters['category'] ?? 'general',
         ),
-        key: state.pageKey,
       ),
     ),
     // 意见反馈页（从设置页进入）。
     GoRoute(
       path: '/feedback',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const FeedbackPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const FeedbackPage(),
     ),
     // 关于页（从设置页进入）。
     GoRoute(
       path: '/about',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AboutPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const AboutPage(),
     ),
     // 调试页（关于页版本号连点 5 次进入）。
     GoRoute(
       path: '/debug',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const DebugPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const DebugPage(),
     ),
     // 听歌排行榜（从设置页进入）。
     GoRoute(
       path: '/leaderboard',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const LeaderboardPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const LeaderboardPage(),
     ),
     // 插件管理（从设置页进入）。
     GoRoute(
       path: '/plugin',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const PluginPage(),
-        key: state.pageKey,
-      ),
+      builder: (context, state) => const PluginPage(),
     ),
     // 我的歌单（从设置页进入）。
     GoRoute(
@@ -432,7 +420,7 @@ bool _enablePredictiveBack(BuildContext context) =>
         ?.enablePredictiveBack ??
     true;
 
-/// 设置链路等普通二级页用抽屉覆盖路由（无封面回拨）。
+/// 设置链路等普通二级页的纯平移路由（无封面回拨）。
 Page<void> _coverPage(
   BuildContext context,
   WidgetBuilder builder, {
@@ -513,7 +501,8 @@ class _CoverRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
   ) {
     // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
-    return builder(context);
+    // 抽屉+壁纸模式下，页面直接烘焙壁纸为自身底色，成为不透明页，切换全程稳定。
+    return AppPageBackground(child: builder(context));
   }
 
   @override
@@ -523,35 +512,32 @@ class _CoverRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 始终挂载预测返回手势认领；非手势走覆盖滑动。
+    // 始终挂载预测返回手势认领；非手势走 FadeForwards 纯平移。
     return PredictiveBackGestureDetector(
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
         if (popGestureInProgress) {
-          return PredictiveBackSharedElementPageTransition(
-            animation: animation,
-            phase: phase,
-            secondaryAnimation: secondaryAnimation,
-            startBackEvent: startBackEvent,
-            currentBackEvent: currentBackEvent,
-            child: child,
+          // 预测返回缩放手势：透明页缩放会露出本路由透底层，同样铺壁纸/实色
+          // 垫底，避免壁纸模式下缩放过程透见下层「穿模」。
+          return TransitionBackdrop(
+            child: PredictiveBackSharedElementPageTransition(
+              animation: animation,
+              phase: phase,
+              secondaryAnimation: secondaryAnimation,
+              startBackEvent: startBackEvent,
+              currentBackEvent: currentBackEvent,
+              child: child,
+            ),
           );
         }
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        // 抽屉覆盖：内容面板从右滑入盖住旧页。路由为 opaque=false，动画期间
-        // Navigator 实时绘制下层真实页面（自带底色），返回时下层跟随出现，
-        // 呈现「主页切换 tab」那种下层联动观感。不再手铺全屏底色——那会盖住
-        // 下层，导致下层要等新页完全退场才显示。
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
+        // 纯平移：官方 FadeForwards（Android U 水平转场），新页右滑入 + 旧页
+        // 同向左移，观感与普通二级页一致。
+        return const FadeForwardsPageTransitionsBuilder().buildTransitions(
+          this,
+          context,
+          animation,
+          secondaryAnimation,
+          child,
         );
       },
     );
@@ -639,20 +625,22 @@ class _PlayerCoverRoute extends PageRoute<void> {
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
         if (popGestureInProgress) {
-          return Stack(
-            children: [
-              PredictiveBackSharedElementPageTransition(
-                animation: animation,
-                phase: phase,
-                secondaryAnimation: secondaryAnimation,
-                startBackEvent: startBackEvent,
-                currentBackEvent: currentBackEvent,
-                child: child,
-              ),
-              // 预测返回手势中叠加「封面飞回播放条」：随手指进度把大封面缩向
-              // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。
-              PredictiveCoverReturnView(animation: animation),
-            ],
+          return TransitionBackdrop(
+            child: Stack(
+              children: [
+                PredictiveBackSharedElementPageTransition(
+                  animation: animation,
+                  phase: phase,
+                  secondaryAnimation: secondaryAnimation,
+                  startBackEvent: startBackEvent,
+                  currentBackEvent: currentBackEvent,
+                  child: child,
+                ),
+                // 预测返回手势中叠加「封面飞回播放条」：随手指进度把大封面缩向
+                // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。
+                PredictiveCoverReturnView(animation: animation),
+              ],
+            ),
           );
         }
         final curved = CurvedAnimation(
@@ -662,14 +650,16 @@ class _PlayerCoverRoute extends PageRoute<void> {
         );
         // 上滑覆盖 + 淡入淡出：打开时淡入上滑，收回时下移渐隐，
         // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
+        return TransitionBackdrop(
+          child: FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
           ),
         );
       },
@@ -740,7 +730,8 @@ class _CoverBackRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
   ) {
     // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
-    return builder(context);
+    // 抽屉+壁纸模式下，页面直接烘焙壁纸为自身底色，成为不透明页，切换全程稳定。
+    return AppPageBackground(child: builder(context));
   }
 
   @override
@@ -757,34 +748,31 @@ class _CoverBackRoute extends PageRoute<void> {
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
         if (popGestureInProgress) {
-          return Stack(
-            children: [
-              PredictiveBackSharedElementPageTransition(
-                animation: animation,
-                phase: phase,
-                secondaryAnimation: secondaryAnimation,
-                startBackEvent: startBackEvent,
-                currentBackEvent: currentBackEvent,
-                child: child,
-              ),
-              // 预测返回手势中叠加「封面飞回播放条」。
-              PredictiveCoverReturnView(animation: animation),
-            ],
+          return TransitionBackdrop(
+            child: Stack(
+              children: [
+                PredictiveBackSharedElementPageTransition(
+                  animation: animation,
+                  phase: phase,
+                  secondaryAnimation: secondaryAnimation,
+                  startBackEvent: startBackEvent,
+                  currentBackEvent: currentBackEvent,
+                  child: child,
+                ),
+                // 预测返回手势中叠加「封面飞回播放条」。
+                PredictiveCoverReturnView(animation: animation),
+              ],
+            ),
           );
         }
-        // 覆盖式滑动：内容面板从右滑入盖住旧页。路由为 opaque=false，动画期间
-        // Navigator 实时绘制下层真实页面，返回时下层跟随出现。
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
+        // 纯平移：官方 FadeForwards（Android U 水平转场），新页右滑入 + 旧页
+        // 同向左移，观感与普通二级页一致。
+        return const FadeForwardsPageTransitionsBuilder().buildTransitions(
+          this,
+          context,
+          animation,
+          secondaryAnimation,
+          child,
         );
       },
     );

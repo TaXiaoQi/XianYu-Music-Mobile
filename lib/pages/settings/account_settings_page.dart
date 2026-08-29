@@ -11,6 +11,7 @@ import '../../src/rust/api.dart' as rust;
 import '../../src/sync/sync_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/i18n/i18n.dart';
@@ -24,7 +25,9 @@ import '../../src/i18n/i18n.dart';
 /// - 手动同步（歌单/收藏/插件/设置 上传与下载）
 /// - 自动同步（定时增量同步开关与间隔）
 class AccountSettingsPage extends ConsumerStatefulWidget {
-  const AccountSettingsPage({super.key});
+  const AccountSettingsPage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<AccountSettingsPage> createState() =>
@@ -59,6 +62,42 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
   Widget build(BuildContext context) {
     // 仅订阅 user 字段：loading/error/sessionExpired 等变化不重建整页。
     final user = ref.watch(authProvider.select((s) => s.user));
+
+    // 设置体与顶栏解耦：全屏页与横屏嵌入态（[widget.embedded]）共用同一列表内容。
+    final items = <Widget>[
+      _sectionTitle(context, tr('账号状态')),
+      _AccountStatusCard(
+        user: user,
+        onManage: () => context.push('/account'),
+        onLogout: user != null ? _confirmLogout : null,
+      ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, tr('服务端设置')),
+      const _ServerConfigCard(),
+      const SizedBox(height: 24),
+      _sectionTitle(context, tr('上传')),
+      _UploadConfigCard(),
+      const SizedBox(height: 24),
+      if (user != null) ...[
+        _sectionTitle(context, tr('手动同步')),
+        _ManualSyncCard(),
+        const SizedBox(height: 24),
+      ],
+      if (user != null) ...[
+        _sectionTitle(context, tr('自动同步')),
+        _AutoSyncCard(),
+        const SizedBox(height: 28),
+      ],
+    ];
+
+    if (widget.embedded) {
+      // 横屏 master-detail 嵌入态：无顶栏/背景，仅渲染设置体。
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        children: items,
+      );
+    }
+
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -72,40 +111,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
               16,
               40 + MediaQuery.of(context).padding.bottom,
             ),
-            children: [
-              // 1. 账号状态
-              _sectionTitle(context, tr('账号状态')),
-              _AccountStatusCard(
-                user: user,
-                onManage: () => context.push('/account'),
-                onLogout: user != null ? _confirmLogout : null,
-              ),
-              const SizedBox(height: 24),
-
-              // 2. 服务端设置
-              _sectionTitle(context, tr('服务端设置')),
-              const _ServerConfigCard(),
-              const SizedBox(height: 24),
-
-              // 3. 上传
-              _sectionTitle(context, tr('上传')),
-              _UploadConfigCard(),
-              const SizedBox(height: 24),
-
-              // 4. 手动同步
-              if (user != null) ...[
-                _sectionTitle(context, tr('手动同步')),
-                _ManualSyncCard(),
-                const SizedBox(height: 24),
-              ],
-
-              // 5. 自动同步
-              if (user != null) ...[
-                _sectionTitle(context, tr('自动同步')),
-                _AutoSyncCard(),
-                const SizedBox(height: 28),
-              ],
-            ],
+            children: items,
           ),
           Positioned(
             top: 0,
@@ -154,20 +160,15 @@ class _AccountStatusCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final isLoggedIn = user != null;
     final fallbackChar = isLoggedIn && user!.nickname.isNotEmpty
         ? String.fromCharCode(user!.nickname.runes.first)
         : '?';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
-        borderRadius: BorderRadius.circular(16),
-        border: glass
-            ? Border.all(color: glassControlBorder)
-            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 16,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -392,19 +393,15 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
-    return Container(
-      decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
-        borderRadius: BorderRadius.circular(16),
-        border: glass
-            ? Border.all(color: glassControlBorder)
-            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           _label(context, tr('服务器 API')),
           const SizedBox(height: 6),
           TextField(
@@ -473,6 +470,7 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -660,7 +658,6 @@ class _GlassCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
 
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
@@ -678,14 +675,11 @@ class _GlassCard extends ConsumerWidget {
       }
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: glass ? glassControlFill : appCardColor(context),
-        borderRadius: BorderRadius.circular(16),
-        border: glass
-            ? Border.all(color: glassControlBorder)
-            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
+    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 16,
       child: Column(children: items),
     );
   }

@@ -18,6 +18,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
@@ -1178,7 +1179,8 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
 
 /// 底部圆角面板的伪毛玻璃包装：开启时叠一层透明 + 高斯模糊（透出壁纸草图），
 /// 关闭时原样返回子组件（保持不透明实底）。圆角与面板顶部两角对齐。
-class _FrostedSheet extends StatelessWidget {
+/// 接入全局 blur 预算：滚动/转场时面板玻璃降级（drawerOrSheet 档）。
+class _FrostedSheet extends ConsumerWidget {
   const _FrostedSheet({
     required this.enabled,
     required this.radius,
@@ -1190,15 +1192,21 @@ class _FrostedSheet extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (!enabled) return child;
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
+    final sigma = surfaceBlurSigma(
+      base: 12,
+      budget: budget,
+      type: BlurSurfaceType.drawerOrSheet,
+    );
     return ClipRRect(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(radius),
         topRight: Radius.circular(radius),
       ),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: child,
       ),
     );

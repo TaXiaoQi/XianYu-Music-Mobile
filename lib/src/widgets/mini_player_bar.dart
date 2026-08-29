@@ -4,11 +4,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/settings.dart';
 import '../core/app_colors.dart';
 import '../player/player_provider.dart';
+import 'bilipai_glass.dart';
+import 'blur_budget.dart';
 import 'cover_hero.dart';
 import 'cover_image.dart';
 import 'flying_cover.dart';
@@ -298,6 +299,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
+    // 全局 blur 预算：滚动/转场时迷你条玻璃降级（sigma 缩放 + 铺底补偿）。
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
     final cover = _RotatingDisc(
       key: _coverKey,
@@ -396,8 +399,19 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onTap: () => context.push('/player'),
       behavior: HitTestBehavior.opaque,
       child: liquid
-          ? _liquidSurface(context, content)
-          : _frostedSurface(context, content, lowPerf: lowPerf),
+          ? (liquidUseFrosted(ref)
+              ? pseudoLiquidSurface(
+                  context: context,
+                  ref: ref,
+                  radius: 999,
+                  child: content,
+                  lowPerf: lowPerf,
+                  surfaceType: BlurSurfaceType.bottomBar,
+                  budget: budget,
+                )
+              : _liquidSurface(context, content))
+          : _frostedSurface(context, content,
+              lowPerf: lowPerf, budget: budget),
     );
 
     // 内建定位模式（页面内嵌播放条，未传 onPanUpdate）：自己返回 Stack + Positioned，
@@ -436,18 +450,25 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return bar;
   }
 
-  /// 液态玻璃表面：与底栏同一套参数，保证两者观感一致。
+  /// BiliPai 化液态玻璃表面：与底栏同一套参数，保证两者观感一致。
   Widget _liquidSurface(BuildContext context, Widget content) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final quality = liquidGlassQualitySetting(ref);
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     return glassBorder(
       context: context,
       radius: 29,
-      child: AdaptiveGlass(
-        // 高 58，圆角取一半成胶囊。
-        shape: const LiquidRoundedRectangle(borderRadius: 29),
-        settings: liquidGlassSettings(isDark),
-        // 渲染档位走设置：低=minimal 最省 / 中=standard 均衡（默认）/ 高=premium 真折射。
-        quality: liquidGlassQualityFromRef(ref),
+      child: BiliPaiGlass(
+        radius: 29,
+        refract: bilipaiRefractOf(quality),
+        chroma: bilipaiChromaOf(quality),
+        blurSigma: surfaceBlurSigma(
+          base: 1.5,
+          budget: budget,
+          type: BlurSurfaceType.bottomBar,
+        ),
+        backgroundColor: bilipaiGlassTint(isDark),
+        specular: bilipaiSpecularOf(quality),
         child: SizedBox(height: 58, child: content),
       ),
     );
@@ -455,14 +476,16 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
   /// 伪毛玻璃表面：液态玻璃关闭时使用。
   /// 透明 + 高斯模糊；低性能模式 → 高不透明度纯色回退（无模糊）。
+  /// [budget] 传入时按全局 blur 预算缩放 sigma、铺底透明度补偿。
   Widget _frostedSurface(BuildContext context,
       Widget content, {
-      bool lowPerf = false}) {
+      bool lowPerf = false,
+      BlurBudget? budget}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // 开启壁纸 → 半透明玻璃透出壁纸；否则关白底标准磨砂；关闭毛玻璃/低性能 → 纯色。
     final wallpaper = ref.watch(wallpaperActiveProvider);
     final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf, wallpaper: wallpaper);
+        glassShouldUseSolid(ref, lowPerf: lowPerf);
     final bg = wallpaper
         ? glassControlFill
         : (solid
@@ -475,10 +498,18 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         : (isDark
             ? Colors.white.withValues(alpha: 0.12)
             : Colors.white.withValues(alpha: 0.40));
+    final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
+    final sigma = budget == null
+        ? 10.0 * frostedBlurScale(ref)
+        : surfaceBlurSigma(
+            base: 10 * frostedBlurScale(ref),
+            budget: budget,
+            type: BlurSurfaceType.bottomBar,
+          );
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(
-        color: bg,
+        color: fill,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
         boxShadow: [
@@ -495,7 +526,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: surface,
       ),
     );

@@ -18,7 +18,10 @@ import '../../src/i18n/i18n.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
-  const FeedbackPage({super.key});
+  const FeedbackPage({super.key, this.embedded = false});
+
+  /// 横屏嵌入 mode：隐藏自带标题栏，仅保留 TabBar 以切换「提交/我的」反馈。
+  final bool embedded;
 
   @override
   ConsumerState<FeedbackPage> createState() => _FeedbackPageState();
@@ -174,6 +177,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+    final tabBar = TabBar(
+      controller: _tab,
+      tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
+    );
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -181,13 +188,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         children: [
           Padding(
             padding: EdgeInsets.only(
-              top: GlassTopBar.height(
-                context,
-                bottom: TabBar(
-                  controller: _tab,
-                  tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
-                ),
-              ),
+              top: widget.embedded
+                  ? MediaQuery.of(context).padding.top +
+                      tabBar.preferredSize.height
+                  : GlassTopBar.height(context, bottom: tabBar),
             ),
             child: RepaintBoundary(
               child: TabBarView(
@@ -199,19 +203,32 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ),
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title: Text(tr('意见反馈')),
-              bottom: TabBar(
-                controller: _tab,
-                tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
+          // 嵌入态（横屏 master-detail 右侧）：仅保留 TabBar 切换条（避开状态栏），标题/返回由外层接管。
+          if (widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                color: Colors.transparent,
+                child: Padding(
+                  padding:
+                      EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+                  child: tabBar,
+                ),
+              ),
+            )
+          else
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('意见反馈')),
+                bottom: tabBar,
               ),
             ),
-          ),
         ],
       ),
     );

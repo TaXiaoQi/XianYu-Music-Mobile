@@ -17,6 +17,7 @@ import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
@@ -63,9 +64,16 @@ Color settingsCardColor(BuildContext context) => appCardColor(context);
 
 /// 设置详情页：浅白底 + 纯白卡片，展示单个分类下的全部设置项。
 class SettingsCategoryPage extends ConsumerStatefulWidget {
-  const SettingsCategoryPage({super.key, required this.category});
+  const SettingsCategoryPage({
+    super.key,
+    required this.category,
+    this.embedded = false,
+  });
 
   final SettingsCategory category;
+
+  /// 嵌入态：用于横屏 master-detail 右侧，去掉顶栏仅渲染设置体。
+  final bool embedded;
 
   @override
   ConsumerState<SettingsCategoryPage> createState() =>
@@ -80,6 +88,21 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final settings = ref.watch(settingsProvider).valueOrNull;
     final notifier = ref.read(settingsProvider.notifier);
     final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
+
+    if (widget.embedded) {
+      // 嵌入态：仅渲染设置体，顶栏/背景交由上层（横屏 master-detail 右侧）负责。
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: _buildItems(
+          context,
+          ref,
+          category,
+          settings,
+          notifier,
+          exclusivePlaying,
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -201,6 +224,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
+    final wallpaper = ref.watch(wallpaperActiveProvider);
     return [
       _sectionHeader(context, tr('主题')),
       _CardGroup(
@@ -233,15 +257,33 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, tr('材质')),
       _CardGroup(
         children: [
-          _switchTile(
-            context,
-            icon: Icons.blur_on_outlined,
-            title: tr('毛玻璃材质'),
-            subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
-            // 毛玻璃默认开启；关闭后在非壁纸场景回退为高不透明度纯色。
-            value: s?.frostedGlass ?? true,
-            onChanged: (v) => n.setFrostedGlass(v),
-          ),
+          // 壁纸模式下强制开启毛玻璃（保证壁纸可读性），因此隐藏开关、只留强度调节。
+          if (!wallpaper)
+            _switchTile(
+              context,
+              icon: Icons.blur_on_outlined,
+              title: tr('毛玻璃材质'),
+              subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
+              // 毛玻璃默认开启；关闭后在非壁纸场景回退为高不透明度纯色。
+              value: s?.frostedGlass ?? true,
+              onChanged: (v) => n.setFrostedGlass(v),
+            ),
+          // 毛玻璃强度调节：毛玻璃开启（或壁纸模式强制开启）时才显示；
+          // 打开液态玻璃会联动关闭毛玻璃，此入口随之隐藏。
+          if (wallpaper || (s?.frostedGlass ?? true))
+            _tile(
+              context,
+              icon: Icons.tune_outlined,
+              title: tr('毛玻璃效果'),
+              subtitle: tr('调整毛玻璃模糊强度'),
+              trailing: Text(switch (s?.frostedGlassLevel ??
+                  FrostedGlassLevel.strongest) {
+                FrostedGlassLevel.strongest => tr('最强'),
+                FrostedGlassLevel.medium => tr('中等'),
+                FrostedGlassLevel.light => tr('轻度'),
+              }),
+              onTap: () => _pickFrostedGlassLevel(context, ref, s),
+            ),
           _switchTile(
             context,
             icon: Icons.gradient_outlined,
@@ -250,8 +292,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             // 液态玻璃开关始终可点，不再因悬浮底栏关闭而强制置灰/归假：
             // 打开时由 setLiquidGlass 联动打开悬浮底栏；关闭悬浮时由
             // setFloatingNavBar 联动关闭液态玻璃，故此处跟随 liquidGlass 真实值。
+            // 液态与毛玻璃互斥：开液态时自动关毛玻璃，关液态自动恢复毛玻璃。
             value: s?.liquidGlass ?? false,
-            onChanged: (v) => n.setLiquidGlass(v),
+            onChanged: (v) {
+              n.setLiquidGlass(v);
+              // 与毛玻璃互斥联动：开液态关毛玻璃；关液态恢复毛玻璃。
+              if (!v) n.setFrostedGlass(wallpaper ? true : (s?.frostedGlass ?? true));
+            },
           ),
           if (s?.liquidGlass ?? false)
             _tile(
@@ -266,6 +313,59 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                 LiquidGlassQuality.medium => tr('中 · 均衡'),
               }),
               onTap: () => _pickLiquidGlassQuality(context, ref, s),
+            ),
+        ],
+      ),
+      // 导航栏与底栏样式：由「常规」页迁入外观。
+      _sectionHeader(context, tr('导航栏与底栏')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.navigation_outlined,
+            title: tr('导航栏位置'),
+            trailing: Text(switch (s?.navBarPosition ?? NavBarPosition.bottom) {
+              NavBarPosition.bottom => tr('底部导航'),
+              NavBarPosition.side => tr('侧边悬浮'),
+            }),
+            onTap: () => _pickNavBarPosition(context, ref, s),
+          ),
+          if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
+              NavBarPosition.bottom)
+            _switchTile(
+              context,
+              icon: Icons.subtitles_outlined,
+              title: tr('悬浮式底栏'),
+              value: s?.floatingNavBar ?? true,
+              onChanged: (v) => n.setFloatingNavBar(v),
+            ),
+          _switchTile(
+            context,
+            icon: Icons.manage_search_outlined,
+            title: tr('悬浮搜索框'),
+            subtitle: tr('首页和我的页搜索框悬浮显示，应用液态玻璃时同步生效'),
+            value: s?.floatingSearchBar ?? false,
+            onChanged: (v) => n.setFloatingSearchBar(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.crop_landscape_outlined,
+            title: tr('横屏使用摄像头区域'),
+            subtitle: tr('横屏时各页面铺满到摄像头(挖孔)区域，不再留黑边'),
+            value: s?.landscapeCameraArea ?? true,
+            onChanged: (v) => n.setLandscapeCameraArea(v),
+          ),
+          if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
+            _tile(
+              context,
+              icon: Icons.swap_vert_outlined,
+              title: tr('侧边栏展开方向'),
+              trailing: Text(switch (s?.sideBarExpandDirection ??
+                  SideBarExpandDirection.down) {
+                SideBarExpandDirection.down => tr('向下展开'),
+                SideBarExpandDirection.up => tr('向上展开'),
+              }),
+              onTap: () => _pickSideBarExpandDirection(context, ref, s),
             ),
         ],
       ),
@@ -293,43 +393,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               subtitle: tr('播放页控制卡使用液态玻璃材质'),
               value: s?.playerLiquidGlass ?? true,
               onChanged: (v) => n.setPlayerLiquidGlass(v),
-            ),
-        ],
-      ),
-      // 导航栏与底栏样式：由「常规」页迁入外观。
-      _sectionHeader(context, tr('导航栏与底栏')),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.navigation_outlined,
-            title: tr('导航栏位置'),
-            trailing: Text(switch (s?.navBarPosition ?? NavBarPosition.bottom) {
-              NavBarPosition.bottom => tr('底部导航'),
-              NavBarPosition.side => tr('侧边悬浮'),
-            }),
-            onTap: () => _pickNavBarPosition(context, ref, s),
-          ),
-          if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
-              NavBarPosition.bottom)
-            _switchTile(
-              context,
-              icon: Icons.subtitles_outlined,
-              title: tr('悬浮式底栏'),
-              value: s?.floatingNavBar ?? true,
-              onChanged: (v) => n.setFloatingNavBar(v),
-            ),
-          if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
-            _tile(
-              context,
-              icon: Icons.swap_vert_outlined,
-              title: tr('侧边栏展开方向'),
-              trailing: Text(switch (s?.sideBarExpandDirection ??
-                  SideBarExpandDirection.down) {
-                SideBarExpandDirection.down => tr('向下展开'),
-                SideBarExpandDirection.up => tr('向上展开'),
-              }),
-              onTap: () => _pickSideBarExpandDirection(context, ref, s),
             ),
         ],
       ),
@@ -879,6 +942,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     required bool value,
     ValueChanged<bool>? onChanged,
     String? subtitle,
+    bool enabled = true,
   }) {
     return SwitchListTile(
       secondary: Icon(icon),
@@ -887,7 +951,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ? null
           : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       value: value,
-      onChanged: onChanged,
+      onChanged: enabled ? onChanged : null,
     );
   }
 
@@ -1503,6 +1567,41 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
+  Future<void> _pickFrostedGlassLevel(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.frostedGlassLevel ?? FrostedGlassLevel.strongest;
+    final choice = await showModernChoiceSheet<FrostedGlassLevel>(
+      context: context,
+      title: tr('毛玻璃效果'),
+      options:   [
+        ModernChoiceOption(
+            label: tr('最强'),
+            subtitle: tr('磨砂感最深，背景最模糊'),
+            value: FrostedGlassLevel.strongest,
+            icon: Icons.blur_on_outlined),
+        ModernChoiceOption(
+            label: tr('中等'),
+            subtitle: tr('收敛模糊，兼顾辨识度'),
+            value: FrostedGlassLevel.medium,
+            icon: Icons.blur_circular_outlined),
+        ModernChoiceOption(
+            label: tr('轻度'),
+            subtitle: tr('轻微磨砂，最通透'),
+            value: FrostedGlassLevel.light,
+            icon: Icons.blur_off_outlined),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setFrostedGlassLevel(choice);
+    }
+  }
+
   Future<void> _pickLiquidGlassQuality(
     BuildContext context,
     WidgetRef ref,
@@ -2017,7 +2116,6 @@ class _CardGroup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final glass = ref.watch(wallpaperActiveProvider);
     final items = <Widget>[];
     for (var i = 0; i < children.length; i++) {
       items.add(children[i]);
@@ -2034,16 +2132,20 @@ class _CardGroup extends ConsumerWidget {
       }
     }
 
-    return Material(
-      color: glass ? glassControlFill : settingsCardColor(context),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: glass
-            ? BorderSide(color: glassControlBorder)
-            : BorderSide.none,
+    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide.none,
+        ),
+        child: Column(children: items),
       ),
-      child: Column(children: items),
     );
   }
 }

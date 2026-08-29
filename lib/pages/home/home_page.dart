@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -19,10 +22,18 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final floating = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final searchBar = _SearchBarBottom(
       onTap: () => context.push('/search'),
       onRecognize: () => context.push('/recognize'),
     );
+    // 悬浮搜索框：顶栏标题行下方悬浮胶囊，内容从其下方穿过被玻璃模糊。
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final searchTop = statusBar + kToolbarHeight + 8;
+    final topInset = floating
+        ? searchTop + 44 + 12
+        : GlassTopBar.height(context, bottom: searchBar);
 
     return Scaffold(
       body: Stack(
@@ -31,7 +42,7 @@ class HomePage extends ConsumerWidget {
           // 内容主体：顶部避让扩展后的顶栏（标题行+搜索框）。
           ListView(
             padding: EdgeInsets.fromLTRB(
-                18, GlassTopBar.height(context, bottom: searchBar), 18, ref.watch(navBarInsetProvider) + 24),
+                18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
             children:   [
               SizedBox(height: 14),
               CoverCarousel(),
@@ -71,9 +82,26 @@ class HomePage extends ConsumerWidget {
                 ),
               ),
               titleSpacing: 18,
-              bottom: searchBar,
+              actions: [
+                // 扫码登录入口：扫描桌面端登录页二维码
+                _ScanEntryButton(
+                  onTap: () => context.push('/scan'),
+                ),
+                const SizedBox(width: 16),
+              ],
+              bottom: floating ? null : searchBar,
             ),
           ),
+          if (floating)
+            Positioned(
+              top: searchTop,
+              left: 18,
+              right: 18,
+              child: FloatingSearchBar(
+                onTap: () => context.push('/search'),
+                onRecognize: () => context.push('/recognize'),
+              ),
+            ),
         ],
       ),
     );
@@ -108,8 +136,9 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
     return Material(
-      color: Colors.white.withValues(alpha: 0.34),
+      color: contrastSearchColor(context),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
@@ -117,10 +146,6 @@ class _SearchBar extends StatelessWidget {
         child: Container(
           height: 44,
           padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          ),
           child: Row(
             children: [
               Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
@@ -148,7 +173,37 @@ class _SearchBar extends StatelessWidget {
                   child: Icon(Icons.mic_none, size: 17, color: Color(0xFFEC4141)),
                 ),
               ),
-            ],
+              ],
+            ),
+          ),
+        ),
+      );
+  }
+}
+
+/// 顶栏扫码登录入口：轻红底圆形图标，点击进入扫码页。
+class _ScanEntryButton extends StatelessWidget {
+  const _ScanEntryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEC4141).withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.qr_code_scanner,
+            size: 20,
+            color: Color(0xFFEC4141),
           ),
         ),
       ),
@@ -225,21 +280,21 @@ class _MostPlayedRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final song = entry.song;
-    return Material(
-      color: Colors.white.withValues(alpha: 0.34),
-      borderRadius: BorderRadius.circular(13),
-      child: InkWell(
-        onTap: () =>
-            ref.read(libraryProvider.notifier).playList([song], 0),
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 13,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),
-        child: Container(
-          height: 62,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          ),
-          child: Row(
+        child: InkWell(
+          onTap: () =>
+              ref.read(libraryProvider.notifier).playList([song], 0),
+          borderRadius: BorderRadius.circular(13),
+          child: Container(
+            height: 62,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
             children: [
               CoverImage(
                 songPath: song.path,
@@ -301,6 +356,7 @@ class _MostPlayedRow extends ConsumerWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
