@@ -152,8 +152,11 @@ class _PredictiveBackTabContainerState
     if (!_inTransition) {
       return PageSwitchTabView(
         currentIndex: widget.currentIndex,
-        children: widget.children,
         onPageSettled: _onPageSettled,
+        // 横屏 out-in 淡出淡入开关（对齐外观设置「横屏切换动画」）。
+        fadeEnabled: ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true)),
+        children: widget.children,
       );
     }
     final exit = _exitIndex < widget.children.length

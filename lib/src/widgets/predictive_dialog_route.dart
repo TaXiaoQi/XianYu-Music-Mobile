@@ -84,6 +84,12 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   @override
   bool get popGestureEnabled => isCurrent && closableByBack;
 
+  // 弹窗与页面切换动画完全解耦：返回 false 切断框架对下层页面
+  // secondaryAnimation 的驱动，下层在覆盖/平滑模式下都保持静止，
+  // 弹窗只执行自身的居中淡进淡出（buildTransitions）。
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+
   @override
   Widget buildPage(
     BuildContext context,
@@ -125,9 +131,13 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     // 关键：必须「始终」挂载 PredictiveBackGestureDetector（WidgetsBinding
     // observer），否则手势开始时（popGestureInProgress 仍为 false）没有
     // observer 认领预测返回，弹窗全程无跟手反馈，只能滑到系统提交阈值才
-    // 瞬间关闭——表现为「要滑很长一段才有反应」。detector 内部再按
-    // popGestureInProgress 分流：手势中走官方 predictive 过渡（整屏缩放跟手），
-    // 非手势的打开/关闭（按钮、编程、系统返回）用纯淡入淡出。
+    // 瞬间关闭——表现为「要滑很长一段才有反应」。
+    //
+    // 视觉上弹窗「只做居中淡进淡出」，与页面切换动画完全解耦：非手势的
+    // 打开/关闭（按钮、编程、点遮罩、返回键）纯淡入淡出；预测返回手势中
+    // 也**不走**官方 predictive 的整屏缩放/向边缘平移提交，而是复用同一份
+    // FadeTransition——手势期间框架把手指进度写进本路由的 animation，弹窗
+    // 与遮罩的透明度自然跟随手指淡出，松手提交淡完、取消则淡回，全程无平移。
     return PredictiveBackGestureDetector(
       route: this,
       builder:
@@ -137,16 +147,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
             PredictiveBackEvent? startBackEvent,
             PredictiveBackEvent? currentBackEvent,
           ) {
-            if (popGestureInProgress) {
-              return PredictiveBackSharedElementPageTransition(
-                animation: animation,
-                phase: phase,
-                secondaryAnimation: secondaryAnimation,
-                startBackEvent: startBackEvent,
-                currentBackEvent: currentBackEvent,
-                child: child,
-              );
-            }
             final curved = CurvedAnimation(
               parent: animation,
               curve: Curves.easeOutCubic,
@@ -218,6 +218,10 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
 
   @override
   bool get popGestureEnabled => isCurrent && closableByBack;
+
+  // 与 PredictiveBackDialogRoute 一致：不驱动下层页面转场，下层保持静止。
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
 
   @override
   Widget buildPage(

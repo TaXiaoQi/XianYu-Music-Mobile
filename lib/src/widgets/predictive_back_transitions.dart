@@ -2,10 +2,6 @@ import 'dart:ui' show clampDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../core/app_colors.dart';
-import 'custom_background.dart';
 
 /// 让任意 [PageRoute] 参与 Android 预测返回的公共转场组件。
 ///
@@ -43,6 +39,18 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     }
   }
 
+  /// 本路由是否真正认领了当前手势。
+  ///
+  /// `WidgetsBindingObserver` 的预测返回回调是**全局广播**：任何路由的手势
+  /// 都会通知到所有 detector。`popGestureInProgress` 又是 navigator 全局
+  /// 标志（`isCurrent && userGestureInProgress`）——弹窗提交 pop 的几帧里
+  /// `userGestureInProgress` 仍为 true、下层路由已变回 current，下层会
+  /// 误判「自己正被手势返回」而切入跟手转场分支（内部 Transform 子树以
+  /// 无效事件重建），在布局完成前被绘制导致
+  /// `RenderBox was not laid out: RenderTransform` 崩溃。因此分支判断只信
+  /// 本路由自己认领的手势，不信全局标志。
+  bool _owned = false;
+
   /// The back event when the gesture first started.
   PredictiveBackEvent? get startBackEvent => _startBackEvent;
   PredictiveBackEvent? _startBackEvent;
@@ -65,11 +73,14 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    phase = PredictiveBackPhase.start;
     final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
     if (!gestureInProgress) {
+      // 未认领：不置 phase、不残留状态（此前无条件置 start 会污染其他
+      // 路由手势期间本 detector 的 phase）。
       return false;
     }
+    _owned = true;
+    phase = PredictiveBackPhase.start;
 
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     startBackEvent = currentBackEvent = backEvent;
@@ -78,6 +89,7 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
+    if (!_owned) return;
     phase = PredictiveBackPhase.update;
 
     widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
@@ -86,7 +98,11 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   void handleCancelBackGesture() {
-    phase = PredictiveBackPhase.cancel;
+    if (!_owned) return;
+    _owned = false;
+    // 取消后立刻回到 idle：跟手分支退出，路由自身的反向过渡随动画回弹
+    //（与原先经 popGestureInProgress 门控后的实际行为一致）。
+    phase = PredictiveBackPhase.idle;
 
     widget.route.handleCancelBackGesture();
     startBackEvent = currentBackEvent = null;
@@ -94,7 +110,12 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   void handleCommitBackGesture() {
-    phase = PredictiveBackPhase.commit;
+    if (!_owned) return;
+    _owned = false;
+    // 提交后立刻回到 idle：pop 动画由路由自身的反向过渡接管（isCurrent 在
+    // pop 开始即失效，与原先经 popGestureInProgress 门控后的实际行为一致），
+    // 同时避免本 detector 残留 commit 桩状态。
+    phase = PredictiveBackPhase.idle;
 
     widget.route.handleCommitBackGesture();
     startBackEvent = currentBackEvent = null;
@@ -116,10 +137,14 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   Widget build(BuildContext context) {
-    final PredictiveBackPhase effectivePhase = widget.route.popGestureInProgress
-        ? phase
-        : PredictiveBackPhase.idle;
-    return widget.builder(context, effectivePhase, startBackEvent, currentBackEvent);
+    // 非认领路由恒为 idle：其他路由（如上层弹窗）的手势期间，本路由的
+    // builder 不会进入跟手转场分支，保持静止。
+    return widget.builder(
+      context,
+      _owned ? phase : PredictiveBackPhase.idle,
+      _owned ? startBackEvent : null,
+      _owned ? currentBackEvent : null,
+    );
   }
 }
 
@@ -155,7 +180,10 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
     return PredictiveBackGestureDetector(
       route: route,
       builder: (context, phase, startBackEvent, currentBackEvent) {
-        if (route.popGestureInProgress) {
+        // 只在本路由认领的手势中走跟手分支（phase 非 idle），不信 navigator
+        // 全局的 popGestureInProgress——否则上层弹窗提交后的几帧里本页会误入
+        // 跟手分支引发布局崩溃。
+        if (phase != PredictiveBackPhase.idle) {
           // 手势跟手中整屏缩放，会露出本页透底层，故同样铺根层底色，
           // 避免出现透明/黑底闪烁。
           return _withBackground(
@@ -211,31 +239,18 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
 
 /// 转场/预测返回手势中铺在路由底部的「根层背景」垫底。
 ///
-/// 未启用自定义壁纸：铺 [backgroundColor]（无值时退回 scaffoldBackgroundColor），
-/// 保证 opaque 路由不露出 Navigator 之外的透底层。
-///
-/// 启用自定义壁纸：铺一层壁纸 [CustomBackgroundLayer] 垫底。全部页面 Scaffold
-/// 均为透明，抽屉/缩放转场的透明页若没有这层壁纸垫底，滑动中会透见下层路由或
-/// 壁纸错位，造成「穿模」；铺壁纸后切换全程如一张照片般稳定不透。（注意外层
-/// MaterialApp.builder 已铺根壁纸层，这里仅作为转场期间本路由内稳定背景，
-/// 两处壁纸配置一致、重合渲染，视觉无差别。）
-class TransitionBackdrop extends ConsumerWidget {
+/// 铺 [backgroundColor]（无值时退回 scaffoldBackgroundColor），保证 opaque
+/// 路由不露出 Navigator 之外的透底层。壁纸模式下根层已铺壁纸、页面 Scaffold
+/// 透明透出壁纸，此处的实色垫底只会在转场瞬间短暂出现——壁纸只是替换底色，
+/// 垫底色即壁纸所替代的那个底色，视觉连续。
+class TransitionBackdrop extends StatelessWidget {
   const TransitionBackdrop({super.key, this.backgroundColor, this.child});
 
   final Color? backgroundColor;
   final Widget? child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(wallpaperActiveProvider)) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          const CustomBackgroundLayer(),
-          ?child,
-        ],
-      );
-    }
+  Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,

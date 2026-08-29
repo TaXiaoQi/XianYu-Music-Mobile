@@ -26,6 +26,15 @@ enum SideBarExpandDirection {
   up,
 }
 
+/// 页面切换动画风格（覆盖 / 平滑）
+enum PageTransitionStyle {
+  /// 覆盖：新页从右滑入盖住旧页，旧页静止。
+  cover,
+
+  /// 平滑：新旧两页平行平移，新页右滑入的同时旧页左移。
+  smooth,
+}
+
 /// 性能模式：auto 自动按设备强弱判断 / full 满特效 / performance 性能优先（降级动效）。
 enum PerformanceMode {
   auto,
@@ -103,8 +112,6 @@ class CustomBackground {
   final int translateX;
   /// 纵向平移（-50~50，相对屏幕高度百分比）。
   final int translateY;
-  /// 前景样式：'light' 亮字 / 'dark' 暗字（对齐桌面端 foregroundStyle）。
-  final String foregroundStyle;
 
   const CustomBackground({
     this.enabled = false,
@@ -115,7 +122,6 @@ class CustomBackground {
     this.scale = 100,
     this.translateX = 0,
     this.translateY = 0,
-    this.foregroundStyle = 'light',
   });
 
   /// 默认（未启用）。
@@ -123,8 +129,6 @@ class CustomBackground {
 
   /// 是否处于可用状态（已启用且存在图片路径）。
   bool get active => enabled && imagePath.isNotEmpty;
-
-  bool get useLightForeground => foregroundStyle == 'light';
 
   CustomBackground copyWith({
     bool? enabled,
@@ -135,7 +139,6 @@ class CustomBackground {
     int? scale,
     int? translateX,
     int? translateY,
-    String? foregroundStyle,
   }) {
     return CustomBackground(
       enabled: enabled ?? this.enabled,
@@ -146,7 +149,6 @@ class CustomBackground {
       scale: scale ?? this.scale,
       translateX: translateX ?? this.translateX,
       translateY: translateY ?? this.translateY,
-      foregroundStyle: foregroundStyle ?? this.foregroundStyle,
     );
   }
 }
@@ -194,6 +196,8 @@ class AppSettings {
     this.floatingNavBar = false,
     this.floatingSearchBar = false,
     this.navBarPosition = NavBarPosition.bottom,
+    this.pageTransitionStyle = PageTransitionStyle.cover,
+    this.landscapeTransitionEnabled = true,
     this.sideBarExpandDirection = SideBarExpandDirection.down,
     this.usbExclusiveOutput = false,
     this.bitPerfectOutput = false,
@@ -316,6 +320,14 @@ class AppSettings {
 
   /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
   final NavBarPosition navBarPosition;
+
+  /// 页面切换动画风格：cover 覆盖（新页盖旧页），smooth 平滑（两页平行平移）。
+  /// 仅在竖屏生效；横屏使用 [landscapeTransitionEnabled]。
+  final PageTransitionStyle pageTransitionStyle;
+
+  /// 横屏下首页/我的等主 tab 在右侧容器里的切换动效（淡进淡出），默认开启。
+  /// 与竖屏切换动画相互独立。
+  final bool landscapeTransitionEnabled;
 
   /// 侧边栏展开方向：down 向下展开，up 向上展开。仅在侧边栏模式生效。
   final SideBarExpandDirection sideBarExpandDirection;
@@ -472,6 +484,8 @@ class AppSettings {
     bool? floatingNavBar,
     bool? floatingSearchBar,
     NavBarPosition? navBarPosition,
+    PageTransitionStyle? pageTransitionStyle,
+    bool? landscapeTransitionEnabled,
     SideBarExpandDirection? sideBarExpandDirection,
     bool? usbExclusiveOutput,
     bool? bitPerfectOutput,
@@ -554,6 +568,10 @@ class AppSettings {
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       floatingSearchBar: floatingSearchBar ?? this.floatingSearchBar,
       navBarPosition: navBarPosition ?? this.navBarPosition,
+      pageTransitionStyle:
+          pageTransitionStyle ?? this.pageTransitionStyle,
+      landscapeTransitionEnabled:
+          landscapeTransitionEnabled ?? this.landscapeTransitionEnabled,
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
       usbExclusiveOutput: usbExclusiveOutput ?? this.usbExclusiveOutput,
@@ -677,6 +695,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
               ? NavBarPosition.side
               : NavBarPosition.bottom,
+      pageTransitionStyle:
+          (prefs.getString('pageTransitionStyle') ?? 'cover') == 'smooth'
+              ? PageTransitionStyle.smooth
+              : PageTransitionStyle.cover,
+      // 横屏 tab 切换动效：默认开启（淡进淡出）。
+      landscapeTransitionEnabled:
+          prefs.getBool('landscapeTransitionEnabled') ?? true,
       sideBarExpandDirection:
           (prefs.getString('sideBarExpandDirection') ?? 'down') == 'up'
               ? SideBarExpandDirection.up
@@ -746,8 +771,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         scale: prefs.getInt('customBackgroundScale') ?? 100,
         translateX: prefs.getInt('customBackgroundTranslateX') ?? 0,
         translateY: prefs.getInt('customBackgroundTranslateY') ?? 0,
-        foregroundStyle:
-            prefs.getString('customBackgroundForegroundStyle') ?? 'light',
       ),
     );
   }
@@ -847,6 +870,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('floatingSearchBar', next.floatingSearchBar),
       prefs.setString('navBarPosition', next.navBarPosition.name),
       prefs.setString(
+          'pageTransitionStyle', next.pageTransitionStyle.name),
+      prefs.setBool(
+          'landscapeTransitionEnabled', next.landscapeTransitionEnabled),
+      prefs.setString(
           'sideBarExpandDirection', next.sideBarExpandDirection.name),
       prefs.setBool('usbExclusiveOutput', next.usbExclusiveOutput),
       prefs.setBool('bitPerfectOutput', next.bitPerfectOutput),
@@ -898,7 +925,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('customBackgroundScale', next.customBackground.scale),
       prefs.setInt('customBackgroundTranslateX', next.customBackground.translateX),
       prefs.setInt('customBackgroundTranslateY', next.customBackground.translateY),
-      prefs.setString('customBackgroundForegroundStyle', next.customBackground.foregroundStyle),
     ]);
   }
 
@@ -937,25 +963,19 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     // 打开液态玻璃时同步打开悬浮底栏（液态玻璃材质作用于悬浮底栏）；
     // 关闭液态玻璃不联动，保留用户当前的底栏样式。
     floatingNavBar: v ? true : null,
-    // 毛玻璃与液态玻璃全局互斥：开液态关毛玻璃；关液态恢复毛玻璃（壁纸下
-    // 仍由壁纸强制开启，互斥在壁纸模式由渲染层保证显式开启）。
-    frostedGlass: v ? false : true,
+    // 液态玻璃只覆盖固定几个控件（悬浮底栏/迷你条/悬浮搜索框/侧栏面板/
+    // 播放页控制卡），与毛玻璃可共存：其余 UI 表面由毛玻璃负责，互不联动。
     playerLiquidGlass: v ? true : false,
   ));
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
         const AppSettings())
-      .copyWith(
-    playerLiquidGlass: v,
-    // 与毛玻璃互斥：开播放页液态关毛玻璃；关则恢复毛玻璃。
-    frostedGlass: v ? false : true,
-  ));
+      .copyWith(playerLiquidGlass: v));
   Future<void> setFrostedGlass(bool v) => _save((state.valueOrNull ??
         const AppSettings())
       .copyWith(
     frostedGlass: v,
-    // 毛玻璃与液态玻璃是全局互斥材质：开毛玻璃时联动关闭液态玻璃（含播放页）。
-    liquidGlass: v ? false : null,
-    playerLiquidGlass: v ? false : null,
+    // 毛玻璃与液态玻璃可共存：液态优先覆盖固定几个控件，毛玻璃补齐其余
+    // 表面；两个开关互不联动。
   ));
   Future<void> setFrostedGlassLevel(FrostedGlassLevel l) => _save(
       (state.valueOrNull ?? const AppSettings())
@@ -977,14 +997,16 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       .copyWith(streamCacheSizeMB: v));
   Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(
-        // 液态玻璃只属于悬浮底栏：关闭悬浮时把液态玻璃一并关闭，避免固定底栏变液态。
         floatingNavBar: v,
-        liquidGlass: v ? (state.valueOrNull?.liquidGlass ?? false) : false,
+        // 液态玻璃独立于底栏样式：关悬浮只影响底栏表面（固定底栏本就走毛
+        // 玻璃），迷你条/搜索框/播放页控制卡的液态玻璃保持不变。
       ));
   Future<void> setFloatingSearchBar(bool v) => _save(
       (state.valueOrNull ?? const AppSettings())
           .copyWith(floatingSearchBar: v));
   Future<void> setNavBarPosition(NavBarPosition pos) => _save((state.valueOrNull ?? const AppSettings()).copyWith(navBarPosition: pos));
+  Future<void> setPageTransitionStyle(PageTransitionStyle style) => _save((state.valueOrNull ?? const AppSettings()).copyWith(pageTransitionStyle: style));
+  Future<void> setLandscapeTransitionEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(landscapeTransitionEnabled: v));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
   Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));
   Future<void> setBitPerfectOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(bitPerfectOutput: v));
@@ -1022,15 +1044,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setFloatingLyricsPosition(int x, int y) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsX: x, floatingLyricsY: y));
 
   /// 写入自定义壁纸背景。
+  ///
+  /// 壁纸模型（2026-08 简化）：壁纸只是「把底色换成壁纸」——根层铺壁纸、
+  /// 页面 Scaffold 透出；其余（前景配色、毛玻璃/液态玻璃开关、卡片样式、
+  /// 弹窗配色）与普通模式完全一致，不再有任何联动强制。
   Future<void> setCustomBackground(CustomBackground v) => _save(
-      (state.valueOrNull ?? const AppSettings()).copyWith(customBackground: v,
-      // 壁纸启用后强制开启毛玻璃：否则透明玻璃在壁纸上会糊成纯色。
-      // 关闭壁纸（none）时保持原毛玻璃状态（含关闭）。
-      frostedGlass: v.enabled ? true : null,
-      // 壁纸与液态玻璃冲突时自动切回毛玻璃（介质互斥，壁纸需透明玻璃）。
-      liquidGlass: v.enabled ? false : null,
-      playerLiquidGlass: v.enabled ? false : null,
-    ));
+      (state.valueOrNull ?? const AppSettings())
+          .copyWith(customBackground: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

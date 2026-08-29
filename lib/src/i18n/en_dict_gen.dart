@@ -144,6 +144,7 @@ const Map<String, String> enDictGen = {
   '嵌入歌词': 'Embed lyrics',
   '青绿': 'Teal',
   '清空': 'Clear',
+  '清空播放队列': 'Clear play queue',
   '清理在线播放缓存': 'Clear playback cache',
   '请输入当前登录密码': 'Enter your current password',
   '请输入歌单名称': 'Enter a playlist name',

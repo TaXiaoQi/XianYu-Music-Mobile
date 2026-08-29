@@ -197,6 +197,10 @@ const Map<String, String> enDictManual = {
   '低清': 'Low quality',
   '低音增强': 'Bass boost',
   '底部导航': 'Bottom navigation',
+  '切换动画': 'Transition animation',
+  '覆盖': 'Cover',
+  '平滑': 'Smooth',
+  '覆盖：新页盖住旧页；平滑：新旧两页平行平移': 'Cover: new page slides over the old one; Smooth: both pages translate in parallel',
   '底部居中胶囊成功提示': 'Bottom-center capsule success toast',
   '底部居中胶囊普通提示': 'Bottom-center capsule info toast',
   '底部居中胶囊失败提示': 'Bottom-center capsule error toast',
@@ -1209,14 +1213,16 @@ const Map<String, String> enDictManual = {
   '码率': 'Bitrate',
   '满特效': 'Full effects',
   '毛玻璃材质': 'Frosted glass',
-  '悬浮搜索框': 'Floating search bar',
-  '首页和我的页搜索框悬浮显示，应用液态玻璃时同步生效':
-      'Floating search bar on Home & Mine pages; applies liquid glass when enabled',
+  '悬浮顶部栏': 'Floating top bar',
+  '首页、我的页与横屏顶栏改为悬浮显示（控件独立悬浮），应用液态玻璃时同步生效':
+      'Floating top bar on Home, Mine & landscape top bar (independent controls); applies liquid glass when enabled',
   '材质': 'Material',
   '顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色':
       'Frosted blur for top bar, nav bar & player bar; solid when off',
   '悬浮导航 shader 折射光影，关闭时默认毛玻璃':
       'Floating nav shader refraction; frosted glass when off',
+  '开启时自动切换到悬浮式底栏；底栏、迷你条、搜索框与播放页控制卡优先液态，其余表面由毛玻璃补齐':
+      'Switches to floating bottom bar when enabled; nav bar, mini bar, search bar & player card prefer liquid glass, other surfaces fall back to frosted glass',
   '没有找到相关{name}': 'No {name} found',
   '没有找到相关歌曲': 'No songs found',
   '昵称修改需管理员审核，审核通过后生效。': 'Nickname changes require admin approval.',
