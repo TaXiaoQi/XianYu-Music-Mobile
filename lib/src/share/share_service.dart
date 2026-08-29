@@ -65,6 +65,15 @@ class ShareService {
     return future;
   }
 
+  /// 上报一次真实「点分享」动作（fire-and-forget，失败静默）：
+  /// 仅在用户真正点击分享时调用，切歌预加载不触发，供仪表台分享统计去虚高。
+  void reportShareAction() {
+    _ref
+        .read(authProvider.notifier)
+        .requestAction('report_share_action', {})
+        .catchError((Object _) => <String, dynamic>{});
+  }
+
   /// 解析分享封面 URL：在线封面（http(s)）直接用；
   /// 本地封面读取本地文件上传到服务端，返回可被落地页访问的 HTTPS URL。
   /// 失败静默返回空串（分享仍可进行，仅无封面）。

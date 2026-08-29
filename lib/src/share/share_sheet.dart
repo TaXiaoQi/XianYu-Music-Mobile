@@ -224,6 +224,7 @@ Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) asyn
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
   }
+  ref.read(shareServiceProvider).reportShareAction();
   await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song, url)));
   showXianYuToastByOverlay(overlay, tr('分享文案已复制'));
 }
@@ -240,6 +241,7 @@ Future<void> _shareViaQQ(
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
   }
+  ref.read(shareServiceProvider).reportShareAction();
 
   final qq = ref.read(qqShareServiceProvider);
   if (!await qq.isQQInstalled()) {
@@ -289,6 +291,7 @@ Future<void> _shareToOtherApps(
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
   }
+  ref.read(shareServiceProvider).reportShareAction();
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
 
