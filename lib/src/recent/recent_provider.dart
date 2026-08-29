@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db_path.dart';
 import '../favorites/favorites_provider.dart';
 import '../library/library_provider.dart';
+import '../online/online_meta_store.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
 
@@ -70,13 +71,27 @@ class RecentManager extends StateNotifier<RecentState> {
         } catch (_) {}
       }
 
+      // 在线歌曲：优先从持久化元数据池还原（播放时写入），其次收藏。
+      final onlinePaths = paths.where(_isOnline).toList();
+      final onlineMeta = onlinePaths.isEmpty
+          ? <String, QueueItem>{}
+          : await _ref.read(onlineMetaStoreProvider).getAll(onlinePaths);
+
       final entries = <RecentEntry>[];
       for (final e in list) {
         final path = e['songPath'] as String? ?? '';
         if (path.isEmpty) continue;
         final playedAt = (e['playedAt'] as num?)?.toInt() ?? 0;
         if (_isOnline(path)) {
-          // 在线歌曲：尝试从收藏中恢复元数据。
+          final meta = onlineMeta[path];
+          if (meta != null) {
+            entries.add(RecentEntry(
+              songPath: path,
+              playedAt: playedAt,
+              onlineItem: meta,
+            ));
+            continue;
+          }
           final fav = _ref
               .read(favoritesProvider)
               .entries
@@ -123,6 +138,12 @@ class RecentManager extends StateNotifier<RecentState> {
       final dbPath = await _ref.read(dbPathProvider.future);
       await statsRemoveFromRecentHistory(
           dbPath: dbPath, songPaths: [songPath]);
+      // 同步清理元数据池（对齐桌面端：仍被收藏引用时保留，收藏有独立存储不受影响）。
+      final isFav = _ref.read(favoritesProvider).entries
+          .any((f) => f.path == songPath);
+      if (!isFav) {
+        await _ref.read(onlineMetaStoreProvider).remove([songPath]);
+      }
     } catch (_) {}
     await refresh();
   }
@@ -131,6 +152,8 @@ class RecentManager extends StateNotifier<RecentState> {
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
       await statsClearRecentHistory(dbPath: dbPath);
+      // 同步清空在线元数据池（收藏条目有独立存储，不受影响）。
+      await _ref.read(onlineMetaStoreProvider).clear();
     } catch (_) {}
     await refresh();
   }

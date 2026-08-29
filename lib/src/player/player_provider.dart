@@ -14,12 +14,14 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
 import '../core/app_logger.dart';
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
 import '../home/home_providers.dart';
 import '../library/saf_channel.dart';
+import '../online/online_meta_store.dart';
 import '../online/online_search_provider.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
@@ -32,6 +34,10 @@ import '../i18n/i18n.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
 XianYuAudioHandler? audioHandler;
+
+/// 直链体积缓存（url → 字节）：音质/下载弹窗重复打开不重复探测。
+/// 直链带过期参数会变化，超上限直接清空重建，避免无界增长。
+final Map<String, int> _qualitySizeByUrl = {};
 
 /// 最近创建的播放控制器（playerProvider 为全局单例）。
 ///
@@ -336,6 +342,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   // 在线歌曲连续失败跳过计数（防环）。
   int _skipDepth = 0;
+
+  /// 起播流水线代际号：清空队列/队列删空等「重置」操作递增，_playAt 在每个
+  /// await 边界后校验，不一致即放弃后续起播——否则清空队列时在途的
+  /// `_playAt`（在线解析/换管线/加载源）会把 current 写回 state 并重新
+  /// `_player.play()`，表现为「清了还在响、队列复活、播放页不退出」。
+  int _playEpoch = 0;
   // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
@@ -832,7 +844,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> playQueue(List<QueueItem> items,
       {int startIndex = 0, bool shareLinkPlayback = false}) async {
     if (items.isEmpty) return;
-    debugPrint('[play] playQueue ${items.length} 首 startIndex=$startIndex');
+    AppLog.info('play', 'playQueue ${items.length} 首 startIndex=$startIndex');
     _shareLinkPlayback = shareLinkPlayback;
     _shuffleHistory.clear();
     _shuffleFuture.clear();
@@ -845,15 +857,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _playAt(startIndex);
     } catch (e, st) {
       // 手势调用点不 await 异步错误，此处兜底捕获避免整链静默中断。
-      debugPrint('[play] playQueue 异常: $e\n$st');
+      AppLog.error('play', 'playQueue 异常: $e\n$st');
       state = state.copyWith(isPlaying: false, resolving: false);
     }
   }
 
   Future<void> _playAt(int index, {double startAtSecs = 0}) async {
     if (index < 0 || index >= state.queue.length) return;
+    // 记录代际号：期间若队列被清空/删空，后续 await 边界处全部放弃，
+    // 防止在途起播把已清空的状态「复活」。
+    final epoch = _playEpoch;
 
-    debugPrint('[play] _playAt index=$index path=${state.queue[index].path}');
+    AppLog.info('play', '_playAt index=$index path=${state.queue[index].path}');
     // 首次播放时申请通知权限（Android 13+ 未授权则媒体通知被系统静默拦截）。
     unawaited(_ensureNotificationPermission());
     _flushPlayStats();
@@ -881,14 +896,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
     _syncToSystemMediaSession();
     try {
-      if (item.isOnline) {
-        await _stopExclusive();
-        await _playOnline(item);
-      } else if (_isRemotePath(item.path)) {
-        await _stopExclusive();
-        _rgGain = 1.0;
-        await _playRemote(item);
-      } else {
+        if (item.isOnline) {
+          await _stopExclusive();
+          if (epoch != _playEpoch) return;
+          await _playOnline(item);
+          if (epoch != _playEpoch) return;
+        } else if (_isRemotePath(item.path)) {
+          await _stopExclusive();
+          if (epoch != _playEpoch) return;
+          _rgGain = 1.0;
+          await _playRemote(item);
+          if (epoch != _playEpoch) return;
+        } else {
         // SAF content:// 路径先物化为本地真实文件，独占/音量平衡/普通播放统一
         // 使用真实路径（Rust/ExoPlayer 均无法直接消费树文档 URI）。
         var target = item.path;
@@ -906,11 +925,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         var started = false;
         if (useExclusive) {
           await _stopExclusive();
+          if (epoch != _playEpoch) return;
           started = await _tryStartExclusive(target,
               startAtSecs: startAtSecs, isPlaying: true);
+          if (epoch != _playEpoch) {
+            await _stopExclusive();
+            return;
+          }
         }
         if (!started) {
           await _stopExclusive();
+          if (epoch != _playEpoch) return;
           try {
             await _player.stop();
           } catch (_) {}
@@ -921,10 +946,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             } catch (_) {}
           }
           await _player.setVolume(_effectiveVolume());
+          if (epoch != _playEpoch) return;
           await _player.play();
         }
       }
       _skipDepth = 0;
+      if (epoch != _playEpoch) return;
       state = state.copyWith(resolving: false, error: null);
       _reportBehavior(item, 'play', 0);
       _recordRecentPlay(item);
@@ -934,7 +961,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       // 本地歌曲通知栏封面兜底（异步，不阻塞起播）。
       unawaited(_resolveNotificationCover(item));
     } catch (e) {
+      // 队列已被清空/删空：放弃失败处理（换源/跳过/错误透出），不再改写 state。
+      if (epoch != _playEpoch) {
+        _shareLinkPlayback = false;
+        return;
+      }
       state = state.copyWith(isPlaying: false, resolving: false);
+      // 新歌加载失败：先停掉正在响的上一首，避免「点了新歌没反应但旧歌还在响」。
+      // 换源/跳过分支随后会自行重新起播，此处停止对它们无影响。
+      try {
+        await _stopExclusive();
+      } catch (_) {}
+      try {
+        await _player.stop();
+      } catch (_) {}
       // 在线歌曲：先尝试自动切换其他音源，避免直接跳过/停止。
       // 分享链接触发的播放按「分享链接播放失败行为」设置：pause 不换源（直接透出错误暂停），
       // replace 才允许走插件索引换源重播。
@@ -979,7 +1019,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 : tr('播放失败：{e}', {'e': e.toString()}));
       } else {
         // 本地歌曲失败同样透出：静默失败会让用户以为「点击没反应」。
-        debugPrint('[play] 本地播放失败 path=${item.path} error=$e');
+        AppLog.error('play', '本地播放失败 path=${item.path} error=$e');
         state = state.copyWith(
             error: e is PluginEngineException
                 ? e.message
@@ -995,7 +1035,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 在线歌曲：解析直链后播放。失败抛异常由调用方处理。
   Future<void> _playOnline(QueueItem item) async {
     final json = item.onlineSongJson;
-    debugPrint('[playOnline] ${item.title} path=${item.path} '
+    AppLog.info('play', '[playOnline] ${item.title} path=${item.path} '
         'onlineSongJson=${json?.isNotEmpty ?? false}');
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
@@ -1005,7 +1045,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           s0?.onlineDefaultQuality ??
           '320k';
       final candidates = _qualityCandidates(preferred, fb0);
-      debugPrint('[playOnline] pluginId=${songJson['pluginId']} '
+      AppLog.info('play', '[playOnline] pluginId=${songJson['pluginId']} '
           'source=${songJson['source']} format=${songJson['format']} '
           'preferred=$preferred candidates=$candidates');
 
@@ -1019,7 +1059,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final start = await probe
           .startBest(preferred, candidates)
           .timeout(const Duration(seconds: 12), onTimeout: () => null);
-      debugPrint('[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
+      AppLog.info('play',
+          '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
           'available=${probe.availableQualities} probing=${probe.probing}');
       if (start != null) {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
@@ -1077,7 +1118,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final engine = _ref.read(pluginEngineProvider).valueOrNull;
           final meta = engine?.metadataOf(pid);
           final raw = meta?['supportedQualities'];
-          debugPrint('[quality] declared pid=$pid meta=${meta == null ? 'null' : 'ok'} '
+          AppLog.debug('quality', '[quality] declared pid=$pid meta=${meta == null ? 'null' : 'ok'} '
               'supportedQualities=$raw');
           if (raw is List) {
             for (final dq in raw) {
@@ -1102,7 +1143,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
     }
     final result = kQualityLadder.where(out.contains).toList();
-    debugPrint('[quality] _declaredQualities pid=$pid result=$result');
+    AppLog.debug('quality', '[quality] _declaredQualities pid=$pid result=$result');
     return result;
   }
 
@@ -1140,11 +1181,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         quality: quality,
         dataDir: dataDir,
       ).timeout(const Duration(seconds: 8));
-      if (resolved == 'null' || resolved.isEmpty) return null;
+      if (resolved == 'null' || resolved.isEmpty) {
+        AppLog.warn('lx', '[lxResolve] 公共API $quality 无结果: $resolved');
+        return null;
+      }
       final url =
           (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
-      return _isPlayableUrl(url) ? ResolvedMediaUrl(url: url!) : null;
-    } catch (_) {
+      if (!_isPlayableUrl(url)) {
+        AppLog.warn('lx', '[lxResolve] 公共API $quality 非法直链: $url');
+        return null;
+      }
+      AppLog.info('lx', '[lxResolve] 公共API $quality 命中');
+      return ResolvedMediaUrl(url: url!);
+    } catch (e) {
+      AppLog.error('lx', '[lxResolve] 公共API $quality 异常: $e');
       return null;
     }
   }
@@ -1209,12 +1259,56 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<List<String>> downloadQualityOptions() =>
       _probeQualityOptions(forDownload: true);
 
+  /// 当前歌曲各已解析档位的实测体积：实际音质 → 体积信息。
+  ///
+  /// 对齐桌面端弹窗的「扩展名 · 体积」：复用共享探针已解析出的直链，
+  /// 逐条做 Range 体积探测（Rust `probe_url_size`）；结果按直链缓存，
+  /// 弹窗重复打开不重复请求。仅含已解析完成的档位，探测中的档位不出现在
+  /// 返回值里，由 UI 以「未知体积」兜底。
+  Future<Map<String, QualitySizeInfo>> qualitySizes() async {
+    final item = state.current;
+    final json = item?.onlineSongJson ?? item?.onlineInfoJson;
+    if (item == null || json == null || json.isEmpty) return const {};
+    try {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final key = _songProbeKey(songJson, item);
+      final probe = onlineQualityProbeRegistry.peek(key);
+      if (probe == null) return const {};
+      final entries = probe.resolved;
+      if (entries.isEmpty) return const {};
+      final out = <String, QualitySizeInfo>{};
+      await Future.wait(entries.map((r) async {
+        final cached = _qualitySizeByUrl[r.url];
+        if (cached != null) {
+          out[r.quality] = QualitySizeInfo(url: r.url, bytes: cached);
+          return;
+        }
+        try {
+          final raw = await probeUrlSize(url: r.url);
+          final info = jsonDecode(raw);
+          final size = info is Map<String, dynamic> ? info['size'] : null;
+          if (size is num && size > 0) {
+            if (_qualitySizeByUrl.length > 200) _qualitySizeByUrl.clear();
+            _qualitySizeByUrl[r.url] = size.toInt();
+            out[r.quality] = QualitySizeInfo(url: r.url, bytes: size.toInt());
+          }
+        } catch (_) {
+          // 单条直链体积探测失败不影响其他档位（服务器不支持 Range 等）。
+        }
+      }));
+      return out;
+    } catch (e) {
+      AppLog.debug('quality', '[quality] 体积探测失败: $e');
+      return const {};
+    }
+  }
+
   Future<List<String>> _probeQualityOptions(
       {required bool forDownload}) async {
     final item = state.current;
     // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
-    debugPrint('[quality] _probeQualityOptions item=${item?.title} '
+    AppLog.debug('quality', '[quality] _probeQualityOptions item=${item?.title} '
         'onlineSongJson=${item?.onlineSongJson?.isNotEmpty ?? false} '
         'onlineInfoJson=${item?.onlineInfoJson?.isNotEmpty ?? false}');
     if (json == null || json.isEmpty) return const [];
@@ -1234,7 +1328,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         // 对齐桌面 getOnlineAvailableQualities：菜单直接展示源声明音质，
         // 探测仅作后台校验/降级修正，不再阻塞菜单展示（避免探测慢/挂起导致空态）。
         final base = kQualityLadder.reversed.where(declared.contains).toList();
-        debugPrint('[quality] declared non-empty base=$base');
+        AppLog.debug('quality', '[quality] declared non-empty base=$base');
         state = state.copyWith(
           availableQualities: base,
           qualityMenuProbing: true,
@@ -1247,21 +1341,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final targets = kQualityLadder.reversed
           .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
           .toList();
-      debugPrint('[quality] declared empty, probing targets=$targets');
+      AppLog.debug('quality', '[quality] declared empty, probing targets=$targets');
       await Future.wait(targets.map(probe.probe).toList());
 
       final opts = <String>{...probe.availableQualities};
       if (state.currentQuality != null) opts.add(state.currentQuality!);
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
-      debugPrint('[quality] probe done opts=$ordered');
+      AppLog.info('quality', '[quality] probe done opts=$ordered');
       state = state.copyWith(
         availableQualities: ordered,
         qualityMenuProbing: false,
       );
       return ordered;
     } catch (e) {
-      debugPrint('[quality] _probeQualityOptions error: $e');
+      AppLog.error('quality', '[quality] _probeQualityOptions error: $e');
       state = state.copyWith(qualityMenuProbing: false);
       return state.availableQualities;
     }
@@ -1536,7 +1630,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
       } catch (e) {
-        debugPrint('[stats] add_to_history 失败: $e');
+        AppLog.warn('stats', 'add_to_history 失败: $e');
       }
     });
   }
@@ -1709,7 +1803,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
       final source = sources.where((s) => s.id == pluginId).toList();
-      if (source.isEmpty) return null;
+      if (source.isEmpty) {
+        debugPrint('[playPlugin] store 中无插件 $pluginId（source=$sourceKey）');
+        return null;
+      }
 
       if (format == 'musicfree') {
         // MusicFree 插件：调用 getMediaSource(musicItem, quality)，内部做音质降级映射。
@@ -1722,15 +1819,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       final result =
           await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
-      if (result == null) return null;
+      if (result == null) {
+        debugPrint('[playPlugin] ${source.first.name} '
+            'musicUrl($sourceKey/$quality) 返回空');
+        return null;
+      }
       final url = result['url'] as String?;
-      if (!_isPlayableUrl(url)) return null;
+      if (!_isPlayableUrl(url)) {
+        debugPrint('[playPlugin] ${source.first.name} '
+            'musicUrl($sourceKey/$quality) 非法直链: $url');
+        return null;
+      }
       final h = result['headers'];
+      debugPrint('[playPlugin] ${source.first.name} '
+          'musicUrl($sourceKey/$quality) 命中 type=${result['type']}');
       return ResolvedMediaUrl(
         url: url!,
         headers: h is Map ? h.cast<String, String>() : null,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[playPlugin] 解析异常($quality): $e');
       return null;
     }
   }
@@ -1756,6 +1864,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
+        // 在线歌曲（lx://、plugin://）不在本地曲库中，历史只存路径无法反查。
+        // 对齐桌面端：把完整元数据写入持久化池，最近播放列表据此还原展示。
+        if (item.isOnline) {
+          await _ref.read(onlineMetaStoreProvider).put(item);
+        }
         // 使最近播放角标/列表实时刷新：invalidate 在下次 watch 时让 provider
         // 重建并从 DB 重读（对齐首页统计的实时刷新模式），否则要等重启后
         // RecentManager 构造时 refresh 才会更新。
@@ -1773,6 +1886,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final wasCurrent = index == state.queueIndex;
     queue.removeAt(index);
     if (queue.isEmpty) {
+      // 队列删空等同重置：递增代际号让在途起播放弃，防止复活。
+      _playEpoch++;
       await _stopExclusive();
       await _player.stop();
       state = const PlaybackState();
@@ -1789,6 +1904,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } else {
       state = state.copyWith(queue: queue, queueIndex: newIndex);
     }
+  }
+
+  /// 清空播放队列并停止播放（对齐桌面端 clearQueue）。
+  ///
+  /// 停掉独占/普通两条播放管线、失效共享探针、清空当前曲——
+  /// 播放详情页/迷你条随 current 为空自动收起，用于从「无法加载的坏歌」中脱身。
+  Future<void> clearQueue() async {
+    // 先递增代际号：让所有在途起播流水线在下一个 await 边界放弃。
+    _playEpoch++;
+    if (_activeProbeKey != null) {
+      try {
+        onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
+      } catch (_) {}
+      _activeProbeKey = null;
+    }
+    _skipDepth = 0;
+    await _stopExclusive();
+    try {
+      await _player.stop();
+    } catch (_) {}
+    state = const PlaybackState();
   }
 
   /// 将队列中 [oldIndex] 的歌曲移动到 [newIndex]。

@@ -64,6 +64,13 @@ class QualityProbeResult {
   final Map<String, String>? headers;
 }
 
+/// 档位体积信息：直链 + 实测文件字节数（对齐桌面端弹窗「扩展名 · 体积」）。
+class QualitySizeInfo {
+  const QualitySizeInfo({required this.url, required this.bytes});
+  final String url;
+  final int bytes;
+}
+
 /// 每首歌共享一轮音质探测。
 class SongQualityProbe {
   SongQualityProbe({required this.resolveQuality, this.maxConcurrency = 3});
@@ -141,6 +148,10 @@ class SongQualityProbe {
     return out;
   }
 
+  /// 已解析完成的档位结果（直链 + 实际音质 + 请求头），
+  /// 供体积探测等复用，不必重复解析直链。
+  List<QualityProbeResult> get resolved => List.unmodifiable(_done);
+
   /// 起播：并行发起候选链，返回首个可播档（首选优先）。
   ///
   /// [candidateChain] 已按起播优先级排序（首选在前）。并行发起既能快速
@@ -188,6 +199,9 @@ final class OnlineQualityProbeRegistry {
       ),
     );
   }
+
+  /// 取已存在的探针（不创建），供体积探测等只读复用。
+  SongQualityProbe? peek(String songKey) => _registry[songKey];
 
   void invalidate(String songKey) {
     final probe = _registry.remove(songKey);
