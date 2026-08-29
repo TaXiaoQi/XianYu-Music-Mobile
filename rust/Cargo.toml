@@ -45,7 +45,7 @@ uuid = { version = "1", features = ["v4"] }
 # default-features 必须关掉：默认特性含 avif（ravif→rav1e AV1 编码器）、exr、tiff 等，
 # 会让 arm64 .so 白涨约 5-8MB（封面只需 jpeg/png/webp）
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
-rquickjs = { version = "0.12", features = ["futures", "parallel"] }
+rquickjs = { version = "0.12", features = ["futures", "parallel", "bindgen"] }
 getrandom = "0.3"
 url = "2"
 

@@ -20,10 +20,36 @@ class DiscoverSection extends ConsumerStatefulWidget {
 
 class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
   int _index = 0;
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   void _selectTab(int i) {
-    // 切到「统计」tab 时主动刷新统计数据，确保每次打开都能读到最新
-    // （不依赖播放落库的失效时机，本地查询很快，几乎无感）。
+    if (i == _index) return;
+    if (i == 0) {
+      ref.invalidate(listenStatsProvider);
+      ref.invalidate(mostPlayedProvider);
+    }
+    setState(() => _index = i);
+    _pageController.animateToPage(
+      i,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onPageChanged(int i) {
+    if (i == _index) return;
     if (i == 0) {
       ref.invalidate(listenStatsProvider);
       ref.invalidate(mostPlayedProvider);
@@ -82,54 +108,47 @@ class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
                   ),
                 ),
               ),
-            const Spacer(),
-            InkWell(
-              onTap: () => context.push(_tabs[_index].route),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Row(
-                  children: [
-                    Text(
-                      tr('查看全部'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Icon(Icons.chevron_right,
-                        size: 16, color: scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
-        const SizedBox(height: 6),
-        // 内容卡片：只对新卡片做纯淡入 + 轻微上移，旧卡片立即移除不参与叠加。
-        // 若用默认交叉淡入，两张半透明白玻璃卡片在过渡中叠加、亮度翻倍，
-        // 在无壁纸（纯色背景）下切换会闪一下；对齐桌面端瞬时切换以避免重排跳动。
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          switchInCurve: Curves.easeOutCubic,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.02),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
+        const SizedBox(height: 4),
+        // 查看全部：置于 Tab 标题行与下方卡片之间的过渡区域（X 轴保持靠右不变）
+        Align(
+          alignment: Alignment.centerRight,
+          child: InkWell(
+            onTap: () => context.push(_tabs[_index].route),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tr('查看全部'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right,
+                      size: 16, color: scheme.onSurfaceVariant),
+                ],
               ),
-            );
-          },
-          // 只绘制当前（新）卡片：旧卡片不残留，杜绝交叉淡入的白闪与高度跳动。
-          layoutBuilder: (currentChild, previousChildren) =>
-              currentChild ?? const SizedBox.shrink(),
-          child: KeyedSubtree(
-            key: ValueKey(_tabs[_index].key),
-            child: _buildContent(scheme),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        // 内容卡片：使用 PageView 支持左右平滑滚动切换动画，兼顾手势滑动与点击 Tab
+        SizedBox(
+          height: 148,
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: _onPageChanged,
+            physics: const BouncingScrollPhysics(),
+            children: [
+              _StatsCard(),
+              const _DailyCard(),
+              const _TopListsBody(),
+            ],
           ),
         ),
       ],
@@ -163,7 +182,6 @@ class _StatsCard extends ConsumerWidget {
               value: data?.totalDurationText ?? '—',
             ),
           ),
-          _divider(scheme),
           Expanded(
             child: _statCell(
               scheme,
@@ -172,7 +190,6 @@ class _StatsCard extends ConsumerWidget {
               value: data?.todayDurationText ?? '—',
             ),
           ),
-          _divider(scheme),
           Expanded(
             child: _statCell(
               scheme,
@@ -199,6 +216,7 @@ class _StatsCard extends ConsumerWidget {
     required String value,
   }) {
     return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(icon, size: 19, color: scheme.primary),
         const SizedBox(height: 6),
@@ -251,6 +269,7 @@ class _DailyCard extends ConsumerWidget {
     }
     final items = state?.items.take(3).toList() ?? const [];
     return _CardContainer(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       onTap: () => context.push('/home/daily'),
       child: async.isLoading && items.isEmpty
           ? const Padding(
@@ -264,11 +283,9 @@ class _DailyCard extends ConsumerWidget {
               ),
             )
           : Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                for (var i = 0; i < items.length; i++) ...[
-                  _dailyRow(scheme, items[i]),
-                  if (i != items.length - 1) const SizedBox(height: 8),
-                ],
+                for (final item in items) _dailyRow(scheme, item),
               ],
             ),
     );
@@ -432,10 +449,15 @@ class _TopListsBody extends ConsumerWidget {
 
 /// 发现区卡片容器（半透明玻璃卡片，与首页其余卡片一致）。
 class _CardContainer extends StatelessWidget {
-  const _CardContainer({required this.child, this.onTap});
+  const _CardContainer({
+    required this.child,
+    this.onTap,
+    this.padding = const EdgeInsets.all(14),
+  });
 
   final Widget child;
   final VoidCallback? onTap;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
@@ -446,7 +468,7 @@ class _CardContainer extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(13),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: padding,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(13),
             border: Border.all(color: Colors.white.withValues(alpha: 0.14)),

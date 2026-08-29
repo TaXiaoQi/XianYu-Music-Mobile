@@ -30,6 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "com.xianyumusic.app"
+        manifestPlaceholders["appLabel"] = "弦予音乐"
         minSdk = flutter.minSdkVersion
         // 见 compileSdk 注释：预测返回进度需要 targetSdk 37
         targetSdk = 37
