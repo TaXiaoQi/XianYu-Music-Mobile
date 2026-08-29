@@ -926,29 +926,74 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     required Widget trailing,
     VoidCallback? onTap,
     String? subtitle,
+    int? subtitleMaxLines,
   }) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-      trailing: onTap == null
-          ? trailing
-          : Row(
+    final scheme = Theme.of(context).colorScheme;
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 14),
+          // 左侧标题与副标题区
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                trailing,
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.outline,
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurface,
+                  ),
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: subtitleMaxLines,
+                    overflow: subtitleMaxLines != null
+                        ? TextOverflow.ellipsis
+                        : null,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
             ),
-      onTap: onTap,
+          ),
+          const SizedBox(width: 12),
+          // 右侧控条与标签区
+          onTap == null
+              ? trailing
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DefaultTextStyle(
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      child: trailing,
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: scheme.outline,
+                    ),
+                  ],
+                ),
+        ],
+      ),
     );
+
+    if (onTap == null) return content;
+    return InkWell(onTap: onTap, child: content);
   }
 
   Widget _switchTile(
@@ -959,15 +1004,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ValueChanged<bool>? onChanged,
     String? subtitle,
     bool enabled = true,
+    int? subtitleMaxLines,
   }) {
-    return SwitchListTile(
-      secondary: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-      value: value,
-      onChanged: enabled ? onChanged : null,
+    return _tile(
+      context,
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      subtitleMaxLines: subtitleMaxLines,
+      trailing: Switch.adaptive(
+        value: value,
+        onChanged: enabled ? onChanged : null,
+      ),
+      onTap: enabled && onChanged != null ? () => onChanged(!value) : null,
     );
   }
 
@@ -1162,88 +1211,56 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   Widget _floatingLyricsOpacitySlider(AppSettings? s, SettingsNotifier n) {
     final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsOpacity ?? 100).toDouble();
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => (s?.floatingLyricsOpacity ?? 100).toDouble(),
+      title: tr('不透明度'),
+      value: v,
       step: 5,
       min: 35,
       max: 100,
-      format: (x) => '${x.round()}%',
-      slider: CommittedSlider(
-        min: 35,
-        max: 100,
-        divisions: 13,
-        value: v,
-        enabled: enabled,
-        onCommit: (x) => n.setFloatingLyricsOpacity(x.round()),
-      ),
-      onAdjust: (x) => n.setFloatingLyricsOpacity(x.round()),
+      onChanged: (x) => n.setFloatingLyricsOpacity(x.round()),
     );
   }
 
   Widget _floatingLyricsFontSlider(AppSettings? s, SettingsNotifier n) {
     final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsFontScale ?? 100).toDouble();
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => (s?.floatingLyricsFontScale ?? 100).toDouble(),
+      title: tr('字号'),
+      value: v,
       step: 5,
       min: 80,
       max: 220,
-      format: (x) => '${x.round()}%',
-      slider: CommittedSlider(
-        min: 80,
-        max: 220,
-        divisions: 28,
-        value: v,
-        enabled: enabled,
-        onCommit: (x) => n.setFloatingLyricsFontScale(x.round()),
-      ),
-      onAdjust: (x) => n.setFloatingLyricsFontScale(x.round()),
+      onChanged: (x) => n.setFloatingLyricsFontScale(x.round()),
     );
   }
 
   Widget _floatingLyricsSecondarySlider(AppSettings? s, SettingsNotifier n) {
     final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsSecondaryScale ?? 88).toDouble();
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => (s?.floatingLyricsSecondaryScale ?? 88).toDouble(),
+      title: tr('副行字号'),
+      value: v,
       step: 5,
       min: 70,
       max: 180,
-      format: (x) => '${x.round()}%',
-      slider: CommittedSlider(
-        min: 70,
-        max: 180,
-        divisions: 22,
-        value: v,
-        enabled: enabled,
-        onCommit: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
-      ),
-      onAdjust: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
+      onChanged: (x) => n.setFloatingLyricsSecondaryScale(x.round()),
     );
   }
 
   Widget _floatingLyricsWidthSlider(AppSettings? s, SettingsNotifier n) {
     final enabled = s?.floatingLyricsEnabled ?? false;
     final v = (s?.floatingLyricsWidthPercent ?? 92).toDouble();
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => (s?.floatingLyricsWidthPercent ?? 92).toDouble(),
+      title: tr('宽度'),
+      value: v,
       step: 5,
       min: 40,
       max: 100,
-      format: (x) => '${x.round()}%',
-      slider: CommittedSlider(
-        min: 40,
-        max: 100,
-        divisions: 12,
-        value: v,
-        enabled: enabled,
-        onCommit: (x) => n.setFloatingLyricsWidthPercent(x.round()),
-      ),
-      onAdjust: (x) => n.setFloatingLyricsWidthPercent(x.round()),
+      onChanged: (x) => n.setFloatingLyricsWidthPercent(x.round()),
     );
   }
 
@@ -1263,26 +1280,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     double norm(double x) =>
         maxX <= 0 ? 0.0 : (x / maxX * 100).clamp(-100.0, 100.0);
     final v = norm((s?.floatingLyricsX ?? 0).toDouble());
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => norm((s?.floatingLyricsX ?? 0).toDouble()),
+      title: tr('水平位置'),
+      value: v,
       step: 5,
       min: -100,
       max: 100,
-      valueWidth: 44,
-      format: (x) => x == 0 ? '0' : ('${x > 0 ? '+' : ''}${x.round()}'),
-      slider: CommittedSlider(
-        min: -100,
-        max: 100,
-        divisions: 40,
-        value: v,
-        enabled: enabled,
-        onCommit: (val) {
-          final px = (val / 100 * maxX).round();
-          n.setFloatingLyricsPosition(px, s?.floatingLyricsY ?? 96);
-        },
-      ),
-      onAdjust: (val) {
+      unit: '',
+      onChanged: (val) {
         final px = (val / 100 * maxX).round();
         n.setFloatingLyricsPosition(px, s?.floatingLyricsY ?? 96);
       },
@@ -1305,30 +1311,24 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     double norm(double y) =>
         maxY <= minY ? 0.0 : ((y - minY) / (maxY - minY) * 100).clamp(0.0, 100.0);
     final v = norm((s?.floatingLyricsY ?? 96).toDouble());
-    return _StepperSliderRow(
+    return _NumericInputStepperRow(
       enabled: enabled,
-      readValue: () => norm((s?.floatingLyricsY ?? 96).toDouble()),
+      title: tr('垂直位置'),
+      value: v,
       step: 5,
       min: 0,
       max: 100,
-      format: (x) => '${x.round()}',
-      slider: CommittedSlider(
-        min: 0,
-        max: 100,
-        divisions: 40,
-        value: v,
-        enabled: enabled,
-        onCommit: (val) {
-          final px = (minY + val / 100 * (maxY - minY)).round();
-          n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, px);
-        },
-      ),
-      onAdjust: (val) {
-        final px = (minY + val / 100 * (maxY - minY)).round();
-        n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, px);
+      unit: '',
+      onChanged: (val) {
+        final py = (minY + val / 100 * (maxY - minY)).round();
+        n.setFloatingLyricsPosition(s?.floatingLyricsX ?? 0, py);
       },
     );
   }
+
+
+
+
 
   Future<void> _resetFloatingLyricsPosition() async {
     await FloatingLyricsController.resetPosition();
@@ -1343,42 +1343,56 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     SettingsNotifier n,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    final minutes = (s?.shareLinkValidityMinutes ?? 120).clamp(5, 1440).toInt();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          leading: const Icon(Icons.timer_outlined),
-          title:   Text(tr('分享链接有效时长')),
-          subtitle: Text(
-            tr('分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）'),
-            style: Theme.of(context).textTheme.bodySmall,
+    final minutes = (s?.shareLinkValidityMinutes ?? 120).clamp(5, 1440).toDouble();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.timer_outlined, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  tr('分享链接有效时长'),
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _NumericInputStepperRow(
+                enabled: true,
+                title: tr('有效时长'),
+                value: minutes,
+                step: 15,
+                min: 5,
+                max: 1440,
+                unit: ' ${tr('分钟')}',
+                onChanged: (v) => n.setShareLinkValidityMinutes(v.round()),
+              ),
+            ],
           ),
-          trailing: Text(
-            _shareValidityLabel(minutes),
-            style: TextStyle(
-              fontSize: 12.5,
-              color: scheme.primary,
-              fontWeight: FontWeight.w600,
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 34),
+            child: Text(
+              tr('分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）'),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: scheme.onSurfaceVariant,
+                height: 1.35,
+              ),
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: CommittedSlider(
-            min: 5,
-            max: 1440,
-            divisions: 287,
-            value: minutes.toDouble(),
-            onCommit: (v) => n.setShareLinkValidityMinutes(v.round()),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
-
-  String _shareValidityLabel(int v) =>
-      v % 60 == 0 ? tr('{h} 小时', {'h': v ~/ 60}) : tr('{m} 分钟', {'m': v});
 
   String _failureBehaviorLabel(String v) => switch (v) {
     'stop' => tr('停止播放'),
@@ -2076,38 +2090,93 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 }
 
-/// 带 -/+ 步进按钮的滑块行：左「−」右「＋」，中间为滑块，右侧显示当前值，
-/// 便于对悬浮歌词位置等连续值做精细微调。
-class _StepperSliderRow extends StatelessWidget {
-  const _StepperSliderRow({
-    required this.slider,
+/// 带 -/+ 步进按钮与可点击直接输入数值的微调控件。
+class _NumericInputStepperRow extends StatelessWidget {
+  const _NumericInputStepperRow({
     required this.enabled,
-    required this.readValue,
+    required this.value,
     required this.step,
     required this.min,
     required this.max,
-    required this.onAdjust,
-    this.format,
-    this.valueWidth = 40,
+    required this.onChanged,
+    required this.title,
+    this.unit = '%',
   });
 
-  final Widget slider;
   final bool enabled;
-  final double Function() readValue;
+  final double value;
   final double step;
   final double min;
   final double max;
-  final void Function(double value) onAdjust;
-  final String Function(double)? format;
-  final double valueWidth;
+  final ValueChanged<double> onChanged;
+  final String title;
+  final String unit;
+
+  Future<void> _showManualInputDialog(BuildContext context) async {
+    final controller = TextEditingController(text: value.round().toString());
+    final scheme = Theme.of(context).colorScheme;
+
+    final result = await showPredictiveDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('设置{title}', {'title': title})),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tr('请输入数值（范围 {min} ~ {max}）', {
+                'min': min.round().toString(),
+                'max': max.round().toString(),
+              }),
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                suffixText: unit,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = double.tryParse(controller.text.trim());
+              if (parsed != null) {
+                Navigator.pop(ctx, parsed.clamp(min, max));
+              } else {
+                Navigator.pop(ctx);
+              }
+            },
+            child: Text(tr('确定')),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      onChanged(result);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
     Widget stepButton(IconData icon, double delta) {
       return IconButton(
         visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
         padding: EdgeInsets.zero,
         iconSize: 16,
         style: IconButton.styleFrom(
@@ -2118,7 +2187,7 @@ class _StepperSliderRow extends StatelessWidget {
         ),
         icon: Icon(icon),
         onPressed: enabled
-            ? () => onAdjust((readValue() + delta).clamp(min, max))
+            ? () => onChanged((value + delta).clamp(min, max))
             : null,
       );
     }
@@ -2128,20 +2197,34 @@ class _StepperSliderRow extends StatelessWidget {
       children: [
         stepButton(Icons.remove, -step),
         const SizedBox(width: 6),
-        SizedBox(width: 120, child: slider),
-        const SizedBox(width: 6),
-        stepButton(Icons.add, step),
-        if (format != null) ...[
-          const SizedBox(width: 8),
-          SizedBox(
-            width: valueWidth,
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: enabled ? () => _showManualInputDialog(context) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: enabled
+                  ? scheme.surfaceContainerHighest.withValues(alpha: 0.6)
+                  : scheme.surfaceContainerHighest.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: enabled
+                    ? scheme.outline.withValues(alpha: 0.15)
+                    : Colors.transparent,
+              ),
+            ),
             child: Text(
-              format!(readValue()),
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontSize: 12.5),
+              '${value.round()}$unit',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: enabled ? scheme.primary : scheme.outline,
+              ),
             ),
           ),
-        ],
+        ),
+        const SizedBox(width: 6),
+        stepButton(Icons.add, step),
       ],
     );
   }
