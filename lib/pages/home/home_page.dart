@@ -6,11 +6,12 @@ import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
-import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/page_search_bar.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -22,17 +23,26 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 竖屏 / 横屏两套完全分开：横屏顶栏改横向（搜索框 + 扫码齐平一行）、
+    // 「弦予音乐」标题移入左侧侧栏、去掉封面卡片直接以「发现」起步。
+    return useLandscape(ref)
+        ? _buildLandscape(context, ref)
+        : _buildPortrait(context, ref);
+  }
+
+  /// 竖屏：原默认布局（封面轮播 + 发现 + 听过最多，标题 + 底部搜索框顶栏）。
+  Widget _buildPortrait(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final searchBar = _SearchBarBottom(
+    final searchBar = PageSearchBarBottom(
       onTap: () => context.push('/search'),
       onRecognize: () => context.push('/recognize'),
     );
-    // 悬浮搜索框：顶栏标题行下方悬浮胶囊，内容从其下方穿过被玻璃模糊。
+    // 悬浮顶部栏（标题胶囊+搜索胶囊+玻璃按钮）由壳层统一渲染在状态栏下方，
+    // 悬浮模式下本页不再渲染自己的标题行。
     final statusBar = MediaQuery.paddingOf(context).top;
-    final searchTop = statusBar + kToolbarHeight + 8;
     final topInset = floating
-        ? searchTop + 44 + 12
+        ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
 
     return Scaffold(
@@ -56,12 +66,15 @@ class HomePage extends ConsumerWidget {
               _MostPlayedList(),
             ],
           ),
-          // 顶栏：状态栏+「弦予音乐」标题+搜索框，滚动内容从其下方穿过被毛玻璃模糊。
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
+          // 顶栏（仅非悬浮模式）：状态栏+「弦予音乐」标题+搜索框，
+          // 滚动内容从其下方穿过被毛玻璃模糊；悬浮模式由壳层悬浮顶栏接管。
+          if (!floating)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+              titleSpacing: 18,
               title:   Text.rich(
                 TextSpan(
                   children: [
@@ -81,131 +94,53 @@ class HomePage extends ConsumerWidget {
                   letterSpacing: 0.5,
                 ),
               ),
-              titleSpacing: 18,
               actions: [
-                // 扫码登录入口：扫描桌面端登录页二维码
-                _ScanEntryButton(
-                  onTap: () => context.push('/scan'),
+                // 皮肤（壁纸中心）入口：与我的页账号区的扫码入口位置互换
+                IconButton(
+                  icon: const Icon(Icons.checkroom),
+                  tooltip: tr('皮肤'),
+                  onPressed: () => context.push('/wallpaper'),
                 ),
                 const SizedBox(width: 16),
               ],
               bottom: floating ? null : searchBar,
             ),
           ),
-          if (floating)
-            Positioned(
-              top: searchTop,
-              left: 18,
-              right: 18,
-              child: FloatingSearchBar(
-                onTap: () => context.push('/search'),
-                onRecognize: () => context.push('/recognize'),
-              ),
-            ),
         ],
       ),
     );
   }
-}
 
-/// 顶栏搜索框扩展区（PreferredSizeWidget 以便 GlassTopBar 计算 height）。
-class _SearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
-  const _SearchBarBottom({required this.onTap, required this.onRecognize});
-
-  final VoidCallback onTap;
-  final VoidCallback onRecognize;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(58);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-      child: _SearchBar(onTap: onTap, onRecognize: onRecognize),
-    );
-  }
-}
-
-class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.onTap, required this.onRecognize});
-
-  final VoidCallback onTap;
-  final VoidCallback onRecognize;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
-    return Material(
-      color: contrastSearchColor(context),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
-          child: Row(
+  /// 横屏：独立一套 UI。去掉封面轮播卡片、直接以「发现」起步。
+  /// 顶栏由壳层统一提供（全局继承），本页不再渲染自身顶栏。
+  Widget _buildLandscape(BuildContext context, WidgetRef ref) {
+    // 悬浮模式：壳层横屏全局顶栏独立悬浮在容器顶部（控件独立显示），
+    // 内容需预留其高度，滚动时才能从悬浮控件下方穿过（默认模式顶栏在
+    // 上方 Column 中，无需预留）。
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
+    return Scaffold(
+      body: Stack(
+        children: [
+          const _AmbientBackground(),
+          // 内容主体：顶部无需再避让顶栏（壳层全局顶栏在上方 Column 中），
+          // 直接以「发现」起步，仅留少量呼吸间距。
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+                18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
             children: [
-              Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  tr('搜索歌曲、歌手、专辑'),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // 听歌识曲入口：搜索框内右侧（仅标识）
-              GestureDetector(
-                onTap: onRecognize,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEC4141).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(Icons.mic_none, size: 17, color: Color(0xFFEC4141)),
-                ),
-              ),
-              ],
-            ),
+              SizedBox(height: 10),
+              _SectionHeader(title: tr('发现')),
+              SizedBox(height: 12),
+              DiscoverSection(),
+              SizedBox(height: 26),
+              _SectionHeader(title: tr('听过最多')),
+              SizedBox(height: 14),
+              _MostPlayedList(),
+            ],
           ),
-        ),
-      );
-  }
-}
-
-/// 顶栏扫码登录入口：轻红底圆形图标，点击进入扫码页。
-class _ScanEntryButton extends StatelessWidget {
-  const _ScanEntryButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEC4141).withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.qr_code_scanner,
-            size: 20,
-            color: Color(0xFFEC4141),
-          ),
-        ),
+        ],
       ),
     );
   }

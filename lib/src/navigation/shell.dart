@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/app_logger.dart';
 import '../core/app_colors.dart';
@@ -14,6 +13,7 @@ import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/glass_settings.dart';
+import '../widgets/custom_background.dart';
 import '../widgets/blur_budget.dart';
 import '../widgets/app_toast.dart';
 import '../notifications/notification_service.dart';
@@ -21,6 +21,16 @@ import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart';
 import '../widgets/bilipai_glass.dart';
+import '../../pages/library/library_page.dart';
+import '../../pages/favorites/favorites_page.dart';
+import '../../pages/recent/recent_page.dart';
+import '../../pages/playlist/playlists_page.dart';
+import '../widgets/floating_search_bar.dart';
+import '../widgets/glass_appbar.dart' show GlassTopBar;
+import '../widgets/landscape_top_bar.dart';
+import '../../pages/account/account_page.dart';
+import '../../pages/download/download_page.dart';
+import '../../pages/search/search_page.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
 
@@ -30,14 +40,28 @@ import '../i18n/i18n.dart';
 /// 弹窗、列表等需要避让它的地方统一引用此常量，改动底栏尺寸时只需改这里。
 const double kFloatingNavBarInset = 90;
 
-/// 横屏固定左缘侧栏宽度。内容区整体右移避让，避免侧栏遮挡根页面内容。
-const double kLandscapeRailWidth = 64;
+/// 横屏固定左缘侧栏宽度（文字侧边栏，参考设置页横屏左栏）。内容区整体右移避让。
+const double kLandscapeRailWidth = 176;
 
 /// 全局横屏感知：由 AppShell 的 MediaQuery 检测写入，供各页面响应横屏布局。
 ///
 /// 横屏时导航自动切换为侧边形态、无底部栏，页面底部只需为准占播放条留白，
 /// 侧边栏浮层不参与布局，故左缘由需要避让的页面自行判断。
 final isLandscapeProvider = StateProvider<bool>((ref) => false);
+
+/// 横屏侧边栏「音乐库」当前选中的入口（0本地/1收藏/2最近/3歌单），null 表示
+/// 未选中（右侧显示主 tab）。选中后右侧直接内嵌对应页面，不进入二级路由，
+/// 参考设置页横屏的 master-detail。
+final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
+
+/// 横屏「我的」页账号与安全是否以右侧容器内嵌面板打开（不开二级路由）。
+final landscapeAccountOpenProvider = StateProvider<bool>((ref) => false);
+
+/// 横屏「我的」页歌曲下载是否以右侧容器内嵌面板打开（不开二级路由）。
+final landscapeDownloadOpenProvider = StateProvider<bool>((ref) => false);
+
+/// 横屏选中的歌单 id：右侧容器内嵌歌单详情（不开二级路由），null=未打开。
+final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 
 /// 分支根页面需要的底部避让高度。
 ///
@@ -52,31 +76,6 @@ final navBarInsetProvider = Provider<double>((ref) {
   final floating = s?.floatingNavBar ?? true;
   return floating ? 175 : 82;
 });
-
-/// 最新调优的晶莹水晶物理 Shader 液态玻璃参数。
-///
-/// 极低底色遮罩 + 适当轻模糊 + 高饱和透光 + 强烈边缘高光与折射，呈现如 iOS 18/26 般水润透亮的液态玻璃。
-LiquidGlassSettings liquidGlassSettings(bool isDark) => LiquidGlassSettings(
-      glassColor:
-          // 提升底色不透明度：暗色从 alpha 10(≈0.04) 提到 80(≈0.31)、
-          // 亮色从 130(≈0.51) 提到 175(≈0.69)，让液态底栏/侧栏不透明到能
-          // 托起折射高光、透出模糊层次；亮色避免过高压暗底色（老问题）。
-          isDark
-          ? const Color.fromARGB(80, 255, 255, 255)
-          : const Color.fromARGB(175, 255, 255, 255),
-      blur: isDark ? 9.0 : 7.0,
-      thickness: 22,
-      refractiveIndex: 1.38,
-      chromaticAberration: 0.035,
-      lightIntensity: isDark ? 1.45 : 1.15,
-      ambientStrength: 0.25,
-      glowIntensity: 1.1,
-      saturation: 1.28,
-      shadow: const [],
-      // ambientRim/edgeAbsorption 仅 premium(高)档消费：全周边亮环 + 边缘雕刻暗带。
-      ambientRim: 0.5,
-      edgeAbsorption: 0.12,
-    );
 
 /// 请求隐藏底栏与迷你播放条的页面计数。
 ///
@@ -102,12 +101,16 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   /// 是否已计入隐藏计数，避免重复增减导致计数漂移。
   bool _counted = false;
 
+  /// 是否真正计入隐藏计数。横屏内嵌容器模式（embedded）覆盖为 false：
+  /// 迷你播放条由壳层常驻承接，页面自身不再隐藏 shell 浮层。
+  bool get hidesChrome => true;
+
   @override
   void initState() {
     super.initState();
     // 延后一帧：build 期间不可修改 provider。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !hidesChrome) return;
       _container = ProviderScope.containerOf(context, listen: false);
       _counted = true;
       AppLogger.instance.log('shell', '进入二级页面 ${widget.runtimeType}');
@@ -368,6 +371,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     if (_lastImmersive != landscape) {
       _lastImmersive = landscape;
       _applyLandscapeImmersive(landscape);
+      // 横屏不切回流：进入/退出横屏都留在当前页，不强制切回首页 tab。
     }
   }
 
@@ -407,15 +411,21 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     double defaultLeft,
     double defaultTop,
     double maxTop,
+    double miniBarW,
+    double landscapeLeftBound,
+    double landscapeRightBound,
+    bool landscape,
   ) {
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
 
-    // 实际宽度（与悬浮底栏一致的 18px 双侧边距），拖拽边界按真实尺寸夹取。
-    final barW = screenSize.width - 36.0;
-
-    final minLeft = 6.0;
-    final maxLeft = screenSize.width - barW - 6.0;
+    // 拖拽边界：横屏按真实迷你条宽度在 leftBound..rightBound 间自由左右拖动；
+    // 竖屏为贴底长条，沿用旧行为（横移基本锁死、只纵向停靠）。
+    final barW = landscape ? miniBarW : (screenSize.width - 36.0);
+    final minLeft = landscape ? landscapeLeftBound : 6.0;
+    final maxLeft = landscape
+        ? landscapeRightBound
+        : (screenSize.width - barW - 6.0);
     final minTop = padding.top + 6.0;
 
     // 拖拽下限由调用方按底栏几何（悬浮 18+70 / 固定 safeBottom+64 / 二级页无底栏）
@@ -452,6 +462,36 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     });
   }
 
+  /// 横屏右侧主 tab 容器：摄像头区域使用时抑制切口内边距。主 tab 切换的
+  /// 淡出淡入动效由分支容器（PageSwitchTabView 横屏 out-in）负责，此处不再叠加。
+  Widget _landscapeFadePanel({
+    required bool useCameraArea,
+    required EdgeInsets padding,
+    required BuildContext context,
+    required Widget child,
+  }) {
+    // 摄像头区域使用时抑制切口内边距：壳内各页面 SafeArea 不再为挖孔留安全区。
+    return useCameraArea
+        ? MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              padding: padding.copyWith(left: 0, right: 0),
+            ),
+            child: child,
+          )
+        : child;
+  }
+
+  // 横屏容器（音乐库/下载/歌单详情）切入切换：从下往上轻微滑动 + 淡进淡出，
+  // 类似桌面端切换效果。关闭「横屏切换动画」时保持硬切。
+  Widget _landscapeSlide({
+    required bool enabled,
+    required Object? trigger,
+    required Widget child,
+  }) {
+    if (!enabled) return child;
+    return _LandscapeSlideFade(trigger: trigger, child: child);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -465,12 +505,62 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final noti = ref.read(isLandscapeProvider.notifier);
-      if (noti.state != landscape) noti.state = landscape;
+      if (noti.state != landscape) {
+        final wasLandscape = noti.state;
+        noti.state = landscape;
+        // 进入横屏且停在搜索二级路由上：关掉二级路由，改为在右侧容器打开
+        // 搜索对应页面（/search=默认页，/search/result=结果页，会话共用）。
+        // 注意不能用 GoRouterState.of(context)——壳层拿到的是自己分支的路由
+        // 状态（如 /home），/search、/search/result 压在其之上，须读路由器
+        // 实时栈顶。
+        if (landscape && !wasLandscape) {
+          final path = GoRouter.of(context)
+              .routerDelegate
+              .currentConfiguration
+              .uri
+              .path;
+          if (path == '/search' || path == '/search/result') {
+            ref.read(landscapeSearchOpenProvider.notifier).state = true;
+            ref.read(landscapeSearchResultsProvider.notifier).state =
+                path == '/search/result';
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          }
+        }
+      }
     });
 
     final floating =
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
+
+    // 横屏侧边栏「音乐库」当前选中的入口（null=显示主 tab）。
+    final libSel = ref.watch(landscapeLibraryProvider);
+
+    // 横屏「我的」页账号与安全内嵌面板是否打开（不开二级路由）。
+    final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
+
+    // 横屏「我的」页歌曲下载内嵌面板是否打开（不开二级路由）。
+    final downloadOpen = landscape && ref.watch(landscapeDownloadOpenProvider);
+
+    // 横屏选中的歌单详情内嵌面板（不开二级路由），null=未打开。
+    final playlistOpenId = landscape
+        ? ref.watch(landscapePlaylistOpenProvider)
+        : null;
+
+    // 横屏搜索容器（不开二级路由）：true=搜索默认页，显示结果页看 results。
+    final searchOpenRaw = ref.watch(landscapeSearchOpenProvider);
+    final searchResults = ref.watch(landscapeSearchResultsProvider);
+    final searchOpen = landscape && searchOpenRaw;
+
+    // 悬浮搜索框开关：开启后首页/我的页共用同一个实例（提至壳层，不随 tab
+    // 重建，避免液态玻璃 shader 反复初始化渲染）。
+    final floatingSearchBar =
+        ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.floatingSearchBar ?? false));
 
     // 横屏使用摄像头区域：开启时壳内各页面不再为摄像头挖孔保留安全区，
     // 内容可铺满到短边摄像头（迷你条避让仍用原始 padding，不受影响）。
@@ -479,16 +569,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
             settingsProvider.select(
                 (s) => s.valueOrNull?.landscapeCameraArea ?? true));
 
+    // 横屏下首页/我的等主 tab 在右侧容器切换时的淡进淡出动效（独立于竖屏切换动画）。
+    final landscapeFadeEnabled = landscape &&
+        ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true));
+
     // 用「当前是否为根路径」而非 canPop 判断是否处于二级页：canPop 在整个返回
     // 过渡动画期间一直为 true（被退路由动画结束才从 _history 移除），会让底栏
     // 动画结束才出现；路径在 pop 开始时即已收缩，可让底栏随一级页露出同步淡入。
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
 
-    void select(int i) => widget.navigationShell.goBranch(
-          i,
-          initialLocation: i == widget.index,
-        );
+    void select(int i) {
+      // 切主 tab 时关闭横屏搜索容器（参考桌面端：侧边栏导航即离开搜索页）。
+      if (searchOpenRaw) closeLandscapeSearch(ref);
+      widget.navigationShell.goBranch(i, initialLocation: i == widget.index);
+    }
 
     // 横屏自动切换为侧边导航（复用「侧边栏模式」布局几何，隐藏底部栏）。
     // 前提：横屏前必须先有被测量的 MediaQuery——本 State 作为壳层必然已完成首帧。
@@ -509,7 +605,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     // 否则位置变化会打断「底栏封面飞播放页」的飞行）；其余情况沿用 hidden 下沉。
     final miniBarLow = hiddenCount > 0 || (!_isRootPath && !isPlayerPage);
 
-    // 迷你条宽度：竖屏占满（两侧各 18）；横屏限宽停靠右缘，避免占满整宽。
+    // 统一播放条：横屏音乐库面板（本地/收藏/最近/歌单）以及下载/歌单详情
+    // 容器统一由外壳条承载并常驻整屏（与全局顶栏同步）；账号面板仍按原逻辑隐藏外壳条。
+    final hideShellMiniBar = accountOpen;
+
+    // 迷你条宽度：竖屏占满（两侧各 18）；横屏保持限宽（55%/520），宽度不变，
+    // 仅放开拖拽横移边界使其可自由拖动到整个横屏（含越到左侧栏上方）。
     final miniBarW = landscape
         ? math.min(screenSize.width * 0.55, 520.0)
         : (screenSize.width - 36.0);
@@ -521,12 +622,20 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
 
     // 默认定位坐标（不受软键盘影响，始终保持在底部稳定避让区）
     late final double defaultLeft;
+    // 横屏可自由拖拽的左右边界：播放条占满整屏宽，仅避开左右挖孔。
+    // 竖屏为贴底长条，只做纵向停靠，横移基本不放开（沿用旧行为）。
+    var landscapeLeftBound = 6.0;
+    var landscapeRightBound = 30.0;
     if (landscape) {
-      // 横屏尽量靠右停靠，但左不越过侧栏/左挖孔、右不撞进右挖孔。
-      final leftBound = math.max(leftCutout, kLandscapeRailWidth + 10);
-      final rightBound =
-          screenSize.width - miniBarW - (rightCutout > 0 ? rightCutout + 12 : 16);
-      defaultLeft = rightBound > leftBound ? rightBound : leftBound;
+      landscapeLeftBound = math.max(leftCutout, 6.0);
+      landscapeRightBound = screenSize.width -
+          miniBarW -
+          (rightCutout > 0 ? rightCutout + 12 : 16);
+      // 横屏默认起始位置居中；若居中位越出可拖拽边界则夹紧到边界内（防退化越界）。
+      defaultLeft = landscapeRightBound > landscapeLeftBound
+          ? ((screenSize.width - miniBarW) / 2.0)
+              .clamp(landscapeLeftBound, landscapeRightBound)
+          : landscapeLeftBound;
     } else {
       defaultLeft = 18.0;
     }
@@ -572,64 +681,302 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
     return Scaffold(
       body: Stack(
         children: [
+          // 壳底「固定背景层」：始终不随内容平移，供透明页面透出根层壁纸/底色。
+          // （壁纸由 CustomBackgroundLayer 铺设；无壁纸时透出主题底色。
+          // 第二个 Positioned.fill 作保底底色。）
+          const Positioned.fill(
+            child: CustomBackgroundLayer(),
+          ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: Theme.of(context).scaffoldBackgroundColor,
+            ),
+          ),
           // 横屏时左缘固定侧栏占位，内容整体右移避让；二级页（hidden）侧栏淡出，
           // 内容不偏移以享受全宽。播放页是推入 root navigator 的独立路由，不受此影响。
           // 滚动检测由 app.dart 根层 ScrollOffsetCapture 统一捕获，波浪扭曲已内聚到
-          // 迷你播放条/悬浮底栏的 AdaptiveGlass 自身负责液态玻璃渲染，
+          // 迷你播放条/悬浮底栏的 BiliPaiGlass 自身负责液态玻璃渲染，
           // 无需再整页包裹 LiquidWave 离屏捕获。
           Padding(
             // 横屏：左缘固定侧栏占位，内容右移避让；开关开启时不再为右侧
             // 摄像头挖孔预留安全区（所有页面使用摄像头区域）。
             padding: EdgeInsets.only(
-              left: landscape && !hidden ? kLandscapeRailWidth : 0,
+              // 横屏侧栏常驻：二级页（本地/收藏/最近/歌单）打开时也在左侧保留侧栏，
+              // 便于在音乐库入口间直接切换（参考桌面版侧边栏）。
+              left: landscape ? kLandscapeRailWidth : 0,
               right: (landscape && !useCameraArea) ? padding.right : 0,
             ),
-            child: useCameraArea
-                // 抑制摄像头切口内边距：壳内各页面 SafeArea 不再为挖孔留安全区。
-                ? MediaQuery(
-                    data: MediaQuery.of(context).copyWith(
-                      padding: padding.copyWith(left: 0, right: 0),
-                    ),
-                    child: widget.navigationShell,
-                  )
-                : widget.navigationShell,
-          ),
+            child: Stack(
+                    children: [
+                      // 主 tab 内容（首页/我的）：横屏下先接全局顶栏（全局继承，
+                      // 各页不再渲染自身顶栏），下方为当前页内容（切换动效在
+                      // 分支容器内，桌面版 page-fade 同款 out-in）。
+                      Positioned.fill(
+                        child: landscape
+                            ? (floatingSearchBar
+                                // 悬浮模式：内容铺满右侧容器，横屏全局顶栏独立悬浮
+                                // 在其上方（控件独立显示），滚动内容从其下穿过。
+                                ? Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: _landscapeFadePanel(
+                                          useCameraArea: useCameraArea,
+                                          padding: padding,
+                                          context: context,
+                                          child: widget.navigationShell,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        child: LandscapeGlobalTopBar(
+                                          currentIndex: widget.index,
+                                          floating: true,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                // 默认模式：全局顶栏直接显示在容器顶部（普通
+                                // IconButton 控件内嵌顶栏条），内容在其下方。
+                                : Column(
+                                    children: [
+                                      LandscapeGlobalTopBar(
+                                        currentIndex: widget.index,
+                                        floating: false,
+                                      ),
+                                      Expanded(
+                                        child: _landscapeFadePanel(
+                                          useCameraArea: useCameraArea,
+                                          padding: padding,
+                                          context: context,
+                                          child: widget.navigationShell,
+                                        ),
+                                      ),
+                                    ],
+                                  ))
+                            : _landscapeFadePanel(
+                                useCameraArea: useCameraArea,
+                                padding: padding,
+                                context: context,
+                                child: widget.navigationShell,
+                              ),
+                      ),
+                      // 横屏且侧边栏选中音乐库入口时，右侧直接内嵌对应页面：
+                      // 不进入二级路由，navigationShell 保持挂载以保留主 tab 状态。
+                      if (landscape && libSel != null)
+                        Positioned.fill(
+                          child: useCameraArea
+                                  ? MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(
+                                        padding: padding.copyWith(left: 0, right: 0),
+                                      ),
+                                      child: _landscapeSlide(
+                                        enabled: landscapeFadeEnabled,
+                                        trigger: libSel,
+                                        child: _MusicLibraryPane(index: libSel),
+                                      ),
+                                    )
+                                  : _landscapeSlide(
+                                      enabled: landscapeFadeEnabled,
+                                      trigger: libSel,
+                                      child: _MusicLibraryPane(index: libSel),
+                                    ),
+                              ),
+                      // 胶囊顶栏覆盖层：音乐库面板打开时叠加同一根全局顶栏
+                      // （面板保持全屏铺满，顶栏浮在其上，避免缩短容器截断内嵌迷你条）。
+                      if (landscape && libSel != null)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: LandscapeGlobalTopBar(
+                            currentIndex: widget.index,
+                            floating: floatingSearchBar,
+                          ),
+                        ),
+                      // 横屏「我的」账号与安全：右侧容器内嵌账号页，不开二级路由，
+                      // 盖住容器（含全局顶栏），返回后回到我的页。
+                      if (accountOpen)
+                        Positioned.fill(
+                          child: useCameraArea
+                              ? MediaQuery(
+                                  data: MediaQuery.of(context).copyWith(
+                                    padding: padding.copyWith(left: 0, right: 0),
+                                  ),
+                                  child: _AccountPane(
+                                    onBack: () => ref
+                                        .read(landscapeAccountOpenProvider.notifier)
+                                        .state = false,
+                                  ),
+                                )
+                              : _AccountPane(
+                                  onBack: () => ref
+                                      .read(landscapeAccountOpenProvider.notifier)
+                                      .state = false,
+                                ),
+                        ),
+                      // 横屏「我的」下载管理：右侧容器内嵌下载页，不开二级路由。
+                      if (downloadOpen)
+                        Positioned.fill(
+                          child: useCameraArea
+                              ? MediaQuery(
+                                  data: MediaQuery.of(context).copyWith(
+                                    padding: padding.copyWith(left: 0, right: 0),
+                                  ),
+                                  child: _landscapeSlide(
+                                    enabled: landscapeFadeEnabled,
+                                    trigger: downloadOpen,
+                                    child: const _DownloadPane(),
+                                  ),
+                                )
+                              : _landscapeSlide(
+                                  enabled: landscapeFadeEnabled,
+                                  trigger: downloadOpen,
+                                  child: const _DownloadPane(),
+                                ),
+                        ),
+                      // 横屏选中的歌单详情：右侧容器内嵌歌单详情，不开二级路由。
+                      if (playlistOpenId != null)
+                        Positioned.fill(
+                          child: useCameraArea
+                              ? MediaQuery(
+                                  data: MediaQuery.of(context).copyWith(
+                                    padding: padding.copyWith(left: 0, right: 0),
+                                  ),
+                                  child: _landscapeSlide(
+                                    enabled: landscapeFadeEnabled,
+                                    trigger: playlistOpenId,
+                                    child: _PlaylistDetailPane(playlistId: playlistOpenId),
+                                  ),
+                                )
+                              : _landscapeSlide(
+                                  enabled: landscapeFadeEnabled,
+                                  trigger: playlistOpenId,
+                                  child: _PlaylistDetailPane(playlistId: playlistOpenId),
+                                ),
+                        ),
+                      // 横屏搜索容器：右侧容器内嵌搜索默认页（历史+热搜）/
+                      // 结果页，不开二级路由（原 /search、/search/result 为
+                      // 竖屏二级路由，横屏改走容器）。参考桌面端「顶栏即搜索
+                      // 输入」：输入框由全局顶栏承接，提交后在容器内显示结果。
+                      // 渲染顺序在歌单详情之后（最上层覆盖），回退链最先闭合。
+                      if (searchOpen)
+                        Positioned.fill(
+                          child: useCameraArea
+                              ? MediaQuery(
+                                  data: MediaQuery.of(context).copyWith(
+                                    padding: padding.copyWith(left: 0, right: 0),
+                                  ),
+                                  child: _landscapeSlide(
+                                    enabled: landscapeFadeEnabled,
+                                    trigger: searchOpen,
+                                    child: _SearchPane(showResults: searchResults),
+                                  ),
+                                )
+                              : _landscapeSlide(
+                                  enabled: landscapeFadeEnabled,
+                                  trigger: searchOpen,
+                                  child: _SearchPane(showResults: searchResults),
+                                ),
+                        ),
+                      // 下载/歌单详情容器与全局顶栏同步：不盖住顶栏，顶栏在其上
+                      // 浮层显示（搜索框左侧带回退按钮），由顶栏返回闭合容器。
+                      if (downloadOpen)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: LandscapeGlobalTopBar(
+                            currentIndex: widget.index,
+                            floating: floatingSearchBar,
+                          ),
+                        ),
+                      if (playlistOpenId != null)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: LandscapeGlobalTopBar(
+                            currentIndex: widget.index,
+                            floating: floatingSearchBar,
+                          ),
+                        ),
+                      // 搜索容器打开时顶栏浮层显示搜索输入框（顶栏即搜索输入）。
+                      if (searchOpen)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: LandscapeGlobalTopBar(
+                            currentIndex: widget.index,
+                            floating: floatingSearchBar,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+          // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
+          // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
+          // 播放页是覆盖全屏的独立 root 路由，侧栏在下层不可见，无需处理。
+          if (landscape)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: kLandscapeRailWidth,
+              child: _LandscapeRail(
+                index: widget.index,
+                onSelect: select,
+              ),
+            ),
 
           // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
           // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让
           // Hero 在 push 后下一帧收集源封面时找不到迷你条，导致「打开无飞行、只有
           // 返回有飞行」；播放页为不透明路由会盖住迷你条，留在树中无副作用。
-          AnimatedPositioned(
-            duration: _isPlayerDragging
-                ? Duration.zero
-                : const Duration(milliseconds: 320),
-            curve: Curves.easeOutCubic,
-            left: actualLeft,
-            top: actualTop,
-            width: miniBarW,
-            child: MiniPlayerBar(
-              onPanStart: _onPlayerPanStart,
-              onPanUpdate: (d) => _onPlayerPanUpdate(d, screenSize, padding,
-                  defaultLeft, defaultTop, dragMaxTop),
-              onPanEnd: (d) =>
-                  _onPlayerPanEnd(d, defaultLeft, defaultTop),
-              onPanCancel: _onPlayerPanCancel,
-              // 二级页面（非播放页）时 shell 播放条被 root navigator 覆盖不可见，
-              // 不注册飞封面目标，避免与页面自己的播放条竞争目标位置。
-              registerTarget: !(hiddenCount > 0 && !isPlayerPage),
-              // Hero 源：根页面与播放页时由 shell 播放条承担；二级页面（非播放页）
-              // 时去掉 Hero，由页面内嵌播放条承担（Hero 源必须在栈顶页面子树中）。
-              heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
-              // 预测返回回拨落点：用根页停靠位（见上 rootBarTop），使二级页返回时
-              // 封面飞行可见地归位到 shell 条。
-              returnTarget: () => Rect.fromLTWH(
-                actualLeft,
-                rootBarTop,
-                46,
-                46,
+          if (!hideShellMiniBar)
+            AnimatedPositioned(
+                duration: _isPlayerDragging
+                    ? Duration.zero
+                    : const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+                left: actualLeft,
+                top: actualTop,
+                width: miniBarW,
+                child: MiniPlayerBar(
+                  onPanStart: _onPlayerPanStart,
+                  onPanUpdate: (d) => _onPlayerPanUpdate(
+                      d,
+                      screenSize,
+                      padding,
+                      defaultLeft,
+                      defaultTop,
+                      dragMaxTop,
+                      miniBarW,
+                      landscapeLeftBound,
+                      landscapeRightBound,
+                      landscape),
+                  onPanEnd: (d) =>
+                      _onPlayerPanEnd(d, defaultLeft, defaultTop),
+                  onPanCancel: _onPlayerPanCancel,
+                  // 二级页面（非播放页）时 shell 播放条被 root navigator 覆盖不可见，
+                  // 不注册飞封面目标，避免与页面自己的播放条竞争目标位置。
+                  registerTarget: !(hiddenCount > 0 && !isPlayerPage),
+                  // Hero 源：根页面与播放页时由 shell 播放条承担；二级页面（非播放页）
+                  // 时去掉 Hero，由页面内嵌播放条承担（Hero 源必须在栈顶页面子树中）。
+                  heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
+                  // 预测返回回拨落点：用根页停靠位（见上 rootBarTop），使二级页返回时
+                  // 封面飞行可见地归位到 shell 条。
+                  returnTarget: () => Rect.fromLTWH(
+                    actualLeft,
+                    rootBarTop,
+                    46,
+                    46,
+                  ),
+                ),
               ),
-            ),
-          ),
 
           // 侧边栏悬浮层（竖屏「侧边栏模式」用）
           if (isSide && !landscape)
@@ -643,48 +990,99 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
               onSelect: select,
             ),
 
-          // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）
-          if (landscape)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: kLandscapeRailWidth,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-                opacity: hidden ? 0.0 : 1.0,
-                child: IgnorePointer(
-                  ignoring: hidden,
-                  child: _LandscapeRail(
-                    index: widget.index,
-                    onSelect: select,
-                  ),
-                ),
-              ),
-            ),
-
           // 悬浮底栏（仅在 4 个主 Tab 根页面展示，二级页面 hidden 时优雅淡出缩小隐去）
           if (!isSide && floating)
             Positioned(
+                left: 18,
+                right: 18,
+                bottom: 18,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  opacity: hidden ? 0.0 : 1.0,
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    scale: hidden ? 0.92 : 1.0,
+                    child: IgnorePointer(
+                      ignoring: hidden,
+                      child: _JellySwitch(
+                        key: _jellyKey,
+                        mode: true,
+                        child: _LiquidNavBar(index: widget.index, onSelect: select),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+          // 悬浮顶部栏（竖屏首页/我的页共用同一实例）：标题玻璃胶囊 + 搜索胶囊
+          // （长度自适应）+ 右侧玻璃小按钮（首页=皮肤、我的=设置），直接悬浮在
+          // 状态栏下方，取代页面自带的标题行；二级页/其它 tab 淡出并禁用交互。
+          // 横屏不渲染——横屏有带搜索框的全局顶栏。
+          if (!landscape)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 8,
               left: 18,
               right: 18,
-              bottom: 18,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                opacity: hidden ? 0.0 : 1.0,
-                child: AnimatedScale(
-                  duration: const Duration(milliseconds: 240),
-                  curve: Curves.easeOutCubic,
-                  scale: hidden ? 0.92 : 1.0,
-                  child: IgnorePointer(
-                    ignoring: hidden,
-                    child: _JellySwitch(
-                      key: _jellyKey,
-                      mode: true,
-                      child: _LiquidNavBar(index: widget.index, onSelect: select),
-                    ),
+                opacity: (floatingSearchBar &&
+                        (widget.index == 0 || widget.index == 1) &&
+                        !hidden)
+                    ? 1.0
+                    : 0.0,
+                child: IgnorePointer(
+                  ignoring: !(floatingSearchBar &&
+                      (widget.index == 0 || widget.index == 1) &&
+                      !hidden),
+                  child: FloatingTopBar(
+                    title: widget.index == 1
+                        ? Text(
+                            tr('我的'),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                            ),
+                          )
+                        : Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(text: tr('弦予')),
+                                TextSpan(
+                                  text: tr('音乐'),
+                                  style: const TextStyle(
+                                    color: Color(0xFFEC4141),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                    onSearchTap: () => context.push('/search'),
+                    // 首页/我的页共用同一搜索框样式（带听歌识曲话筒入口）。
+                    onRecognize: () => context.push('/recognize'),
+                    actions: [
+                      if (widget.index == 0)
+                        BiliPaiIconButton(
+                          icon: Icons.checkroom,
+                          tooltip: tr('皮肤'),
+                          onTap: () => context.push('/wallpaper'),
+                        )
+                      else
+                        BiliPaiIconButton(
+                          icon: Icons.settings_outlined,
+                          tooltip: tr('设置'),
+                          onTap: () => context.push('/settings'),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -695,11 +1093,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
           ? _JellySwitch(
               key: _jellyKey,
               mode: false,
-              child:
-                  _FixedChrome(index: widget.index, hidden: hidden, onSelect: select),
+              child: _FixedChrome(
+                  index: widget.index, hidden: hidden, onSelect: select),
             )
           : null,
-    );
+        ); // 关闭 Scaffold，结束 return 语句
   }
 }
 
@@ -753,7 +1151,6 @@ class _FixedNavBar extends ConsumerWidget {
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
-    final wallpaper = ref.watch(wallpaperActiveProvider);
 
     // 固定底栏内容（与材质设置无关，共用布局）。
     final bar = SafeArea(
@@ -776,13 +1173,11 @@ class _FixedNavBar extends ConsumerWidget {
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    final fill = wallpaper
-        ? glassControlFill
-        : (solid
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
+    final fill = solid
+        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
     final glassFill =
         solid ? fill : surfaceFillWithBudget(fill, budget);
     // 固定底栏顶部不再画横向分隔线（玻璃态的分隔条 / 实色态的 border）：
@@ -985,42 +1380,36 @@ class _LiquidNavBar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    return glassBorder(
-      context: context,
+    return BiliPaiGlass(
       radius: 30,
-      child: BiliPaiGlass(
-        radius: 30,
-        refract: bilipaiRefractOf(quality),
-        chroma: bilipaiChromaOf(quality),
-        blurSigma: surfaceBlurSigma(
-          base: 1.5,
-          budget: budget,
-          type: BlurSurfaceType.bottomBar,
-        ),
-        backgroundColor: bilipaiGlassTint(isDark),
-        specular: bilipaiSpecularOf(quality),
-        child: SizedBox(height: 70, child: tabs),
+      refract: bilipaiRefractOf(quality),
+      chroma: bilipaiChromaOf(quality),
+      blurSigma: surfaceBlurSigma(
+        base: 6,
+        budget: budget,
+        type: BlurSurfaceType.bottomBar,
       ),
+      backgroundColor: bilipaiGlassTint(isDark),
+      specular: bilipaiSpecularOf(quality),
+      edgeAmount: bilipaiEdgeOf(quality),
+      saturation: bilipaiSaturationOf(quality),
+      child: SizedBox(height: 70, child: tabs),
     );
   }
 
   /// 伪毛玻璃：液态玻璃关闭时的默认样式。
   ///
-  /// 规则：开启壁纸 → 半透明玻璃 + 高斯模糊（透出壁纸，与设置组件/播放条一致）；
-  /// 低性能模式（或关闭壁纸）→ 标准半透明磨砂；低性能 → 高不透明度纯色。
+  /// 规则：标准半透明磨砂（跟随毛玻璃开关）；低性能 → 高不透明度纯色。
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
       {bool lowPerf = false, BlurBudget? budget}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final wallpaper = ref.watch(wallpaperActiveProvider);
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final bg = wallpaper
-        ? glassControlFill
-        : (solid
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
+    final bg = solid
+        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
     final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
     final sigma = budget == null
         ? 14.0
@@ -1029,11 +1418,9 @@ class _LiquidNavBar extends ConsumerWidget {
             budget: budget,
             type: BlurSurfaceType.bottomBar,
           );
-    final border = wallpaper
-        ? glassControlBorder
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.12)
-            : Colors.white.withValues(alpha: 0.40));
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.40);
     final capsule = Container(
       height: 70,
       decoration: BoxDecoration(
@@ -1074,34 +1461,31 @@ class _LandscapeRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final lowPerf = ref.watch(
-      settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
-    );
-    final wallpaper = ref.watch(wallpaperActiveProvider);
-    final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf);
 
-    final bg = wallpaper
-        ? glassControlFill
-        : (solid
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.55)));
-    final border = wallpaper
-        ? glassControlBorder
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.32));
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    final fill = solid ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = surfaceBlurSigma(
-      base: 12,
-      budget: budget,
-      type: BlurSurfaceType.bottomBar,
-    );
+    // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的入口，直接内嵌右侧显示。
+    final primary = bottomNavItems;
+    final library = [
+      (tr('本地音乐'), Icons.library_music_outlined),
+      (tr('我的收藏'), Icons.favorite_outline),
+      (tr('最近播放'), Icons.history_outlined),
+      (tr('我的歌单'), Icons.queue_music_outlined),
+    ];
+    final libSel = ref.watch(landscapeLibraryProvider);
+
+    Widget label(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
+          child: Text(
+            t,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+              letterSpacing: 0.5,
+            ),
+          ),
+        );
 
     final rail = SafeArea(
       right: false,
@@ -1109,83 +1493,122 @@ class _LandscapeRail extends ConsumerWidget {
         width: kLandscapeRailWidth,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: fill,
-            border: Border(right: BorderSide(color: border)),
+            // 与设置页侧边栏一致：不单独绘制底色（继承外壳默认背景），
+            // 仅保留右侧一条细分隔线。
+            border: Border(
+              right: BorderSide(
+                color: scheme.onSurface.withValues(alpha: 0.08),
+              ),
+            ),
           ),
           child: Column(
             children: [
-              const SizedBox(height: 14),
-              _ThreeBarsIcon(color: scheme.onSurface.withValues(alpha: 0.7)),
-              const SizedBox(height: 4),
-              const Spacer(),
-              for (var i = 0; i < bottomNavItems.length; i++)
-                _LandscapeTab(
-                  item: bottomNavItems[i],
-                  selected: i == index,
-                  onTap: () => onSelect(i),
+              const SizedBox(height: 20),
+              // 顶部品牌标题（横屏时首页顶栏的「弦予音乐」标题移来这里，取代原三条竖线图标）。
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                    children: [
+                      TextSpan(text: tr('弦予')),
+                      TextSpan(
+                        text: tr('音乐'),
+                        style: const TextStyle(
+                          color: Color(0xFFEC4141),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              const SizedBox(height: 14),
+              ),
+              // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的二级入口。
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.only(top: 6, bottom: 12),
+                  children: [
+                    label(tr('导航')),
+                    for (var i = 0; i < primary.length; i++)
+                      _railItem(
+                        context,
+                        icon: primary[i].icon,
+                        title: navTitle(context, primary[i]),
+                        selected: libSel == null && i == index,
+                        onTap: () {
+                          ref.read(landscapeLibraryProvider.notifier).state =
+                              null;
+                          onSelect(i);
+                        },
+                      ),
+                    label(tr('音乐库')),
+                    for (var j = 0; j < library.length; j++)
+                      _railItem(
+                        context,
+                        icon: library[j].$2,
+                        title: library[j].$1,
+                        selected: libSel == j,
+                        onTap: () {
+                          // 切换音乐库入口时关闭横屏搜索容器（不遮挡新容器）。
+                          closeLandscapeSearch(ref);
+                          ref.read(landscapeLibraryProvider.notifier).state =
+                              j;
+                        },
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
-    if (solid) return rail;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: rail,
-      ),
-    );
+    return rail;
   }
-}
 
-class _LandscapeTab extends StatelessWidget {
-  const _LandscapeTab({
-    required this.item,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final BottomNavItem item;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
+  /// 横屏侧栏单个入口（图标 + 文字，选中淡红胶囊）。
+  Widget _railItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected
         ? scheme.primary
-        : scheme.onSurfaceVariant.withValues(alpha: 0.55);
+        : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 3, 8, 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: InkWell(
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          width: 48,
-          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           decoration: BoxDecoration(
-            color: selected
-                ? scheme.primary.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
+            borderRadius: BorderRadius.circular(10),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
-              Icon(item.icon, size: 22, color: color),
-              const SizedBox(height: 3),
-              Text(
-                navTitle(context, item),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  color: color,
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: color,
+                  ),
                 ),
               ),
             ],
@@ -1195,6 +1618,112 @@ class _LandscapeTab extends StatelessWidget {
     );
   }
 }
+
+/// 横屏右侧「音乐库」内嵌面板：按 [landscapeLibraryProvider] 的序号
+/// 用 [IndexedStack] 展示 本地/收藏/最近/歌单，切换不重建、保留各页状态。
+/// 面板保持铺满右侧容器（迷你条等按全屏底定位），胶囊顶栏由壳层作为
+/// 覆盖层叠在其顶部，统一与首页/我的同一根顶栏。
+class _MusicLibraryPane extends StatelessWidget {
+  const _MusicLibraryPane({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: IndexedStack(
+        index: index,
+        children: const [
+          LibraryPage(),
+          FavoritesPage(),
+          RecentPage(),
+          PlaylistsPage(),
+        ],
+      ),
+    );
+  }
+}
+
+/// 横屏「我的」账号与安全：右侧容器内嵌账号页，不开二级路由。
+/// 复用 [AccountPage.embedded]，自带「账号与安全」顶栏 + 返回闭合面板。
+class _AccountPane extends StatelessWidget {
+  const _AccountPane({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return AccountPage(embedded: true, onBack: onBack);
+  }
+}
+
+/// 横屏「我的」下载管理：右侧容器内嵌下载页，不开二级路由。
+/// 复用 [DownloadPage.embedded]，顶栏由全局横屏顶栏承接并隐藏自身顶栏。
+class _DownloadPane extends StatelessWidget {
+  const _DownloadPane();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DownloadPage(embedded: true);
+  }
+}
+
+/// 横屏选中的歌单详情：右侧容器内嵌歌单详情页，不开二级路由。
+/// 复用 [PlaylistDetailPage.embedded]，顶栏由全局横屏顶栏承接并隐藏自身顶栏。
+class _PlaylistDetailPane extends StatelessWidget {
+  const _PlaylistDetailPane({required this.playlistId});
+
+  final String playlistId;
+
+  @override
+  Widget build(BuildContext context) {
+    return PlaylistDetailPage(playlistId: playlistId, embedded: true);
+  }
+}
+
+/// 横屏搜索容器：右侧容器内嵌搜索默认页（历史+热搜）或结果页，不开二级路由。
+/// 输入框由全局横屏顶栏承接（搜索胶囊点击打开本容器），提交后切到结果页。
+class _SearchPane extends ConsumerWidget {
+  const _SearchPane({required this.showResults});
+
+  /// true=搜索结果页（SearchResultPage.embedded），false=搜索默认页。
+  final bool showResults;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 悬浮顶部栏模式下应用悬浮观感：内容铺满全高，滚动时从悬浮玻璃控件
+    // 下方穿过（与首页/我的页一致）；默认模式保持静态避让顶栏高度。
+    final floatingBar = ref.watch(settingsProvider
+        .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    if (!showResults) {
+      // 页面底色用 appScaffoldBackground（与其他容器一致）。注意不能用
+      // Theme.scaffoldBackgroundColor——全局主题为透明（底色由根层渲染），
+      // 透明容器会直接透出下方主 tab 内容。
+      if (floatingBar) {
+        return ColoredBox(
+          color: appScaffoldBackground(context, ref),
+          child: SearchIdleView(
+            onSearch: (q) => submitLandscapeSearch(ref, q),
+            // 初始内容位于悬浮控件下方，滚动时穿透到其背后。
+            topPadding: GlassTopBar.height(context),
+          ),
+        );
+      }
+      // 内容下移避让全局顶栏（顶栏以浮层形式盖在容器上方）。
+      return ColoredBox(
+        color: appScaffoldBackground(context, ref),
+        child: Padding(
+          padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+          child:
+              SearchIdleView(onSearch: (q) => submitLandscapeSearch(ref, q)),
+        ),
+      );
+    }
+    return const SearchResultPage(embedded: true);
+  }
+}
+
 
 /// 底部栏共享选中指示器：红色胶囊随所选 tab 横向滑动。
 ///
@@ -1646,15 +2175,22 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               budget: budget,
             );
           } else {
-            panelWidget = glassBorder(
-              context: context,
+            // BiliPai 液态玻璃面板：与底栏/迷你播放条同一套 shader 观感。
+            final quality = liquidGlassQualitySetting(ref);
+            panelWidget = BiliPaiGlass(
               radius: 24,
-              child: AdaptiveGlass(
-                shape: const LiquidRoundedRectangle(borderRadius: 24),
-                settings: liquidGlassSettings(isDark),
-                quality: liquidGlassQualityFromRef(ref),
-                child: SizedBox(width: panelWidth, child: panelBody),
+              refract: bilipaiRefractOf(quality),
+              chroma: bilipaiChromaOf(quality),
+              blurSigma: surfaceBlurSigma(
+                base: 8,
+                budget: budget,
+                type: BlurSurfaceType.drawerOrSheet,
               ),
+              backgroundColor: bilipaiGlassTint(isDark),
+              specular: bilipaiSpecularOf(quality),
+              edgeAmount: bilipaiEdgeOf(quality),
+              saturation: bilipaiSaturationOf(quality),
+              child: SizedBox(width: panelWidth, child: panelBody),
             );
           }
         } else if (lowPerf) {
@@ -1795,6 +2331,80 @@ class _SideNavTab extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 横屏容器切入过渡：对齐桌面版 page-fade —— 自下方 8px、scale 0.996 微上移
+/// 淡入（0.22s，cubic-bezier(0.16, 1, 0.3, 1)）。每次 [trigger] 变化（或首次
+/// 挂载）时重放一次过渡；关闭横屏切换动画时由壳层直接返回 child，不经此组件。
+class _LandscapeSlideFade extends StatefulWidget {
+  const _LandscapeSlideFade({required this.trigger, required this.child});
+  // 桌面版 page-fade 同款参数。
+  static const _duration = Duration(milliseconds: 220);
+  static const _ease = Cubic(0.16, 1.0, 0.3, 1.0);
+
+  final Object? trigger;
+  final Widget child;
+
+  @override
+  State<_LandscapeSlideFade> createState() => _LandscapeSlideFadeState();
+}
+
+class _LandscapeSlideFadeState extends State<_LandscapeSlideFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: _LandscapeSlideFade._duration,
+    );
+    final curve = CurvedAnimation(
+      parent: _c,
+      curve: _LandscapeSlideFade._ease,
+    );
+    _fade = curve;
+    // 与桌面版 enter-from 一致：translateY(8px) + scale(0.996) → 原位。
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 8),
+      end: Offset.zero,
+    ).animate(curve);
+    _scale = Tween<double>(begin: 0.996, end: 1).animate(curve);
+    _c.forward();
+  }
+
+  @override
+  void didUpdateWidget(_LandscapeSlideFade old) {
+    super.didUpdateWidget(old);
+    if (old.trigger != widget.trigger) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      child: widget.child,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: _slide.value,
+          child: Transform.scale(
+            scale: _scale.value,
+            child: Opacity(opacity: _fade.value, child: child),
+          ),
+        );
+      },
     );
   }
 }

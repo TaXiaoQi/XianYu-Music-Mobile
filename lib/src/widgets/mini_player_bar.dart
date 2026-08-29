@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
-import '../core/app_colors.dart';
 import '../player/player_provider.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
@@ -90,7 +89,23 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   /// 路由监听：页面内嵌播放条在播放页打开时隐藏（避免与 shell 播放条 Hero 冲突）。
   GoRouter? _router;
 
-  double get _defaultLeft => 18.0;
+  bool get _isLandscape =>
+      MediaQuery.of(context).size.width >=
+      MediaQuery.of(context).size.height * 1.05;
+
+  /// 横屏复用外壳播放条的封顶宽度（min(55%屏宽, 520)）并底部居中；
+  /// 竖屏保持原「占满两侧各 18」的全宽。
+  double get _barWidth {
+    final w = MediaQuery.of(context).size.width;
+    return _isLandscape ? math.min(w * 0.55, 520.0) : w - 36.0;
+  }
+
+  double get _defaultLeft {
+    final w = MediaQuery.of(context).size.width;
+    if (!_isLandscape) return 18.0;
+    final barW = _barWidth;
+    return ((w - barW) / 2.0).clamp(6.0, math.max(6.0, w - barW - 6.0));
+  }
 
   double get _defaultTop {
     final size = MediaQuery.of(context).size;
@@ -216,11 +231,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     }
   }
 
-  /// 内建拖拽更新：以默认位置（left:18 / bottom:12+安全区）为基准，用绝对坐标计算边界。
+  /// 内建拖拽更新：以默认位置（left / bottom:12+安全区）为基准，用绝对坐标计算边界。
   void _defaultPanUpdate(DragUpdateDetails d) {
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    final barW = size.width - 36.0;
+    final barW = _barWidth;
     const barH = 58.0;
     const minLeft = 6.0;
     final maxLeft = size.width - barW - 6.0;
@@ -433,13 +448,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         }
         return const SizedBox.shrink();
       }
-      final size = MediaQuery.of(context).size;
       return Stack(
         children: [
           Positioned(
             left: _pos?.dx ?? _defaultLeft,
             top: _pos?.dy ?? _defaultTop,
-            width: size.width - 36.0,
+            width: _barWidth,
             child: bar,
           ),
         ],
@@ -455,22 +469,20 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    return glassBorder(
-      context: context,
+    return BiliPaiGlass(
       radius: 29,
-      child: BiliPaiGlass(
-        radius: 29,
-        refract: bilipaiRefractOf(quality),
-        chroma: bilipaiChromaOf(quality),
-        blurSigma: surfaceBlurSigma(
-          base: 1.5,
-          budget: budget,
-          type: BlurSurfaceType.bottomBar,
-        ),
-        backgroundColor: bilipaiGlassTint(isDark),
-        specular: bilipaiSpecularOf(quality),
-        child: SizedBox(height: 58, child: content),
+      refract: bilipaiRefractOf(quality),
+      chroma: bilipaiChromaOf(quality),
+      blurSigma: surfaceBlurSigma(
+        base: 8,
+        budget: budget,
+        type: BlurSurfaceType.bottomBar,
       ),
+      backgroundColor: bilipaiGlassTint(isDark),
+      specular: bilipaiSpecularOf(quality),
+      edgeAmount: bilipaiEdgeOf(quality),
+      saturation: bilipaiSaturationOf(quality),
+      child: SizedBox(height: 58, child: content),
     );
   }
 
@@ -482,22 +494,17 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       bool lowPerf = false,
       BlurBudget? budget}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 开启壁纸 → 半透明玻璃透出壁纸；否则关白底标准磨砂；关闭毛玻璃/低性能 → 纯色。
-    final wallpaper = ref.watch(wallpaperActiveProvider);
+    // 标准磨砂（跟随毛玻璃开关）；关闭毛玻璃/低性能 → 纯色。
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final bg = wallpaper
-        ? glassControlFill
-        : (solid
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
-    final border = wallpaper
-        ? glassControlBorder
+    final bg = solid
+        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (isDark
-            ? Colors.white.withValues(alpha: 0.12)
-            : Colors.white.withValues(alpha: 0.40));
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : Colors.white.withValues(alpha: 0.40);
     final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
     final sigma = budget == null
         ? 10.0 * frostedBlurScale(ref)

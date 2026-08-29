@@ -13,6 +13,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
+import '../../src/plugin/plugin_host_fallback.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
@@ -86,6 +87,15 @@ class _TrackEntry {
 
 enum _CatalogKind { artist, album, playlist }
 
+/// 播放量格式化（对齐 MfSheetItem 的亿/万缩写）。
+String _formatPlayCount(num n) {
+  if (n >= 100000000) {
+    return tr('{n}亿', {'n': (n / 100000000).toStringAsFixed(1)});
+  }
+  if (n >= 10000) return tr('{n}万', {'n': (n / 10000).toStringAsFixed(1)});
+  return '$n';
+}
+
 /// 歌手/专辑/歌单结果：本地条目、在线导航或 LX 派生直放。
 class _CatalogItem {
   final String kind; // artist | album | playlist
@@ -147,6 +157,50 @@ class SearchSessionNotifier extends Notifier<SearchSession> {
 
   void setSource(String id) =>
       state = SearchSession(query: state.query, sourceId: id);
+}
+
+// ==================== 横屏搜索容器（参考桌面端：顶栏即搜索输入） ====================
+
+/// 横屏搜索容器是否打开：右侧容器内嵌搜索页/结果页（不开二级路由），
+/// 由全局顶栏搜索胶囊点击打开，输入框由全局顶栏承接。
+final landscapeSearchOpenProvider = StateProvider<bool>((ref) => false);
+
+/// 横屏搜索容器当前是否显示结果页（false=搜索默认页：历史+热搜）。
+final landscapeSearchResultsProvider = StateProvider<bool>((ref) => false);
+
+/// 横屏搜索输入控制器：全局顶栏输入框持有，与搜索容器共享。
+final landscapeSearchCtrlProvider = Provider<TextEditingController>((ref) {
+  final ctrl = TextEditingController();
+  ref.onDispose(ctrl.dispose);
+  return ctrl;
+});
+
+/// 横屏顶栏搜索输入框的全局焦点节点：容器打开后由打开方在下一帧显式
+/// requestFocus，保证第一次点击顶栏搜索框输入法就弹出（输入框与胶囊在同一
+/// 帧切换重建，autofocus 在该时机可能被吞掉）。
+final landscapeSearchFocusProvider = Provider<FocusNode>((ref) {
+  final node = FocusNode();
+  ref.onDispose(node.dispose);
+  return node;
+});
+
+/// 关闭横屏搜索容器并复位到默认页（切主 tab / 点侧边栏音乐库入口时调用）。
+void closeLandscapeSearch(WidgetRef ref) {
+  ref.read(landscapeSearchOpenProvider.notifier).state = false;
+  ref.read(landscapeSearchResultsProvider.notifier).state = false;
+}
+
+/// 提交横屏搜索：记录历史与会话、容器切到结果页。
+/// 全局顶栏输入框回车/搜索按钮与搜索默认页（历史/热搜点击）共用。
+void submitLandscapeSearch(WidgetRef ref, String raw) {
+  final q = raw.trim();
+  if (q.isEmpty) return;
+  FocusManager.instance.primaryFocus?.unfocus();
+  ref.read(landscapeSearchCtrlProvider).text = q;
+  ref.read(searchHistoryProvider.notifier).add(q);
+  final sourceId = ref.read(searchSessionProvider).sourceId;
+  ref.read(searchSessionProvider.notifier).startSearch(q, sourceId);
+  ref.read(landscapeSearchResultsProvider.notifier).state = true;
 }
 
 // ==================== 搜索页 ====================
@@ -226,7 +280,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: _IdleBody(onSearch: _submitSearch),
+            child: SearchIdleView(onSearch: _submitSearch),
           ),
           Positioned(
             top: 0,
@@ -248,6 +302,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
                   autofocus: true,
                   textInputAction: TextInputAction.search,
                   style: const TextStyle(fontSize: 15),
+                  // 字段被高 40 的清除按钮撑高后，dense 输入框默认顶部对齐，
+                  // 文字会偏上；显式居中让键入文字与 hint 都垂直居中。
+                  textAlignVertical: TextAlignVertical.center,
                   onChanged: _onChanged,
                   onSubmitted: (q) => _submitSearch(q),
                   decoration: InputDecoration(
@@ -288,10 +345,14 @@ class _SearchPageState extends ConsumerState<SearchPage>
 
 // ==================== 搜索结果页 ====================
 
-/// 搜索结果页：独立的 /search/result 路由。顶部 4 个内容 tab（单曲/歌手/专辑/歌单），
-/// tab 下方为来源切换条；本页显示迷你播放条，搜索输入框用于返回搜索页，不内联搜索。
+/// 搜索结果页：竖屏为独立 /search/result 路由；横屏以内嵌容器模式
+/// （[embedded]=true，不开二级路由）显示在右侧容器，顶栏由全局横屏顶栏
+/// 承接（内容 tab 与来源切换条改在内容区顶部展示），迷你播放条由壳层常驻。
 class SearchResultPage extends ConsumerStatefulWidget {
-  const SearchResultPage({super.key});
+  const SearchResultPage({super.key, this.embedded = false});
+
+  /// 横屏右侧容器内嵌模式。
+  final bool embedded;
 
   @override
   ConsumerState<SearchResultPage> createState() => _SearchResultPageState();
@@ -299,6 +360,10 @@ class SearchResultPage extends ConsumerStatefulWidget {
 
 class _SearchResultPageState extends ConsumerState<SearchResultPage>
     with SingleTickerProviderStateMixin, HidesShellChrome {
+  /// 内嵌容器模式不隐藏 shell 浮层（迷你播放条由壳层常驻承接）。
+  @override
+  bool get hidesChrome => !widget.embedded;
+
   late final TabController _tab;
   final TextEditingController _queryCtrl = TextEditingController();
 
@@ -442,6 +507,55 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
       ],
     );
 
+    final tabView = TabBarView(
+      controller: _tab,
+      children: [
+        _TrackTab(
+          keyword: keyword,
+          source: selected,
+          visible: _tab.index == 0,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.artist,
+          keyword: keyword,
+          source: selected,
+          visible: _tab.index == 1,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.album,
+          keyword: keyword,
+          source: selected,
+          visible: _tab.index == 2,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.playlist,
+          keyword: keyword,
+          source: selected,
+          visible: _tab.index == 3,
+        ),
+      ],
+    );
+
+    // 内嵌模式：顶栏由全局横屏顶栏承接（内容下移避让其高度），内容 tab 与
+    // 来源切换条在内容区顶部展示；顶栏输入框提交的新搜索经
+    // searchSessionProvider 驱动，子 tab 通过 didUpdateWidget 重搜。
+    if (widget.embedded) {
+      return Scaffold(
+        backgroundColor: appScaffoldBackground(context, ref),
+        resizeToAvoidBottomInset: false,
+        body: Padding(
+          padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+          child: Column(
+            children: [
+              tabBar,
+              _buildSourceBar(),
+              Expanded(child: tabView),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -454,36 +568,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
             child: Column(
               children: [
                 _buildSourceBar(),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tab,
-                    children: [
-                      _TrackTab(
-                        keyword: keyword,
-                        source: selected,
-                        visible: _tab.index == 0,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.artist,
-                        keyword: keyword,
-                        source: selected,
-                        visible: _tab.index == 1,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.album,
-                        keyword: keyword,
-                        source: selected,
-                        visible: _tab.index == 2,
-                      ),
-                      _CatalogTab(
-                        kind: _CatalogKind.playlist,
-                        keyword: keyword,
-                        source: selected,
-                        visible: _tab.index == 3,
-                      ),
-                    ],
-                  ),
-                ),
+                Expanded(child: tabView),
               ],
             ),
           ),
@@ -508,6 +593,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                   readOnly: true,
                   onTap: _goToSearchPage,
                   style: const TextStyle(fontSize: 15),
+                  // 与搜索页输入框一致：高 40 容器内文字垂直居中。
+                  textAlignVertical: TextAlignVertical.center,
                   decoration: InputDecoration(
                     hintText:
                         keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
@@ -548,11 +635,20 @@ final _hotSearchProvider = FutureProvider<List<HotSearchItem>>((ref) {
   return ref.read(accountApiProvider).fetchHotSearch(limit: 10);
 });
 
-/// 默认空白页：上方搜索历史，下方"大家都在搜"；点击任一关键词即提交搜索。
-class _IdleBody extends ConsumerWidget {
-  const _IdleBody({required this.onSearch});
+/// 搜索默认页视图：上方搜索历史，下方"大家都在搜"；点击任一关键词即提交搜索。
+/// 供竖屏搜索页与横屏搜索容器（顶栏承接输入框）复用。
+class SearchIdleView extends ConsumerWidget {
+  const SearchIdleView({
+    super.key,
+    required this.onSearch,
+    this.topPadding = 4,
+  });
 
   final void Function(String keyword) onSearch;
+
+  /// 顶部留白：悬浮顶栏模式下由调用方传入顶栏高度，列表内容滚动时从悬浮
+  /// 玻璃控件下方穿过（悬浮观感与首页/我的页一致）；默认模式保持默认值。
+  final double topPadding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -562,7 +658,7 @@ class _IdleBody extends ConsumerWidget {
     final bottomInset = MediaQuery.of(context).padding.bottom + 24;
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, 4, 16, bottomInset),
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomInset),
       children: [
         // —— 搜索历史 ——
         Row(
@@ -1136,9 +1232,9 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       } else if (src.type == _SourceType.musicfree) {
         out.addAll(await _searchMusicFree(q));
       } else {
-        // LX 平台：单曲内派生出歌手/专辑；歌单无目录搜索能力。
+        // LX 平台：单曲内派生出歌手/专辑；歌单走各源原生歌单接口（宿主代取）。
         if (widget.kind == _CatalogKind.playlist) {
-          out.clear();
+          out.addAll(await _searchLxSheets(q));
         } else {
           out.addAll(await _searchLxDerive(q));
         }
@@ -1283,6 +1379,37 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       );
     }
     return map.values.toList();
+  }
+
+  /// LX 平台歌单搜索：宿主代取各源原生歌单接口（kw/kg/tx/wy/mg）。
+  Future<List<_CatalogItem>> _searchLxSheets(String q) async {
+    final source = widget.source;
+    final sheets = await lxHostPlaylistSearchFallback(
+      source.plugin!,
+      source.lxKey ?? '',
+      q,
+    );
+    final out = <_CatalogItem>[];
+    for (final s in sheets) {
+      final trackCount = s['trackCount'];
+      final playCount = s['playCount'];
+      final parts = <String>[
+        if ((s['artist'] as String?)?.isNotEmpty == true) s['artist'] as String,
+        if (trackCount is num && trackCount > 0)
+          tr('{n} 首', {'n': trackCount.toInt()}),
+        if (playCount is num && playCount > 0) _formatPlayCount(playCount),
+      ];
+      out.add(_CatalogItem(
+        kind: 'playlist',
+        title: s['title'] as String,
+        subtitle: parts.join(' · '),
+        coverUrl: s['coverUrl'] as String?,
+        sourceTag: source.name,
+        onlinePlugin: source.plugin,
+        onlineRaw: s,
+      ));
+    }
+    return out;
   }
 
   void _open(_CatalogItem item) {

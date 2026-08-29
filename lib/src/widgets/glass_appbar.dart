@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
@@ -59,10 +58,8 @@ class GlassTopBar extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    // 自定义壁纸启用时，顶栏改为半透明白玻璃（对齐首页「发现」区卡片），透出壁纸。
-    final wallpaper = ref.watch(wallpaperActiveProvider);
-
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
+    // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
     final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     // 全局 blur 预算（header 档：滚动/转场时保持模糊，仅缩小输入）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
@@ -71,18 +68,14 @@ class GlassTopBar extends ConsumerWidget {
       budget: budget,
       type: BlurSurfaceType.header,
     );
-    final fill = wallpaper
-        ? glassControlFill
-        : (solid
-            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
+    final fill = solid
+        ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.52));
     final glassFill =
         solid ? fill : surfaceFillWithBudget(fill, budget);
-    final divider = wallpaper
-        ? glassControlBorder
-        : scheme.onSurface.withValues(alpha: 0.06);
+    final divider = scheme.onSurface.withValues(alpha: 0.06);
 
     final bar = _bar(context, statusBarHeight);
     final inner = Container(

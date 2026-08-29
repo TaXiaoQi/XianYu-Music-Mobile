@@ -19,13 +19,14 @@ import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
-import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/page_search_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../home/online_detail_page.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 「我的」页：搜索条 + 账号区 + 快捷入口四宫格（参考魅族音乐我的页布局）。
@@ -39,14 +40,18 @@ class MinePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final searchBar = _SearchBarBottom(onTap: () => context.push('/search'));
-    // 悬浮搜索框：顶栏标题行下方悬浮胶囊，内容从其下方穿过被玻璃模糊。
+    final searchBar = PageSearchBarBottom(
+      onTap: () => context.push('/search'),
+      onRecognize: () => context.push('/recognize'),
+    );
+    // 悬浮顶部栏（标题胶囊+搜索胶囊+玻璃按钮）由壳层统一渲染（首页/我的页共用
+    // 同一实例，不随 tab 重建）。悬浮模式下本页不再渲染标题行，仅按其几何预留
+    // 顶部避让，避免账号条飞到悬浮顶栏下方。
     final statusBar = MediaQuery.paddingOf(context).top;
-    final searchTop = statusBar + kToolbarHeight + 8;
     final topInset = floating
-        ? searchTop + 44 + 12
+        ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
-    return Scaffold(
+    final portrait = Scaffold(
       // 背景交给 Shell 层统一渲染（自定义壁纸/默认底色），页面自身保持透明以透出壁纸。
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -70,11 +75,13 @@ class MinePage extends ConsumerWidget {
               _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
+          // 顶栏（仅非悬浮模式）：悬浮模式由壳层悬浮顶栏接管（含设置玻璃按钮）。
+          if (!floating)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
               title:   Text(tr('我的')),
               actions: [
                 IconButton(
@@ -86,78 +93,226 @@ class MinePage extends ConsumerWidget {
               bottom: floating ? null : searchBar,
             ),
           ),
-          if (floating)
-            Positioned(
-              top: searchTop,
-              left: 16,
-              right: 16,
-              child: FloatingSearchBar(
-                onTap: () => context.push('/search'),
-              ),
-            ),
         ],
         ),
       ),
     );
+
+    // 竖屏=完整版默认布局，横屏=精简个人中心，两套 UI 完全分开（见 LandscapeGate）。
+    return LandscapeGate(
+      portrait: portrait,
+      landscape: _buildLandscapeProfile(context, ref),
+    );
   }
-}
 
-/// 顶栏搜索框扩展区（PreferredSizeWidget 以便 GlassTopBar 计算 height）。
-class _SearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
-  const _SearchBarBottom({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(58);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-      child: _SearchEntry(
-        onTap: onTap,
+  /// 横屏专用：精简个人中心（独立一套 UI）。参考桌面版个人中心排布——
+  /// 账号区 + 收藏/歌单/历史统计 + 四个快捷入口卡片。音乐库各入口已由
+  /// 横屏侧边栏承接，此处不再重复列表分区。
+  Widget _buildLandscapeProfile(BuildContext context, WidgetRef ref) {
+    // 悬浮模式：壳层横屏全局顶栏独立悬浮在容器顶部，内容需预留其高度
+    // （默认模式顶栏在上方 Column 中，无需预留）。
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
+    return Scaffold(
+      backgroundColor: appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: false,
+      // 顶部无需避让：壳层全局顶栏在内容上方 Column 中，自身处理状态栏。
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
+        children: const [
+          SizedBox(height: 18),
+          _AccountArea(),
+          SizedBox(height: 22),
+          _StatsRow(),
+          SizedBox(height: 24),
+          _QuickCards(),
+          SizedBox(height: 12),
+        ],
       ),
     );
   }
 }
 
-/// 顶部搜索条：点击进入搜索页（参考图布局）。
-class _SearchEntry extends ConsumerWidget {
-  const _SearchEntry({required this.onTap});
-
-  final VoidCallback onTap;
+/// 数据统计：收藏 / 歌单 / 历史（参考桌面版个人中心，数字+标签一行排布）。
+class _StatsRow extends ConsumerWidget {
+  const _StatsRow();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final capsule = Material(
-      color: contrastSearchColor(context),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Text(
-                tr('搜索歌曲、歌手、专辑'),
-                style: TextStyle(
-                  fontSize: 13.5,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
+    final favCount =
+        ref.watch(favoritesProvider.select((s) => s.entries.length));
+    final recentCount =
+        ref.watch(recentProvider.select((s) => s.entries.length));
+    final playlistCount = ref.watch(playlistManagerProvider).playlists.length;
+    final card = Material(
+      color: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            _statItem(scheme, '$favCount', tr('收藏')),
+            _statItem(scheme, '$playlistCount', tr('歌单')),
+            _statItem(scheme, '$recentCount', tr('历史')),
+          ],
         ),
       ),
     );
-    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃页面形成对比。
-    return capsule;
+    return frostedCardSurface(
+        context: context, ref: ref, radius: 16, child: card);
+  }
+}
+
+Widget _statItem(ColorScheme scheme, String value, String label) {
+  return Expanded(
+    child: Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.bold,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w300,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 快捷入口卡片：账号设置 / 主题外观 / 本地音乐 / 下载（参考桌面版个人中心宫格）。
+/// 竖屏 2×2 网格；横屏 1×4 单行平铺。横屏下「账号设置」走容器内嵌、不开二级路由。
+class _QuickCards extends ConsumerWidget {
+  const _QuickCards();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final isLandscape = useLandscape(ref);
+    final cards = [
+      (tr('账号设置'), tr('管理账号信息'), Icons.account_circle_outlined, '/account'),
+      (tr('主题外观'), tr('换肤与界面风格'), Icons.palette_outlined, '/wallpaper'),
+      (tr('本地音乐'), tr('管理本地曲库'), Icons.library_music_outlined, '/library'),
+      (tr('歌曲下载'), tr('管理下载任务'), Icons.download_outlined, '/download'),
+    ];
+
+    // 横屏：账号设置/歌曲下载在右侧容器内嵌打开、本地音乐切到侧边栏本地入口，
+    // 均不开二级页；其余（主题外观）保持 push。
+    void open((String, String, IconData, String) c) {
+      if (!isLandscape) {
+        context.push(c.$4);
+        return;
+      }
+      switch (c.$4) {
+        case '/account':
+          ref.read(landscapeAccountOpenProvider.notifier).state = true;
+        case '/download':
+          ref.read(landscapeDownloadOpenProvider.notifier).state = true;
+        case '/library':
+          // 本地音乐：路由到侧边栏音乐库的本地入口（0=本地）。
+          ref.read(landscapeLibraryProvider.notifier).state = 0;
+        default:
+          context.push(c.$4);
+      }
+    }
+
+    Widget card((String, String, IconData, String) c) {
+      return Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: InkWell(
+          onTap: () => open(c),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4141),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(c.$3, color: Colors.white, size: 21),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        c.$1,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        c.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 横屏：直接平铺 1×4（参考桌面版），单行四张卡均分宽度。
+    if (isLandscape) {
+      return Row(
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            Expanded(
+              child: SizedBox(height: 88, child: card(cards[i])),
+            ),
+            if (i != cards.length - 1) const SizedBox(width: 12),
+          ],
+        ],
+      );
+    }
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.85,
+      children: [for (final c in cards) card(c)],
+    );
   }
 }
 
@@ -168,6 +323,7 @@ class _AccountArea extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final isLandscape = useLandscape(ref);
     final auth = ref.watch(authProvider);
     final user = auth.user;
     final loggedIn = auth.isLoggedIn && user != null;
@@ -230,7 +386,14 @@ class _AccountArea extends ConsumerWidget {
         side: BorderSide.none,
       ),
       child: InkWell(
-        onTap: () => context.push('/account'),
+        // 横屏：账号与安全在右侧容器内嵌显示，不开二级路由。
+        onTap: () {
+          if (isLandscape) {
+            ref.read(landscapeAccountOpenProvider.notifier).state = true;
+          } else {
+            context.push('/account');
+          }
+        },
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -276,10 +439,14 @@ class _AccountArea extends ConsumerWidget {
                   ],
                 ),
               ),
+              // 扫码登录入口：竖屏与首页顶栏的皮肤入口位置互换；横屏保持扫码。
               IconButton(
-                onPressed: () => context.push('/wallpaper'),
-                icon: Icon(Icons.checkroom, color: scheme.outline),
-                tooltip: tr('皮肤'),
+                onPressed: () => context.push('/scan'),
+                icon: Icon(
+                  Icons.qr_code_scanner,
+                  color: scheme.outline,
+                ),
+                tooltip: tr('扫码'),
                 splashRadius: 20,
               ),
             ],
