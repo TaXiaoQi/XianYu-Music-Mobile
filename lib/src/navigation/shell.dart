@@ -803,90 +803,155 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold> {
                           ),
                         ),
                       // 横屏「我的」账号与安全：右侧容器内嵌账号页，不开二级路由，
-                      // 盖住容器（含全局顶栏），返回后回到我的页。
-                      if (accountOpen)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding: padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _AccountPane(
-                                    onBack: () => ref
-                                        .read(landscapeAccountOpenProvider.notifier)
-                                        .state = false,
-                                  ),
+                      // 盖住容器（含全局顶栏），返回后回到我的页。使用 AnimatedSwitcher 提供进出双向平滑过渡。
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          reverseDuration: const Duration(milliseconds: 180),
+                          switchInCurve: const Cubic(0.16, 1.0, 0.3, 1.0),
+                          switchOutCurve: Curves.easeOutCubic,
+                          transitionBuilder: (child, animation) {
+                            if (!landscapeFadeEnabled) return child;
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.015),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: accountOpen
+                              ? KeyedSubtree(
+                                  key: const ValueKey('account-open'),
+                                  child: useCameraArea
+                                      ? MediaQuery(
+                                          data: MediaQuery.of(context).copyWith(
+                                            padding: padding.copyWith(left: 0, right: 0),
+                                          ),
+                                          child: _AccountPane(
+                                            onBack: () => ref
+                                                .read(landscapeAccountOpenProvider.notifier)
+                                                .state = false,
+                                          ),
+                                        )
+                                      : _AccountPane(
+                                          onBack: () => ref
+                                              .read(landscapeAccountOpenProvider.notifier)
+                                              .state = false,
+                                        ),
                                 )
-                              : _AccountPane(
-                                  onBack: () => ref
-                                      .read(landscapeAccountOpenProvider.notifier)
-                                      .state = false,
-                                ),
+                              : const SizedBox.shrink(key: ValueKey('account-closed')),
                         ),
+                      ),
                       // 横屏「我的」下载管理：右侧容器内嵌下载页，不开二级路由。
-                      if (downloadOpen)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding: padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _landscapeSlide(
-                                    enabled: landscapeFadeEnabled,
-                                    trigger: downloadOpen,
-                                    child: const _DownloadPane(),
-                                  ),
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          reverseDuration: const Duration(milliseconds: 180),
+                          switchInCurve: const Cubic(0.16, 1.0, 0.3, 1.0),
+                          switchOutCurve: Curves.easeOutCubic,
+                          transitionBuilder: (child, animation) {
+                            if (!landscapeFadeEnabled) return child;
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.015),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: downloadOpen
+                              ? KeyedSubtree(
+                                  key: const ValueKey('download-open'),
+                                  child: useCameraArea
+                                      ? MediaQuery(
+                                          data: MediaQuery.of(context).copyWith(
+                                            padding: padding.copyWith(left: 0, right: 0),
+                                          ),
+                                          child: const _DownloadPane(),
+                                        )
+                                      : const _DownloadPane(),
                                 )
-                              : _landscapeSlide(
-                                  enabled: landscapeFadeEnabled,
-                                  trigger: downloadOpen,
-                                  child: const _DownloadPane(),
-                                ),
+                              : const SizedBox.shrink(key: ValueKey('download-closed')),
                         ),
+                      ),
                       // 横屏选中的歌单详情：右侧容器内嵌歌单详情，不开二级路由。
-                      if (playlistOpenId != null)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding: padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _landscapeSlide(
-                                    enabled: landscapeFadeEnabled,
-                                    trigger: playlistOpenId,
-                                    child: _PlaylistDetailPane(playlistId: playlistOpenId),
-                                  ),
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          reverseDuration: const Duration(milliseconds: 180),
+                          switchInCurve: const Cubic(0.16, 1.0, 0.3, 1.0),
+                          switchOutCurve: Curves.easeOutCubic,
+                          transitionBuilder: (child, animation) {
+                            if (!landscapeFadeEnabled) return child;
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.015),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: playlistOpenId != null
+                              ? KeyedSubtree(
+                                  key: ValueKey('playlist-$playlistOpenId'),
+                                  child: useCameraArea
+                                      ? MediaQuery(
+                                          data: MediaQuery.of(context).copyWith(
+                                            padding: padding.copyWith(left: 0, right: 0),
+                                          ),
+                                          child: _PlaylistDetailPane(playlistId: playlistOpenId),
+                                        )
+                                      : _PlaylistDetailPane(playlistId: playlistOpenId),
                                 )
-                              : _landscapeSlide(
-                                  enabled: landscapeFadeEnabled,
-                                  trigger: playlistOpenId,
-                                  child: _PlaylistDetailPane(playlistId: playlistOpenId),
-                                ),
+                              : const SizedBox.shrink(key: ValueKey('playlist-closed')),
                         ),
+                      ),
                       // 横屏搜索容器：右侧容器内嵌搜索默认页（历史+热搜）/
-                      // 结果页，不开二级路由（原 /search、/search/result 为
-                      // 竖屏二级路由，横屏改走容器）。参考桌面端「顶栏即搜索
-                      // 输入」：输入框由全局顶栏承接，提交后在容器内显示结果。
-                      // 渲染顺序在歌单详情之后（最上层覆盖），回退链最先闭合。
-                      if (searchOpen)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding: padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _landscapeSlide(
-                                    enabled: landscapeFadeEnabled,
-                                    trigger: searchOpen,
-                                    child: _SearchPane(showResults: searchResults),
-                                  ),
+                      // 结果页，不开二级路由。
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          reverseDuration: const Duration(milliseconds: 180),
+                          switchInCurve: const Cubic(0.16, 1.0, 0.3, 1.0),
+                          switchOutCurve: Curves.easeOutCubic,
+                          transitionBuilder: (child, animation) {
+                            if (!landscapeFadeEnabled) return child;
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.015),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: searchOpen
+                              ? KeyedSubtree(
+                                  key: const ValueKey('search-open'),
+                                  child: useCameraArea
+                                      ? MediaQuery(
+                                          data: MediaQuery.of(context).copyWith(
+                                            padding: padding.copyWith(left: 0, right: 0),
+                                          ),
+                                          child: _SearchPane(showResults: searchResults),
+                                        )
+                                      : _SearchPane(showResults: searchResults),
                                 )
-                              : _landscapeSlide(
-                                  enabled: landscapeFadeEnabled,
-                                  trigger: searchOpen,
-                                  child: _SearchPane(showResults: searchResults),
-                                ),
+                              : const SizedBox.shrink(key: ValueKey('search-closed')),
                         ),
+                      ),
                       // 下载/歌单详情容器与全局顶栏同步：不盖住顶栏，顶栏在其上
                       // 浮层显示（搜索框左侧带回退按钮），由顶栏返回闭合容器。
                       if (downloadOpen)
@@ -1627,27 +1692,137 @@ class _LandscapeRail extends ConsumerWidget {
 }
 
 /// 横屏右侧「音乐库」内嵌面板：按 [landscapeLibraryProvider] 的序号
-/// 用 [IndexedStack] 展示 本地/收藏/最近/歌单，切换不重建、保留各页状态。
-/// 面板保持铺满右侧容器（迷你条等按全屏底定位），胶囊顶栏由壳层作为
-/// 覆盖层叠在其顶部，统一与首页/我的同一根顶栏。
-class _MusicLibraryPane extends StatelessWidget {
+/// 展示 本地/收藏/最近/歌单，切换不重建、保留各页状态。
+/// 包含 200ms 桌面端同款 Out-In / FadeThrough 页面过渡动画（淡入 + 微上移）。
+class _MusicLibraryPane extends StatefulWidget {
   const _MusicLibraryPane({required this.index});
 
   final int index;
 
   @override
+  State<_MusicLibraryPane> createState() => _MusicLibraryPaneState();
+}
+
+class _MusicLibraryPaneState extends State<_MusicLibraryPane>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final CurvedAnimation _curve;
+  int _prevIndex = -1;
+  bool _animating = false;
+
+  static const _duration = Duration(milliseconds: 200);
+  static const _ease = Cubic(0.16, 1.0, 0.3, 1.0);
+
+  @override
+  void initState() {
+    super.initState();
+    _prevIndex = widget.index;
+    _ctrl = AnimationController(vsync: this, duration: _duration);
+    _curve = CurvedAnimation(parent: _ctrl, curve: _ease);
+  }
+
+  @override
+  void didUpdateWidget(_MusicLibraryPane old) {
+    super.didUpdateWidget(old);
+    if (widget.index != old.index) {
+      _prevIndex = old.index;
+      _animating = true;
+      _ctrl.forward(from: 0.0).whenComplete(() {
+        if (mounted) {
+          setState(() {
+            _animating = false;
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: IndexedStack(
-        index: index,
-        children: const [
-          LibraryPage(),
-          FavoritesPage(),
-          RecentPage(),
-          PlaylistsPage(),
-        ],
-      ),
+    const pages = <Widget>[
+      LibraryPage(),
+      FavoritesPage(),
+      RecentPage(),
+      PlaylistsPage(),
+    ];
+
+    return AnimatedBuilder(
+      animation: _curve,
+      builder: (context, _) {
+        final t = _curve.value;
+        final children = <Widget>[];
+
+        if (!_animating) {
+          // 非动画期间：仅渲染当前页，其余 Offstage 隐藏
+          for (var i = 0; i < pages.length; i++) {
+            final isCurrent = i == widget.index;
+            children.add(
+              Positioned.fill(
+                key: ValueKey(i),
+                child: Offstage(
+                  offstage: !isCurrent,
+                  child: IgnorePointer(ignoring: !isCurrent, child: pages[i]),
+                ),
+              ),
+            );
+          }
+        } else {
+          // 动画期间：
+          // 1. 先把非活跃页加进来（Offstage 隐藏）
+          for (var i = 0; i < pages.length; i++) {
+            if (i != _prevIndex && i != widget.index) {
+              children.add(
+                Positioned.fill(
+                  key: ValueKey(i),
+                  child: const Offstage(offstage: true, child: SizedBox.shrink()),
+                ),
+              );
+            }
+          }
+          // 2. 旧页（isFrom）无论 Index 是大是小，必须【先加】放在 Stack 底层打底
+          if (_prevIndex >= 0 && _prevIndex < pages.length) {
+            children.add(
+              Positioned.fill(
+                key: ValueKey(_prevIndex),
+                child: Offstage(
+                  offstage: false,
+                  child: IgnorePointer(child: pages[_prevIndex]),
+                ),
+              ),
+            );
+          }
+          // 3. 新页（isTo）无论 Index 是大是小，必须【后加】盖在 Stack 最顶层平滑淡入
+          if (widget.index >= 0 && widget.index < pages.length && widget.index != _prevIndex) {
+            final opacity = t.clamp(0.0, 1.0);
+            children.add(
+              Positioned.fill(
+                key: ValueKey(widget.index),
+                child: Offstage(
+                  offstage: false,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.translate(
+                      offset: Offset(0, 6 * (1 - t)),
+                      child: pages[widget.index],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
+        return Stack(
+          children: children,
+        );
+      },
     );
   }
 }

@@ -110,76 +110,81 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView>
     super.dispose();
   }
 
-  /// 恒定挂载的分支层：所有分支永远在树上，仅通过透明度/偏移驱动过渡，
-  /// 绝不因动画状态增删子节点，从根源杜绝 Element 树 remount 闪烁。
-  Widget _buildBranchLayer(int i, double t) {
-    final child = widget.children[i];
-
-    // 非动画状态：仅当前页可见，其余全部 Offstage 隐藏
-    if (!_animating) {
-      final isCurrent = i == widget.currentIndex;
-      return Positioned.fill(
-        key: ValueKey(i),
-        child: Offstage(
-          offstage: !isCurrent,
-          child: IgnorePointer(ignoring: !isCurrent, child: child),
-        ),
-      );
-    }
-
-    // 动画期间：旧页垫底保持不透明，新页顶层淡入，其余隐藏
-    final isFrom = i == _fromIndex;
-    final isTo = i == _pendingIndex;
-
-    if (!isFrom && !isTo) {
-      return Positioned.fill(
-        key: ValueKey(i),
-        child: Offstage(offstage: true, child: child),
-      );
-    }
-
-    if (isFrom) {
-      return Positioned.fill(
-        key: ValueKey(i),
-        child: Offstage(
-          offstage: false,
-          child: IgnorePointer(child: child),
-        ),
-      );
-    }
-
-    // isTo：顶层向上 8px 平滑淡入覆盖。底色不参与淡入，避免旧页透出。
-    final opacity = t.clamp(0.0, 1.0);
-    return Positioned.fill(
-      key: ValueKey(i),
-      child: Opacity(
-        opacity: opacity,
-        child: Transform.translate(
-          offset: Offset(0, 8 * (1 - t)),
-          child: Transform.scale(
-            scale: 0.996 + 0.004 * t,
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_landscape) {
-      // 所有分支恒定挂载（数量与顺序永不改变，杜绝 Element 树 remount 导致的闪烁）
       return Container(
         color: Theme.of(context).colorScheme.surface,
         child: AnimatedBuilder(
           animation: _curved,
           builder: (context, _) {
             final t = _curved.value;
+            final children = <Widget>[];
+
+            if (!_animating) {
+              // 非动画状态：仅当前页可见
+              for (var i = 0; i < widget.children.length; i++) {
+                final isCurrent = i == widget.currentIndex;
+                children.add(
+                  Positioned.fill(
+                    key: ValueKey(i),
+                    child: Offstage(
+                      offstage: !isCurrent,
+                      child: IgnorePointer(ignoring: !isCurrent, child: widget.children[i]),
+                    ),
+                  ),
+                );
+              }
+            } else {
+              // 动画状态：
+              // 1. 先放非活跃分支（Offstage 隐藏）
+              for (var i = 0; i < widget.children.length; i++) {
+                if (i != _fromIndex && i != _pendingIndex) {
+                  children.add(
+                    Positioned.fill(
+                      key: ValueKey(i),
+                      child: const Offstage(offstage: true, child: SizedBox.shrink()),
+                    ),
+                  );
+                }
+              }
+              // 2. 旧页（isFrom）无论 Index 是 0 还是 1，必须【先加】在 Stack 底层打底
+              if (_fromIndex >= 0 && _fromIndex < widget.children.length) {
+                children.add(
+                  Positioned.fill(
+                    key: ValueKey(_fromIndex),
+                    child: Offstage(
+                      offstage: false,
+                      child: IgnorePointer(child: widget.children[_fromIndex]),
+                    ),
+                  ),
+                );
+              }
+              // 3. 新页（isTo）无论 Index 是 0 还是 1，必须【后加】盖在 Stack 最顶层淡入
+              if (_pendingIndex >= 0 &&
+                  _pendingIndex < widget.children.length &&
+                  _pendingIndex != _fromIndex) {
+                final opacity = t.clamp(0.0, 1.0);
+                children.add(
+                  Positioned.fill(
+                    key: ValueKey(_pendingIndex),
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Transform.translate(
+                        offset: Offset(0, 8 * (1 - t)),
+                        child: Transform.scale(
+                          scale: 0.996 + 0.004 * t,
+                          child: widget.children[_pendingIndex],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+            }
+
             return Stack(
-              children: [
-                for (var i = 0; i < widget.children.length; i++)
-                  _buildBranchLayer(i, t),
-              ],
+              children: children,
             );
           },
         ),

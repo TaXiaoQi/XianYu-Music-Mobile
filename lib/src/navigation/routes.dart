@@ -522,17 +522,51 @@ class _ShellRoute extends PageRoute<void> {
   ) {
     // 平滑：委托主题默认转场（淡进淡出 + 原生平推），旧页平移淡出与新页
     // 滑入对称。转场时实时读取设置，改「切换动画」后立即生效。
-    if (_isSmooth(context)) {
-      return Theme.of(context).pageTransitionsTheme.buildTransitions(
-        this,
-        context,
-        animation,
-        secondaryAnimation,
-        child,
-      );
-    }
-    // 覆盖：旧页静止，由新页的覆盖滑动完成转场。
-    return child;
+        if (_isSmooth(context)) {
+          return Theme.of(context).pageTransitionsTheme.buildTransitions(
+            this,
+            context,
+            animation,
+            secondaryAnimation,
+            child,
+          );
+        }
+        // 覆盖：仅短距轻移（自约 1/4 宽入）。
+        // 区分进场（forward）与退场（reverse）：
+        // 退场时若沿用 easeInOutCubicEmphasized，反向驱动会导致尾段动画极其缓慢，
+        // 视觉上表现为「返回时在尾部卡顿凝滞」。使用动效专用的 easeOutCubic (进场) / easeInCubic (退场)。
+        final isPortrait =
+            MediaQuery.orientationOf(context) == Orientation.portrait;
+        final isReverse = animation.status == AnimationStatus.reverse;
+        final animCurve = isReverse
+            ? Curves.easeInCubic
+            : (isPortrait ? Curves.easeOutCubic : Curves.easeOut);
+
+        // 进场自 25% 轻盈滑入；退场必须彻底滑出屏幕右边缘 (1.0)，
+        // 彻底解决只滑到 25% 便硬切消失的问题。
+        final slideTween = Tween<Offset>(
+          begin: isReverse ? const Offset(1.0, 0) : const Offset(0.25, 0),
+          end: Offset.zero,
+        );
+
+        final coverSlide = SlideTransition(
+          position: animation.drive(
+            slideTween.chain(
+              CurveTween(curve: animCurve),
+            ),
+          ),
+          child: child,
+        );
+        if (isPortrait) {
+          return coverSlide;
+        }
+        return FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          ),
+          child: coverSlide,
+        );
   }
 }
 
@@ -610,16 +644,11 @@ class _CoverRoute extends PageRoute<void> {
   @override
   bool get popGestureEnabled => isCurrent && predictiveBack;
 
-  // 覆盖转场用 opaque=true：Flutter Overlay 对 opaque 路由在「转场动画期间」仍会
-  // 绘制其下层（Cupertino 覆盖式转场即如此），动画结束后才隐藏下层。故声明
-  // opaque=true 能同时满足——
-  //  · 动画期间：下层真实绘制，返回时新页滑出、下层联动透出（抽屉覆盖效果保留）；
-  //  · 静态：Overlay 跳过下层路由不绘制，页面的透明背景透出的是「根层壁纸/底色」，
-  //    而非下层页面内容。
-  // 此前用 opaque=false 会导致静态时下层路由持续绘制：壁纸(透明)模式下页面背景
-  // 透明，下层「我的」等内容便永久穿透到设置页等二级页之上（「被覆盖的页面不消失」）。
+  // 设置为 false，保持下层路由（我的/首页）在后台维持 Layer 状态。
+  // 当点击返回 Pop 时，下层路由无需在第 1 帧重新构建与绘制整棵 Layout 树，
+  // 彻底解决动画刚开始加速阶段（第 1~3 帧）冷启动重绘造成的卡顿。
   @override
-  bool get opaque => true;
+  bool get opaque => false;
 
   @override
   Color? get barrierColor => null;
@@ -686,37 +715,15 @@ class _CoverRoute extends PageRoute<void> {
             child,
           );
         }
-        // 覆盖：仅短距轻移（自约 1/4 宽入）。竖屏去掉淡入，否则转场中有几帧
-        // 新旧页重叠透叠；横屏保持淡入+轻移，不动横屏观感。
-        // 曲线用主题 FadeForwards 的原生同款 easeInOutCubicEmphasized
-        //（缓起-加速-缓出，观感匀速顺滑）；easeOut 起步速度是匀速 2 倍、
-        // 尾段急拖，前后段速度不一致。
-        final isPortrait =
-            MediaQuery.orientationOf(context) == Orientation.portrait;
-        final coverSlide = SlideTransition(
-          position: animation.drive(
-            Tween<Offset>(
-              begin: const Offset(0.25, 0),
-              end: Offset.zero,
-            ).chain(
-              CurveTween(
-                curve: isPortrait
-                    ? Curves.easeInOutCubicEmphasized
-                    : Curves.easeOut,
-              ),
-            ),
-          ),
-          child: child,
+        // 纯渐变动画（FadeTransition）：无位移，进出平滑自然，零硬切与卡顿。
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
         );
-        if (isPortrait) {
-          return coverSlide;
-        }
         return FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ),
-          child: coverSlide,
+          opacity: curved,
+          child: child,
         );
       },
     );
@@ -950,8 +957,6 @@ class _CoverBackRoute extends PageRoute<void> {
             ),
           );
         }
-        // 平滑：委托主题默认转场（淡进淡出 + 原生平推）。这里在转场时实时
-        // 读取设置，改「切换动画」后无需重进页面即可立即生效。
         if (_isSmooth(context)) {
           return Theme.of(context).pageTransitionsTheme.buildTransitions(
             this,
@@ -961,37 +966,15 @@ class _CoverBackRoute extends PageRoute<void> {
             child,
           );
         }
-        // 覆盖：仅短距轻移（自约 1/4 宽入）。竖屏去掉淡入，否则转场中有几帧
-        // 新旧页重叠透叠；横屏保持淡入+轻移，不动横屏观感。
-        // 曲线用主题 FadeForwards 的原生同款 easeInOutCubicEmphasized
-        //（缓起-加速-缓出，观感匀速顺滑）；easeOut 起步速度是匀速 2 倍、
-        // 尾段急拖，前后段速度不一致。
-        final isPortrait =
-            MediaQuery.orientationOf(context) == Orientation.portrait;
-        final coverSlide = SlideTransition(
-          position: animation.drive(
-            Tween<Offset>(
-              begin: const Offset(0.25, 0),
-              end: Offset.zero,
-            ).chain(
-              CurveTween(
-                curve: isPortrait
-                    ? Curves.easeInOutCubicEmphasized
-                    : Curves.easeOut,
-              ),
-            ),
-          ),
-          child: child,
+        // 纯渐变动画（FadeTransition）：无位移，进出平滑自然。
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
         );
-        if (isPortrait) {
-          return coverSlide;
-        }
         return FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ),
-          child: coverSlide,
+          opacity: curved,
+          child: child,
         );
       },
     );

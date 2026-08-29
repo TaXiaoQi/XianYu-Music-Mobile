@@ -19,7 +19,7 @@ void markScrollActivity() {
   });
 }
 
-/// 全局路由转场状态：push/pop 后 400ms 内为 true（转场动画窗口）。
+/// 全局路由转场状态：push/pop 后 300ms 内为 true（精确匹配转场动画 300ms 窗口）。
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);
 Timer? _transitionTimer;
 
@@ -27,7 +27,7 @@ Timer? _transitionTimer;
 void markTransitionActivity() {
   globalIsTransitioning.value = true;
   _transitionTimer?.cancel();
-  _transitionTimer = Timer(const Duration(milliseconds: 400), () {
+  _transitionTimer = Timer(const Duration(milliseconds: 300), () {
     globalIsTransitioning.value = false;
   });
 }

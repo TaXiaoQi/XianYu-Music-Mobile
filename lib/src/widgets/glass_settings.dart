@@ -65,12 +65,24 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
+
+  // 响应转场与滚动时的全局 blur 预算：转场/滚动时卡片高斯模糊降级，
+  // 避免多个 BackdropFilter 在位移运动时造成 GPU 帧抓取掉帧卡顿。
+  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
+  final sigma = surfaceBlurSigma(
+    base: 16 * frostedBlurScale(ref),
+    budget: budget,
+    type: BlurSurfaceType.drawerOrSheet,
+  );
+
+  if (sigma <= 0.1) return surface;
+
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
       filter: ImageFilter.blur(
-        sigmaX: 16 * frostedBlurScale(ref),
-        sigmaY: 16 * frostedBlurScale(ref),
+        sigmaX: sigma,
+        sigmaY: sigma,
       ),
       child: surface,
     ),

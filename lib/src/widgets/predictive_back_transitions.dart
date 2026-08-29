@@ -329,7 +329,9 @@ class _PredictiveBackSharedElementPageTransitionState
   // This is not the same as PredictiveBackPageTransitionsBuilder's duration,
   // which is the duration of widget.animation, so an Interval is used.
   static const int _kCommitMilliseconds = 400;
-  static const Curve _kCurve = Curves.easeInOutCubicEmphasized;
+  // 使用匀速平滑曲线 easeOutCubic，替代 M3 easeInOutCubicEmphasized，
+  // 彻底解决 M3 曲线在中途 t=0.5~0.8 平台期导致动画在加速过程中「凝滞/停顿一下」的问题。
+  static const Curve _kCurve = Curves.easeOutCubic;
   static const Interval _kCommitInterval = Interval(
     0.0,
     _kCommitMilliseconds / FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds,
