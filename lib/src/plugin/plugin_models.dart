@@ -282,6 +282,25 @@ class PluginSearchResult {
     this.rawData,
   });
 
+  PluginSearchResult copyWith({String? interval}) => PluginSearchResult(
+        name: name,
+        singer: singer,
+        albumName: albumName,
+        albumId: albumId,
+        songmid: songmid,
+        source: source,
+        interval: interval ?? this.interval,
+        img: img,
+        hash: hash,
+        strMediaMid: strMediaMid,
+        songId: songId,
+        albumMid: albumMid,
+        copyrightId: copyrightId,
+        types: types,
+        lxTypes: lxTypes,
+        rawData: rawData,
+      );
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'singer': singer,

@@ -24,7 +24,10 @@ import '../../src/i18n/i18n.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
 class PluginPage extends ConsumerStatefulWidget {
-  const PluginPage({super.key});
+  const PluginPage({super.key, this.embedded = false});
+
+  /// 横屏嵌入 mode：由 master-detail 右侧接管，隐藏返回按钮，保留标题与插件设置/安装动作。
+  final bool embedded;
 
   @override
   ConsumerState<PluginPage> createState() => _PluginPageState();
@@ -121,7 +124,8 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+                top: widget.embedded ? 0 : GlassTopBar.height(context)),
             child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
@@ -274,7 +278,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
               left: 0,
               right: 0,
               child: GlassTopBar(
-                leading: const BackButton(),
+                leading: widget.embedded ? null : const BackButton(),
                 title: Text(tr('音源')),
                 actions: [
                   IconButton(

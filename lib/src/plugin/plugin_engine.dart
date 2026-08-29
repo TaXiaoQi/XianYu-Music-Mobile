@@ -5,6 +5,7 @@ import '../player/media_url.dart';
 import '../rust/api.dart' as frb;
 import '../i18n/i18n.dart';
 import 'plugin_models.dart';
+import 'plugin_host_fallback.dart';
 import 'plugin_store.dart';
 
 /// 插件引擎编排层：负责插件加载/调用/生命周期，LX 请求封装。
@@ -649,10 +650,16 @@ class PluginEngine {
 
   static ResolvedMediaUrl? _extractMfPlayableUrl(dynamic response) {
     if (response == null) return null;
+    // QQ 60 秒试听链（RS02 前缀）不是可用播放源：走免费公共中转的 QQ 插件游客
+    // 模板恒返试听且各音质档同一文件。若照常返回用户只能听到 60 秒还误以为歌
+    // 就这「那么短」。拒收并继续下一音质档，全档失败由起播失败行为透出（对齐桌面
+    // bakaPluginManagerMedia 的 shouldAcceptMediaResult）。
+    bool notQqTrial(String url) => !isQqTrialMediaUrl(url);
     if (response is String) {
       return response.isNotEmpty &&
               response.length <= 2048 &&
-              RegExp(r'^https?:').hasMatch(response)
+              RegExp(r'^https?:').hasMatch(response) &&
+              notQqTrial(response)
           ? ResolvedMediaUrl(url: response)
           : null;
     }
@@ -662,7 +669,8 @@ class PluginEngine {
       if (url != null &&
           url.isNotEmpty &&
           url.length <= 2048 &&
-          RegExp(r'^https?:').hasMatch(url)) {
+          RegExp(r'^https?:').hasMatch(url) &&
+          notQqTrial(url)) {
         final h = obj['headers'];
         return ResolvedMediaUrl(
           url: url,
@@ -841,23 +849,17 @@ class PluginEngine {
   // ==================== 搜索 ====================
 
   /// 在单个 LX 插件中搜索（source 为插件内音源 key，如 'kw'）。
+  ///
+  /// 与桌面端一致：LX 插件不实现 search（仅 musicUrl/lyric/pic），歌曲搜索
+  /// 全部由宿主落雪签名接口（lxSearch）代取，按插件声明的音源 key 分发到
+  /// kw/kg/tx/wy/mg 对应平台；播放仍走插件自身 musicUrl。宿主失败返回空数组。
   Future<List<PluginSearchResult>> searchInPlugin(
     PluginSource source,
     String sourceKey,
     String keyword, {
     int limit = 30,
   }) async {
-    final response = await lxRequest(source, 'search', {
-      'source': sourceKey,
-      'type': 'song',
-      'musicInfo': {'keyword': keyword, 'page': 1, 'limit': limit},
-    });
-    if (response == null) return const [];
-    final list = _extractResultList(response);
-    return list
-        .map((e) => PluginSearchResult.fromJson(e))
-        .where((r) => r.name.isNotEmpty)
-        .toList();
+    return lxHostSearchFallback(source, sourceKey, keyword, limit: limit);
   }
 
   // ==================== 生命周期 ====================
@@ -914,29 +916,6 @@ class PluginEngine {
       if (v is String && v.isNotEmpty) return v;
     }
     return '';
-  }
-
-  List<Map<String, dynamic>> _extractResultList(dynamic response) {
-    if (response is List) {
-      return response
-          .whereType<Map>()
-          .map((e) => e.cast<String, dynamic>())
-          .toList();
-    }
-    if (response is Map) {
-      final obj = response.cast<String, dynamic>();
-      // 兼容 { data: [...] } / { result: [...] } / { songs: [...] } 结构
-      for (final key in ['data', 'result', 'songs', 'list']) {
-        final v = obj[key];
-        if (v is List) {
-          return v
-              .whereType<Map>()
-              .map((e) => e.cast<String, dynamic>())
-              .toList();
-        }
-      }
-    }
-    return const [];
   }
 }
 

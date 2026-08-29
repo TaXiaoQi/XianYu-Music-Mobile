@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../player/player_provider.dart';
 import '../i18n/i18n.dart';
 import 'plugin_engine.dart';
+import 'plugin_host_fallback.dart';
 import 'plugin_models.dart';
 
 /// 歌单/榜单条目（MusicFree 插件）。
@@ -157,7 +158,7 @@ class PluginCatalogService {
       PluginSource source, Map<String, dynamic> item, {int page = 1}) async {
     final list = await _tryCallList(
         source, 'getTopListDetail', [item, page]);
-    return list;
+    return _maybeFillQqDurations(source, list);
   }
 
   // ==================== 歌单 ====================
@@ -170,7 +171,7 @@ class PluginCatalogService {
     if (methods.contains('getMusicSheetInfo')) {
       final list =
           await _tryCallList(source, 'getMusicSheetInfo', [item, page]);
-      if (list.isNotEmpty) return list;
+      if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
     }
     if (page == 1 && methods.contains('search')) {
       final title = _stripHtml(item['title'] ?? item['name'] ?? '');
@@ -197,7 +198,10 @@ class PluginCatalogService {
               .map((e) => mfItemToSearchResult(e, source))
               .where((r) => r.name.isNotEmpty)
               .toList();
-          return (songs: songs, isEnd: extractMfIsEnd(raw));
+          return (
+            songs: await _maybeFillQqDurations(source, songs),
+            isEnd: extractMfIsEnd(raw),
+          );
         }
       }
     }
@@ -245,7 +249,7 @@ class PluginCatalogService {
     if (methods.contains('getArtistWorks')) {
       final list =
           await _tryCallList(source, 'getArtistWorks', [item, page, 'music']);
-      if (list.isNotEmpty) return list;
+      if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
     }
     if (page == 1 && methods.contains('search')) {
       final name = _stripHtml(item['name'] ?? item['title'] ?? item['artist'] ?? '');
@@ -286,11 +290,14 @@ class PluginCatalogService {
   /// 专辑搜索。
   Future<List<MfAlbumItem>> searchAlbums(
       PluginSource source, String keyword) async {
-    final list = await _tryCallRawList(source, 'search', [keyword, 1, 'album']);
-    return list
-        .map((m) => _toAlbum(m, source))
-        .where((a) => a.name.isNotEmpty)
-        .toList();
+    var list = await _tryCallRawList(source, 'search', [keyword, 1, 'album']);
+    var albums = list.map((m) => _toAlbum(m, source)).toList();
+    // QQ 插件专辑搜索兜底：无签名接口被累积风控返回空时，宿主签名接口代取。
+    if (albums.isEmpty && isQqMusicPluginSource(source, _platformOf(source))) {
+      final fb = await qqHostAlbumSearchFallback(source, keyword);
+      albums = fb.map((m) => _toAlbum(m, source)).toList();
+    }
+    return albums.where((a) => a.name.isNotEmpty).toList();
   }
 
   /// 专辑详情曲目：getAlbumInfo。
@@ -312,15 +319,46 @@ class PluginCatalogService {
     if (albumMid != null && req['albumMID'] == null) {
       req['albumMID'] = albumMid;
     }
-    return _tryCallList(source, 'getAlbumInfo', [req, page]);
+    final list = await _tryCallList(source, 'getAlbumInfo', [req, page]);
+    if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
+    // QQ 插件专辑曲目兜底：插件 getAlbumInfo 空结果时，宿主签名 AlbumSongList 代取。
+    if (isQqMusicPluginSource(source, _platformOf(source))) {
+      final mid = (albumMid ?? '').toString();
+      if (mid.isNotEmpty) {
+        return _maybeFillQqDurations(
+            source, await qqHostAlbumSongsFallback(source, mid, page: page));
+      }
+    }
+    return const [];
   }
 
   // ==================== 单曲搜索（MusicFree） ====================
 
+  /// 插件已加载元数据里的 platform 字段（判断 QQ 等平台用）。
+  String? _platformOf(PluginSource source) {
+    final meta = engine.metadataOf(source.id);
+    final p = meta?['platform'];
+    return p is String && p.isNotEmpty ? p : null;
+  }
+
+  /// QQ 详情列表按需批量补时长（非 QQ 插件或已全有则不发起请求）。
+  Future<List<PluginSearchResult>> _maybeFillQqDurations(
+          PluginSource source, List<PluginSearchResult> list) async =>
+      qqFillSongDurations(source, _platformOf(source), list);
+
   Future<List<PluginSearchResult>> searchMusic(
       PluginSource source, String keyword,
       {int limit = 30}) async {
-    return _tryCallList(source, 'search', [keyword, 1, 'music'], limit: limit);
+    final results =
+        await _tryCallList(source, 'search', [keyword, 1, 'music'], limit: limit);
+    if (results.isNotEmpty) return results;
+    // QQ 插件兜底：无签名搜索端点已被腾讯累积风控（2001 恒空列表），插件返回空
+    // 不代表真无结果。短间隔重试对累积风控无效，改由宿主用落雪签名 tx 接口代取，
+    // 播放仍走插件自身 getMediaSource，不受影响。
+    if (isQqMusicPluginSource(source, _platformOf(source))) {
+      return qqHostSearchFallback(source, keyword, limit: limit);
+    }
+    return results;
   }
 
   // ==================== 队列项转换 ====================
