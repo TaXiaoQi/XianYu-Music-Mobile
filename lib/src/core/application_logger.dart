@@ -104,6 +104,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       category: category,
       message: message,
     ));
+    // 双写控制台：调试时 logcat/IDE 控制台同样可见（release 下 debugPrint
+    // 为空操作，日志系统照常工作）。引擎侧 JS 日志也经此统一出口。
+    debugPrint('[AppLog:${level.value}] [$category] $message');
     _flushLater();
   }
 

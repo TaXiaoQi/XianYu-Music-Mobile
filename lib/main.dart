@@ -32,6 +32,7 @@ Future<void> main() async {
   WidgetsBinding.instance
       .addObserver(AppLogLifecycleObserver());
   _installErrorReporting(container);
+  AppLog.info('startup', '应用启动（main 开始）');
 
   // 尽早触发 rust 初始化（与首帧渲染并行），缩短「打开→可交互」的等待。
   container.read(rustInitProvider);
@@ -67,7 +68,9 @@ Future<void> main() async {
   // 总体首帧计时（从 main 开始）
   final t0 = Stopwatch()..start();
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    debugPrint('[startup] first frame rendered in ${t0.elapsedMilliseconds}ms (from main)');
+    final ms = t0.elapsedMilliseconds;
+    AppLog.info('startup', '首帧渲染完成 ${ms}ms（从 main 起算）');
+    debugPrint('[startup] first frame rendered in ${ms}ms (from main)');
   });
 
   // 后台初始化系统 MediaSession / 控制中心音频服务，不阻塞首帧。
@@ -94,7 +97,10 @@ Future<void> main() async {
       // 构造时 bindNotifier 落空——此处补绑，控制中心按键才能生效。
       final notifier = activePlayerNotifier;
       if (notifier != null) h.bindNotifier(notifier);
-    }, onError: (Object _, StackTrace _) {}),
+      AppLog.info('startup', 'AudioService 初始化完成');
+    }, onError: (Object e, StackTrace st) {
+      AppLog.error('startup', 'AudioService 初始化失败: $e\n$st');
+    }),
   );
 }
 
