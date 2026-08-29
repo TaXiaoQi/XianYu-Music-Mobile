@@ -6,6 +6,7 @@ pub mod lyrics;
 pub mod lyric_fetcher;
 pub mod url_resolver;
 pub mod lx_search;
+pub mod lx_catalog;
 pub mod scanner;
 pub mod auth;
 pub mod palette;

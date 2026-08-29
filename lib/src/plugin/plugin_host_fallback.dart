@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/application_logger.dart';
 import '../rust/api.dart' as frb;
 import 'plugin_models.dart';
 
@@ -224,6 +225,44 @@ final RegExp _qqTrialUrlRe =
 bool isQqTrialMediaUrl(String? url) =>
     url != null && _qqTrialUrlRe.hasMatch(url);
 
+/// 把 LX 搜索条目（Rust LxSearchItem JSON）映射为统一 PluginSearchResult。
+/// source 用音源 key，保证 `lx://{source}/{songmid}` 路径与播放一致。
+PluginSearchResult _lxSearchItemToResult(String sourceKey, Map<String, dynamic> m) {
+  final raw = Map<String, dynamic>.from(m)
+    ..['source'] = sourceKey
+    ..['_hostLxFallback'] = true;
+  final types = <Map<String, dynamic>>[];
+  final rawTypes = m['types'];
+  if (rawTypes is List) {
+    for (final t in rawTypes) {
+      if (t is Map) types.add(t.cast<String, dynamic>());
+    }
+  }
+  final lxTypes = <String, dynamic>{};
+  final rawLxTypes = m['lx_types'];
+  if (rawLxTypes is Map) {
+    lxTypes.addAll(rawLxTypes.cast<String, dynamic>());
+  }
+  return PluginSearchResult(
+    name: (m['name'] ?? '').toString(),
+    singer: (m['singer'] ?? '').toString(),
+    albumName: (m['album_name'] ?? '').toString(),
+    albumId: m['album_id']?.toString(),
+    songmid: (m['songmid'] ?? '').toString(),
+    source: sourceKey,
+    interval: (m['interval'] ?? '').toString(),
+    img: m['img']?.toString(),
+    hash: m['hash']?.toString(),
+    strMediaMid: m['str_media_mid']?.toString(),
+    songId: m['song_id'],
+    albumMid: m['album_mid']?.toString(),
+    copyrightId: m['copyright_id']?.toString(),
+    types: types,
+    lxTypes: lxTypes.isEmpty ? null : lxTypes,
+    rawData: raw,
+  );
+}
+
 /// 宿主代取 LX 插件歌曲搜索（对齐桌面端 Search.vue 的 lx 分支）。
 ///
 /// 桌面端 LX 插件不实现 search（仅 musicUrl/lyric/pic），歌曲搜索全部由宿主
@@ -242,51 +281,104 @@ Future<List<PluginSearchResult>> lxHostSearchFallback(
     final json =
         await frb.lxSearch(source: sourceKey, keyword: keyword, limit: limit);
     final list = jsonDecode(json);
-    debugPrint('[lxHostSearch] source=$sourceKey keyword=$keyword '
+    AppLog.debug('plugin', '[lxHostSearch] source=$sourceKey keyword=$keyword '
         'list=${(list is List) ? list.length : 'nonList'}');
     if (list is! List || list.isEmpty) return const [];
     return list
         .whereType<Map>()
         .map((e) => e.cast<String, dynamic>())
         .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
-        .map((m) {
-          final raw = Map<String, dynamic>.from(m)
-            ..['source'] = sourceKey
-            ..['_hostLxFallback'] = true;
-          final types = <Map<String, dynamic>>[];
-          final rawTypes = m['types'];
-          if (rawTypes is List) {
-            for (final t in rawTypes) {
-              if (t is Map) types.add(t.cast<String, dynamic>());
-            }
-          }
-          final lxTypes = <String, dynamic>{};
-          final rawLxTypes = m['lx_types'];
-          if (rawLxTypes is Map) {
-            lxTypes.addAll(rawLxTypes.cast<String, dynamic>());
-          }
-          return PluginSearchResult(
-            name: (m['name'] ?? '').toString(),
-            singer: (m['singer'] ?? '').toString(),
-            albumName: (m['album_name'] ?? '').toString(),
-            albumId: m['album_id'],
-            songmid: (m['songmid'] ?? '').toString(),
-            source: sourceKey,
-            interval: (m['interval'] ?? '').toString(),
-            img: m['img']?.toString(),
-            hash: m['hash']?.toString(),
-            strMediaMid: m['str_media_mid']?.toString(),
-            songId: m['song_id'],
-            albumMid: m['album_mid']?.toString(),
-            copyrightId: m['copyright_id']?.toString(),
-            types: types,
-            lxTypes: lxTypes.isEmpty ? null : lxTypes,
-            rawData: raw,
-          );
-        })
+        .map((m) => _lxSearchItemToResult(sourceKey, m))
         .toList();
   } catch (e, st) {
-    debugPrint('[lxHostSearch] source=$sourceKey EXCEPTION: $e\n$st');
+    AppLog.warn('plugin', '[lxHostSearch] source=$sourceKey EXCEPTION: $e\n$st');
+    return const [];
+  }
+}
+
+/// 宿主代取 LX 歌单搜索（对齐桌面端 searchLxPlaylists：各源原生歌单接口 + TX 风控兜底）。
+///
+/// 返回的条目携带 `_lxSource`（音源 key）与 `_lxPlaylistId`（平台原生歌单 ID），
+/// 供歌单详情页走 [lxHostPlaylistTracksFallback] 拉取曲目。
+/// 任何异常都吞掉返回空数组。
+Future<List<Map<String, dynamic>>> lxHostPlaylistSearchFallback(
+  PluginSource source,
+  String sourceKey,
+  String keyword, {
+  int page = 1,
+  int limit = 30,
+}) async {
+  try {
+    final json = await frb.lxSearchPlaylists(
+      source: sourceKey,
+      keyword: keyword,
+      page: page,
+      limit: limit,
+    );
+    final list = jsonDecode(json);
+    AppLog.debug('plugin', '[lxHostPlaylistSearch] source=$sourceKey keyword=$keyword '
+        'list=${(list is List) ? list.length : 'nonList'}');
+    if (list is! List || list.isEmpty) return const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .where((m) => (m['playlist_id'] ?? '').toString().isNotEmpty)
+        .map((m) {
+          final playlistId = (m['playlist_id'] ?? '').toString();
+          return <String, dynamic>{
+            'id': playlistId,
+            'title': (m['title'] ?? '').toString(),
+            'artist': (m['artist'] ?? '').toString(),
+            'coverUrl': m['cover_url']?.toString(),
+            'trackCount': m['track_count'],
+            'playCount': m['play_count'],
+            'source': sourceKey,
+            '_lxSource': sourceKey,
+            '_lxPlaylistId': playlistId,
+          };
+        })
+        .where((m) => (m['title'] as String).isNotEmpty)
+        .toList();
+  } catch (e, st) {
+    AppLog.warn(
+        'plugin', '[lxHostPlaylistSearch] source=$sourceKey EXCEPTION: $e\n$st');
+    return const [];
+  }
+}
+
+/// 宿主代取 LX 歌单曲目（对齐桌面端 lxGetPlaylistTracks，含 TX 风控 Web 兜底）。
+/// 曲目映射与歌曲搜索一致（songmid/types/lx_types），播放走插件自身 musicUrl。
+/// 任何异常都吞掉返回空数组。
+Future<List<PluginSearchResult>> lxHostPlaylistTracksFallback(
+  PluginSource source,
+  String sourceKey,
+  String playlistId, {
+  int page = 1,
+  int limit = 100,
+}) async {
+  try {
+    final json = await frb.lxPlaylistTracks(
+      source: sourceKey,
+      playlistId: playlistId,
+      page: page,
+      limit: limit,
+    );
+    final result = jsonDecode(json);
+    if (result is! Map) return const [];
+    final list = result['list'];
+    AppLog.debug('plugin', '[lxHostPlaylistTracks] source=$sourceKey '
+        'playlistId=$playlistId page=$page '
+        'list=${(list is List) ? list.length : 'nonList'}');
+    if (list is! List || list.isEmpty) return const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
+        .map((m) => _lxSearchItemToResult(sourceKey, m))
+        .toList();
+  } catch (e, st) {
+    AppLog.warn('plugin',
+        '[lxHostPlaylistTracks] source=$sourceKey EXCEPTION: $e\n$st');
     return const [];
   }
 }

@@ -83,6 +83,32 @@ pub async fn tx_batch_track_interval(song_ids_json: String) -> Result<String, St
     serde_json::to_string(&map).map_err(|e| e.to_string())
 }
 
+/// LX 歌单搜索（kw/kg/tx/wy/mg 原生歌单接口，对齐桌面端 searchLxPlaylists）。
+/// 返回归一化 [`crate::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
+pub async fn lx_search_playlists(
+    source: String,
+    keyword: String,
+    page: u32,
+    limit: u32,
+) -> Result<String, String> {
+    let items =
+        crate::music::lx_catalog::lx_search_playlists(&source, &keyword, page, limit).await?;
+    serde_json::to_string(&items).map_err(|e| e.to_string())
+}
+
+/// LX 歌单曲目（对齐桌面端 lxGetPlaylistTracks，含 TX 风控 Web 兜底）。
+/// 返回 `{ list: [LxSearchItem], isEnd: bool }` 的 JSON。
+pub async fn lx_playlist_tracks(
+    source: String,
+    playlist_id: String,
+    page: u32,
+    limit: u32,
+) -> Result<String, String> {
+    let result =
+        crate::music::lx_catalog::lx_playlist_tracks(&source, &playlist_id, page, limit).await?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
 // =========================================================================
 // 音源插件管理
 // =========================================================================

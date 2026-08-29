@@ -122,7 +122,7 @@ pub async fn clear_lx_search_cache() {
     cache.clear();
 }
 
-fn format_play_time(seconds: f64) -> String {
+pub(crate) fn format_play_time(seconds: f64) -> String {
     if seconds.is_nan() || seconds <= 0.0 {
         return "00:00".to_string();
     }
@@ -221,7 +221,7 @@ fn decode_numeric_entities(s: &str) -> String {
 }
 
 /// HTML 实体解码（覆盖常见命名实体 + 数字实体，前缀等价于前端 `he` 库的常用场景）
-fn decode_name(s: &str) -> String {
+pub(crate) fn decode_name(s: &str) -> String {
     let named = s
         .replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -234,7 +234,7 @@ fn decode_name(s: &str) -> String {
 }
 
 /// 从歌手数组中提取歌手名（与前端 formatSingerName 一致）
-fn format_singer_name(singers: &serde_json::Value, name_key: &str) -> String {
+pub(crate) fn format_singer_name(singers: &serde_json::Value, name_key: &str) -> String {
     if let Some(arr) = singers.as_array() {
         let names: Vec<String> = arr
             .iter()
@@ -292,7 +292,7 @@ fn http_client() -> &'static Result<reqwest::Client, String> {
     })
 }
 
-async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+pub(crate) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
     let client = http_client().as_ref().map_err(|e| e.clone())?;
     let mut req = client.get(url);
     for (key, value) in headers {
@@ -310,7 +310,7 @@ async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json
     serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
 }
 
-async fn http_post_json(
+pub(crate) async fn http_post_json(
     url: &str,
     body: &str,
     headers: &[(&str, &str)],
@@ -353,7 +353,7 @@ fn pick_hash_by_idx(hash: &str, indexes: &[usize]) -> String {
 }
 
 /// TX 签名（与前端 zzcSign 一致）
-fn zzc_sign(text: &str) -> String {
+pub(crate) fn zzc_sign(text: &str) -> String {
     let hash = sha1_hex(text);
     let part1 = pick_hash_by_idx(&hash, &TX_PART_1_INDEXES);
     let part2 = pick_hash_by_idx(&hash, &TX_PART_2_INDEXES);
@@ -376,7 +376,7 @@ fn zzc_sign(text: &str) -> String {
     format!("zzc{}{}{}", part1, b64_clean, part2).to_lowercase()
 }
 
-fn mg_create_signature(time: &str, text: &str) -> (String, String) {
+pub(crate) fn mg_create_signature(time: &str, text: &str) -> (String, String) {
     let device_id = "963B7AA0D21511ED807EE5846EC87D20";
     let signature_md5 = "6cdc72a439cef99a3418d2a78aa28c73";
     let input = format!(
@@ -549,7 +549,7 @@ async fn search_kw(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         .ok_or_else(|| "KW search: N_MINFO missing".to_string())
 }
 
-fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
+pub(crate) fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
     let mut types = Vec::new();
     let mut lx_types = HashMap::new();
 
@@ -833,7 +833,7 @@ fn tx_pick_search_raw_list(data: &serde_json::Value) -> Option<&serde_json::Valu
     None
 }
 
-fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
+pub(crate) fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
     let mut list = Vec::new();
     let arr = match raw_list.as_array() {
         Some(a) => a,
@@ -1372,7 +1372,7 @@ pub async fn tx_batch_track_interval(song_ids: &[String]) -> Result<HashMap<Stri
 }
 
 /// Desktop 接口随机 guid：32 位大写 hex
-fn random_tx_guid() -> String {
+pub(crate) fn random_tx_guid() -> String {
     let mut state = chrono_like_random();
     let mut s = String::with_capacity(32);
     for _ in 0..32 {
@@ -1401,7 +1401,7 @@ fn random_tx_wid() -> String {
 }
 
 /// Desktop 接口随机 searchid 尾号：5 位数字
-fn random_5_digits() -> u64 {
+pub(crate) fn random_5_digits() -> u64 {
     chrono_like_random().wrapping_mul(7919).wrapping_add(104729) % 100000
 }
 

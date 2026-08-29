@@ -75,6 +75,34 @@ Future<String> txAlbumSongs({
 Future<String> txBatchTrackInterval({required String songIdsJson}) =>
     RustLib.instance.api.crateApiTxBatchTrackInterval(songIdsJson: songIdsJson);
 
+/// LX 歌单搜索（kw/kg/tx/wy/mg 原生歌单接口，对齐桌面端 searchLxPlaylists）。
+/// 返回归一化 [`crate::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
+Future<String> lxSearchPlaylists({
+  required String source,
+  required String keyword,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiLxSearchPlaylists(
+  source: source,
+  keyword: keyword,
+  page: page,
+  limit: limit,
+);
+
+/// LX 歌单曲目（对齐桌面端 lxGetPlaylistTracks，含 TX 风控 Web 兜底）。
+/// 返回 `{ list: [LxSearchItem], isEnd: bool }` 的 JSON。
+Future<String> lxPlaylistTracks({
+  required String source,
+  required String playlistId,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiLxPlaylistTracks(
+  source: source,
+  playlistId: playlistId,
+  page: page,
+  limit: limit,
+);
+
 /// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
 Future<String> pluginList({required String dataDir}) =>
     RustLib.instance.api.crateApiPluginList(dataDir: dataDir);

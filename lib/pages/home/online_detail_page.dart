@@ -7,8 +7,10 @@ import '../../src/core/app_colors.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
+import '../../src/plugin/plugin_host_fallback.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/plugin/plugin_search.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
@@ -61,7 +63,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   bool _introLoaded = false;
   int _page = 1;
   PluginCatalogService? _catalog;
+  PluginSearchService? _searchService;
   PluginSource? _source;
+  /// LX 歌单来源音源 key（raw['_lxSource']，非 null 时歌单曲目走宿主代取）。
+  String? _lxSource;
   late final TabController? _tab;
   int _activeTab = 0;
 
@@ -102,6 +107,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
     _source = source.first;
     _catalog = PluginCatalogService(engine, sources);
+    _searchService = PluginSearchService(engine, sources);
+    _lxSource = widget.args.raw['_lxSource'] is String
+        ? widget.args.raw['_lxSource'] as String
+        : null;
     await _loadSongs(reset: true);
     if (widget.args.type == OnlineDetailType.artist) {
       // 专辑预取：列表页点进歌手默认在歌曲 tab，专辑后台备好切 tab 即显。
@@ -135,7 +144,16 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         list = await catalog.getTopListDetail(source, raw, page: page);
       case OnlineDetailType.playlist:
         final item = Map<String, dynamic>.from(raw);
-        if (item['_isAlbum'] == true) {
+        if (_lxSource != null) {
+          // LX 歌单：宿主代取各源原生歌单曲目接口（kw/kg/tx/wy/mg）。
+          final playlistId = (item['_lxPlaylistId'] ?? '').toString();
+          list = await lxHostPlaylistTracksFallback(
+            source,
+            _lxSource!,
+            playlistId,
+            page: page,
+          );
+        } else if (item['_isAlbum'] == true) {
           item.remove('_isAlbum');
           list = await catalog.getAlbumSongs(source, item, page: page);
         } else {
@@ -180,12 +198,19 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   void _playAll() => _play(0);
 
+  QueueItem _queueItemOf(PluginSearchResult r) {
+    final source = _source!;
+    // LX 来源（歌单曲目）走 `lx://{source}/{songmid}` 队列项，播放用插件 musicUrl。
+    if (_lxSource != null && _searchService != null) {
+      return _searchService!.toQueueItem(source, r);
+    }
+    return PluginCatalogService.toQueueItem(source, r);
+  }
+
   void _play(int index) {
     final source = _source;
     if (source == null) return;
-    final queue = _songs
-        .map((r) => PluginCatalogService.toQueueItem(source, r))
-        .toList();
+    final queue = _songs.map(_queueItemOf).toList();
     if (queue.isEmpty) return;
     ref.read(playerProvider.notifier).playQueue(queue, startIndex: index);
   }
@@ -193,7 +218,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   QueueItem? _queueItem(int index) {
     final source = _source;
     if (source == null) return null;
-    return PluginCatalogService.toQueueItem(source, _songs[index]);
+    return _queueItemOf(_songs[index]);
   }
 
   void _toggleFavorite(int index) {
@@ -219,7 +244,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   void _songActions(int index) {
     final source = _source;
     if (source == null) return;
-    final item = PluginCatalogService.toQueueItem(source, _songs[index]);
+    final item = _queueItemOf(_songs[index]);
     showSongActionsSheet(
       context,
       ref: ref,
