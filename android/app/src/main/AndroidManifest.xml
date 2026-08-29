@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 听歌识曲：麦克风录音 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 扫码登录：相机扫码（桌面端二维码） -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- 悬浮歌词窗：在其他应用上层显示 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <application

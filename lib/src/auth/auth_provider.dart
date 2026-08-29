@@ -97,6 +97,36 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+/// 扫码登录：移动端「扫描到二维码」后从服务端拿到的被扫设备信息，
+/// 供确认登录页展示应用名、设备ID、位置等（对齐 QQ/微信扫码确认）。
+class TvLoginScanInfo {
+  final String appName;
+  final String deviceId;
+  final String location;
+  final String nickname;
+  final String ciyuanxiId;
+  const TvLoginScanInfo({
+    this.appName = '',
+    this.deviceId = '',
+    this.location = '',
+    this.nickname = '',
+    this.ciyuanxiId = '',
+  });
+
+  factory TvLoginScanInfo.fromJson(Map<String, dynamic> j) {
+    final nickname = ((j['nickname'] as String?)?.isNotEmpty ?? false)
+        ? (j['nickname'] as String)
+        : ((j['username'] as String?) ?? '');
+    return TvLoginScanInfo(
+      appName: (j['app_name'] as String?) ?? '',
+      deviceId: (j['device_id'] as String?) ?? '',
+      location: (j['location'] as String?) ?? '',
+      nickname: nickname,
+      ciyuanxiId: (j['ciyuanxi_id'] as String?) ?? '',
+    );
+  }
+}
+
 /// 人机验证题目（内置算术题模式，与桌面端 get_captcha 一致）。
 class HumanCaptcha {
   final String captchaId;
@@ -343,6 +373,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// 邮箱验证码登录（无需密码，通过发送到注册邮箱的验证码登录）。
+  Future<void> loginByEmail({
+    required String email,
+    required String code,
+    HumanCaptchaPayload? captcha,
+  }) async {
+    state = state.copyWith(loading: true, clearError: true);
+    try {
+      final data = await requestAction('login_by_code', {
+        'email': email.trim(),
+        'verify_code': code.trim(),
+        'device_id': await _deviceId(),
+        if (captcha != null) ...captcha.toBodyFields(),
+      });
+      final token = data['token'];
+      if (token == null || token.toString().isEmpty) {
+        throw AuthException(tr('登录响应无效'));
+      }
+      await _saveAuth(token.toString(), data);
+    } catch (e) {
+      state = state.copyWith(loading: false, error: _msg(e, tr('登录失败')));
+    }
+  }
+
   /// 用户注册（注册成功后自动登录）。
   Future<void> register({
     required String ciyuanxiId,
@@ -371,6 +425,42 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       state = state.copyWith(loading: false, error: _msg(e, tr('注册失败')));
     }
+  }
+
+  /// 扫码登录：移动端标记桌面端二维码「已扫描」，返回被扫设备信息供确认页展示。
+  /// 未登录时返回 null 由调用方引导先登录。
+  Future<TvLoginScanInfo?> scanTvLogin(String code) async {
+    final user = state.user;
+    final ciyuanxiId = user?.ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return null;
+    final data = await requestAction('scan_tv_login', {
+      'code': code.trim(),
+      'ciyuanxi_id': ciyuanxiId,
+    });
+    final info = TvLoginScanInfo.fromJson(data);
+    if (info.nickname.isEmpty) {
+      return TvLoginScanInfo(
+        appName: info.appName,
+        deviceId: info.deviceId,
+        location: info.location,
+        nickname: ciyuanxiId,
+        ciyuanxiId: ciyuanxiId,
+      );
+    }
+    return info;
+  }
+
+  /// 扫码登录：移动端确认后为桌面端签发登录凭证。
+  Future<void> confirmTvLogin(String code) async {
+    final user = state.user;
+    final ciyuanxiId = user?.ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录'));
+    }
+    await requestAction('confirm_tv_login', {
+      'code': code.trim(),
+      'ciyuanxi_id': ciyuanxiId,
+    });
   }
 
   /// 设置内联错误信息（供 UI 展示本地校验错误，如两次密码不一致）。
