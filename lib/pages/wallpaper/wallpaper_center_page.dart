@@ -726,17 +726,25 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: _picked == null
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_photo_alternate_outlined,
-                            size: 40, color: scheme.onSurfaceVariant),
-                        const SizedBox(height: 6),
-                        Text(tr('点击选择图片（JPG / PNG / WEBP，30MB 以内）'),
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_photo_alternate_outlined,
+                              size: 40, color: scheme.onSurfaceVariant),
+                          const SizedBox(height: 8),
+                          Text(
+                            tr('点击选择图片\n(JPG / PNG / WEBP，30MB 以内)'),
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant)),
-                      ],
+                              fontSize: 12,
+                              height: 1.4,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                     )
                   : ClipRRect(
                       borderRadius: BorderRadius.circular(14),
