@@ -14,7 +14,7 @@ class OnlineSource {
 }
 
 /// 支持的在线音源。顺序即 UI 上的展示顺序。
-get kOnlineSources => <OnlineSource>[
+List<OnlineSource> get kOnlineSources => <OnlineSource>[
   OnlineSource('kw', tr('酷我')),
   OnlineSource('wy', tr('网易云')),
   OnlineSource('kg', tr('酷狗')),

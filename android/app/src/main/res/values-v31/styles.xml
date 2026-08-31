@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+（含 16）系统闪屏强制接管：只认平台 windowSplashScreen* 属性，
+         LaunchTheme 的 windowBackground 启动图在该阶段不可见。不配置时系统默认
+         显示启动器 adaptive icon（白圆底裁切），与窗口启动图的裸 logo 大小/形态
+         不一致，产生两段式跳变。这里显式配置与窗口启动图同源的昼夜底色
+         （@color/splash_background：白天白 / 夜间 #121212）+ 同尺寸裸 logo
+         （splash_icon 引用的 splash_logo 自带 drawable-night 反白变体），
+         系统闪屏 → 窗口启动图 → Flutter 全程观感一致。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <!-- splash_icon 为透明底 adaptive icon（原因详见该文件注释）：EMUI
+             安卓 16 会忽略非自适应 icon 与 windowSplashScreenIconBackgroundColor，
+             只有 adaptive icon 能被真正采用，昼夜尺寸才一致。 -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+    </style>
+</resources>
+

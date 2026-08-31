@@ -70,14 +70,13 @@ object StatusBarLyricsNotification {
 
     private fun ensureChannel(context: Context, nm: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "状态栏歌词",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "在通知栏显示正在播放的歌词行" }
-            nm.createNotificationChannel(channel)
-        }
+        // 同 ID 重复创建会更新渠道名称/描述，保证改名「车机歌词」对已有安装生效
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "车机歌词",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply { description = "把当前歌词行推送到系统通知，供车机 / 蓝牙屏读取显示" }
+        nm.createNotificationChannel(channel)
     }
 
     private fun decodeCover(path: String?): Bitmap? {

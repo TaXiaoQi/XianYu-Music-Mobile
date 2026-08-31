@@ -9,16 +9,22 @@ import 'predictive_back_transitions.dart';
 /// 壁纸分支会对页面 textTheme 全局 apply，这里为弹窗 route 统一恢复
 /// 基础 colorScheme + textTheme，覆盖所有经 showPredictiveDialog 的弹窗，
 /// 避免逐弹窗手改而遗漏。
-Widget _restoreBaseTheme(BuildContext context, Widget child) {
+///
+/// [builder] 必须在恢复后的 Theme **内部**（Builder）执行：若在恢复前急切
+/// 执行，builder 里 `Theme.of(dialogContext)` 拿到的是被壁纸亮字覆盖后的
+/// 页面主题——弹窗内所有显式取色（`scheme.onSurfaceVariant` 正文/副标题、
+/// sheet 标题等）都会取到白色，白底白字不可见。
+WidgetBuilder _restoreBaseTheme(BuildContext context, WidgetBuilder builder) {
   final t = Theme.of(context);
   final dark = t.brightness == Brightness.dark;
   final scheme = dark ? darkBaseScheme : lightBaseScheme;
   final tt = dark ? darkBaseTextTheme : lightBaseTextTheme;
-  if (scheme == null) return child;
-  return Theme(
-    data: t.copyWith(colorScheme: scheme, textTheme: tt ?? t.textTheme),
-    child: child,
-  );
+  if (scheme == null) return builder;
+  // Builder：把 builder 推迟到 Theme 子树内构建，Theme.of 取到基础主题。
+  return (innerContext) => Theme(
+        data: t.copyWith(colorScheme: scheme, textTheme: tt ?? t.textTheme),
+        child: Builder(builder: builder),
+      );
 }
 
 /// 让弹窗参与 Android 预测返回的自定义页面路由。
@@ -114,7 +120,7 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
               onTap: dismissible ? () => Navigator.of(context).pop() : null,
               child: Container(color: scrim),
             ),
-            Center(child: _restoreBaseTheme(context, builder(context))),
+            Center(child: _restoreBaseTheme(context, builder)(context)),
           ],
         ),
       ),
@@ -260,7 +266,7 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
               alignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxWidth),
-                child: _restoreBaseTheme(context, builder(context)),
+                child: _restoreBaseTheme(context, builder)(context),
               ),
             ),
           ),

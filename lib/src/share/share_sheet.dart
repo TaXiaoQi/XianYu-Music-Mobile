@@ -15,12 +15,16 @@ import 'package:share_plus/share_plus.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 
 import '../online/cover_proxy.dart';
+import '../core/db_path.dart';
+import '../library/saf_channel.dart';
+import '../rust/api.dart';
 import '../player/player_provider.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/sheet_dialog.dart';
 import 'qq_share_service.dart';
 import 'share_service.dart';
+import 'system_share.dart';
 import '../i18n/i18n.dart';
 
 /// 弹出歌曲分享菜单：QQ 好友 / QQ 空间 / 复制链接。
@@ -205,6 +209,40 @@ Future<String> _ensureUrl(WidgetRef ref, QueueItem song) async {
   }
 }
 
+/// 本地歌曲封面兜底解析：分享入口拿到的 QueueItem 多来自列表页早先构建，
+/// coverPath 可能尚未回写懒提取的缩略图路径（扫描期不提取封面，防拖慢启动）。
+/// 这里现场提取一次（含 SAF fd 自愈，与通知栏封面兜底同逻辑），
+/// 返回补全封面后的 song 与本地封面文件（可能为 null = 无封面）。
+Future<(QueueItem, File?)> _resolveLocalCover(
+    WidgetRef ref, QueueItem song) async {
+  var updated = song;
+  if (!song.isOnline && (song.coverPath == null || song.coverPath!.isEmpty)) {
+    try {
+      final dbPath = await ref.read(dbPathProvider.future);
+      final cacheRoot = await ref.read(coverCacheRootProvider.future);
+      var p = await getSongCoverThumbnail(
+        dbPath: dbPath,
+        cacheRoot: cacheRoot,
+        path: song.path,
+      );
+      if (p.isEmpty && SafChannel.isSafPath(song.path)) {
+        final healed =
+            await SafChannel.extractCoverToCache(song.path, cacheRoot);
+        if (healed.isNotEmpty) {
+          p = await getSongCoverThumbnail(
+            dbPath: dbPath,
+            cacheRoot: cacheRoot,
+            path: song.path,
+          );
+        }
+      }
+      if (p.isNotEmpty) updated = song.copyWith(coverPath: p);
+    } catch (_) {}
+  }
+  final file = await _localCoverFile(updated);
+  return (updated, file);
+}
+
 /// 分享文案：第一行「用户名邀请你去弦予音乐听《歌名》」，第二行分享链接。
 /// 未登录时第一行省略用户名。
 String _buildShareText(WidgetRef ref, QueueItem song, String url) {
@@ -219,7 +257,8 @@ String _buildShareText(WidgetRef ref, QueueItem song, String url) {
 
 /// 生成并复制分享链接。
 Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) async {
-  final url = await _ensureUrl(ref, song);
+  final (song2, _) = await _resolveLocalCover(ref, song);
+  final url = await _ensureUrl(ref, song2);
   if (url.isEmpty) {
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
@@ -236,7 +275,11 @@ Future<void> _shareViaQQ(
   QueueItem song, {
   required int scene,
 }) async {
-  final url = await _ensureUrl(ref, song);
+  // 先兜底解析本地封面（懒提取 + SAF 自愈）并补全 song，再生成分享链接：
+  // 落地页 og:image 与 QQ 卡片缩略图共用这次解析结果。
+  final (song2, coverFile) = await _resolveLocalCover(ref, song);
+
+  final url = await _ensureUrl(ref, song2);
   if (url.isEmpty) {
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
@@ -245,14 +288,13 @@ Future<void> _shareViaQQ(
 
   final qq = ref.read(qqShareServiceProvider);
   if (!await qq.isQQInstalled()) {
-    await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song, url)));
+    await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song2, url)));
     showXianYuToastByOverlay(overlay, tr('未安装 QQ，分享链接已复制'));
     return;
   }
 
   var coverPath = '';
   try {
-    final coverFile = await _localCoverFile(song);
     if (coverFile != null) {
       // QQ 卡片缩略图需本地文件且不宜过大，压缩到 ≤256px JPEG 后再分享。
       coverPath = (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
@@ -266,9 +308,9 @@ Future<void> _shareViaQQ(
     summary: artist,
     targetUrl: url,
     coverPath: coverPath,
-    // QQ 好友走「音乐卡片」类型（封面左、歌名右的对齐样式）；
-    // QQ 空间不支持音乐卡片，维持普通网页卡片。
-    musicUrl: scene == TencentScene.kScene_QQ ? url : null,
+    // 统一走普通网页卡片（QQ 对已上线应用渲染增强模板：封面右上 + 底部应用图标，
+    // 同网易云/QQ 音乐观感）；音乐类型卡片会被 QQ 自动叠加播放角标，弃用。
+    musicUrl: null,
   );
 
   switch (result) {
@@ -284,12 +326,15 @@ Future<void> _shareViaQQ(
 
 /// 调用 Android 系统分享面板（ACTION_SEND）：封面图 + 「歌名 · 歌手 + 落地页链接」。
 /// 覆盖微信/钉钉/短信等任意平台；封面缺失或下载失败时退化为纯文本。
+/// 优先走原生通道（普通 startActivity，国产 ROM 才会弹自家分享面板），
+/// 通道不可用时回退 share_plus。
 Future<void> _shareToOtherApps(
   OverlayState overlay,
   WidgetRef ref,
   QueueItem song,
 ) async {
-  final url = await _ensureUrl(ref, song);
+  final (song2, cover) = await _resolveLocalCover(ref, song);
+  final url = await _ensureUrl(ref, song2);
   if (url.isEmpty) {
     showXianYuToastByOverlay(overlay, tr('生成分享链接失败'));
     return;
@@ -297,15 +342,25 @@ Future<void> _shareToOtherApps(
   ref.read(shareServiceProvider).reportShareAction();
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
+  final shareText =
+      tr('{title} · {artist}\n来自弦予音乐\n{url}', {'title': song.title, 'artist': artist, 'url': url});
 
-  final cover = await _localCoverFile(song);
   try {
+    final sent = await shareViaSystem(text: shareText, filePath: cover?.path);
+    if (sent != null) {
+      if (!sent) {
+        await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song2, url)));
+        showXianYuToastByOverlay(overlay, tr('分享失败，链接已复制'));
+      }
+      return;
+    }
+    // 通道不可用（非 Android），回退 share_plus。
     await SharePlus.instance.share(ShareParams(
       files: cover == null ? null : [XFile(cover.path)],
-      text: tr('{title} · {artist}\n来自弦予音乐\n{url}', {'title': song.title, 'artist': artist, 'url': url}),
+      text: shareText,
     ));
   } catch (_) {
-    await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song, url)));
+    await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song2, url)));
     showXianYuToastByOverlay(overlay, tr('分享失败，链接已复制'));
   }
 }

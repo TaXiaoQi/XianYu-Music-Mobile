@@ -111,7 +111,11 @@ class _CoverReturnSourceState extends State<CoverReturnSource> {
   // tear-off 每次访问都会生成新闭包，identical 恒为 false 导致源无法注销。
   // ignore: prefer_function_declarations_over_variables
   late final Rect Function() _provider = () {
-    final ro = _key.currentContext?.findRenderObject();
+    final ctx = _key.currentContext;
+    // 元素可能已处于 failed/inactive（如预测返回转场中途注销），此时
+    // findRenderObject() 会断言失败，需先通过 mounted 守卫。
+    if (ctx == null || !ctx.mounted) return Rect.zero;
+    final ro = ctx.findRenderObject();
     if (ro is RenderBox && ro.hasSize) {
       return ro.localToGlobal(Offset.zero) & ro.size;
     }

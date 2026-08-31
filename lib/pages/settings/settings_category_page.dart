@@ -133,6 +133,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
+              // 设置页内容从顶栏高度之下才开始，下方是纯色底色：
+              // 扁平背板，跳过全屏 BackdropFilter，消除切页卡顿（视觉不变）。
+              flatBackdrop: true,
               leading: const BackButton(),
               title: Text(category.title),
             ),
@@ -919,6 +922,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ),
   );
 
+  // 自绘行布局替代 ListTile：大字体缩放/小屏（DPI 调大）下行宽不足时，
+  // ListTile 会把 trailing 值文本挤出卡片边界（截断/与副标题挤压）。
+  // 标题/副标题走 Expanded 自动换行；trailing 保持自然宽度右对齐（顶到
+  // chevron），仅当超过行宽 50% 上限时由 FittedBox 等比缩小兜底。
   Widget _tile(
     BuildContext context, {
     required IconData icon,
@@ -927,27 +934,53 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     VoidCallback? onTap,
     String? subtitle,
   }) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-      trailing: onTap == null
-          ? trailing
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                trailing,
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ],
-            ),
+    return InkWell(
       onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: LayoutBuilder(builder: (context, cons) {
+            return Row(
+              children: [
+                Icon(icon),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title),
+                      if (subtitle != null)
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: cons.maxWidth * 0.5),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: trailing,
+                  ),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ],
+              ],
+            );
+          }),
+        ),
+      ),
     );
   }
 
@@ -1347,13 +1380,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ListTile(
-          leading: const Icon(Icons.timer_outlined),
-          title:   Text(tr('分享链接有效时长')),
-          subtitle: Text(
-            tr('分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）'),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+        _tile(
+          context,
+          icon: Icons.timer_outlined,
+          title: tr('分享链接有效时长'),
+          subtitle: tr('分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）'),
           trailing: Text(
             _shareValidityLabel(minutes),
             style: TextStyle(
@@ -2215,7 +2246,7 @@ class _AccentColorSheet extends StatefulWidget {
   final String title;
   final Map<int, String>? presets;
 
-  static get _defaultPresets => <int, String>{
+  static Map<int, String> get _defaultPresets => <int, String>{
     0xFFEC4141: tr('经典红'),
     0xFFF9735B: tr('珊瑚'),
     0xFFF59E0B: tr('琥珀'),
@@ -2227,7 +2258,7 @@ class _AccentColorSheet extends StatefulWidget {
   };
 
   /// 与 RawS-Music DesktopLyricService.QUICK_COLORS 一致的歌词颜色预设。
-  static get lyricPresets => <int, String>{
+  static Map<int, String> get lyricPresets => <int, String>{
     0xFFFFFFFF: tr('纯白'),
     0xFFBFBFBF: tr('银灰'),
     0xFF91CDFF: tr('天蓝'),

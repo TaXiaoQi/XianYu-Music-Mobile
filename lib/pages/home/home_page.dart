@@ -18,11 +18,20 @@ import '../../src/i18n/i18n.dart';
 /// 首页：顶栏（标题+搜索框）/ 封面轮播 / 发现 / 听过最多。
 ///
 /// 顶栏为毛玻璃固定条，扩展至搜索框下；设置入口在「我的」页右上角菜单。
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  /// 首页内容背板：静态快照供顶栏离线缓存复用（被二级页盖住/弹回时零抓屏）。
+  final _backdropKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
     // 竖屏 / 横屏两套完全分开：横屏顶栏改横向（搜索框 + 扫码齐平一行）、
     // 「弦予音乐」标题移入左侧侧栏、去掉封面卡片直接以「发现」起步。
     return useLandscape(ref)
@@ -50,21 +59,35 @@ class HomePage extends ConsumerWidget {
         children: [
           const _AmbientBackground(),
           // 内容主体：顶部避让扩展后的顶栏（标题行+搜索框）。
-          ListView(
+          // 整体包 RepaintBoundary 并按 _backdropKey 暴露，供顶栏离线缓存背板。
+          RepaintBoundary(
+            key: _backdropKey,
+            child: ListView(
             padding: EdgeInsets.fromLTRB(
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
             children:   [
               SizedBox(height: 14),
               CoverCarousel(),
               SizedBox(height: 26),
-              _SectionHeader(title: tr('发现')),
+              _SectionHeader(
+                title: tr('发现'),
+                action: _viewAllAction(context, ref, '/home/toplists'),
+              ),
               SizedBox(height: 12),
               DiscoverSection(),
+              SizedBox(height: 26),
+              _SectionHeader(
+                title: tr('每日推荐'),
+                action: _viewAllAction(context, ref, '/home/daily'),
+              ),
+              SizedBox(height: 14),
+              DailyRecommendSection(),
               SizedBox(height: 26),
               _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
               _MostPlayedList(),
             ],
+            ),
           ),
           // 顶栏（仅非悬浮模式）：状态栏+「弦予音乐」标题+搜索框，
           // 滚动内容从其下方穿过被毛玻璃模糊；悬浮模式由壳层悬浮顶栏接管。
@@ -74,6 +97,8 @@ class HomePage extends ConsumerWidget {
               left: 0,
               right: 0,
               child: GlassTopBar(
+              // 离线缓存背板：静止/切页/弹回时直接复用预模糊快照。
+              cachedBackdropKey: _backdropKey,
               titleSpacing: 18,
               title:   Text.rich(
                 TextSpan(
@@ -131,9 +156,19 @@ class HomePage extends ConsumerWidget {
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
             children: [
               SizedBox(height: 10),
-              _SectionHeader(title: tr('发现')),
+              _SectionHeader(
+                title: tr('发现'),
+                action: _viewAllAction(context, ref, '/home/toplists'),
+              ),
               SizedBox(height: 12),
               DiscoverSection(),
+              SizedBox(height: 26),
+              _SectionHeader(
+                title: tr('每日推荐'),
+                action: _viewAllAction(context, ref, '/home/daily'),
+              ),
+              SizedBox(height: 14),
+              DailyRecommendSection(),
               SizedBox(height: 26),
               _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
@@ -147,17 +182,48 @@ class HomePage extends ConsumerWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.action});
 
   final String title;
 
+  /// 标题行右侧动作（如「查看全部」入口）。
+  final Widget? action;
+
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+          ),
+        ),
+        ?action,
+      ],
     );
   }
+}
+
+/// 「查看全部」入口：横屏开右侧内容容器，竖屏 push 二级路由。
+Widget _viewAllAction(BuildContext context, WidgetRef ref, String route) {
+  final scheme = Theme.of(context).colorScheme;
+  return InkWell(
+    onTap: () => openDiscoverEntry(context, ref, route),
+    borderRadius: BorderRadius.circular(6),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Row(
+        children: [
+          Text(
+            tr('查看全部'),
+            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+          ),
+          Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
+        ],
+      ),
+    ),
+  );
 }
 
 class _MostPlayedList extends ConsumerWidget {

@@ -124,7 +124,7 @@ class FloatingGlassSurface extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 8,
+          base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
         ),
@@ -211,7 +211,7 @@ class BiliPaiPill extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 8,
+          base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
         ),

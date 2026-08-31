@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -474,7 +473,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
       blurSigma: surfaceBlurSigma(
-        base: 8,
+        base: 4,
         budget: budget,
         type: BlurSurfaceType.bottomBar,
       ),
@@ -533,7 +532,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 降采样模糊 filter，按 (sigma, downscale) 全局缓存复用。
+        filter: cheapBackdropBlur(sigma),
         child: surface,
       ),
     );

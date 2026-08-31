@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/navigation/shell.dart'
+    show landscapeSettingsCategoryProvider;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/landscape_page_fade.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
@@ -28,12 +31,15 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  /// 横屏 master-detail 当前选中的分类 path（默认账号）。
-  String? _selectedPath;
-
   /// 设置搜索关键字；非空时列表区切换为搜索结果。
   String _query = '';
   final _searchCtrl = TextEditingController();
+
+  /// 设置内容背板：静态快照供顶栏离线缓存复用（推/回二级页时不重算）。
+  final _backdropKey = GlobalKey();
+
+  /// 横屏 master-detail 左侧分类导航宽度（默认 260，可拖动分割线调整）。
+  double _navWidth = 260;
 
   @override
   void dispose() {
@@ -68,19 +74,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         children: [
           // 内容列表：顶部预留顶栏（含搜索框）高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
           // 底部避让：二级页底栏隐藏，仅迷你播放条悬浮在距底 18px 处（高 58）。
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              GlassTopBar.height(context, bottom: searchBox) + 12,
-              16,
-              92 + MediaQuery.of(context).padding.bottom,
+          // 包 RepaintBoundary 按 _backdropKey 暴露，供顶栏离线缓存复用。
+          RepaintBoundary(
+            key: _backdropKey,
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                GlassTopBar.height(context, bottom: searchBox) + 12,
+                16,
+                92 + MediaQuery.of(context).padding.bottom,
+              ),
+              children: [
+                if (_query.trim().isEmpty)
+                  ..._buildCategorySections(context, groups)
+                else
+                  ..._buildSearchResults(context),
+              ],
             ),
-            children: [
-              if (_query.trim().isEmpty)
-                ..._buildCategorySections(context, groups)
-              else
-                ..._buildSearchResults(context),
-            ],
           ),
           // 顶栏高斯模糊毛玻璃（二级页带返回按钮），底部内嵌搜索框。
           Positioned(
@@ -88,6 +98,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
+              // 离线缓存背板：静止/被分类页盖住/回退时直接复用预模糊快照。
+              cachedBackdropKey: _backdropKey,
               leading: const BackButton(),
               title: Text(tr('设置')),
               bottom: searchBox,
@@ -235,7 +247,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   /// 横屏 master-detail：左侧分类导航（含选中态），右侧直嵌当前分类详情。
   Widget _buildLandscape(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
-    final sel = _selectedPath ?? '/settings/account';
+    // 选中分类走全局 provider：翻转重定向（停在设置二级页进横屏）由 shell
+    // 先写入目标分类再 pop 揭开本页，master-detail 直接落在对应分类。
+    final sel = ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
     final selTitle = _titleOf(groups, sel) ?? tr('设置');
 
@@ -248,7 +262,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Material(
             color: Colors.transparent,
             child: SizedBox(
-              width: 260,
+              width: _navWidth,
               // 只避让顶部（状态栏）与左侧（摄像头在左列时），右/下 padding 属右列，
               // 否则翻转屏幕后右侧挖孔的 padding 会误作用到左列，导航条右侧空出一节。
               child: SafeArea(
@@ -302,8 +316,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                       selected: _isEmbeddable(entries[i].path) &&
                                           sel == entries[i].path,
                                       onTapOverride: _isEmbeddable(entries[i].path)
-                                          ? () => setState(
-                                              () => _selectedPath = entries[i].path)
+                                          ? () => ref
+                                              .read(landscapeSettingsCategoryProvider
+                                                  .notifier)
+                                              .state = entries[i].path
                                           : null,
                                     ),
                                 ],
@@ -316,7 +332,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               compact: true,
                               onTapOverride: (r) {
                                 if (_isEmbeddable(r.path)) {
-                                  setState(() => _selectedPath = r.path);
+                                  ref
+                                      .read(landscapeSettingsCategoryProvider
+                                          .notifier)
+                                      .state = r.path;
                                 } else {
                                   context.push(r.path);
                                 }
@@ -330,18 +349,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
           ),
-          const VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: Color(0x14000000),
+          _SettingsDivider(
+            onDragUpdate: (dx) {
+              final screenW = MediaQuery.sizeOf(context).width;
+              setState(() {
+                // 最小即当前默认宽度 260，最远只能划到屏幕中部（对半）。
+                _navWidth = (_navWidth + dx).clamp(260.0, screenW * 0.5);
+              });
+            },
           ),
           // 右：当前分类详情（薄顶栏 + 嵌入体，切换带淡入淡出）
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // plugin/feedback 嵌入时自带顶栏（音源 actions / 反馈 TabBar），外层不再渲染标题条。
-                if (sel != '/plugin' && sel != '/feedback')
+                // plugin 嵌入时自带纯色标题条（含音源操作按钮），外层不再渲染；
+                // 其余分类（含 feedback，TabBar 在标题条之下）统一由外层渲染标题条。
+                if (sel != '/plugin')
                   Container(
                     height: GlassTopBar.height(context),
                     alignment: Alignment.centerLeft,
@@ -355,16 +379,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ),
                 Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    child: detail == null
-                        ? const SizedBox.shrink()
-                        : KeyedSubtree(
-                            key: ValueKey(sel),
-                            child: detail,
-                          ),
+                  // 与横屏壳层右侧面板同一套桌面版 page-fade out-in（旧分类
+                  // 淡出微上移缩小 → 新分类自下方淡入），替换原 AnimatedSwitcher
+                  // 交叉淡入（切换观感与壳层面板不一致、近似硬切）。
+                  child: LandscapePageFade(
+                    open: detail != null,
+                    trigger: sel,
+                    child: detail,
                   ),
                 ),
               ],
@@ -520,6 +541,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ],
     ),
   ];
+}
+
+/// 设置页 master-detail 的可拖动分割条：横跨全高的窄 hit 区，静置为细分隔线。
+class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider({required this.onDragUpdate});
+
+  final ValueChanged<double> onDragUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (d) => onDragUpdate(d.delta.dx),
+      child: SizedBox(
+        width: 28,
+        child: Center(
+          child: Container(
+            width: 1,
+            height: 56,
+            color: scheme.onSurface.withValues(alpha: 0.16),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CategoryEntry {
@@ -726,7 +773,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '垂直位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '上下 位置'),
   _SearchItem(label: '锁定位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '锁定 拖动'),
   _SearchItem(label: '重置位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '重置 还原'),
-  _SearchItem(label: '状态栏歌词', section: '状态栏歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '通知栏 锁屏 状态栏'),
+  _SearchItem(label: '车机歌词', section: '车机歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '通知栏 锁屏 车机 蓝牙 状态栏'),
 
   // 播放
   _SearchItem(label: '音量', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: 'volume 声音'),

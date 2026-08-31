@@ -1,10 +1,9 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import 'blur_budget.dart';
+import 'cached_frosted.dart';
 import 'glass_settings.dart';
 
 /// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
@@ -33,6 +32,8 @@ class GlassTopBar extends ConsumerWidget {
     this.actions,
     this.bottom,
     this.titleSpacing,
+    this.cachedBackdropKey,
+    this.flatBackdrop = false,
   });
 
   final Widget? leading;
@@ -40,6 +41,19 @@ class GlassTopBar extends ConsumerWidget {
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
   final double? titleSpacing;
+
+  /// 扁平背板：顶栏下方为已知固定的纯色（无内容穿过）时置 true，跳过
+  /// `BackdropFilter` 全屏离屏合成，直接用铺底填充——视觉不变、成本归零。
+  /// 典型：设置类页面顶栏（内容从 `GlassTopBar.height` 之后才开始）。
+  final bool flatBackdrop;
+
+  /// 离线缓存背板的 RepaintBoundary 的 GlobalKey（可选）。
+  ///
+  /// 提供时本页内容（`ListView` 等）需包在 `RepaintBoundary(key: 该 key)` 中，
+  /// 顶栏改用 [CachedFrosted] 离线缓存：静止/被二级页盖住/弹回时直接 blit
+  /// 一张预模糊小图，不再每帧全屏高斯基对背板——切页不卡。滚动中自动回退
+  /// 实时 BackdropFilter。细节见 [CachedFrosted]。
+  final GlobalKey? cachedBackdropKey;
 
   /// 顶栏总高度（含状态栏、工具栏与底部 TabBar）：供内容区顶部 Padding 避让。
   /// 无论毛玻璃开/关高度一致，可安全用于布局。
@@ -85,13 +99,26 @@ class GlassTopBar extends ConsumerWidget {
       ),
       child: bar,
     );
-    if (solid) return inner;
+    if (solid || flatBackdrop) return inner;
+
+    // 提供离线缓存背板 key 时，走 CachedFrosted（静止直接 blit，滚动才实时）。
+    final cachedKey = cachedBackdropKey;
+    if (cachedKey != null) {
+      return CachedFrosted(
+        backdropKey: cachedKey,
+        sigma: sigma,
+        // 铺底透明度由 inner 承担，此处不叠加，避免双重变暗。
+        fill: const Color(0x00000000),
+        child: inner,
+      );
+    }
 
     return ClipRect(
       child: BackdropFilter(
         // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
         // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感；按预算缩放。
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16。
+        filter: cheapBackdropBlur(sigma),
         child: inner,
       ),
     );

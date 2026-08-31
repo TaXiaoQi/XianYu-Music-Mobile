@@ -32,13 +32,13 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
   bool _hasScanned = false;
   String? _error;
 
-  static get _presets => [
+  static List<(String, String)> get _presets => [
     (tr('歌名 - 歌手'), '{title} - {artist}'),
     (tr('歌手 - 歌名'), '{artist} - {title}'),
     (tr('轨道. 歌名'), '{track}. {title}'),
   ];
 
-  static get _variables => [
+  static List<(String, String)> get _variables => [
     ('{title}', tr('标题')),
     ('{artist}', tr('歌手')),
     ('{album}', tr('专辑')),

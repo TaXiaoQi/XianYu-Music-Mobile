@@ -17,6 +17,7 @@ import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
 import '../../pages/home/online_detail_page.dart';
 import '../../pages/library/library_page.dart';
+import '../../pages/library/library_folder_page.dart';
 import '../../pages/mine/mine_page.dart';
 import '../../pages/effects/effects_page.dart';
 import '../../pages/search/search_page.dart';
@@ -48,6 +49,11 @@ import '../i18n/i18n.dart';
 
 /// 主路由：底部导航使用 StatefulShellRoute 保持各 tab 状态。
 final appNavigatorKey = GlobalKey<NavigatorState>();
+
+/// 分支子树 GlobalKey：竖屏（PageSwitchTabView）与横屏（LandscapeTabSwitcher）
+/// 是两个独立容器，翻转时整体互换；分支凭同一 GlobalKey 重挂父级，
+/// 各自 Navigator/滚动状态跨翻转保留。数量与 branches 一一对应。
+final _branchKeys = <GlobalKey>[GlobalKey(), GlobalKey()];
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
   // TransitionTracker：push/pop 时标记全局转场，供 blur 预算在转场窗口降级。
@@ -63,7 +69,10 @@ final appRouter = GoRouter(
         return PredictiveBackTabContainer(
           navigationShell: navigationShell,
           currentIndex: navigationShell.currentIndex,
-          children: children,
+          children: [
+            for (var i = 0; i < children.length && i < _branchKeys.length; i++)
+              KeyedSubtree(key: _branchKeys[i], child: children[i]),
+          ],
         );
       },
       branches: [
@@ -120,15 +129,28 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
-    // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑 / 3 文件夹。
+    // 音乐库（从「我的」页与主页网格进入）：tab=0 全部 / 1 歌手 / 2 专辑。
     GoRoute(
       path: '/library',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => LibraryPage(
-          initialTab:
-              int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        (_) => KeyedSubtree(
+          // 与横屏音乐库容器共享 key：翻转瞬间 GlobalKey reparent，滚动状态保留。
+          key: musicLibraryPageKeys[0],
+          child: LibraryPage(
+            initialTab:
+                int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+          ),
         ),
+        key: state.pageKey,
+      ),
+    ),
+    // 文件夹页（扫描歌曲一体化界面，从本地页顶部搜索框右侧「+」进入）。
+    GoRoute(
+      path: '/library/folders',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const LibraryFolderPage(),
         key: state.pageKey,
       ),
     ),
@@ -276,7 +298,10 @@ final appRouter = GoRouter(
       path: '/playlists',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => const PlaylistsPage(),
+        (_) => KeyedSubtree(
+          key: musicLibraryPageKeys[3],
+          child: const PlaylistsPage(),
+        ),
         key: state.pageKey,
       ),
     ),
@@ -307,9 +332,12 @@ final appRouter = GoRouter(
       path: '/favorites',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => FavoritesPage(
-          initialTab:
-              int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        (_) => KeyedSubtree(
+          key: musicLibraryPageKeys[1],
+          child: FavoritesPage(
+            initialTab:
+                int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+          ),
         ),
         key: state.pageKey,
       ),
@@ -318,7 +346,10 @@ final appRouter = GoRouter(
       path: '/recent',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => const RecentPage(),
+        (_) => KeyedSubtree(
+          key: musicLibraryPageKeys[2],
+          child: const RecentPage(),
+        ),
         key: state.pageKey,
       ),
     ),
@@ -349,7 +380,7 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
-    // 扫描目录管理已合并到本地库「文件夹」页（/library?tab=3），原独立页已删除。
+    // 扫描目录管理已合并到本地库「文件夹」页（/library/folders），原独立页已删除。
     // 远程音乐库 WebDAV 管理（从设置页进入）。
     GoRoute(
       path: '/remote-library',
@@ -409,7 +440,7 @@ class BottomNavItem {
   const BottomNavItem(this.title, this.icon, this.location);
 }
 
-get bottomNavItems => [
+final List<BottomNavItem> bottomNavItems = [
   BottomNavItem(tr('首页'), Icons.home, '/home'),
   BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine'),
 ];
@@ -491,7 +522,7 @@ class _ShellRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get transitionDuration => const Duration(milliseconds: 250);
 
   // 只对不透明整页路由（_CoverRoute/_CoverBackRoute）做旧页联动；
   // 弹窗（PredictiveBackDialogRoute 等，opaque=false）与播放页
@@ -506,6 +537,7 @@ class _ShellRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    debugPrint('[dbg-t] _ShellRoute buildPage');
     return Semantics(
       scopesRoute: true,
       explicitChildNodes: true,
@@ -520,19 +552,123 @@ class _ShellRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 平滑：委托主题默认转场（淡进淡出 + 原生平推），旧页平移淡出与新页
-    // 滑入对称。转场时实时读取设置，改「切换动画」后立即生效。
+    debugPrint(
+      '[dbg-t] _ShellRoute buildTransitions entryOpaque='
+      '${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
+    );
+    // 平滑：定制版 FadeForwards（见 _SmoothFadeForwards）。转场时实时
+    // 读取设置，改「切换动画」后立即生效。
     if (_isSmooth(context)) {
-      return Theme.of(context).pageTransitionsTheme.buildTransitions(
-        this,
-        context,
-        animation,
-        secondaryAnimation,
-        child,
+      return _SmoothFadeForwards(
+        animation: animation,
+        secondaryAnimation: secondaryAnimation,
+        child: child,
       );
     }
     // 覆盖：旧页静止，由新页的覆盖滑动完成转场。
     return child;
+  }
+}
+
+/// 平滑模式转场：复刻 SDK `FadeForwardsPageTransitionsBuilder`（安卓 U 同款
+/// 1/4 行程平移 + emphasized 曲线 + 前 25% 快速淡出），仅调整入场淡入节奏。
+///
+/// SDK 原版旧页在转场 25% 处完全淡出，而新页淡入是线性 `Interval(0, 0.75)`，
+/// 此刻仅 ~33% 透明度，中间存在一段「新旧内容都极淡」的空窗；壁纸模式下
+/// 这段空窗会让壁纸整个裸露一下（感知为闪烁）。这里把入场淡入改为
+/// easeOutCubic 提前到位（25% 处已 ~70%），新旧内容交叠连续，消除空窗；
+/// 位移与淡出节奏不变，普通模式下观感与原版几乎一致。
+class _SmoothFadeForwards extends StatelessWidget {
+  const _SmoothFadeForwards({
+    required this.animation,
+    required this.secondaryAnimation,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
+  final Widget? child;
+
+  // 本页入场位移：从右 1/4 行程滑入（SDK 同款）。
+  static final Animatable<Offset> _forwardTranslation = Tween<Offset>(
+    begin: const Offset(0.25, 0),
+    end: Offset.zero,
+  ).chain(CurveTween(curve: Curves.easeInOutCubicEmphasized));
+
+  // 本页退场位移（返回时）：向右滑出 1/4 行程（SDK 同款）。
+  static final Animatable<Offset> _backwardTranslation = Tween<Offset>(
+    begin: Offset.zero,
+    end: const Offset(0.25, 0),
+  ).chain(CurveTween(curve: Curves.easeInOutCubicEmphasized));
+
+  // 下层页被覆盖时的位移：向左让出 1/4（SDK 同款）。
+  static final Animatable<Offset> _secondaryForwardTranslation = Tween<Offset>(
+    begin: Offset.zero,
+    end: const Offset(-0.25, 0),
+  ).chain(CurveTween(curve: Curves.easeInOutCubicEmphasized));
+
+  // 下层页在覆盖页退出时的位移：从左 1/4 归位（SDK 同款）。
+  static final Animatable<Offset> _secondaryBackwardTranslation =
+      Tween<Offset>(
+    begin: const Offset(-0.25, 0),
+    end: Offset.zero,
+  ).chain(CurveTween(curve: Curves.easeInOutCubicEmphasized));
+
+  // 淡出与 SDK 一致：前 25% 快速消失。
+  static final Animatable<double> _fadeOut = Tween<double>(
+    begin: 1,
+    end: 0,
+  ).chain(CurveTween(curve: const Interval(0, 0.25)));
+
+  // 淡入为定制点：easeOutCubic 提前显现，填掉 SDK 线性淡入的空窗。
+  static final Animatable<double> _fadeIn = Tween<double>(
+    begin: 0,
+    end: 1,
+  ).chain(
+    CurveTween(curve: const Interval(0, 0.75, curve: Curves.easeOutCubic)),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return DualTransitionBuilder(
+      animation: animation,
+      forwardBuilder: (context, anim, child) => FadeTransition(
+        opacity: _fadeIn.animate(anim),
+        child: SlideTransition(
+          position: _forwardTranslation.animate(anim),
+          child: child,
+        ),
+      ),
+      reverseBuilder: (context, anim, child) => IgnorePointer(
+        ignoring: anim.status == AnimationStatus.forward,
+        child: FadeTransition(
+          opacity: _fadeOut.animate(anim),
+          child: SlideTransition(
+            position: _backwardTranslation.animate(anim),
+            child: child,
+          ),
+        ),
+      ),
+      // 下层页的联动出场（被覆盖让位 / 覆盖页退出归位），结构与 SDK 一致。
+      child: DualTransitionBuilder(
+        animation: ReverseAnimation(secondaryAnimation),
+        forwardBuilder: (context, anim, child) => FadeTransition(
+          opacity: _fadeIn.animate(anim),
+          child: SlideTransition(
+            position: _secondaryBackwardTranslation.animate(anim),
+            child: child,
+          ),
+        ),
+        reverseBuilder: (context, anim, child) => FadeTransition(
+          opacity: _fadeOut.animate(anim),
+          child: SlideTransition(
+            position: _secondaryForwardTranslation.animate(anim),
+            child: child,
+          ),
+        ),
+        child: child,
+      ),
+    );
   }
 }
 
@@ -596,8 +732,32 @@ class _CoverPage extends Page<void> {
   }
 }
 
-/// 通用抽屉覆盖路由：覆盖滑动 + 预测返回，`opaque=false`。
-class _CoverRoute extends PageRoute<void> {
+/// 覆盖式路由的手势提交：从当前手势位置继续滑出。
+///
+/// SDK 默认实现 `_handleDragEnd` 会 `reverse(from: upperBound)` 把动画先跳回
+/// 起点（页面先弹回全屏再滑出），与跟手阶段的位置不衔接，造成肉眼可见的
+/// 跳变卡顿；这里从当前值继续反向，动作完全连续，并维持
+/// `userGestureInProgress` 直到滑出动画结束（与 SDK 行为一致）。
+mixin _CoverGestureCommit on PageRoute<void> {
+  @override
+  void handleCommitBackGesture() {
+    final AnimationController? ctrl = controller;
+    navigator?.pop();
+    if (ctrl != null && ctrl.isAnimating) {
+      late final AnimationStatusListener listener;
+      listener = (AnimationStatus status) {
+        navigator?.didStopUserGesture();
+        ctrl.removeStatusListener(listener);
+      };
+      ctrl.addStatusListener(listener);
+    } else {
+      navigator?.didStopUserGesture();
+    }
+  }
+}
+
+/// 通用抽屉覆盖路由：覆盖滑动 + 预测返回，`opaque=true`。
+class _CoverRoute extends PageRoute<void> with _CoverGestureCommit {
   _CoverRoute({
     required super.settings,
     required this.builder,
@@ -609,6 +769,21 @@ class _CoverRoute extends PageRoute<void> {
 
   @override
   bool get popGestureEnabled => isCurrent && predictiveBack;
+
+  @override
+  void install() {
+    super.install();
+    // [dbg-wallpaper-cover-vanish] 关联插桩：completed = Overlay 置 opaque、
+    // 下层路由停止绘制。若 completed 提前于视觉滑入结束，旧页即会「直接消失」。
+    controller?.addStatusListener((status) {
+      debugPrint(
+        '[dbg-t] _CoverRoute(${settings.name}) status=$status '
+        'value=${controller?.value.toStringAsFixed(3)} '
+        'entryOpaque=${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
+      );
+    });
+    overlayEntries.first.opaque = opaque;
+  }
 
   // 覆盖转场用 opaque=true：Flutter Overlay 对 opaque 路由在「转场动画期间」仍会
   // 绘制其下层（Cupertino 覆盖式转场即如此），动画结束后才隐藏下层。故声明
@@ -634,7 +809,7 @@ class _CoverRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get transitionDuration => const Duration(milliseconds: 250);
 
   @override
   Widget buildPage(
@@ -642,8 +817,8 @@ class _CoverRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
-    // 抽屉+壁纸模式下，页面直接烘焙壁纸为自身底色，成为不透明页，切换全程稳定。
+    // 壁纸由 AppPageBackground 烘焙为页面底色（不透明卡片），转场即普通
+    // 模式的整页滑动，无穿模、无需垫底补偿。
     return AppPageBackground(child: builder(context));
   }
 
@@ -654,69 +829,47 @@ class _CoverRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 始终挂载预测返回手势认领；非手势走 FadeForwards 纯平移。
+    // 始终挂载预测返回手势认领：detector 把手势进度同步到路由 controller
+    //（value = 1 - 手势进度），下方覆盖平移本身就是跟手视觉。手势跟行/
+    // 取消回弹/提交滑出/普通返回共用同一套转场，全程无分支切换跳变。
     return PredictiveBackGestureDetector(
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
-        // 只信本路由认领的手势（phase 非 idle），不用 navigator 全局的
-        // popGestureInProgress：上层弹窗提交后的几帧里该标志仍为 true，
-        // 本页会误入跟手分支引发布局崩溃。
-        if (phase != PredictiveBackPhase.idle) {
-          // 预测返回缩放手势：透明页缩放会露出本路由透底层，同样铺壁纸/实色
-          // 垫底，避免壁纸模式下缩放过程透见下层「穿模」。
-          return TransitionBackdrop(
-            child: PredictiveBackSharedElementPageTransition(
-              animation: animation,
-              phase: phase,
-              secondaryAnimation: secondaryAnimation,
-              startBackEvent: startBackEvent,
-              currentBackEvent: currentBackEvent,
-              child: child,
-            ),
-          );
-        }
-        // 平滑：委托主题默认转场（淡进淡出 + 原生平推）。这里在转场时实时
-        // 读取设置，改「切换动画」后无需重进页面即可立即生效。
+        // 平滑：定制版 FadeForwards（见 _SmoothFadeForwards）。这里在转场时
+        // 实时读取设置，改「切换动画」后无需重进页面即可立即生效。
         if (_isSmooth(context)) {
-          return Theme.of(context).pageTransitionsTheme.buildTransitions(
-            this,
-            context,
-            animation,
-            secondaryAnimation,
-            child,
+          return _SmoothFadeForwards(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            child: child,
           );
         }
-        // 覆盖：仅短距轻移（自约 1/4 宽入）。竖屏去掉淡入，否则转场中有几帧
-        // 新旧页重叠透叠；横屏保持淡入+轻移，不动横屏观感。
-        // 曲线用主题 FadeForwards 的原生同款 easeInOutCubicEmphasized
-        //（缓起-加速-缓出，观感匀速顺滑）；easeOut 起步速度是匀速 2 倍、
-        // 尾段急拖，前后段速度不一致。
+        // 覆盖：竖屏整页从右缘滑入盖住旧页（安卓原生覆盖式），返回整页滑出；
+        // 曲线 linear 近匀速，进出速度剖面完全一致，无慢起慢收的迟滞感。
+        // 横屏保持淡入+轻移，不动横屏观感。
         final isPortrait =
             MediaQuery.orientationOf(context) == Orientation.portrait;
-        final coverSlide = SlideTransition(
-          position: animation.drive(
-            Tween<Offset>(
-              begin: const Offset(0.25, 0),
-              end: Offset.zero,
-            ).chain(
-              CurveTween(
-                curve: isPortrait
-                    ? Curves.easeInOutCubicEmphasized
-                    : Curves.easeOut,
-              ),
-            ),
-          ),
-          child: child,
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: isPortrait ? Curves.linear : Curves.easeOut,
+          reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
         );
-        if (isPortrait) {
-          return coverSlide;
-        }
-        return FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ),
-          child: coverSlide,
+        final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+        final page = isPortrait
+            ? child
+            : FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                  // 淡出与淡入镜像（同上，方向感知）。
+                  reverseCurve: Curves.easeOutCubic.flipped,
+                ),
+                child: child,
+              );
+        return SlideTransition(
+          position: Tween<Offset>(begin: begin, end: Offset.zero)
+              .animate(curved),
+          child: page,
         );
       },
     );
@@ -745,7 +898,7 @@ class _PlayerCoverPage extends Page<void> {
 }
 
 /// 播放页覆盖路由：打开从底部上滑覆盖，关闭从上往下收回。
-class _PlayerCoverRoute extends PageRoute<void> {
+class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit {
   _PlayerCoverRoute({
     required super.settings,
     required this.builder,
@@ -798,33 +951,13 @@ class _PlayerCoverRoute extends PageRoute<void> {
     Widget child,
   ) {
     // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势，
-    // 否则边缘滑动无跟手行程直接 pop。手势中走官方 predictive 过渡（整屏缩放
-    // 跟手），非手势的打开/关闭保持「从下往上覆盖 + 淡入淡出」。
+    // 否则边缘滑动无跟手行程直接 pop。手势中与普通收回共用同一套
+    // 「下移渐隐」跟手视觉（controller 被驱动为 1 - 手势进度），提交后从
+    // 当前位置继续收回，全程连续无跳变；非手势的打开/关闭保持
+    // 「从下往上覆盖 + 淡入淡出」。
     return PredictiveBackGestureDetector(
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
-        // 只信本路由认领的手势（phase 非 idle），不用 navigator 全局的
-        // popGestureInProgress：上层弹窗提交后的几帧里该标志仍为 true，
-        // 本页会误入跟手分支引发布局崩溃。
-        if (phase != PredictiveBackPhase.idle) {
-          return TransitionBackdrop(
-            child: Stack(
-              children: [
-                PredictiveBackSharedElementPageTransition(
-                  animation: animation,
-                  phase: phase,
-                  secondaryAnimation: secondaryAnimation,
-                  startBackEvent: startBackEvent,
-                  currentBackEvent: currentBackEvent,
-                  child: child,
-                ),
-                // 预测返回手势中叠加「封面飞回播放条」：随手指进度把大封面缩向
-                // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。
-                PredictiveCoverReturnView(animation: animation),
-              ],
-            ),
-          );
-        }
         final curved = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,
@@ -832,17 +965,25 @@ class _PlayerCoverRoute extends PageRoute<void> {
         );
         // 上滑覆盖 + 淡入淡出：打开时淡入上滑，收回时下移渐隐，
         // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
-        return TransitionBackdrop(
-          child: FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 1),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          ),
+        // 淡入过程透出旧页与普通模式行为一致；壁纸模式下页面底色由
+        // AppPageBackground 烘焙（旧页含壁纸，同为不透明卡片）。
+        final exit = SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+        if (phase == PredictiveBackPhase.idle) {
+          return exit;
+        }
+        // 手势中叠加「封面飞回播放条」：随手势进度把大封面缩向
+        // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。
+        return Stack(
+          children: [
+            exit,
+            PredictiveCoverReturnView(animation: animation),
+          ],
         );
       },
     );
@@ -874,7 +1015,7 @@ class _CoverBackPage extends Page<void> {
   }
 }
 
-class _CoverBackRoute extends PageRoute<void> {
+class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit {
   _CoverBackRoute({
     required super.settings,
     required this.builder,
@@ -886,6 +1027,19 @@ class _CoverBackRoute extends PageRoute<void> {
 
   @override
   bool get popGestureEnabled => isCurrent && predictiveBack;
+
+  @override
+  void install() {
+    super.install();
+    // [dbg-wallpaper-cover-vanish] 关联插桩（同 _CoverRoute）。
+    controller?.addStatusListener((status) {
+      debugPrint(
+        '[dbg-t] _CoverBackRoute(${settings.name}) status=$status '
+        'value=${controller?.value.toStringAsFixed(3)} '
+        'entryOpaque=${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
+      );
+    });
+  }
 
   @override
   bool get opaque => true;
@@ -903,7 +1057,7 @@ class _CoverBackRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get transitionDuration => const Duration(milliseconds: 250);
 
   @override
   Widget buildPage(
@@ -911,8 +1065,7 @@ class _CoverBackRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    // 内容面板背景透明，转场时由 buildTransitions 的固定全屏底色垫底。
-    // 抽屉+壁纸模式下，页面直接烘焙壁纸为自身底色，成为不透明页，切换全程稳定。
+    // 壁纸由 AppPageBackground 烘焙为页面底色（同 _CoverRoute）。
     return AppPageBackground(child: builder(context));
   }
 
@@ -924,75 +1077,67 @@ class _CoverBackRoute extends PageRoute<void> {
     Widget child,
   ) {
     // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势；
-    // 手势中渲染官方 predictive 过渡（整屏缩放跟手）+ 封面回拨叠加，
-    // 非手势的打开/关闭沿用覆盖式滑动，观感与普通二级页保持一致。
+    // 手势中由 detector 驱动 controller（value = 1 - 手势进度），转场本身即
+    // 跟手视觉，提交/取消回弹/普通返回共用同一套转场，无分支切换跳变。
     return PredictiveBackGestureDetector(
       route: this,
       builder: (context, phase, startBackEvent, currentBackEvent) {
-        // 只信本路由认领的手势（phase 非 idle），不用 navigator 全局的
-        // popGestureInProgress：上层弹窗提交后的几帧里该标志仍为 true，
-        // 本页会误入跟手分支引发布局崩溃。
-        if (phase != PredictiveBackPhase.idle) {
+        // 平滑：定制版 FadeForwards（见 _SmoothFadeForwards）。这里在转场时
+        // 实时读取设置，改「切换动画」后无需重进页面即可立即生效。
+        if (_isSmooth(context)) {
+          final smooth = _SmoothFadeForwards(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            child: child,
+          );
+          if (phase == PredictiveBackPhase.idle) return smooth;
+          // 手势中叠加「封面飞回播放条」。
           return TransitionBackdrop(
             child: Stack(
               children: [
-                PredictiveBackSharedElementPageTransition(
-                  animation: animation,
-                  phase: phase,
-                  secondaryAnimation: secondaryAnimation,
-                  startBackEvent: startBackEvent,
-                  currentBackEvent: currentBackEvent,
-                  child: child,
-                ),
-                // 预测返回手势中叠加「封面飞回播放条」。
+                smooth,
                 PredictiveCoverReturnView(animation: animation),
               ],
             ),
           );
         }
-        // 平滑：委托主题默认转场（淡进淡出 + 原生平推）。这里在转场时实时
-        // 读取设置，改「切换动画」后无需重进页面即可立即生效。
-        if (_isSmooth(context)) {
-          return Theme.of(context).pageTransitionsTheme.buildTransitions(
-            this,
-            context,
-            animation,
-            secondaryAnimation,
-            child,
-          );
-        }
-        // 覆盖：仅短距轻移（自约 1/4 宽入）。竖屏去掉淡入，否则转场中有几帧
-        // 新旧页重叠透叠；横屏保持淡入+轻移，不动横屏观感。
-        // 曲线用主题 FadeForwards 的原生同款 easeInOutCubicEmphasized
-        //（缓起-加速-缓出，观感匀速顺滑）；easeOut 起步速度是匀速 2 倍、
-        // 尾段急拖，前后段速度不一致。
+        // 覆盖：竖屏整页从右缘滑入盖住旧页（安卓原生覆盖式），返回整页滑出；
+        // 曲线 linear 近匀速，进出速度剖面完全一致，无慢起慢收的迟滞感。
+        // 横屏保持淡入+轻移，不动横屏观感。
         final isPortrait =
             MediaQuery.orientationOf(context) == Orientation.portrait;
-        final coverSlide = SlideTransition(
-          position: animation.drive(
-            Tween<Offset>(
-              begin: const Offset(0.25, 0),
-              end: Offset.zero,
-            ).chain(
-              CurveTween(
-                curve: isPortrait
-                    ? Curves.easeInOutCubicEmphasized
-                    : Curves.easeOut,
-              ),
-            ),
-          ),
-          child: child,
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: isPortrait ? Curves.linear : Curves.easeOut,
+          reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
         );
-        if (isPortrait) {
-          return coverSlide;
+        final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+        final page = isPortrait
+            ? child
+            : FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                  // 淡出与淡入镜像（同上，方向感知）。
+                  reverseCurve: Curves.easeOutCubic.flipped,
+                ),
+                child: child,
+              );
+        final transition = SlideTransition(
+          position: Tween<Offset>(begin: begin, end: Offset.zero)
+              .animate(curved),
+          child: page,
+        );
+        // 手势中叠加「封面飞回播放条」。
+        if (phase != PredictiveBackPhase.idle) {
+          return Stack(
+            children: [
+              transition,
+              PredictiveCoverReturnView(animation: animation),
+            ],
+          );
         }
-        return FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ),
-          child: coverSlide,
-        );
+        return transition;
       },
     );
   }

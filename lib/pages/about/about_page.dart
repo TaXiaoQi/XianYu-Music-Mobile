@@ -36,7 +36,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   DateTime? _lastDebugTap;
 
   /// 开发者名单（与桌面端一致），点击跳转 GitHub 主页。
-  static get _developers => <(String, String)>[
+  static List<(String, String)> get _developers => <(String, String)>[
     ('@ShenYichenCN', 'https://github.com/ShenYichenCN'),
     ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
     (tr('@知难辞'), 'https://github.com/88541'),

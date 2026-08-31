@@ -44,6 +44,14 @@ class SafChannel {
 
   static bool get isSupported => Platform.isAndroid;
 
+  /// 当前设备的 Android API level（非 Android 返回 0）。
+  /// 存储权限按版本细分申请时使用（13+ 为 READ_MEDIA_AUDIO，以下为
+  /// READ_EXTERNAL_STORAGE）。
+  static Future<int> androidSdkInt() async {
+    if (!isSupported) return 0;
+    return await _channel.invokeMethod<int>('getSdkInt') ?? 0;
+  }
+
   /// 让用户选择目录树，返回持久化的 `content://…/tree/…` URI（取消返回 null）。
   static Future<String?> chooseFolderTree() async {
     if (!isSupported) return null;

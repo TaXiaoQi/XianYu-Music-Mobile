@@ -65,13 +65,19 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
+  // 接入全局 blur 预算：滚动/转场期间按档位缩 sigma。降采样模糊
+  // （cheapBackdropBlur）把模糊工作量降为 1/16，运动期可保持玻璃恒定
+  // （RwaS 口径：不跳模糊、无观感跳变），静止后恢复满档 sigma。
+  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.generic));
+  final sigma = surfaceBlurSigma(
+    base: 16 * frostedBlurScale(ref),
+    budget: budget,
+    type: BlurSurfaceType.generic,
+  );
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
-      filter: ImageFilter.blur(
-        sigmaX: 16 * frostedBlurScale(ref),
-        sigmaY: 16 * frostedBlurScale(ref),
-      ),
+      filter: cheapBackdropBlur(sigma),
       child: surface,
     ),
   );
@@ -89,16 +95,18 @@ LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.liquidGlassQuality ??
         LiquidGlassQuality.medium));
 
-/// BiliPai 化液态玻璃折射强度（滚动波浪位移幅度）按档位映射：
-/// medium 更收敛 / high 接近 BiliPai 默认。low 走伪液态毛玻璃不经 shader。
+/// BiliPai 化液态玻璃折射强度（边缘透镜最大位移）按档位映射。
 double bilipaiRefractOf(LiquidGlassQuality q) => switch (q) {
-      LiquidGlassQuality.low => 0.10,
-      LiquidGlassQuality.medium => 0.17,
-      LiquidGlassQuality.high => 0.24,
+      // 逻辑像素 = BiliPai refractionAmount（64dp dock 名义 24dp）。剖面已
+      // 换成原版 circleMap 圆弧曲线（位移集中在贴边一圈），可以回到原版
+      // 位移量级；medium 略收敛适配矮表面。
+      LiquidGlassQuality.low => 6.0,
+      LiquidGlassQuality.medium => 16.0,
+      LiquidGlassQuality.high => 24.0,
     };
 
-/// BiliPai 化液态玻璃色差强度（RGB 通道分离幅度）按档位映射。
-/// 已全档归零：色差会在亮色内容上产生彩色重影，观感刺眼（用户反馈）；
+/// BiliPai 化液态玻璃色差强度按档位映射。
+/// BiliPai shell 恒为无色差（"Miuix keeps the shell achromatic"），全档归零；
 /// 保留参数位便于日后微调。
 double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
@@ -123,14 +131,15 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃边缘透镜折射幅度（逻辑像素）按档位映射。
-/// 固定厚度边带内 edge² 二次衰减、外向位移，把玻璃外的内容拉进边缘一圈，
-/// 形成可见的液态折射环；low 走伪液态毛玻璃不经 shader。
+/// 固定厚度边带内 circleMap 圆弧衰减、SDF 外向位移，把玻璃外的内容拉进
+/// 边缘一圈，形成可见的液态折射环；low 走伪液态毛玻璃不经 shader。
 double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
-      // 中间是 σ8 真高斯的柔和梯度，边缘折射要弯得够深（12-16 逻辑像素）
-      // 才能在磨砂上看出「拉出弯折」的液态圈。
-      LiquidGlassQuality.medium => 12.0,
-      LiquidGlassQuality.high => 16.0,
+      // 边带厚度 = BiliPai refractionHeight（64dp dock 名义 24dp）。剖面换成
+      // 原版 circleMap 后位移集中在贴边 1/2 带内（半带处仅 ~13%），带可以
+      // 开回原版量级而不「还没靠近就弯」；小表面另有 0.42×短边安全钳制。
+      LiquidGlassQuality.medium => 16.0,
+      LiquidGlassQuality.high => 24.0,
     };
 
 /// BiliPai 化液态玻璃饱和度增益按档位映射。
@@ -149,7 +158,56 @@ double bilipaiSaturationOf(LiquidGlassQuality q) => switch (q) {
 /// 播放页卡）统一判断，避免各处重复口径。
 bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
   if (lowPerf) return true;
-  return !(ref.watch(settingsProvider).valueOrNull?.frostedGlass ?? true);
+  // 只 select frostedGlass 字段：本函数被所有玻璃表面调用，若 watch 整个
+  // settingsProvider，设置页任意开关变化都会让全部玻璃表面重建重绘。
+  return !(ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.frostedGlass)) ??
+      true);
+}
+
+/// 高斯模糊 filter 缓存（渲染一次、保存状态）。
+///
+/// Impeller 下新建 `ImageFilter` 即新管线对象，玻璃表面随 provider 变化频繁
+/// rebuild 时每次新建会反复触发引擎侧重编译/重采样。模糊只由 sigma 决定，
+/// 按 sigma 缓存复用同一实例；缓存超上限整体清空防膨胀（sigma 由离散档位
+/// ×dpr 组成，实际取值很少）。
+final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
+
+/// 取（或创建并缓存）[sigma] 对应的高斯模糊 filter。
+ImageFilter cachedBlur(double sigma) {
+  final hit = _blurFilterCache[sigma];
+  if (hit != null) return hit;
+  if (_blurFilterCache.length > 32) _blurFilterCache.clear();
+  return _blurFilterCache[sigma] =
+      ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
+}
+
+/// 降采样高斯模糊（借鉴 RwaS/Kyant Backdrop 的 GPU RenderEffect 思路）。
+///
+/// RwaS 里模糊是 GPU 合成期一次性效果，便宜到可以常驻（运动期不降级、无观感
+/// 跳变）。Flutter 的 BackdropFilter 每实例每帧各自捕获背板，模糊按全分辨率
+/// 像素算，这是切页掉帧根因。等价优化：先把背板按 1/[downscale] 采样缩小、
+/// 在小图上做 sigma/downscale 的模糊、再放大回去——模糊像素工作量降为
+/// 1/downscale²（4x 时 1/16），观感与全分辨率高斯几乎无差（模糊本身低频）。
+/// filter 按 (sigma, downscale) 缓存复用。
+final Map<String, ImageFilter> _cheapBlurCache = <String, ImageFilter>{};
+
+ImageFilter cheapBackdropBlur(double sigma, {int downscale = 4}) {
+  final key = '$sigma/$downscale';
+  final hit = _cheapBlurCache[key];
+  if (hit != null) return hit;
+  if (_cheapBlurCache.length > 64) _cheapBlurCache.clear();
+  final d = downscale.toDouble();
+  return _cheapBlurCache[key] = ImageFilter.compose(
+    // 最后一步：把小图模糊结果放大回原尺寸。
+    outer: ImageFilter.matrix(Matrix4.diagonal3Values(d, d, 1).storage),
+    inner: ImageFilter.compose(
+      // 第二步：在小图上做等效模糊（sigma 同步缩小，视觉半径不变）。
+      outer: ImageFilter.blur(sigmaX: sigma / d, sigmaY: sigma / d),
+      // 第一步：把背板采样缩小到 1/downscale。
+      inner: ImageFilter.matrix(Matrix4.diagonal3Values(1 / d, 1 / d, 1).storage),
+    ),
+  );
 }
 
 /// 液态玻璃最低档（low）用「伪液态毛玻璃」伪造，不跑 shader。
@@ -212,11 +270,13 @@ Widget pseudoLiquidSurface({
     child: child,
   );
   if (solid) return surface;
+  // 降采样模糊（cheapBackdropBlur）把运动期模糊成本降为 1/16，玻璃可恒定
+  // 渲染（RwaS 口径：运动期不跳模糊、无观感跳变），sigma 仍按预算档位缩放。
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
       // 比普通毛玻璃（10/14）更淡，配合透明底呈现液态通透感；按预算缩放。
-      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      filter: cheapBackdropBlur(sigma),
       child: surface,
     ),
   );

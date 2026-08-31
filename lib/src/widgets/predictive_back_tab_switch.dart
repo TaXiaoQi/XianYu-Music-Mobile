@@ -5,19 +5,29 @@ import 'package:go_router/go_router.dart';
 
 import '../core/app_logger.dart';
 import '../core/settings.dart';
+import '../navigation/landscape_tab_switcher.dart';
 import '../navigation/page_switch_tab_view.dart';
+// 横竖屏判定、覆盖面板与音乐库选中状态来自 shell.dart（独立横屏模式的状态源）。
+import '../navigation/shell.dart'
+    show
+        isLandscapeProvider,
+        landscapePaneOpenProvider,
+        landscapeLibraryProvider;
 import 'predictive_back_transitions.dart';
 
-/// 两个根 Tab 之间的「预测返回」。
+/// 竖屏两个根 Tab 之间的「预测返回」。
 ///
 /// 在「我的」根 tab 上做系统边缘返回手势时，跟手预览首页分支并从下方露出，
 /// 「我的」分支按预测返回行程缩放/位移/淡出（复用播放页同款
 /// [PredictiveBackSharedElementPageTransition]）；提交（松手确认返回）时
 /// `goBranch(0)` 切回首页，取消时原路还原。与二级页的预测返回体验统一。
 ///
-/// 仅当：非二级页（无 pop 路由）、不在首页分支、且全局预测返回开关开启时
-/// 认领手势。其余情况（首页双击退出 / 二级页 pop / 关闭预测返回）保持原行为，
-/// 由 shell 的 PopScope + _handleBack 手动分发兜底。
+/// 横屏是独立模式：直接渲染 [LandscapeTabSwitcher]（独立 out-in 切换器），
+/// 不挂 PageView、不认领预测返回手势，路由/动画/手势与竖屏完全分开。
+///
+/// 仅当：竖屏、非二级页（无 pop 路由）、不在首页分支、且全局预测返回开关
+/// 开启时认领手势。其余情况（首页双击退出 / 二级页 pop / 关闭预测返回）
+/// 保持原行为，由 shell 的 PopScope + _handleBack 手动分发兜底。
 class PredictiveBackTabContainer extends ConsumerStatefulWidget {
   const PredictiveBackTabContainer({
     super.key,
@@ -79,6 +89,8 @@ class _PredictiveBackTabContainerState
 
   bool _shouldClaim(PredictiveBackEvent backEvent) {
     if (backEvent.isButtonEvent) return false;
+    // 横屏独立模式：不认领预测返回（shell 的手动分发兜底处理返回）。
+    if (ref.read(isLandscapeProvider)) return false;
     if (widget.children.length < 2) return false;
     if (widget.currentIndex == 0) return false;
     if (GoRouter.of(context).canPop()) return false;
@@ -149,13 +161,26 @@ class _PredictiveBackTabContainerState
 
   @override
   Widget build(BuildContext context) {
+    // 横屏独立模式：独立 out-in 切换器（无 PageView/预测返回）。
+    // suppress 三种情况硬切（切换动画由别处承担，或本容器当前不可见）：
+    // - 覆盖面板（账号/搜索/下载/歌单详情）打开：面板关闭淡出即切换动画；
+    // - 音乐库入口选中：本容器在外层主页切换器（shell landscapeHome）中处于
+    //   隐藏分支，切 tab 硬跳、由外层 out-in 承担可见动画，避免嵌套双重淡入
+    //   （音乐库→首页时外层 out-in 揭开内层，内层再自己 out-in 会叠两层）。
+    if (ref.watch(isLandscapeProvider)) {
+      return LandscapeTabSwitcher(
+        currentIndex: widget.currentIndex,
+        enabled: ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true)),
+        suppress: ref.watch(landscapePaneOpenProvider) ||
+            ref.watch(landscapeLibraryProvider) != null,
+        children: widget.children,
+      );
+    }
     if (!_inTransition) {
       return PageSwitchTabView(
         currentIndex: widget.currentIndex,
         onPageSettled: _onPageSettled,
-        // 横屏 out-in 淡出淡入开关（对齐外观设置「横屏切换动画」）。
-        fadeEnabled: ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true)),
         children: widget.children,
       );
     }

@@ -1,5 +1,6 @@
 package com.xianyumusic.app
 
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -83,6 +84,11 @@ class LyricsOverlayService : Service() {
         showControlsWithAnimation()
     }
 
+    // 半透明底板（触控即显示，按住期间常显，无操作 3 秒自动淡出），alpha 0=隐藏 255=显示。
+    private var rootBg: GradientDrawable? = null
+    private var bgAnimator: ValueAnimator? = null
+    private val hideBgRunnable = Runnable { hideBackgroundPanel() }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -118,6 +124,10 @@ class LyricsOverlayService : Service() {
     override fun onDestroy() {
         instance = null
         rootView?.removeCallbacks(hideControlsRunnable)
+        rootView?.removeCallbacks(hideBgRunnable)
+        bgAnimator?.cancel()
+        bgAnimator = null
+        rootBg = null
         rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
         lyricView = null
@@ -181,6 +191,14 @@ class LyricsOverlayService : Service() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(8), dp(4), dp(8), dp(4))
+            // 半透明圆角底板：把窗口真实占位（可拖拽/双击/长按的区域）可视化。
+            // 默认隐藏（alpha 0），点击/拖动/长按出现、数秒无操作自动淡出。
+            // 根布局 wrap_content，控制条唤出时底板自动撑大到包含控制条。
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.argb(92, 15, 15, 17))
+                alpha = 0
+            }.also { rootBg = it }
         }
         val lyric = LyricsOverlayView(this).apply {
             touchHandler = ::onDrag
@@ -286,6 +304,8 @@ class LyricsOverlayService : Service() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
             setOnClickListener {
                 action()
+                // 继续操作：底板显示时长顺延。
+                showBackgroundPanel()
                 scheduleControlsAutoHide()
             }
         }
@@ -304,6 +324,8 @@ class LyricsOverlayService : Service() {
             background = controlBackground()
             setOnClickListener {
                 action()
+                // 继续操作：底板显示时长顺延。
+                showBackgroundPanel()
                 scheduleControlsAutoHide()
             }
         }, controlLayoutParams())
@@ -423,6 +445,8 @@ class LyricsOverlayService : Service() {
                 startY = params.y
                 movedDuringTouch = false
                 longPressTriggered = false
+                // 触控即显示底板；按住期间取消自动隐藏，抬起后再排 3 秒倒计时。
+                showBackgroundPanel(scheduleHide = false)
                 root.removeCallbacks(longPressRunnable)
                 root.postDelayed(longPressRunnable, LONG_PRESS_TIMEOUT_MS)
             }
@@ -433,6 +457,8 @@ class LyricsOverlayService : Service() {
                     movedDuringTouch = true
                     root.removeCallbacks(longPressRunnable)
                 }
+                // 手指未抬起（拖拽中）持续显示底板，不排隐藏。
+                showBackgroundPanel(scheduleHide = false)
                 params.x = startX + dx.roundToInt()
                 params.y = startY + dy.roundToInt()
                 clampToScreen(root, params)
@@ -444,8 +470,13 @@ class LyricsOverlayService : Service() {
                 xPos = params.x
                 yPos = params.y
                 emitEvent("onPositionChanged", mapOf("x" to xPos, "y" to yPos))
+                // 抬起 = 本轮触控结束，无操作 3 秒后淡出底板。
+                showBackgroundPanel()
             }
-            MotionEvent.ACTION_CANCEL -> root.removeCallbacks(longPressRunnable)
+            MotionEvent.ACTION_CANCEL -> {
+                root.removeCallbacks(longPressRunnable)
+                showBackgroundPanel()
+            }
         }
         return true
     }
@@ -467,6 +498,7 @@ class LyricsOverlayService : Service() {
 
     private fun showControlsWithAnimation() {
         if (locked) return
+        showBackgroundPanel()
         controlsView?.apply {
             animate().cancel()
             visibility = View.VISIBLE
@@ -481,6 +513,34 @@ class LyricsOverlayService : Service() {
                 .start()
         }
         scheduleControlsAutoHide()
+    }
+
+    /**
+     * 底板淡入。scheduleHide=true 时重置自动隐藏计时（无操作 3 秒淡出）；
+     * false 表示按住/拖拽中保持常显，抬起（ACTION_UP）时再排隐藏。
+     */
+    private fun showBackgroundPanel(scheduleHide: Boolean = true) {
+        val bg = rootBg ?: return
+        val root = rootView ?: return
+        root.removeCallbacks(hideBgRunnable)
+        bgAnimator?.cancel()
+        bgAnimator = ValueAnimator.ofInt(bg.alpha, 255).apply {
+            duration = 180
+            addUpdateListener { bg.alpha = it.animatedValue as Int }
+            start()
+        }
+        if (scheduleHide) root.postDelayed(hideBgRunnable, BACKGROUND_AUTO_HIDE_MS)
+    }
+
+    /** 底板自动淡出（回到纯歌词浮字状态）。 */
+    private fun hideBackgroundPanel() {
+        val bg = rootBg ?: return
+        bgAnimator?.cancel()
+        bgAnimator = ValueAnimator.ofInt(bg.alpha, 0).apply {
+            duration = 260
+            addUpdateListener { bg.alpha = it.animatedValue as Int }
+            start()
+        }
     }
 
     private fun hideControls() {
@@ -645,6 +705,7 @@ class LyricsOverlayService : Service() {
         private const val CHANNEL_ID = "xianyu_floating_lyric"
         private const val NOTIFICATION_ID = 0x52444C59
         private const val CONTROLS_AUTO_HIDE_MS = 4_000L
+        private const val BACKGROUND_AUTO_HIDE_MS = 3_000L
         private const val DOUBLE_TAP_TIMEOUT_MS = 360L
         private const val LONG_PRESS_TIMEOUT_MS = 460L
         private const val CONTROL_ANIMATION_MS = 220L

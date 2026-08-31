@@ -6,154 +6,55 @@ import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/top_lists_preview_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 首页发现区：统计 / 每日推荐 / 音源榜单三 tab 切换（对齐桌面 HomeDiscoverTabs）。
-class DiscoverSection extends ConsumerStatefulWidget {
+/// 打开发现区入口：横屏改开右侧「内容」容器（不开二级路由），
+/// 竖屏照常 push 二级路由。
+void openDiscoverEntry(BuildContext context, WidgetRef ref, String route) {
+  if (ref.read(isLandscapeProvider)) {
+    ref.read(landscapeContentPathProvider.notifier).state = route;
+  } else {
+    context.push(route);
+  }
+}
+
+/// 首页发现区：音源榜单直接内嵌展示（原「统计/日推/音源榜单」三 tab 已拆分：
+/// 统计三格卡移到「我的」页、日推独立区块、本区块直出音源榜单）。
+class DiscoverSection extends ConsumerWidget {
   const DiscoverSection({super.key});
 
   @override
-  ConsumerState<DiscoverSection> createState() => _DiscoverSectionState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const _TopListsBody();
+  }
 }
 
-class _DiscoverSectionState extends ConsumerState<DiscoverSection> {
-  int _index = 0;
-
-  void _selectTab(int i) {
-    // 切到「统计」tab 时主动刷新统计数据，确保每次打开都能读到最新
-    // （不依赖播放落库的失效时机，本地查询很快，几乎无感）。
-    if (i == 0) {
-      ref.invalidate(listenStatsProvider);
-      ref.invalidate(mostPlayedProvider);
-    }
-    setState(() => _index = i);
-  }
-
-  static get _tabs => [
-    (key: 'statistics', label: tr('统计'), route: '/leaderboard'),
-    (key: 'dailyRecommend', label: tr('每日推荐'), route: '/home/daily'),
-    (key: 'topLists', label: tr('音源榜单'), route: '/home/toplists'),
-  ];
+/// 首页「每日推荐」区块：日推预览卡直接展示（原 tab 内容拆出）。
+class DailyRecommendSection extends ConsumerWidget {
+  const DailyRecommendSection({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Tab 行（桌面同款：文字 + 红色下划线指示）。
-        Row(
-          children: [
-            for (var i = 0; i < _tabs.length; i++)
-              InkWell(
-                onTap: () => _selectTab(i),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _tabs[i].label,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: _index == i
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOut,
-                        width: 24,
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: scheme.primary,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        transform: Matrix4.diagonal3Values(
-                            _index == i ? 1.0 : 0.001, 1.0, 1.0),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            const Spacer(),
-            InkWell(
-              onTap: () => context.push(_tabs[_index].route),
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Row(
-                  children: [
-                    Text(
-                      tr('查看全部'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    Icon(Icons.chevron_right,
-                        size: 16, color: scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        // 内容卡片：只对新卡片做纯淡入 + 轻微上移，旧卡片立即移除不参与叠加。
-        // 若用默认交叉淡入，两张半透明白玻璃卡片在过渡中叠加、亮度翻倍，
-        // 在无壁纸（纯色背景）下切换会闪一下；对齐桌面端瞬时切换以避免重排跳动。
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          switchInCurve: Curves.easeOutCubic,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.02),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            );
-          },
-          // 只绘制当前（新）卡片：旧卡片不残留，杜绝交叉淡入的白闪与高度跳动。
-          layoutBuilder: (currentChild, previousChildren) =>
-              currentChild ?? const SizedBox.shrink(),
-          child: KeyedSubtree(
-            key: ValueKey(_tabs[_index].key),
-            child: _buildContent(scheme),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildContent(ColorScheme scheme) {
-    return switch (_tabs[_index].key) {
-      'statistics' => _StatsCard(),
-      'dailyRecommend' => const _DailyCard(),
-      _ => const _TopListsBody(),
-    };
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const _DailyCard();
   }
 }
 
-/// 统计预览：听歌时长 + 今日数据。
-class _StatsCard extends ConsumerWidget {
+/// 听歌统计三格卡：累计听歌 / 今日时长 / 今日首数（原首页「统计」tab 内容，
+/// 现移到「我的」页账号区与音乐库入口之间）。整卡点击打开完整听歌排行榜。
+class StatsSummaryCard extends ConsumerWidget {
+  const StatsSummaryCard({super.key});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final stats = ref.watch(listenStatsProvider);
     final data = stats.valueOrNull;
     return _CardContainer(
+      onTap: () => openDiscoverEntry(context, ref, '/leaderboard'),
       child: Row(
         children: [
           Expanded(
@@ -252,7 +153,7 @@ class _DailyCard extends ConsumerWidget {
     }
     final items = state?.items.take(3).toList() ?? const [];
     return _CardContainer(
-      onTap: () => context.push('/home/daily'),
+      onTap: () => openDiscoverEntry(context, ref, '/home/daily'),
       child: async.isLoading && items.isEmpty
           ? const Padding(
               padding: EdgeInsets.symmetric(vertical: 14),
@@ -351,7 +252,7 @@ class _TopListsBody extends ConsumerWidget {
     final boards = state.boards;
     if (boards.isEmpty) {
       return _CardContainer(
-        onTap: () => context.push('/home/toplists'),
+        onTap: () => openDiscoverEntry(context, ref, '/home/toplists'),
         child: Row(
           children: [
             Icon(Icons.library_music_outlined, size: 22, color: scheme.primary),

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 import '../player/player_provider.dart';
 import '../i18n/i18n.dart';
 import 'plugin_engine.dart';
@@ -552,8 +554,60 @@ String _extractAlbumText(Map<String, dynamic> item) {
   return '';
 }
 
-/// 提取封面（对齐桌面 extractCoverUrl 的常用字段）。
-String? _extractCover(Map<String, dynamic> node) {
+/// 网易云 picId 加密路径段（与官方 CDN 路径一致，对齐桌面 encryptNeteasePicId）。
+String _encryptNeteasePicId(String id) {
+  const magic = '3go8&\$8*3*3h0k(2)2';
+  final m = magic.codeUnits;
+  final xored = List<int>.generate(
+      id.length, (i) => id.codeUnitAt(i) ^ m[i % m.length]);
+  final digest = md5.convert(xored);
+  return base64.encode(digest.bytes).replaceAll('/', '_').replaceAll('+', '-');
+}
+
+/// 由 picId 生成网易云封面 CDN URL。
+/// picId 常超过安全整数范围（JSON 解析丢精度）：只信纯数字字符串或 <2^53 整数。
+String? _neteaseCoverUrlFromPicId(dynamic picId) {
+  String? id;
+  if (picId is String) {
+    final t = picId.trim();
+    if (t.isNotEmpty && t != '0' && RegExp(r'^\d+$').hasMatch(t)) id = t;
+  } else if (picId is int && picId != 0 && picId < 9007199254740992) {
+    id = picId.toString();
+  }
+  if (id == null) return null;
+  return 'https://p1.music.126.net/${_encryptNeteasePicId(id)}/$id.jpg';
+}
+
+/// 从节点上尽力提取网易云 picId（优先 *_str 字符串字段，防 number 精度丢失）。
+String? _neteaseCoverUrl(Map<String, dynamic> node) {
+  final al = node['al'] is Map ? node['al'] as Map : null;
+  final album = node['album'] is Map ? node['album'] as Map : null;
+  final candidates = <dynamic>[
+    if (al != null) ...[al['picId_str'], al['pic_str'], al['picId'], al['pic']],
+    if (album != null)
+      ...[album['picId_str'], album['pic_str'], album['picId'], album['pic']],
+    node['picId_str'],
+    node['pic_str'],
+    node['picId'],
+    node['pic'],
+  ];
+  for (final c in candidates) {
+    final url = _neteaseCoverUrlFromPicId(c);
+    if (url != null) return url;
+  }
+  return null;
+}
+
+/// 酷我旧 CDN 域名统一换 img3.kuwo.cn（第三方插件会返回证书异常的 imgN.sycdn）。
+String _normalizeKuwoCoverUrl(String url) {
+  var out = url.trim().replaceFirst(RegExp(r'^http://'), 'https://');
+  return out.replaceFirstMapped(
+    RegExp(r'^https://[^/]+\.kuwo\.cn/(.+)$', caseSensitive: false),
+    (m) => 'https://img3.kuwo.cn/${m.group(1)}',
+  );
+}
+
+String? _extractCoverFromNode(Map<String, dynamic> node) {
   const direct = [
     'artwork', 'cover', 'coverImg', 'coverUrl', 'cover_url', 'pic',
     'picurl', 'img', 'imgurl', 'imgUrl', 'albumPic', 'picture',
@@ -575,7 +629,37 @@ String? _extractCover(Map<String, dynamic> node) {
     final v = node[k];
     if (v is String && v.startsWith('http')) return v;
   }
-  return null;
+  // 网易云 weapi/search 常只给 picId 不给 picUrl：直接加密拼 CDN 兜底，
+  // 避免逐条再打 getMusicInfo（对齐桌面 extractCoverUrl）。
+  return _neteaseCoverUrl(node);
+}
+
+/// 提取封面（对齐桌面 extractCoverUrl：直接字段 + 嵌套一层 + 网易云 picId 兜底）。
+String? _extractCover(Map<String, dynamic> item) {
+  const nestedKeys = ['song', 'data', 'music', 'musicInfo', 'detail'];
+  var url = _extractCoverFromNode(item);
+  for (final k in nestedKeys) {
+    if (url != null) break;
+    final v = item[k];
+    if (v is Map) {
+      url = _extractCoverFromNode(Map<String, dynamic>.from(v));
+    }
+  }
+  final raw = item['rawData'];
+  if (url == null && raw is Map) {
+    for (final k in nestedKeys) {
+      final v = raw[k];
+      if (v is Map) {
+        url = _extractCoverFromNode(Map<String, dynamic>.from(v));
+        if (url != null) break;
+      }
+    }
+  }
+  if (url == null) return null;
+  var out = url;
+  if (out.startsWith('http://')) out = out.replaceFirst('http://', 'https://');
+  if (out.contains('kuwo.cn')) out = _normalizeKuwoCoverUrl(out);
+  return out;
 }
 
 /// 提取歌手头像。

@@ -94,6 +94,12 @@ enum ListSize {
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff', 'dsf', 'dff'];
 
+/// 壁纸模式全局字体颜色档位：
+/// - follow：跟随主题明暗（默认）
+/// - light：亮色字体（壁纸偏暗时用）
+/// - dark：暗色字体（壁纸偏亮时用）
+enum WallpaperTextColor { follow, light, dark }
+
 /// 自定义壁纸背景（对齐桌面端 ThemeSettings.customBackground）。
 ///
 /// 使用整型百分比便于 SharedPreferences 存取；渲染时再换算为 double。
@@ -112,6 +118,8 @@ class CustomBackground {
   final int translateX;
   /// 纵向平移（-50~50，相对屏幕高度百分比）。
   final int translateY;
+  /// 全局字体颜色档位（仅壁纸启用时生效，随壁纸一起持久化）。
+  final WallpaperTextColor textMode;
 
   const CustomBackground({
     this.enabled = false,
@@ -122,6 +130,7 @@ class CustomBackground {
     this.scale = 100,
     this.translateX = 0,
     this.translateY = 0,
+    this.textMode = WallpaperTextColor.follow,
   });
 
   /// 默认（未启用）。
@@ -139,6 +148,7 @@ class CustomBackground {
     int? scale,
     int? translateX,
     int? translateY,
+    WallpaperTextColor? textMode,
   }) {
     return CustomBackground(
       enabled: enabled ?? this.enabled,
@@ -149,6 +159,7 @@ class CustomBackground {
       scale: scale ?? this.scale,
       translateX: translateX ?? this.translateX,
       translateY: translateY ?? this.translateY,
+      textMode: textMode ?? this.textMode,
     );
   }
 }
@@ -771,6 +782,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         scale: prefs.getInt('customBackgroundScale') ?? 100,
         translateX: prefs.getInt('customBackgroundTranslateX') ?? 0,
         translateY: prefs.getInt('customBackgroundTranslateY') ?? 0,
+        textMode: WallpaperTextColor
+            .values[prefs.getInt('customBackgroundTextMode') ?? 0],
       ),
     );
   }
@@ -925,6 +938,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('customBackgroundScale', next.customBackground.scale),
       prefs.setInt('customBackgroundTranslateX', next.customBackground.translateX),
       prefs.setInt('customBackgroundTranslateY', next.customBackground.translateY),
+      prefs.setInt('customBackgroundTextMode', next.customBackground.textMode.index),
     ]);
   }
 
@@ -1045,12 +1059,16 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
 
   /// 写入自定义壁纸背景。
   ///
-  /// 壁纸模型（2026-08 简化）：壁纸只是「把底色换成壁纸」——根层铺壁纸、
-  /// 页面 Scaffold 透出；其余（前景配色、毛玻璃/液态玻璃开关、卡片样式、
-  /// 弹窗配色）与普通模式完全一致，不再有任何联动强制。
+  /// 壁纸模型（2026-08 简化）：壁纸只是「把底色换成壁纸」——页面由
+  /// AppPageBackground 烘焙壁纸底色；其余（前景配色、卡片样式、弹窗配色）
+  /// 与普通模式完全一致，不再有任何联动强制。
+  ///
+  /// 唯一联动：启用壁纸时默认打开毛玻璃材质（壁纸为图片底，玻璃表面半透明
+  /// 透出壁纸更有质感、也更保证可读性）；恢复默认背景时不回改毛玻璃开关。
   Future<void> setCustomBackground(CustomBackground v) => _save(
-      (state.valueOrNull ?? const AppSettings())
-          .copyWith(customBackground: v));
+      (state.valueOrNull ?? const AppSettings()).copyWith(
+          customBackground: v,
+          frostedGlass: v.enabled ? true : null));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

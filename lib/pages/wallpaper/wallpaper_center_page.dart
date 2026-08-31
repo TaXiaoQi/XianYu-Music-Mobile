@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:ui';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -18,6 +17,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
@@ -1122,6 +1122,29 @@ class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
                         onChanged: (v) => setState(
                             () => _draft = _draft.copyWith(scale: v)),
                       ),
+                      const SizedBox(height: 4),
+                      // 全局字体颜色档位：保存并使用后随壁纸一起生效/持久化。
+                      SegmentedButton<WallpaperTextColor>(
+                        segments: [
+                          ButtonSegment(
+                            value: WallpaperTextColor.follow,
+                            label: Text(tr('默认')),
+                          ),
+                          ButtonSegment(
+                            value: WallpaperTextColor.light,
+                            label: Text(tr('亮色字体')),
+                          ),
+                          ButtonSegment(
+                            value: WallpaperTextColor.dark,
+                            label: Text(tr('暗色字体')),
+                          ),
+                        ],
+                        selected: {_draft.textMode},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (selection) => setState(
+                            () => _draft =
+                                _draft.copyWith(textMode: selection.first)),
+                      ),
                       const SizedBox(height: 20),
                       FilledButton.icon(
                         onPressed: _apply,
@@ -1169,13 +1192,15 @@ class _FrostedSheet extends ConsumerWidget {
       budget: budget,
       type: BlurSurfaceType.drawerOrSheet,
     );
+    // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，
+    // 运动期保持玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
     return ClipRRect(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(radius),
         topRight: Radius.circular(radius),
       ),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        filter: cheapBackdropBlur(sigma),
         child: child,
       ),
     );
