@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'glass_settings.dart';
-import 'blur_budget.dart' show globalIsScrolling, globalIsTransitioning;
+import 'blur_budget.dart'
+    show globalIsScrolling, globalIsTabSwitching, globalIsTransitioning;
 
 /// 离线缓存毛玻璃表面（替代滚动中每帧全分辨率高斯的 `BackdropFilter`）。
 ///
@@ -69,6 +70,7 @@ class _CachedFrostedState extends State<CachedFrosted> {
       _backdropLogicalSize.width <= 0 ? 1.0 : 1.0 / widget.downscale;
 
   bool _scrolling = globalIsScrolling.value;
+  bool _tabSwitching = globalIsTabSwitching.value;
   bool _disposed = false;
   int _captureToken = 0;
 
@@ -76,6 +78,7 @@ class _CachedFrostedState extends State<CachedFrosted> {
   void initState() {
     super.initState();
     globalIsScrolling.addListener(_onScrollChanged);
+    globalIsTabSwitching.addListener(_onTabSwitchChanged);
     // 首次布局结束后抓一次（内容可见时）。
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
   }
@@ -94,8 +97,24 @@ class _CachedFrostedState extends State<CachedFrosted> {
   void dispose() {
     _disposed = true;
     globalIsScrolling.removeListener(_onScrollChanged);
+    globalIsTabSwitching.removeListener(_onTabSwitchChanged);
     _blurred?.dispose();
     super.dispose();
+  }
+
+  void _onTabSwitchChanged() {
+    final ts = globalIsTabSwitching.value;
+    if (ts == _tabSwitching) return;
+    _tabSwitching = ts;
+    if (!ts) {
+      // 主 tab 切换动画结束：页面已在新位置静止。若当前没有滚动/路由转场，
+      // 重新抓屏刷新快照（壁纸固定、页面整体相对它错开的新位置下，旧快照
+      // 已不适用）。
+      if (!_scrolling && !globalIsTransitioning.value) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   void _onScrollChanged() {
@@ -183,12 +202,18 @@ class _CachedFrostedState extends State<CachedFrosted> {
   @override
   Widget build(BuildContext context) {
     // 自己的 backdrop（内容）在滚动 → 存在真相对运动 → 回退实时
-    // BackdropFilter（由预算降级扛）。但**转场期间例外**：平移动效切页时
+    // BackdropFilter（由预算降级扛）。但**路由转场期间例外**：平移动效切页时
     // 新旧两页重叠可见，若此时二级页滚动把全局切成滚动态，被盖一半的设置
-    // 页顶栏会回退成每帧全屏实时高斯 → 切页掉帧。转场时保持 blit 缓存，避免
-    // 每帧全屏模糊；转场结束才按滚动态回退实时。
+    // 页顶栏会回退成每帧全屏实时高斯 → 切页掉帧。路由转场时保持 blit 缓存，
+    // 转场结束才按滚动态回退实时。
+    //
+    // 主 tab 切换（[globalIsTabSwitching]）例外：整页（含顶栏）相对固定壁纸
+    // 平移，blit 旧快照会让「顶栏后的壁纸错位/歪」；此时旧快照已无效，必须
+    // 退回实时 BackdropFilter（壁纸在页后面，live 采样当前相对位置才对）。
+    // 顶栏属小面积玻璃（header 例外），退回实时由转场降级预算扛住，可接受。
     if (_blurred == null ||
-        (_scrolling && !globalIsTransitioning.value)) {
+        _tabSwitching ||
+        (_scrolling && !globalIsTransitioning.value && !_tabSwitching)) {
       return ClipRect(
         child: BackdropFilter(
           filter: cheapBackdropBlur(widget.sigma),

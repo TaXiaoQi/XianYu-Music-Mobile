@@ -321,7 +321,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：抽掉玻璃底色统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     // 全局 blur 预算：滚动/转场时迷你条玻璃降级（sigma 缩放 + 铺底补偿）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
@@ -334,7 +336,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     // 当前路由子树内只存在一个带 Hero 的播放条：根页面由 shell 播放条承担，
     // 二级页面由页面内嵌播放条承担（shell 在二级页面传 heroTag:null 让位）。
     // 播放页打开时页面播放条隐藏，避免与 shell 播放条同标签 Hero 冲突。
-    final coverWidget = (widget.heroTag == null || PlayerOpenCover.opening.value)
+    final coverWidget = (widget.heroTag == null)
         ? cover
         : Hero(
             tag: widget.heroTag!,
@@ -419,12 +421,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
       onPanCancel: _handlePanCancel,
-      onTap: () {
-        // 打开播放页转场由 PlayerOpenCoverFly 在播放页自身层手工飞行封面，
-        // 需在 push 前标记打开态：抑制本条的 Hero 源 + 让播放页隐藏真实大封面。
-        PlayerOpenCover.opening.value = true;
-        context.push('/player');
-      },
+      onTap: () => context.push('/player'),
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? (liquidUseFrosted(ref)
@@ -511,22 +508,27 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     // 标准磨砂（跟随毛玻璃开关）；关闭毛玻璃/低性能 → 纯色。
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
+        : (wallpaper
+            ? wallpaperGlassFill(context)
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
-    final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = budget == null
-        ? 10.0 * frostedBlurScale(ref)
-        : surfaceBlurSigma(
-            base: 10 * frostedBlurScale(ref),
-            budget: budget,
-            type: BlurSurfaceType.bottomBar,
-          );
+    final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
+    final sigma = wallpaper
+        ? wallpaperGlassSigma(context)
+        : (budget == null
+            ? 10.0 * frostedBlurScale(ref)
+            : surfaceBlurSigma(
+                base: 10 * frostedBlurScale(ref),
+                budget: budget,
+                type: BlurSurfaceType.bottomBar,
+              ));
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(

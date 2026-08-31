@@ -16,9 +16,16 @@ class SkinIcon extends StatelessWidget {
     final theme = IconTheme.of(context);
     final iconColor = color ?? theme.color ?? Colors.white;
     final iconSize = size ?? theme.size ?? 24;
-    return CustomPaint(
-      size: Size.square(iconSize),
-      painter: _SkinPainter(color: iconColor),
+    // tight 父约束会撑大 CustomPaint 画布；SizedBox+Center 让 painter 始终按 iconSize 绘制
+    return SizedBox(
+      width: iconSize,
+      height: iconSize,
+      child: Center(
+        child: CustomPaint(
+          size: Size.square(iconSize),
+          painter: _SkinPainter(color: iconColor),
+        ),
+      ),
     );
   }
 }

@@ -913,20 +913,6 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit {
   final WidgetBuilder builder;
   final bool predictiveBack;
 
-  // 打开方向标记：路由初次推入时为 true，首次打开动画 forward 完成后置 false。
-  // 用于 idle 阶段叠加手工「顶层打开封面飞行」（PlayerOpenCoverFly），
-  // 关闭/预测返回阶段均为 false，不叠加，交给往返 Hero / PredictiveCoverReturnView。
-  bool _opening = true;
-  Animation<double>? _tracked;
-
-  void _trackOpen(Animation<double> a) {
-    if (identical(a, _tracked)) return;
-    _tracked = a;
-    a.addStatusListener((s) {
-      if (s == AnimationStatus.completed) _opening = false;
-    });
-  }
-
   // 用户开启预测返回时才接管边缘返回手势，做跟手行程；否则关闭也走
   // 普通 pop，仍由反向覆盖（从上往下）动画收回。
   @override
@@ -969,7 +955,6 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    _trackOpen(animation);
     // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势，
     // 否则边缘滑动无跟手行程直接 pop。手势中与普通收回共用同一套
     // 「下移渐隐」跟手视觉（controller 被驱动为 1 - 手势进度），提交后从
@@ -995,17 +980,7 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit {
           child: FadeTransition(opacity: curved, child: child),
         );
         if (phase == PredictiveBackPhase.idle) {
-          // 打开期间于播放页自身层叠加手工封面飞行（整张播放页之上），避免被盖住；
-          // 仅当确由 mini bar 触发（PlayerOpenCover.opening 为 true）才叠加，
-          // 其它入口仍走原 Hero 飞行。动画完成后 _opening 置 false 不再叠加。
-          if (!_opening || !PlayerOpenCover.opening.value) return exit;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              exit,
-              PlayerOpenCoverFly(animation: animation),
-            ],
-          );
+          return exit;
         }
         // 手势中叠加「封面飞回播放条」：随手势进度把大封面缩向
         // 迷你条封面位置，把系统预测行程与原有封面回拨语义统一。

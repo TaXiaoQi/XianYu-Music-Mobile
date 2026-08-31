@@ -102,7 +102,9 @@ class FloatingGlassSurface extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     if (liquid) {
@@ -180,7 +182,9 @@ class BiliPaiPill extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     final content = Material(

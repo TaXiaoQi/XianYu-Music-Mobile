@@ -19,6 +19,21 @@ void markScrollActivity() {
   });
 }
 
+/// 全局主 tab 切换状态：底部导航主 tab 正在做整页平移动画（程序化切页）为 true。
+///
+/// 区别于路由转场（[globalIsTransitioning]）/内容滚动（[globalIsScrolling]）：
+/// 此开关只在 PageView 切主 tab 的平移动画期间激活，供离线缓存玻璃表面
+/// （CachedFrosted）退回实时 BackdropFilter。否则程序化切页会把整页（含顶栏）
+/// 相对固定壁纸平移，而顶栏却 blit 一张静止的旧快照——壁纸近乎全透的顶栏下
+/// 就会暴露「顶栏后壁纸错位/歪」「顶栏空了过会才加载」。
+final ValueNotifier<bool> globalIsTabSwitching = ValueNotifier(false);
+
+/// 标记一次主 tab 切换开始/结束。由调用方（PageSwitchTabView）在平移动画
+/// 开始前置 true、动画结束后置回 false。
+void setTabSwitching(bool value) {
+  globalIsTabSwitching.value = value;
+}
+
 /// 全局浮层拖动状态：播放条/侧栏等浮层被按住拖拽中为 true。区别于滚动/转场，
 /// 拖动会把玻璃平移盖到不同内容上，静止冻结图会错位，故拖动期间 BiliPaiGlass
 /// 须退回实时背板（每帧按当前位置重新采样背景），松开后再在新位置冻结。

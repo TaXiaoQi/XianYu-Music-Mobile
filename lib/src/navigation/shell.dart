@@ -1510,14 +1510,17 @@ class _FixedNavBar extends ConsumerWidget {
     // 低性能模式或关闭「毛玻璃」→ 高不透明度纯色回退（无模糊）。
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final wallpaper = wallpaperGlassActive(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final fill = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
+        : (wallpaper
+            ? wallpaperGlassFill(context)
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
     final glassFill =
-        solid ? fill : surfaceFillWithBudget(fill, budget);
+        (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget);
     // 固定底栏顶部不再画横向分隔线（玻璃态的分隔条 / 实色态的 border）：
     // 迷你播放条停靠时正好落在底栏顶边，画线会在播放条底缘形成一条可见
     // 接缝，视觉上就像"播放条贴不住底栏、中间有空"。去掉后二者无缝贴合。
@@ -1527,8 +1530,10 @@ class _FixedNavBar extends ConsumerWidget {
     }
     // 伪毛玻璃：半透明白/暗 + 高斯模糊（安卓原生磨砂质感），壁纸时更透。
     // sigma 只由预算离散档位决定，filter 为降采样模糊（cheapBackdropBlur）。
-    final barSigma = surfaceBlurSigma(
-        base: 14, budget: budget, type: BlurSurfaceType.bottomBar);
+    final barSigma = wallpaper
+        ? wallpaperGlassSigma(context)
+        : surfaceBlurSigma(
+            base: 14, budget: budget, type: BlurSurfaceType.bottomBar);
     return ClipRect(
       child: BackdropFilter(
         filter: cheapBackdropBlur(barSigma),
@@ -1676,7 +1681,9 @@ class _LiquidNavBar extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -1744,19 +1751,25 @@ class _LiquidNavBar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
-    final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = budget == null
-        ? 14.0
-        : surfaceBlurSigma(
-            base: 14,
-            budget: budget,
-            type: BlurSurfaceType.bottomBar,
-          );
+        : (wallpaper
+            ? wallpaperGlassFill(context)
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final fill =
+        (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
+    final sigma = wallpaper
+        ? wallpaperGlassSigma(context)
+        : (budget == null
+            ? 14.0
+            : surfaceBlurSigma(
+                base: 14,
+                budget: budget,
+                type: BlurSurfaceType.bottomBar,
+              ));
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
@@ -2719,7 +2732,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         (ref.watch(
                 settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     // 全局 blur 预算：滚动/转场时侧栏面板玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
@@ -2906,15 +2921,19 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             child: panelBody,
           );
         } else {
-          final panelBg = isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.white.withValues(alpha: 0.35);
+          final panelBg = wallpaperGlassActive(ref)
+              ? wallpaperGlassFill(context)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.white.withValues(alpha: 0.35));
           final panelFill = surfaceFillWithBudget(panelBg, budget);
-          final panelSigma = surfaceBlurSigma(
-            base: 8 * frostedBlurScale(ref),
-            budget: budget,
-            type: BlurSurfaceType.drawerOrSheet,
-          );
+          final panelSigma = wallpaperGlassActive(ref)
+              ? wallpaperGlassSigma(context)
+              : surfaceBlurSigma(
+                  base: 8 * frostedBlurScale(ref),
+                  budget: budget,
+                  type: BlurSurfaceType.drawerOrSheet,
+                );
           // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，
           // 运动期保持玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
           panelWidget = ClipRRect(

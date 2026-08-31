@@ -6,10 +6,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import 'blur_budget.dart';
 
-/// 从设置读取当前毛玻璃效果档位（low/medium/high 语义映射）。
+/// 从设置读取当前毛玻璃档位（low/medium/high 语义映射）。
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
         FrostedGlassLevel.strongest));
+
+/// 是否处于「壁纸透明孔」模式：启用自定义壁纸时，所有玻璃表面控件统一抽掉
+/// 实色底色，改为极淡半透明磨砂，壁纸透出、控件仍可读。
+bool wallpaperGlassActive(WidgetRef ref) =>
+    ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.customBackground.active ?? false));
+
+/// 壁纸透明孔模式下，玻璃表面的极淡半透明磨砂 fill（抽掉实色底，几乎全透）。
+Color wallpaperGlassFill(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  // 暗色更透到几近透明、亮色略淡以保证控件边界可辨：透明孔控件观感。
+  return isDark
+      ? const Color(0x0DFFFFFF)
+      : const Color(0x30FFFFFF);
+}
+
+/// 壁纸透明孔模式下，玻璃表面使用的极淡模糊 sigma（轻度档收敛，近乎透明只留一层）
+double wallpaperGlassSigma(BuildContext context) => 8.0;
 
 /// 毛玻璃模糊强度档位 → sigma 缩放系数。
 /// strongest = 1.0（当前默认，观感最强）/ medium = 0.6 / light = 0.16。
@@ -49,12 +67,15 @@ Widget frostedCardSurface({
   bool lowPerf = false,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
+  final wallpaper = wallpaperGlassActive(ref);
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (isDark
-          ? Colors.white.withValues(alpha: 0.10)
-          : Colors.white.withValues(alpha: 0.52));
+      : (wallpaper
+          ? wallpaperGlassFill(context)
+          : (isDark
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.white.withValues(alpha: 0.52)));
   final border = solid
       ? null
       : Border.all(
@@ -74,7 +95,7 @@ Widget frostedCardSurface({
   // 模糊度跟随「毛玻璃」档位：滑动/停止三态 sigma 恒定一致，仅转场瞬间
     // 临时缩档防整页掉帧（见 frostedBlurSigma）。降采样模糊（cheapBackdropBlur）
     // 把高斯工作量降为 1/16 控制成本。
-  final sigma = frostedBlurSigma(ref);
+  final sigma = wallpaper ? wallpaperGlassSigma(context) : frostedBlurSigma(ref);
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
@@ -159,6 +180,8 @@ double bilipaiSaturationOf(LiquidGlassQuality q) => switch (q) {
 /// 播放页卡）统一判断，避免各处重复口径。
 bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
   if (lowPerf) return true;
+  // 壁纸透明孔模式：始终走极淡磨砂，不回退纯色（实色底板会盖住壁纸）。
+  if (wallpaperGlassActive(ref)) return false;
   // 只 select frostedGlass 字段：本函数被所有玻璃表面调用，若 watch 整个
   // settingsProvider，设置页任意开关变化都会让全部玻璃表面重建重绘。
   return !(ref.watch(settingsProvider.select(
@@ -241,20 +264,25 @@ Widget pseudoLiquidSurface({
   double? frostedScale,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
+  final wallpaper = wallpaperGlassActive(ref);
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : Colors.white.withValues(alpha: 0.34));
+      : (wallpaper
+          ? wallpaperGlassFill(context)
+          : (isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.34)));
   final border = isDark
       ? Colors.white.withValues(alpha: 0.18)
       : Colors.white.withValues(alpha: 0.5);
-  final fill = (budget == null || solid) ? bg : surfaceFillWithBudget(bg, budget);
+  final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
-  final sigma = budget == null
-      ? 8.0 * scale
-      : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType);
+  final sigma = wallpaper
+      ? wallpaperGlassSigma(context)
+      : (budget == null
+          ? 8.0 * scale
+          : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType));
   final surface = Container(
     decoration: BoxDecoration(
       color: fill,

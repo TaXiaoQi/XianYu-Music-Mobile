@@ -221,8 +221,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             _showLyrics = true;
                           });
                         },
-                        child: OpenCoverGuard(
-                          child: Center(
+                        child: Center(
                             child: Hero(
                               tag: 'player-cover',
                             flightShuttleBuilder: (ctx, animation, direction,
@@ -253,7 +252,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               child: _BigCover(current: current),
                             ),
                           ),
-                        ),
                         ),
                       ),
                       const Spacer(),
@@ -423,51 +421,49 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                     cons.maxHeight * 0.8
                                 ? side * 0.9
                                 : cons.maxHeight * 0.8;
-                            return OpenCoverGuard(
-                              child: Center(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    setState(
-                                        () => _showLyrics = !_showLyrics);
-                                  },
-                                child: Hero(
-                                  tag: 'player-cover',
-                                  flightShuttleBuilder: (ctx, animation,
-                                          direction, fromCtx, toCtx) =>
-                                      PlayerCoverShuttle(
-                                        animation: animation,
-                                        songPath: current?.path ?? '',
-                                        networkUrl: current?.coverUrl,
-                                        fromRadius: 23,
-                                        toRadius: 31,
-                                        borderColor: Colors.white
-                                            .withValues(alpha: 0.18),
-                                        shadow: BoxShadow(
-                                          color: scheme
-                                              .primary
-                                              .withValues(alpha: 0.28),
-                                          blurRadius: 36,
-                                          spreadRadius: 2,
-                                        ),
-                                        gradient: [
-                                          scheme.primary,
-                                          scheme
-                                              .primary
-                                              .withValues(alpha: 0.72),
-                                        ],
+                            return Center(
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(
+                                      () => _showLyrics = !_showLyrics);
+                                },
+                              child: Hero(
+                                tag: 'player-cover',
+                                flightShuttleBuilder: (ctx, animation,
+                                        direction, fromCtx, toCtx) =>
+                                    PlayerCoverShuttle(
+                                      animation: animation,
+                                      songPath: current?.path ?? '',
+                                      networkUrl: current?.coverUrl,
+                                      fromRadius: 23,
+                                      toRadius: 31,
+                                      borderColor: Colors.white
+                                          .withValues(alpha: 0.18),
+                                      shadow: BoxShadow(
+                                        color: scheme
+                                            .primary
+                                            .withValues(alpha: 0.28),
+                                        blurRadius: 36,
+                                        spreadRadius: 2,
                                       ),
-                                  child: CoverReturnSource(
-                                    songPath: current?.path,
-                                    networkUrl: current?.coverUrl,
-                                    child: _BigCover(
-                                      current: current,
-                                      size: coverSize,
+                                      gradient: [
+                                        scheme.primary,
+                                        scheme
+                                            .primary
+                                            .withValues(alpha: 0.72),
+                                      ],
                                     ),
+                                child: CoverReturnSource(
+                                  songPath: current?.path,
+                                  networkUrl: current?.coverUrl,
+                                  child: _BigCover(
+                                    current: current,
+                                    size: coverSize,
                                   ),
                                 ),
                               ),
                             ),
-                            );
+                          );
                           },
                           ),
                         ),
@@ -837,10 +833,9 @@ class _TraditionalPlayerLayoutState
           children: [
             // 封面略下移，与顶部切换 tab 留出呼吸间距
             const SizedBox(height: 14),
-            OpenCoverGuard(
-              child: Center(
-                child: Hero(
-                  tag: 'player-cover',
+            Center(
+              child: Hero(
+                tag: 'player-cover',
                 flightShuttleBuilder:
                     (ctx, animation, direction, fromCtx, toCtx) {
                   final scheme = Theme.of(context).colorScheme;
@@ -874,7 +869,6 @@ class _TraditionalPlayerLayoutState
                   ),
                 ),
               ),
-            ),
             ),
             // 竖屏：封面下方保留歌名/作者/收藏信息条；横屏这些信息冗余
             // （顶部有歌名、底部有收藏），去掉并把空间留给放大的封面。
@@ -2063,7 +2057,9 @@ class _GlassControlCard extends ConsumerWidget {
               settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
             ) ??
             true) &&
-            !lowPerf;
+            !lowPerf &&
+            // 壁纸透明孔模式：控制卡统一走极淡透明磨砂，跳过液态 shader。
+            !wallpaperGlassActive(ref);
     // 毛玻璃材质开关：关闭时控制卡回退为高不透明度纯色（无模糊）。
     final frosted = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? true),
@@ -2166,15 +2162,19 @@ class _GlassControlCard extends ConsumerWidget {
       );
     }
 
-    final glassColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.6);
+    final glassColor = wallpaperGlassActive(ref)
+        ? wallpaperGlassFill(context)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.6));
 
-    final sigma = surfaceBlurSigma(
-      base: 15,
-      budget: budget,
-      type: BlurSurfaceType.drawerOrSheet,
-    );
+    final sigma = wallpaperGlassActive(ref)
+        ? wallpaperGlassSigma(context)
+        : surfaceBlurSigma(
+            base: 15,
+            budget: budget,
+            type: BlurSurfaceType.drawerOrSheet,
+          );
     // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，运动期保持
     // 玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
     return ClipRRect(
