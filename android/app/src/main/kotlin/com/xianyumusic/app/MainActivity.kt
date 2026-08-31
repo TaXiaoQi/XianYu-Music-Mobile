@@ -29,8 +29,8 @@ class MainActivity : AudioServiceActivity() {
     private val REQ_CHOOSE_TREE = 1001
 
     // 横竖屏旋转事件：旋转一开始系统即回调 onConfigurationChanged，把当前屏幕
-    // 方向（Configuration.ORIENTATION_*：0 未知 / 1 竖 / 2 横）推给 Dart 侧，
-    // 让布局在旋转开始就切换，无需等视图尺寸到位。
+    // 方向（1 竖 / 2 横）推给 Dart 侧，让布局在旋转开始就切换，尽量第一帧出横屏，
+    // 缩短系统旋转期间「拉伸竖屏」的停留。
     private var rotationEvents: EventChannel.EventSink? = null
 
     // xianyu:// 深链：分享落地页拉起后把 intent 交给 Flutter 解析播放。
@@ -99,10 +99,10 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /** 推送当前屏幕方向（1 竖 / 2 横）：主动读 Display 旋转角（0/90/180/270），
-     *  仅旋转那一瞬上报、非常节能，最贴近原生行为；不依赖视图尺寸断点，避免切布局延迟。 */
+     *  仅旋转那一瞬上报、非常节能，最贴近原生行为。 */
     private fun emitRotation() {
         val rotation = windowManager.defaultDisplay.rotation
-        // Surface.ROTATION_*：0 自然竖 / 90 横（自然横）/ 180 反向竖 / 270 反向横。
+        // Surface.ROTATION_*：0 自然竖 / 90 横 / 180 反向竖 / 270 反向横。
         val landscape = rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
         val orientation =
             if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT

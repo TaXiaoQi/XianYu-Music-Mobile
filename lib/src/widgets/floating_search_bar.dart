@@ -127,6 +127,7 @@ class FloatingGlassSurface extends ConsumerWidget {
           base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
+          crispAtRest: true,
         ),
         backgroundColor: bilipaiGlassTint(isDark),
         specular: bilipaiSpecularOf(quality),
@@ -214,6 +215,7 @@ class BiliPaiPill extends ConsumerWidget {
           base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
+          crispAtRest: true,
         ),
         backgroundColor: bilipaiGlassTint(isDark),
         specular: bilipaiSpecularOf(quality),
@@ -239,26 +241,36 @@ class BiliPaiPill extends ConsumerWidget {
 class BiliPaiIconButton extends StatelessWidget {
   const BiliPaiIconButton({
     super.key,
-    required this.icon,
+    this.icon,
+    this.iconChild,
     this.onTap,
     this.color,
     this.tooltip,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconChild;
   final VoidCallback? onTap;
   final Color? color;
   final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
+    // IconTheme 包裹：内置 Icon 用显式 color/size；iconChild（如自定义 SkinIcon）
+    // 不传 color 时也能从 IconTheme 继承按钮标准色与尺寸。
     final iconWidget = SizedBox(
       width: 40,
       height: 40,
-      child: Icon(
-        icon,
-        size: 20,
-        color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+      child: IconTheme(
+        data: const IconThemeData(size: 20).copyWith(
+          color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        child: iconChild ??
+            Icon(
+              icon,
+              size: 20,
+              color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
       ),
     );
     return BiliPaiPill(

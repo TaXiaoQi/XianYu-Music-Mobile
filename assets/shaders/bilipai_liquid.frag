@@ -49,6 +49,9 @@ uniform float uSaturation;
 // 立刻有放大镜观感（无此项时，向内采样存在 ~A/2 的跳过区，内容要没入
 // 近半半径才出现在边带里）。
 uniform float uDepthEffect;
+// 槽 19：uTime —— 持续涟漪时间（秒）。给采样点加低频正弦微位移，让玻璃
+// 自身始终带轻微液态流动（静止/拖拽/滚动皆可见），不是单纯停在模糊上。
+uniform float uTime;
 
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
@@ -111,6 +114,21 @@ void main() {
       }
     }
   }
+
+  //  —— 持续液态涟漪（uTime）——
+  // 给整块玻璃采样点叠加低频行进波，让玻璃自身始终带**可见**的缓慢液态流
+  // 动：静止 / 拖拽（底图不动）时也能看出「水面在漾」，而不只是停在模糊上。
+  // 幅度取物理像素级、波长 ~150px、频率极低避免晃眼；涟漪随距边缘浅浅增强。
+  float rippleDepth = max(0.0, -sd);
+  float edgeGain = max(0.35, 1.0 - rippleDepth / (uEdgeAmount + 1e-3));
+  float rippleTime = uTime * 1.9;
+  // 两列斜向相干的行进波叠加，峰值 ±1.7；乘 2.0 后位移最高 ~3.4px，经下方
+  // 高斯模糊后仍清晰可辨（这与 ±1px 的亚像素微颤有质的差异）。
+  float wave =
+      sin(c.x * 0.040 - rippleTime) + 0.7 * cos(c.y * 0.028 + rippleTime * 1.3);
+  // 垂直向微位移，视觉上像水面横纹漾动；方向沿玻璃局部 y，长条表面通用，
+  // 不会像带方向涡那样斜向串色。
+  uv -= vec2(0.0, wave * edgeGain) * 2.0;
 
   // 采样点只 clamp 到屏幕内：向内折射采样的是玻璃下方的内容，正常不会
   // 越界；clamp 只做屏幕边界兜底。

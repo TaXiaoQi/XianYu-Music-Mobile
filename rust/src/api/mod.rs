@@ -433,6 +433,17 @@ fn open_scan_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
 // 音乐库扫描（第六批）
 // =========================================================================
 
+/// 由数据库路径推导封面缓存目录（`{db_dir}/cover_cache/covers`）。
+///
+/// 与前端 `coverCacheRootProvider`（`{appDataDir}/cover_cache`）保持同构，
+/// 供常规扫描在扫描期同步提取缩略图回写 `cover_thumb_path`，避免列表滚动时
+/// 前端逐行懒提取（FFI + 解码 + 写盘）造成卡顿。
+fn derive_cover_cache_dir(db_path: &str) -> Option<std::path::PathBuf> {
+    let db = std::path::Path::new(db_path);
+    let cache_root = db.parent()?.join("cover_cache");
+    Some(crate::music::covers::get_cover_cache_dir(&cache_root))
+}
+
 /// 增量扫描一个音乐文件夹，将新增/更新/删除写入数据库，返回该文件夹全部歌曲 JSON。
 ///
 /// - `db_path`：SQLite 数据库文件路径
@@ -448,6 +459,7 @@ pub fn scan_music_folder(
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
     let options =
         crate::music::scanner::ScanOptions::new(minimum_duration_seconds, allowed_formats);
+    let cover_cache_dir = derive_cover_cache_dir(&db_path);
     let songs = crate::music::scanner::scan_single_directory_internal(
         folder_path,
         db_conn,
@@ -456,6 +468,7 @@ pub fn scan_music_folder(
         1,
         1,
         options,
+        cover_cache_dir,
     )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
@@ -998,8 +1011,13 @@ pub fn refresh_folder_songs(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let songs =
-        crate::toolbox::refresh_folder_songs(db_conn, folder_path, minimum_duration_seconds)?;
+    let cover_cache_dir = derive_cover_cache_dir(&db_path);
+    let songs = crate::toolbox::refresh_folder_songs(
+        db_conn,
+        folder_path,
+        minimum_duration_seconds,
+        cover_cache_dir,
+    )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -1541,8 +1559,9 @@ pub fn stats_get_recent_playlist_catalog(
 // 封面缓存清理（对齐桌面端 music::covers::clear_cover_cache）
 // =========================================================================
 
-/// 清空封面缓存目录。
+/// 清空封面缓存目录，并同步清空无图负缓存（释放「提取失败」记忆，允许立即重试）。
 pub fn clear_cover_cache(cache_dir: String) -> Result<(), String> {
+    crate::music::covers::clear_no_cover_negative_cache();
     crate::music::covers::clear_cover_cache(std::path::Path::new(&cache_dir))
 }
 
@@ -1769,7 +1788,9 @@ pub fn scan_library(
 ) -> Result<String, String> {
     let conn = open_scan_conn(&db_path)?;
     let shared = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let songs = crate::music::library::scan_library(shared, minimum_duration_seconds)?;
+    let cover_cache_dir = derive_cover_cache_dir(&db_path);
+    let songs =
+        crate::music::library::scan_library(shared, minimum_duration_seconds, cover_cache_dir)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 

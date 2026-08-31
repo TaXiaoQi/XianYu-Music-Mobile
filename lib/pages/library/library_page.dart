@@ -555,7 +555,10 @@ class _ArtistsTab extends ConsumerWidget {
       itemBuilder: (context, i) {
         final a = artists[i];
         final scheme = Theme.of(context).colorScheme;
-        return CoverRow(
+        return RepaintBoundary(
+          // key 用歌手名，滚动时该行图层可缓存复用，避免整页重绘。
+          key: ValueKey('artist_${a.name}'),
+          child: CoverRow(
           cover: CoverImage(
             songPath: a.firstSongPath,
             width: m.artistCover,
@@ -586,6 +589,7 @@ class _ArtistsTab extends ConsumerWidget {
                     ref.read(libraryProvider.notifier).songsByArtist(a.name),
               ),
             ),
+          ),
           ),
         );
       },
@@ -628,7 +632,9 @@ class _AlbumsTab extends ConsumerWidget {
       itemBuilder: (context, i) {
         final a = albums[i];
         final scheme = Theme.of(context).colorScheme;
-        return CoverRow(
+        return RepaintBoundary(
+          key: ValueKey('album_${a.key}'),
+          child: CoverRow(
           cover: CoverImage(
             songPath: a.firstSongPath,
             width: m.songCover,
@@ -660,6 +666,7 @@ class _AlbumsTab extends ConsumerWidget {
                     ref.read(libraryProvider.notifier).songsByAlbum(a.key),
               ),
             ),
+          ),
           ),
         );
       },

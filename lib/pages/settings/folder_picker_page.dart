@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -143,9 +142,10 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
       for (final p in kept) {
         await folders.addFolder(p);
       }
-      final count = await ref.read(libraryProvider.notifier).scanAllFolders();
+      // 只注册扫描目录，立即返回；不在这里触发全库扫描（否则会一直卡在
+      // 选择页等扫完）。歌曲扫描改由文件夹页/顶栏手动触发。
       if (!mounted) return;
-      Navigator.of(context).pop(count);
+      Navigator.of(context).pop(kept.length);
     } catch (e) {
       if (!mounted) return;
       setState(() => _adding = false);

@@ -221,9 +221,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             _showLyrics = true;
                           });
                         },
-                        child: Center(
-                          child: Hero(
-                            tag: 'player-cover',
+                        child: OpenCoverGuard(
+                          child: Center(
+                            child: Hero(
+                              tag: 'player-cover',
                             flightShuttleBuilder: (ctx, animation, direction,
                                 fromCtx, toCtx) {
                               return PlayerCoverShuttle(
@@ -252,6 +253,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               child: _BigCover(current: current),
                             ),
                           ),
+                        ),
                         ),
                       ),
                       const Spacer(),
@@ -421,12 +423,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                     cons.maxHeight * 0.8
                                 ? side * 0.9
                                 : cons.maxHeight * 0.8;
-                            return Center(
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(
-                                      () => _showLyrics = !_showLyrics);
-                                },
+                            return OpenCoverGuard(
+                              child: Center(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(
+                                        () => _showLyrics = !_showLyrics);
+                                  },
                                 child: Hero(
                                   tag: 'player-cover',
                                   flightShuttleBuilder: (ctx, animation,
@@ -463,6 +466,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   ),
                                 ),
                               ),
+                            ),
                             );
                           },
                           ),
@@ -833,9 +837,10 @@ class _TraditionalPlayerLayoutState
           children: [
             // 封面略下移，与顶部切换 tab 留出呼吸间距
             const SizedBox(height: 14),
-            Center(
-              child: Hero(
-                tag: 'player-cover',
+            OpenCoverGuard(
+              child: Center(
+                child: Hero(
+                  tag: 'player-cover',
                 flightShuttleBuilder:
                     (ctx, animation, direction, fromCtx, toCtx) {
                   final scheme = Theme.of(context).colorScheme;
@@ -869,6 +874,7 @@ class _TraditionalPlayerLayoutState
                   ),
                 ),
               ),
+            ),
             ),
             // 竖屏：封面下方保留歌名/作者/收藏信息条；横屏这些信息冗余
             // （顶部有歌名、底部有收藏），去掉并把空间留给放大的封面。
@@ -4221,15 +4227,34 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 
   /// 一次性精确居中：等当前行实测布局后瞬时跳到视口正中（无动画）。
-  /// 当前行尚未构建测量时保持待办、等下一帧，期间不做粗略比例滚动。
+  /// 目标行尚未被测量时按比例粗跳一次拉进视口，随即清除待办交还常规跟随——
+  /// 绝不长期锁住。对齐 RwaS LyricPlaybackState 数据驱动模型：活跃行始终由
+  /// position 重算、任何锚点变化都驱动一次滚动，不被"上一次是否精确落位"门闩阻塞。
   void _tryPendingCenterJump() {
     if (_userInteracted) return; // 用户正在手动翻看，不打扰
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
     final idx = _activeIndexFor(_displayPos);
-    final layout = _lineLayouts[idx];
-    if (layout == null) return;
     final viewport = _scrollCtrl.position.viewportDimension;
     if (viewport <= 0) return;
+    final layout = _lineLayouts[idx];
+    if (layout == null) {
+      // 目标活动行尚未被 LazyList 构造测量——典型于歌曲已播到中段才打开/重开
+      // 歌词页，当前行远在视口之外（比例粗跳的错位往往超过 200px 缓存区，该行
+      // 仍不会进入 _lineLayouts）。必须在此清除 _pendingCenterJump：否则后续每次
+      // _autoScrollToActiveLine 都被这扇门短路，歌词停在顶部、高亮行在屏外，
+      // 且"下一句也不跳转"。向 RwaS 看齐：粗跳一次即交还常规跟随路径，
+      // 活跃行每推进一格都由 _autoScrollToActiveLine 重新滚动逼近，不再卡死。
+      if (idx >= 0 && _lines.length > 1) {
+        final maxScroll = _scrollCtrl.position.maxScrollExtent;
+        final target = (maxScroll * idx / (_lines.length - 1))
+            .clamp(0.0, maxScroll);
+        if ((target - _scrollCtrl.offset).abs() >= 1) {
+          _scrollCtrl.jumpTo(target); // jumpTo 无动画，避免"先估再动画"两次移动
+        }
+      }
+      _pendingCenterJump = false; // 一次性尽力而为，不长期阻塞跟随
+      return;
+    }
     _pendingCenterJump = false;
     _lastActiveIndex = idx;
     final target = (layout.$1 + layout.$2 / 2 - viewport / 2)

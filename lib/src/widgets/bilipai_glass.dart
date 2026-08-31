@@ -40,6 +40,7 @@ class BiliPaiGlass extends StatefulWidget {
     required this.edgeAmount,
     this.saturation = 1.0,
     this.depthEffect = 0.0,
+    this.alwaysLive = false,
     required this.child,
   });
 
@@ -74,6 +75,14 @@ class BiliPaiGlass extends StatefulWidget {
   /// 类小圆面开启；壳体表面保持 Halcyon 默认关闭。
   final double depthEffect;
 
+  /// 始终实时渲染（不参与「静止冻结背板」优化）。
+  ///
+  /// 开启后该表面不做抓屏冻结，任何时刻都走实时 BackdropFilter + 液态
+  /// shader，且涟漪时钟常转——适用于需要拖拽 / 平移盖到不同内容上、不能
+  /// 容忍冻结背板错位的浮层（迷你播放条）。代价是静止时也持续实时渲染
+  /// （面积小、成本可控）；关闭则维持静止冻结缓存以省电。
+  final bool alwaysLive;
+
   final Widget child;
 
   @override
@@ -81,7 +90,7 @@ class BiliPaiGlass extends StatefulWidget {
 }
 
 class _BiliPaiGlassState extends State<BiliPaiGlass>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   ui.FragmentShader? _shader;
 
   /// 进程内共享的已加载 program：BiliPaiGlass 会在容器/顶栏切换时频繁重新
@@ -109,6 +118,11 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   /// 避免实时↔冻结硬切导致的视觉闪烁。
   late final AnimationController _fade;
 
+  /// 持续涟漪时钟：驱动 shader 的 uTime（槽 19），让玻璃在静止 / 拖拽（底图
+  /// 不动）时也带轻微液态流动，而不止是停在模糊上。仅实时背板（非冻结）时
+  /// 运行；冻结（blit 缓存图）后停表省电。
+  late final AnimationController _ripple;
+
   @override
   void initState() {
     super.initState();
@@ -125,8 +139,17 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     );
     // 直接驱动背板绘制层的淡变值，避免淡变期间每帧重建整个 widget 树。
     _fade.addListener(_onFadeTicked);
+    // 持续涟漪：值 0→1 映射为 uTime 秒（1 rev = 8s），非零起始避免首帧
+    // 时间被清零。仅实时背板时向前走。
+    _ripple = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+      value: 3.0,
+    )..repeat();
+    _ripple.addListener(_onRippleTick);
     globalIsScrolling.addListener(_onGlobalState);
     globalIsTransitioning.addListener(_onGlobalState);
+    globalIsDragging.addListener(_onGlobalState);
   }
 
   /// 把当前淡变值写入背板图元（仅重绘，不重建 widget）。
@@ -134,6 +157,18 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (!mounted) return;
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is RenderLiquidBacking) ro.fadeBlend = _fade.value;
+  }
+
+  /// 把涟漪时钟值写入背板 shader 的 uTime 并触发实时重绘。涟漪只在非静止
+  /// （实时背板）时运行，冻结（blit 缓存图）后停表、不会再触发重绘，故
+  /// 这里无条件重绘刷新背板即可。
+  void _onRippleTick() {
+    if (!mounted) return;
+    final ro = _backingKey.currentContext?.findRenderObject();
+    if (ro is RenderLiquidBacking) {
+      ro.uiTime = _ripple.value * 8.0;
+      ro.markNeedsPaint();
+    }
   }
 
   Future<void> _load() async {
@@ -155,21 +190,29 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   void dispose() {
     globalIsScrolling.removeListener(_onGlobalState);
     globalIsTransitioning.removeListener(_onGlobalState);
+    globalIsDragging.removeListener(_onGlobalState);
     _idleDebounce?.cancel();
     _fade.dispose();
+    _ripple.dispose();
     _frozen?.dispose();
     _shader?.dispose();
     super.dispose();
   }
 
   /// 全局静止/活动切换：静止且无缓存 → 稍后抓屏冻结；活动 → 淡变退冻结
-  /// 回退实时（背板在动，缓存已失效）。
+  /// 回退实时（背板在动，缓存已失效）。滚动/转场/拖动任一活动即非静止。
   void _onGlobalState() {
     if (!mounted) return;
-    final idle = !globalIsScrolling.value && !globalIsTransitioning.value;
+    // 常驻实时模式：不吃冻结优化，始终实时渲染液态 shader + 涟漪常转
+    // （涟漪从 initState 起 repeat，这里不 stop、不 capture、不 fade）。
+    if (widget.alwaysLive) return;
+    final idle = !globalIsScrolling.value &&
+        !globalIsTransitioning.value &&
+        !globalIsDragging.value;
     if (idle == _idle) return;
     _idle = idle;
     if (idle) {
+      _ripple.stop();
       if (_frozen != null) {
         _startFadeIn();
       } else {
@@ -177,6 +220,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       }
     } else {
       _idleDebounce?.cancel();
+      if (!_ripple.isAnimating) _ripple.repeat();
       _startFadeOut();
     }
   }
@@ -222,6 +266,15 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (_capturing || !mounted || _frozen != null) return;
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is! RenderRepaintBoundary) return;
+    // RepaintBoundary 尚未完成本帧绘制（刚挂载 / 布局尺寸变化，如旋转）时，
+    // 立即 toImage 会触发 debugNeedsPaint 断言并抓到半成品。推迟到下一帧
+    // 绘制完成后重试。release 下 debugNeedsPaint 恒为 false，行为与原先一致。
+    if (ro.debugNeedsPaint) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _frozen == null) _capture();
+      });
+      return;
+    }
     _capturing = true;
     try {
       final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -230,7 +283,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       if (!mounted ||
           !_idle ||
           globalIsScrolling.value ||
-          globalIsTransitioning.value) {
+          globalIsTransitioning.value ||
+          globalIsDragging.value) {
         image.dispose();
         return;
       }
@@ -518,6 +572,11 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  /// 持续涟漪时钟秒值（驱动 shader 槽 19 uTime）。仅存值不触发重绘——重绘
+  /// 由宿主 _onRippleTick 按「实时背板」口径主动 markNeedsPaint，避免冻结
+  /// 后仍每帧重绘。
+  double uiTime = 0;
+
   double _devicePixelRatio;
   double get devicePixelRatio => _devicePixelRatio;
   set devicePixelRatio(double value) {
@@ -707,7 +766,8 @@ class RenderLiquidBacking extends RenderBox {
         math.min(_edgeAmount, math.min(size.width, size.height) * 0.42) * dpr,
       )
       ..setFloat(17, _saturation)
-      ..setFloat(18, _depthEffect);
+      ..setFloat(18, _depthEffect)
+      ..setFloat(19, uiTime);
 
     final shaderLayer = _shaderHandle.layer ??= BackdropFilterLayer();
     shaderLayer.filter = ui.ImageFilter.shader(_shader);

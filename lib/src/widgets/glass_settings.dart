@@ -23,6 +23,12 @@ double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
       FrostedGlassLevel.light => 0.16,
     };
 
+/// 当前毛玻璃 sigma（页面级玻璃表面统一入口）：完全跟随「毛玻璃」档位，
+/// 滑动/停止/转场三态恒定一致、**不缩档**——转场掉帧改由
+/// [RouteStaticSnapshot] 整页快照平移承担，不再用缩减模糊强度换取流畅
+/// （不牺牲效果）。
+double frostedBlurSigma(WidgetRef ref) => 16 * frostedBlurScale(ref);
+
 /// 从设置读取当前毛玻璃档位对应的 sigma 缩放系数。
 double frostedBlurScale(WidgetRef ref) =>
     frostedBlurScaleOf(frostedGlassLevelSetting(ref));
@@ -65,15 +71,10 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
-  // 接入全局 blur 预算：滚动/转场期间按档位缩 sigma。降采样模糊
-  // （cheapBackdropBlur）把模糊工作量降为 1/16，运动期可保持玻璃恒定
-  // （RwaS 口径：不跳模糊、无观感跳变），静止后恢复满档 sigma。
-  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.generic));
-  final sigma = surfaceBlurSigma(
-    base: 16 * frostedBlurScale(ref),
-    budget: budget,
-    type: BlurSurfaceType.generic,
-  );
+  // 模糊度跟随「毛玻璃」档位：滑动/停止三态 sigma 恒定一致，仅转场瞬间
+    // 临时缩档防整页掉帧（见 frostedBlurSigma）。降采样模糊（cheapBackdropBlur）
+    // 把高斯工作量降为 1/16 控制成本。
+  final sigma = frostedBlurSigma(ref);
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(

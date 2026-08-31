@@ -23,6 +23,10 @@ import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
 
+/// 下载记录修订号：保存新壁纸后自增，通知「我的下载」列表立即刷新。
+/// 「我的下载」Tab 用 keepAlive 常驻，不监听则保存后切过去仍是旧数据（找不到）。
+final ValueNotifier<int> _downloadsRevision = ValueNotifier<int>(0);
+
 /// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
 class WallpaperCenterPage extends ConsumerStatefulWidget {
   const WallpaperCenterPage({super.key});
@@ -72,7 +76,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
                   _WallpaperBrowseTab(),
                   _MyUploadsTab(),
                   _MyDownloadsTab(),
-                  _CustomWallpaperTab(),
+                  CustomWallpaperEditor(),
                 ],
               ),
             ),
@@ -296,58 +300,123 @@ class _WallpaperCard extends ConsumerWidget {
 // 壁纸全屏预览 + 保存
 // ───────────────────────────────────────────────────────────
 
-class _WallpaperPreviewPage extends StatefulWidget {
+class _WallpaperPreviewPage extends ConsumerStatefulWidget {
   const _WallpaperPreviewPage({required this.wallpaper});
 
   final Map<String, dynamic> wallpaper;
 
   @override
-  State<_WallpaperPreviewPage> createState() => _WallpaperPreviewPageState();
+  ConsumerState<_WallpaperPreviewPage> createState() =>
+      _WallpaperPreviewPageState();
 }
 
-class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
-  bool _saving = false;
-  String? _saveResult;
+class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
+  /// 已落盘的本地路径（从「我的下载」进入时预填；本页保存后回填）。
+  String? _localPath;
+  bool _busy = false;
+  String? _result;
 
-  Future<void> _save() async {
-    if (_saving) return;
+  bool get _hasLocal => _localPath != null && File(_localPath!).existsSync();
+
+  @override
+  void initState() {
+    super.initState();
+    final lp = (widget.wallpaper['localPath'] as String?) ?? '';
+    if (lp.isNotEmpty && File(lp).existsSync()) {
+      _localPath = lp;
+    }
+  }
+
+  /// 确保壁纸已保存到本地（未保存则下载落盘并写入「我的下载」记录），返回本地路径。
+  Future<String> _ensureLocal() async {
+    if (_hasLocal) return _localPath!;
+    final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
+    if (url.isEmpty) throw Exception(tr('壁纸地址无效'));
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
+    final req = await client.getUrl(Uri.parse(url));
+    final res = await req.close();
+    if (res.statusCode != 200) {
+      throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
+    }
+    final bytes = await consolidateBytes(res);
+    // 保存目录：应用文档目录 Wallpapers/（缓存目录会被系统清理，不可持久化）。
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final id = widget.wallpaper['id'];
+    final title = (widget.wallpaper['title'] as String?) ?? 'wallpaper';
+    final safeName = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final file = File(p.join(dir.path, 'wallpaper_${id}_$safeName.jpg'));
+    await file.writeAsBytes(bytes);
+    await _recordDownload(widget.wallpaper, file.path);
+    _downloadsRevision.value++; // 通知「我的下载」列表刷新
+    _localPath = file.path;
+    return _localPath!;
+  }
+
+  /// 仅保存到本地。
+  Future<void> _saveOnly() async {
+    if (_busy) return;
     setState(() {
-      _saving = true;
-      _saveResult = null;
+      _busy = true;
+      _result = null;
     });
     try {
-      final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
-      if (url.isEmpty) throw Exception(tr('壁纸地址无效'));
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
-      final req = await client.getUrl(Uri.parse(url));
-      final res = await req.close();
-      if (res.statusCode != 200) {
-        throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
-      }
-      final bytes = await consolidateBytes(res);
-      // 保存目录：应用文档目录 Wallpapers/（缓存目录会被系统清理，不可持久化）。
-      final docs = await getApplicationDocumentsDirectory();
-      final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final id = widget.wallpaper['id'];
-      final title = (widget.wallpaper['title'] as String?) ?? 'wallpaper';
-      final safeName = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final file =
-          File(p.join(dir.path, 'wallpaper_${id}_$safeName.jpg'));
-      await file.writeAsBytes(bytes);
-      await _recordDownload(widget.wallpaper, file.path);
+      final path = await _ensureLocal();
       if (!mounted) return;
       setState(() {
-        _saving = false;
-        _saveResult = tr('已保存：{path}', {'path': file.path});
+        _busy = false;
+        _result = tr('已保存：{path}', {'path': path});
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _saving = false;
-        _saveResult = tr('保存失败：{e}', {'e': e});
+        _busy = false;
+        _result = tr('保存失败：{e}', {'e': e});
       });
     }
+  }
+
+  /// 保存到本地，并打开自定义壁纸编辑器（预加载该图，由用户调参后保存应用）。
+  Future<void> _saveAndApply() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _result = null;
+    });
+    try {
+      final path = await _ensureLocal();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await _openCustomEditor(path);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _result = tr('保存失败：{e}', {'e': e});
+      });
+    }
+  }
+
+  /// 打开自定义壁纸编辑器并预加载本地壁纸（「应用壁纸」UI 入口）。
+  Future<void> _apply() async {
+    if (_busy) return;
+    final target = _localPath;
+    if (target == null || !File(target).existsSync()) {
+      if (mounted) showXianYuToast(context, tr('请先保存壁纸'));
+      return;
+    }
+    await _openCustomEditor(target);
+  }
+
+  /// 跳转到自定义壁纸编辑器，预加载 [path] 让用户调整后应用（不做任何即时整屏应用）。
+  Future<void> _openCustomEditor(String path) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => WallpaperCustomApplyPage(imagePath: path),
+    ));
+    if (mounted) showXianYuToast(context, tr('请在自定义界面点击「保存并使用」完成应用'));
   }
 
   Future<Uint8List> consolidateBytes(HttpClientResponse res) async {
@@ -380,11 +449,18 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
     } catch (_) {}
   }
 
+  /// 忙碌态小菊花。
+  Widget _spinner({double size = 16}) => SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+            strokeWidth: 2, color: Colors.white),
+      );
+
   @override
   Widget build(BuildContext context) {
     final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
-    final localPath = (widget.wallpaper['localPath'] as String?) ?? '';
-    final hasLocal = localPath.isNotEmpty && File(localPath).existsSync();
+    final hasLocal = _hasLocal;
     final title = (widget.wallpaper['title'] as String?) ?? '';
     return Scaffold(
       backgroundColor: Colors.black,
@@ -399,7 +475,7 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
               maxScale: 4,
               child: Center(
                 child: hasLocal
-                    ? Image.file(File(localPath), fit: BoxFit.contain)
+                    ? Image.file(File(_localPath!), fit: BoxFit.contain)
                     : url.isEmpty
                         ? const Icon(Icons.image_not_supported_outlined,
                             color: Colors.white54, size: 64)
@@ -420,40 +496,59 @@ class _WallpaperPreviewPageState extends State<_WallpaperPreviewPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!hasLocal) ...[
-                    if (_saveResult != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Text(
-                          _saveResult!,
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12),
-                          textAlign: TextAlign.center,
-                        ),
+                  if (_result != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        _result!,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
                       ),
+                    ),
+                  if (!hasLocal) ...[
+                    // 主操作：保存到本地并应用；次操作：仅保存。
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.download_outlined),
-                        label: Text(_saving ? tr('保存中…') : tr('保存壁纸')),
+                        onPressed: _busy ? null : _saveAndApply,
+                        icon: _busy ? _spinner() : const Icon(Icons.check),
+                        label: Text(_busy ? tr('保存并应用中…') : tr('保存并应用')),
                       ),
                     ),
-                  ] else
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _saveOnly,
+                        icon: const Icon(Icons.download_outlined),
+                        label: Text(tr('仅保存到本地')),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // 已保存：打开自定义壁纸编辑器，可调参后应用。
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : _apply,
+                        icon: const Icon(Icons.tune),
+                        label: Text(tr('应用壁纸')),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.tonalIcon(
                         onPressed: null,
-                        icon: const Icon(Icons.check_circle_outline),
-                        label:   Text(tr('已保存到本地')),
+                        icon: const Icon(Icons.cloud_done_outlined),
+                        label: Text(tr('已保存到本地')),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -825,6 +920,14 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
   void initState() {
     super.initState();
     _load();
+    // 下载记录修订号变化（本页或其它入口新增壁纸）时刷新列表。
+    _downloadsRevision.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    _downloadsRevision.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -921,24 +1024,57 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
 
 // ───────────────────────────────────────────────────────────
 // 自定义壁纸（对齐桌面端 CustomSkinModal）
+//
+// 同时作为「壁纸中心-自定义壁纸」Tab 展示，以及「壁纸广场」预览页应用壁纸时
+// 打开的独立编辑页（传入 initialImagePath 预加载下载壁纸，由用户调参后保存）。
 // ───────────────────────────────────────────────────────────
 
-class _CustomWallpaperTab extends ConsumerStatefulWidget {
-  const _CustomWallpaperTab();
+class CustomWallpaperEditor extends ConsumerStatefulWidget {
+  const CustomWallpaperEditor({super.key, this.initialImagePath});
+
+  /// 预加载图片路径；为 null 时读取当前已保存的自定义背景。
+  final String? initialImagePath;
 
   @override
-  ConsumerState<_CustomWallpaperTab> createState() =>
-      _CustomWallpaperTabState();
+  ConsumerState<CustomWallpaperEditor> createState() =>
+      _CustomWallpaperEditorState();
 }
 
-class _CustomWallpaperTabState extends ConsumerState<_CustomWallpaperTab> {
+/// 「应用壁纸」独立编辑页：带返回栏，预加载下载壁纸。
+class WallpaperCustomApplyPage extends StatelessWidget {
+  const WallpaperCustomApplyPage({super.key, required this.imagePath});
+
+  final String imagePath;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(tr('自定义壁纸'))),
+      body: CustomWallpaperEditor(initialImagePath: imagePath),
+    );
+  }
+}
+
+class _CustomWallpaperEditorState
+    extends ConsumerState<CustomWallpaperEditor> {
   late CustomBackground _draft;
 
   @override
   void initState() {
     super.initState();
-    _draft = ref.read(settingsProvider).valueOrNull?.customBackground ??
-        CustomBackground.none;
+    final ip = widget.initialImagePath;
+    if (ip != null && ip.isNotEmpty && File(ip).existsSync()) {
+      // 已下载壁纸预加载：用「清晰档」起步（不整屏模糊），用户可再调。
+      _draft = CustomBackground(
+        imagePath: ip,
+        enabled: true,
+        blur: 0,
+        maskAlpha: 18,
+      );
+    } else {
+      _draft = ref.read(settingsProvider).valueOrNull?.customBackground ??
+          CustomBackground.none;
+    }
   }
 
   Future<void> _pickImage() async {

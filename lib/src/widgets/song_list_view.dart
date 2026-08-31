@@ -254,7 +254,13 @@ class SongsListView extends ConsumerWidget {
         addAutomaticKeepAlives: false,
         itemExtent: rowExtent,
         itemCount: songs.length,
-        itemBuilder: (context, i) => buildRow(i),
+        // 每行包 RepaintBoundary 隔离成独立合成层：滚动时行内的封面/文本只重绘
+        // 自身图层，可被引擎缓存复用，避免整页重绘造成掉帧（与拖拽排序路径对齐）。
+        // key 用「路径 + 下标」复合，防止同一首歌多次出现时的重复 Key 断言。
+        itemBuilder: (context, i) => RepaintBoundary(
+          key: ValueKey('${songs[i].path}_$i'),
+          child: buildRow(i),
+        ),
       );
     }
     return ReorderableListView.builder(

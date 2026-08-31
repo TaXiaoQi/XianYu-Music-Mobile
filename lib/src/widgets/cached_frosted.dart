@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'glass_settings.dart';
-import 'blur_budget.dart' show globalIsScrolling;
+import 'blur_budget.dart' show globalIsScrolling, globalIsTransitioning;
 
 /// 离线缓存毛玻璃表面（替代滚动中每帧全分辨率高斯的 `BackdropFilter`）。
 ///
@@ -104,7 +104,11 @@ class _CachedFrostedState extends State<CachedFrosted> {
     _scrolling = sc;
     if (!sc) {
       // 滚动停止：重新抓屏刷新缓存（延迟到本帧后，确保内容已静止）。
-      WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
+      // 转场期间跳过——平移动效中整屏 toImage 本身就是掉帧源，且此刻
+      // build 走 blit 缓存，保持现状即可；转场结束滚动再停止时才重抓。
+      if (!globalIsTransitioning.value) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
+      }
     }
     if (mounted) setState(() {});
   }
@@ -178,8 +182,13 @@ class _CachedFrostedState extends State<CachedFrosted> {
 
   @override
   Widget build(BuildContext context) {
-    // 内容在滚动 → 存在真相对运动 → 回退实时 BackdropFilter（由预算降级扛）。
-    if (_scrolling || _blurred == null) {
+    // 自己的 backdrop（内容）在滚动 → 存在真相对运动 → 回退实时
+    // BackdropFilter（由预算降级扛）。但**转场期间例外**：平移动效切页时
+    // 新旧两页重叠可见，若此时二级页滚动把全局切成滚动态，被盖一半的设置
+    // 页顶栏会回退成每帧全屏实时高斯 → 切页掉帧。转场时保持 blit 缓存，避免
+    // 每帧全屏模糊；转场结束才按滚动态回退实时。
+    if (_blurred == null ||
+        (_scrolling && !globalIsTransitioning.value)) {
       return ClipRect(
         child: BackdropFilter(
           filter: cheapBackdropBlur(widget.sigma),
@@ -188,11 +197,11 @@ class _CachedFrostedState extends State<CachedFrosted> {
       );
     }
     // 静止 → 直接 blit 缓存模糊图，零逐帧高斯。
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.fill,
-        borderRadius: BorderRadius.circular(widget.radius),
-      ),
+    // 合成顺序必须与实时 BackdropFilter 分支一致：模糊内容垫底 → 半透明
+    // 铺底 fill 盖在其上（压暗/提亮）→ 控件置顶。否则填底色被不透明模糊图
+    // 盖住、无 tint，停下来会显得比滑动时“轻”（三态观感不一致）。
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.radius),
       child: CustomPaint(
         painter: _CachedBlurPainter(
           image: _blurred!,
@@ -200,7 +209,10 @@ class _CachedFrostedState extends State<CachedFrosted> {
           backdropLogicalSize: _backdropLogicalSize,
           scale: _scale,
         ),
-        child: widget.child,
+        child: Container(
+          color: widget.fill,
+          child: widget.child,
+        ),
       ),
     );
   }

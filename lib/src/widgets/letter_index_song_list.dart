@@ -201,18 +201,27 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
           itemBuilder: (context, i) {
             final gIdx = flatGroup[i];
             if (gIdx >= 0) {
-              return _HeaderTile(
-                  letter: groups[gIdx].letter, cou: groups[gIdx].cou);
+              // 分组表头也包一层：滚动时整列表逐行复用缓存，避免整页重绘。
+              return RepaintBoundary(
+                child: _HeaderTile(
+                    letter: groups[gIdx].letter, cou: groups[gIdx].cou),
+              );
             }
             final si = songAt[i];
-            return _SongRowItem(
-              song: songs[si],
-              originalIndex: si,
-              songs: songs,
-              single: single,
-              onPlay: widget.onPlay,
-              highlight: widget.highlight,
-              enableActions: widget.enableActions,
+            // 歌曲行包 RepaintBoundary 隔离合成层：与默认列表路径对齐，
+            // 滚动时只重绘进/出可见区的行，可缓存图层避免掉帧。
+            // key 用分组下标+歌曲原始下标复合，避免重复 Key。
+            return RepaintBoundary(
+              key: ValueKey('${si}_$gIdx'),
+              child: _SongRowItem(
+                song: songs[si],
+                originalIndex: si,
+                songs: songs,
+                single: single,
+                onPlay: widget.onPlay,
+                highlight: widget.highlight,
+                enableActions: widget.enableActions,
+              ),
             );
           },
         ),

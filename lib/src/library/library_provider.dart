@@ -202,11 +202,21 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(loading: true, error: null);
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
-      final songsJson = await getLibrarySongsCached(dbPath: dbPath);
-      final foldersJson = await getLibraryFolders(dbPath: dbPath);
-      final artistsJson = await getLibraryArtistCatalog(dbPath: dbPath);
-      final albumsJson = await getLibraryAlbumCatalog(dbPath: dbPath);
-      final treeJson = await getLibraryHierarchy(dbPath: dbPath);
+      // 并行拉取全部曲库数据源（相互独立、无相互依赖），首屏等待时长从
+      // 「串行求和」降到「最慢一项」。对齐 RwaS 启动并发预热的思路，
+      // 减少本地库首开的白屏等待。
+      final results = await Future.wait<String>([
+        getLibrarySongsCached(dbPath: dbPath),
+        getLibraryFolders(dbPath: dbPath),
+        getLibraryArtistCatalog(dbPath: dbPath),
+        getLibraryAlbumCatalog(dbPath: dbPath),
+        getLibraryHierarchy(dbPath: dbPath),
+      ]);
+      final songsJson = results[0];
+      final foldersJson = results[1];
+      final artistsJson = results[2];
+      final albumsJson = results[3];
+      final treeJson = results[4];
       final folders = (jsonDecode(foldersJson) as List)
           .map((e) => (e as Map<String, dynamic>)['path'] as String? ?? '')
           .where((p) => p.isNotEmpty)
@@ -309,6 +319,24 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     'aiff': ['aif', 'aiff'],
   };
 
+  /// 起始即只从 DB 读取当前已入库歌曲，刷新到 UI（不动 loading/目录/目录树）。
+  /// 用于增量扫描：每扫完一个目录就把该目录已入库结果先展示出来，
+  /// 实现「先扫完先见」，避免全部目录解析完才出第一屏。
+  Future<void> _reloadSongsFromDb() async {
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final songsJson = await getLibrarySongsCached(dbPath: dbPath);
+      final parsed = _parseSongs(songsJson);
+      state = state.copyWith(
+        songs: await _applyCustomOrder(parsed),
+        loading: false,
+        error: null,
+      );
+    } catch (_) {
+      // 增量刷新失败不阻断扫描，最终由 load() 兜底。
+    }
+  }
+
   /// 扫描全部已配置目录，按选定格式白名单入库，返回扫描到的歌曲总数。
   Future<int> scanAllFolders() async {
     final dbPath = await _ref.read(dbPathProvider.future);
@@ -350,6 +378,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         // 单个目录失败不阻断其它目录，但记录错误以便暴露给用户。
         errors.add('$folder: $e');
       }
+      // 该目录扫描已完成（已入库），立即刷新歌曲到 UI，先见先出。
+      await _reloadSongsFromDb();
     }
     await load();
     // 一首都没扫到且有错误时，抛出以便 UI 展示真实原因。
@@ -497,6 +527,13 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// 按专辑 key 取歌曲列表。
   Future<List<Song>> songsByAlbum(String key) async {
+    // 内存快路径：本地页完成加载后 state.songs 已是全量曲库，直接按 albumKey 过滤，
+    // 免去每次开专辑页的 DB 往返 + JSON 反序列化（对齐 RwaS 的内存索引缓存）。
+    // 空命中含「专辑歌曲尚未计入内存 / 正在增量扫描」的可能，回落 DB 兜底。
+    if (!state.loading && state.songs.isNotEmpty) {
+      final hit = state.songs.where((s) => s.albumKey == key).toList();
+      if (hit.isNotEmpty) return hit;
+    }
     final dbPath = await _ref.read(dbPathProvider.future);
     final pathsJson =
         await getLibrarySongPathsByAlbum(dbPath: dbPath, albumKey: key);

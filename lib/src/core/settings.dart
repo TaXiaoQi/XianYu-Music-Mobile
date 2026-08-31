@@ -1059,16 +1059,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
 
   /// 写入自定义壁纸背景。
   ///
-  /// 壁纸模型（2026-08 简化）：壁纸只是「把底色换成壁纸」——页面由
-  /// AppPageBackground 烘焙壁纸底色；其余（前景配色、卡片样式、弹窗配色）
-  /// 与普通模式完全一致，不再有任何联动强制。
-  ///
-  /// 唯一联动：启用壁纸时默认打开毛玻璃材质（壁纸为图片底，玻璃表面半透明
-  /// 透出壁纸更有质感、也更保证可读性）；恢复默认背景时不回改毛玻璃开关。
+  /// 壁纸模型：壁纸只是「把底色换成壁纸」——页面由 AppPageBackground 烘焙
+  /// 壁纸底色；启用壁纸时**不再联动开关毛玻璃**，所有控件底色由玻璃表面
+  /// 在壁纸激活时统一抽成极淡半透明磨砂（见 glass_settings.dart 的
+  /// `wallpaperShouldUseFrosted`），透出壁纸保证可读性。恢复默认背景时
+  /// 同样不回溯任何开关。
   Future<void> setCustomBackground(CustomBackground v) => _save(
       (state.valueOrNull ?? const AppSettings()).copyWith(
-          customBackground: v,
-          frostedGlass: v.enabled ? true : null));
+          customBackground: v));
 
   /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);

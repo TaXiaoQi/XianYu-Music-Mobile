@@ -16,6 +16,7 @@ import 'glass_appbar.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 import 'page_search_bar.dart';
+import 'skin_icon.dart';
 
 /// 横屏全局搜索胶囊：搜索框（点击在右侧容器打开搜索，不开二级路由）+
 /// 听歌识曲入口（mic）。由壳层在右侧容器顶部统一渲染，首页/我的等页面继承使用。
@@ -139,7 +140,7 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
               ),
               const SizedBox(width: 10),
               BiliPaiIconButton(
-                icon: Icons.checkroom,
+                iconChild: const SkinIcon(),
                 tooltip: tr('皮肤'),
                 onTap: () => context.push('/wallpaper'),
               ),
@@ -177,7 +178,7 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.checkroom),
+          icon: const SkinIcon(),
           tooltip: tr('皮肤'),
           onPressed: () => context.push('/wallpaper'),
         ),

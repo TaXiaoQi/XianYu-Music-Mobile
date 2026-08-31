@@ -261,6 +261,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _handlePanStart(DragStartDetails d) {
+    // 拖动开始即视为浮层在动：让 BiliPaiGlass 退回实时背板，避免移盖到别处时
+    // 仍 blit 旧位置的冻结背板（玻璃「没加载」）。
+    setGlobalDragging(true);
     widget.onPanStart?.call(d);
   }
 
@@ -273,11 +276,17 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _handlePanEnd(DragEndDetails d) {
+    setGlobalDragging(false);
     if (widget.onPanEnd != null) {
       widget.onPanEnd!(d);
     } else {
       _defaultPanEnd(d);
     }
+  }
+
+  void _handlePanCancel() {
+    setGlobalDragging(false);
+    widget.onPanCancel?.call();
   }
 
   @override
@@ -325,7 +334,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     // 当前路由子树内只存在一个带 Hero 的播放条：根页面由 shell 播放条承担，
     // 二级页面由页面内嵌播放条承担（shell 在二级页面传 heroTag:null 让位）。
     // 播放页打开时页面播放条隐藏，避免与 shell 播放条同标签 Hero 冲突。
-    final coverWidget = widget.heroTag == null
+    final coverWidget = (widget.heroTag == null || PlayerOpenCover.opening.value)
         ? cover
         : Hero(
             tag: widget.heroTag!,
@@ -409,8 +418,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onPanStart: _handlePanStart,
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
-      onPanCancel: widget.onPanCancel,
-      onTap: () => context.push('/player'),
+      onPanCancel: _handlePanCancel,
+      onTap: () {
+        // 打开播放页转场由 PlayerOpenCoverFly 在播放页自身层手工飞行封面，
+        // 需在 push 前标记打开态：抑制本条的 Hero 源 + 让播放页隐藏真实大封面。
+        PlayerOpenCover.opening.value = true;
+        context.push('/player');
+      },
       behavior: HitTestBehavior.opaque,
       child: liquid
           ? (liquidUseFrosted(ref)
@@ -476,6 +490,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         base: 4,
         budget: budget,
         type: BlurSurfaceType.bottomBar,
+        crispAtRest: true,
       ),
       backgroundColor: bilipaiGlassTint(isDark),
       specular: bilipaiSpecularOf(quality),
@@ -560,7 +575,10 @@ class _RotatingDisc extends ConsumerWidget {
         ? 0.0
         : (position / duration).clamp(0.0, 1.0);
 
-    return SizedBox(
+    // 旋转封面独立成 RepaintBoundary：封面每帧旋转只重绘这一小块图层，
+    // 不再 touch 到整页大边界触发全页重绘，避免播放时列表滚动双重掉帧。
+    return RepaintBoundary(
+      child: SizedBox(
       width: 46,
       height: 46,
       child: CustomPaint(
@@ -587,6 +605,7 @@ class _RotatingDisc extends ConsumerWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

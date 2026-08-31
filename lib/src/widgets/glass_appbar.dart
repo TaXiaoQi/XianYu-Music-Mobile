@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
-import 'blur_budget.dart';
 import 'cached_frosted.dart';
 import 'glass_settings.dart';
 
@@ -75,20 +74,15 @@ class GlassTopBar extends ConsumerWidget {
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
     // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
     final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    // 全局 blur 预算（header 档：滚动/转场时保持模糊，仅缩小输入）。
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final sigma = surfaceBlurSigma(
-      base: 16,
-      budget: budget,
-      type: BlurSurfaceType.header,
-    );
+    // 模糊度跟随「毛玻璃」档位：切换/滑动/停止语义一致（滑动与停止恒定），
+    // 仅转场切页瞬间临时缩档防整页掉帧（见 frostedBlurSigma）。
+    final sigma = frostedBlurSigma(ref);
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (isDark
             ? Colors.white.withValues(alpha: 0.10)
             : Colors.white.withValues(alpha: 0.52));
-    final glassFill =
-        solid ? fill : surfaceFillWithBudget(fill, budget);
+    final glassFill = fill;
     final divider = scheme.onSurface.withValues(alpha: 0.06);
 
     final bar = _bar(context, statusBarHeight);
@@ -113,11 +107,11 @@ class GlassTopBar extends ConsumerWidget {
       );
     }
 
+    // 普通玻璃顶栏：退化为实时 BackdropFilter。sigma 恒定跟随档位，切换/
+    // 滑动/停止三态模糊度表现一致。降采样模糊（cheapBackdropBlur）把高斯
+    // 工作量降为 1/16，在保持一致观感的同时控制成本。
     return ClipRect(
       child: BackdropFilter(
-        // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
-        // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感；按预算缩放。
-        // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16。
         filter: cheapBackdropBlur(sigma),
         child: inner,
       ),

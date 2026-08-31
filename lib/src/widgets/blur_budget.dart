@@ -19,6 +19,16 @@ void markScrollActivity() {
   });
 }
 
+/// 全局浮层拖动状态：播放条/侧栏等浮层被按住拖拽中为 true。区别于滚动/转场，
+/// 拖动会把玻璃平移盖到不同内容上，静止冻结图会错位，故拖动期间 BiliPaiGlass
+/// 须退回实时背板（每帧按当前位置重新采样背景），松开后再在新位置冻结。
+final ValueNotifier<bool> globalIsDragging = ValueNotifier(false);
+
+/// 标记一次浮层拖动开始/结束（start=true / end=false）。
+void setGlobalDragging(bool value) {
+  globalIsDragging.value = value;
+}
+
 /// 全局路由转场状态：push/pop 后 400ms 内为 true（转场动画窗口）。
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);
 Timer? _transitionTimer;
@@ -203,21 +213,23 @@ BlurBudget resolveBlurBudget({
   );
 }
 
+/// 非实时（滚动/转场/降级/液态玻璃静止）档位的模糊输入缩放，按表面类型给出
+/// 比全档更轻的高斯模糊输入。header/bottomBar 明显更轻（0.60/0.70）：
+/// 滚动/转场期间背板逐帧全变，轻化 sigma 可省数倍模糊算力，同时保有一定
+/// 磨砂质感（铺底不透明度不变，不会透底）。
+double nonRealtimeBlurInputScale(BlurSurfaceType type) => switch (type) {
+  BlurSurfaceType.header => 0.60,
+  BlurSurfaceType.drawerOrSheet => 0.84,
+  BlurSurfaceType.bottomBar => 0.70,
+  BlurSurfaceType.overlay => 0.84,
+  BlurSurfaceType.generic => 0.84,
+};
+
 /// 模糊输入缩放：实时模式 1.0；降级（滚动/转场/低动态）时按表面类型缩小
 /// 高斯模糊输入，省算力同时保留一定玻璃质感。
-///
-/// header/bottomBar 运动档明显加深（0.88/0.82 → 0.60/0.70）：滚动/转场期间
-/// 背板逐帧全变，全部玻璃每帧全量重算高斯模糊，sigma 减半可省数倍模糊算力。
-/// 铺底不透明度不变（surfaceFillWithBudget 恒定），磨砂感仍在、不会透底。
 double resolveBlurInputScale(BlurBudget budget, BlurSurfaceType type) {
   if (budget.allowRealtime) return 1.0;
-  return switch (type) {
-    BlurSurfaceType.header => 0.60,
-    BlurSurfaceType.drawerOrSheet => 0.84,
-    BlurSurfaceType.bottomBar => 0.70,
-    BlurSurfaceType.overlay => 0.84,
-    BlurSurfaceType.generic => 0.84,
-  };
+  return nonRealtimeBlurInputScale(type);
 }
 
 /// 结合预算得到表面实际高斯模糊 sigma。
@@ -227,12 +239,16 @@ double surfaceBlurSigma({
   required double base,
   required BlurBudget budget,
   required BlurSurfaceType type,
+  bool crispAtRest = false,
 }) {
   final levelScale = switch (budget.maxBlurLevel) {
     0 => 0.6,
     _ => 1.0,
   };
-  return base * levelScale * resolveBlurInputScale(budget, type);
+  final inputScale = crispAtRest
+      ? nonRealtimeBlurInputScale(type)
+      : resolveBlurInputScale(budget, type);
+  return base * levelScale * inputScale;
 }
 
 /// 结合预算调整半透明铺底 alpha（预算不足时更透）。

@@ -12,6 +12,7 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/page_search_bar.dart';
+import '../../src/widgets/skin_icon.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -122,7 +123,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               actions: [
                 // 皮肤（壁纸中心）入口：与我的页账号区的扫码入口位置互换
                 IconButton(
-                  icon: const Icon(Icons.checkroom),
+                  icon: const SkinIcon(),
                   tooltip: tr('皮肤'),
                   onPressed: () => context.push('/wallpaper'),
                 ),

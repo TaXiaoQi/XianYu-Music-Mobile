@@ -91,8 +91,8 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
           final count = await Navigator.of(context, rootNavigator: true)
               .push<int>(
                   MaterialPageRoute(builder: (_) => const FolderPickerPage()));
-          if (count != null && mounted) {
-            _toast(count > 0 ? '已添加扫描目录，扫描到 $count 首' : tr('已添加扫描目录'));
+          if (count != null && count > 0 && mounted) {
+            _toast(count > 1 ? '已添加 $count 个扫描目录' : tr('已添加扫描目录'));
           }
           return;
         }
@@ -127,14 +127,9 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
       if (treeUri == null) return;
       await SafChannel.persistPermission(treeUri);
       await ref.read(scanFoldersProvider.notifier).addFolder(treeUri);
-      String msg;
-      try {
-        final count = await ref.read(libraryProvider.notifier).scanAllFolders();
-        msg = '已添加扫描目录，扫描到 $count 首';
-      } catch (e) {
-        msg = '已添加扫描目录，但扫描失败：$e';
-      }
-      if (mounted) _toast(msg);
+      // 只注册扫描目录，不在此触发全库扫描（否则会一直卡在添加页面等扫完）。
+      // 歌曲扫描改由文件夹页/顶栏手动触发。
+      if (mounted) _toast('已添加扫描目录');
     } catch (e) {
       if (mounted) _toast(tr('添加失败：{e}', {'e': e}));
     } finally {
@@ -154,14 +149,8 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         await ref.read(scanFoldersProvider.notifier).removeFolder(treeUri);
         await ref.read(scanFoldersProvider.notifier).addFolder(newUri);
       }
-      String msg;
-      try {
-        final count = await ref.read(libraryProvider.notifier).scanAllFolders();
-        msg = tr('重新授权成功，扫描到 {n} 首', {'n': count});
-      } catch (e) {
-        msg = tr('重新授权完成，但扫描失败：{e}', {'e': e});
-      }
-      if (mounted) _toast(msg);
+      // 只完成授权，不在此触发全库扫描（避免卡在选择页）。
+      if (mounted) _toast(tr('重新授权成功'));
     } catch (e) {
       if (mounted) _toast(tr('重新授权失败：{e}', {'e': e}));
     } finally {

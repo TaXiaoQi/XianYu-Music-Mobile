@@ -29,6 +29,7 @@ import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../widgets/floating_search_bar.dart';
+import '../widgets/skin_icon.dart';
 import '../widgets/flat_top_bar.dart';
 import '../widgets/glass_appbar.dart' show GlassTopBar;
 import '../widgets/landscape_top_bar.dart';
@@ -56,13 +57,6 @@ const double kLandscapeRailWidth = 176;
 /// 横屏时导航自动切换为侧边形态、无底部栏，页面底部只需为准占播放条留白，
 /// 侧边栏浮层不参与布局，故左缘由需要避让的页面自行判断。
 final isLandscapeProvider = StateProvider<bool>((ref) => false);
-
-/// 原生系统方向：0 未知 / 1 竖 / 2 横（`Configuration.ORIENTATION_*`）。
-///
-/// 由 Android `onConfigurationChanged` 在旋转一开始即推送，作为横竖屏判定的
-/// 权威来源——布局据此在旋转开始就切换；事件未到（或不支持）时保持 0，
-/// 由 [isLandscapeProvider] 的尺寸判定兜底。
-final rotationProvider = StateProvider<int?>((ref) => null);
 
 /// 横屏侧边栏「音乐库」当前选中的入口（0本地/1收藏/2最近/3歌单），null 表示
 /// 未选中（右侧显示主 tab）。选中后右侧直接内嵌对应页面，不进入二级路由，
@@ -407,24 +401,24 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
     _router.routerDelegate.addListener(_onRouteChanged);
     // 订阅原生旋转事件：旋转一开始（onConfigurationChanged）即推送屏幕方向，
-    // 提前更新横竖屏状态，避免等视图尺寸到位才切导致的页面跳变。
+    // 立刻切横竖屏布局，尽量第一帧出横屏，缩短系统旋转期间「拉伸竖屏」的停留。
+    // 尺寸判定（didChangeMetrics）保留作兜底。
     _rotationSub = const EventChannel('xianyu/rotation/events')
         .receiveBroadcastStream()
         .listen(_onRotationEvent, onError: (_) {});
   }
 
-  /// 接收原生屏幕方向（0 未知 / 1 竖 / 2 横），旋转一开始即切横竖屏布局。
+  /// 接收原生屏幕方向（1 竖 / 2 横），旋转一开始即切横竖屏布局。
   void _onRotationEvent(Object? e) {
     if (!mounted) return;
     final v = e is num ? e.toInt() : null;
     if (v == null) return;
-    ref.read(rotationProvider.notifier).state = v;
     if (v == 1) {
       ref.read(isLandscapeProvider.notifier).state = false;
     } else if (v == 2) {
       ref.read(isLandscapeProvider.notifier).state = true;
     }
-    // v == 0（未知）：交给尺寸判定兜底，这里不覆盖。
+    // 其他值：交给尺寸判定兜底，这里不覆盖。
   }
 
   /// 路由匹配变化（push/pop）时跟手更新是否处于根路径，并顺带清掉漂移的
@@ -448,6 +442,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     WidgetsBinding.instance.removeObserver(this);
     _router.routerDelegate.removeListener(_onRouteChanged);
     _libPaneMountTimer?.cancel();
+    _rotationSub?.cancel();
     super.dispose();
   }
 
@@ -1348,7 +1343,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                       child: _JellySwitch(
                         key: _jellyKey,
                         mode: true,
-                        child: _LiquidNavBar(index: widget.index, onSelect: select),
+                        child:
+                            _LiquidNavBar(index: widget.index, onSelect: select),
                       ),
                     ),
                   ),
@@ -1413,7 +1409,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     actions: [
                       if (widget.index == 0)
                         BiliPaiIconButton(
-                          icon: Icons.checkroom,
+                          iconChild: const SkinIcon(),
                           tooltip: tr('皮肤'),
                           onTap: () => context.push('/wallpaper'),
                         )
@@ -1730,6 +1726,7 @@ class _LiquidNavBar extends ConsumerWidget {
         base: 4,
         budget: budget,
         type: BlurSurfaceType.bottomBar,
+        crispAtRest: true,
       ),
       backgroundColor: bilipaiGlassTint(isDark),
       specular: bilipaiSpecularOf(quality),
@@ -2643,6 +2640,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
   void _onPanStart(DragStartDetails details) {
     _dragDistance = 0;
     _isDragging = true;
+    setGlobalDragging(true);
   }
 
   void _onPanUpdate(
@@ -2682,6 +2680,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         _isDragging = false;
       });
     }
+    setGlobalDragging(false);
     // 移动距离极小（< 6 像素）判定为轻触点击
     if (_dragDistance < 6) {
       widget.onToggleExpand();
@@ -2694,6 +2693,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         _isDragging = false;
       });
     }
+    setGlobalDragging(false);
   }
 
   @override
@@ -2872,6 +2872,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 base: 4,
                 budget: budget,
                 type: BlurSurfaceType.drawerOrSheet,
+                crispAtRest: true,
               ),
               backgroundColor: bilipaiGlassTint(isDark),
               specular: bilipaiSpecularOf(quality),

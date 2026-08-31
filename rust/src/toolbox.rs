@@ -227,6 +227,7 @@ pub fn refresh_folder_songs(
     conn: Arc<Mutex<rusqlite::Connection>>,
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    cover_cache_dir: Option<PathBuf>,
 ) -> Result<Vec<crate::music::types::Song>, String> {
     let validated = path_validator::validate_path(&folder_path, None)?;
     let folder_path = validated.to_string_lossy().to_string();
@@ -238,6 +239,7 @@ pub fn refresh_folder_songs(
         1,
         1,
         crate::music::scanner::ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds),
+        cover_cache_dir,
     )
 }
 

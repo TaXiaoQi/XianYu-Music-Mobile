@@ -35,45 +35,50 @@ class Announcement {
       );
 }
 
-/// 关于页配置（get_about_config）。
+/// 关于页致谢名单成员：名字 + 主页链接。
+class AcknowledgementItem {
+  final String name;
+  final String url;
+  const AcknowledgementItem({required this.name, this.url = ''});
+
+  factory AcknowledgementItem.fromJson(Map<String, dynamic> j) =>
+      AcknowledgementItem(
+        name: (j['name'] ?? '').toString(),
+        url: (j['url'] ?? '').toString(),
+      );
+}
+
+/// 关于页配置（get_about_config）。只下发链接，按钮显示文字由客户端按语言本地化。
 class AboutConfig {
   final String officialSiteUrl;
-  final String officialSiteText;
   final bool updateEnabled;
-  final String updateText;
   final String projectUrl;
-  final String projectText;
   final String referenceProjectUrl;
-  final String referenceProjectText;
   final String joinGroupUrl;
-  final String joinGroupText;
+  final List<AcknowledgementItem> acknowledgements;
   const AboutConfig({
     this.officialSiteUrl = 'https://www.xianyumusic.cn',
-    this.officialSiteText = '前往官网',
     this.updateEnabled = true,
-    this.updateText = '检查更新',
     this.projectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Mobile',
-    this.projectText = '开源地址',
     this.referenceProjectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-    this.referenceProjectText = '参考项目',
     this.joinGroupUrl = '',
-    this.joinGroupText = '加入群组',
+    this.acknowledgements = const [],
   });
 
   factory AboutConfig.fromJson(Map<String, dynamic> j) => AboutConfig(
         officialSiteUrl: (j['officialSiteUrl'] ?? '').toString(),
-        officialSiteText: (j['officialSiteText'] ?? tr('前往官网')).toString(),
         updateEnabled: (j['updateEnabled'] as bool?) ?? true,
-        updateText: (j['updateText'] ?? tr('检查更新')).toString(),
-        projectUrl: (j['projectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Mobile')
-            .toString(),
-        projectText: (j['projectText'] ?? tr('开源地址')).toString(),
+        projectUrl:
+            (j['projectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Mobile')
+                .toString(),
         referenceProjectUrl:
             (j['referenceProjectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Desktop')
                 .toString(),
-        referenceProjectText: (j['referenceProjectText'] ?? tr('参考项目')).toString(),
         joinGroupUrl: (j['joinGroupUrl'] ?? '').toString(),
-        joinGroupText: (j['joinGroupText'] ?? tr('加入群组')).toString(),
+        acknowledgements: (j['acknowledgements'] as List?)
+                ?.map((e) => AcknowledgementItem.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 }
 

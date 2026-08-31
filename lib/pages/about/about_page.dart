@@ -87,18 +87,90 @@ class _AboutPageState extends ConsumerState<AboutPage> {
 
   Future<void> _openUrl(String url) async => openExternalUrl(context, url);
 
+  /// 点击「致谢名单」弹出的名单弹窗，成员可点击跳转主页。
+  Future<void> _showAcknowledgements(List<AcknowledgementItem> items) {
+    final scheme = Theme.of(context).colorScheme;
+    final chipItems = List<AcknowledgementItem>.from(items);
+    return showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          decoration: BoxDecoration(
+            color: appCardColor(context),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 24,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(tr('致谢名单'),
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text(
+                tr('感谢以下项目创意或功能的贡献者，排名不分先后'),
+                textAlign: TextAlign.center,
+                style:
+                    TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              if (chipItems.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    tr('暂无致谢名单'),
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final it in chipItems)
+                      _DeveloperChip(name: it.name, url: it.url, onOpen: _openUrl),
+                  ],
+                ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 32, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(tr('知道了')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final links = <({IconData icon, String label, String url})>[
       if (_config.officialSiteUrl.isNotEmpty)
-        (icon: Icons.language, label: tr(_config.officialSiteText), url: _config.officialSiteUrl),
+        (icon: Icons.language, label: tr('前往官网'), url: _config.officialSiteUrl),
       if (_config.joinGroupUrl.isNotEmpty)
-        (icon: Icons.group, label: tr(_config.joinGroupText), url: _config.joinGroupUrl),
+        (icon: Icons.group, label: tr('加入群组'), url: _config.joinGroupUrl),
       if (_config.projectUrl.isNotEmpty)
-        (icon: Icons.code, label: tr(_config.projectText), url: _config.projectUrl),
+        (icon: Icons.code, label: tr('开源地址'), url: _config.projectUrl),
       if (_config.referenceProjectUrl.isNotEmpty)
-        (icon: Icons.book_outlined, label: tr(_config.referenceProjectText), url: _config.referenceProjectUrl),
+        (icon: Icons.book_outlined, label: tr('参考项目'), url: _config.referenceProjectUrl),
     ];
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -164,7 +236,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.system_update_alt, size: 18),
-              label: Text(_checkingUpdate ? tr('检查中…') : tr(_config.updateText)),
+              label: Text(_checkingUpdate ? tr('检查中…') : tr('检查更新')),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -187,20 +259,24 @@ class _AboutPageState extends ConsumerState<AboutPage> {
               ),
               child: Column(
                 children: [
-                  for (var i = 0; i < links.length; i++) ...[
+                  for (final item in links) ...[
                     ListTile(
-                      leading: Icon(links[i].icon, color: scheme.primary),
-                      title: Text(links[i].label),
+                      leading: Icon(item.icon, color: scheme.primary),
+                      title: Text(item.label),
                       trailing: Icon(Icons.open_in_new,
                           size: 16, color: scheme.outline),
-                      onTap: () => _openUrl(links[i].url),
+                      onTap: () => _openUrl(item.url),
                     ),
-                    if (i != links.length - 1)
-                      Divider(
-                          height: 1,
-                          indent: 52,
-                          color: scheme.outlineVariant),
+                    Divider(height: 1, indent: 52, color: scheme.outlineVariant),
                   ],
+                  if (_config.acknowledgements.isNotEmpty)
+                    ListTile(
+                      leading: Icon(Icons.favorite_outline, color: scheme.primary),
+                      title: Text(tr('致谢名单')),
+                      trailing: Icon(Icons.chevron_right,
+                          size: 18, color: scheme.outline),
+                      onTap: () => _showAcknowledgements(_config.acknowledgements),
+                    ),
                 ],
               ),
             ),
