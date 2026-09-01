@@ -156,13 +156,13 @@ LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(
         LiquidGlassQuality.medium));
 
 /// BiliPai 化液态玻璃折射强度（边缘透镜最大位移）按档位映射。
+/// 对齐原版三档配方：CLEAR 24 / BALANCED 24 / FROSTED 8（重磨砂档折射收敛）。
+/// 逻辑像素 = BiliPai refractionAmount（64dp dock 名义 24dp），剖面为原版
+/// circleMap 圆弧曲线。
 double bilipaiRefractOf(LiquidGlassQuality q) => switch (q) {
-      // 逻辑像素 = BiliPai refractionAmount（64dp dock 名义 24dp）。剖面已
-      // 换成原版 circleMap 圆弧曲线（位移集中在贴边一圈），可以回到原版
-      // 位移量级；medium 略收敛适配矮表面。
-      LiquidGlassQuality.low => 6.0,
-      LiquidGlassQuality.medium => 16.0,
-      LiquidGlassQuality.high => 24.0,
+      LiquidGlassQuality.low => 24.0,
+      LiquidGlassQuality.medium => 24.0,
+      LiquidGlassQuality.high => 8.0,
     };
 
 /// BiliPai 化液态玻璃色差强度按档位映射。
@@ -175,39 +175,51 @@ double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃预乘混合底色：对齐原版 FloatingDockChrome 的
-/// `surfaceColor = 主题 surfaceContainer × surfaceAlpha`（balanced 0.40）——
-/// 亮色为白 0.40；暗色原版是暗色 surfaceContainer，即深灰烟熏玻璃
-/// （此前暗色用白色 0.26 薄纱，透明度过高且发灰）。
-Color bilipaiGlassTint(bool isDark) => isDark
-    ? const Color(0x6626262A)
-    : const Color(0x66FFFFFF);
+/// `surfaceColor = 主题 surfaceContainer × surfaceAlpha`（clear/balanced
+/// 0.40，frosted 0.54）——亮色为白；暗色原版是暗色 surfaceContainer，
+/// 即深灰烟熏玻璃（此前暗色用白色 0.26 薄纱，透明度过高且发灰）。
+Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
+  final a = quality == LiquidGlassQuality.high ? 0.54 : 0.40;
+  return isDark
+      ? Color.fromARGB((a * 255).round(), 0x26, 0x26, 0x2A)
+      : Color.fromARGB((a * 255).round(), 0xFF, 0xFF, 0xFF);
+}
 
 /// BiliPai 化液态玻璃表面流动高光强度（滚动时在玻璃上扫过的反光带）。
-/// low 走伪液态不经 shader；中/高档映射高光强度。
+/// 全档真液态：低档轻量高光，中/高档渐强。
 double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
-      LiquidGlassQuality.low => 0.0,
+      LiquidGlassQuality.low => 0.20,
       LiquidGlassQuality.medium => 0.38,
       LiquidGlassQuality.high => 0.55,
     };
 
-/// BiliPai 化液态玻璃边缘透镜折射幅度（逻辑像素）按档位映射。
-/// 固定厚度边带内 circleMap 圆弧衰减、SDF 外向位移，把玻璃外的内容拉进
-/// 边缘一圈，形成可见的液态折射环；low 走伪液态毛玻璃不经 shader。
-double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
+/// BiliPai 化液态玻璃背景模糊半径（逻辑像素）按档位映射。
+/// 对齐原版 LiquidGlassTuning 三档配方：低=CLEAR 0 / 中=BALANCED 4dp /
+/// 高=FROSTED 24dp——「液态感」的核心是 CLEAR 档零模糊水晶玻璃；
+/// BALANCED 是原版默认观感；FROSTED 重磨砂接近毛玻璃但折射/饱和仍按
+/// 液态配方走。
+double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
-      // 边带厚度 = BiliPai refractionHeight（64dp dock 名义 24dp）。剖面换成
-      // 原版 circleMap 后位移集中在贴边 1/2 带内（半带处仅 ~13%），带可以
-      // 开回原版量级而不「还没靠近就弯」；小表面另有 0.42×短边安全钳制。
-      LiquidGlassQuality.medium => 16.0,
+      LiquidGlassQuality.medium => 4.0,
       LiquidGlassQuality.high => 24.0,
     };
 
+/// BiliPai 化液态玻璃边缘透镜折射幅度（逻辑像素）按档位映射。
+/// 边带厚度 = BiliPai refractionHeight：低/中档 24dp（64dp dock 名义值），
+/// 高档 FROSTED 收敛 8dp。剖面为原版 circleMap，位移集中在贴边 1/2 带内
+/// （半带处仅 ~13%），不会「还没靠近就弯」；小表面另有 0.42×短边安全钳制。
+double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
+      LiquidGlassQuality.low => 24.0,
+      LiquidGlassQuality.medium => 24.0,
+      LiquidGlassQuality.high => 8.0,
+    };
+
 /// BiliPai 化液态玻璃饱和度增益按档位映射。
-/// 原版 balanced 档 saturation 1.5（水晶透亮感核心），frosted 档 1.24。
+/// 原版 clear/balanced 档 1.5（水晶透亮感核心），frosted 档收敛 1.24。
 double bilipaiSaturationOf(LiquidGlassQuality q) => switch (q) {
-      LiquidGlassQuality.low => 1.0,
-      LiquidGlassQuality.medium => 1.45,
-      LiquidGlassQuality.high => 1.5,
+      LiquidGlassQuality.low => 1.5,
+      LiquidGlassQuality.medium => 1.5,
+      LiquidGlassQuality.high => 1.24,
     };
 
 /// 玻璃表面是否回退为「高不透明度纯色」（关闭毛玻璃 / 低性能模式）。
@@ -227,6 +239,12 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
       true);
 }
 
+/// 底栏/悬浮顶栏显隐动画窗口开关：二级页进出（navBarHidden 计数切换）时这些
+/// 玻璃表面要经过 Opacity/Scale 动画，BackdropFilter 处于透明度动画层内背板
+/// 采样会渲染成黑帧（表现为「返回一级时玻璃黑一下再加载」）。动画窗口内置
+/// true，相关表面强制纯色铺底，动画结束后恢复毛玻璃。仅在竖屏由壳层驱动。
+final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
+
 /// 高斯模糊 filter 缓存（渲染一次、保存状态）。
 ///
 /// Impeller 下新建 `ImageFilter` 即新管线对象，玻璃表面随 provider 变化频繁
@@ -234,7 +252,6 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
 /// 按 sigma 缓存复用同一实例；缓存超上限整体清空防膨胀（sigma 由离散档位
 /// ×dpr 组成，实际取值很少）。
 final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
-
 /// 取（或创建并缓存）[sigma] 对应的高斯模糊 filter。
 ImageFilter cachedBlur(double sigma) {
   final hit = _blurFilterCache[sigma];
@@ -272,22 +289,12 @@ ImageFilter cheapBackdropBlur(double sigma, {int downscale = 4}) {
   );
 }
 
-/// 液态玻璃最低档（low）用「伪液态毛玻璃」伪造，不跑 shader。
+/// 伪液态毛玻璃表面（液态玻璃关闭时的毛玻璃回退实现）。
 ///
-/// 低档不再走 `AdaptiveGlass`（即便 minimal 也要片元着色器），改用
-/// [pseudoLiquidSurface]：更淡的高斯模糊 + 更透明的底，模拟液态玻璃的
-/// 通透观感，零 shader 开销。中档走真液态（standard 轻量片元着色器）。
-bool liquidUseFrosted(WidgetRef ref) =>
-    ref.watch(settingsProvider.select((s) =>
-        s.valueOrNull?.liquidGlassQuality ?? LiquidGlassQuality.medium)) ==
-    LiquidGlassQuality.low;
-
-/// 伪液态毛玻璃表面（液态玻璃 low 档的伪造实现）。
-///
-/// 直接借用毛玻璃「轻度」档（frostedBlurScaleOf(light) = 0.16）伪装液态玻璃——
-/// 极淡模糊（base 8 × 0.16 ≈ 1.3）+ 透明底，实测观感最像液态玻璃；
+/// 借用毛玻璃档位缩放（frostedBlurScaleOf）做「透明底 + 淡模糊」表面：
 /// 低性能模式 → 高不透明度纯色回退。传入 [budget] 时按全局 blur 预算动态
 /// 缩放 sigma、并用铺底透明度补偿（滚动/转场期间降级，接入统一预算策略）。
+/// 液态玻璃开启时不再走这里（全档真液态 shader）。
 Widget pseudoLiquidSurface({
   required BuildContext context,
   required WidgetRef ref,
@@ -300,6 +307,10 @@ Widget pseudoLiquidSurface({
   // frostedBlurScale(ref) 跟随用户档位）；不传（液态 low 档伪液态）默认用
   // 毛玻璃「轻度」档 0.16。
   double? frostedScale,
+  // true 时无视玻璃设置直接纯色铺底（跳过 BackdropFilter/shader）。
+  // 用于底栏/悬浮顶栏的显隐动画窗口：BackdropFilter 处于 Opacity 动画层内
+  // 背板采样会渲染成黑帧（「玻璃黑一下再加载」），动画期间强制纯色。
+  bool forceSolid = false,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
@@ -308,7 +319,7 @@ Widget pseudoLiquidSurface({
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? true));
   final wallTransparent = wallpaper && !frostedOn;
-  final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
   // 壁纸模式：导航类表面（悬浮顶栏 header、底栏/迷你播放条 bottomBar）保持磨砂
   // 模糊（壁纸且毛玻璃关闭时用 wallpaperNavGlassFill + 最深固定模糊）；毛玻璃
   // 开启时全部表面按用户档位正常渲染玻璃，其余表面维持全透明透出壁纸。

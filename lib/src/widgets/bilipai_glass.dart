@@ -20,7 +20,8 @@ typedef BackingOverlayCallback =
 /// - 着色器经 `BackdropFilterLayer` + `ImageFilter.shader` 绑定背景采样
 ///   （第一个 sampler 由引擎绑定到玻璃下方的实时内容），无需像旧 LiquidWave
 ///   那样整页离屏捕获，成本更低；
-/// - 中/高档真液态档位生效；低档（伪液态毛玻璃）走 [pseudoLiquidSurface]。
+/// - 全档真液态生效（BiliPai 三档配方：低/中=CLEAR 零模糊、高=BALANCED
+///   4dp）；液态玻璃关闭时的毛玻璃回退走 [pseudoLiquidSurface]。
 ///
 /// **静止缓存（停下不动缓存当前效果）**：玻璃只分「背板」与「内容」两层——
 ///   背板（模糊 + 液态折射 + 底色）是昂贵的实时 BackdropFilter；内容（封面/
@@ -725,7 +726,11 @@ class RenderLiquidBacking extends RenderBox {
           ui.ImageFilter.blur(sigmaX: targetSigma, sigmaY: targetSigma);
       _cachedBlurSigma = targetSigma;
     }
-    final blurLayer = _blurHandle.layer ??= BackdropFilterLayer();
+    // 层对象每帧新建（句柄只保留最新一层供 dispose 清理）：复用同一
+    // BackdropFilterLayer 时，Impeller 对 shader 背板快照按层实例缓存，
+    // 玻璃平移（层位置变化、背后内容不变）时不会重新快照——拖动播放条
+    // 「折射效果留在原地」的根因。新建层实例强制引擎每帧重新抓背板。
+    final blurLayer = _blurHandle.layer = BackdropFilterLayer();
     blurLayer.filter = _cachedBlurFilter!;
 
     final clipPath = Path()
@@ -769,7 +774,7 @@ class RenderLiquidBacking extends RenderBox {
       ..setFloat(18, _depthEffect)
       ..setFloat(19, uiTime);
 
-    final shaderLayer = _shaderHandle.layer ??= BackdropFilterLayer();
+    final shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
     shaderLayer.filter = ui.ImageFilter.shader(_shader);
 
     _clipHandle.layer = context.pushClipPath(
@@ -786,7 +791,6 @@ class RenderLiquidBacking extends RenderBox {
         // 十字淡变：在实时背板之上叠冻结图。
         overlay?.call(context, offset);
       },
-      oldLayer: _clipHandle.layer,
     );
   }
 

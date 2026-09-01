@@ -422,17 +422,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       onTap: () => context.push('/player'),
       behavior: HitTestBehavior.opaque,
       child: liquid
-          ? (liquidUseFrosted(ref)
-              ? pseudoLiquidSurface(
-                  context: context,
-                  ref: ref,
-                  radius: 999,
-                  child: content,
-                  lowPerf: lowPerf,
-                  surfaceType: BlurSurfaceType.bottomBar,
-                  budget: budget,
-                )
-              : _liquidSurface(context, content))
+          ? _liquidSurface(context, content)
           : _frostedSurface(context, content,
               lowPerf: lowPerf, budget: budget),
     );
@@ -482,15 +472,19 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
       blurSigma: surfaceBlurSigma(
-        base: 4,
+        base: bilipaiBackdropBlurOf(quality),
         budget: budget,
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiGlassTint(isDark),
+      backgroundColor: bilipaiGlassTint(isDark, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
+      // 播放条可拖拽/平移盖到不同内容上，不能容忍「静止冻结背板」在拖动时
+      // 错位（旧位置的液态折射固化在原地、新位置没有折射）。开启常驻实时：
+      // 关闭抓屏冻结，背板始终实时采样跟随，涟漪常转提供拖动时的液态观感。
+      alwaysLive: true,
       child: SizedBox(height: 58, child: content),
     );
   }

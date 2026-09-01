@@ -106,30 +106,19 @@ class FloatingGlassSurface extends ConsumerWidget {
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     if (liquid) {
-      // 液态玻璃低档：不跑 shader，用伪液态毛玻璃伪造（透明底 + 淡模糊）。
-      if (liquidUseFrosted(ref)) {
-        return pseudoLiquidSurface(
-          context: context,
-          ref: ref,
-          radius: radius,
-          child: child,
-          lowPerf: lowPerf,
-          surfaceType: BlurSurfaceType.header,
-          budget: budget,
-        );
-      }
+      // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       return BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 4,
+          base: bilipaiBackdropBlurOf(quality),
           budget: budget,
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiGlassTint(isDark),
+        backgroundColor: bilipaiGlassTint(isDark, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -194,30 +183,19 @@ class BiliPaiPill extends ConsumerWidget {
     );
 
     if (liquid) {
-      // 液态玻璃低档：不跑 shader，用伪液态毛玻璃伪造（透明底 + 淡模糊）。
-      if (liquidUseFrosted(ref)) {
-        return pseudoLiquidSurface(
-          context: context,
-          ref: ref,
-          radius: radius,
-          child: content,
-          lowPerf: lowPerf,
-          surfaceType: BlurSurfaceType.header,
-          budget: budget,
-        );
-      }
+      // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       return BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 4,
+          base: bilipaiBackdropBlurOf(quality),
           budget: budget,
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiGlassTint(isDark),
+        backgroundColor: bilipaiGlassTint(isDark, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -462,6 +440,7 @@ class FloatingSearchTopBar extends StatelessWidget {
     this.onBack,
     this.action,
     this.tabPill,
+    this.bottomPill,
   });
 
   /// 搜索输入/展示胶囊（[FloatingGlassSearchField] 或自定义）。
@@ -475,6 +454,9 @@ class FloatingSearchTopBar extends StatelessWidget {
 
   /// 可选第二行悬浮 Tab 气泡。
   final Widget? tabPill;
+
+  /// 可选第三行悬浮气泡（如搜索结果页/榜单页的音源来源切换条）。
+  final Widget? bottomPill;
 
   @override
   Widget build(BuildContext context) {
@@ -498,6 +480,10 @@ class FloatingSearchTopBar extends StatelessWidget {
         if (tabPill != null) ...[
           const SizedBox(height: 10),
           tabPill!,
+        ],
+        if (bottomPill != null) ...[
+          const SizedBox(height: 10),
+          bottomPill!,
         ],
       ],
     );
