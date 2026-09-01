@@ -33,6 +33,7 @@ class GlassTopBar extends ConsumerWidget {
     this.bottom,
     this.titleSpacing,
     this.flatBackdrop = false,
+    this.forceSolid = false,
   });
 
   final Widget? leading;
@@ -40,6 +41,11 @@ class GlassTopBar extends ConsumerWidget {
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
   final double? titleSpacing;
+
+  /// true 时无视玻璃设置直接纯色铺底（跳过 BackdropFilter）。用于壳层固定
+  /// 顶栏的显隐动画窗口（[chromeGlassSettlingProvider]）：BackdropFilter 处于
+  /// Opacity 动画层内背板采样会渲染成黑帧，动画期间强制纯色。
+  final bool forceSolid;
 
   /// 扁平背板：顶栏下方为已知固定的纯色（无内容穿过）时置 true，跳过
   /// `BackdropFilter` 全屏离屏合成，直接用铺底填充——视觉不变、成本归零。
@@ -65,7 +71,7 @@ class GlassTopBar extends ConsumerWidget {
     );
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
     // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
-    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
     // 固定顶栏：模糊度恒定最深，不跟随「毛玻璃强度」档位、不随壁纸/滚动
     // 预算变化（见 kNavSurfaceBlurSigma）。四处玻璃表面观感统一、切换/
