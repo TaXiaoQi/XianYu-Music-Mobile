@@ -225,7 +225,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 ),
                           isDense: true,
                           filled: true,
-                          fillColor: appCardColor(context),
+                          fillColor: appCardFill(context, ref),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -586,7 +586,7 @@ class _SubscriptionSection extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -798,7 +798,7 @@ class _PluginCard extends ConsumerWidget {
             : tr('未知');
 
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
@@ -1493,7 +1493,7 @@ class _InstallOption extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
