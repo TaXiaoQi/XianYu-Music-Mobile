@@ -2043,56 +2043,93 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.downloadPath ?? '';
-    final controller = TextEditingController(text: cur);
-    final action = await showSheetDialog<Object?>(
+    final curPath = s?.downloadPath ?? '';
+    final isDefault = curPath.isEmpty;
+
+    final action = await showSheetDialog<String?>(
       context,
       (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-              Text(tr('下载路径'), style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
             Text(
-              tr('留空使用默认下载目录'),
+              tr('下载路径'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isDefault
+                  ? tr('当前使用默认下载目录')
+                  : tr('当前路径：{path}', {'path': curPath}),
               style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(ctx).colorScheme.outline,
+                fontSize: 13,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration:   InputDecoration(
-                labelText: tr('路径'),
-                hintText: tr('例如 /storage/emulated/0/Music'),
-                border: OutlineInputBorder(),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              icon: const Icon(Icons.folder_open_outlined, size: 20),
+              label: Text(tr('选择系统文件夹')),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
+              onPressed: () => Navigator.pop(ctx, 'pick'),
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, 'default'),
-                  child:   Text(tr('恢复默认')),
+            if (!isDefault) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.restore_outlined, size: 20),
+                label: Text(tr('恢复默认下载目录')),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                  child:   Text(tr('确定')),
-                ),
-              ],
-            ),
+                onPressed: () => Navigator.pop(ctx, 'default'),
+              ),
+            ],
           ],
         ),
       ),
     );
+
     if (action == null) return;
-    final path = action == 'default' ? '' : action as String;
-    await ref.read(settingsProvider.notifier).setDownloadPath(path);
+
+    if (action == 'default') {
+      await ref.read(settingsProvider.notifier).setDownloadPath('');
+      if (context.mounted) {
+        showXianYuToast(context, tr('已恢复默认下载目录'));
+      }
+      return;
+    }
+
+    if (action == 'pick') {
+      try {
+        final selectedDir = await FilePicker.getDirectoryPath();
+        if (selectedDir != null && selectedDir.trim().isNotEmpty) {
+          final path = selectedDir.trim();
+          if (path.startsWith('content://')) {
+            if (context.mounted) {
+              showXianYuToast(
+                context,
+                tr('该位置无法直接访问，请选择本地存储文件夹'),
+              );
+            }
+            return;
+          }
+          await ref.read(settingsProvider.notifier).setDownloadPath(path);
+          if (context.mounted) {
+            showXianYuToast(context, tr('下载路径已更新'));
+          }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          showXianYuToast(context, tr('选择目录失败：{e}', {'e': e}));
+        }
+      }
+    }
   }
 
   Widget _choiceSheet(

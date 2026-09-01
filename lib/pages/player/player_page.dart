@@ -212,9 +212,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                         ],
                       ),
                     ),
-                    // 中间区域：封面模式（居中大封面）/ 歌词模式（Expanded 占满中段空间）
+                    // 中间区域：封面模式（上移大封面 + 3行 Mini 歌词）/ 歌词模式（Expanded 占满中段空间）
                     if (!_showLyrics) ...[
-                      const Spacer(),
+                      const SizedBox(height: 12),
                       GestureDetector(
                         onTap: () {
                           setState(() {
@@ -249,12 +249,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             child: CoverReturnSource(
                               songPath: current?.path,
                               networkUrl: current?.coverUrl,
-                              child: _BigCover(current: current),
+                              child: _BigCover(
+                                current: current,
+                                size: MediaQuery.of(context).size.width * 0.64,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      const Spacer(),
+                      // 封面与底栏播放卡片中间加入 3 行 Mini 歌词
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32, vertical: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: _LyricPreview(current: current),
+                          ),
+                        ),
+                      ),
                     ] else ...[
                       Expanded(
                         child: ClipRect(
