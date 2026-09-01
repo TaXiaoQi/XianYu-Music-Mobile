@@ -922,10 +922,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ),
   );
 
-  // 自绘行布局替代 ListTile：大字体缩放/小屏（DPI 调大）下行宽不足时，
-  // ListTile 会把 trailing 值文本挤出卡片边界（截断/与副标题挤压）。
-  // 标题/副标题走 Expanded 自动换行；trailing 保持自然宽度右对齐（顶到
-  // chevron），仅当超过行宽 50% 上限时由 FittedBox 等比缩小兜底。
+  // 自绘行布局：响应壁纸模式与主题字体继承。
   Widget _tile(
     BuildContext context, {
     required IconData icon,
@@ -933,9 +930,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     required Widget trailing,
     VoidCallback? onTap,
     String? subtitle,
+    bool enabled = true,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final iconColor = enabled
+        ? scheme.onSurfaceVariant
+        : scheme.onSurfaceVariant.withValues(alpha: 0.45);
+    final titleColor = enabled
+        ? scheme.onSurface
+        : scheme.onSurface.withValues(alpha: 0.55);
+    final subtitleColor = enabled
+        ? scheme.onSurfaceVariant
+        : scheme.onSurfaceVariant.withValues(alpha: 0.45);
+
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: ConstrainedBox(
@@ -943,19 +954,29 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           child: LayoutBuilder(builder: (context, cons) {
             return Row(
               children: [
-                Icon(icon),
+                Icon(icon, color: iconColor),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title),
-                      if (subtitle != null)
+                      Text(
+                        title,
+                        style: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: (textTheme.bodySmall ?? const TextStyle()).copyWith(
+                            color: subtitleColor,
+                          ),
                         ),
+                      ],
                     ],
                   ),
                 ),
@@ -973,7 +994,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                   Icon(
                     Icons.chevron_right,
                     size: 18,
-                    color: Theme.of(context).colorScheme.outline,
+                    color: enabled
+                        ? scheme.outline
+                        : scheme.outline.withValues(alpha: 0.4),
                   ),
                 ],
               ],
@@ -993,14 +1016,17 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     String? subtitle,
     bool enabled = true,
   }) {
-    return SwitchListTile(
-      secondary: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-      value: value,
-      onChanged: enabled ? onChanged : null,
+    return _tile(
+      context,
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      enabled: enabled,
+      trailing: Switch.adaptive(
+        value: value,
+        onChanged: enabled && onChanged != null ? onChanged : null,
+      ),
+      onTap: enabled && onChanged != null ? () => onChanged(!value) : null,
     );
   }
 
@@ -2145,7 +2171,9 @@ class _StepperSliderRow extends StatelessWidget {
           backgroundColor: enabled
               ? scheme.surfaceContainerHighest
               : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          foregroundColor: enabled ? scheme.onSurfaceVariant : scheme.outline,
+          foregroundColor: enabled
+              ? scheme.onSurfaceVariant
+              : scheme.onSurfaceVariant.withValues(alpha: 0.45),
         ),
         icon: Icon(icon),
         onPressed: enabled
@@ -2169,7 +2197,12 @@ class _StepperSliderRow extends StatelessWidget {
             child: Text(
               format!(readValue()),
               textAlign: TextAlign.end,
-              style: const TextStyle(fontSize: 12.5),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: enabled
+                    ? scheme.onSurface
+                    : scheme.onSurface.withValues(alpha: 0.45),
+              ),
             ),
           ),
         ],
