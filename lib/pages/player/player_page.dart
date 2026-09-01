@@ -1449,53 +1449,62 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
       _lines[active],
       active + 1 < _lines.length ? _lines[active + 1] : null,
     ];
-    // 三行窗口随换行整体滚动：旧行上移淡出、新行自下滑入（避免逐字硬切）。
-    // 进/出动画均由 AnimatedSwitcher 预先施加 switchIn/OutCurve，
-    // 以 ValueKey(active) 区分方向（旧行动画反向播放 1→0，故 tween 同形）。
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 380),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, anim) {
-        final isNew = (child.key as ValueKey<int>?)?.value == active;
-        final offset = isNew
-            ? Tween<Offset>(begin: const Offset(0, 0.6), end: Offset.zero)
-            : Tween<Offset>(begin: const Offset(0, -0.6), end: Offset.zero);
-        return FadeTransition(
-          opacity: anim,
-          child: SlideTransition(
-            position: anim.drive(offset),
-            child: child,
-          ),
-        );
-      },
-      child: Column(
-        key: ValueKey<int>(active),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var j = 0; j < items.length; j++)
-            if (items[j] != null)
-              Padding(
-                padding: EdgeInsets.only(
-                  top: j == 1 ? 3 : 1,
-                  bottom: j == 1 ? 3 : 1,
-                ),
-                child: Text(
-                  items[j]!.text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: j == 1
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.5),
-                    fontSize: j == 1 ? 14 : 12.5,
-                    height: 1.2,
-                  ),
-                ),
+    // 三个固定槽位（上/中/下）+ 槽内 AnimatedSwitcher：槽位尺寸恒定、列
+    // 永不整体换键重排，换行只是各槽内文本淡入淡出+轻微滑动。
+    // 旧实现整列用 ValueKey(active) 换键，新旧两列内容错位重叠（原中间行
+    // 在新列里变顶行、字号/内边距不同），观感为"错位再回位"。
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var j = 0; j < 3; j++)
+          SizedBox(
+            height: j == 1 ? 23.0 : 17.0,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                alignment: Alignment.centerLeft,
+                children: [...previousChildren, ?currentChild],
               ),
-        ],
-      ),
+              transitionBuilder: (child, anim) {
+                // 进槽的行自下方滑入；出槽的行向上滑出（动画反向播放 1→0，
+                // 故 tween 同形）。方向以「child key == 当前槽位应显示的行」区分。
+                final expected =
+                    j == 0 ? active - 1 : (j == 1 ? active : active + 1);
+                final isNew =
+                    (child.key as ValueKey<int>?)?.value == expected;
+                final offset = isNew
+                    ? Tween<Offset>(begin: const Offset(0, 0.45), end: Offset.zero)
+                    : Tween<Offset>(begin: const Offset(0, -0.45), end: Offset.zero);
+                return FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: anim.drive(offset),
+                    child: child,
+                  ),
+                );
+              },
+              child: items[j] == null
+                  ? const SizedBox.shrink(key: ValueKey<int>(-1000))
+                  : Text(
+                      items[j]!.text,
+                      key: ValueKey<int>(
+                          j == 0 ? active - 1 : (j == 1 ? active : active + 1)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: j == 1
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.5),
+                        fontSize: j == 1 ? 14 : 12.5,
+                        height: 1.2,
+                      ),
+                    ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1867,6 +1876,16 @@ class _BlurredCoverBackground extends StatelessWidget {
     // 背景模糊恒定为大模糊（MusicFree blurRadius=50），打开/收回全程不变，
     // 不再跟随路由转场动态调 sigma，消除开关过程中背景的观感变化。
     const sigma = 50.0 / downscale;
+    // 桌面端 PlayerDetailBackground 同款色调处理：brightness(0.78) 压暗 +
+    // saturate(1.42) 提饱和 + contrast(1.16) 提对比（CSS filter 顺序：
+    // brightness → saturate → contrast，矩阵已按序合成，含 -0.08 对比偏置）。
+    // 无此处理时模糊封面整体偏亮，歌词白字可读性差。
+    const toneMatrix = <double>[
+      1.2039, -0.2717, -0.0274, 0, -0.08, //
+      -0.0809, 1.0131, -0.0274, 0, -0.08, //
+      -0.0809, -0.2717, 1.2575, 0, -0.08, //
+      0, 0, 0, 1, 0,
+    ];
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
@@ -1885,26 +1904,29 @@ class _BlurredCoverBackground extends StatelessWidget {
                   sigmaY: sigma,
                   tileMode: TileMode.decal,
                 ),
-                child: CoverImage(
-                  songPath: item.path,
-                  networkUrl: item.coverUrl,
-                  width: smallW,
-                  height: smallH,
-                  radius: 0,
-                  gradient: [
-                    scheme.primary,
-                    scheme.primary.withValues(alpha: 0.72),
-                  ],
-                  // 全屏背景占位不要中央大图标
-                  placeholder: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          scheme.primary.withValues(alpha: 0.55),
-                          Color.lerp(scheme.surface, Colors.black, 0.6)!,
-                        ],
+                child: ColorFiltered(
+                  colorFilter: const ColorFilter.matrix(toneMatrix),
+                  child: CoverImage(
+                    songPath: item.path,
+                    networkUrl: item.coverUrl,
+                    width: smallW,
+                    height: smallH,
+                    radius: 0,
+                    gradient: [
+                      scheme.primary,
+                      scheme.primary.withValues(alpha: 0.72),
+                    ],
+                    // 全屏背景占位不要中央大图标
+                    placeholder: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            scheme.primary.withValues(alpha: 0.55),
+                            Color.lerp(scheme.surface, Colors.black, 0.6)!,
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1912,9 +1934,46 @@ class _BlurredCoverBackground extends StatelessWidget {
               ),
             ),
           ),
-          // 已去掉背景全屏压暗层：歌词/封面直接铺在模糊封面上，观感更亮更通透。
+          // 桌面端同款渐晕：左右 black/6 + 底部 black/22（歌词区在下部，
+          // 底部压暗直接提升可读性），顶部仅 black/3 保持通透。
+          const _DecoratedGradient(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Color(0x0F000000),
+                Color(0x00000000),
+                Color(0x0F000000),
+              ],
+            ),
+          ),
+          const _DecoratedGradient(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0x08000000),
+                Color(0x00000000),
+                Color(0x38000000),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// 全屏渐晕层：纯渐变装饰，静态图层零成本。
+class _DecoratedGradient extends StatelessWidget {
+  const _DecoratedGradient({required this.gradient});
+
+  final Gradient gradient;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(gradient: gradient),
     );
   }
 }
@@ -3585,6 +3644,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 未完成前不做按比例估算的粗略滚动，避免落位后二次动画。
   bool _pendingCenterJump = true;
 
+  /// 精确居中安全阀：粗跳后若 _onLineMeasured 未在限时内触发（目标行在缓存
+  /// 区外未被构建），自动清除 pending 交还常规跟随，避免 _autoScrollToActiveLine
+  /// 被长期短路。
+  Timer? _pendingCenterFallback;
+
   /// 上一次歌词视口高度：横竖屏/分屏切换检测用。
   double? _lastViewportHeight;
 
@@ -3778,6 +3842,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _lastActiveIndex = -1;
       _renderActiveIndex = -1;
       _pendingCenterJump = true;
+      _pendingCenterFallback?.cancel();
       _clearBlurSnapshots();
       _enterBlurTransition();
       _draggingIndexTimer?.cancel();
@@ -3786,8 +3851,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _syncTicker();
       _fetchLyrics();
     } else if (!oldWidget.visible && widget.visible) {
-      // 歌词页重新可见：重新居中一次（页面常驻挂载时 visible 切换不走 initState）
+      // 歌词页重新可见：清除过时布局缓存（页面隐藏期间行高/视口可能已变），
+      // 重新居中一次。_tryPendingCenterJump 会粗跳拉入目标行后重试精确居中。
       _pendingCenterJump = true;
+      _pendingCenterFallback?.cancel();
+      _lineLayouts.clear();
       _enterBlurTransition();
     }
   }
@@ -3900,6 +3968,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _pullRevision.dispose();
     _recenterTimer?.cancel();
     _draggingIndexTimer?.cancel();
+    _pendingCenterFallback?.cancel();
     _clearBlurSnapshots();
     _scrollCtrl.dispose();
     super.dispose();
@@ -3935,6 +4004,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _progress.value = _anchorPos;
       // （重新）开始播放：触发一次精确居中（恢复播放/进入歌词页共用此分支）
       _pendingCenterJump = true;
+      _pendingCenterFallback?.cancel();
       _anchorWatch
         ..reset()
         ..start();
@@ -3989,6 +4059,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   void _onLineMeasured(int index, double viewportDy, double height) {
     if (!mounted) return;
     _lineLayouts[index] = (viewportDy + _scrollCtrl.offset, height);
+    // 粗跳后目标行进入 ListView 构建范围，_MeasuredLine 测量完成 → 立即
+    // 触发精确居中（对齐 RwaS 修正循环：拉入后读真实 offset 补齐偏移）。
+    if (_pendingCenterJump &&
+        !_userInteracted &&
+        index == _activeIndexFor(_displayPos)) {
+      _tryPendingCenterJump();
+    }
   }
 
   /// 滚动更新：定位视口中心对应的歌词行（MusicFree 的 onScroll 中心命中测试）。
@@ -4225,9 +4302,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 
   /// 一次性精确居中：等当前行实测布局后瞬时跳到视口正中（无动画）。
-  /// 目标行尚未被测量时按比例粗跳一次拉进视口，随即清除待办交还常规跟随——
-  /// 绝不长期锁住。对齐 RwaS LyricPlaybackState 数据驱动模型：活跃行始终由
-  /// position 重算、任何锚点变化都驱动一次滚动，不被"上一次是否精确落位"门闩阻塞。
+  /// 目标行尚未被测量时按比例粗跳拉入 ListView 构建范围，保留 pending 等
+  /// _onLineMeasured 回调触发精确居中（对齐 RwaS 修正循环：拉入后读真实
+  /// offset 补齐偏移）。500ms 安全阀兜底防止长期短路 _autoScrollToActiveLine。
   void _tryPendingCenterJump() {
     if (_userInteracted) return; // 用户正在手动翻看，不打扰
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
@@ -4236,24 +4313,32 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (viewport <= 0) return;
     final layout = _lineLayouts[idx];
     if (layout == null) {
-      // 目标活动行尚未被 LazyList 构造测量——典型于歌曲已播到中段才打开/重开
-      // 歌词页，当前行远在视口之外（比例粗跳的错位往往超过 200px 缓存区，该行
-      // 仍不会进入 _lineLayouts）。必须在此清除 _pendingCenterJump：否则后续每次
-      // _autoScrollToActiveLine 都被这扇门短路，歌词停在顶部、高亮行在屏外，
-      // 且"下一句也不跳转"。向 RwaS 看齐：粗跳一次即交还常规跟随路径，
-      // 活跃行每推进一格都由 _autoScrollToActiveLine 重新滚动逼近，不再卡死。
+      // 目标活动行尚未被 ListView 构造测量——典型于歌曲已播到中段才打开/重开
+      // 歌词页，当前行远在视口之外。粗跳一次将目标行拉入 ListView 构建范围，
+      // 下一帧 _MeasuredLine 回调填充布局缓存后由 _onLineMeasured 触发精确居中。
+      // 对齐 RwaS animateScrollToItem 拉入 → 读真实 offset 补齐残余偏移。
       if (idx >= 0 && _lines.length > 1) {
         final maxScroll = _scrollCtrl.position.maxScrollExtent;
         final target = (maxScroll * idx / (_lines.length - 1))
             .clamp(0.0, maxScroll);
         if ((target - _scrollCtrl.offset).abs() >= 1) {
-          _scrollCtrl.jumpTo(target); // jumpTo 无动画，避免"先估再动画"两次移动
+          _scrollCtrl.jumpTo(target);
         }
       }
-      _pendingCenterJump = false; // 一次性尽力而为，不长期阻塞跟随
+      // 不清除 _pendingCenterJump：_onLineMeasured 会在目标行测量完成后
+      // 立即触发精确居中。安全阀：500ms 内未测量则自动清除，交还常规跟随。
+      _pendingCenterFallback?.cancel();
+      _pendingCenterFallback = Timer(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _pendingCenterJump = false;
+          _pendingCenterFallback = null;
+        }
+      });
       return;
     }
     _pendingCenterJump = false;
+    _pendingCenterFallback?.cancel();
+    _pendingCenterFallback = null;
     _lastActiveIndex = idx;
     final target = (layout.$1 + layout.$2 / 2 - viewport / 2)
         .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
@@ -4409,6 +4494,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               if (!mounted) return;
               _lineLayouts.clear();
               _pendingCenterJump = true;
+              _pendingCenterFallback?.cancel();
               _tryPendingCenterJump();
             });
           }
