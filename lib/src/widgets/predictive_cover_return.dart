@@ -21,6 +21,11 @@ class PredictiveCoverReturn {
   PredictiveCoverReturn._();
   static final PredictiveCoverReturn instance = PredictiveCoverReturn._();
 
+  /// 预测返回手势是否处于「进行中」（[PredictiveCoverReturnView] 已挂载，
+  /// 即 phase ≠ idle）。页面自身封面据此隐藏——封面由 overlay 单张接管，
+  /// 避免「页面带着封面一起退下」。取消返回时视图卸载，恢复显示页内封面。
+  final ValueNotifier<bool> returning = ValueNotifier<bool>(false);
+
   _ReturnSource? _source;
   Rect Function()? _targetProvider;
 
@@ -168,7 +173,19 @@ class _CoverReturnSourceState extends State<CoverReturnSource> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyedSubtree(key: _key, child: widget.child);
+    // 预测返回手势进行中（返回画面面自身封面，由根 overlay 单张接管）时把
+    // 页内封面调成透明。用 Opacity 而非 Offstage：保持占用布局，Rect 解析与
+    // Hero 转场不受影响；取消返回时同一帧恢复显示，与 overlay 封面无缝衔接。
+    return KeyedSubtree(
+      key: _key,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: PredictiveCoverReturn.instance.returning,
+        builder: (context, returning, _) => Opacity(
+          opacity: returning ? 0.0 : 1.0,
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }
 
@@ -211,6 +228,9 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
         if (!mounted || _entry != null) return;
         final entry = OverlayEntry(builder: (ctx) => _buildCover(ctx));
         _entry = entry;
+        // 与插入同刻才置「封面回拨进行中」：页内封面隐藏与 overlay 封面出现
+        // 严格同帧，避免中间露一帧背景。
+        PredictiveCoverReturn.instance.returning.value = true;
         Overlay.of(context, rootOverlay: true).insert(entry);
       });
     }
@@ -220,6 +240,8 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
   void dispose() {
     _entry?.remove();
     _entry = null;
+    // 手势取消/完成卸载：结束封面回拨，恢复页面自身封面显示。
+    PredictiveCoverReturn.instance.returning.value = false;
     super.dispose();
   }
 
@@ -270,13 +292,14 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
             final srcRadius = math.min(32.0, s0 * 0.08);
             final dstRadius = s1 / 2;
 
-            // 跟手量 raw：0（页完全在）→ 1（页完全退）。封面不随手势立即飞，
-            // 而是等页面先退过 [_startProgress] 再启动，避免飞行封面与仍在原位
-            // 的播放页封面重叠抢跑（「封面飞走了、原图上还有封面」）。
-            // 启动前 t=0，飞行封面停在源封面位置遮住它；页退过阈值后才开始缩向
-            // 迷你条。取消手势则 raw 回落、封面原路回退，与页面一并弹回。
+            // 跟手量 raw：0（页完全在）→ 1（页完全退）。页面先退、封面在源位
+            // 保持；待手势走过约 1/3（raw ≥ 1/3）才开始飞封面，避免飞行封面与
+            // 仍在原位的播放页封面重叠抢跑（「封面飞走了、原图上还有封面」）。
+            // 启动前 t=0，飞行封面停在源封面位置遮住它；越过阈值后才缩向迷你条。
+            // 取消手势则 raw 回落、封面原路回退，与页面一并弹回。
             final raw = (1 - widget.animation.value).clamp(0.0, 1.0);
-            const startProgress = 0.5;
+            // 页面先下 → 封面原保持 → 约 1/3 处开始缩向迷你条。
+            const startProgress = 1 / 3;
             final t = raw <= startProgress
                 ? 0.0
                 : (raw - startProgress) / (1 - startProgress);

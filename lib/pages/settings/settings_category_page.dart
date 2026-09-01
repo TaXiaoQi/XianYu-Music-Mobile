@@ -215,6 +215,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      _sectionHeader(context, tr('列表显示')),
+      _CardGroup(
+        children: [
+          _switchTile(
+            context,
+            icon: Icons.vertical_align_top_outlined,
+            title: tr('显示回到顶部按钮'),
+            subtitle: tr('歌曲列表滚动后显示返回顶部的悬浮按钮'),
+            value: s?.enableScrollToTopButton ?? true,
+            onChanged: (v) => n.setEnableScrollToTopButton(v),
+          ),
+        ],
+      ),
       _sectionHeader(context, tr('存储空间')),
       const _StorageSettingsGroup(),
     ];

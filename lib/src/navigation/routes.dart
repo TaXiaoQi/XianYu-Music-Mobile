@@ -117,9 +117,16 @@ final appRouter = GoRouter(
       ),
     ),
     // 搜索页（从主页搜索栏进入），搜索结果页另用独立路由承载迷你播放条。
+    // 走 _coverPage（同设置导航页）：转场期由 RouteStaticSnapshot 静态化整页，
+    // 毛玻璃顶栏/底栏烘焙进快照，避免默认 MaterialPage 转场时 BackdropFilter
+    // 无稳定背板导致的「先清晰后模糊 / 返回时顶栏底栏黑一下」。
     GoRoute(
       path: '/search',
-      builder: (context, state) => const SearchPage(),
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const SearchPage(),
+        key: state.pageKey,
+      ),
     ),
     // 搜索结果页（搜索页提交后进入，独立路由以承载迷你播放条）。
     GoRoute(
@@ -714,6 +721,22 @@ Page<void> _coverPage(
   );
 }
 
+/// 供页面内直接 `Navigator.push` 的覆盖式转场路由（页面内 push 统一走这套，
+/// 与路由层 [_coverPage] 同款：覆盖滑动 + 预测返回 + 转场期 RouteStaticSnapshot
+/// 静态化整页，避免默认 MaterialPageRoute 转场期间 BackdropFilter 无稳定背板
+/// 导致的顶栏/底栏「先清晰后模糊 / 黑一下」）。
+PageRoute<T> coverPageRoute<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  RouteSettings? settings,
+}) {
+  return _CoverRoute<T>(
+    settings: settings ?? RouteSettings(),
+    builder: builder,
+    predictiveBack: _enablePredictiveBack(context),
+  );
+}
+
 /// 通用抽屉覆盖页（无封面回拨，供设置链路页面使用）。
 class _CoverPage extends Page<void> {
   const _CoverPage({
@@ -741,7 +764,7 @@ class _CoverPage extends Page<void> {
 /// 起点（页面先弹回全屏再滑出），与跟手阶段的位置不衔接，造成肉眼可见的
 /// 跳变卡顿；这里从当前值继续反向，动作完全连续，并维持
 /// `userGestureInProgress` 直到滑出动画结束（与 SDK 行为一致）。
-mixin _CoverGestureCommit on PageRoute<void> {
+mixin _CoverGestureCommit<T> on PageRoute<T> {
   @override
   void handleCommitBackGesture() {
     final AnimationController? ctrl = controller;
@@ -760,7 +783,7 @@ mixin _CoverGestureCommit on PageRoute<void> {
 }
 
 /// 通用抽屉覆盖路由：覆盖滑动 + 预测返回，`opaque=true`。
-class _CoverRoute extends PageRoute<void> with _CoverGestureCommit {
+class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   _CoverRoute({
     required super.settings,
     required this.builder,
@@ -903,7 +926,7 @@ class _PlayerCoverPage extends Page<void> {
 }
 
 /// 播放页覆盖路由：打开从底部上滑覆盖，关闭从上往下收回。
-class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit {
+class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   _PlayerCoverRoute({
     required super.settings,
     required this.builder,
@@ -1020,7 +1043,7 @@ class _CoverBackPage extends Page<void> {
   }
 }
 
-class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit {
+class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   _CoverBackRoute({
     required super.settings,
     required this.builder,

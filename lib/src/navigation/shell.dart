@@ -1940,13 +1940,7 @@ class _LiquidNavBar extends ConsumerWidget {
         color: fill,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.18),
-            blurRadius: 26,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: navFloatShadows(context, ref),
       ),
       child: tabs,
     );
@@ -3170,7 +3164,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           );
         } else {
           final panelBg = wallpaperGlassActive(ref)
-              ? wallpaperGlassFill(context)
+              ? wallpaperGlassFill(context, ref)
               : (isDark
                   ? Colors.white.withValues(alpha: 0.05)
                   : Colors.white.withValues(alpha: 0.35));

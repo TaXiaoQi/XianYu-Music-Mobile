@@ -10,6 +10,7 @@ const Map<String, String> enDictManual = {
   '模糊': 'Blur',
   '遮罩': 'Mask',
   '缩放': 'Scale',
+  '组件底色': 'Component tint',
   '前景样式': 'Foreground style',
   '默认': 'Default',
   '亮色字体': 'Light text',
@@ -40,6 +41,10 @@ const Map<String, String> enDictManual = {
   'Bit-perfect / DSD 直出中，音效已锁定': 'Bit-perfect / DSD direct output: sound effects are locked',
   '回到顶部': 'Back to top',
   '定位当前播放歌曲': 'Locate the current song',
+  '列表显示': 'List display',
+  '显示回到顶部按钮': 'Show the back-to-top button',
+  '歌曲列表滚动后显示返回顶部的悬浮按钮':
+      'Show the back-to-top button after scrolling song lists',
   'Bit-perfect 直出': 'Bit-perfect direct output',
   'b站': 'bilibili',
   'Dolby Atmos 沉浸环绕': 'Dolby Atmos immersive surround',

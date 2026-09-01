@@ -19,7 +19,9 @@ class CoverProxy {
     'bilivideo.com',
     'y.gtimg.cn',
     'qpic.cn',
+    // 酷我封面 CDN，防盗链需 Referer，直连会 403；桌面端归一化后域名即 img3.kuwo.cn
     'sycdn.kuwo.cn',
+    'img3.kuwo.cn',
     // 网易云 CDN 对非白名单来源会拒绝，必须带 Referer 走后端
     'music.126.net',
     '163.com',

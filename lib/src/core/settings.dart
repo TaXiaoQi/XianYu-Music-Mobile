@@ -121,6 +121,11 @@ class CustomBackground {
   final int translateY;
   /// 全局字体颜色档位（仅壁纸启用时生效，随壁纸一起持久化）。
   final WallpaperTextColor textMode;
+  /// 组件底色块不透明度（0~90，默认 30%；0 = 完全透明）。
+  ///
+  /// 壁纸模式下原本透明的卡片/控件改为「反色色块」：选亮色字体→深色块、
+  /// 选暗色字体→浅色块，以此保证前景可读；此值控制色块不透明度，最高 90%。
+  final int widgetAlpha;
 
   const CustomBackground({
     this.enabled = false,
@@ -132,6 +137,7 @@ class CustomBackground {
     this.translateX = 0,
     this.translateY = 0,
     this.textMode = WallpaperTextColor.follow,
+    this.widgetAlpha = 30,
   });
 
   /// 默认（未启用）。
@@ -150,6 +156,7 @@ class CustomBackground {
     int? translateX,
     int? translateY,
     WallpaperTextColor? textMode,
+    int? widgetAlpha,
   }) {
     return CustomBackground(
       enabled: enabled ?? this.enabled,
@@ -161,6 +168,7 @@ class CustomBackground {
       translateX: translateX ?? this.translateX,
       translateY: translateY ?? this.translateY,
       textMode: textMode ?? this.textMode,
+      widgetAlpha: widgetAlpha ?? this.widgetAlpha,
     );
   }
 }
@@ -176,6 +184,7 @@ class AppSettings {
     this.accentColor = 0xFFEC4141,
     this.customBackground = CustomBackground.none,
     this.showQualityBadges = true,
+    this.enableScrollToTopButton = true,
     this.onlineDefaultQuality = '320k',
     this.libraryMinDurationSeconds = 0,
     this.showLyricsTranslation = true,
@@ -261,6 +270,10 @@ class AppSettings {
   final int accentColor;
   final CustomBackground customBackground;
   final bool showQualityBadges;
+
+  /// 是否显示歌曲列表右下角「回到顶部」悬浮按钮（对齐桌面端常规设置）。
+  /// 「定位当前播放歌曲」按钮不受此开关影响。
+  final bool enableScrollToTopButton;
   final String onlineDefaultQuality;
   final int libraryMinDurationSeconds;
   final bool showLyricsTranslation;
@@ -464,6 +477,7 @@ class AppSettings {
     int? accentColor,
     CustomBackground? customBackground,
     bool? showQualityBadges,
+    bool? enableScrollToTopButton,
     String? onlineDefaultQuality,
     int? libraryMinDurationSeconds,
     bool? showLyricsTranslation,
@@ -543,6 +557,8 @@ class AppSettings {
       accentColor: accentColor ?? this.accentColor,
       customBackground: customBackground ?? this.customBackground,
       showQualityBadges: showQualityBadges ?? this.showQualityBadges,
+      enableScrollToTopButton:
+          enableScrollToTopButton ?? this.enableScrollToTopButton,
       onlineDefaultQuality: onlineDefaultQuality ?? this.onlineDefaultQuality,
       libraryMinDurationSeconds:
           libraryMinDurationSeconds ?? this.libraryMinDurationSeconds,
@@ -666,6 +682,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       themeMode: _themeFromInt(prefs.getInt('themeMode') ?? 0),
       accentColor: prefs.getInt('accentColor') ?? 0xFFEC4141,
       showQualityBadges: prefs.getBool('showQualityBadges') ?? true,
+      enableScrollToTopButton:
+          prefs.getBool('enableScrollToTopButton') ?? true,
       onlineDefaultQuality:
           prefs.getString('onlineDefaultQuality') ?? '320k',
       libraryMinDurationSeconds:
@@ -785,6 +803,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         translateY: prefs.getInt('customBackgroundTranslateY') ?? 0,
         textMode: WallpaperTextColor
             .values[prefs.getInt('customBackgroundTextMode') ?? 0],
+        widgetAlpha: prefs.getInt('customBackgroundWidgetAlpha') ?? 30,
       ),
     );
   }
@@ -849,6 +868,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('themeMode', next.themeMode.index),
       prefs.setInt('accentColor', next.accentColor),
       prefs.setBool('showQualityBadges', next.showQualityBadges),
+      prefs.setBool('enableScrollToTopButton', next.enableScrollToTopButton),
       prefs.setString('onlineDefaultQuality', next.onlineDefaultQuality),
       prefs.setInt(
           'libraryMinDurationSeconds', next.libraryMinDurationSeconds),
@@ -940,6 +960,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('customBackgroundTranslateX', next.customBackground.translateX),
       prefs.setInt('customBackgroundTranslateY', next.customBackground.translateY),
       prefs.setInt('customBackgroundTextMode', next.customBackground.textMode.index),
+      prefs.setInt(
+          'customBackgroundWidgetAlpha', next.customBackground.widgetAlpha),
     ]);
   }
 
@@ -952,6 +974,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setThemeMode(ThemeModePreference m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(themeMode: m));
   Future<void> setAccentColor(int c) => _save((state.valueOrNull ?? const AppSettings()).copyWith(accentColor: c));
   Future<void> setShowQualityBadges(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showQualityBadges: v));
+  Future<void> setEnableScrollToTopButton(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enableScrollToTopButton: v));
   Future<void> setOnlineDefaultQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineDefaultQuality: q));
   Future<void> setLibraryMinDurationSeconds(int s) => _save((state.valueOrNull ?? const AppSettings()).copyWith(libraryMinDurationSeconds: s));
   Future<void> setShowLyricsTranslation(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showLyricsTranslation: v));

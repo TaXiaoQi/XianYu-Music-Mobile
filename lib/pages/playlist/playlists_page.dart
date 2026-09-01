@@ -19,6 +19,7 @@ import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
@@ -575,7 +576,8 @@ class _AlbumHeader extends StatelessWidget {
 }
 
 /// 歌单歌曲列表：按公告的列表项尺寸（ListSize）缩放；长按行首把手可拖动排序。
-class _PlaylistSongs extends ConsumerWidget {
+/// 右下角悬浮「回到顶部 / 定位播放」按钮（对齐收藏页单曲列表）。
+class _PlaylistSongs extends ConsumerStatefulWidget {
   const _PlaylistSongs({
     required this.playlist,
     required this.manager,
@@ -587,11 +589,24 @@ class _PlaylistSongs extends ConsumerWidget {
   final void Function(int index) onRemove;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PlaylistSongs> createState() => _PlaylistSongsState();
+}
+
+class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    final songs = playlist.songs;
+    final songs = widget.playlist.songs;
 
     void onReorder(int oldIndex, int newIndex) {
       if (newIndex < 0 || newIndex >= songs.length || newIndex == oldIndex) return;
@@ -599,109 +614,123 @@ class _PlaylistSongs extends ConsumerWidget {
       final moved = paths.removeAt(oldIndex);
       // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
       paths.insert(newIndex.clamp(0, paths.length), moved);
-      manager.reorderSongs(playlist.id, paths);
+      widget.manager.reorderSongs(widget.playlist.id, paths);
     }
 
-    return ReorderableListView.builder(
-      // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
-      padding: EdgeInsets.only(
-        bottom: (hasSong ? 92.0 : 150.0) +
-            MediaQuery.of(context).padding.bottom,
-      ),
-      buildDefaultDragHandles: false,
-      // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
-      // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
-      // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
-      proxyDecorator: (child, index, animation) =>
-          Material(type: MaterialType.transparency, child: child),
-      itemCount: songs.length,
-      onReorderItem: onReorder,
-      itemBuilder: (context, index) {
-        final song = songs[index];
-        // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
-        // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
-        // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
-        // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
-        return RepaintBoundary(
-          key: ValueKey('${song.path}_$index'),
-          child: Builder(
-            builder: (rowContext) {
-              // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
-              BuildContext? coverCtx;
-              final g = songRowPlay(ref, onPlay: () async {
-                // 等封面落地后再播放：播放条封面随落地同步更新，
-                // 避免飞行过程中播放条封面提前切换。
-                final ok = await launchFlyCover(
-                  rowContext,
-                  coverContext: coverCtx,
-                  coverSize: m.songCover,
-                  vPad: m.vPad,
-                  songPath: song.path,
-                  networkUrl: song.coverUrl,
-                  thumbPath: song.coverThumbPath,
-                  radius: m.songRadius,
-                );
-                if (ok) manager.play(playlist, index);
-              });
-              final row = g.wrap(
-                CoverRow(
-                  cover: Builder(
-                    builder: (c) {
-                      coverCtx = c;
-                      return CoverImage(
-                        songPath: song.path,
-                        networkUrl: song.coverUrl,
-                        thumbPath: song.coverThumbPath,
-                        width: m.songCover,
-                        height: m.songCover,
-                        radius: m.songRadius,
-                      );
-                    },
-                  ),
-                  onTap: g.onTap,
-                  verticalPadding: m.vPad,
-                  horizontalPadding: 0,
-                  title: Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${song.artist} · ${song.album}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(Icons.close,
-                        size: 18, color: scheme.outline),
-                    tooltip: tr('从歌单移除'),
-                    onPressed: () => onRemove(index),
-                  ),
-                ),
-              );
-              return Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 44),
-                    child: row,
-                  ),
-                  Positioned(
-                    left: 8,
-                    top: 0,
-                    bottom: 0,
-                    width: 36,
-                    child: Center(child: DragHandle(index: index)),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+    final rowExtent = m.songCover + 2 * m.vPad;
+    final bottomPad = (hasSong ? 92.0 : 150.0) +
+        MediaQuery.of(context).padding.bottom;
+
+    return Stack(
+      children: [
+        ReorderableListView.builder(
+          scrollController: _controller,
+          // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
+          padding: EdgeInsets.only(bottom: bottomPad),
+          buildDefaultDragHandles: false,
+          // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
+          // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
+          // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
+          proxyDecorator: (child, index, animation) =>
+              Material(type: MaterialType.transparency, child: child),
+          itemCount: songs.length,
+          onReorderItem: onReorder,
+          itemBuilder: (context, index) {
+            final song = songs[index];
+            // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
+            // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
+            // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
+            // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+            return RepaintBoundary(
+              key: ValueKey('${song.path}_$index'),
+              child: Builder(
+                builder: (rowContext) {
+                  // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+                  BuildContext? coverCtx;
+                  final g = songRowPlay(ref, onPlay: () async {
+                    // 等封面落地后再播放：播放条封面随落地同步更新，
+                    // 避免飞行过程中播放条封面提前切换。
+                    final ok = await launchFlyCover(
+                      rowContext,
+                      coverContext: coverCtx,
+                      coverSize: m.songCover,
+                      vPad: m.vPad,
+                      songPath: song.path,
+                      networkUrl: song.coverUrl,
+                      thumbPath: song.coverThumbPath,
+                      radius: m.songRadius,
+                    );
+                    if (ok) widget.manager.play(widget.playlist, index);
+                  });
+                  final row = g.wrap(
+                    CoverRow(
+                      cover: Builder(
+                        builder: (c) {
+                          coverCtx = c;
+                          return CoverImage(
+                            songPath: song.path,
+                            networkUrl: song.coverUrl,
+                            thumbPath: song.coverThumbPath,
+                            width: m.songCover,
+                            height: m.songCover,
+                            radius: m.songRadius,
+                          );
+                        },
+                      ),
+                      onTap: g.onTap,
+                      verticalPadding: m.vPad,
+                      horizontalPadding: 0,
+                      title: Text(
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: m.titleSize, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        '${song.artist} · ${song.album}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(Icons.close,
+                            size: 18, color: scheme.outline),
+                        tooltip: tr('从歌单移除'),
+                        onPressed: () => widget.onRemove(index),
+                      ),
+                    ),
+                  );
+                  return Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 44),
+                        child: row,
+                      ),
+                      Positioned(
+                        left: 8,
+                        top: 0,
+                        bottom: 0,
+                        width: 36,
+                        child: Center(child: DragHandle(index: index)),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        SongListScrollFabs(
+          controller: _controller,
+          paths: songs.map((s) => s.path).toList(),
+          rowTopOf: (i) => i * rowExtent,
+          itemExtent: rowExtent,
+          bottom: bottomPad + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 }

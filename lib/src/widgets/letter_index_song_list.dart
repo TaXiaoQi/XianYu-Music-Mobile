@@ -263,7 +263,7 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
         if (widget.enableScrollFabs)
           SongListScrollFabs(
             controller: _controller,
-            songs: songs,
+            paths: songs.map((s) => s.path).toList(),
             rowTopOf: _rowTopOf,
             itemExtent: _rowExtent,
             bottom: (widget.padding?.bottom ?? 0.0) + 8,

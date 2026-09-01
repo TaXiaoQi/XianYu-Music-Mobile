@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/cover_image.dart';
@@ -815,8 +816,9 @@ class _ArtistsTab extends ConsumerWidget {
           verticalPadding: m.vPad,
           trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(
-              builder: (_) => SongListPage(
+            coverPageRoute(
+              context,
+              (_) => SongListPage(
                 title: a.name,
                 loader: () =>
                     ref.read(libraryProvider.notifier).songsByArtist(a.name),
@@ -898,8 +900,9 @@ class _AlbumsTab extends ConsumerWidget {
           verticalPadding: m.vPad,
           trailing: Icon(Icons.chevron_right, color: scheme.outline),
           onTap: () => Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(
-              builder: (_) => SongListPage(
+            coverPageRoute(
+              context,
+              (_) => SongListPage(
                 title: a.name,
                 loader: () =>
                     ref.read(libraryProvider.notifier).songsByAlbum(a.key),

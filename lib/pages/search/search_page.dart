@@ -12,6 +12,7 @@ import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
+import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
@@ -33,6 +34,7 @@ import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
 import '../library/song_list_page.dart';
@@ -1135,6 +1137,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   List<_TrackEntry> _results = const [];
   bool _loading = false;
   String _searchedHash = '';
+  /// 与 [_results] 对齐的歌曲路径缓存，供悬浮按钮匹配当前播放歌曲。
+  List<String> _paths = const [];
+  final ScrollController _scroll = ScrollController();
   /// 搜索失败原因（超时/插件异常等）。空串表示无错误——空结果与失败要分开
   /// 提示，否则插件挂了用户只看到"无结果"，误以为是搜不到。
   String _searchError = '';
@@ -1159,6 +1164,12 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     if (q.isEmpty) return;
     final hash = '${widget.source.id}|$q';
     if (hash != _searchedHash) _search(q, hash);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
   List<PluginSource> _plugins() => ref.read(pluginManagerProvider).sources;
@@ -1215,8 +1226,27 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     if (_searchedHash != hash) return;
     setState(() {
       _results = out;
+      _paths = _buildPaths(out);
       _loading = false;
     });
+  }
+
+  /// 由搜索结果提取歌曲路径列表（本地取文件路径，在线取 QueueItem.path），
+  /// 与 [_results] 一一对应，供悬浮按钮定位当前播放歌曲。
+  List<String> _buildPaths(List<_TrackEntry> out) {
+    final engine = ref.read(pluginEngineProvider).valueOrNull;
+    if (engine == null) {
+      return [
+        for (final e in out) e.isLocal ? (e.localSong?.path ?? '') : '',
+      ];
+    }
+    final service = PluginSearchService(engine, _plugins());
+    return [
+      for (final e in out)
+        e.isLocal
+            ? (e.localSong?.path ?? '')
+            : service.toQueueItem(e.pluginSource!, e.pluginResult!).path,
+    ];
   }
 
   void _play(int index) {
@@ -1293,11 +1323,16 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
-    return ListView.builder(
-      padding: EdgeInsets.only(
-        top: _ContentTopInsetScope.of(context),
-        bottom: bottomInset,
-      ),
+    final topInset = _ContentTopInsetScope.of(context);
+    final rowExtent = m.songCover + 2 * m.vPad;
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scroll,
+          padding: EdgeInsets.only(
+            top: topInset,
+            bottom: bottomInset,
+          ),
       itemCount: _results.length,
       itemBuilder: (context, i) {
         final e = _results[i];
@@ -1422,6 +1457,17 @@ class _TrackTabState extends ConsumerState<_TrackTab>
           },
         );
       },
+        ),
+        // 右下角「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+        SongListScrollFabs(
+          controller: _scroll,
+          paths: _paths,
+          rowTopOf: (i) => topInset + i * rowExtent,
+          itemExtent: rowExtent,
+          bottom: bottomInset + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 }
@@ -1736,10 +1782,12 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     if (item.localArtist != null) {
       final a = item.localArtist!;
       Navigator.of(context, rootNavigator: true).push(
-        MaterialPageRoute(
-          builder: (_) => SongListPage(
+        coverPageRoute(
+          context,
+          (_) => SongListPage(
             title: a.name,
-            loader: () => ref.read(libraryProvider.notifier).songsByArtist(a.name),
+            loader: () =>
+                ref.read(libraryProvider.notifier).songsByArtist(a.name),
           ),
         ),
       );
@@ -1748,10 +1796,12 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     if (item.localAlbum != null) {
       final a = item.localAlbum!;
       Navigator.of(context, rootNavigator: true).push(
-        MaterialPageRoute(
-          builder: (_) => SongListPage(
+        coverPageRoute(
+          context,
+          (_) => SongListPage(
             title: a.name,
-            loader: () => ref.read(libraryProvider.notifier).songsByAlbum(a.key),
+            loader: () =>
+                ref.read(libraryProvider.notifier).songsByAlbum(a.key),
           ),
         ),
       );

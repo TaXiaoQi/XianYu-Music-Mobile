@@ -15,6 +15,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -290,8 +291,9 @@ class _WallpaperCard extends ConsumerWidget {
   }
 
   void _openPreview(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => _WallpaperPreviewPage(wallpaper: wallpaper),
+    Navigator.of(context).push(coverPageRoute<void>(
+      context,
+      (_) => _WallpaperPreviewPage(wallpaper: wallpaper),
     ));
   }
 }
@@ -413,10 +415,20 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
   /// 跳转到自定义壁纸编辑器，预加载 [path] 让用户调整后应用（不做任何即时整屏应用）。
   Future<void> _openCustomEditor(String path) async {
     if (!mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => WallpaperCustomApplyPage(imagePath: path),
-    ));
-    if (mounted) showXianYuToast(context, tr('请在自定义界面点击「保存并使用」完成应用'));
+    final applied = await Navigator.of(context).push<bool?>(
+      coverPageRoute<bool>(
+        context,
+        (_) => WallpaperCustomApplyPage(imagePath: path),
+      ),
+    );
+    if (!mounted) return;
+    if (applied == true) {
+      // 已在自定义界面「保存并使用」→ 把预览页一起关掉，直接回到壁纸中心，
+      // 免去「应用后还要原路返回」。
+      Navigator.of(context).pop(true);
+      return;
+    }
+    showXianYuToast(context, tr('请在自定义界面点击「保存并使用」完成应用'));
   }
 
   Future<Uint8List> consolidateBytes(HttpClientResponse res) async {
@@ -1010,9 +1022,9 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
           ),
           onTap: () {
             if (exists) {
-              Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) =>
-                    _WallpaperPreviewPage(wallpaper: w),
+              Navigator.of(context).push(coverPageRoute<void>(
+                context,
+                (_) => _WallpaperPreviewPage(wallpaper: w),
               ));
             }
           },
@@ -1105,7 +1117,10 @@ class _CustomWallpaperEditorState
     await ref
         .read(settingsProvider.notifier)
         .setCustomBackground(_draft.copyWith(enabled: true));
+    // 应用成功后直接关闭本编辑页（并把结果透传给预览页，让其一起关掉，
+    // 免去「应用后还要原路返回」）。
     showXianYuToastByOverlay(overlay, tr('已应用自定义壁纸'));
+    if (mounted) Navigator.of(context).pop(true);
   }
 
   Future<void> _restore() async {
@@ -1257,6 +1272,20 @@ class _CustomWallpaperEditorState
                         divisions: 80,
                         onChanged: (v) => setState(
                             () => _draft = _draft.copyWith(scale: v)),
+                      ),
+                      // 组件底色块不透明度：壁纸下原本透明的卡片/控件改为
+                      // 反色色块（亮字→深色块、暗字→浅色块），可调 0~90%，
+                      // 0 = 完全透明。
+                      _ParamSlider(
+                        icon: Icons.invert_colors,
+                        label: tr('组件底色'),
+                        value: _draft.widgetAlpha,
+                        min: 0,
+                        max: 90,
+                        divisions: 90,
+                        suffix: '%',
+                        onChanged: (v) => setState(
+                            () => _draft = _draft.copyWith(widgetAlpha: v)),
                       ),
                       const SizedBox(height: 4),
                       // 全局字体颜色档位：保存并使用后随壁纸一起生效/持久化。

@@ -18,6 +18,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../home/online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -174,7 +175,8 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 }
 
 /// 单曲收藏列表：长按行首把手可拖动排序（顶级列表，拖到边缘自动滚动）。
-class _SongsTab extends ConsumerWidget {
+/// 右下角叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+class _SongsTab extends ConsumerStatefulWidget {
   const _SongsTab({
     required this.fav,
     required this.notifier,
@@ -184,10 +186,23 @@ class _SongsTab extends ConsumerWidget {
   final FavoritesManager notifier;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SongsTab> createState() => _SongsTabState();
+}
+
+class _SongsTabState extends ConsumerState<_SongsTab> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    final entries = fav.entries;
+    final entries = widget.fav.entries;
     if (entries.isEmpty) {
       return Center(
         child: Column(
@@ -206,6 +221,9 @@ class _SongsTab extends ConsumerWidget {
         ),
       );
     }
+    final m = ListMetrics.ofRef(ref);
+    // 行高固定（封面 + 上下内边距），悬浮按钮按此推算行位置。
+    final rowExtent = m.songCover + 2 * m.vPad;
 
     void onReorder(int oldIndex, int newIndex) {
       if (newIndex < 0 || newIndex >= entries.length || newIndex == oldIndex) return;
@@ -213,46 +231,59 @@ class _SongsTab extends ConsumerWidget {
       final moved = paths.removeAt(oldIndex);
       // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
       paths.insert(newIndex.clamp(0, paths.length), moved);
-      notifier.reorderEntries(paths);
+      widget.notifier.reorderEntries(paths);
     }
 
-    return ReorderableListView.builder(
-      padding: EdgeInsets.only(
-        bottom: (hasSong ? 92.0 : 24.0) +
-            MediaQuery.of(context).padding.bottom,
-      ),
-      buildDefaultDragHandles: false,
-      // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell 会以
-      // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
-      proxyDecorator: (child, index, animation) =>
-          Material(type: MaterialType.transparency, child: child),
-      itemCount: entries.length,
-      onReorderItem: onReorder,
-      itemBuilder: (context, i) {
-        final entry = entries[i];
-        return RepaintBoundary(
-          key: ValueKey(entry.path),
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 44),
-                child: _FavoriteTile(
-                  entry: entry,
-                  onPlay: () => notifier.play(i),
-                  onRemove: () => notifier.remove(entry.path),
-                ),
+    final bottomPad =
+        (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
+
+    return Stack(
+      children: [
+        ReorderableListView.builder(
+          scrollController: _controller,
+          padding: EdgeInsets.only(bottom: bottomPad),
+          buildDefaultDragHandles: false,
+          // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell 会以
+          // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
+          proxyDecorator: (child, index, animation) =>
+              Material(type: MaterialType.transparency, child: child),
+          itemCount: entries.length,
+          onReorderItem: onReorder,
+          itemBuilder: (context, i) {
+            final entry = entries[i];
+            return RepaintBoundary(
+              key: ValueKey(entry.path),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 44),
+                    child: _FavoriteTile(
+                      entry: entry,
+                      onPlay: () => widget.notifier.play(i),
+                      onRemove: () => widget.notifier.remove(entry.path),
+                    ),
+                  ),
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    width: 36,
+                    child: Center(child: DragHandle(index: i)),
+                  ),
+                ],
               ),
-              Positioned(
-                left: 8,
-                top: 0,
-                bottom: 0,
-                width: 36,
-                child: Center(child: DragHandle(index: i)),
-              ),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+        SongListScrollFabs(
+          controller: _controller,
+          paths: entries.map((e) => e.path).toList(),
+          rowTopOf: (i) => i * rowExtent,
+          itemExtent: rowExtent,
+          bottom: bottomPad + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 }

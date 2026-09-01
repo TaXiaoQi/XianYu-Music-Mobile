@@ -598,13 +598,34 @@ String? _neteaseCoverUrl(Map<String, dynamic> node) {
   return null;
 }
 
-/// 酷我旧 CDN 域名统一换 img3.kuwo.cn（第三方插件会返回证书异常的 imgN.sycdn）。
+/// 酷我旧 CDN 域名换 img3.kuwo.cn（第三方插件会返回证书异常的 imgN.sycdn）。
+/// 只替换 sycdn.kuwo.cn，保留 zimg.kuwo.cn / kwimgN.kuwo.cn 等可用域名，
+/// 否则榜单封面 zimg.kuwo.cn/bang/... 会被改写成 img3 的 404 路径（对齐桌面 normalizeKuwoCoverUrl）。
 String _normalizeKuwoCoverUrl(String url) {
   var out = url.trim().replaceFirst(RegExp(r'^http://'), 'https://');
   return out.replaceFirstMapped(
-    RegExp(r'^https://[^/]+\.kuwo\.cn/(.+)$', caseSensitive: false),
+    RegExp(r'^https://sycdn\.kuwo\.cn/(.+)$', caseSensitive: false),
     (m) => 'https://img3.kuwo.cn/${m.group(1)}',
   );
+}
+
+/// 酷我搜索结果常见只给封面相对短路径（如 web_albumpic_short: `120/s3s94/93/xxx.jpg`），
+/// 拼成可用 HTTPS 封面（对齐桌面 buildKuwoAlbumCoverUrl，产物域名即 img3.kuwo.cn）；
+/// 仍在直连域内，需经代理才可取回。
+String? _buildKuwoShortCover(dynamic shortPath) {
+  if (shortPath is! String || shortPath.trim().isEmpty) return null;
+  var short = shortPath.trim().replaceFirst(RegExp(r'^/+'), '');
+  if (short.isEmpty || !short.contains('/')) return null;
+  // 把开头的尺寸段换成目标尺寸（120/xxx → 500/xxx）
+  short = short.replaceFirstMapped(RegExp(r'^\d+/'), (m) => '500/');
+  return 'https://img3.kuwo.cn/star/albumcover/$short';
+}
+
+/// 是否可作为封面 URL：绝对 http(s) 或协议相对 `//`（酷我等源常返回 `//img4.kuwo.cn/...`）。
+bool _looksLikeCoverUrl(dynamic v) {
+  if (v is! String) return false;
+  final s = v.trim();
+  return s.startsWith('http') || s.startsWith('//');
 }
 
 String? _extractCoverFromNode(Map<String, dynamic> node) {
@@ -622,9 +643,18 @@ String? _extractCoverFromNode(Map<String, dynamic> node) {
   ];
   for (final k in direct) {
     final v = node[k];
-    if (v is String && v.startsWith('http')) return v;
+    if (_looksLikeCoverUrl(v)) return v;
     final rv = raw[k];
-    if (rv is String && rv.startsWith('http')) return rv;
+    if (_looksLikeCoverUrl(rv)) return rv;
+  }
+  // 酷我搜索常只给封面相对短路径（web_albumpic_short 等），对齐桌面 kwSearchCover。
+  const kwShortKeys = [
+    'web_albumpic_short', 'web_album_pic', 'album_pic',
+    'albumpic_short', 'albumpic',
+  ];
+  for (final k in kwShortKeys) {
+    final built = _buildKuwoShortCover(node[k]) ?? _buildKuwoShortCover(raw[k]);
+    if (built != null) return built;
   }
   // 嵌套 al / album 里的 picUrl / blurPicUrl（node 与 raw 都检查，对齐桌面）。
   for (final key in ['al', 'album']) {
@@ -632,16 +662,16 @@ String? _extractCoverFromNode(Map<String, dynamic> node) {
       if (src is! Map) continue;
       for (final kk in ['picUrl', 'blurPicUrl']) {
         final u = src[kk];
-        if (u is String && u.startsWith('http')) return u;
+        if (_looksLikeCoverUrl(u)) return u;
       }
     }
   }
   // 顶部 coverImgUrl / picUrl。
   for (final k in ['picUrl', 'coverImgUrl']) {
     final v = node[k];
-    if (v is String && v.startsWith('http')) return v;
+    if (_looksLikeCoverUrl(v)) return v;
     final rv = raw[k];
-    if (rv is String && rv.startsWith('http')) return rv;
+    if (_looksLikeCoverUrl(rv)) return rv;
   }
   // 网易云 weapi/search 常只给 picId 不给 picUrl：直接加密拼 CDN 兜底，
   // 避免逐条再打 getMusicInfo（对齐桌面 extractCoverUrl）。
@@ -677,6 +707,7 @@ String? _extractCover(Map<String, dynamic> item) {
   }
   if (url == null) return null;
   var out = url;
+  if (out.startsWith('//')) out = 'https:$out';
   if (out.startsWith('http://')) out = out.replaceFirst('http://', 'https://');
   if (out.contains('kuwo.cn')) out = _normalizeKuwoCoverUrl(out);
   return out;
@@ -690,7 +721,7 @@ String? _extractAvatar(Map<String, dynamic> item) {
   ];
   for (final k in candidates) {
     final v = item[k];
-    if (v is String && v.startsWith('http')) return v;
+    if (_looksLikeCoverUrl(v)) return v;
   }
   return _extractCover(item);
 }

@@ -17,6 +17,7 @@ import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
@@ -69,6 +70,8 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   String? _lxSource;
   late final TabController? _tab;
   int _activeTab = 0;
+  /// 歌曲列表滚动控制器，供「回到顶部 / 定位当前播放歌曲」悬浮按钮使用。
+  final ScrollController _songScroll = ScrollController();
 
   @override
   void initState() {
@@ -93,6 +96,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   @override
   void dispose() {
     _tab?.dispose();
+    _songScroll.dispose();
     super.dispose();
   }
 
@@ -357,17 +361,20 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         child: Text(tr('暂无歌曲'), style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n.metrics.pixels > n.metrics.maxScrollExtent - 300) {
-          _loadSongs();
-        }
-        return false;
-      },
-      child: ListView.separated(
-        padding: EdgeInsets.only(
-            top: 6, bottom: MediaQuery.of(context).padding.bottom + 100),
-        itemCount: _songs.length + 1,
+    return Stack(
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.metrics.pixels > n.metrics.maxScrollExtent - 300) {
+              _loadSongs();
+            }
+            return false;
+          },
+          child: ListView.separated(
+            controller: _songScroll,
+            padding: EdgeInsets.only(
+                top: 6, bottom: MediaQuery.of(context).padding.bottom + 100),
+            itemCount: _songs.length + 1,
         separatorBuilder: (_, _) => const SizedBox.shrink(),
         itemBuilder: (context, i) {
           if (i == _songs.length) {
@@ -469,7 +476,18 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             },
           );
         },
-      ),
+        ),
+        ),
+        // 右下角「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+        SongListScrollFabs(
+          controller: _songScroll,
+          paths: [for (final r in _songs) _queueItemOf(r).path],
+          rowTopOf: (i) => 6 + i * (m.songCover + 2 * m.vPad),
+          itemExtent: m.songCover + 2 * m.vPad,
+          bottom: MediaQuery.of(context).padding.bottom + 100 + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 

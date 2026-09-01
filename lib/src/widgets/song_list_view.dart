@@ -347,7 +347,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
           list,
           SongListScrollFabs(
             controller: _controller,
-            songs: songs,
+            paths: songs.map((s) => s.path).toList(),
             rowTopOf: (i) => (padding?.top ?? 0.0) + i * rowExtent,
             itemExtent: rowExtent,
             bottom: (padding?.bottom ?? 0.0) + 8,

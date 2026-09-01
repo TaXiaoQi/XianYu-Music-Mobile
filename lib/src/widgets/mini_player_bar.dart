@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -524,13 +525,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         color: fill,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
-            blurRadius: 26,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: navFloatShadows(context, ref),
       ),
       child: content,
     );
@@ -538,8 +533,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        // 降采样模糊 filter，按 (sigma, downscale) 全局缓存复用。
-        filter: cheapBackdropBlur(sigma),
+        // 播放条是贴底的细长圆角窄条，cheapBackdropBlur 的 1/4 降采样再放大
+        // 采样网格与物理像素不对齐，会产生约 1~2px 水平相位偏移（观感"往右歪、
+        // 和背底没对上"）。与顶栏一致改用全分辨率高斯，按原始像素精确对齐背板；
+        // 播放条仅一条窄带，全分辨率成本可控。
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: surface,
       ),
     );

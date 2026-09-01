@@ -17,16 +17,61 @@ bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.customBackground.active ?? false));
 
-/// 壁纸模式下「普通玻璃表面」的 fill：直接全透明（不留任何铺底）——壁纸完全
-/// 透出（卡片、搜索框、列表条、悬浮胶囊等）。
-Color wallpaperGlassFill(BuildContext context) => const Color(0x00000000);
+/// 壁纸模式下「普通玻璃表面（卡片/搜索框/列表条/悬浮胶囊等）」的反色色块底。
+///
+/// 原先是全透明（0x00000000）让壁纸完全透出——组件在复杂壁纸上不可辨、文字
+/// 难读；现改为根据字体档位取反色基色、按 `customBackground.widgetAlpha`
+/// （0~90，0=完全透明）控制不透明度的色块：选亮色字体→深色块、选暗色字体→
+/// 浅色块（默认 30%）。供所有透明组件/玻璃表面与 [appCardFill] 组件统一使用，
+/// 替换"全部透明组件"。
+Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
+  final cb =
+      ref.watch(settingsProvider.select((s) => s.valueOrNull?.customBackground));
+  final alpha = ((cb?.widgetAlpha ?? 30).clamp(0, 90)) / 100.0;
+  if (alpha <= 0) return const Color(0x00000000);
+  // 反色判断：字体是否为深色（暗字→浅色块；亮字→深色块）。
+  final darkish = cb?.textMode == WallpaperTextColor.dark ||
+      (cb?.textMode == WallpaperTextColor.follow &&
+          Theme.of(context).brightness == Brightness.light);
+  final base =
+      darkish ? const Color(0xFFFFFFFF) : const Color(0xFF202020);
+  return base.withValues(alpha: alpha);
+}
 
-/// 壁纸模式下「顶栏 / 固定底栏」的 fill：保持极淡半透明磨砂（微薄纱），配合
-/// 固定的最深模糊（[kNavSurfaceBlurSigma]）维持磨砂观感——顶/底栏在壁纸模式
-/// 下**模糊保持与原样一致、不透明化**，壁纸透出但仍有玻璃质感。
+/// 壁纸模式下「普通玻璃表面」的 fill：统一走反色色块（[wallpaperBlockFill]），
+/// 不再全透明（避免组件在壁纸上隐没）。
+Color wallpaperGlassFill(BuildContext context, WidgetRef ref) =>
+    wallpaperBlockFill(context, ref);
+
+/// 壁纸模式下「顶栏 / 固定底栏 / 迷你播放条」的 fill：保持半透明磨砂（薄纱），
+/// 配合固定的最深模糊（[kNavSurfaceBlurSigma]）维持磨砂观感——顶/底栏、播放条
+/// 在壁纸模式下**模糊保持与原样一致、不透明化**，壁纸透出但仍有玻璃质感。
+///
+/// 透明度的底线：原先暗色仅 5%、亮色 19%，叠在「带深色遮罩」的壁纸背上几乎
+/// 等于黑色（尤以迷你播放条常见「毛玻璃发黑」）。故量值适当提高，确保任何
+/// 壁纸上都渲染为可见的半透明磨砂、而非沉成黑色。
 Color wallpaperNavGlassFill(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  return isDark ? const Color(0x0DFFFFFF) : const Color(0x30FFFFFF);
+  return isDark ? const Color(0x26FFFFFF) : const Color(0x4CFFFFFF);
+}
+
+/// 浮动导航胶囊（迷你播放条 / 悬浮底栏 / 悬浮顶栏等）的投影。
+///
+/// 常规（非壁纸）模式下：浮动即「胶囊 + 黑色投影」（该形态设计本体），仅贴边
+/// 固定的顶/底栏无投影。但在**壁纸模式**下这些胶囊 fill 是半透明磨砂
+/// （[wallpaperNavGlassFill]，~30% 白），黑色投影会透过半透明胶囊透显出来、
+/// 整根胶囊看着像黑色块（固定顶/底栏贴边无投影所以正常）。故壁纸模式下去掉
+/// 投影，仅靠描边 + 模糊维持浮层层次，避免「胶囊本身黑」。
+List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
+  if (wallpaperGlassActive(ref)) return const [];
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
+      blurRadius: 26,
+      offset: const Offset(0, 8),
+    ),
+  ];
 }
 
 /// 壁纸模式下「普通玻璃表面」的模糊 sigma：归零，不做任何高斯模糊（直接透明）。
@@ -90,7 +135,7 @@ Widget frostedCardSurface({
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
       : (wallpaperTransparent
-          ? wallpaperGlassFill(context)
+          ? wallpaperGlassFill(context, ref)
           : frostedFill);
   final border = solid
       ? null
@@ -332,7 +377,7 @@ Widget pseudoLiquidSurface({
       : (wallpaperNav
           ? wallpaperNavGlassFill(context)
           : wallTransparent
-              ? wallpaperGlassFill(context)
+              ? wallpaperGlassFill(context, ref)
               : (isDark
                   ? Colors.white.withValues(alpha: 0.06)
                   : Colors.white.withValues(alpha: 0.34)));
@@ -353,13 +398,7 @@ Widget pseudoLiquidSurface({
       color: fill,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: border),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
-          blurRadius: 26,
-          offset: const Offset(0, 8),
-        ),
-      ],
+      boxShadow: navFloatShadows(context, ref),
     ),
     child: child,
   );

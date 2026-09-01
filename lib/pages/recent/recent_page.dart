@@ -14,6 +14,7 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
@@ -143,38 +144,65 @@ class RecentPage extends ConsumerWidget {
 }
 
 /// 最近播放列表：独立订阅播放状态以调整底部留白，播放状态翻转不波及页头。
-class _RecentList extends ConsumerWidget {
+/// 右下角叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+class _RecentList extends ConsumerStatefulWidget {
   const _RecentList({required this.recent, required this.notifier});
 
   final RecentState recent;
   final RecentManager notifier;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RecentList> createState() => _RecentListState();
+}
+
+class _RecentListState extends ConsumerState<_RecentList> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final m = ListMetrics.ofRef(ref);
     // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
     // 跳过逐行布局测量，大列表快速滑动更省 CPU（对齐统一 SongsListView）。
     final rowExtent = m.songCover + 2 * m.vPad;
-    return ListView.builder(
-      padding: EdgeInsets.only(
-        bottom: (hasSong ? 92.0 : 24.0) +
-            MediaQuery.of(context).padding.bottom,
-      ),
-      itemExtent: rowExtent,
-      // 提前半屏预缓存，避免新行进场时突然解码封面掉帧（对齐 SongsListView）。
-      scrollCacheExtent: ScrollCacheExtent.pixels(500),
-      // 行不保留状态（封面/标题均无状态构建），离屏即弃，省内存与重建。
-      addAutomaticKeepAlives: false,
-      itemCount: recent.entries.length,
-      itemBuilder: (context, i) {
-        final entry = recent.entries[i];
-        return _RecentTile(
-          entry: entry,
-          onPlay: () => notifier.play(i),
-          onRemove: () => notifier.remove(entry.songPath),
-        );
-      },
+    final bottomPad =
+        (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
+
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _controller,
+          padding: EdgeInsets.only(bottom: bottomPad),
+          itemExtent: rowExtent,
+          // 提前半屏预缓存，避免新行进场时突然解码封面掉帧（对齐 SongsListView）。
+          scrollCacheExtent: ScrollCacheExtent.pixels(500),
+          // 行不保留状态（封面/标题均无状态构建），离屏即弃，省内存与重建。
+          addAutomaticKeepAlives: false,
+          itemCount: widget.recent.entries.length,
+          itemBuilder: (context, i) {
+            final entry = widget.recent.entries[i];
+            return _RecentTile(
+              entry: entry,
+              onPlay: () => widget.notifier.play(i),
+              onRemove: () => widget.notifier.remove(entry.songPath),
+            );
+          },
+        ),
+        SongListScrollFabs(
+          controller: _controller,
+          paths: widget.recent.entries.map((e) => e.songPath).toList(),
+          rowTopOf: (i) => i * rowExtent,
+          itemExtent: rowExtent,
+          bottom: bottomPad + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 }

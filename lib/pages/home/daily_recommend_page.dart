@@ -9,9 +9,11 @@ import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
+import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -207,27 +209,48 @@ class _Header extends ConsumerWidget {
   }
 }
 
-class _RecommendList extends ConsumerWidget {
+/// 日推歌曲列表：行高固定，右下角叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+class _RecommendList extends ConsumerStatefulWidget {
   const _RecommendList({required this.state});
 
   final DailyRecommendState state;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RecommendList> createState() => _RecommendListState();
+}
+
+class _RecommendListState extends ConsumerState<_RecommendList> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final state = widget.state;
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    return ListView.separated(
-      padding: EdgeInsets.only(
-        top: 6,
-        bottom: (hasSong ? 92.0 : 24.0) +
-            MediaQuery.of(context).padding.bottom,
-      ),
-      itemCount: state.items.length,
-      separatorBuilder: (_, _) => SizedBox(height: 4),
-      itemBuilder: (context, i) {
-        final item = state.items[i];
-        return Builder(
-          builder: (rowContext) {
+    final m = ListMetrics.ofRef(ref);
+    // 行高固定（封面 + 上下内边距），悬浮按钮按此推算行位置。
+    final rowExtent = 46.0 + 2 * m.vPad;
+    final quality =
+        ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
+    final bottomPad =
+        (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
+    return Stack(
+      children: [
+        ListView.separated(
+          controller: _scroll,
+          padding: EdgeInsets.only(top: 6, bottom: bottomPad),
+          itemCount: state.items.length,
+          separatorBuilder: (_, _) => SizedBox(height: 4),
+          itemBuilder: (context, i) {
+            final item = state.items[i];
+            return Builder(
+              builder: (rowContext) {
             // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
             BuildContext? coverCtx;
             final g = songRowPlay(
@@ -262,8 +285,8 @@ class _RecommendList extends ConsumerWidget {
             }
 
             return g.wrap(
-              ListTile(
-                dense: true,
+                ListTile(
+                  dense: true,
                 leading: Builder(
                   builder: (c) {
                     coverCtx = c;
@@ -326,7 +349,20 @@ class _RecommendList extends ConsumerWidget {
             );
           },
         );
-      },
+        },
+        ),
+        // 右下角「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+        SongListScrollFabs(
+          controller: _scroll,
+          paths: [
+            for (final it in state.items) it.toQueueItem(quality).path,
+          ],
+          rowTopOf: (i) => 6 + i * (rowExtent + 4),
+          itemExtent: rowExtent + 4,
+          bottom: bottomPad + 8,
+          right: 12,
+        ),
+      ],
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'settings.dart';
+import '../widgets/glass_settings.dart';
 
 /// 是否启用自定义壁纸。启用时仅替换根层底色（app.dart 铺 CustomBackgroundLayer、
 /// 页面 Scaffold 底色透明透出壁纸），其余样式与普通模式完全一致。
@@ -50,10 +51,11 @@ Color appCardColor(BuildContext context) {
 }
 
 /// 壁纸模式感知的控件/卡片底色：
-/// - 壁纸模式 → 全透明（卡片/列表条/文件夹控件直接透出壁纸）；
+/// - 壁纸模式 → 统一反色色块（[wallpaperBlockFill]，选亮字→深色块、选暗字→
+///   浅色块，不透明度由 `customBackground.widgetAlpha` 控制，0~90，0=透明）；
 /// - 常规模式 → [appCardColor]，统一卡片底色。
 /// 供需要跟随壁纸透明化的控件使用（榜单行/周期切换/文件夹控件等）。
 Color appCardFill(BuildContext context, WidgetRef ref) =>
     ref.watch(wallpaperActiveProvider)
-        ? Colors.transparent
+        ? wallpaperBlockFill(context, ref)
         : appCardColor(context);

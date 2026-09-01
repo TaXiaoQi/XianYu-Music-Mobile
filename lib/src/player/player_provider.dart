@@ -23,6 +23,7 @@ import '../home/home_providers.dart';
 import '../library/saf_channel.dart';
 import '../online/online_meta_store.dart';
 import '../online/online_search_provider.dart';
+import '../online/cover_proxy.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
 import '../recent/recent_provider.dart';
@@ -373,6 +374,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _currentPlayCountRecorded = false;
   /// 通知栏封面路径缓存（歌曲 path → 缩略图路径；空串 = 无封面）。
   final Map<String, String> _notifCoverCache = {};
+  /// 已发起封面预加载的歌曲 path（避免同歌重复预热；满额清首保活）。
+  final Set<String> _preloadedCovers = {};
   /// 进程内是否已请求过通知权限（Android 13+ 媒体通知必需）。
   bool _notifPermissionAsked = false;
 
@@ -718,6 +721,58 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {}
   }
 
+  /// 预加载播放队列封面（后台异步，不阻塞起播）。
+  ///
+  /// 目标：切歌/切歌封面动画时，下一首封面多数已解码/落盘，避免新封面从占位
+  /// 渐显的等待。只预热当前之后若干首 + 随机模式下若干随机候选：
+  ///   - 在线封面：防盗链域名（bili/网易/腾讯/酷我 CDN 等）经 [CoverProxy.fetch]
+  ///     预先拉取到内存缓存（CoverImage._maybeProxy 可直接命中渲染）；
+  ///   - 本地封面：经 [getSongCoverThumbnail] 预热缩略图到磁盘缓存（diff.rs 按
+  ///     mtime+size 短路的既成缓存，后续 CoverImage 再次提取立刻返回）。
+  /// 同歌只预热一次（_preloadedCovers 去重，满额清首保活）。
+  void _preloadQueueCovers() {
+    final targets = <QueueItem>{};
+    for (var k = 1; k <= 6 && state.queueIndex + k < state.queue.length; k++) {
+      targets.add(state.queue[state.queueIndex + k]);
+    }
+    // 随机模式：额外预取若干随机候选，增大切歌即命中的概率。
+    if (state.playMode == 2 && state.queue.length > 1) {
+      for (var i = 0; i < 3; i++) {
+        final idx = _rand.nextInt(state.queue.length);
+        if (idx != state.queueIndex) targets.add(state.queue[idx]);
+      }
+    }
+    for (final item in targets) {
+      if (!_preloadedCovers.add(item.path)) continue;
+      if (_preloadedCovers.length > 64) {
+        _preloadedCovers.remove(_preloadedCovers.first);
+      }
+      Future(() => _preloadOneCover(item));
+    }
+  }
+
+  Future<void> _preloadOneCover(QueueItem item) async {
+    try {
+      if (item.isOnline) {
+        final url = item.coverUrl;
+        if (url != null && url.isNotEmpty && CoverProxy.needsProxy(url)) {
+          await CoverProxy.fetch(url);
+        }
+        return;
+      }
+      if (item.coverUrl?.isNotEmpty == true) return;
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+      await getSongCoverThumbnail(
+        dbPath: dbPath,
+        cacheRoot: cacheRoot,
+        path: item.path,
+      );
+    } catch (_) {
+      // 预载失败静默：封面另有占位兜底，不影响起播。
+    }
+  }
+
   Future<void> _restoreSession() async {
     try {
       String jsonStr = '';
@@ -978,6 +1033,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
       // 本地歌曲通知栏封面兜底（异步，不阻塞起播）。
       unawaited(_resolveNotificationCover(item));
+      // 预热队列后续歌曲封面，使切歌/封面动画时下一首封面多数已就绪。
+      unawaited(Future(() => _preloadQueueCovers()));
     } catch (e) {
       // 队列已被清空/删空：放弃失败处理（换源/跳过/错误透出），不再改写 state。
       if (epoch != _playEpoch) {

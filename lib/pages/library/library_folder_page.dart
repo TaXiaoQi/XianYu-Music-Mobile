@@ -11,6 +11,7 @@ import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
+import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/player/player_provider.dart';
@@ -89,8 +90,8 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         if (!mounted) return;
         if (granted) {
           final count = await Navigator.of(context, rootNavigator: true)
-              .push<int>(
-                  MaterialPageRoute(builder: (_) => const FolderPickerPage()));
+              .push<int>(coverPageRoute<int>(
+                  context, (_) => const FolderPickerPage()));
           if (count != null && count > 0 && mounted) {
             _toast(count > 1 ? '已添加 $count 个扫描目录' : tr('已添加扫描目录'));
           }
@@ -211,8 +212,9 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         onOpen: () {
           if (n.songCount > 0) {
             Navigator.of(context, rootNavigator: true).push(
-              MaterialPageRoute(
-                builder: (_) => SongListPage(
+              coverPageRoute(
+                context,
+                (_) => SongListPage(
                   title: n.name,
                   loader: () =>
                       ref.read(libraryProvider.notifier).songsByFolder(n.path),
