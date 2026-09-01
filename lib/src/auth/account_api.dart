@@ -45,6 +45,7 @@ class AccountApi {
       final data = await _action('get_announcement', {
         'ciyuanxi_id': _ciyuanxiId ?? '',
         'device_id': await _auth.deviceId(),
+        'platform': 'mobile',
       }, fetchTimeoutMs: 15000);
       if (data['id'] == null ||
           data['title'] == null ||

@@ -81,7 +81,7 @@ Widget frostedCardSurface({
   // 壁纸模式下毛玻璃的观感由「毛玻璃」开关决定：开启则按用户档位渲染玻璃，
   // 关闭才回退全透明透出壁纸（不再由壁纸模式强制覆盖）。
   final frostedOn = ref.watch(settingsProvider.select(
-      (s) => s.valueOrNull?.frostedGlass ?? true));
+      (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   final frostedFill = isDark
@@ -317,7 +317,7 @@ Widget pseudoLiquidSurface({
   // 壁纸模式是否回退透明（仅当「毛玻璃」关闭）：开启则按档位渲染玻璃，
   // 关闭时仅导航类表面保留极淡磨砂，其余表面全透明透出壁纸。
   final frostedOn = ref.watch(settingsProvider.select(
-      (s) => s.valueOrNull?.frostedGlass ?? true));
+      (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallTransparent = wallpaper && !frostedOn;
   final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
   // 壁纸模式：导航类表面（顶栏 header、底栏/迷你播放条 bottomBar、顶栏液态

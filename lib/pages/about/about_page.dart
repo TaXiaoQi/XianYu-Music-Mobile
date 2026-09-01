@@ -40,9 +40,28 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   static List<(String, String)> get _developers => <(String, String)>[
     ('@ShenYichenCN', 'https://github.com/ShenYichenCN'),
     ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
-    (tr('@知难辞'), 'https://github.com/88541'),
-    (tr('@绛狐'), 'https://github.com/kaishui-server'),
   ];
+
+  /// 随开发者名单一起划入致谢名单的贡献者（本地静态成员，与服务端致谢合并展示）。
+  static List<AcknowledgementItem> get _extraAcknowledgements =>
+      const <AcknowledgementItem>[
+        AcknowledgementItem(
+            name: '@知难辞', url: 'https://github.com/88541'),
+        AcknowledgementItem(
+            name: '@绛狐', url: 'https://github.com/kaishui-server'),
+      ];
+
+  /// 服务端致谢 + 本地静态致谢，去重后再展示。
+  List<AcknowledgementItem> get _allAcknowledgements {
+    final merged = <AcknowledgementItem>[
+      ..._config.acknowledgements,
+      ..._extraAcknowledgements,
+    ];
+    final seen = <String>{};
+    return merged
+        .where((it) => seen.add(it.name))
+        .toList(growable: false);
+  }
 
   @override
   void initState() {
@@ -260,13 +279,13 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                     ),
                     Divider(height: 1, indent: 52, color: scheme.outlineVariant),
                   ],
-                  if (_config.acknowledgements.isNotEmpty)
+                  if (_allAcknowledgements.isNotEmpty)
                     ListTile(
                       leading: Icon(Icons.favorite_outline, color: scheme.primary),
                       title: Text(tr('致谢名单')),
                       trailing: Icon(Icons.chevron_right,
                           size: 18, color: scheme.outline),
-                      onTap: () => _showAcknowledgements(_config.acknowledgements),
+                      onTap: () => _showAcknowledgements(_allAcknowledgements),
                     ),
                 ],
               ),

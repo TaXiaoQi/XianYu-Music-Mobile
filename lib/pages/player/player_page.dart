@@ -2129,7 +2129,7 @@ class _GlassControlCard extends ConsumerWidget {
             !lowPerf;
     // 毛玻璃材质开关：关闭时控制卡回退为高不透明度纯色（无模糊）。
     final frosted = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? true),
+      settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? false),
     );
     // 全局 blur 预算：滚动/转场时播放页控制卡玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));

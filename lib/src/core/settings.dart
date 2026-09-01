@@ -197,7 +197,7 @@ class AppSettings {
     this.lyricFontPath = '',
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
-    this.frostedGlass = true,
+    this.frostedGlass = false,
     this.frostedGlassLevel = FrostedGlassLevel.strongest,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
@@ -222,7 +222,7 @@ class AppSettings {
     this.autoSwitchSourceOnFailure = false,
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
-    this.enablePredictiveBack = true,
+    this.enablePredictiveBack = false,
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
     // 分享链接有效时长（分钟）：5~24*60，默认 2 小时。
@@ -656,7 +656,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
     final liquidGlass = prefs.getBool('liquidGlass') ?? false;
-    final frostedGlass = prefs.getBool('frostedGlass') ?? true;
+    final frostedGlass = prefs.getBool('frostedGlass') ?? false;
 
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
@@ -735,7 +735,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('autoSwitchSourceOnFailure') ?? false,
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
-      enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? true,
+      enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,
       language: _langFromString(prefs.getString('language') ?? 'system'),
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
       shareLinkValidityMinutes:

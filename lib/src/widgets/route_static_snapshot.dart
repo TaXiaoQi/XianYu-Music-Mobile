@@ -57,7 +57,7 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   void initState() {
     super.initState();
     _enabled =
-        ref.read(settingsProvider).valueOrNull?.frostedGlass ?? true;
+        ref.read(settingsProvider).valueOrNull?.frostedGlass ?? false;
     widget.animation.addStatusListener(_onStatus);
     // 首帧布局后尽早抓一次，避免首个转场冷启动时无快照。
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());

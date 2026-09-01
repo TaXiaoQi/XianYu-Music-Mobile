@@ -264,15 +264,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.blur_on_outlined,
             title: tr('毛玻璃材质'),
             subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
-            // 毛玻璃默认开启；关闭后回退为高不透明度纯色。壁纸模式行为一致
+            // 毛玻璃默认关闭；关闭后回退为高不透明度纯色。壁纸模式行为一致
             // （壁纸只是替换底色，不改变玻璃开关）。
-            value: s?.frostedGlass ?? true,
+            value: s?.frostedGlass ?? false,
             onChanged: (v) => n.setFrostedGlass(v),
           ),
           // 毛玻璃强度调节：毛玻璃开启时才显示。
           // 与液态玻璃共存：液态只覆盖固定几个控件，其余表面由毛玻璃负责，
           // 因此液态玻璃开启时此入口仍然可见、可调。
-          if (s?.frostedGlass ?? true)
+          if (s?.frostedGlass ?? false)
             _tile(
               context,
               icon: Icons.tune_outlined,
@@ -900,7 +900,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.arrow_back_outlined,
             title: tr('预测返回手势'),
             subtitle: tr('开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）'),
-            value: s?.enablePredictiveBack ?? true,
+            value: s?.enablePredictiveBack ?? false,
             onChanged: (v) => n.setEnablePredictiveBack(v),
           ),
         ],

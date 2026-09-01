@@ -302,7 +302,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final textMode = cbActive
         ? (settings!.customBackground.textMode)
         : WallpaperTextColor.follow;
-    _ensureThemes(accent, settings?.enablePredictiveBack ?? true, textMode);
+    _ensureThemes(accent, settings?.enablePredictiveBack ?? false, textMode);
     // 壁纸模型：壁纸只是替换根层底色（CustomBackgroundLayer），页面文字、
     // 玻璃开关、卡片样式全部与普通模式一致，不再对主题做任何前景覆盖。
     final ThemeData theme = _lightTheme!;

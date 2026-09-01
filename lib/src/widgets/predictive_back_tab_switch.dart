@@ -94,7 +94,7 @@ class _PredictiveBackTabContainerState
     if (widget.children.length < 2) return false;
     if (widget.currentIndex == 0) return false;
     if (GoRouter.of(context).canPop()) return false;
-    return ref.read(settingsProvider).valueOrNull?.enablePredictiveBack ?? true;
+    return ref.read(settingsProvider).valueOrNull?.enablePredictiveBack ?? false;
   }
 
   @override

@@ -50,8 +50,13 @@ import '../i18n/i18n.dart';
 const double kFloatingNavBarInset = 90;
 
 /// 横屏固定左缘侧栏宽度（文字侧边栏，参考设置页横屏左栏）。内容区整体右移避让。
-/// 拖动分割线时最小保持此宽度，最大划到屏幕中部（对半）。
+/// 拖动分割线时最大划到屏幕中部（对半）；最小可缩到「仅图标」宽
+/// （[kLandscapeRailIconWidth]），此时侧栏自动只显示居中的图标、隐藏文字。
 const double kLandscapeRailWidth = 176;
+/// 拖动分割线的最小宽度：仅图标态（icon + 内边距，容纳单个入口图标）。
+const double kLandscapeRailIconWidth = 60;
+/// 侧栏宽度低于此值（px）时切换为「仅图标」态：隐藏品牌标题与分区文字、入口只留图标。
+const double kLandscapeRailCollapseAt = 120;
 
 /// 全局横屏感知：由 AppShell 的 MediaQuery 检测写入，供各页面响应横屏布局。
 ///
@@ -1058,9 +1063,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
               setState(() {
-                // 最小即当前默认宽度，最远只能划到屏幕中部（对半）。
+                // 最远划到屏幕中部（对半）；最小可缩到「仅图标」宽。
                 _railWidth = (_railWidth + dx)
-                    .clamp(kLandscapeRailWidth, screenW * 0.5);
+                    .clamp(kLandscapeRailIconWidth, screenW * 0.5);
               });
             },
           ),
@@ -2003,6 +2008,8 @@ class _LandscapeRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 窄宽（用户把分割线拖到图标态）时隐藏品牌/分区/文字，仅居中显示图标。
+    final collapsed = railWidth < kLandscapeRailCollapseAt;
 
     // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的入口，直接内嵌右侧显示。
     final primary = bottomNavItems;
@@ -2033,7 +2040,9 @@ class _LandscapeRail extends ConsumerWidget {
       children: [
         SizedBox(height: floating ? 14 : 20),
         // 顶部品牌标题（横屏时首页顶栏的「弦予音乐」标题移来这里，取代原三条竖线图标）。
-        Padding(
+        // 图标态下隐藏，仅保留顶部留白。
+        if (!collapsed)
+          Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Text.rich(
             TextSpan(
@@ -2060,24 +2069,26 @@ class _LandscapeRail extends ConsumerWidget {
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
             children: [
-              label(tr('导航')),
+              if (!collapsed) label(tr('导航')),
               for (var i = 0; i < primary.length; i++)
                 _railItem(
                   context,
                   icon: primary[i].icon,
                   title: navTitle(context, primary[i]),
+                  collapsed: collapsed,
                   selected: libSel == null && i == index,
                   onTap: () {
                     ref.read(landscapeLibraryProvider.notifier).state = null;
                     onSelect(i);
                   },
                 ),
-              label(tr('音乐库')),
+              if (!collapsed) label(tr('音乐库')),
               for (var j = 0; j < library.length; j++)
                 _railItem(
                   context,
                   icon: library[j].$2,
                   title: library[j].$1,
+                  collapsed: collapsed,
                   selected: libSel == j,
                   onTap: () {
                     // 切换音乐库入口时关闭横屏搜索容器（不遮挡新容器）。
@@ -2118,47 +2129,58 @@ class _LandscapeRail extends ConsumerWidget {
     );
   }
 
-  /// 横屏侧栏单个入口（图标 + 文字，选中淡红胶囊）。
+  /// 横屏侧栏单个入口（图标 + 文字，选中淡红胶囊）。图标态（[collapsed]）只居中图标。
   Widget _railItem(
     BuildContext context, {
     required IconData icon,
     required String title,
     required bool selected,
     required VoidCallback onTap,
+    bool collapsed = false,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected
         ? scheme.primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: collapsed ? 0 : 8,
+        vertical: 2,
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding: EdgeInsets.symmetric(
+            horizontal: collapsed ? 0 : 10,
+            vertical: 9,
+          ),
           decoration: BoxDecoration(
             color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment:
+                collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
               Icon(icon, size: 20, color: color),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
+              if (!collapsed) ...[
+                const SizedBox(width: 9),
+                Text(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w500,
                     color: color,
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
