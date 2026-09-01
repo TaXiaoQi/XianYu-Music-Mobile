@@ -36,6 +36,7 @@ import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../home/online_detail_page.dart';
 import '../library/song_list_page.dart';
+import '../../src/widgets/custom_background.dart';
 import '../../src/i18n/i18n.dart';
 
 // ==================== 来源模型 ====================
@@ -447,14 +448,6 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     setState(() {});
   }
 
-  /// 当前活动音源索引（取动画值实现半途即触发搜索，不等国画结束）。
-  int get _activeSourceIdx {
-    if (_sourceTab == null || _sources.length <= 1) return 0;
-    return (_sourceTab!.animation?.value ?? _activeSourceIndex.toDouble())
-        .round()
-        .clamp(0, _sources.length - 1);
-  }
-
   @override
   void dispose() {
     _tab.removeListener(_onTabChanged);
@@ -633,72 +626,33 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     // 禁用横滑（由外层接管），内容 tab 靠点击切换。每个音源页独立加载，
     // TabBarView 原生动画与搜索并行（参考榜单页 _PeriodBoard）。
     // 单音源：单层 TabBarView（_tab），横滑切内容 tab。
-    final sourceIdx = _activeSourceIdx;
-    final contentIdx = _tab.index;
-    final contentArea = _sources.length > 1
-        ? TabBarView(
-            controller: _sourceTab,
-            children: [
-              for (var si = 0; si < _sources.length; si++)
-                TabBarView(
-                  controller: _tab,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    _TrackTab(
-                      keyword: keyword,
-                      source: _sources[si],
-                      visible: sourceIdx == si && contentIdx == 0,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.artist,
-                      keyword: keyword,
-                      source: _sources[si],
-                      visible: sourceIdx == si && contentIdx == 1,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.album,
-                      keyword: keyword,
-                      source: _sources[si],
-                      visible: sourceIdx == si && contentIdx == 2,
-                    ),
-                    _CatalogTab(
-                      kind: _CatalogKind.playlist,
-                      keyword: keyword,
-                      source: _sources[si],
-                      visible: sourceIdx == si && contentIdx == 3,
-                    ),
-                  ],
-                ),
-            ],
-          )
-        : TabBarView(
-            controller: _tab,
-            children: [
-              _TrackTab(
-                keyword: keyword,
-                source: selected,
-                visible: contentIdx == 0,
-              ),
-              _CatalogTab(
-                kind: _CatalogKind.artist,
-                keyword: keyword,
-                source: selected,
-                visible: contentIdx == 1,
-              ),
-              _CatalogTab(
-                kind: _CatalogKind.album,
-                keyword: keyword,
-                source: selected,
-                visible: contentIdx == 2,
-              ),
-              _CatalogTab(
-                kind: _CatalogKind.playlist,
-                keyword: keyword,
-                source: selected,
-                visible: contentIdx == 3,
-              ),
-            ],
-          );
+    // 结果内容区：单层 TabBarView (controller: _tab) 承载 [单曲, 歌手, 专辑, 歌单]。
+    // 避免在多音源循环中嵌套多重 TabBarView 导致争抢同一个 _tab 控制器、
+    // 引起 RenderViewport 视图偏移移出屏幕外的严重布局崩溃 Bug。
+    final contentArea = TabBarView(
+      controller: _tab,
+      children: [
+        _TrackTab(
+          keyword: keyword,
+          source: selected,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.artist,
+          keyword: keyword,
+          source: selected,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.album,
+          keyword: keyword,
+          source: selected,
+        ),
+        _CatalogTab(
+          kind: _CatalogKind.playlist,
+          keyword: keyword,
+          source: selected,
+        ),
+      ],
+    );
 
     // 内嵌模式（横屏搜索容器）：顶栏由全局横屏顶栏承接（回退/搜索/皮肤/
     // 设置四大控件所有横屏容器共享，本页无额外 tab 行、无需独立悬浮适配）。
@@ -729,10 +683,11 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         ? statusBar + 8 + 44 + 10 + 48 + 10 + 40
         : GlassTopBar.height(context, bottom: tabBar);
 
-    return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
-      resizeToAvoidBottomInset: false,
-      body: Stack(
+    return AppPageBackground(
+      child: Scaffold(
+        backgroundColor: appScaffoldBackground(context, ref),
+        resizeToAvoidBottomInset: false,
+        body: Stack(
         children: [
           // 结果列表铺满全屏：避让量注入列表滚动 padding，滚动时内容从顶栏
           // 与来源条下方穿过（悬浮穿透观感）。
@@ -764,13 +719,13 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
               ),
             )
           else ...[
-            // 来源切换条悬浮吸顶（不透明底色防止列表文字透叠）。
+            // 来源切换条悬浮吸顶（实色底色防止列表文字透叠）。
             Positioned(
               top: topInset,
               left: 0,
               right: 0,
               child: ColoredBox(
-                color: Theme.of(context).scaffoldBackgroundColor,
+                color: appSurfaceBg(context),
                 child: _buildSourceBar(),
               ),
             ),
@@ -825,7 +780,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
           const BottomPlayBarSlot(),
         ],
       ),
-    );
+    ),
+  );
   }
 
   /// 给内容区（结果 tab）注入顶部避让量：列表滚动 padding.top 增加 [inset]，
@@ -1092,12 +1048,10 @@ class _EmptyHotHint extends StatelessWidget {
 class _TrackTab extends ConsumerStatefulWidget {
   final String keyword;
   final _SourceItem source;
-  final bool visible;
 
   const _TrackTab({
     required this.keyword,
     required this.source,
-    required this.visible,
   });
 
   @override
@@ -1137,8 +1091,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   @override
   void initState() {
     super.initState();
-    // 进入结果页时子组件全新创建，需立即执行首次搜索。
-    if (widget.visible && widget.keyword.trim().isNotEmpty) {
+    // 进入结果页时立即发起首次搜索（不强依赖 visible，避免首帧 visible 计算偏差导致跳过搜索）。
+    if (widget.keyword.trim().isNotEmpty) {
       final q = widget.keyword.trim();
       _search(q, '${widget.source.id}|$q');
     }
@@ -1147,8 +1101,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   @override
   void didUpdateWidget(covariant _TrackTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.visible) return;
     final q = widget.keyword.trim();
+    if (q.isEmpty) return;
     final hash = '${widget.source.id}|$q';
     if (hash != _searchedHash) _search(q, hash);
   }
@@ -1424,13 +1378,11 @@ class _CatalogTab extends ConsumerStatefulWidget {
   final _CatalogKind kind;
   final String keyword;
   final _SourceItem source;
-  final bool visible;
 
   const _CatalogTab({
     required this.kind,
     required this.keyword,
     required this.source,
-    required this.visible,
   });
 
   @override
@@ -1455,8 +1407,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   @override
   void initState() {
     super.initState();
-    // 进入结果页时子组件全新创建，需立即执行首次搜索。
-    if (widget.visible && widget.keyword.trim().isNotEmpty) {
+    // 进入结果页时立即发起首次搜索。
+    if (widget.keyword.trim().isNotEmpty) {
       final q = widget.keyword.trim();
       _search(q, '${widget.source.id}|$q');
     }
@@ -1465,8 +1417,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   @override
   void didUpdateWidget(covariant _CatalogTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.visible) return;
     final q = widget.keyword.trim();
+    if (q.isEmpty) return;
     final hash = '${widget.source.id}|$q';
     if (hash != _searchedHash) _search(q, hash);
   }
