@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/blur_budget.dart';
-
 /// 竖屏底部导航 tab 容器（PageView 实现）：手指左右拖动即可跟手切换 tab，
 /// 松手由自定义弹簧物理吸附到整页，参考 PiliNara 的首页 Tab 切换手感。
 ///
@@ -47,21 +45,11 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
     if (widget.currentIndex == old.currentIndex) return;
     if (_controller.hasClients &&
         _controller.page?.round() != widget.currentIndex) {
-      // 主 tab 切换不是路由 push/pop，TransitionTracker（NavigatorObserver）
-      // 感知不到；显式标记转场活动，激活全局 blur 预算的转场降级通道，
-      // 避免整页平移期间所有玻璃表面满档重算模糊导致掉帧。
-      markTransitionActivity();
-      // 标记主 tab 切换动画开始：整页相对固定壁纸平移，离线缓存玻璃表面
-      // （CachedFrosted）需退回实时 BackdropFilter，否则顶栏后会暴露旧快照
-      // 的错位壁纸。动画结束时复位并触发重抓快照。
-      setTabSwitching(true);
-      _controller
-          .animateToPage(
-            widget.currentIndex,
-            duration: widget.duration,
-            curve: Curves.easeOutCubic,
-          )
-          .whenComplete(() => setTabSwitching(false));
+      _controller.animateToPage(
+        widget.currentIndex,
+        duration: widget.duration,
+        curve: Curves.easeOutCubic,
+      );
     }
   }
 
@@ -73,25 +61,17 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
 
   @override
   Widget build(BuildContext context) {
-    return NotificationListener<ScrollNotification>(
-      // 手指拖动切 tab 同样是整页平移（非路由转场）：标记滚动活动，
-      // 让 blur 预算在拖动全程保持降级（markScrollActivity 内部防抖）。
-      onNotification: (n) {
-        if (n.depth == 0) markScrollActivity();
-        return false;
+    return PageView(
+      controller: _controller,
+      physics: const _TabPageScrollPhysics(),
+      onPageChanged: (page) {
+        if (page != widget.currentIndex) {
+          widget.onPageSettled?.call(page);
+        }
       },
-      child: PageView(
-        controller: _controller,
-        physics: const _TabPageScrollPhysics(),
-        onPageChanged: (page) {
-          if (page != widget.currentIndex) {
-            widget.onPageSettled?.call(page);
-          }
-        },
-        children: [
-          for (final child in widget.children) TabKeepAlivePage(child: child),
-        ],
-      ),
+      children: [
+        for (final child in widget.children) TabKeepAlivePage(child: child),
+      ],
     );
   }
 }

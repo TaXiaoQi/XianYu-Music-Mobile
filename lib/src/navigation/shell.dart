@@ -473,6 +473,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   /// 翻转前所在的二级页 path：进横屏被重定向时记录，转回竖屏时恢复。
   String? _rotateBackPath;
 
+  /// 上一次 didChangeMetrics 读到的物理朝向（true=横屏），null=尚未收到首帧。
+  ///
+  /// 翻转重定向以此为准而非 provider 现状：原生旋转通道（_onRotationEvent）在
+  /// 旋转一开始就把 isLandscapeProvider 置成新朝向，didChangeMetrics 到达时
+  /// state 已匹配会早退、跳过重定向——表现为「横屏音乐库容器回竖屏只到我的页、
+  /// 进不了详细页」。物理朝向翻转才做重定向，其余 metrics 触发不重定向。
+  bool? _lastPhysicalLandscape;
+
   /// 是否允许挂载横屏音乐库 pane（_MusicLibraryPane）。
   ///
   /// pane 与竖屏音乐库二级页（/library 等）共享 [musicLibraryPageKeys] 做
@@ -539,8 +547,17 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final size = view.physicalSize / view.devicePixelRatio;
     final landscape = size.width >= size.height * 1.05;
     final noti = ref.read(isLandscapeProvider.notifier);
-    if (noti.state == landscape) return;
-    noti.state = landscape;
+    if (noti.state != landscape) {
+      noti.state = landscape;
+    }
+    // 物理朝向翻转判定：以上一次 didChangeMetrics 读到的物理朝向为准，而非
+    // provider 现状——原生旋转通道(_onRotationEvent)可能已提前把 provider 置成
+    // 新朝向，直接按 state 早退会跳过翻转重定向（横屏容器回竖屏只停在主页、
+    // 进不了详细页）。真正翻转才跑重定向，键盘/通知栏等 metrics 触发不重定向。
+    final flipped =
+        _lastPhysicalLandscape != null && _lastPhysicalLandscape != landscape;
+    _lastPhysicalLandscape = landscape;
+    if (!flipped) return;
     if (!landscape) {
         // 转回竖屏：路由跟着切回竖屏形态，横屏容器状态全部移交/丢弃——竖屏
         // 路由是唯一事实（返回键 pop 即可回主页），下次进横屏再由竖屏路由
@@ -950,10 +967,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
     final anyPaneOpen = landPane != null;
 
-    // 音乐库 pane（本地/收藏/最近/歌单）激活：页内顶栏完整接管（与竖屏二级页
-    // 同构），全局横屏顶栏让位隐藏——否则悬浮模式下页内固定顶栏与全局悬浮
-    // 控件同位叠层，内容也无法穿透。
-    final libPaneActive = landscape && libSel != null;
+    // 音乐库 pane（本地/收藏/最近/歌单）不再让位隐藏全局顶栏：四个容器统一
+    // 继承壳层 LandscapeGlobalTopBar（返回/搜索/皮肤/设置），页内顶栏在面板
+    // 模式下让位为「全局顶栏下方的内容头」（仅保留 TabBar 与页内操作），
+    // 避免悬浮模式下与全局悬浮控件同位叠层。
+    const libPaneActive = false;
 
     // 悬浮搜索框开关：开启后首页/我的页共用同一个实例（提至壳层，不随 tab
     // 重建，避免液态玻璃 shader 反复初始化渲染）。
@@ -988,20 +1006,30 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     // _libPaneMountable：竖屏音乐库二级页翻转进横屏时，pop 反向转场内的
     // 路由页 element 也持同 key，pane 延迟到转场结束后再挂（_deferLibPaneMount）。
     final libPaneMountable = landscape && _libPaneMountable;
-    final Widget landscapeHome = EmbeddedShellScope(
-      child: LandscapeTabSwitcher(
-        currentIndex: libPaneMountable ? (libSel == null ? 0 : 1 + libSel) : 0,
-        enabled: landscapeFadeEnabled,
-        suppress: anyPaneOpen,
-        children: [
-          widget.navigationShell,
-          if (libPaneMountable) ...[
-            const _MusicLibraryPane(index: 0),
-            const _MusicLibraryPane(index: 1),
-            const _MusicLibraryPane(index: 2),
-            const _MusicLibraryPane(index: 3),
+    // 主页统一内容切换器包一层 Offstage：横屏钻取面板（账号/搜索/内容/歌单详情/
+    // 下载）打开期间把主页内容整体「收走」而不是叠在面板下方。这些面板在壁纸模式
+    // 下是半透明表面（无实色底、透出壁纸），若主页仍绘制在下方，会从面板后透出
+    // 主页的列表/文字——即用户感知的「穿透」。offstage 后下方只剩根层壁纸，面板
+    // 透出的是干净的壁纸；面板切换动画（LandscapePageFade out-in）负责覆盖开合。
+    // （音乐库四 pane 本就是同级分支，面板关闭后 parallax 回到对应分支。）
+    final Widget landscapeHome = Offstage(
+      offstage: anyPaneOpen,
+      child: EmbeddedShellScope(
+        child: LandscapeTabSwitcher(
+          currentIndex:
+              libPaneMountable ? (libSel == null ? 0 : 1 + libSel) : 0,
+          enabled: landscapeFadeEnabled,
+          suppress: anyPaneOpen,
+          children: [
+            widget.navigationShell,
+            if (libPaneMountable) ...[
+              const _MusicLibraryPane(index: 0),
+              const _MusicLibraryPane(index: 1),
+              const _MusicLibraryPane(index: 2),
+              const _MusicLibraryPane(index: 3),
+            ],
           ],
-        ],
+        ),
       ),
     );
 
@@ -1299,29 +1327,24 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
           // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
           // 播放页是覆盖全屏的独立 root 路由，侧栏在下层不可见，无需处理。
-          // 悬浮顶部栏模式：侧栏缩为玻璃胶囊卡悬浮在左侧（避让悬浮顶栏控件，
-          // 左右 12 对齐竖屏 dock 边距），不再贴边全高。
+          // 侧栏始终贴边全高：顶部「弦予音乐」logo 与右侧容器全局顶栏对齐，
+          // 不随「悬浮搜索框」开关下移（避免 logo 错位），右侧可拖动分割线常驻。
           if (landscape)
             Positioned(
-              left: floatingSearchBar ? 12 : 0,
-              top: floatingSearchBar
-                  ? MediaQuery.paddingOf(context).top + 60 + 8
-                  : 0,
-              bottom: floatingSearchBar ? 18 : 0,
-              width: floatingSearchBar
-                  ? math.max(160.0, _railWidth - 24)
-                  : _railWidth,
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: _railWidth,
               child: _LandscapeRail(
                 index: widget.index,
                 onSelect: select,
                 railWidth: _railWidth,
-                floating: floatingSearchBar,
+                floating: false,
               ),
             ),
 
           // 左缘侧栏右侧的可拖动分割条：静置为细分隔线，拖动实时调整侧栏宽度。
-          // 悬浮模式下侧栏是独立胶囊卡（固定宽度），不显示分割条。
-          if (landscape && !floatingSearchBar) buildRailDivider(),
+          if (landscape) buildRailDivider(),
 
           // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
           // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让

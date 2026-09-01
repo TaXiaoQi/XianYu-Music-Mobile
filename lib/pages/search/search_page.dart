@@ -550,7 +550,30 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     _sourceTab?.animateTo(newIdx);
   }
 
-  Widget _buildSourceBar() {
+  /// [floating]：悬浮顶栏模式下把每个来源拆成独立玻璃气泡（[FloatingSourcePill]），
+  /// 替换原来的 ChoiceChip 底色；否则保留原 ChoiceChip（固定/内嵌模式）。
+  Widget _buildSourceBar({bool floating = false}) {
+    if (floating) {
+      return SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
+          children: [
+            for (final s in _sources)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FloatingSourcePill(
+                  name: s.name,
+                  selected: s.id == _selected.id,
+                  onTap: () => _onSourceSelected(s.id),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       height: 46,
       child: ListView(
@@ -701,9 +724,9 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
     // 内容初始避让量：悬浮=悬浮列高度（首行44 + 间距10 + Tab气泡48 +
-    // 间距10 + 来源气泡46）；固定=GlassTopBar（含内容 tab）。
+    // 间距10 + 来源独立气泡40）；固定=GlassTopBar（含内容 tab）。
     final topInset = floating
-        ? statusBar + 8 + 44 + 10 + 48 + 10
+        ? statusBar + 8 + 44 + 10 + 48 + 10 + 40
         : GlassTopBar.height(context, bottom: tabBar);
 
     return Scaffold(
@@ -736,8 +759,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                   onTap: _goToSearchPage,
                 ),
                 tabPill: FloatingTabPill(child: tabBar),
-                // 来源插件切换条也包进玻璃气泡，与 Tab 气泡同材质。
-                bottomPill: FloatingTabPill(height: 46, child: _buildSourceBar()),
+                // 来源插件切换条：拆成独立气泡，不再用大气泡包裹全部来源。
+                bottomPill: _buildSourceBar(floating: true),
               ),
             )
           else ...[

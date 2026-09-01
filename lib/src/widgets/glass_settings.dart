@@ -320,32 +320,34 @@ Widget pseudoLiquidSurface({
       (s) => s.valueOrNull?.frostedGlass ?? true));
   final wallTransparent = wallpaper && !frostedOn;
   final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
-  // 壁纸模式：导航类表面（悬浮顶栏 header、底栏/迷你播放条 bottomBar）保持磨砂
-  // 模糊（壁纸且毛玻璃关闭时用 wallpaperNavGlassFill + 最深固定模糊）；毛玻璃
-  // 开启时全部表面按用户档位正常渲染玻璃，其余表面维持全透明透出壁纸。
+  // 壁纸模式：导航类表面（顶栏 header、底栏/迷你播放条 bottomBar、顶栏液态
+  // 胶囊等）恒定极淡半透明磨砂（wallpaperNavGlassFill + 最深固定模糊），与
+  // GlassTopBar 一致、不随「毛玻璃」开关变化——壁纸仍透出但有玻璃质感；其余
+  // 表面在毛玻璃关闭时才全透明透出壁纸，开启则按用户档位正常渲染玻璃。
   final navSurface = surfaceType == BlurSurfaceType.header ||
       surfaceType == BlurSurfaceType.bottomBar;
+  final wallpaperNav = wallpaper && navSurface;
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallTransparent
-          ? (navSurface
-              ? wallpaperNavGlassFill(context)
-              : wallpaperGlassFill(context))
-          : (isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.white.withValues(alpha: 0.34)));
+      : (wallpaperNav
+          ? wallpaperNavGlassFill(context)
+          : wallTransparent
+              ? wallpaperGlassFill(context)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.white.withValues(alpha: 0.34)));
   final border = isDark
       ? Colors.white.withValues(alpha: 0.18)
       : Colors.white.withValues(alpha: 0.5);
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
-  final sigma = wallTransparent
-      ? (navSurface
-          ? kNavSurfaceBlurSigma
-          : wallpaperGlassSigma(context))
-      : (budget == null
-          ? 8.0 * scale
-          : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType));
+  final sigma = wallpaperNav
+      ? kNavSurfaceBlurSigma
+      : wallTransparent
+          ? wallpaperGlassSigma(context)
+          : (budget == null
+              ? 8.0 * scale
+              : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType));
   final surface = Container(
     decoration: BoxDecoration(
       color: fill,

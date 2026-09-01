@@ -48,8 +48,9 @@ enum PlayerStyle {
   traditional,
 }
 
-/// 液态玻璃效果档位：low 性能优先（纯模糊+描边，最省电）/
-/// medium 均衡（轻量片元着色器，默认）/ high 极致渲染（真折射+色散，较耗能）。
+/// 液态玻璃效果档位：low 透亮（CLEAR，零背景模糊+边缘透镜折射，最省电）/
+/// medium 均衡（BALANCED，轻模糊 4dp，默认）/ high 磨砂（FROSTED，重磨砂
+/// 24dp，折射与饱和收敛）。
 enum LiquidGlassQuality {
   low,
   medium,

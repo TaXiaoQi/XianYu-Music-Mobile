@@ -304,11 +304,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               context,
               icon: Icons.tune_outlined,
               title: tr('液态玻璃效果'),
-              subtitle: tr('调整液态玻璃渲染强度与耗电'),
+              subtitle: tr('调整玻璃透亮与磨砂程度'),
               trailing: Text(switch (s?.liquidGlassQuality ??
                   LiquidGlassQuality.medium) {
-                LiquidGlassQuality.low => tr('低 · 性能优先'),
-                LiquidGlassQuality.high => tr('高 · 极致渲染'),
+                LiquidGlassQuality.low => tr('低 · 透亮'),
+                LiquidGlassQuality.high => tr('高 · 磨砂'),
                 LiquidGlassQuality.medium => tr('中 · 均衡'),
               }),
               onTap: () => _pickLiquidGlassQuality(context, ref, s),
@@ -1709,20 +1709,20 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       title: tr('液态玻璃效果'),
       options:   [
         ModernChoiceOption(
-            label: tr('低 · 性能优先'),
-            subtitle: tr('纯高斯模糊+描边，续航最好'),
+            label: tr('低 · 透亮'),
+            subtitle: tr('水晶透亮，零背景模糊，最省电'),
             value: LiquidGlassQuality.low,
             icon: Icons.battery_saver_outlined),
         ModernChoiceOption(
             label: tr('中 · 均衡'),
-            subtitle: tr('轻量片元着色器（默认）'),
+            subtitle: tr('轻模糊，默认观感'),
             value: LiquidGlassQuality.medium,
             icon: Icons.tune_outlined),
         ModernChoiceOption(
-            label: tr('高 · 极致渲染'),
-            subtitle: tr('完整折射与色散管线，观感最强'),
+            label: tr('高 · 磨砂'),
+            subtitle: tr('重磨砂，折射与饱和收敛'),
             value: LiquidGlassQuality.high,
-            icon: Icons.auto_awesome_outlined),
+            icon: Icons.blur_on),
       ],
       currentValue: cur,
     );

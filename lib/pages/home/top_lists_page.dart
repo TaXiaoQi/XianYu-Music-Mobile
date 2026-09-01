@@ -125,9 +125,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 壁纸抽透明态：来源 chip 未选中透出壁纸、选中轻量红底+细边，
-    // 避免榜单来源选择条在壁纸上堆成实色色块；普通模式走主题原样。
-    final wallpaper = ref.watch(wallpaperActiveProvider);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
@@ -139,40 +136,23 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
               children: [
                 if (_sources.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    // 来源插件切换条玻璃气泡：与悬浮顶栏气泡同材质。
-                    child: FloatingTabPill(
-                      height: 46,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    // 来源插件切换条：拆成独立玻璃气泡，不再用一个大泡包裹全部来源。
+                    child: SizedBox(
+                      height: 40,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
                         children: [
                           for (final s in _sources)
                             Padding(
                               key: _chipKeys[s.id],
                               padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text(s.name),
-                                showCheckmark: false,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8),
+                              child: FloatingSourcePill(
+                                name: s.name,
                                 selected: _selectedId == s.id,
-                                backgroundColor:
-                                    wallpaper ? Colors.transparent : null,
-                                selectedColor: wallpaper
-                                    ? scheme.primary.withValues(alpha: 0.14)
-                                    : null,
-                                side: wallpaper
-                                    ? BorderSide(
-                                        color: _selectedId == s.id
-                                            ? scheme.primary
-                                            : scheme.outline
-                                                .withValues(alpha: 0.35),
-                                      )
-                                    : null,
-                                onSelected: (_) =>
+                                onTap: () =>
                                     _selectSource(_sources.indexOf(s)),
                               ),
                             ),

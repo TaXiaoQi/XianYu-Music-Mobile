@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/navigation/shell.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
@@ -26,6 +27,14 @@ class RecentPage extends ConsumerWidget {
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+    // 横屏音乐库面板模式下统一继承壳层全局顶栏：页内只保留一个『清空』内容头，
+    // 位于全局顶栏下方（悬浮模式按顶栏高度下移）。
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
+    // 有记录时渲染「清空」内容头，否则直接以全局顶栏为头。
+    final hasHeader = inMusicPane && recent.entries.isNotEmpty;
 
     return HideShellChrome(
       child: Scaffold(
@@ -34,8 +43,11 @@ class RecentPage extends ConsumerWidget {
           children: [
             Padding(
               padding: EdgeInsets.only(
-                // 面板模式下胶囊顶栏仍覆盖顶部，内容统一按顶栏高度避让。
-                top: GlassTopBar.height(context),
+                // 面板模式下内容头在全局顶栏下方，内容按内容头避让；非面板模式
+                // 沿用完整 GlassTopBar 高度避让。
+                top: inMusicPane
+                    ? paneTop + (hasHeader ? 48 : 8)
+                    : GlassTopBar.height(context),
               ),
               child: recent.loading
                   ? const Center(child: CircularProgressIndicator())
@@ -63,6 +75,23 @@ class RecentPage extends ConsumerWidget {
                           notifier: notifier,
                         ),
             ),
+            // 内容头：面板模式仅保留右侧「清空」；非面板模式完整 GlassTopBar。
+            if (inMusicPane)
+              Positioned(
+                top: paneTop,
+                left: (inMusicPane && floating) ? 12 : 0,
+                right: (inMusicPane && floating) ? 12 : 0,
+                child: hasHeader
+                    ? Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          tooltip: tr('清空'),
+                          onPressed: () => _confirmClear(context, notifier),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             if (!inMusicPane)
               Positioned(
                 top: 0,

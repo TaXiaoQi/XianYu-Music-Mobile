@@ -186,12 +186,82 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       ],
     );
 
+    // 横屏音乐库 pane 模式：本页不再渲染完整顶栏（返回/皮肤/设置/搜索入口由
+    // 壳层 LandscapeGlobalTopBar 统一继承），页内仅保留「内容头」作为页面特有
+    // 控件（本地搜索 + 文件夹 + TabBar），位于全局顶栏下方。
+    // 悬浮模式：全局顶栏独立悬浮在右侧容器顶部（高度≈statusBar+60），内容头
+    // 需下移到其下方（paneTop=statusBar+66）；固定（覆盖）模式全局顶栏在壳层
+    // Column 上层，内容直接从其下方开始（paneTop=0）。
+    final paneTop = (inMusicPane && floating) ? statusBar + 66 : 0.0;
+
+    // 页内内容头（悬浮胶囊 / 固定细分条）。悬浮模式用与首页同款的玻璃胶囊行；
+    // 固定（覆盖）模式用带细分隔线的紧凑条，保持与全局顶栏一致的常规观感。
+    final Widget header;
+    final double headerTop;
+    if (inMusicPane) {
+      headerTop = paneTop;
+      header = floating
+          ? FloatingSearchTopBar(
+              field: FloatingGlassSearchField(
+                controller: _searchCtrl,
+                onChanged: _onSearchChanged,
+                showClear: _query.isNotEmpty,
+                onClear: _clearSearch,
+                hint: tr('搜索歌曲、歌手、专辑'),
+              ),
+              action: BiliPaiIconButton(
+                icon: Icons.add,
+                tooltip: tr('文件夹'),
+                onTap: () => context.push('/library/folders'),
+              ),
+              tabPill: FloatingTabPill(child: tabBar),
+            )
+          : _fixedPaneHeader(context, tabBar);
+    } else if (floating) {
+      headerTop = statusBar + 8;
+      header = FloatingSearchTopBar(
+        onBack: () => context.pop(),
+        field: FloatingGlassSearchField(
+          controller: _searchCtrl,
+          onChanged: _onSearchChanged,
+          showClear: _query.isNotEmpty,
+          onClear: _clearSearch,
+          hint: tr('搜索歌曲、歌手、专辑'),
+        ),
+        action: BiliPaiIconButton(
+          icon: Icons.add,
+          tooltip: tr('文件夹'),
+          onTap: () => context.push('/library/folders'),
+        ),
+        tabPill: FloatingTabPill(child: tabBar),
+      );
+    } else {
+      headerTop = 0;
+      header = GlassTopBar(
+        leading: const BackButton(),
+        titleSpacing: 4,
+        title: _buildSearchField(context),
+        actions: [
+          // 文件夹页入口（已从 Tab 独立为二级页）。
+          IconButton(
+            tooltip: tr('文件夹'),
+            onPressed: () => context.push('/library/folders'),
+            icon: const Icon(Icons.add, size: 24),
+          ),
+        ],
+        bottom: tabBar,
+      );
+    }
+
     // 顶栏下方的内容初始避让量：悬浮=整列高度；固定=GlassTopBar（含 TabBar）。
     // 内容铺满全屏，避让量注入列表 padding.top——滚动时内容从顶栏下方穿过
     //（与首页一致的悬浮穿透观感），而非被 Padding 压在顶栏下。
-    final topInset = floating
-        ? statusBar + 8 + 44 + 10 + 48 + 14
-        : GlassTopBar.height(context, bottom: tabBar);
+    // pane 模式下还需额外让出全局顶栏高度（paneTop）+ 页内内容头高度。
+    final topInset = inMusicPane
+        ? paneTop + (floating ? 44 + 10 + 48 : 8 + 48 + 48) + 12
+        : (floating
+            ? statusBar + 8 + 44 + 10 + 48 + 14
+            : GlassTopBar.height(context, bottom: tabBar));
 
     return HideShellChrome(
       child: Scaffold(
@@ -217,54 +287,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   _AlbumsTab(topInset: topInset),
                 ],
               ),
-            // 悬浮模式：整列悬浮顶栏（行 + Tab 气泡）；否则固定 GlassTopBar。
-            // 横屏 pane 内无路由可弹：返回钮改为退出音乐库 pane（侧边栏回首页）。
-            if (floating)
-              Positioned(
-                top: statusBar + 8,
-                left: 12,
-                right: 12,
-                child: FloatingSearchTopBar(
-                  onBack: inMusicPane
-                      ? () => ref
-                          .read(landscapeLibraryProvider.notifier)
-                          .state = null
-                      : () => context.pop(),
-                  field: FloatingGlassSearchField(
-                    controller: _searchCtrl,
-                    onChanged: _onSearchChanged,
-                    showClear: _query.isNotEmpty,
-                    onClear: _clearSearch,
-                    hint: tr('搜索歌曲、歌手、专辑'),
-                  ),
-                  action: BiliPaiIconButton(
-                    icon: Icons.add,
-                    tooltip: tr('文件夹'),
-                    onTap: () => context.push('/library/folders'),
-                  ),
-                  tabPill: FloatingTabPill(child: tabBar),
-                ),
-              )
-            else
-              Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: inMusicPane ? null : const BackButton(),
-                titleSpacing: 4,
-                // 横屏 pane 内全局顶栏已让位，页内补回搜索框（保持入口完整）。
-                title: _buildSearchField(context),
-                actions: [
-                  // 文件夹页入口（已从 Tab 独立为二级页）。
-                  IconButton(
-                    tooltip: tr('文件夹'),
-                    onPressed: () => context.push('/library/folders'),
-                    icon: const Icon(Icons.add, size: 24),
-                  ),
-                ],
-                bottom: tabBar,
-              ),
+            // 顶栏层：悬浮/固定/pane 三种形态统一在此铺位。
+            // 横屏 pane 内无路由可弹，返回钮由全局顶栏承接（页内头不含返回键）。
+            Positioned(
+              top: headerTop,
+              left: (inMusicPane || floating) && floating ? 12 : 0,
+              right: (inMusicPane || floating) && floating ? 12 : 0,
+              child: header,
             ),
             // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
             if (!inMusicPane && lib.songs.isNotEmpty)
@@ -272,6 +301,46 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           ],
         ),
         ),
+      ),
+    );
+  }
+
+  /// 面板（横屏音乐库 pane，固定/覆盖模式）的内容头：本地搜索 + 文件夹 +
+  /// TabBar，带细分隔线，位于全局顶栏下方。
+  Widget _fixedPaneHeader(BuildContext context, Widget tabBar) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Row(
+              children: [
+                Expanded(child: _buildSearchField(context)),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: tr('文件夹'),
+                  onPressed: () => context.push('/library/folders'),
+                  icon: const Icon(Icons.add, size: 22),
+                ),
+              ],
+            ),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(
+              tabBarTheme: TabBarThemeData(
+                dividerColor: Colors.transparent,
+              ),
+            ),
+            child: SizedBox(height: 48, child: tabBar),
+          ),
+        ],
       ),
     );
   }

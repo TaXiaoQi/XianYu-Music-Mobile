@@ -99,11 +99,15 @@ class FloatingGlassSurface extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    // 壁纸模式下抽掉液态实色底：顶栏类胶囊一致走极淡磨砂（wallpaperNavGlassFill），
+    // 让壁纸从气泡/胶囊下透出，与 GlassTopBar 同口径。
+    final wallpaper = wallpaperGlassActive(ref);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+            !lowPerf &&
+            !wallpaper;
 
     if (liquid) {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
@@ -166,11 +170,15 @@ class BiliPaiPill extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    // 壁纸模式下抽掉液态实色底：顶栏类胶囊一致走极淡磨砂（wallpaperNavGlassFill），
+    // 让壁纸从气泡/胶囊下透出，与 GlassTopBar 同口径。
+    final wallpaper = wallpaperGlassActive(ref);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+            !lowPerf &&
+            !wallpaper;
 
     final content = Material(
       color: Colors.transparent,
@@ -211,6 +219,60 @@ class BiliPaiPill extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
+    );
+  }
+}
+
+/// 独立来源气泡：每个音源来源一个玻璃胶囊（BiliPai 材质），选中用轻量红底+红字
+/// 替换原 ChoiceChip 底色。用于搜索页/榜单页的来源切换条——拆开成独立气泡，
+/// 不再用一个大 [FloatingTabPill] 包裹全部来源。
+class FloatingSourcePill extends ConsumerWidget {
+  const FloatingSourcePill({
+    super.key,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    this.height = 40,
+  });
+
+  final String name;
+
+  /// 当前是否选中。
+  final bool selected;
+
+  final VoidCallback onTap;
+
+  /// 胶囊高度（默认 40，整高 circular radius=height/2）。
+  final double height;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final radius = height / 2;
+    return BiliPaiPill(
+      onTap: onTap,
+      radius: radius,
+      child: Container(
+        height: height,
+        constraints: BoxConstraints(
+          minWidth: height + 12,
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            // 选中红字，未选中跟随主题次要色。
+            color: selected
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
     );
   }
 }

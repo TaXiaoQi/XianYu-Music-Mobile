@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
@@ -14,6 +15,7 @@ import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/flying_cover.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -32,6 +34,13 @@ class PlaylistsPage extends ConsumerWidget {
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
+    // 横屏音乐库 pane 模式下统一继承壳层全局顶栏：页内仅保留「新建/导入」
+    // 内容头，位于全局顶栏下方（悬浮模式按顶栏高度下移）。
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
+    const headerH = 48.0;
 
     return HideShellChrome(
       child: Scaffold(
@@ -41,8 +50,9 @@ class PlaylistsPage extends ConsumerWidget {
           children: [
             Padding(
               padding: EdgeInsets.only(
-                // 面板模式下胶囊顶栏仍覆盖顶部，内容统一按顶栏高度避让。
-                top: GlassTopBar.height(context),
+                // 面板模式下内容头在全局顶栏下方，内容按其避让；非面板模式
+                // 沿用完整 GlassTopBar 高度避让。
+                top: inMusicPane ? paneTop + headerH + 4 : GlassTopBar.height(context),
               ),
               child: state.loading
                   ? const Center(child: CircularProgressIndicator())
@@ -82,6 +92,46 @@ class PlaylistsPage extends ConsumerWidget {
                         )
                       : _PlaylistList(state: state),
             ),
+            // 内容头：面板模式仅保留右侧「新建/导入」（悬浮玻璃圆钮 / 固定普通钮）；
+            // 非面板模式渲染完整 GlassTopBar。
+            if (inMusicPane)
+              Positioned(
+                top: paneTop,
+                left: (inMusicPane && floating) ? 12 : 0,
+                right: (inMusicPane && floating) ? 12 : 0,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (floating) ...[
+                        BiliPaiIconButton(
+                          icon: Icons.add,
+                          tooltip: tr('新建歌单'),
+                          onTap: () => _promptCreate(context, manager),
+                        ),
+                        const SizedBox(width: 10),
+                        BiliPaiIconButton(
+                          icon: Icons.file_download_outlined,
+                          tooltip: tr('导入歌单'),
+                          onTap: () => context.push('/playlist-import'),
+                        ),
+                      ] else ...[
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          tooltip: tr('新建歌单'),
+                          onPressed: () => _promptCreate(context, manager),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.file_download_outlined),
+                          tooltip: tr('导入歌单'),
+                          onPressed: () => context.push('/playlist-import'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             if (!inMusicPane)
               Positioned(
                 top: 0,

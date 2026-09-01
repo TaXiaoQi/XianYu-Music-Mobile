@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
@@ -62,6 +64,14 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
         Tab(text: tr('专辑')),
       ],
     );
+    // 横屏音乐库面板模式下统一继承壳层全局顶栏：页内不再渲染完整 GlassTopBar，
+    // 仅保留 TabBar 作为「内容头」，位于全局顶栏下方（悬浮模式按顶栏高度下移）。
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
+    // 内容头（TabBar）高度，用于内容区顶部避让。
+    const tabBarHeight = 48.0;
 
     return HideShellChrome(
       child: Scaffold(
@@ -69,9 +79,12 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
         body: Stack(
           children: [
             Padding(
-              // 面板模式下仍保留 TabBar，故内容顶部始终按顶栏高度（含 TabBar）避让。
+              // 面板模式下内容头位于全局顶栏下方，内容按其避让；非面板模式沿用
+              // 完整 GlassTopBar（含 TabBar）高度避让。
               padding: EdgeInsets.only(
-                top: GlassTopBar.height(context, bottom: tabBar),
+                top: inMusicPane
+                    ? paneTop + tabBarHeight + 2
+                    : GlassTopBar.height(context, bottom: tabBar),
               ),
               child: fav.loading
                   ? const Center(child: CircularProgressIndicator())
@@ -84,17 +97,20 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                       ],
                     ),
             ),
-            // 面板模式下保留 TabBar，仅去掉 leading / title / actions。
+            // 内容头：面板模式只保留 TabBar（悬浮气泡 / 固定细分条）；非面板模式
+            // 渲染完整 GlassTopBar（返回 + 标题 + 清空 + TabBar）。
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: inMusicPane ? null : const BackButton(),
-                title: inMusicPane ? null : Text(tr('收藏')),
-                actions: inMusicPane
-                    ? null
-                    : [
+              top: paneTop,
+              left: (inMusicPane && floating) ? 12 : 0,
+              right: (inMusicPane && floating) ? 12 : 0,
+              child: inMusicPane
+                  ? (floating
+                      ? FloatingTabPill(child: tabBar)
+                      : _tabBarStrip(context, tabBar))
+                  : GlassTopBar(
+                      leading: const BackButton(),
+                      title: Text(tr('收藏')),
+                      actions: [
                         if (fav.entries.isNotEmpty && _tab.index == 0)
                           IconButton(
                             icon: const Icon(Icons.delete_sweep_outlined),
@@ -102,13 +118,33 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                             onPressed: () => _confirmClear(context, notifier),
                           ),
                       ],
-                bottom: tabBar,
-              ),
+                      bottom: tabBar,
+                    ),
             ),
             // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
             if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 面板模式（非悬浮）下仅含 TabBar 的内容头：细分隔线 + 48 高 TabBar。
+  Widget _tabBarStrip(BuildContext context, Widget tabBar) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          tabBarTheme: TabBarThemeData(
+            dividerColor: Colors.transparent,
+          ),
+        ),
+        child: SizedBox(height: 48, child: tabBar),
       ),
     );
   }
