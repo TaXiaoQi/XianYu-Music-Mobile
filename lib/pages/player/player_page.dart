@@ -5487,6 +5487,88 @@ class _QueueSheet extends ConsumerStatefulWidget {
 }
 
 class _QueueSheetState extends ConsumerState<_QueueSheet> {
+  String _formatItemSource(QueueItem item) {
+    if (!item.isOnline) {
+      return tr('本地');
+    }
+
+    // 1. 优先从 onlineSongJson 中匹配已安装插件的名称
+    if (item.onlineSongJson != null && item.onlineSongJson!.isNotEmpty) {
+      try {
+        final json = jsonDecode(item.onlineSongJson!) as Map<String, dynamic>;
+        final pluginId = json['pluginId'] as String?;
+        if (pluginId != null && pluginId.isNotEmpty) {
+        final pluginState = ref.read(pluginManagerProvider);
+        for (final p in pluginState.sources) {
+            if (p.id == pluginId) {
+              return p.name;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. 识别短 key（LX / 常用音源）
+    final rawSource = item.source?.trim();
+    if (rawSource != null && rawSource.isNotEmpty) {
+      final lower = rawSource.toLowerCase();
+      switch (lower) {
+        case 'kw':
+          return tr('小蜗');
+        case 'kg':
+          return tr('小枸');
+        case 'tx':
+          return tr('小秋');
+        case 'wy':
+          return tr('小芸');
+        case 'mg':
+          return tr('小蜜');
+        case 'bilibili':
+        case 'bili':
+          return tr('哔哩');
+        case 'qishui':
+          return tr('汽水');
+        case 'qmkg':
+          return tr('K歌');
+        case 'kuaishou':
+          return tr('快手');
+        case 'youtube':
+          return 'YouTube';
+        case 'xmly':
+          return tr('喜马拉雅');
+        default:
+          if (rawSource.length <= 6) {
+            return rawSource.toUpperCase();
+          }
+          return rawSource;
+      }
+    }
+
+    // 3. 从 lx 协议路径兜底
+    if (item.path.startsWith('lx://')) {
+      final parts = item.path.substring(5).split('/');
+      if (parts.isNotEmpty && parts.first.isNotEmpty) {
+        final src = parts.first.toLowerCase();
+        switch (src) {
+          case 'kw':
+            return tr('小蜗');
+          case 'kg':
+            return tr('小枸');
+          case 'tx':
+            return tr('小秋');
+          case 'wy':
+            return tr('小芸');
+          case 'mg':
+            return tr('小蜜');
+          default:
+            return src.toUpperCase();
+        }
+      }
+    }
+
+    return tr('在线');
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
@@ -5617,14 +5699,29 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.drag_handle,
-                            size: 18,
-                            color: scheme.outline,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHigh
+                                .withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color:
+                                  scheme.outlineVariant.withValues(alpha: 0.3),
+                              width: 0.5,
+                            ),
                           ),
-                          onPressed: null,
+                          child: Text(
+                            _formatItemSource(item),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
+                        const SizedBox(width: 4),
                         IconButton(
                           icon: Icon(
                             Icons.close,
