@@ -321,9 +321,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：抽掉玻璃底色统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     // 全局 blur 预算：滚动/转场时迷你条玻璃降级（sigma 缩放 + 铺底补偿）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
@@ -523,15 +521,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
     final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = wallpaper
-        ? kNavSurfaceBlurSigma
-        : (budget == null
-            ? 10.0 * frostedBlurScale(ref)
-            : surfaceBlurSigma(
-                base: 10 * frostedBlurScale(ref),
-                budget: budget,
-                type: BlurSurfaceType.bottomBar,
-              ));
+    // 迷你播放条与顶栏/固定底栏同为导航浮层，模糊量恒定最深（kNavSurfaceBlurSigma=16），
+    // 不跟随「毛玻璃强度」档位——普通/壁纸模式三表面观感统一（静止/滚动/拖拽三态一致）。
+    final sigma = kNavSurfaceBlurSigma;
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(

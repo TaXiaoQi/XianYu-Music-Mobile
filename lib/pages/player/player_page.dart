@@ -2057,9 +2057,7 @@ class _GlassControlCard extends ConsumerWidget {
               settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
             ) ??
             true) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：控制卡统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     // 毛玻璃材质开关：关闭时控制卡回退为高不透明度纯色（无模糊）。
     final frosted = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? true),

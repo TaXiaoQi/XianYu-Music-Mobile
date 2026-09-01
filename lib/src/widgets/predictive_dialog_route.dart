@@ -120,7 +120,16 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
               onTap: dismissible ? () => Navigator.of(context).pop() : null,
               child: Container(color: scrim),
             ),
-            Center(child: _restoreBaseTheme(context, builder)(context)),
+            // 弹窗路由级键盘避让：adjustResize 设备上键出时整个窗口表面会被缩小，
+            // 若直接 Center，弹窗会被顶到「缩水表面」的中央而带着背景一起上移。
+            // 这里用 DialogKeyboardLift 把弹窗钉回「无键盘时的原始全窗」中央，
+            // 仅在键盘真的会盖住底缘时才最小上移；所有 showPredictiveDialog
+            // 弹窗（含直接传 AlertDialog 的）自动获得该行为。
+            Center(
+              child: DialogKeyboardLift(
+                child: _restoreBaseTheme(context, builder)(context),
+              ),
+            ),
           ],
         ),
       ),
@@ -314,4 +323,77 @@ Future<T?> showPredictiveBottomSheet<T>({
       maxWidth: maxWidth,
     ),
   );
+}
+
+/// 键盘避让「仅遮挡才顶起」包装（居中弹窗共用，挂在 [PredictiveBackDialogRoute]
+/// 的 Center 下，所有 showPredictiveDialog 弹窗自动生效）。
+///
+/// - adjustResize 设备上键盘把表面缩小，Center 会把弹窗自动顶到缩水表面的中央
+///   （这就是「离输入法很远却仍被顶起」、连背景一起上移的来源）。这里用
+///   fullH（无键全屏高）把弹窗钉回自然中央，只在键盘真的会盖住底缘时才最小上移
+///  直到露出；键盘收起后自动回到原位；
+/// - 顶起量是「键盘高度」与「弹窗内容高」的纯函数（弹窗屏幕居中推导），
+///   内容高首次布局后一次性缓存；走 [Transform]，不触发重排，键盘动画期间不掉帧。
+class DialogKeyboardLift extends StatefulWidget {
+  const DialogKeyboardLift({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<DialogKeyboardLift> createState() => _DialogKeyboardLiftState();
+}
+
+class _DialogKeyboardLiftState extends State<DialogKeyboardLift> {
+  final GlobalKey _key = GlobalKey();
+  // 弹窗内容高（首次布局后一次性缓存；内容在弹窗展示期内不变）。
+  double _dialogH = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureOnce());
+  }
+
+  void _measureOnce() {
+    if (!mounted || _dialogH > 0) return;
+    final ctx = _key.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      _dialogH = box.size.height;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // adjustResize 设备上键盘把窗口缩小，Center 会把弹窗自动抬高。这里先用
+    // fullH（无键高全屏高）把弹窗钉回自然中央，只在键盘真的会盖住底缘时
+    // 才最小上移直到露出。该公式对「窗口会缩小」和「窗口不缩」两类设备都成立，
+    // 若不做窗口缩放的设备，下面 naturalTop == currentTop，退化为仅被遮挡才顶起。
+    final mq = MediaQuery.of(context);
+    final sizeH = mq.size.height;
+    final keyboard = mq.viewInsets.bottom;
+    double translateY = 0;
+    if (keyboard > 0 && _dialogH > 0) {
+      final fullH = sizeH + keyboard; // 无键盘时的全屏高
+      final naturalTop = (fullH - _dialogH) / 2; // 自然中央（无键盘时的居中位置）
+      final currentTop = (sizeH - _dialogH) / 2; // 窗口缩小+居中后的当前位置
+      final visibleBottom = sizeH; // 可视区底缘 == 键盘顶缘
+      double desiredTop = naturalTop;
+      if (desiredTop + _dialogH > visibleBottom) {
+        final floor = visibleBottom - _dialogH;
+        desiredTop = floor < 0 ? 0.0 : floor;
+      }
+      // 位移 = 目标位置 - 当前位置；正值表示向下还原，负值表示向上避让。
+      translateY = desiredTop - currentTop;
+    }
+    return Transform.translate(
+      offset: Offset(0, translateY),
+      // RepaintBoundary：把弹窗内容层缓存为一块位图层，键盘动画期间每帧只做
+      // 层位移（GPU 合成），不逐帧重新光栅化弹窗内容，避免顶起掉帧。
+      child: RepaintBoundary(
+        child: KeyedSubtree(key: _key, child: widget.child),
+      ),
+    );
+  }
 }

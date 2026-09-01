@@ -1,8 +1,9 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
-import 'cached_frosted.dart';
 import 'glass_settings.dart';
 
 /// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
@@ -31,7 +32,6 @@ class GlassTopBar extends ConsumerWidget {
     this.actions,
     this.bottom,
     this.titleSpacing,
-    this.cachedBackdropKey,
     this.flatBackdrop = false,
   });
 
@@ -45,14 +45,6 @@ class GlassTopBar extends ConsumerWidget {
   /// `BackdropFilter` 全屏离屏合成，直接用铺底填充——视觉不变、成本归零。
   /// 典型：设置类页面顶栏（内容从 `GlassTopBar.height` 之后才开始）。
   final bool flatBackdrop;
-
-  /// 离线缓存背板的 RepaintBoundary 的 GlobalKey（可选）。
-  ///
-  /// 提供时本页内容（`ListView` 等）需包在 `RepaintBoundary(key: 该 key)` 中，
-  /// 顶栏改用 [CachedFrosted] 离线缓存：静止/被二级页盖住/弹回时直接 blit
-  /// 一张预模糊小图，不再每帧全屏高斯基对背板——切页不卡。滚动中自动回退
-  /// 实时 BackdropFilter。细节见 [CachedFrosted]。
-  final GlobalKey? cachedBackdropKey;
 
   /// 顶栏总高度（含状态栏、工具栏与底部 TabBar）：供内容区顶部 Padding 避让。
   /// 无论毛玻璃开/关高度一致，可安全用于布局。
@@ -102,24 +94,16 @@ class GlassTopBar extends ConsumerWidget {
     // 观感两态一致，不随壁纸/滚动/预算变化）。
     if (solid || flatBackdrop) return inner;
 
-    // 提供离线缓存背板 key 时，走 CachedFrosted（静止直接 blit，滚动才实时）。
-    final cachedKey = cachedBackdropKey;
-    if (cachedKey != null) {
-      return CachedFrosted(
-        backdropKey: cachedKey,
-        sigma: sigma,
-        // 铺底透明度由 inner 承担，此处不叠加，避免双重变暗。
-        fill: const Color(0x00000000),
-        child: inner,
-      );
-    }
-
-    // 普通玻璃顶栏：退化为实时 BackdropFilter。sigma 恒定跟随档位，切换/
-    // 滑动/停止三态模糊度表现一致。降采样模糊（cheapBackdropBlur）把高斯
-    // 工作量降为 1/16，在保持一致观感的同时控制成本。
+    // 顶栏与固定底栏一致，始终走实时 BackdropFilter，静止/滚动/切换三态
+    // 观感稳定、不再有快照态与实时态之间的视觉跳变。sigma 恒定
+    // （kNavSurfaceBlurSigma）。顶栏此处用**全分辨率**高斯模糊（不做降采样）：
+    // cheapBackdropBlur 的 1/4 降采样再放大，采样网格与物理像素不对齐时会
+    // 产生约 1~2px 的水平相位偏移（细长条贴邻屏幕边缘最明显，观感像"往右歪、
+    // 和背底没对上"）。全分辨率 blur(sigma) 与 cheapBackdropBlur 的等效半径一致，
+    // 但按原始像素精确对齐背板。顶栏仅一条窄带，全分辨率成本可控。
     return ClipRect(
       child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: inner,
       ),
     );

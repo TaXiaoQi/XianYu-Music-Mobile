@@ -102,9 +102,7 @@ class FloatingGlassSurface extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     if (liquid) {
@@ -182,9 +180,7 @@ class BiliPaiPill extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     final content = Material(
@@ -386,6 +382,9 @@ class FloatingGlassSearchField extends ConsumerWidget {
             fontSize: 14.5,
             color: scheme.onSurface,
           ),
+          // 字段被高 44 的前缀图标/清除按钮撑高后，dense 输入框默认顶部对齐，
+          // 文字会偏上；显式居中让键入文字与 hint 都垂直居中。
+          textAlignVertical: TextAlignVertical.center,
           cursorColor: scheme.primary,
           onChanged: onChanged,
           onTap: onTap,
@@ -436,7 +435,16 @@ class FloatingTabPill extends StatelessWidget {
         height: height,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-          child: child,
+          // 覆盖 TabBar 底部默认分隔线：气泡内只需指示器/文字，去掉那条
+          // 既多余又和玻璃底冲突的横线（仅影响悬浮气泡，不改非悬浮形态）。
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              tabBarTheme: TabBarThemeData(
+                dividerColor: Colors.transparent,
+              ),
+            ),
+            child: child,
+          ),
         ),
       ),
     );

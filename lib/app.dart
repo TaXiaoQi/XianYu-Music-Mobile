@@ -274,6 +274,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
           containers.copyWith(onSurface: onSurface, onSurfaceVariant: onSurfaceVariant),
       textTheme:
           base.textTheme.apply(bodyColor: onSurface, displayColor: onSurface),
+      // 壁纸「亮字/暗字」档位全局覆盖 iconTheme：无显式颜色的裸图标（设置/
+      // 播放/下载/关于/反馈/悬浮歌词等绝大多数控制图标）默认取 iconTheme.color，
+      // 而 ThemeData.build 在构造时按主题明暗自固化 iconTheme（亮主题黑54、
+      // 暗主题白70），copyWith 不会随新 colorScheme 重算。
+      // 若不覆盖，这些图标会固定为「原主题极性」的半透明色——在壁纸字色反转后
+      // （如暗壁纸配亮字，文字已转白）图标仍是深色，与壁纸同色而不可见。
+      // 这里把 iconTheme 同步为 onSurface（与文字同极性、不透明），图标即与
+      // 文字一致，跟随「亮色/暗色字体」档位切换。
+      iconTheme: IconThemeData(color: onSurface),
     );
   }
 

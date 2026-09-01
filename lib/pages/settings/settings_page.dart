@@ -35,9 +35,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   String _query = '';
   final _searchCtrl = TextEditingController();
 
-  /// 设置内容背板：静态快照供顶栏离线缓存复用（推/回二级页时不重算）。
-  final _backdropKey = GlobalKey();
-
   /// 横屏 master-detail 左侧分类导航宽度（默认 260，可拖动分割线调整）。
   double _navWidth = 260;
 
@@ -70,13 +67,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // 内容列表：顶部预留顶栏（含搜索框）高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
           // 底部避让：二级页底栏隐藏，仅迷你播放条悬浮在距底 18px 处（高 58）。
-          // 包 RepaintBoundary 按 _backdropKey 暴露，供顶栏离线缓存复用。
+          // 包 RepaintBoundary 隔离内部重绘，避免列表重排波及背景层。
           RepaintBoundary(
-            key: _backdropKey,
             child: ListView(
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -98,8 +95,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              // 离线缓存背板：静止/被分类页盖住/回退时直接复用预模糊快照。
-              cachedBackdropKey: _backdropKey,
               leading: const BackButton(),
               title: Text(tr('设置')),
               bottom: searchBox,
@@ -255,6 +250,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: false,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

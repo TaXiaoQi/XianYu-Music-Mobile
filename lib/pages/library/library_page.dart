@@ -395,21 +395,34 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
           child: Row(
             children: [
               Expanded(
-                child: DropdownButton<_SongSort>(
-                  value: _sort,
-                  isExpanded: true,
-                  underline: const SizedBox.shrink(),
-                  items:   [
-                    DropdownMenuItem(value: _SongSort.none, child: Text(tr('默认排序'))),
-                    DropdownMenuItem(value: _SongSort.title, child: Text(tr('按标题'))),
-                    DropdownMenuItem(value: _SongSort.artist, child: Text(tr('按歌手'))),
-                    DropdownMenuItem(value: _SongSort.album, child: Text(tr('按专辑'))),
-                    DropdownMenuItem(value: _SongSort.addedAt, child: Text(tr('按添加时间'))),
-                  ],
-                  onChanged: (v) {
-                    _sort = v ?? _SongSort.none;
-                    _onCriteriaChanged();
-                  },
+                child: InkWell(
+                  onTap: () => _openSortMenu(context),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sort,
+                            size: 18, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            _sortLabel(_sort),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.arrow_drop_down,
+                            size: 18, color: scheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
@@ -531,12 +544,99 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
     );
   }
 
+  String _sortLabel(_SongSort s) => switch (s) {
+        _SongSort.none => tr('默认排序'),
+        _SongSort.title => tr('按标题'),
+        _SongSort.artist => tr('按歌手'),
+        _SongSort.album => tr('按专辑'),
+        _SongSort.addedAt => tr('按添加时间'),
+      };
+
+  /// 打开排序选择弹窗（对齐项目统一弹窗风格），选中项高亮前勾选标记，
+  /// 用主色强调、不改底色，保持轻量选中态。
+  Future<void> _openSortMenu(BuildContext context) async {
+    final v = await showSheetDialog<_SongSort>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Text(
+                tr('排序方式'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            for (final s in _SongSort.values)
+              _SortItem(
+                label: _sortLabel(s),
+                selected: s == _sort,
+                onTap: () => Navigator.pop(ctx, s),
+              ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+      // 选项列表较轻，收窄成窄面板、纵向拉长的风格。
+      maxWidth: 240,
+    );
+    if (v != null) {
+      _sort = v;
+      _onCriteriaChanged();
+    }
+  }
+
   String _fmtDuration(int ms) {
     final sec = (ms / 1000).round();
     final h = sec ~/ 3600;
     final m = (sec % 3600) ~/ 60;
     if (h > 0) return '$h 小时 $m 分钟';
     return '$m 分钟';
+  }
+}
+
+/// 排序弹窗里的单选项：选中项左侧主色勾选标记（轻量选中态）。
+class _SortItem extends StatelessWidget {
+  const _SortItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: selected ? scheme.primary : scheme.onSurface,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check, size: 18, color: scheme.primary),
+          ],
+        ),
+      ),
+    );
   }
 }
 

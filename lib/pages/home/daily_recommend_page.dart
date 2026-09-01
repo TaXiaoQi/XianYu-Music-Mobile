@@ -67,7 +67,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.person_outline,
                     message: tr('登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制'),
                     action: tr('去登录'),
-                    onTap: () => context.go('/account'),
+                    onTap: () => context.push('/account'),
                   );
                 }
                 if (state.items.isEmpty) {
@@ -75,7 +75,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.music_off_outlined,
                     message: tr('今天还没有推荐\n请先在「插件管理」中安装音源插件'),
                     action: tr('去安装插件'),
-                    onTap: () => context.go('/plugin'),
+                    onTap: () => context.push('/plugin'),
                   );
                 }
                 return Column(

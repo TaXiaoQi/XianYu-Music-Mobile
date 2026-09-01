@@ -126,15 +126,14 @@ const Set<String> kLandscapeSettingPaths = <String>{
 /// 分支根页面需要的底部避让高度。
 ///
 /// - 悬浮式：底栏与播放条都是浮层（顶端到屏幕底部约 165px），页面留出 175px 保证末项完全露出。
-/// - 固定式：底栏由 `Scaffold` 收缩内容区，但播放条仍是浮层，
-///   页面只需为播放条留白 (82px)。
+/// - 固定式：固定底栏经 `extendBody` 让内容延伸穿到其下（毛玻璃透出内容），底栏
+///   与播放条同为浮层观感，页面同样留出 175px 保证末项完全露出。
 /// - 侧边栏（含横屏自动切换）：导航移到侧边，底部仅剩浮层播放条，页面只需留出 82px。
 final navBarInsetProvider = Provider<double>((ref) {
   final landscape = ref.watch(isLandscapeProvider);
   final s = ref.watch(settingsProvider).valueOrNull;
   if (landscape || s?.navBarPosition == NavBarPosition.side) return 82;
-  final floating = s?.floatingNavBar ?? true;
-  return floating ? 175 : 82;
+  return 175;
 });
 
 /// 请求隐藏底栏与迷你播放条的页面计数。
@@ -1097,7 +1096,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           : (screenSize.height - safeBottom - 64.0 - barH);
     }();
 
+    // resizeToAvoidBottomInset: false — 不让键盘顶起整个壳层内容。
+    // 弹窗在 root Navigator 上，DialogKeyboardLift 已负责弹窗自身的键盘避让；
+    // 页面级输入（搜索等）在各页面内自行处理。参考 PiliNara 的 ViewInsetsSafeArea
+    // 做法：主容器不因键盘缩小，需要避让的页面/弹窗自行消费 viewInsets。
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // 壳底「固定背景层」：始终不随内容平移，供透明页面透出根层壁纸/底色。
@@ -1434,6 +1438,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                   index: widget.index, hidden: hidden, onSelect: select),
             )
           : null,
+      // 固定底栏走入 bottomNavigationBar 槽位时，默认 Scaffold 会把 body 高度收缩
+      // 到底栏上方，导致内容永远到不了底栏后面——固定底栏的毛玻璃只能模糊一片空白
+      // 背景，观感像「不透出的遮挡」。extendBody 让 body（整页内容）延伸到固定底栏
+      // 之下去，滚动内容得以穿过底栏、被其毛玻璃透出（与顶栏/悬浮 dock 一致）。
+      extendBody: !isSide && !floating,
         ); // 关闭 Scaffold，结束 return 语句
   }
 }
@@ -1679,9 +1688,7 @@ class _LiquidNavBar extends ConsumerWidget {
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -1753,7 +1760,9 @@ class _LiquidNavBar extends ConsumerWidget {
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperGlassFill(context)
+            // 壁纸模式下底栏保持极淡磨砂（wallpaperNavGlassFill），与固定底栏/
+            // 顶栏一致，避免全透明让悬浮 dock 在壁纸下滑走时「直接不可见」。
+            ? wallpaperNavGlassFill(context)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -2723,9 +2732,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         (ref.watch(
                 settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf &&
-            // 壁纸透明孔模式：统一走极淡透明磨砂，跳过液态 shader。
-            !wallpaperGlassActive(ref);
+            !lowPerf;
     // 全局 blur 预算：滚动/转场时侧栏面板玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 

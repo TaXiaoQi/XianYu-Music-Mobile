@@ -78,14 +78,20 @@ Widget frostedCardSurface({
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
+  // 壁纸模式下毛玻璃的观感由「毛玻璃」开关决定：开启则按用户档位渲染玻璃，
+  // 关闭才回退全透明透出壁纸（不再由壁纸模式强制覆盖）。
+  final frostedOn = ref.watch(settingsProvider.select(
+      (s) => s.valueOrNull?.frostedGlass ?? true));
+  final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final frostedFill = isDark
+      ? Colors.white.withValues(alpha: 0.10)
+      : Colors.white.withValues(alpha: 0.52);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallpaper
+      : (wallpaperTransparent
           ? wallpaperGlassFill(context)
-          : (isDark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.white.withValues(alpha: 0.52)));
+          : frostedFill);
   final border = solid
       ? null
       : Border.all(
@@ -105,8 +111,10 @@ Widget frostedCardSurface({
   // 模糊度跟随「毛玻璃」档位：滑动/停止三态 sigma 恒定一致，仅转场瞬间
     // 临时缩档防整页掉帧（见 frostedBlurSigma）。降采样模糊（cheapBackdropBlur）
     // 把高斯工作量降为 1/16 控制成本。
-  final sigma = wallpaper ? wallpaperGlassSigma(context) : frostedBlurSigma(ref);
-  // 壁纸模式 sigma=0、fill=全透明：不铺任何模糊，直接透出壁纸（仅保留描边）。
+  final sigma = wallpaperTransparent
+      ? wallpaperGlassSigma(context)
+      : frostedBlurSigma(ref);
+  // 壁纸模式且毛玻璃关闭：sigma=0、fill=全透明，直接透出壁纸（仅保留描边）。
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -125,15 +133,22 @@ Color contrastSearchColor(BuildContext context) =>
         : const Color(0xF0FFFFFF);
 
 /// 搜索框底色（随顶栏模糊状态联动）：
-/// - 固定顶栏处于模糊态（毛玻璃开启，含壁纸模式顶栏保持模糊）→ 完全透明，
-///   把搜索框「镂空」出来，直接透出顶栏的磨砂模糊（不再用实色块盖住）；
+/// - 固定顶栏处于模糊态（毛玻璃开启）→ 完全透明，把搜索框「镂空」出来，
+///   直接透出顶栏的磨砂模糊（不再用实色块盖住）；
 /// - 固定顶栏纯色态（毛玻璃关闭 / 低性能）→ 固定对比色（[contrastSearchColor]），
-///   与不透明的顶栏形成明暗对比。
+///   与不透明的顶栏形成明暗对比；
+/// - 壁纸模式 → 参考本地页顶栏搜索框（[LibraryPage] 的 8% 半透明白/黑填充），
+///   用淡半透明底让搜索框在壁纸上直接显示出来（不再全透明隐没进壁纸）。
 /// 所有带搜索框的页面（首页/我的/搜索页/结果页/设置页/横屏顶栏等）统一走本函数。
-Color searchBoxFill(BuildContext context, WidgetRef ref) =>
-    glassShouldUseSolid(ref, lowPerf: false)
-        ? contrastSearchColor(context)
-        : const Color(0x00000000);
+Color searchBoxFill(BuildContext context, WidgetRef ref) {
+  if (wallpaperGlassActive(ref)) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? const Color(0x14FFFFFF) : const Color(0x14000000);
+  }
+  return glassShouldUseSolid(ref, lowPerf: false)
+      ? contrastSearchColor(context)
+      : const Color(0x00000000);
+}
 
 /// 从设置读取当前液态玻璃效果档位（原始 low/medium/high）。
 LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(
@@ -288,15 +303,20 @@ Widget pseudoLiquidSurface({
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
+  // 壁纸模式是否回退透明（仅当「毛玻璃」关闭）：开启则按档位渲染玻璃，
+  // 关闭时仅导航类表面保留极淡磨砂，其余表面全透明透出壁纸。
+  final frostedOn = ref.watch(settingsProvider.select(
+      (s) => s.valueOrNull?.frostedGlass ?? true));
+  final wallTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   // 壁纸模式：导航类表面（悬浮顶栏 header、底栏/迷你播放条 bottomBar）保持磨砂
-  // 模糊（同固定顶/底栏口径：wallpaperNavGlassFill + 最深固定模糊），其余表面
-  // （抽屉/底部面板 drawerOrSheet、浮层 overlay、通用 generic）维持全透明。
+  // 模糊（壁纸且毛玻璃关闭时用 wallpaperNavGlassFill + 最深固定模糊）；毛玻璃
+  // 开启时全部表面按用户档位正常渲染玻璃，其余表面维持全透明透出壁纸。
   final navSurface = surfaceType == BlurSurfaceType.header ||
       surfaceType == BlurSurfaceType.bottomBar;
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallpaper
+      : (wallTransparent
           ? (navSurface
               ? wallpaperNavGlassFill(context)
               : wallpaperGlassFill(context))
@@ -308,7 +328,7 @@ Widget pseudoLiquidSurface({
       : Colors.white.withValues(alpha: 0.5);
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
-  final sigma = wallpaper
+  final sigma = wallTransparent
       ? (navSurface
           ? kNavSurfaceBlurSigma
           : wallpaperGlassSigma(context))

@@ -252,7 +252,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -321,7 +321,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (logs.isEmpty) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),

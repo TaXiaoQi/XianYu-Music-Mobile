@@ -2886,7 +2886,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
   Widget build(BuildContext context) {
     final logs = ref.watch(applicationLogsProvider);
     final errorCount = logs.where((e) => e.level == LogLevel.error).length;
-    final scheme = Theme.of(context).colorScheme;
     return _CardGroup(
       children: [
         _action(
@@ -2904,7 +2903,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
               ? null
               : () => _export(onlyErrors: true),
         ),
-        Divider(height: 1, indent: 16, endIndent: 16, color: scheme.outlineVariant),
         _action(
           context,
           icon: Icons.delete_sweep_outlined,

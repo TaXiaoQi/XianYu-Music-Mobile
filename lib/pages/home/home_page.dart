@@ -27,9 +27,6 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
-  /// 首页内容背板：静态快照供顶栏离线缓存复用（被二级页盖住/弹回时零抓屏）。
-  final _backdropKey = GlobalKey();
-
   @override
   Widget build(BuildContext context) {
     final ref = this.ref;
@@ -60,9 +57,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           const _AmbientBackground(),
           // 内容主体：顶部避让扩展后的顶栏（标题行+搜索框）。
-          // 整体包 RepaintBoundary 并按 _backdropKey 暴露，供顶栏离线缓存背板。
+          // RepaintBoundary 隔离内部重绘，避免列表重排波及背景层。
           RepaintBoundary(
-            key: _backdropKey,
             child: ListView(
             padding: EdgeInsets.fromLTRB(
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
@@ -98,8 +94,6 @@ class _HomePageState extends ConsumerState<HomePage> {
               left: 0,
               right: 0,
               child: GlassTopBar(
-              // 离线缓存背板：静止/切页/弹回时直接复用预模糊快照。
-              cachedBackdropKey: _backdropKey,
               titleSpacing: 18,
               title:   Text.rich(
                 TextSpan(

@@ -10,6 +10,7 @@ import '../../src/core/developer_mode.dart';
 import '../../src/update/app_update.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 关于页：版本信息、检查更新、官网/开源/群组链接。
@@ -87,73 +88,61 @@ class _AboutPageState extends ConsumerState<AboutPage> {
 
   Future<void> _openUrl(String url) async => openExternalUrl(context, url);
 
-  /// 点击「致谢名单」弹出的名单弹窗，成员可点击跳转主页。
+  /// 点击「致谢名单」弹出的名单弹窗（统一走 showSheetDialog，对齐项目弹窗口径，
+  /// 壁纸/明暗模式自适应），成员可点击跳转主页。
   Future<void> _showAcknowledgements(List<AcknowledgementItem> items) {
     final scheme = Theme.of(context).colorScheme;
     final chipItems = List<AcknowledgementItem>.from(items);
-    return showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-          decoration: BoxDecoration(
-            color: appCardColor(context),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 24,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(tr('致谢名单'),
-                  style: const TextStyle(
-                      fontSize: 17, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(
-                tr('感谢以下项目创意或功能的贡献者，排名不分先后'),
-                textAlign: TextAlign.center,
-                style:
-                    TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 16),
-              if (chipItems.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    tr('暂无致谢名单'),
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final it in chipItems)
-                      _DeveloperChip(name: it.name, url: it.url, onOpen: _openUrl),
-                  ],
+    return showSheetDialog<void>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(tr('致谢名单'),
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text(
+              tr('感谢以下项目创意或功能的贡献者，排名不分先后'),
+              textAlign: TextAlign.center,
+              style:
+                  TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            if (chipItems.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  tr('暂无致谢名单'),
+                  style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 32, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(tr('知道了')),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (final it in chipItems)
+                    _DeveloperChip(
+                        name: it.name, url: it.url, onOpen: _openUrl),
+                ],
               ),
-            ],
-          ),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 32, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(tr('知道了')),
+            ),
+          ],
         ),
       ),
     );
@@ -254,7 +243,9 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: appCardColor(context),
+                // 壁纸模式抽透明：卡片底色随其他页面一致透出壁纸，配合壁纸
+                // 「亮/暗字」档位下翻转的前景，避免卡片实色与翻转后的明暗冲突。
+                color: appCardFill(context, ref),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -363,7 +354,7 @@ class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
           decoration: BoxDecoration(
             color: _pressed
                 ? scheme.primary.withValues(alpha: 0.14)
-                : appCardColor(context),
+                : appCardFill(context, ref),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: _pressed
