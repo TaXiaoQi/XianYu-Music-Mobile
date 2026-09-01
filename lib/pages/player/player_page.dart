@@ -2140,7 +2140,7 @@ class _GlassControlCard extends ConsumerWidget {
       // 横屏时标题已居中在顶栏，控制卡只留进度 + 三区控制行，内边距收敛。
       padding: landscape
           ? const EdgeInsets.fromLTRB(8, 10, 8, 12)
-          : const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          : const EdgeInsets.fromLTRB(20, 10, 20, 14),
       child: current == null
           ?   Padding(
               padding: EdgeInsets.all(24),
@@ -2166,7 +2166,7 @@ class _GlassControlCard extends ConsumerWidget {
               children: [
                 _TitleRow(current: current!),
                 if (error != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(Icons.error_outline, size: 15, color: scheme.error),
@@ -2180,12 +2180,12 @@ class _GlassControlCard extends ConsumerWidget {
                     ],
                   ),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: 4),
                 // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
                 RepaintBoundary(
                   child: _ProgressBar(notifier: notifier),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 2),
                 _Controls(notifier: notifier),
               ],
             ),
@@ -2277,105 +2277,157 @@ class _TitleRow extends ConsumerWidget {
     final lyricsEnabled = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
-    return Row(
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // 顶部行：歌名与歌手完整展示，适当向下平移并保持顶部空隙
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                current.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      current.title.isEmpty ? tr('未知曲目') : current.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      current.artist.isEmpty ? tr('未知歌手') : current.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                current.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              if (current.isOnline)
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _showQualitySheet(context, ref),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Text(
+                      _qualityLabel(currentQuality),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: (currentQuality != null &&
+                                isLosslessQuality(currentQuality))
+                            ? scheme.primary
+                            : const Color(0xFFEC4141).withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              // 桌面歌词「词」按钮
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: lyricsEnabled
+                          ? scheme.primary.withValues(alpha: 0.14)
+                          : Colors.transparent,
+                    ),
+                    child: Text(
+                      tr('词'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: lyricsEnabled
+                            ? scheme.primary
+                            : Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        if (current.isOnline)
-          InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () => _showQualitySheet(context, ref),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Text(
-                _qualityLabel(currentQuality),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                  color:
-                      (currentQuality != null &&
-                          isLosslessQuality(currentQuality))
-                      ? scheme.primary
-                      : Color(0xFFEC4141).withValues(alpha: 0.9),
+        // 下方行：功能动作图标行（收藏 / 分享 / 下载 / 评论），向下微平移
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              IconButton(
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  isFav ? Icons.favorite : Icons.favorite_border,
+                  size: 22,
+                  color: isFav
+                      ? const Color(0xFFEC4141)
+                      : Colors.white.withValues(alpha: 0.85),
                 ),
+                tooltip: tr('收藏'),
+                onPressed: () => ref.read(favoritesProvider.notifier).toggle(current),
               ),
-            ),
-          ),
-        IconButton(
-          icon: Icon(
-            isFav ? Icons.favorite : Icons.favorite_border,
-            color: isFav ? scheme.primary : null,
-          ),
-          onPressed: () => ref.read(favoritesProvider.notifier).toggle(current),
-        ),
-        IconButton(
-          icon: const Icon(Icons.ios_share),
-          tooltip: tr('分享歌曲'),
-          onPressed: () => _shareCurrent(context, ref, current),
-        ),
-        if (current.isOnline)
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            onPressed: () => _showDownloadQualitySheet(context, ref, current),
-          ),
-        if (current.isOnline)
-          IconButton(
-            icon: const Icon(Icons.mode_comment_outlined),
-            onPressed: () => showSheetDialog<void>(
-              context,
-              (_) => CommentSheet(songJson: current.onlineSongJson),
-            ),
-          ),
-        // 桌面歌词「词」按钮（高级模式）：与收藏/分享/下载/评论并排、位于最右
-        InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: lyricsEnabled
-                    ? scheme.primary.withValues(alpha: 0.14)
-                    : Colors.transparent,
-              ),
-              child: Text(
-                tr('词'),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: lyricsEnabled
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
+              IconButton(
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  Icons.ios_share,
+                  size: 22,
+                  color: Colors.white.withValues(alpha: 0.85),
                 ),
+                tooltip: tr('分享歌曲'),
+                onPressed: () => _shareCurrent(context, ref, current),
               ),
-            ),
+              if (current.isOnline)
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.download_outlined,
+                    size: 22,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  tooltip: tr('下载歌曲'),
+                  onPressed: () => _showDownloadQualitySheet(context, ref, current),
+                ),
+              if (current.isOnline)
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.mode_comment_outlined,
+                    size: 22,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  tooltip: tr('评论'),
+                  onPressed: () => showSheetDialog<void>(
+                    context,
+                    (_) => CommentSheet(songJson: current.onlineSongJson),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
