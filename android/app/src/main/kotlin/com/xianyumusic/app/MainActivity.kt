@@ -150,6 +150,37 @@ class MainActivity : AudioServiceActivity() {
                     }
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DownloadNotification.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "updateDownloadProgress" -> {
+                        val currentTitle = call.argument<String>("currentTitle") ?: ""
+                        val currentArtist = call.argument<String>("currentArtist") ?: ""
+                        val doneCount = call.argument<Int>("doneCount") ?: 0
+                        val totalCount = call.argument<Int>("totalCount") ?: 0
+                        val progressPercent = call.argument<Int>("progressPercent") ?: 0
+                        val isFinished = call.argument<Boolean>("isFinished") ?: false
+                        val isFailed = call.argument<Boolean>("isFailed") ?: false
+
+                        DownloadNotification.showOrUpdate(
+                            this,
+                            currentTitle,
+                            currentArtist,
+                            doneCount,
+                            totalCount,
+                            progressPercent,
+                            isFinished,
+                            isFailed
+                        )
+                        result.success(true)
+                    }
+                    "dismissDownloadNotification" -> {
+                        DownloadNotification.cancel(this)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

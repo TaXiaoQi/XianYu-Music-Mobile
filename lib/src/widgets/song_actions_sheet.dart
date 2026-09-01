@@ -91,7 +91,10 @@ Future<void> showSongActionsSheet(
                 onTap: () {
                   Navigator.pop(ctx);
                   ref.read(downloadProvider.notifier).download(item);
-                  showXianYuToast(ctx, tr('开始下载：{title}', {'title': item.title}));
+                  showXianYuToast(
+                    ctx,
+                    tr('开始下载：{title}，请留意通知查看下载进度', {'title': item.title}),
+                  );
                 },
               ),
             if (onPlay != null)

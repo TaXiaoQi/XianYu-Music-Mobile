@@ -2781,7 +2781,7 @@ class _DownloadQualitySheetState
                                     .download(widget.song, quality: q);
                                 showXianYuToastByOverlay(
                                   overlay,
-                                  tr('开始下载：{title}（{quality}）', {
+                                  tr('开始下载：{title}（{quality}），请留意通知查看下载进度', {
                                     'title': widget.song.title,
                                     'quality': _qualityLabel(q),
                                   }),

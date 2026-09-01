@@ -74,24 +74,78 @@ class DownloadPage extends ConsumerWidget {
   }
 
   void _confirmClear(BuildContext context, DownloadManager notifier) {
+    bool deleteFiles = false;
     showPredictiveDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('清空下载记录')),
-        content:   Text(tr('确定要清空全部下载记录吗？（不会删除已下载的文件）')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              notifier.clearHistory();
-            },
-            child:   Text(tr('清空')),
-          ),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text(tr('清空下载记录')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr('确定要清空全部下载记录吗？')),
+                const SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    setState(() {
+                      deleteFiles = !deleteFiles;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Checkbox(
+                            value: deleteFiles,
+                            onChanged: (v) {
+                              setState(() {
+                                deleteFiles = v ?? false;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          tr('同时删除本地文件'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(ctx).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr('取消')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  notifier.clearHistory(deleteFiles: deleteFiles);
+                  showXianYuToast(
+                    context,
+                    deleteFiles
+                        ? tr('已清空记录并删除本地文件')
+                        : tr('已清空下载记录'),
+                  );
+                },
+                child: Text(tr('清空')),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

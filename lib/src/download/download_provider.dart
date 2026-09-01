@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'download_notification_service.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
@@ -31,6 +32,7 @@ class DownloadTask {
   final String? error;
   final String? filePath;
   final int startedAt;
+  final int progressPercent;
 
   const DownloadTask({
     required this.songPath,
@@ -46,12 +48,14 @@ class DownloadTask {
     this.error,
     this.filePath,
     required this.startedAt,
+    this.progressPercent = 0,
   });
 
   DownloadTask copyWith({
     DownloadStatus? status,
     String? error,
     String? filePath,
+    int? progressPercent,
   }) {
     return DownloadTask(
       songPath: songPath,
@@ -64,9 +68,10 @@ class DownloadTask {
       onlineSongJson: onlineSongJson,
       onlineInfoJson: onlineInfoJson,
       status: status ?? this.status,
-      error: error,
-      filePath: filePath,
+      error: error ?? this.error,
+      filePath: filePath ?? this.filePath,
       startedAt: startedAt,
+      progressPercent: progressPercent ?? this.progressPercent,
     );
   }
 }
@@ -239,6 +244,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   Future<void> _execute(DownloadTask task) async {
     try {
+      _updateTask(task.songPath, status: DownloadStatus.downloading, progressPercent: 15);
       final (filePath, usedQuality) =
           await _performDownload(task, _ref.read(settingsProvider).valueOrNull);
       final entry = DownloadHistoryEntry(
@@ -251,7 +257,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         artist: task.artist,
       );
       await _recordHistory(entry);
-      _updateTask(task.songPath, status: DownloadStatus.done, filePath: filePath);
+      _updateTask(task.songPath, status: DownloadStatus.done, filePath: filePath, progressPercent: 100);
     } catch (e) {
       _updateTask(
           task.songPath,
@@ -300,6 +306,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     if (url == null) throw StateError(tr('直链解析失败'));
 
+    _updateTask(task.songPath, progressPercent: 40);
+
     // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理；移动端不转码，
     //    文件即直链源格式）。
     final dir = await _downloadDir();
@@ -315,6 +323,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
       overwriteExisting: settings?.overwriteExisting ?? false,
     );
 
+    _updateTask(task.songPath, progressPercent: 60);
+
     // 3. 流式下载
     await downloadOnlineSong(
       url: url,
@@ -323,11 +333,15 @@ class DownloadManager extends StateNotifier<DownloadState> {
       headersJson: '{}',
     );
 
+    _updateTask(task.songPath, progressPercent: 85);
+
     // 4. 收尾：可选歌词（独立文件）与嵌入元数据/歌词/封面
     final wantLyrics = settings?.downloadLyrics ?? true;
     if (wantLyrics || (settings?.embedDownloadLyrics ?? false)) {
       await _finalizeExtras(item, destPath, parsed, settings);
     }
+
+    _updateTask(task.songPath, progressPercent: 95);
 
     return (destPath, usedQuality);
   }
@@ -488,13 +502,60 @@ class DownloadManager extends StateNotifier<DownloadState> {
     );
   }
 
-  void _updateTask(String songPath,
-      {DownloadStatus? status, String? error, String? filePath}) {
+  void _updateTask(
+    String songPath, {
+    DownloadStatus? status,
+    String? error,
+    String? filePath,
+    int? progressPercent,
+  }) {
     state = state.copyWith(
       tasks: state.tasks.map((t) {
         if (t.songPath != songPath) return t;
-        return t.copyWith(status: status ?? t.status, error: error, filePath: filePath);
+        return t.copyWith(
+          status: status ?? t.status,
+          error: error,
+          filePath: filePath,
+          progressPercent: progressPercent ?? t.progressPercent,
+        );
       }).toList(),
+    );
+    _syncNotificationProgress();
+  }
+
+  void _syncNotificationProgress() {
+    final activeTasks = state.tasks.where((t) =>
+        t.status == DownloadStatus.downloading ||
+        t.status == DownloadStatus.waiting ||
+        t.status == DownloadStatus.done).toList();
+
+    if (activeTasks.isEmpty) {
+      DownloadNotificationService.dismiss();
+      return;
+    }
+
+    final totalCount = activeTasks.length;
+    final doneCount = activeTasks.where((t) => t.status == DownloadStatus.done).length;
+
+    // 优先取正在下载中的任务
+    DownloadTask currentTask;
+    final downloadingList = activeTasks.where((t) => t.status == DownloadStatus.downloading).toList();
+    if (downloadingList.isNotEmpty) {
+      currentTask = downloadingList.first;
+    } else {
+      currentTask = activeTasks.first;
+    }
+
+    final isAllDone = doneCount == totalCount && totalCount > 0;
+
+    DownloadNotificationService.update(
+      currentTitle: currentTask.title,
+      currentArtist: currentTask.artist,
+      doneCount: doneCount,
+      totalCount: totalCount,
+      progressPercent: isAllDone ? 100 : (currentTask.status == DownloadStatus.done ? 100 : currentTask.progressPercent),
+      isFinished: isAllDone,
+      isFailed: currentTask.status == DownloadStatus.failed,
     );
   }
 
@@ -510,8 +571,33 @@ class DownloadManager extends StateNotifier<DownloadState> {
         history: state.history.where((e) => e.songPath != songPath).toList());
   }
 
-  /// 清空下载记录。
-  Future<void> clearHistory() async {
+  /// 清空下载记录（可选同时删除本地已下载的文件）。
+  Future<void> clearHistory({bool deleteFiles = false}) async {
+    if (deleteFiles) {
+      for (final entry in state.history) {
+        try {
+          if (entry.filePath.isNotEmpty) {
+            final f = File(entry.filePath);
+            if (f.existsSync()) {
+              f.deleteSync();
+            }
+            // 清理关联的 lrc 歌词和 cover 封面文件
+            final dot = entry.filePath.lastIndexOf('.');
+            if (dot != -1) {
+              final base = entry.filePath.substring(0, dot);
+              final lrcFile = File('$base.lrc');
+              if (lrcFile.existsSync()) {
+                lrcFile.deleteSync();
+              }
+              final coverFile = File('$base.cover');
+              if (coverFile.existsSync()) {
+                coverFile.deleteSync();
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
     final dataDir = await _ref.read(appDataDirProvider.future);
     await writeDownloadHistory(dataDir: dataDir, content: '{}');
     state = state.copyWith(history: const []);
