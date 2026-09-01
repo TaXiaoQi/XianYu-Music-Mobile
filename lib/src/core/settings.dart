@@ -202,6 +202,7 @@ class AppSettings {
     this.lyricFontSize = 1,
     this.lyricOffsetMs = 0,
     this.showLyricsRomaji = false,
+    this.lyricAlignment = 'center',
     this.lyricFontName = '',
     this.lyricFontPath = '',
     this.liquidGlass = false,
@@ -313,6 +314,9 @@ class AppSettings {
   final String organizeRule;
   final int lyricFontSize;
   final int lyricOffsetMs;
+
+  /// 歌词水平对齐：left / center / right（横屏歌词菜单设置，对齐桌面）。
+  final String lyricAlignment;
   final bool liquidGlass;
   final bool playerLiquidGlass;
 
@@ -497,6 +501,7 @@ class AppSettings {
     String? organizeRule,
     int? lyricFontSize,
     int? lyricOffsetMs,
+    String? lyricAlignment,
     bool? liquidGlass,
     bool? playerLiquidGlass,
     bool? frostedGlass,
@@ -582,6 +587,7 @@ class AppSettings {
       organizeRule: organizeRule ?? this.organizeRule,
       lyricFontSize: lyricFontSize ?? this.lyricFontSize,
       lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
+      lyricAlignment: lyricAlignment ?? this.lyricAlignment,
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
       frostedGlass: frostedGlass ?? this.frostedGlass,
@@ -708,6 +714,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
+      lyricAlignment: prefs.getString('lyricAlignment') ?? 'center',
       liquidGlass: liquidGlass,
       frostedGlass: frostedGlass,
       frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'strongest'),
@@ -890,6 +897,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('organizeRule', next.organizeRule),
       prefs.setInt('lyricFontSize', next.lyricFontSize),
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
+      prefs.setString('lyricAlignment', next.lyricAlignment),
       prefs.setBool('liquidGlass', next.liquidGlass),
       prefs.setBool('frostedGlass', next.frostedGlass),
       prefs.setString('frostedGlassLevel', next.frostedGlassLevel.name),
@@ -994,6 +1002,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
   Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));
+  Future<void> setLyricAlignment(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricAlignment: v));
   Future<void> setLiquidGlass(bool v) => _save((state.valueOrNull ??
         const AppSettings())
       .copyWith(

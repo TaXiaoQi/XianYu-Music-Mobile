@@ -69,6 +69,32 @@ final isLandscapeProvider = StateProvider<bool>((ref) => false);
 /// 参考设置页横屏的 master-detail。
 final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
 
+/// 横屏音乐库 pane 的本地搜索激活状态：在音乐库 pane 内点全局搜索胶囊时置
+/// true，顶栏标题区切换为本地过滤输入框（不再打开在线搜索容器）。对齐桌面端
+/// ——音乐库页的搜索框承担本地过滤职能。
+final landscapeLibrarySearchActiveProvider =
+    StateProvider<bool>((ref) => false);
+
+/// 横屏音乐库 pane 的本地过滤关键词：非空时各 pane（本地/收藏/最近/歌单）以它
+/// 作为本地过滤条件。由全局顶栏的本地过滤输入框写入，各音乐库 pane 页面读取。
+final landscapeLibraryQueryProvider = StateProvider<String>((ref) => '');
+
+/// 横屏音乐库 pane 本地过滤输入框控制器：全局顶栏持有，与各 pane 共享。
+final landscapeLibrarySearchCtrlProvider =
+    Provider<TextEditingController>((ref) {
+  final ctrl = TextEditingController();
+  ref.onDispose(ctrl.dispose);
+  return ctrl;
+});
+
+/// 本地过滤输入框焦点：切换为输入框后由打开方下一帧显式 requestFocus，保证
+/// 第一次点全局搜索胶囊（在音乐库 pane）输入法就弹出。
+final landscapeLibrarySearchFocusProvider = Provider<FocusNode>((ref) {
+  final node = FocusNode();
+  ref.onDispose(node.dispose);
+  return node;
+});
+
 /// 横屏「我的」页账号与安全是否以右侧容器内嵌面板打开（不开二级路由）。
 final landscapeAccountOpenProvider = StateProvider<bool>((ref) => false);
 
@@ -1136,35 +1162,42 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             // 固定式：播放条底边与固定底栏顶(screenSize.height-safeBottom-64)贴合。
             : (screenSize.height - safeBottom - 58.0 - 64.0));
 
+    // 批量模式托起：批量操作栏（作底栏）在底部占位时，播放条整体上移到批量栏
+    // 之上（与「底栏托起播放条」一致），避免批量菜单被播放条挡住。
+    final batchLift = ref.watch(batchBarLiftProvider);
+    final liftedDefaultTop = defaultTop - batchLift;
+
     final actualLeft = _playerLeft ?? defaultLeft;
     // 显示位置按顶栏底部夹紧：历史停靠位（上界收紧前拖到顶部）不残留压栏。
-    final actualTop = (_playerTop ?? defaultTop)
+    final actualTop = (_playerTop ?? liftedDefaultTop)
         .clamp(_playerMinTop(padding.top, landscape), double.infinity)
         .toDouble();
 
     // 根页停靠位顶部：预测返回回拨的落点（页面条在二级页位于低位 -18，shell 条
     // 回到根页停在 -82/-70/-12，直接取隐藏位产生的飞行只有几像素不可见）。用
     // 根页停靠顶计算目标，才能复现「页面条封面飞回根页 shell 条」的可见飞行。
-    final rootBarTop = isSide
-        ? (screenSize.height - safeBottom - 58.0 - 12.0)
-        : (floating
-            ? (screenSize.height - 18.0 - 70.0 - 58.0)
-            : (screenSize.height - safeBottom - 58.0 - 64.0));
+    // 根页停靠不随 miniBarLow 下沉，恒为根页停靠位（批量模式下随批量栏托起）。
+    final rootBarTop = (isSide
+            ? (screenSize.height - safeBottom - 58.0 - 12.0)
+            : (floating
+                ? (screenSize.height - 18.0 - 70.0 - 58.0)
+                : (screenSize.height - safeBottom - 58.0 - 64.0))) -
+        batchLift;
 
     // 播放条拖拽下限：与 defaultTop 停靠位一致，按底栏几何分支。
     // 原来只按悬浮底栏参数(18 间隙+70 高)算，常规(固定式)底部栏下因缺计算
     // safeBottom+64 导致播放条拖到底也与底栏贴近不了，这里按类型精确避让。
     final dragMaxTop = () {
       final barH = 58.0;
-      if (isSide) return screenSize.height - safeBottom - barH - 12.0;
+      if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
       if (floating) {
         return hidden
             ? (screenSize.height - padding.bottom - barH - 12.0)
-            : (screenSize.height - 18.0 - 70.0 - barH);
+            : (screenSize.height - 18.0 - 70.0 - barH - batchLift);
       }
       return hidden
           ? (screenSize.height - padding.bottom - barH - 12.0)
-          : (screenSize.height - safeBottom - 64.0 - barH);
+          : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
     }();
 
     // resizeToAvoidBottomInset: false — 不让键盘顶起整个壳层内容。

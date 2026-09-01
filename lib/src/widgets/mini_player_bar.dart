@@ -15,6 +15,103 @@ import 'flying_cover.dart';
 import 'predictive_cover_return.dart';
 import 'glass_settings.dart';
 
+/// 批量操作栏当前在底部占用的高度（px）——即批量菜单作为「底栏」托起播放条所需
+/// 上移的量。批量操作栏挂载时按自身实测高度写入，卸载（批量模式退出）时归零。
+/// 壳层迷你播放条与页面内嵌播放条统一读取该值，在批量模式下把自身抬高到批量栏
+/// 之上（模拟「底栏托起播放条」，避免批量菜单被播放条挡住）。
+final batchBarLiftProvider = StateProvider<double>((ref) => 0.0);
+
+/// 播放条 / 批量操作栏等底部悬浮胶囊共用的玻璃表面（材质完全同步）：
+///
+/// - 液态玻璃开启（且非低性能）→ 走 BiliPai 液态 shader；
+/// - 液态玻璃关闭 → 退毛玻璃，模糊度跟随「顶栏/底栏悬浮」口径（与播放条一致）。
+///
+/// 底部悬浮胶囊（迷你播放条、批量操作栏）共用同一入口，避免各自实现玻璃导致
+/// 观感漂移（模糊量 / 液态配方不相统一）。
+Widget playbarGlassSurface(
+  BuildContext context,
+  WidgetRef ref, {
+  required Widget child,
+  double radius = 999,
+}) {
+  final lowPerf = ref.watch(
+    settingsProvider.select(
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+  );
+  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  final liquid =
+      (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+          true) &&
+          !lowPerf;
+
+  if (liquid) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final quality = liquidGlassQualitySetting(ref);
+    return BiliPaiGlass(
+      radius: radius,
+      refract: bilipaiRefractOf(quality),
+      chroma: bilipaiChromaOf(quality),
+      blurSigma: surfaceBlurSigma(
+        base: bilipaiBackdropBlurOf(quality),
+        budget: budget,
+        type: BlurSurfaceType.bottomBar,
+        crispAtRest: true,
+      ),
+      backgroundColor: bilipaiGlassTint(isDark, quality),
+      specular: bilipaiSpecularOf(quality),
+      edgeAmount: bilipaiEdgeOf(quality),
+      saturation: bilipaiSaturationOf(quality),
+      // 常驻实时背板：播放条可拖拽、批量栏贴底，统一保持实时采样，观感一致。
+      alwaysLive: true,
+      child: child,
+    );
+  }
+
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final wallpaper = wallpaperGlassActive(ref);
+  final bg = solid
+      ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+      : (wallpaper
+          ? wallpaperNavGlassFill(context)
+          : (isDark
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.white.withValues(alpha: 0.52)));
+  final fill =
+      (solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
+  final border = isDark
+      ? Colors.white.withValues(alpha: 0.12)
+      : Colors.white.withValues(alpha: 0.40);
+  // 模糊度与播放条完全一致：顶栏/底栏切悬浮时跟随悬浮口径（毛玻璃档位缩放），
+  // 否则恒定最深（kNavSurfaceBlurSigma=16，与固定顶栏/底栏一致）。
+  final navFloating =
+      (ref.watch(settingsProvider.select(
+              (s) => s.valueOrNull?.floatingNavBar)) ??
+          false) ||
+          (ref.watch(settingsProvider.select(
+                  (s) => s.valueOrNull?.floatingSearchBar)) ??
+              false);
+  final sigma =
+      navFloating ? frostedBlurSigma(ref) : kNavSurfaceBlurSigma;
+  final surface = Container(
+    decoration: BoxDecoration(
+      color: fill,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: border),
+      boxShadow: navFloatShadows(context, ref),
+    ),
+    child: child,
+  );
+  if (solid) return surface;
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: surface,
+    ),
+  );
+}
+
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
 ///
 /// 拖拽为内建默认行为：未传 [onPanUpdate] 等回调时自动启用「全图拖动 + 磁吸
@@ -110,7 +207,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   double get _defaultTop {
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    return size.height - padding.bottom - 58.0 - 12.0;
+    // 批量模式下被批量操作栏（作底栏）托起：上移批量栏高度，避免被挡住。
+    final batchLift = ref.read(batchBarLiftProvider);
+    return size.height - padding.bottom - 58.0 - 12.0 - batchLift;
   }
 
   @override
@@ -241,8 +340,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final maxLeft = size.width - barW - 6.0;
     final minTop = padding.top + 6.0;
     // 页面内嵌播放条仅出现在二级页面（无底栏），可拖到更底部。
+    // 批量模式下其下方被批量操作栏占据，拖拽下限同步上移批量栏高度。
     const bottomInset = 12.0;
-    final maxTop = size.height - padding.bottom - barH - bottomInset;
+    final batchLift = ref.read(batchBarLiftProvider);
+    final maxTop = size.height -
+        padding.bottom -
+        barH -
+        bottomInset -
+        batchLift;
     final current = _pos ?? Offset(_defaultLeft, _defaultTop);
     setState(() {
       _pos = Offset(
@@ -300,6 +405,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           duration: s.duration,
           resolving: s.resolving,
         )));
+    // 订阅批量操作栏占位：批量模式进入/退出时重定位播放条（托起/回落）。
+    ref.watch(batchBarLiftProvider);
     final current = p.current;
     if (current == null) return const SizedBox.shrink();
 
@@ -449,7 +556,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       }
       return Stack(
         children: [
-          Positioned(
+          // 批量模式托起/回落用 AnimatedPositioned 平滑过渡（默认停靠位变化时
+          // 带 320ms 缓动）；用户拖拽时归零时长，位置实时跟手。
+          AnimatedPositioned(
+            duration: (_pos == null)
+                ? const Duration(milliseconds: 320)
+                : Duration.zero,
+            curve: Curves.easeOutCubic,
             left: _pos?.dx ?? _defaultLeft,
             top: _pos?.dy ?? _defaultTop,
             width: _barWidth,
@@ -516,9 +629,18 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
     final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    // 迷你播放条与顶栏/固定底栏同为导航浮层，模糊量恒定最深（kNavSurfaceBlurSigma=16），
-    // 不跟随「毛玻璃强度」档位——普通/壁纸模式三表面观感统一（静止/滚动/拖拽三态一致）。
-    final sigma = kNavSurfaceBlurSigma;
+    // 顶栏/底栏切悬浮时，播放条跟随「悬浮」口径（毛玻璃档位缩放：跟悬浮顶栏
+    // 胶囊一致）；否则保持恒定最深（kNavSurfaceBlurSigma=16，跟固定顶栏/底栏
+    // 一致）。保证播放条始终与当前顶栏/底栏形态的模糊量对得上。
+    final navFloating =
+        (ref.watch(settingsProvider.select(
+                (s) => s.valueOrNull?.floatingNavBar)) ??
+            false) ||
+            (ref.watch(settingsProvider.select(
+                    (s) => s.valueOrNull?.floatingSearchBar)) ??
+                false);
+    final sigma =
+        navFloating ? frostedBlurSigma(ref) : kNavSurfaceBlurSigma;
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(

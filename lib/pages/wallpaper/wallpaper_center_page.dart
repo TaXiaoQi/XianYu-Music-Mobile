@@ -213,75 +213,88 @@ class _WallpaperCard extends ConsumerWidget {
       ),
       child: InkWell(
         onTap: () => _openPreview(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (thumb.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: thumb,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.primary.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ),
-                      errorWidget: (_, _, _) => Icon(
-                        Icons.image_not_supported_outlined,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    )
-                else
-                    Center(
-                      child: Icon(Icons.image_outlined,
-                          color: scheme.onSurfaceVariant),
+            if (thumb.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: thumb,
+                fit: BoxFit.cover,
+                placeholder: (_, _) => Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: scheme.primary.withValues(alpha: 0.5),
                     ),
-                  if (statusBadge != null)
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          statusBadge!,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 11),
-                        ),
-                      ),
-                    ),
-                ],
+                  ),
+                ),
+                errorWidget: (_, _, _) => Icon(
+                  Icons.image_not_supported_outlined,
+                  color: scheme.onSurfaceVariant,
+                ),
+              )
+            else
+              Center(
+                child: Icon(Icons.image_outlined,
+                    color: scheme.onSurfaceVariant),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
-                  if (uploader.isNotEmpty)
-                    Text(uploader,
+            if (statusBadge != null)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusBadge!,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 11),
+                  ),
+                ),
+              ),
+            // 描述直接叠加在壁纸内底部：白字 + 底部渐变保证可读，
+            // 不再单独做图片下方的描述框（壁纸模式下也天然清晰）。
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 28, 10, 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.6),
+                    ],
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 11, color: scheme.onSurfaceVariant)),
-                ],
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white)),
+                    if (uploader.isNotEmpty)
+                      Text(uploader,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white70)),
+                  ],
+                ),
               ),
             ),
           ],

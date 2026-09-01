@@ -11,6 +11,10 @@ import '../navigation/shell.dart'
     show
         landscapeDownloadOpenProvider,
         landscapeLibraryProvider,
+        landscapeLibraryQueryProvider,
+        landscapeLibrarySearchActiveProvider,
+        landscapeLibrarySearchCtrlProvider,
+        landscapeLibrarySearchFocusProvider,
         landscapePlaylistOpenProvider;
 import 'glass_appbar.dart';
 import 'floating_search_bar.dart';
@@ -27,12 +31,21 @@ class LandscapeSearchBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 参考桌面端：点击顶栏搜索框即在右侧容器打开搜索页（历史+热搜）。
+    // 音乐库 pane 激活时不打开在线搜索容器，改进入「本地过滤」输入态（当前
+    // pane 以输入为本地过滤条件），由 _LandscapeLibrarySearchField 承接。
     // 注意：不要在这里 postFrame 里对输入框 requestFocus——胶囊在容器打开
     // 的同一帧即被卸载，延迟回调里 ref 已失效会抛异常、焦点永远不会建立。
-    // 聚焦逻辑由输入框自身挂载时处理（见 _LandscapeSearchField）。
+    // 聚焦逻辑由输入框自身挂载时处理（见 _LandscapeLibrarySearchField）。
     return PageSearchBar(
-      onTap: () =>
-          ref.read(landscapeSearchOpenProvider.notifier).state = true,
+      onTap: () {
+        final inLibPane = ref.read(landscapeLibraryProvider) != null;
+        if (inLibPane) {
+          ref.read(landscapeLibraryQueryProvider.notifier).state = '';
+          ref.read(landscapeLibrarySearchActiveProvider.notifier).state = true;
+        } else {
+          ref.read(landscapeSearchOpenProvider.notifier).state = true;
+        }
+      },
       onRecognize: () => context.push('/recognize'),
     );
   }
@@ -67,6 +80,11 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     final downloadOpen = ref.watch(landscapeDownloadOpenProvider);
     final playlistOpenId = ref.watch(landscapePlaylistOpenProvider);
     final libSel = ref.watch(landscapeLibraryProvider);
+    // 音乐库 pane 激活：全局搜索不再打开在线搜索容器，直接承担本地过滤职能。
+    final isLibPane = libSel != null;
+    // 音乐库 pane 内是否进入本地过滤输入态（顶栏标题区切换为本地过滤输入框）。
+    final localSearchActive =
+        ref.watch(landscapeLibrarySearchActiveProvider);
     // 搜索容器打开时，标题区切换为搜索输入框（顶栏即搜索输入，参考桌面端）。
     final searchOpen = ref.watch(landscapeSearchOpenProvider);
     // 回退链是否还有上一级：容器打开，或当前不在首页根路由上。
@@ -77,6 +95,13 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
         currentIndex != 0;
 
     void handleBack() {
+      // 音乐库 pane 的本地过滤输入态优先退出：清空过滤并回到搜索胶囊。
+      if (isLibPane &&
+          ref.read(landscapeLibrarySearchActiveProvider.notifier).state) {
+        ref.read(landscapeLibraryQueryProvider.notifier).state = '';
+        ref.read(landscapeLibrarySearchActiveProvider.notifier).state = false;
+        return;
+      }
       // 搜索容器最上层：结果页先退回搜索默认页，默认页再关闭容器
       // （对齐原「搜索页 ← 结果页」两级路由回退）。
       if (ref.read(landscapeSearchOpenProvider.notifier).state) {
@@ -129,14 +154,34 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: searchOpen
-                    ? const _LandscapeSearchField(floating: true)
-                    : FloatingSearchBar(
-                        onTap: () => ref
-                            .read(landscapeSearchOpenProvider.notifier)
-                            .state = true,
-                        onRecognize: () => context.push('/recognize'),
-                      ),
+                child: (isLibPane && localSearchActive)
+                    ? const _LandscapeLibrarySearchField(floating: true)
+                    : searchOpen
+                        ? const _LandscapeSearchField(floating: true)
+                        : FloatingSearchBar(
+                            onTap: () {
+                              final inLibPane = ref
+                                      .read(landscapeLibraryProvider) !=
+                                  null;
+                              if (inLibPane) {
+                                ref
+                                        .read(landscapeLibraryQueryProvider
+                                            .notifier)
+                                        .state =
+                                    '';
+                                ref
+                                        .read(landscapeLibrarySearchActiveProvider
+                                            .notifier)
+                                        .state =
+                                    true;
+                              } else {
+                                ref
+                                    .read(landscapeSearchOpenProvider.notifier)
+                                    .state = true;
+                              }
+                            },
+                            onRecognize: () => context.push('/recognize'),
+                          ),
               ),
               const SizedBox(width: 10),
               BiliPaiIconButton(
@@ -170,9 +215,11 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
           style: const TextStyle(fontWeight: FontWeight.w400),
           child: SizedBox(
             width: double.infinity,
-            child: searchOpen
-                ? const _LandscapeSearchField()
-                : const LandscapeSearchBar(),
+            child: (isLibPane && localSearchActive)
+                ? const _LandscapeLibrarySearchField()
+                : searchOpen
+                    ? const _LandscapeSearchField()
+                    : const LandscapeSearchBar(),
           ),
         ),
       ),
@@ -337,6 +384,116 @@ class _LandscapeSearchFieldState extends ConsumerState<_LandscapeSearchField> {
 
     // 悬浮模式：与悬浮搜索胶囊同一套玻璃材质（液态/伪液态/毛玻璃），进入
     // 搜索页/结果页材质连续不跳变；默认模式保持对比底色胶囊（PageSearchBar）。
+    if (widget.floating) {
+      return FloatingGlassSurface(child: content);
+    }
+    return Material(
+      color: searchBoxFill(context, ref),
+      borderRadius: BorderRadius.circular(999),
+      child: content,
+    );
+  }
+}
+
+/// 横屏音乐库 pane 的本地过滤输入框：在音乐库 pane 内顶栏搜索胶囊点击后切换
+/// 到本框，输入即过滤当前 pane（本地/收藏/最近/歌单）内容。不再打开在线搜索
+/// 容器、不再发起在线搜索，与桌面端音乐库搜索框行为一致。控制器/焦点全局共享
+/// （landscapeLibrarySearchCtrl/FocusProvider），pane 之间切换不丢输入。
+class _LandscapeLibrarySearchField extends ConsumerStatefulWidget {
+  const _LandscapeLibrarySearchField({this.floating = false});
+
+  final bool floating;
+
+  @override
+  ConsumerState<_LandscapeLibrarySearchField> createState() =>
+      _LandscapeLibrarySearchFieldState();
+}
+
+class _LandscapeLibrarySearchFieldState
+    extends ConsumerState<_LandscapeLibrarySearchField> {
+  late final TextEditingController _ctrl =
+      ref.read(landscapeLibrarySearchCtrlProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    // 挂载后下一帧请求焦点：第一次点全局搜索胶囊（在音乐库 pane）键盘就弹出。
+    // 若节点已持有焦点（顶栏实例切换导致本框为重挂载的新实例），EditableText
+    // 只在焦点「变化」时建立输入法连接，先断开再重连驱动其弹出键盘。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final node = ref.read(landscapeLibrarySearchFocusProvider);
+      if (node.hasFocus) {
+        node.unfocus();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) node.requestFocus();
+        });
+      } else {
+        node.requestFocus();
+      }
+    });
+  }
+
+  void _onChanged(String value) {
+    setState(() {}); // 更新清除按钮显隐。
+    ref.read(landscapeLibraryQueryProvider.notifier).state = value;
+  }
+
+  void _clear() {
+    _ctrl.clear();
+    ref.read(landscapeLibraryQueryProvider.notifier).state = '';
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasText = _ctrl.text.isNotEmpty;
+    final content = Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
+        child: Row(
+          children: [
+            Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                focusNode: ref.watch(landscapeLibrarySearchFocusProvider),
+                textInputAction: TextInputAction.search,
+                style: const TextStyle(fontSize: 15),
+                onChanged: _onChanged,
+                onSubmitted: (_) =>
+                    FocusManager.instance.primaryFocus?.unfocus(),
+                decoration: InputDecoration(
+                  hintText: tr('搜索本地歌曲、歌手、专辑'),
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+            if (hasText)
+              GestureDetector(
+                onTap: _clear,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.clear,
+                    size: 17,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
     if (widget.floating) {
       return FloatingGlassSurface(child: content);
     }

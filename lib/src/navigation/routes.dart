@@ -82,7 +82,7 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/home',
               builder: (context, state) =>
-                  const AppPageBackground(child: HomePage()),
+                  const _ShellTabEntry(child: HomePage()),
             ),
           ],
         ),
@@ -91,7 +91,7 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/mine',
               builder: (context, state) =>
-                  const AppPageBackground(child: MinePage()),
+                  const _ShellTabEntry(child: MinePage()),
             ),
           ],
         ),
@@ -500,6 +500,24 @@ class _ShellPage extends Page<void> {
   }
 }
 
+/// 首页/我的 tab 入口。
+///
+/// 竖屏：用 [AppPageBackground] 把壁纸烘焙为页面自身底色（不透明卡片），
+/// 二级页转场即普通模式整页滑动；横屏：保持透明透出壳层根级全屏壁纸，
+/// 与音乐库容器（_MusicLibraryPane 透明底）一致——否则壁纸被烘焙到右侧
+/// 窄容器内，出现「壁纸被限制在右侧容器、左侧被截断」的割裂。
+class _ShellTabEntry extends ConsumerWidget {
+  const _ShellTabEntry({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(isLandscapeProvider)) return child;
+    return AppPageBackground(child: child);
+  }
+}
+
 /// 主 Shell 路由。
 ///
 /// 根因：默认 MaterialPage 的 `MaterialRouteTransitionMixin.canTransitionTo`
@@ -660,6 +678,9 @@ class _SmoothFadeForwards extends StatelessWidget {
         ),
       ),
       // 下层页的联动出场（被覆盖让位 / 覆盖页退出归位），结构与 SDK 一致。
+      // 注意：secondaryAnimation 是否被驱动由各路由的 canTransitionTo 把关
+      // （只对不透明整页路由联动，播放页/弹窗等半透明覆盖时下层保持静止），
+      // 此处仅做静态的平移/淡出渲染，无需再判断覆盖路由类型。
       child: DualTransitionBuilder(
         animation: ReverseAnimation(secondaryAnimation),
         forwardBuilder: (context, anim, child) => FadeTransition(
@@ -821,6 +842,14 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   // 透明，下层「我的」等内容便永久穿透到设置页等二级页之上（「被覆盖的页面不消失」）。
   @override
   bool get opaque => true;
+
+  // 只对不透明整页路由（_CoverRoute/_CoverBackRoute）做旧页联动；播放页
+  //（_PlayerCoverRoute，opaque=false）与弹窗从本页上方打开/关闭时，下层必须
+  // 保持静止，不跟随 secondaryAnimation 平移——否则从二级页打开播放页，返回
+  // 时会出现「原页面被往左挤、再从左滑入归位」的明显位移（预测返回尤甚）。
+  @override
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) =>
+      nextRoute is PageRoute && nextRoute.opaque;
 
   @override
   Color? get barrierColor => null;
@@ -1071,6 +1100,12 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
 
   @override
   bool get opaque => true;
+
+  // 与 _CoverRoute 一致：只对不透明整页路由做旧页联动，播放页（opaque=false）
+  // 与弹窗覆盖本页时下层保持静止，避免返回时「原页面从左滑入」的位移。
+  @override
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) =>
+      nextRoute is PageRoute && nextRoute.opaque;
 
   @override
   Color? get barrierColor => null;

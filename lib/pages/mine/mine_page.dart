@@ -27,6 +27,7 @@ import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../home/discover_section.dart' show StatsSummaryCard;
 import '../home/online_detail_page.dart';
+import '../search/search_page.dart' show searchSessionProvider;
 import '../../src/responsive/landscape.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -42,7 +43,12 @@ class MinePage extends ConsumerWidget {
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final searchBar = PageSearchBarBottom(
-      onTap: () => context.push('/search'),
+      // 我的页搜索默认引导到本地索引：进入前重置会话音源为 local，
+      // 避免沿用首页/搜索页上一次选中的在线音源（无插件时来源条即显示「本地」）。
+      onTap: () {
+        ref.read(searchSessionProvider.notifier).setSource('local');
+        context.push('/search');
+      },
       onRecognize: () => context.push('/recognize'),
     );
     // 悬浮顶部栏（标题胶囊+搜索胶囊+玻璃按钮）由壳层统一渲染（首页/我的页共用

@@ -1494,6 +1494,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   List<_CatalogItem> _items = const [];
   bool _loading = false;
   String _searchedHash = '';
+  /// 当前结果对应的标签类型；kind 变更时清空旧结果，避免歌手结果残留显示在专辑页。
+  _CatalogKind? _searchedKind;
   // LX 歌单分页状态（宿主代取各源原生歌单接口，需翻页拉全）。
   int _page = 1;
   bool _hasMore = false;
@@ -1519,7 +1521,9 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     // 进入结果页时立即发起首次搜索。
     if (widget.keyword.trim().isNotEmpty) {
       final q = widget.keyword.trim();
-      _search(q, '${widget.source.id}|$q');
+      // hash 必须包含 kind：多音源模式下同一声源页的 歌手/专辑/歌单 复用同一
+      // _CatalogTabState，kind 不清入 hash 会导致切换歌手→专辑→歌单不再发请求。
+      _search(q, '${widget.source.id}|${widget.kind.name}|$q');
     }
   }
 
@@ -1528,7 +1532,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     super.didUpdateWidget(oldWidget);
     final q = widget.keyword.trim();
     if (q.isEmpty) return;
-    final hash = '${widget.source.id}|$q';
+    final hash = '${widget.source.id}|${widget.kind.name}|$q';
     if (hash != _searchedHash) _search(q, hash);
   }
 
@@ -1540,6 +1544,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       _searchedHash = hash;
       _loading = q.isNotEmpty;
       if (q.isEmpty) _items = const [];
+      // 标签类别切换（歌手→专辑→歌单）或换音源时，立刻清空旧类别残留，避免张冠李戴。
+      if (_searchedKind != widget.kind) _items = const [];
       _page = 1;
       _hasMore = false;
       _loadingMore = false;
@@ -1569,6 +1575,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     if (_searchedHash != hash) return;
     setState(() {
       _items = out;
+      _searchedKind = widget.kind;
       _loading = false;
     });
   }

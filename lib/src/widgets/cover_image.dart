@@ -9,6 +9,7 @@ import '../core/db_path.dart';
 import '../library/saf_channel.dart';
 import '../online/cover_proxy.dart';
 import '../rust/api.dart';
+import 'fade_in.dart';
 
 /// 封面加载组件。
 ///
@@ -220,6 +221,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         _proxied!,
         fit: BoxFit.cover,
         cacheWidth: _cacheWidth,
+        frameBuilder: CoverFadeIn.frameBuilder(placeholder: _placeholder()),
         errorBuilder: (_, _, _) => _placeholder(),
       );
     }
@@ -231,6 +233,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       // 与本地封面一致按显示尺寸低清解码，避免在线大图全分辨率解码
       // 拖垮列表滚动内存与 GPU 上采样。
       memCacheWidth: _cacheWidth,
+      fadeInDuration: CoverFadeIn.duration,
+      fadeInCurve: Curves.easeOut,
+      fadeOutDuration: const Duration(milliseconds: 250),
       placeholder: (_, _) => _placeholder(),
       errorWidget: (_, _, _) => _placeholder(),
     );
@@ -243,6 +248,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       File(path),
       fit: BoxFit.cover,
       cacheWidth: _cacheWidth,
+      frameBuilder: CoverFadeIn.frameBuilder(placeholder: _placeholder()),
       errorBuilder: (_, _, _) => _placeholder(),
     );
   }

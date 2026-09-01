@@ -5,6 +5,7 @@ import 'package:pinyin/pinyin.dart';
 
 import '../core/settings.dart';
 import '../library/library_provider.dart';
+import 'batch_action_bar.dart';
 import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
@@ -76,6 +77,8 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
   final bool enableActions;
   /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
   final bool enableScrollFabs;
+  /// 批量选择控制器；非空且处于批量模式时整行点按切换选中。
+  final SongBatchController? batch;
   const LetterIndexSongList({
     super.key,
     required this.songs,
@@ -85,6 +88,7 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
     this.highlight,
     this.enableActions = true,
     this.enableScrollFabs = false,
+    this.batch,
   });
 
   @override
@@ -175,6 +179,7 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
     final songs = widget.songs;
     if (songs.isEmpty) return   Center(child: Text(tr('暂无歌曲')));
     final field = widget.indexField;
+    final batch = widget.batch;
     if (field == null) {
       return SongsListView(
         songs: songs,
@@ -183,6 +188,7 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
         highlight: widget.highlight,
         enableActions: widget.enableActions,
         enableScrollFabs: widget.enableScrollFabs,
+        batch: batch,
       );
     }
 
@@ -209,68 +215,84 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
 
     final single = _singleClick;
 
-    return Stack(
-      children: [
-        ListView.builder(
-          controller: _controller,
-          padding: widget.padding,
-          // 提前约半屏预渲染，避免快速滑动时行连同封面在进场帧现建现画而抽帧。
-          scrollCacheExtent: ScrollCacheExtent.pixels(500),
-          // 行不保留状态，离屏即弃，省内存与重建（分组表头/歌曲行均无持久状态）。
-          addAutomaticKeepAlives: false,
-          itemCount: total,
-          itemBuilder: (context, i) {
-            final gIdx = flatGroup[i];
-            if (gIdx >= 0) {
-              // 分组表头也包一层：滚动时整列表逐行复用缓存，避免整页重绘。
-              return RepaintBoundary(
-                child: _HeaderTile(
-                    letter: groups[gIdx].letter, cou: groups[gIdx].cou),
-              );
-            }
-            final si = songAt[i];
-            // 歌曲行包 RepaintBoundary 隔离合成层：与默认列表路径对齐，
-            // 滚动时只重绘进/出可见区的行，可缓存图层避免掉帧。
-            // key 用分组下标+歌曲原始下标复合，避免重复 Key。
-            return RepaintBoundary(
-              key: ValueKey('${si}_$gIdx'),
-              child: _SongRowItem(
-                song: songs[si],
-                originalIndex: si,
-                songs: songs,
-                single: single,
-                onPlay: widget.onPlay,
-                highlight: widget.highlight,
-                enableActions: widget.enableActions,
-              ),
-            );
-          },
-        ),
-        Positioned(
-          top: _padTop,
-          bottom: 0,
-          right: 2,
-          child: IgnorePointer(
-            ignoring: keys.length <= 2,
-            child: _AlphabetIndexBar(
-              keys: keys,
-              active: _active,
-              onSelect: (c) => _jumpToLetter(c, groups),
-            ),
-          ),
-        ),
-        // 右下角「回到顶部 / 定位播放」悬浮按钮；right 让出右侧 A-Z 索引条。
-        if (widget.enableScrollFabs)
-          SongListScrollFabs(
+    // 批量状态在此每次重建时读取；进出批量模式/切换选中均触发重建。
+    Widget buildContent() {
+      final inBatch = batch != null && batch.batchMode;
+      return Stack(
+        children: [
+          ListView.builder(
             controller: _controller,
-            paths: songs.map((s) => s.path).toList(),
-            rowTopOf: _rowTopOf,
-            itemExtent: _rowExtent,
-            bottom: (widget.padding?.bottom ?? 0.0) + 8,
-            right: 40,
+            padding: widget.padding,
+            // 提前约半屏预渲染，避免快速滑动时行连同封面在进场帧现建现画而抽帧。
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
+            // 行不保留状态，离屏即弃，省内存与重建（分组表头/歌曲行均无持久状态）。
+            addAutomaticKeepAlives: false,
+            itemCount: total,
+            itemBuilder: (context, i) {
+              final gIdx = flatGroup[i];
+              if (gIdx >= 0) {
+                // 分组表头也包一层：滚动时整列表逐行复用缓存，避免整页重绘。
+                return RepaintBoundary(
+                  child: _HeaderTile(
+                      letter: groups[gIdx].letter, cou: groups[gIdx].cou),
+                );
+              }
+              final si = songAt[i];
+              // 歌曲行包 RepaintBoundary 隔离合成层：与默认列表路径对齐，
+              // 滚动时只重绘进/出可见区的行，可缓存图层避免掉帧。
+              // key 用分组下标+歌曲原始下标复合，避免重复 Key。
+              return RepaintBoundary(
+                key: ValueKey('${si}_$gIdx'),
+                child: _SongRowItem(
+                  song: songs[si],
+                  originalIndex: si,
+                  songs: songs,
+                  single: single,
+                  onPlay: widget.onPlay,
+                  highlight: widget.highlight,
+                  enableActions: widget.enableActions,
+                  inBatch: inBatch,
+                  batch: batch,
+                ),
+              );
+            },
           ),
-      ],
-    );
+          if (!inBatch)
+            Positioned(
+              top: _padTop,
+              bottom: 0,
+              right: 2,
+              child: IgnorePointer(
+                ignoring: keys.length <= 2,
+                child: _AlphabetIndexBar(
+                  keys: keys,
+                  active: _active,
+                  onSelect: (c) => _jumpToLetter(c, groups),
+                ),
+              ),
+            ),
+          // 右下角「回到顶部 / 定位播放」悬浮按钮；right 让出右侧 A-Z 索引条。
+          // 批量模式下隐藏，避免与底部批量操作栏叠压。
+          if (widget.enableScrollFabs && !inBatch)
+            SongListScrollFabs(
+              controller: _controller,
+              paths: songs.map((s) => s.path).toList(),
+              rowTopOf: _rowTopOf,
+              itemExtent: _rowExtent,
+              bottom: (widget.padding?.bottom ?? 0.0) + 8,
+              right: 40,
+            ),
+        ],
+      );
+    }
+
+    if (batch != null) {
+      return ListenableBuilder(
+        listenable: batch,
+        builder: (context, _) => buildContent(),
+      );
+    }
+    return buildContent();
   }
 }
 
@@ -310,6 +332,8 @@ class _SongRowItem extends ConsumerWidget {
   final Future<void> Function(List<Song> songs, int index)? onPlay;
   final String? highlight;
   final bool enableActions;
+  final bool inBatch;
+  final SongBatchController? batch;
   const _SongRowItem({
     required this.song,
     required this.originalIndex,
@@ -318,6 +342,8 @@ class _SongRowItem extends ConsumerWidget {
     required this.onPlay,
     required this.highlight,
     required this.enableActions,
+    required this.inBatch,
+    this.batch,
   });
 
   @override
@@ -325,6 +351,36 @@ class _SongRowItem extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     final s = song;
     final hlColor = Theme.of(context).colorScheme.primary;
+    // 批量模式：整行点按切换选中，隐藏尾部操作与时长，行首由 wrapBatchRow 挂勾选。
+    if (inBatch) {
+      final batch = this.batch!;
+      final row = CoverRow(
+        cover: SongCover(song: s, size: m.songCover),
+        title: Text(
+          s.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          '${s.artist} · ${s.album}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: m.subtitleSize,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        verticalPadding: m.vPad,
+        onTap: () => batch.toggle(s.path),
+      );
+      return wrapBatchRow(
+        context,
+        row: row,
+        selected: batch.isSelected(s.path),
+        onToggle: () => batch.toggle(s.path),
+      );
+    }
     return Builder(
       builder: (rowContext) {
         BuildContext? coverCtx;

@@ -5,12 +5,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/download/download_provider.dart';
+import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
+import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/batch_action_bar.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
@@ -18,6 +22,7 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -33,6 +38,10 @@ class PlaylistsPage extends ConsumerWidget {
     final state = ref.watch(playlistManagerProvider);
     // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    // 横屏 pane 内：全局顶栏搜索承担本地过滤（按歌单名过滤）。
+    final filter = inMusicPane
+        ? ref.watch(landscapeLibraryQueryProvider).trim().toLowerCase()
+        : '';
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
     // 横屏音乐库 pane 模式下统一继承壳层全局顶栏：页内仅保留「新建/导入」
@@ -91,7 +100,7 @@ class PlaylistsPage extends ConsumerWidget {
                             ],
                           ),
                         )
-                      : _PlaylistList(state: state),
+                      : _PlaylistList(state: state, filter: filter),
             ),
             // 内容头：面板模式仅保留右侧「新建/导入」（悬浮玻璃圆钮 / 固定普通钮）；
             // 非面板模式渲染完整 GlassTopBar。
@@ -199,13 +208,40 @@ Future<String?> _promptName(BuildContext context, String title) {
 
 /// 我的歌单列表：独立订阅播放状态以调整底部留白，避免播放状态翻转波及页头。
 class _PlaylistList extends ConsumerWidget {
-  const _PlaylistList({required this.state});
+  const _PlaylistList({required this.state, this.filter = ''});
 
   final ImportedPlaylistState state;
+
+  /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
+  final String filter;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
+    final filter = this.filter;
+    final playlists = filter.isEmpty
+        ? state.playlists
+        : state.playlists
+            .where((p) => p.name.toLowerCase().contains(filter))
+            .toList();
+    if (playlists.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off,
+                size: 40, color: scheme.onSurface.withValues(alpha: 0.25)),
+            const SizedBox(height: 12),
+            Text(
+              filter.isNotEmpty ? tr('没有找到相关歌单') : tr('还没有歌单'),
+              style:
+                  TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -213,10 +249,10 @@ class _PlaylistList extends ConsumerWidget {
         16,
         (hasSong ? 92.0 : 150.0) + MediaQuery.of(context).padding.bottom,
       ),
-      itemCount: state.playlists.length,
+      itemCount: playlists.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) =>
-          _PlaylistCard(playlist: state.playlists[index]),
+          _PlaylistCard(playlist: playlists[index]),
     );
   }
 }
@@ -232,8 +268,10 @@ class _PlaylistCard extends ConsumerWidget {
     final manager = ref.read(playlistManagerProvider.notifier);
     final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
+    // 壁纸感知卡片底色：常规模式 = appCardColor；壁纸模式 = 反色色块
+    //（对齐音源/榜单页 appCardFill），避免卡片在壁纸上沉成纯黑。
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -378,7 +416,8 @@ class _PlaylistCard extends ConsumerWidget {
 }
 
 /// 歌单详情：从 provider 实时取最新数据，增删歌曲即时刷新。
-class PlaylistDetailPage extends ConsumerWidget {
+/// 批量模式（[SongBatchController]）下切换为勾选列表 + 底部批量操作栏。
+class PlaylistDetailPage extends ConsumerStatefulWidget {
   const PlaylistDetailPage({
     super.key,
     required this.playlistId,
@@ -391,12 +430,106 @@ class PlaylistDetailPage extends ConsumerWidget {
   final bool embedded;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaylistDetailPage> createState() =>
+      _PlaylistDetailPageState();
+}
+
+class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
+  /// 批量选择控制器（顶栏入口 + 列表 + 底部批量操作栏共用）。
+  final SongBatchController _batch = SongBatchController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 批量模式关闭即复位播放条托起量（绑定退出事件，不依赖批量栏卸载时序）。
+    _batch.addListener(_onBatchChanged);
+  }
+
+  void _onBatchChanged() {
+    if (!_batch.batchMode) {
+      ref.read(batchBarLiftProvider.notifier).state = 0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(PlaylistDetailPage old) {
+    super.didUpdateWidget(old);
+    // 横屏容器在切换不同歌单时复用同一 State，重置批量状态避免串选。
+    if (old.playlistId != widget.playlistId) _batch.exit();
+  }
+
+  @override
+  void dispose() {
+    _batch.removeListener(_onBatchChanged);
+    _batch.dispose();
+    super.dispose();
+  }
+
+  /// 批量模式切换按钮：未进入时显示「批量」，进入后变为「完成」。
+  /// [floating] 为真时用 BiliPai 玻璃圆钮（面板悬浮形态），否则普通图标钮。
+  Widget _batchToggle(BuildContext context, {bool floating = false}) {
+    return ListenableBuilder(
+      listenable: _batch,
+      builder: (context, _) {
+        final active = _batch.batchMode;
+        final icon = active
+            ? Icons.check_rounded
+            : Icons.library_add_check_outlined;
+        final tip = active ? tr('完成') : tr('批量');
+        void onTap() => active ? _batch.exit() : _batch.enter();
+        if (floating) {
+          return BiliPaiIconButton(
+            icon: icon,
+            tooltip: tip,
+            color: active ? Theme.of(context).colorScheme.primary : null,
+            onTap: onTap,
+          );
+        }
+        return IconButton(
+          icon: Icon(icon, size: 22),
+          tooltip: tip,
+          onPressed: onTap,
+        );
+      },
+    );
+  }
+
+  /// 本地歌单收藏唯一键（对齐桌面 buildLocalPlaylistCollectionKey：
+  /// 用歌单 ID 保证重命名后收藏不丢失）。
+  String _collectionKey(ImportedPlaylist playlist) =>
+      'playlist:local:${playlist.id}:${playlist.name}';
+
+  bool _isCollectionFavorite(ImportedPlaylist playlist) =>
+      ref.read(favoritesProvider).isCollectionFavorite(_collectionKey(playlist));
+
+  /// 收藏/取消收藏整张本地歌单。
+  Future<void> _toggleCollectionFavorite(ImportedPlaylist playlist) async {
+    final wasFav = _isCollectionFavorite(playlist);
+    final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
+    await ref.read(favoritesProvider.notifier).toggleCollection(
+          kind: 'playlist',
+          // 本地歌单用稳定 ID 标记来源（收藏页据此区分本地/在线）。
+          pluginId: 'local:${playlist.id}',
+          title: playlist.name,
+          subtitle: tr('{n} 首', {'n': playlist.songs.length}),
+          coverUrl: first?.coverUrl,
+          raw: const {},
+        );
+    if (!mounted) return;
+    showXianYuToast(
+      context,
+      wasFav ? tr('已取消收藏：{t}', {'t': playlist.name}) : tr('已收藏：{t}', {'t': playlist.name}),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(playlistManagerProvider);
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
+    final favState = ref.watch(favoritesProvider);
     final playlist = state.playlists
-        .where((p) => p.id == playlistId)
+        .where((p) => p.id == widget.playlistId)
         .cast<ImportedPlaylist?>()
         .firstWhere((_) => true, orElse: () => null);
 
@@ -410,7 +543,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                 padding: EdgeInsets.only(top: GlassTopBar.height(context)),
                 child:   Center(child: Text(tr('歌单已不存在'))),
               ),
-              if (!embedded)
+              if (!widget.embedded)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -425,6 +558,11 @@ class PlaylistDetailPage extends ConsumerWidget {
         ),
       );
     }
+
+    // 有内容时才提供批量入口（顶栏动作 / 面板头部）。
+    final showBatch = playlist.songs.isNotEmpty;
+    final floating = ref.watch(
+        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
 
     return HideShellChrome(
       child: Scaffold(
@@ -444,6 +582,16 @@ class PlaylistDetailPage extends ConsumerWidget {
                     onPlayAll: playlist.songs.isEmpty
                         ? null
                         : () => manager.play(playlist, 0),
+                    // 收藏整张歌单（对齐桌面：本地歌单详情提供「收藏整张」）。
+                    favoriteLabel: tr('收藏整张歌单'),
+                    isFavorite:
+                        favState.isCollectionFavorite(_collectionKey(playlist)),
+                    onToggleFavorite:
+                        () => _toggleCollectionFavorite(playlist),
+                    // 面板模式下无页内顶栏，批量入口并入头部右侧。
+                    trailing: widget.embedded && showBatch
+                        ? _batchToggle(context, floating: floating)
+                        : null,
                   ),
                   const Divider(height: 1),
                   Expanded(
@@ -458,14 +606,15 @@ class PlaylistDetailPage extends ConsumerWidget {
                         : _PlaylistSongs(
                             playlist: playlist,
                             manager: manager,
-                            onRemove: (index) =>
-                                manager.removeSong(playlist.id, playlist.songs[index].path),
+                            batch: _batch,
+                            onRemove: (index) => manager.removeSong(
+                                playlist.id, playlist.songs[index].path),
                           ),
                   ),
                 ],
               ),
             ),
-            if (!embedded)
+            if (!widget.embedded)
               Positioned(
                 top: 0,
                 left: 0,
@@ -474,6 +623,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                   leading: const BackButton(),
                   title: Text(playlist.name),
                   actions: [
+                    if (showBatch) _batchToggle(context),
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       tooltip: tr('重命名'),
@@ -486,7 +636,7 @@ class PlaylistDetailPage extends ConsumerWidget {
                   ],
                 ),
               ),
-            if (!embedded) const BottomPlayBarSlot(),
+            if (!widget.embedded) const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -501,19 +651,29 @@ class _AlbumHeader extends StatelessWidget {
     required this.song,
     required this.count,
     required this.onPlayAll,
+    this.favoriteLabel,
+    this.isFavorite = false,
+    this.onToggleFavorite,
+    this.trailing,
   });
 
   final String name;
   final ImportedSong? song;
   final int count;
   final VoidCallback? onPlayAll;
+  final String? favoriteLabel;
+  final bool isFavorite;
+  final VoidCallback? onToggleFavorite;
+
+  /// 头部右侧追加控件（面板模式下承载批量入口）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final s = song;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       child: Row(
         children: [
           s == null
@@ -557,18 +717,40 @@ class _AlbumHeader extends StatelessWidget {
                       fontSize: 12.5, color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: onPlayAll,
-                  icon: const Icon(Icons.play_arrow, size: 18),
-                  label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    minimumSize: const Size(0, 34),
-                  ),
+                Row(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onPlayAll,
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        minimumSize: const Size(0, 34),
+                      ),
+                    ),
+                    if (onToggleFavorite != null) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: favoriteLabel ?? '',
+                        child: IconButton.filledTonal(
+                          onPressed: onToggleFavorite,
+                          icon: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(38, 34),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
+          ?trailing,
         ],
       ),
     );
@@ -577,160 +759,365 @@ class _AlbumHeader extends StatelessWidget {
 
 /// 歌单歌曲列表：按公告的列表项尺寸（ListSize）缩放；长按行首把手可拖动排序。
 /// 右下角悬浮「回到顶部 / 定位播放」按钮（对齐收藏页单曲列表）。
+/// 批量模式（[SongBatchController.batchMode]）下切换为勾选列表 + 底部批量操作栏。
 class _PlaylistSongs extends ConsumerStatefulWidget {
   const _PlaylistSongs({
     required this.playlist,
     required this.manager,
     required this.onRemove,
+    required this.batch,
   });
 
   final ImportedPlaylist playlist;
   final PlaylistManager manager;
   final void Function(int index) onRemove;
+  final SongBatchController batch;
 
   @override
   ConsumerState<_PlaylistSongs> createState() => _PlaylistSongsState();
 }
 
 class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
+  /// 常规列表（可拖拽排序 + 悬浮按钮）控制器。
   final ScrollController _controller = ScrollController();
+  /// 批量模式列表专用控制器：与 [_controller] 分离，避免进出批量模式时
+  /// ReorderableListView↔ListView 复用同一控制器导致多滚动视图断言崩溃。
+  final ScrollController _batchController = ScrollController();
 
   @override
   void dispose() {
     _controller.dispose();
+    _batchController.dispose();
     super.dispose();
+  }
+
+  List<ImportedSong> _selected(List<ImportedSong> songs) =>
+      songs.where((s) => widget.batch.selected.contains(s.path)).toList();
+
+  /// 批量播放：选中歌曲入队并起播。
+  Future<void> _batchPlay(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final items = sel.map(_queueItemFromImported).toList();
+    await ref.read(playerProvider.notifier).playQueue(items, startIndex: 0);
+    widget.batch.exit();
+  }
+
+  /// 批量添加到我的收藏（对齐桌面端「添加至我喜欢」）。
+  Future<void> _batchAddToFavorites(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final fav = ref.read(favoritesProvider.notifier);
+    for (final s in sel) {
+      fav.add(_queueItemFromImported(s));
+    }
+    showXianYuToast(context, tr('已收藏 {n} 首歌曲', {'n': sel.length}));
+    widget.batch.exit();
+  }
+
+  /// 批量添加到其它歌单。
+  Future<void> _batchAddToPlaylist(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    await showAddToPlaylistSheet(context, ref, sel);
+    widget.batch.exit();
+  }
+
+  /// 批量下载在线歌曲（本地歌曲自动跳过）。
+  void _batchDownload(List<ImportedSong> songs) {
+    final sel = _selected(songs).where((s) => !s.isLocal).toList();
+    if (sel.isEmpty) {
+      showXianYuToast(context, tr('没有可下载的在线歌曲'));
+      return;
+    }
+    for (final s in sel) {
+      ref.read(downloadProvider.notifier).download(_queueItemFromImported(s));
+    }
+    showXianYuToast(context, tr('开始下载 {n} 首歌曲', {'n': sel.length}));
+    widget.batch.exit();
+  }
+
+  /// 批量从歌单移除（确认弹窗后逐个移除）。
+  Future<void> _confirmBatchRemove(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final ok = await showPredictiveDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('从歌单移除')),
+        content: Text(tr('确定要从歌单移除选中的 {n} 首歌曲吗？', {'n': sel.length})),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('移除')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    for (final s in sel) {
+      await widget.manager.removeSong(widget.playlist.id, s.path);
+    }
+    widget.batch.exit();
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final m = ListMetrics.ofRef(ref);
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    final songs = widget.playlist.songs;
+    return ListenableBuilder(
+      listenable: widget.batch,
+      builder: (context, _) {
+        final scheme = Theme.of(context).colorScheme;
+        final m = ListMetrics.ofRef(ref);
+        final hasSong =
+            ref.watch(playerProvider.select((s) => s.current != null));
+        final songs = widget.playlist.songs;
+        final inBatch = widget.batch.batchMode;
+        final batch = widget.batch;
 
-    void onReorder(int oldIndex, int newIndex) {
-      if (newIndex < 0 || newIndex >= songs.length || newIndex == oldIndex) return;
-      final paths = songs.map((s) => s.path).toList();
-      final moved = paths.removeAt(oldIndex);
-      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
-      paths.insert(newIndex.clamp(0, paths.length), moved);
-      widget.manager.reorderSongs(widget.playlist.id, paths);
-    }
+        void onReorder(int oldIndex, int newIndex) {
+          if (newIndex < 0 ||
+              newIndex >= songs.length ||
+              newIndex == oldIndex) {
+            return;
+          }
+          final paths = songs.map((s) => s.path).toList();
+          final moved = paths.removeAt(oldIndex);
+          // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
+          paths.insert(newIndex.clamp(0, paths.length), moved);
+          widget.manager.reorderSongs(widget.playlist.id, paths);
+        }
 
-    final rowExtent = m.songCover + 2 * m.vPad;
-    final bottomPad = (hasSong ? 92.0 : 150.0) +
-        MediaQuery.of(context).padding.bottom;
+        final rowExtent = m.songCover + 2 * m.vPad;
+        final bottomPad = (hasSong ? 92.0 : 150.0) +
+            MediaQuery.of(context).padding.bottom +
+            (inBatch ? 140 : 0);
 
-    return Stack(
-      children: [
-        ReorderableListView.builder(
-          scrollController: _controller,
-          // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
-          padding: EdgeInsets.only(bottom: bottomPad),
-          buildDefaultDragHandles: false,
-          // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
-          // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
-          // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
-          proxyDecorator: (child, index, animation) =>
-              Material(type: MaterialType.transparency, child: child),
-          itemCount: songs.length,
-          onReorderItem: onReorder,
-          itemBuilder: (context, index) {
-            final song = songs[index];
-            // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
-            // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
-            // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
-            // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
-            return RepaintBoundary(
-              key: ValueKey('${song.path}_$index'),
-              child: Builder(
-                builder: (rowContext) {
-                  // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
-                  BuildContext? coverCtx;
-                  final g = songRowPlay(ref, onPlay: () async {
-                    // 等封面落地后再播放：播放条封面随落地同步更新，
-                    // 避免飞行过程中播放条封面提前切换。
-                    final ok = await launchFlyCover(
-                      rowContext,
-                      coverContext: coverCtx,
-                      coverSize: m.songCover,
-                      vPad: m.vPad,
-                      songPath: song.path,
-                      networkUrl: song.coverUrl,
-                      thumbPath: song.coverThumbPath,
-                      radius: m.songRadius,
-                    );
-                    if (ok) widget.manager.play(widget.playlist, index);
-                  });
-                  final row = g.wrap(
-                    CoverRow(
-                      cover: Builder(
-                        builder: (c) {
-                          coverCtx = c;
-                          return CoverImage(
+        // 批量模式行：整行点按切换选中，行首由 wrapBatchRow 挂勾选。
+        Widget batchRow(int index) {
+          final song = songs[index];
+          final row = CoverRow(
+            cover: CoverImage(
+              songPath: song.path,
+              networkUrl: song.coverUrl,
+              thumbPath: song.coverThumbPath,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            ),
+            onTap: () => batch.toggle(song.path),
+            verticalPadding: m.vPad,
+            horizontalPadding: 0,
+            title: Text(
+              song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: m.titleSize, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '${song.artist} · ${song.album}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+            ),
+          );
+          return wrapBatchRow(
+            context,
+            row: row,
+            selected: batch.isSelected(song.path),
+            onToggle: () => batch.toggle(song.path),
+          );
+        }
+
+        return Stack(
+          children: [
+            // 批量模式禁用拖动排序（行首把手被勾选槽替代），统一走扁平列表，
+            // 且专用 [_batchController] 避免与常规列表复用控制器。
+            if (inBatch)
+              ListView.builder(
+                controller: _batchController,
+                padding: EdgeInsets.only(bottom: bottomPad),
+                itemExtent: rowExtent,
+                addAutomaticKeepAlives: false,
+                itemCount: songs.length,
+                itemBuilder: (context, index) => RepaintBoundary(
+                  key: ValueKey('batch_${songs[index].path}_$index'),
+                  child: batchRow(index),
+                ),
+              )
+            else
+              ReorderableListView.builder(
+                scrollController: _controller,
+                // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
+                padding: EdgeInsets.only(bottom: bottomPad),
+                buildDefaultDragHandles: false,
+                // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
+                // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
+                // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
+                proxyDecorator: (child, index, animation) =>
+                    Material(type: MaterialType.transparency, child: child),
+                itemCount: songs.length,
+                onReorderItem: onReorder,
+                itemBuilder: (context, index) {
+                  final song = songs[index];
+                  // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
+                  // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
+                  // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
+                  // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+                  return RepaintBoundary(
+                    key: ValueKey('${song.path}_$index'),
+                    child: Builder(
+                      builder: (rowContext) {
+                        // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+                        BuildContext? coverCtx;
+                        final g = songRowPlay(ref, onPlay: () async {
+                          // 等封面落地后再播放：播放条封面随落地同步更新，
+                          // 避免飞行过程中播放条封面提前切换。
+                          final ok = await launchFlyCover(
+                            rowContext,
+                            coverContext: coverCtx,
+                            coverSize: m.songCover,
+                            vPad: m.vPad,
                             songPath: song.path,
                             networkUrl: song.coverUrl,
                             thumbPath: song.coverThumbPath,
-                            width: m.songCover,
-                            height: m.songCover,
                             radius: m.songRadius,
                           );
-                        },
-                      ),
-                      onTap: g.onTap,
-                      verticalPadding: m.vPad,
-                      horizontalPadding: 0,
-                      title: Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: m.titleSize, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        '${song.artist} · ${song.album}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(Icons.close,
-                            size: 18, color: scheme.outline),
-                        tooltip: tr('从歌单移除'),
-                        onPressed: () => widget.onRemove(index),
-                      ),
+                          if (ok) widget.manager.play(widget.playlist, index);
+                        });
+                        final row = g.wrap(
+                          CoverRow(
+                            cover: Builder(
+                              builder: (c) {
+                                coverCtx = c;
+                                return CoverImage(
+                                  songPath: song.path,
+                                  networkUrl: song.coverUrl,
+                                  thumbPath: song.coverThumbPath,
+                                  width: m.songCover,
+                                  height: m.songCover,
+                                  radius: m.songRadius,
+                                );
+                              },
+                            ),
+                            onTap: g.onTap,
+                            verticalPadding: m.vPad,
+                            horizontalPadding: 0,
+                            title: Text(
+                              song.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: m.titleSize,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: Text(
+                              '${song.artist} · ${song.album}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: m.subtitleSize,
+                                  color: scheme.onSurfaceVariant),
+                            ),
+                            trailing: IconButton(
+                              icon: Icon(Icons.close,
+                                  size: 18, color: scheme.outline),
+                              tooltip: tr('从歌单移除'),
+                              onPressed: () => widget.onRemove(index),
+                            ),
+                          ),
+                        );
+                        return Stack(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 44),
+                              child: row,
+                            ),
+                            Positioned(
+                              left: 8,
+                              top: 0,
+                              bottom: 0,
+                              width: 36,
+                              child: Center(child: DragHandle(index: index)),
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                  );
-                  return Stack(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 44),
-                        child: row,
-                      ),
-                      Positioned(
-                        left: 8,
-                        top: 0,
-                        bottom: 0,
-                        width: 36,
-                        child: Center(child: DragHandle(index: index)),
-                      ),
-                    ],
                   );
                 },
               ),
-            );
-          },
-        ),
-        SongListScrollFabs(
-          controller: _controller,
-          paths: songs.map((s) => s.path).toList(),
-          rowTopOf: (i) => i * rowExtent,
-          itemExtent: rowExtent,
-          bottom: bottomPad + 8,
-          right: 12,
-        ),
-      ],
+            // 批量操作栏：悬浮在内容底部（避开播放条/安全区）。
+            if (inBatch)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: BatchActionBar(
+                  selectedCount: batch.selectedCount,
+                  totalCount: songs.length,
+                  showPlay: true,
+                  showFavorite: true,
+                  showPlaylist: true,
+                  showDownload: true,
+                  showRemove: true,
+                  onSelectAll: () => batch.toggleSelectAll(
+                      {for (final s in songs) s.path}),
+                  onPlay: () => _batchPlay(songs),
+                  onFavorite: () => _batchAddToFavorites(songs),
+                  onPlaylist: () => _batchAddToPlaylist(songs),
+                  onDownload: () => _batchDownload(songs),
+                  onRemove: () => _confirmBatchRemove(songs),
+                  onDone: batch.exit,
+                ),
+              ),
+            if (!inBatch)
+              SongListScrollFabs(
+                controller: _controller,
+                paths: songs.map((s) => s.path).toList(),
+                rowTopOf: (i) => i * rowExtent,
+                itemExtent: rowExtent,
+                bottom: bottomPad + 8,
+                right: 12,
+              ),
+          ],
+        );
+      },
     );
   }
+}
+
+/// 把歌单曲目转成播放队列项（本地/在线通吃，与 PlaylistManager._toQueueItem 对齐）。
+QueueItem _queueItemFromImported(ImportedSong song) {
+  if (song.isLocal) {
+    return QueueItem(
+      path: song.path,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      durationMs: song.duration * 1000,
+    );
+  }
+  final songJson = <String, dynamic>{
+    'pluginId': song.pluginId,
+    'source': song.source,
+    'format': song.format,
+    'musicInfo': song.musicInfo,
+  };
+  return QueueItem(
+    path: song.path,
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    durationMs: song.duration * 1000,
+    coverUrl: song.coverUrl,
+    onlineSongJson: jsonEncodeSafe(songJson),
+    onlineQuality: '320k',
+  );
 }

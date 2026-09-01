@@ -238,32 +238,41 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     if (boards.isEmpty) {
       return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
+    // 横屏容器内嵌：卡片对齐发现页音源榜单小尺寸（~92 宽、圆角 10、标题 12），
+    // 用 maxCrossAxisExtent 让列宽贴近发现页小卡，而非固定 3 列大网格。
+    final isEmbedded = widget.embedded;
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(14, 8, 14, MediaQuery.of(context).padding.bottom + 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.72,
-      ),
+      gridDelegate: isEmbedded
+          ? const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 92,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.7,
+            )
+          : const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.72,
+            ),
       itemCount: boards.length,
       itemBuilder: (context, i) {
         final b = boards[i];
         return InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
           onTap: () => _openBoard(b),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: OnlineCover(url: b.coverUrl, size: 200, radius: 12),
-                    ),
-                  ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
+                  child: OnlineCover(
+                    url: b.coverUrl,
+                    size: isEmbedded ? 92 : 200,
+                    radius: isEmbedded ? 10 : 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
@@ -271,7 +280,10 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                 b.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: isEmbedded ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (b.subtitle.isNotEmpty)
                 Text(

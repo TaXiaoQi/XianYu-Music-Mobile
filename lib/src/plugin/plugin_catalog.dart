@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../player/player_provider.dart';
 import '../i18n/i18n.dart';
+import '../rust/api.dart';
 import 'plugin_engine.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_models.dart';
@@ -598,13 +599,18 @@ String? _neteaseCoverUrl(Map<String, dynamic> node) {
   return null;
 }
 
-/// 酷我旧 CDN 域名换 img3.kuwo.cn（第三方插件会返回证书异常的 imgN.sycdn）。
-/// 只替换 sycdn.kuwo.cn，保留 zimg.kuwo.cn / kwimgN.kuwo.cn 等可用域名，
-/// 否则榜单封面 zimg.kuwo.cn/bang/... 会被改写成 img3 的 404 路径（对齐桌面 normalizeKuwoCoverUrl）。
+/// 酷我封面 CDN 域名统一改写到 img3.kuwo.cn（对齐桌面 normalizeKuwoCoverUrl）。
+/// 需改写的：imgN.kwcdn（img1.kwcdn 证书异常，本插件 getPicByRid 即返回该域名）、
+/// img4（第三方插件 artworkShort2Long 产物，防盗链直连失败）、imgN.sycdn（证书异常）等；
+/// img3.kuwo.cn 证书有效、可直连渲染，自身不会被二次改写。
+/// 例外：zimg.kuwo.cn 的 /bang/... 路径仅存在于 zimg，img3 无对应路径（404），保持原样直连。
 String _normalizeKuwoCoverUrl(String url) {
   var out = url.trim().replaceFirst(RegExp(r'^http://'), 'https://');
+  if (RegExp(r'^https://zimg\.kuwo\.cn/', caseSensitive: false).hasMatch(out)) {
+    return out;
+  }
   return out.replaceFirstMapped(
-    RegExp(r'^https://sycdn\.kuwo\.cn/(.+)$', caseSensitive: false),
+    RegExp(r'^https://[^/]+\.kuwo\.cn/(.+)$', caseSensitive: false),
     (m) => 'https://img3.kuwo.cn/${m.group(1)}',
   );
 }
@@ -816,4 +822,86 @@ int _parseIntervalMs(String interval) {
   final m = RegExp(r'^(\d+):(\d+)$').firstMatch(interval.trim());
   if (m == null) return 0;
   return (int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!)) * 1000;
+}
+
+/// MF 插件 → LX 平台码（kw/kg/tx/wy/mg），供宿主 lx_cover 接口补封面。
+/// 对齐桌面 backfillMfTrackMeta 的 isKuwo/isKugou/isQQ/isNetease 判定。
+String? lxPlatformCodeOf(PluginSource source) {
+  final srcs = source.sources.map((s) => s.trim().toLowerCase()).toSet();
+  final name = source.name.toLowerCase();
+  if (srcs.contains('kw') || name.contains('kuwo') || name.contains('酷我')) {
+    return 'kw';
+  }
+  if (srcs.contains('kg') || name.contains('kugou') || name.contains('酷狗')) {
+    return 'kg';
+  }
+  if (srcs.contains('tx') ||
+      srcs.contains('qq') ||
+      name.contains('qq') ||
+      name.contains('企鹅')) {
+    return 'tx';
+  }
+  if (srcs.contains('wy') || name.contains('netease') || name.contains('网易')) {
+    return 'wy';
+  }
+  if (srcs.contains('mg') || name.contains('migu') || name.contains('咪咕')) {
+    return 'mg';
+  }
+  return null;
+}
+
+/// 解析 Rust getLxCover 返回的 JSON `Option<String>`（Some 时带引号，None 为 "null"）。
+String? _decodeLxCoverResult(String raw) {
+  if (raw.isEmpty || raw == 'null') return null;
+  try {
+    final v = jsonDecode(raw);
+    if (v is String && v.isNotEmpty) return v;
+  } catch (_) {
+    // 非 JSON 文本（极端情况下 Rust 直接回明文 http 链接）。
+  }
+  if (raw.startsWith('http')) return raw;
+  return null;
+}
+
+/// 用宿主 lx_cover 接口为单曲补封面（对齐桌面 lxGetPic）。
+/// MF 榜单/歌单/歌手/专辑曲目常不带封面字段，按插件平台异步补齐；
+/// 返回归一化后的 HTTPS 封面 URL；平台未知/无封面/失败返回 null。
+Future<String?> fetchLxCoverForSong(
+    PluginSource source, PluginSearchResult r) async {
+  // 单曲自带平台码更精确（多源 LX 插件按歌区分音源）；未知时回退按插件判定。
+  var platform = r.source.trim().toLowerCase();
+  if (!const {'kw', 'kg', 'tx', 'wy', 'mg'}.contains(platform)) {
+    platform = lxPlatformCodeOf(source) ?? '';
+  }
+  if (platform.isEmpty || r.songmid.isEmpty) return null;
+  // 酷我 rid 常带 MUSIC_ 前缀，对齐桌面 fetchKwTrackMetaByIds 去除。
+  final rid =
+      r.songmid.replaceFirst(RegExp(r'^MUSIC_', caseSensitive: false), '');
+  if (rid.isEmpty) return null;
+  try {
+    final raw = await getLxCover(songInfoJson: jsonEncode({
+      'songmid': rid,
+      'source': platform,
+      'name': r.name,
+      'singer': r.singer,
+      'albumName': r.albumName,
+      'albumId': r.albumId,
+      'albumMid': r.albumMid,
+      'hash': r.hash,
+      'strMediaMid': r.strMediaMid,
+      'songId': r.songId,
+      '_types': r.lxTypes,
+    }));
+    final cover = _decodeLxCoverResult(raw);
+    if (cover == null || cover.isEmpty) return null;
+    var out = cover;
+    if (out.startsWith('//')) out = 'https:$out';
+    if (out.startsWith('http://')) {
+      out = out.replaceFirst('http://', 'https://');
+    }
+    if (out.contains('kuwo.cn')) out = _normalizeKuwoCoverUrl(out);
+    return out;
+  } catch (_) {
+    return null;
+  }
 }

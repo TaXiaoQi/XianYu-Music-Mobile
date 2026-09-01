@@ -215,6 +215,24 @@ class PredictiveCoverReturnView extends StatefulWidget {
 class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
   OverlayEntry? _entry;
 
+  /// 手势开始时的源封面矩形快照。
+  ///
+  /// 预测返回中页面本身在做「下移渐隐」位移，而 [CoverReturnSource] 的
+  /// [Rect Function] 是每帧 `localToGlobal` 实时求值——会累计 [SlideTransition]
+  /// 的祖先位移，结果随页面一起下移。若直接用它当锚点，overlay 封面也会跟着
+  /// 页面退（「封面和页面一起退」）。因此这里在首次解析到非空源矩形时**固定快照**：
+  /// 之后动画帧一律用快照，封面才能真正「留在原地」，等页面退过 1/3 再飞迷你条。
+  Rect? _anchoredSource;
+
+  /// 动画期间生效的源矩形：首次取到非空即固化，不再逐帧跟随页面位移。
+  Rect _effectiveSource() {
+    final anchored = _anchoredSource;
+    if (anchored != null) return anchored;
+    final src = PredictiveCoverReturn.instance.sourceRect;
+    if (!src.isEmpty) _anchoredSource = src;
+    return src;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -240,6 +258,7 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
   void dispose() {
     _entry?.remove();
     _entry = null;
+    _anchoredSource = null;
     // 手势取消/完成卸载：结束封面回拨，恢复页面自身封面显示。
     PredictiveCoverReturn.instance.returning.value = false;
     super.dispose();
@@ -276,7 +295,11 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
             // 的封面回拨就被静默吞掉（表现为「有概率不触发飞行动画」）。放在
             // builder 里后，每帧重读一次，一旦布局就绪即恢复飞行，且为 0 的那
             // 一帧仅画空不打断动画。
-            final src = PredictiveCoverReturn.instance.sourceRect;
+            // 源封面矩形快照（见 [_effectiveSource] 注释）：首次解析到非空后
+            // 固定，不再随页面「下移渐隐」位移——overlay 封面因此真正留在原地，
+            // 待页面退过 1/3 再缩向迷你条。此前源未就绪（布局未完成）则返回空，
+            // 每帧重试，一旦就绪即固化。
+            final src = _effectiveSource();
             if (src.isEmpty) return const SizedBox.shrink();
             final (songPath, networkUrl, thumbPath) =
                 PredictiveCoverReturn.instance.coverSource;

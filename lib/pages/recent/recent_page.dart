@@ -26,6 +26,10 @@ class RecentPage extends ConsumerWidget {
     final recent = ref.watch(recentProvider);
     // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    // 横屏 pane 内：全局顶栏搜索承担本地过滤（按曲名/歌手过滤）。
+    final filter = inMusicPane
+        ? ref.watch(landscapeLibraryQueryProvider).trim().toLowerCase()
+        : '';
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     // 横屏音乐库面板模式下统一继承壳层全局顶栏：页内只保留一个『清空』内容头，
@@ -74,6 +78,7 @@ class RecentPage extends ConsumerWidget {
                       : _RecentList(
                           recent: recent,
                           notifier: notifier,
+                          filter: filter,
                         ),
             ),
             // 内容头：面板模式仅保留右侧「清空」；非面板模式完整 GlassTopBar。
@@ -146,10 +151,17 @@ class RecentPage extends ConsumerWidget {
 /// 最近播放列表：独立订阅播放状态以调整底部留白，播放状态翻转不波及页头。
 /// 右下角叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
 class _RecentList extends ConsumerStatefulWidget {
-  const _RecentList({required this.recent, required this.notifier});
+  const _RecentList({
+    required this.recent,
+    required this.notifier,
+    this.filter = '',
+  });
 
   final RecentState recent;
   final RecentManager notifier;
+
+  /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
+  final String filter;
 
   @override
   ConsumerState<_RecentList> createState() => _RecentListState();
@@ -164,6 +176,22 @@ class _RecentListState extends ConsumerState<_RecentList> {
     super.dispose();
   }
 
+  bool _match(RecentEntry e, String f) {
+    if (f.isEmpty) return true;
+    final item = e.toQueueItem();
+    final title = item?.title ?? _titleFromPath(e.songPath);
+    final artist = item?.artist ?? '';
+    return title.toLowerCase().contains(f) ||
+        artist.toLowerCase().contains(f) ||
+        e.songPath.toLowerCase().contains(f);
+  }
+
+  String _titleFromPath(String p) {
+    final name = p.split(RegExp(r'[\\/]')).last;
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
@@ -173,6 +201,30 @@ class _RecentListState extends ConsumerState<_RecentList> {
     final rowExtent = m.songCover + 2 * m.vPad;
     final bottomPad =
         (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
+
+    final all = widget.recent.entries;
+    final filter = widget.filter;
+    final visible =
+        filter.isEmpty ? all : all.where((e) => _match(e, filter)).toList();
+
+    if (visible.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off,
+                size: 40, color: scheme.onSurface.withValues(alpha: 0.25)),
+            const SizedBox(height: 12),
+            Text(
+              filter.isNotEmpty ? tr('没有找到相关歌曲') : tr('暂无播放记录'),
+              style:
+                  TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Stack(
       children: [
@@ -184,19 +236,20 @@ class _RecentListState extends ConsumerState<_RecentList> {
           scrollCacheExtent: ScrollCacheExtent.pixels(500),
           // 行不保留状态（封面/标题均无状态构建），离屏即弃，省内存与重建。
           addAutomaticKeepAlives: false,
-          itemCount: widget.recent.entries.length,
+          itemCount: visible.length,
           itemBuilder: (context, i) {
-            final entry = widget.recent.entries[i];
+            final entry = visible[i];
+            final orig = all.indexOf(entry);
             return _RecentTile(
               entry: entry,
-              onPlay: () => widget.notifier.play(i),
+              onPlay: () => widget.notifier.play(orig),
               onRemove: () => widget.notifier.remove(entry.songPath),
             );
           },
         ),
         SongListScrollFabs(
           controller: _controller,
-          paths: widget.recent.entries.map((e) => e.songPath).toList(),
+          paths: visible.map((e) => e.songPath).toList(),
           rowTopOf: (i) => i * rowExtent,
           itemExtent: rowExtent,
           bottom: bottomPad + 8,

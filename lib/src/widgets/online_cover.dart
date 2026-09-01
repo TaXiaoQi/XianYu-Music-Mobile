@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../online/cover_proxy.dart';
+import 'fade_in.dart';
 
 /// 在线封面。
 ///
@@ -78,6 +79,9 @@ class _OnlineCoverState extends State<OnlineCover> {
         height: widget.size,
         fit: BoxFit.cover,
         cacheWidth: cw,
+        frameBuilder: CoverFadeIn.frameBuilder(
+          placeholder: _placeholder(context),
+        ),
         errorBuilder: (_, _, _) => _placeholder(context),
       ));
     }
@@ -93,6 +97,9 @@ class _OnlineCoverState extends State<OnlineCover> {
       height: widget.size,
       fit: BoxFit.cover,
       memCacheWidth: cw,
+      fadeInDuration: CoverFadeIn.duration,
+      fadeInCurve: Curves.easeOut,
+      fadeOutDuration: const Duration(milliseconds: 250),
       placeholder: (_, _) => _placeholder(context),
       errorWidget: (_, _, _) => _placeholder(context),
     ));

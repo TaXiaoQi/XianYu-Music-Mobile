@@ -468,39 +468,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               notifier: notifier,
               current: current,
               landscape: true,
+              // 横屏歌词调节并入底栏最右组件（对齐桌面歌词页最右菜单）。
+              onLyricAdjust: () => _TraditionalPlayerLayoutState
+                  ._showLyricAdjustMenu(
+                context,
+                ref,
+                hasRomaji: hasRomaji,
+              ),
             ),
           ),
         ),
       ],
-      // 歌词设置悬停按钮。
-      overlay: _showLyrics
-          ? Positioned(
-              top: 4,
-              right: 12,
-              child: _LyricSettingsRail(
-                fontSizeIdx: fontSizeIdx,
-                showTranslation: showTranslation,
-                showRomaji: showRomaji,
-                offsetMs: offsetMs,
-                hasTranslation: true,
-                hasRomaji: hasRomaji,
-                onFontSize: () =>
-                    _LyricsViewState._showFontSizeSheet(context, ref),
-                onToggleTranslation: () {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setShowLyricsTranslation(!showTranslation);
-                },
-                onToggleRomaji: () {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setShowLyricsRomaji(!showRomaji);
-                },
-                onOffset: () =>
-                    _LyricsViewState._showOffsetSheet(context, ref),
-              ),
-            )
-          : null,
+      // 横屏歌词调节已并入底栏最右组件，不再叠加右上角浮动 rail。
+      overlay: null,
     );
   }
 }
@@ -611,6 +591,9 @@ class _TraditionalPlayerLayoutState
     with SingleTickerProviderStateMixin {
   bool _showLyrics = false;
 
+  /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
+  bool _lyricsViewHasRomaji = false;
+
   /// 歌词视图实例 key：本实例内横竖屏翻转 reparent（同 _PlayerPageState）。
   final GlobalKey _lyricsKey = GlobalKey();
 
@@ -703,7 +686,11 @@ class _TraditionalPlayerLayoutState
                 current: current,
                 visible: _showLyrics,
                 onTap: () {},
-                onRomajiAvailable: (_) {},
+                onRomajiAvailable: (has) {
+                  if (_lyricsViewHasRomaji != has) {
+                    setState(() => _lyricsViewHasRomaji = has);
+                  }
+                },
               ),
             ),
           );
@@ -722,6 +709,9 @@ class _TraditionalPlayerLayoutState
         _Controls(notifier: widget.notifier),
         const SizedBox(height: 32),
       ],
+      // 歌词调节入口已并入封面歌词双态「词」控件（进度条上方动作行），
+      // 不再在右上角叠加浮动 rail，避免挤压分享按钮。
+      overlay: null,
     );
   }
 
@@ -756,7 +746,11 @@ class _TraditionalPlayerLayoutState
                   // 横屏歌词常显
                   visible: true,
                   onTap: () {},
-                  onRomajiAvailable: (_) {},
+                  onRomajiAvailable: (has) {
+                    if (_lyricsViewHasRomaji != has) {
+                      setState(() => _lyricsViewHasRomaji = has);
+                    }
+                  },
                 ),
               ),
             ),
@@ -779,9 +773,237 @@ class _TraditionalPlayerLayoutState
         _LandscapeControlsRow(
           notifier: widget.notifier,
           current: current,
+          // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
+          onLyricAdjust: () => _showLyricAdjustMenu(
+            context,
+            ref,
+            hasRomaji: _lyricsViewHasRomaji,
+          ),
         ),
         const SizedBox(height: 16),
       ],
+      // 横屏歌词调节已并入底栏最右组件，右上是音乐卡片，不再叠加浮动 rail。
+      overlay: null,
+    );
+  }
+
+  /// 歌词调节菜单（居中弹窗，对齐桌面歌词页）。
+  /// 含（横屏时可选的左/中/右对齐）+ 字号/翻译/罗马音/偏移入口。
+  /// 传统/高级、横屏/竖屏歌词页共用；竖屏封面页的入口保持「桌面歌词」原状。
+  static void _showLyricAdjustMenu(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool hasRomaji,
+    bool showAlign = true,
+  }) {
+    showSheetDialog<void>(context, (sheetCtx) {
+      final notifier = ref.read(settingsProvider.notifier);
+      // 用 Consumer 包裹：对齐/翻译/罗马音的选中态随设置变化实时高亮。
+      return Consumer(
+        builder: (ctx, ref, _) {
+          final s = ref.watch(settingsProvider).valueOrNull;
+          final align = s?.lyricAlignment ?? 'center';
+          final showTranslation = s?.showLyricsTranslation ?? true;
+          final showRomaji = s?.showLyricsRomaji ?? false;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('歌词调节'),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(sheetCtx).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // 左/中/右 对齐分段（仅横屏歌词菜单；竖屏歌词页去掉对齐入口）。
+                if (showAlign) ...[
+                  _buildAlignSegmented(sheetCtx, align, notifier),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 4),
+                ],
+                // 字号
+                _buildLyricMenuAction(
+                  sheetCtx,
+                  icon: Icons.format_size_rounded,
+                  label: tr('歌词字号'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _LyricsViewState._showFontSizeSheet(context, ref);
+                  },
+                ),
+                // 翻译开关
+                _buildLyricMenuSwitch(
+                  sheetCtx,
+                  icon: Icons.translate_rounded,
+                  label: tr('翻译'),
+                  value: showTranslation,
+                  onChanged: (v) => notifier.setShowLyricsTranslation(v),
+                ),
+                // 罗马音开关
+                _buildLyricMenuSwitch(
+                  sheetCtx,
+                  icon: Icons.abc_rounded,
+                  label: tr('罗马音'),
+                  value: showRomaji,
+                  enabled: hasRomaji,
+                  onChanged: (v) => notifier.setShowLyricsRomaji(v),
+                ),
+                // 时间偏移
+                _buildLyricMenuAction(
+                  sheetCtx,
+                  icon: Icons.av_timer_rounded,
+                  label: tr('时间偏移'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _LyricsViewState._showOffsetSheet(context, ref);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  /// 歌词左/中/右对齐分段选择。
+  static Widget _buildAlignSegmented(
+    BuildContext ctx,
+    String align,
+    SettingsNotifier notifier,
+  ) {
+    final scheme = Theme.of(ctx).colorScheme;
+    const labels = [('left', '左'), ('center', '中'), ('right', '右')];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          tr('歌词对齐'),
+          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final (value, label) in labels)
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    notifier.setLyricAlignment(value);
+                  },
+                  child: Container(
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: align == value
+                          ? const Color(0xFFEC4141).withValues(alpha: 0.14)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight:
+                            align == value ? FontWeight.w700 : FontWeight.w500,
+                        color: align == value
+                            ? const Color(0xFFEC4141)
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 歌词菜单里的点击行（字号 / 时间偏移）。
+  static Widget _buildLyricMenuAction(
+    BuildContext ctx, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(ctx).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: scheme.outline,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 歌词菜单里的开关行（翻译 / 罗马音）。
+  static Widget _buildLyricMenuSwitch(
+    BuildContext ctx, {
+    required IconData icon,
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    bool enabled = true,
+  }) {
+    final scheme = Theme.of(ctx).colorScheme;
+    return InkWell(
+      onTap: enabled ? () => onChanged(!value) : null,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: enabled ? scheme.onSurfaceVariant : scheme.outline,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: enabled ? scheme.onSurface : scheme.outline,
+              ),
+            ),
+            const Spacer(),
+            Switch.adaptive(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+              activeColor: const Color(0xFFEC4141),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1085,9 +1307,36 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 桌面歌词「词」按钮：文字「词」替代图标，开启时主题色高亮。
+  /// 进度条上方动作行最右的歌词控件：封面页是「桌面歌词·词」按钮；
+  /// 歌词页变为「歌词调节」入口（打开调节菜单，含字号/翻译/罗马音/偏移，
+  /// 横屏才含左中右对齐），不再挤压右上角分享按钮。
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
     final accent = Theme.of(context).colorScheme.primary;
+    // 歌词页：桌面歌词控件变身歌词调节控件。
+    if (_showLyrics) {
+      return IconButton(
+        iconSize: 28,
+        tooltip: tr('歌词调节'),
+        icon: Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: accent.withValues(alpha: 0.14),
+          ),
+          child: Icon(Icons.tune_rounded, size: 18, color: accent),
+        ),
+        onPressed: () => _showLyricAdjustMenu(
+          context,
+          ref,
+          hasRomaji: _lyricsViewHasRomaji,
+          // 竖屏歌词菜单不提供左/中/右对齐（对齐只限横屏歌词菜单）。
+          showAlign: false,
+        ),
+      );
+    }
+    // 封面页：桌面歌词「词」按钮正常显示（切换悬浮歌词）。
     return IconButton(
       iconSize: 28,
       tooltip: tr('桌面歌词'),
@@ -2283,10 +2532,14 @@ class _GlassControlCard extends ConsumerWidget {
     required this.notifier,
     required this.current,
     this.landscape = false,
+    this.onLyricAdjust,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
   final bool landscape;
+
+  /// 横屏时打开歌词调节菜单（含左/中/右对齐），为空则横屏底栏不显示该按钮。
+  final VoidCallback? onLyricAdjust;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2334,7 +2587,11 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                _LandscapeControlsRow(notifier: notifier, current: current),
+                _LandscapeControlsRow(
+                  notifier: notifier,
+                  current: current,
+                  onLyricAdjust: onLyricAdjust,
+                ),
               ],
             )
           : Column(
@@ -3173,10 +3430,15 @@ class _LandscapeControlsRow extends ConsumerWidget {
   const _LandscapeControlsRow({
     required this.notifier,
     required this.current,
+    this.onLyricAdjust,
   });
 
   final PlayerNotifier notifier;
   final QueueItem? current;
+
+  /// 打开歌词调节菜单（含左/中/右对齐），对齐桌面歌词页最右组件。
+  /// 为空则不显示该按钮（竖屏控制卡无此入口）。
+  final VoidCallback? onLyricAdjust;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -3419,6 +3681,23 @@ class _LandscapeControlsRow extends ConsumerWidget {
             (_) => _QueueSheet(player: ref.read(playerProvider)),
           ),
         ),
+        // 歌词调节（最右组件，样式与竖屏歌词页的「调节歌词」一致：圆圈描边 + tune 图标）
+        if (onLyricAdjust != null)
+          IconButton(
+            iconSize: 28,
+            tooltip: tr('歌词调节'),
+            icon: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withValues(alpha: 0.14),
+              ),
+              child: Icon(Icons.tune_rounded, size: 18, color: accent),
+            ),
+            onPressed: onLyricAdjust,
+          ),
       ],
     );
 
@@ -3883,6 +4162,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   bool _showTranslation = true;
   bool _showRomaji = false;
   int _offsetMs = 0;
+
+  /// 歌词水平对齐：left / center / right（横屏歌词菜单设定）。
+  TextAlign _align = TextAlign.center;
 
   /// 是否有任一行含罗马音（供设置栏罗马音按钮的可用态判断）。
   bool _hasRomaji = false;
@@ -4693,6 +4975,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _showTranslation = settings?.showLyricsTranslation ?? true;
     _showRomaji = settings?.showLyricsRomaji ?? false;
     _offsetMs = settings?.lyricOffsetMs ?? 0;
+    _align = switch (settings?.lyricAlignment) {
+      'left' => TextAlign.left,
+      'right' => TextAlign.right,
+      _ => TextAlign.center,
+    };
     final lyricFontFamily = (settings?.lyricFontName ?? '').isNotEmpty
         ? settings!.lyricFontName
         : null;
@@ -4818,7 +5105,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     line.romaji!.isNotEmpty) ...[
                   Text(
                     line.romaji!,
-                    textAlign: TextAlign.center,
+                    textAlign: _align,
                     style: TextStyle(
                       fontSize: romajiFont,
                       fontWeight: FontWeight.w500,
@@ -4838,7 +5125,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       valueListenable: _progress,
                       builder: (context, pos, _) {
                         return Wrap(
-                          alignment: WrapAlignment.center,
+                          alignment: switch (_align) {
+                            TextAlign.left => WrapAlignment.start,
+                            TextAlign.right => WrapAlignment.end,
+                            _ => WrapAlignment.center,
+                          },
                           children: [
                             for (final w in line.words)
                               _buildKaraokeWordWidget(
@@ -4868,7 +5159,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                       height: 1.35,
                       fontFamily: lyricFontFamily,
                     ),
-                    child: Text(line.text, textAlign: TextAlign.center),
+                    child: Text(line.text, textAlign: _align),
                   ),
                 if (_showTranslation &&
                     line.translation != null &&
@@ -4876,7 +5167,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   const SizedBox(height: 6),
                   Text(
                     line.translation!,
-                    textAlign: TextAlign.center,
+                    textAlign: _align,
                     style: TextStyle(
                       fontSize: transFont,
                       fontWeight: FontWeight.w500,

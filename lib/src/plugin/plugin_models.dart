@@ -282,7 +282,8 @@ class PluginSearchResult {
     this.rawData,
   });
 
-  PluginSearchResult copyWith({String? interval}) => PluginSearchResult(
+  PluginSearchResult copyWith({String? interval, String? img}) =>
+      PluginSearchResult(
         name: name,
         singer: singer,
         albumName: albumName,
@@ -290,7 +291,7 @@ class PluginSearchResult {
         songmid: songmid,
         source: source,
         interval: interval ?? this.interval,
-        img: img,
+        img: img ?? this.img,
         hash: hash,
         strMediaMid: strMediaMid,
         songId: songId,

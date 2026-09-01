@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -72,6 +74,8 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   int _activeTab = 0;
   /// 歌曲列表滚动控制器，供「回到顶部 / 定位当前播放歌曲」悬浮按钮使用。
   final ScrollController _songScroll = ScrollController();
+  /// 封面补齐任务版本：翻页/切页后自增使旧任务作废（对齐桌面 lxCoverFetchVersion）。
+  int _coverFetchVersion = 0;
 
   @override
   void initState() {
@@ -177,6 +181,44 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       _page = page;
       _loadingMore = false;
     });
+    // 后台补齐缺失封面（不等接口，封面就绪即局部刷新）。
+    _backfillCovers();
+  }
+
+  /// 后台补齐缺失封面的歌曲（对齐桌面 fetchMissingLxCovers）：
+  /// MF 榜单/歌单/歌手/专辑曲目常不带封面字段，用宿主 lx_cover 接口按插件平台
+  /// 异步补齐，小并发 + 版本守卫（翻页/切页后作废旧任务），封面就绪即刷新。
+  void _backfillCovers() {
+    final source = _source;
+    if (source == null) return;
+    if (lxPlatformCodeOf(source) == null) return;
+    final version = ++_coverFetchVersion;
+    final pending = <int>[];
+    for (var i = 0; i < _songs.length; i++) {
+      final r = _songs[i];
+      if ((r.img == null || r.img!.isEmpty) && r.songmid.isNotEmpty) {
+        pending.add(i);
+      }
+    }
+    if (pending.isEmpty) return;
+    var cursor = 0;
+    Future<void> worker() async {
+      while (cursor < pending.length) {
+        final idx = pending[cursor++];
+        // 翻页/切页后版本作废：立即停止，避免继续发无谓请求。
+        if (version != _coverFetchVersion || !mounted) return;
+        final r = _songs[idx];
+        final cover = await fetchLxCoverForSong(source, r);
+        if (cover == null || version != _coverFetchVersion || !mounted) return;
+        if (idx >= _songs.length) continue;
+        setState(() => _songs[idx] = _songs[idx].copyWith(img: cover));
+      }
+    }
+
+    final n = pending.length < 3 ? pending.length : 3;
+    for (var i = 0; i < n; i++) {
+      unawaited(worker());
+    }
   }
 
   Future<void> _loadAlbums() async {

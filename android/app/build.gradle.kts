@@ -131,9 +131,23 @@ tasks.register("rustHook") {
             }.start()
             val code = proc.waitFor()
             if (code != 0) {
-                throw GradleException(
-                    "Rust 钩子退出码 $code：若上方提示 API 绑定已更新，重新运行一次 flutter run / flutter build 即可",
-                )
+                // 正式包(release)的 AOT 编译(gen_snapshot)是 gradle 内部任务，跑在 preBuild(rustHook)
+                // 之后，本次重新生成的绑定与 .so 当轮即可被使用，无需再跑一次（一次性）。
+                // 但 debug/profile run 是工具先编译 Dart 再进 gradle，绑定要重跑才能生效——
+                // 因此只有 code==3(绑定已重新生成) 且为 release 构建时才放行。
+                // 通过顶层任务名判断最稳妥（release 一定走 assemble/bundle Release）。
+                val flMode = if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+                    "release"
+                } else {
+                    "debug"
+                }
+                if (code == 3 && flMode == "release") {
+                    logger.lifecycle("[rustHook] 正式包：Rust 绑定已重新生成，随本次构建直接生效")
+                } else {
+                    throw GradleException(
+                        "Rust 钩子退出码 $code：若上方提示 API 绑定已更新，重新运行一次 flutter run / flutter build 即可",
+                    )
+                }
             }
         }
     }

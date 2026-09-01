@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../library/library_provider.dart';
+import 'batch_action_bar.dart';
 import 'cover_image.dart';
 import 'drag_handle.dart';
 import 'flying_cover.dart';
@@ -142,6 +143,9 @@ class SongsListView extends ConsumerStatefulWidget {
   final ScrollController? controller;
   /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
   final bool enableScrollFabs;
+  /// 批量选择控制器；非空且 [SongBatchController.batchMode] 为真时启用批量
+  /// 选择：行首勾选、整行点按切换选中，播放/长按菜单手势被批量手势接管。
+  final SongBatchController? batch;
   const SongsListView({
     super.key,
     required this.songs,
@@ -152,6 +156,7 @@ class SongsListView extends ConsumerStatefulWidget {
     this.onReorder,
     this.controller,
     this.enableScrollFabs = false,
+    this.batch,
   });
 
   @override
@@ -161,6 +166,10 @@ class SongsListView extends ConsumerStatefulWidget {
 class _SongsListViewState extends ConsumerState<SongsListView> {
   late final ScrollController _controller;
   bool _ownsController = false;
+  /// 批量模式下扁平列表专用控制器。与 [_controller] 分离，避免进出批量模式
+  /// 时 ReorderableListView↔ListView 复用同一控制器导致旧 ScrollPosition 残留、
+  /// 出现「ScrollController attached to multiple scroll views」断言崩溃。
+  final ScrollController _batchController = ScrollController();
 
   @override
   void initState() {
@@ -172,6 +181,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
   @override
   void dispose() {
     if (_ownsController) _controller.dispose();
+    _batchController.dispose();
     super.dispose();
   }
 
@@ -181,6 +191,8 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
     if (songs.isEmpty) {
       return   Center(child: Text(tr('暂无歌曲')));
     }
+    // 批量选择控制器；非空且处于批量模式时整行点按切换选中、隐藏尾部操作。
+    final batch = widget.batch;
     // watch：设置页切换单击/双击后列表自动换模式。
     final single =
         (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
@@ -191,9 +203,39 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
     final enableActions = widget.enableActions;
     final highlight = widget.highlight;
     // 组装歌曲行（Builder 提供行自身 context，供飞封面取封面 RenderBox）。
-    Widget buildRow(int i) {
+    // 批量状态在 buildContent 内每次重建时读取，保证切换选中后行与勾选态同步。
+    Widget buildRow(int i, bool inBatch) {
       final s = songs[i];
       final hlColor = Theme.of(context).colorScheme.primary;
+      // 批量模式：整行点按切换选中，隐藏尾部操作与时长，行首由 wrapBatchRow 挂勾选。
+      if (inBatch && batch != null) {
+        final row = CoverRow(
+          cover: SongCover(song: s, size: m.songCover),
+          title: Text(
+            s.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${s.artist} · ${s.album}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: m.subtitleSize,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          verticalPadding: m.vPad,
+          onTap: () => batch.toggle(s.path),
+        );
+        return wrapBatchRow(
+          context,
+          row: row,
+          selected: batch.isSelected(s.path),
+          onToggle: () => batch.toggle(s.path),
+        );
+      }
       return Builder(
         builder: (rowContext) {
           BuildContext? coverCtx;
@@ -279,84 +321,102 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
     // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
     // 跳过逐行布局测量，长列表快速滑动更省 CPU（对齐 PiliNara 列表优化）。
     final rowExtent = m.songCover + 2 * m.vPad;
-    final Widget list;
-    if (onReorder == null) {
-      list = ListView.builder(
-        controller: _controller,
-        padding: padding,
-        // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
-        // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
-        scrollCacheExtent: ScrollCacheExtent.pixels(500),
-        // 行不保留状态（封面/标题均为无状态构建），离屏即弃，省内存与重建。
-        addAutomaticKeepAlives: false,
-        itemExtent: rowExtent,
-        itemCount: songs.length,
-        // 每行包 RepaintBoundary 隔离成独立合成层：滚动时行内的封面/文本只重绘
-        // 自身图层，可被引擎缓存复用，避免整页重绘造成掉帧（与拖拽排序路径对齐）。
-        // key 用「路径 + 下标」复合，防止同一首歌多次出现时的重复 Key 断言。
-        itemBuilder: (context, i) => RepaintBoundary(
-          key: ValueKey('${songs[i].path}_$i'),
-          child: buildRow(i),
-        ),
-      );
-    } else {
-      list = ReorderableListView.builder(
-        scrollController: _controller,
-        padding: padding,
-        itemExtent: rowExtent,
-        // 顶级列表：拖到边缘时自动滚动。
-        buildDefaultDragHandles: false,
-        // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
-        // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
-        // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
-        proxyDecorator: (child, index, animation) =>
-            Material(type: MaterialType.transparency, child: child),
-        itemCount: songs.length,
-        onReorderItem: onReorder,
-        itemBuilder: (context, i) {
-          // ReorderableListView 要求最外层带 key 才能拖拽，同时隔离合成层防抽帧。
-          // 用「路径 + 下标」复合 Key：同一首歌可多次出现（如歌单多次添加），
-          // 若仅用 path 作 key 会在相邻重复项间拖拽时触发重复 Key 断言报错。
-          return RepaintBoundary(
+    // 批量状态在此每次重建时读取：进出批量模式与切换选中都会触发本函数重跑。
+    Widget buildContent() {
+      final inBatch = batch != null && batch.batchMode;
+      final Widget list;
+      if (onReorder == null || inBatch) {
+        // 批量模式下禁用拖动排序（行首把手被勾选槽替代），统一走扁平列表，
+        // 且专用 [_batchController]，避免与 ReorderableListView 共用 [_controller]
+        // 导致切换模式时旧 ScrollPosition 残留引发多滚动视图断言崩溃。
+        list = ListView.builder(
+          controller: inBatch ? _batchController : _controller,
+          padding: padding,
+          // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
+          // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
+          scrollCacheExtent: ScrollCacheExtent.pixels(500),
+          // 行不保留状态（封面/标题均为无状态构建），离屏即弃，省内存与重建。
+          addAutomaticKeepAlives: false,
+          itemExtent: rowExtent,
+          itemCount: songs.length,
+          // 每行包 RepaintBoundary 隔离成独立合成层：滚动时行内的封面/文本只重绘
+          // 自身图层，可被引擎缓存复用，避免整页重绘造成掉帧（与拖拽排序路径对齐）。
+          // key 用「路径 + 下标」复合，防止同一首歌多次出现时的重复 Key 断言。
+          itemBuilder: (context, i) => RepaintBoundary(
             key: ValueKey('${songs[i].path}_$i'),
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 44),
-                  child: buildRow(i),
-                ),
-                Positioned(
-                  left: 8,
-                  top: 0,
-                  bottom: 0,
-                  width: 36,
-                  child: Center(child: DragHandle(index: i)),
-                ),
-              ],
+            child: buildRow(i, inBatch),
+          ),
+        );
+      } else {
+        list = ReorderableListView.builder(
+          scrollController: _controller,
+          padding: padding,
+          itemExtent: rowExtent,
+          // 顶级列表：拖到边缘时自动滚动。
+          buildDefaultDragHandles: false,
+          // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
+          // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
+          // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
+          proxyDecorator: (child, index, animation) =>
+              Material(type: MaterialType.transparency, child: child),
+          itemCount: songs.length,
+          onReorderItem: onReorder,
+          itemBuilder: (context, i) {
+            // ReorderableListView 要求最外层带 key 才能拖拽，同时隔离合成层防抽帧。
+            // 用「路径 + 下标」复合 Key：同一首歌可多次出现（如歌单多次添加），
+            // 若仅用 path 作 key 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+            return RepaintBoundary(
+              key: ValueKey('${songs[i].path}_$i'),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 44),
+                    child: buildRow(i, false),
+                  ),
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    width: 36,
+                    child: Center(child: DragHandle(index: i)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      }
+
+      // 批量模式下隐藏「回到顶部 / 定位播放」悬浮按钮，避免与底部批量操作栏叠压。
+      Widget result = list;
+      if (widget.enableScrollFabs && !inBatch) {
+        // 悬浮按钮层：右下角「回到顶部 / 定位当前播放歌曲」。
+        // bottom 放在列表底部 padding 之上，避开迷你播放条/安全区。
+        result = Stack(
+          children: [
+            list,
+            SongListScrollFabs(
+              controller: _controller,
+              paths: songs.map((s) => s.path).toList(),
+              rowTopOf: (i) => (padding?.top ?? 0.0) + i * rowExtent,
+              itemExtent: rowExtent,
+              bottom: (padding?.bottom ?? 0.0) + 8,
+              right: 12,
             ),
-          );
-        },
-      );
+          ],
+        );
+      }
+      return result;
     }
 
-    if (widget.enableScrollFabs) {
-      // 悬浮按钮层：右下角「回到顶部 / 定位当前播放歌曲」。
-      // bottom 放在列表底部 padding 之上，避开迷你播放条/安全区。
-      return Stack(
-        children: [
-          list,
-          SongListScrollFabs(
-            controller: _controller,
-            paths: songs.map((s) => s.path).toList(),
-            rowTopOf: (i) => (padding?.top ?? 0.0) + i * rowExtent,
-            itemExtent: rowExtent,
-            bottom: (padding?.bottom ?? 0.0) + 8,
-            right: 12,
-          ),
-        ],
+    // 有批量控制器时监听其状态：切换选中/进出批量模式自动重建行与勾选态。
+    if (batch != null) {
+      return ListenableBuilder(
+        listenable: batch,
+        builder: (context, _) => buildContent(),
       );
     }
-    return list;
+    return buildContent();
   }
 
   String _fmt(int s) {

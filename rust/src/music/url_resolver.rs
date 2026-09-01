@@ -380,10 +380,11 @@ fn normalize_kuwo_cover_url(url: &str) -> Option<String> {
         return None;
     }
     let url = url.replace("http://", "https://");
-    // img1.kwcdn 部分网络不可达，统一改写到 img3.kuwo.cn
+    // img1.kwcdn 部分网络不可达/证书异常，统一改写到 img3.kuwo.cn
+    // 注意替换整段域名，否则 img1.kwcdn.kuwo.cn 会被替换成 img3.kuwo.kuwo.cn（无效域名）
     let url = url
-        .replace("https://img1.kwcdn", "https://img3.kuwo")
-        .replace("https://img.kuwo", "https://img3.kuwo");
+        .replace("https://img1.kwcdn.kuwo.cn", "https://img3.kuwo.cn")
+        .replace("https://img.kuwo.cn", "https://img3.kuwo.cn");
     Some(url)
 }
 
