@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
+import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -27,6 +28,7 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
@@ -270,6 +272,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final floating = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final statusBar = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -278,11 +283,37 @@ class _SearchPageState extends ConsumerState<SearchPage>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
+          // 仅非悬浮：顶部按固定顶栏高度避让；悬浮模式由 SearchIdleView 自带
+          // topPadding 让列表内容从悬浮玻璃控件下方穿过。
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(top: floating ? statusBar + 66 : GlassTopBar.height(context)),
             child: SearchIdleView(onSearch: _submitSearch),
           ),
-          Positioned(
+          if (floating)
+            Positioned(
+              top: statusBar + 8,
+              left: 12,
+              right: 12,
+              child: FloatingSearchTopBar(
+                onBack: () => context.pop(),
+                field: FloatingGlassSearchField(
+                  controller: _ctrl,
+                  autofocus: true,
+                  onChanged: _onChanged,
+                  onSubmitted: (q) => _submitSearch(q),
+                  showClear: _ctrl.text.isNotEmpty,
+                  onClear: _clearInput,
+                ),
+                action: BiliPaiIconButton(
+                  icon: Icons.search,
+                  tooltip: tr('搜索'),
+                  color: scheme.primary,
+                  onTap: () => _submitSearch(_ctrl.text),
+                ),
+              ),
+            )
+          else
+            Positioned(
             top: 0,
             left: 0,
             right: 0,
@@ -293,7 +324,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: contrastSearchColor(context),
+                  color: searchBoxFill(context, ref),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 alignment: Alignment.centerLeft,
@@ -570,14 +601,21 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
       );
     }
 
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final floating = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Padding(
+            // 悬浮模式：顶栏（行 + Tab 气泡）悬浮，内容按整列高度避让。
             padding: EdgeInsets.only(
-              top: GlassTopBar.height(context, bottom: tabBar),
+              top: floating
+                  ? statusBar + 8 + 44 + 10 + 48 + 14
+                  : GlassTopBar.height(context, bottom: tabBar),
             ),
             child: Column(
               children: [
@@ -586,7 +624,30 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
               ],
             ),
           ),
-          Positioned(
+          if (floating)
+            Positioned(
+              top: statusBar + 8,
+              left: 12,
+              right: 12,
+              child: FloatingSearchTopBar(
+                onBack: () => context.pop(),
+                field: FloatingGlassSearchField(
+                  controller: _queryCtrl,
+                  readOnly: true,
+                  onTap: _goToSearchPage,
+                  hint: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
+                ),
+                action: BiliPaiIconButton(
+                  icon: Icons.search,
+                  tooltip: tr('返回搜索'),
+                  color: scheme.primary,
+                  onTap: _goToSearchPage,
+                ),
+                tabPill: FloatingTabPill(child: tabBar),
+              ),
+            )
+          else
+            Positioned(
             top: 0,
             left: 0,
             right: 0,
@@ -598,7 +659,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: contrastSearchColor(context),
+                  color: searchBoxFill(context, ref),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 alignment: Alignment.centerLeft,

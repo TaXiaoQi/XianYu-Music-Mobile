@@ -249,21 +249,18 @@ double resolveBlurInputScale(BlurBudget budget, BlurSurfaceType type) {
 
 /// 结合预算得到表面实际高斯模糊 sigma。
 ///
-/// [maxBlurLevel] 决定强度档（0=最轻，1/2=满档），再乘降级输入缩放。
+/// **sigma 在滑动/停止/切换三态恒定一致，完全不随滚动/转场预算降级**——
+/// 降档（[levelScale]）/ 缩输入（[inputScale]）就是「滚动时玻璃变轻」的根因。
+/// 毛玻璃视觉强度必须稳定（见工程约定），滚动/转场卡顿改由离线缓存
+/// [CachedFrosted] 整页快照与降采样模糊（cheapBackdropBlur）承担，而不是
+/// 牺牲模糊效果。故直接返回 [base]（base 本身已按档位/表面计算好）。
 double surfaceBlurSigma({
   required double base,
   required BlurBudget budget,
   required BlurSurfaceType type,
   bool crispAtRest = false,
 }) {
-  final levelScale = switch (budget.maxBlurLevel) {
-    0 => 0.6,
-    _ => 1.0,
-  };
-  final inputScale = crispAtRest
-      ? nonRealtimeBlurInputScale(type)
-      : resolveBlurInputScale(budget, type);
-  return base * levelScale * inputScale;
+  return base;
 }
 
 /// 结合预算调整半透明铺底 alpha（预算不足时更透）。

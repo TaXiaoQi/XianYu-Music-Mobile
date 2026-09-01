@@ -409,7 +409,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                           ),
                         ),
                         Material(
-                          color: appCardColor(context),
+                          color: appCardFill(context, ref),
                           clipBehavior: Clip.antiAlias,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -550,7 +550,7 @@ class _FilterCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -598,7 +598,7 @@ class _ScanFoldersCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -819,7 +819,7 @@ class _RemoteLibraryCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

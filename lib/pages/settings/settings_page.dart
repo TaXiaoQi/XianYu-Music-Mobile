@@ -131,7 +131,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: contrastSearchColor(context),
+        color: searchBoxFill(context, ref),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(

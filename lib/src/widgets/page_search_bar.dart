@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../i18n/i18n.dart';
 import 'glass_settings.dart';
@@ -30,7 +31,7 @@ class PageSearchBarBottom extends StatelessWidget implements PreferredSizeWidget
 }
 
 /// 顶部搜索条：点击进入搜索页；右侧带听歌识曲（仅话筒图标）入口。
-class PageSearchBar extends StatelessWidget {
+class PageSearchBar extends ConsumerWidget {
   const PageSearchBar({super.key, required this.onTap, this.onRecognize});
 
   final VoidCallback onTap;
@@ -39,11 +40,12 @@ class PageSearchBar extends StatelessWidget {
   final VoidCallback? onRecognize;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
+    // 固定对比色实色胶囊：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比；
+    // 壁纸模式下为全透明（让壁纸透出）。
     return Material(
-      color: contrastSearchColor(context),
+      color: searchBoxFill(context, ref),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,

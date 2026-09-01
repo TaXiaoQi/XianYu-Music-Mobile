@@ -36,10 +36,10 @@ class _SkinPainter extends CustomPainter {
   final Color color;
 
   /// Material 内置 Icon 的 glyph 在 em 框内自带留白（视觉约占逻辑尺寸的
-  /// ~0.78），而衣服路径铺满 0..24。若按满 24 绘制，同样逻辑尺寸下衣服会比
-  /// 旁边的内置图标大一圈（悬浮顶栏观感异常）。因此缩放到中央内容区并居中，
-  /// 使衣服视觉尺寸与内置 Material 图标一致（固定视觉大小）。
-  static const double _visualScale = 0.72;
+  /// ~0.82），而衣服路径铺满 0..24。若按满 24 绘制，同样逻辑尺寸下衣服会比
+  /// 旁边的内置图标大一圈。因此缩放到中央内容区并居中，
+  /// 使衣服视觉尺寸与内置 Material 图标（如 settings_outlined）一致。
+  static const double _visualScale = 0.82;
 
   /// 桌面端 colorScheme（衣服）SVG path 的等价 Flutter Path。
   /// 原始 path（viewBox 24）：

@@ -48,3 +48,12 @@ Color appCardColor(BuildContext context) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return dark ? const Color(0xFF303030) : const Color(0xFFFFFFFF);
 }
+
+/// 壁纸模式感知的控件/卡片底色：
+/// - 壁纸模式 → 全透明（卡片/列表条/文件夹控件直接透出壁纸）；
+/// - 常规模式 → [appCardColor]，统一卡片底色。
+/// 供需要跟随壁纸透明化的控件使用（榜单行/周期切换/文件夹控件等）。
+Color appCardFill(BuildContext context, WidgetRef ref) =>
+    ref.watch(wallpaperActiveProvider)
+        ? Colors.transparent
+        : appCardColor(context);

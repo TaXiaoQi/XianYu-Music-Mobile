@@ -341,7 +341,7 @@ class _LandscapeSearchFieldState extends ConsumerState<_LandscapeSearchField> {
       return FloatingGlassSurface(child: content);
     }
     return Material(
-      color: contrastSearchColor(context),
+      color: searchBoxFill(context, ref),
       borderRadius: BorderRadius.circular(999),
       child: content,
     );

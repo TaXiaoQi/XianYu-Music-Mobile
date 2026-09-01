@@ -509,10 +509,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式：迷你播放条同底栏口径保持磨砂模糊（wallpaperNavGlassFill +
+    // 最深固定模糊 kNavSurfaceBlurSigma），不透明化——仅彻底关闭毛玻璃/低性能
+    // 时回退纯色。
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperGlassFill(context)
+            ? wallpaperNavGlassFill(context)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -521,7 +524,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         : Colors.white.withValues(alpha: 0.40);
     final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
     final sigma = wallpaper
-        ? wallpaperGlassSigma(context)
+        ? kNavSurfaceBlurSigma
         : (budget == null
             ? 10.0 * frostedBlurScale(ref)
             : surfaceBlurSigma(

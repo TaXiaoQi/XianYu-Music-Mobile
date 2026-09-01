@@ -75,14 +75,14 @@ class GlassTopBar extends ConsumerWidget {
     // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
     final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
-    // 模糊度跟随「毛玻璃」档位：切换/滑动/停止语义一致（滑动与停止恒定），
-    // 仅转场切页瞬间临时缩档防整页掉帧（见 frostedBlurSigma）。
-    // 壁纸透明孔模式下统一抽成极淡磨砂（近乎透明，sigma 收敛）。
-    final sigma = wallpaper ? wallpaperGlassSigma(context) : frostedBlurSigma(ref);
+    // 固定顶栏：模糊度恒定最深，不跟随「毛玻璃强度」档位、不随壁纸/滚动
+    // 预算变化（见 kNavSurfaceBlurSigma）。四处玻璃表面观感统一、切换/
+    // 滑动/停止一致。强度档只影响非导航表面。
+    final sigma = kNavSurfaceBlurSigma;
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper
-            ? wallpaperGlassFill(context)
+            ? wallpaperNavGlassFill(context)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -97,16 +97,10 @@ class GlassTopBar extends ConsumerWidget {
       ),
       child: bar,
     );
-    // 壁纸透明孔模式：顶栏退化为一块「透明孔」——只铺极淡半透明磨砂底让壁纸
-    // 透出，不再走 CachedFrosted / 实时 BackdropFilter。
-    //
-    // 理由：壁纸铺在壳层、页面内容（含顶栏背板）之上又有 RepaintBoundary，
-    // 顶栏的模糊采样到不了壳层壁纸（被层边界截断），滑动/停止两态分别走
-    // 实时高斯与离线 blit，模糊会忽重忽透、且快照/采样区域与固定壁纸错位
-    // → 顶栏后的壁纸「歪」。既是透明孔设计，直接去掉背板模糊，壁纸就稳定、
-    // 对齐地透过极淡铺底露出，滑动/停止观感一致。也顺带免掉了切页/滚动期
-    // 顶栏的重模糊与快照重抓开销。
-    if (solid || flatBackdrop || wallpaper) return inner;
+    // 顶栏模糊度恒定最深（[kNavSurfaceBlurSigma]），壁纸模式与常规模式一致：
+    // 仅低性能/纯色回退与扁平背板跳过模糊，其余保持最深的固定模糊（顶/底栏
+    // 观感两态一致，不随壁纸/滚动/预算变化）。
+    if (solid || flatBackdrop) return inner;
 
     // 提供离线缓存背板 key 时，走 CachedFrosted（静止直接 blit，滚动才实时）。
     final cachedKey = cachedBackdropKey;

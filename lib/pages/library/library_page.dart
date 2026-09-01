@@ -7,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
@@ -162,6 +164,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final lib = ref.watch(libraryProvider);
     // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    final floating = !inMusicPane &&
+        (ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.floatingSearchBar ?? false)));
+    final statusBar = MediaQuery.paddingOf(context).top;
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -186,8 +192,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           children: [
             Padding(
               // 面板模式下仍保留 TabBar，故内容顶部始终按顶栏高度（含 TabBar）避让。
+              // 悬浮模式顶栏（行 + Tab 气泡）浮于状态栏下方，内容按其整列高度避让。
               padding: EdgeInsets.only(
-                top: GlassTopBar.height(context, bottom: tabBar),
+                top: floating
+                    ? statusBar + 8 + 44 + 10 + 48 + 14
+                    : GlassTopBar.height(context, bottom: tabBar),
               ),
               child: lib.loading
                   ? const Center(child: CircularProgressIndicator())
@@ -208,8 +217,32 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                               ],
                             ),
             ),
-            // 面板模式下保留 TabBar，仅去掉 leading / title（搜索框）/ actions。
-            Positioned(
+            // 悬浮模式：整列悬浮顶栏（行 + Tab 气泡）；否则固定 GlassTopBar
+            // （面板模式保留 TabBar，仅去掉 leading / title / actions）。
+            if (floating)
+              Positioned(
+                top: statusBar + 8,
+                left: 12,
+                right: 12,
+                child: FloatingSearchTopBar(
+                  onBack: () => context.pop(),
+                  field: FloatingGlassSearchField(
+                    controller: _searchCtrl,
+                    onChanged: _onSearchChanged,
+                    showClear: _query.isNotEmpty,
+                    onClear: _clearSearch,
+                    hint: tr('搜索歌曲、歌手、专辑'),
+                  ),
+                  action: BiliPaiIconButton(
+                    icon: Icons.add,
+                    tooltip: tr('文件夹'),
+                    onTap: () => context.push('/library/folders'),
+                  ),
+                  tabPill: FloatingTabPill(child: tabBar),
+                ),
+              )
+            else
+              Positioned(
               top: 0,
               left: 0,
               right: 0,

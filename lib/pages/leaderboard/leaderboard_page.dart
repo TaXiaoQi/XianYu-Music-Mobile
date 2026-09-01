@@ -98,7 +98,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
                           Container(
                             padding: const EdgeInsets.all(3),
                             decoration: BoxDecoration(
-                              color: appCardColor(context),
+                              color: appCardFill(context, ref),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
@@ -250,7 +250,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
         height: 56,
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: appCardColor(context),
+          color: appCardFill(context, ref),
           borderRadius: BorderRadius.circular(12),
         ),
         child: _skeletonRow(scheme),
@@ -363,7 +363,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
@@ -372,7 +372,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               shape: BoxShape.circle,
             ),
           ),
@@ -386,7 +386,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
                   width: 120,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: appCardColor(context),
+                    color: appCardFill(context, ref),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -395,7 +395,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
                   width: 80,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: appCardColor(context),
+                    color: appCardFill(context, ref),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -541,7 +541,7 @@ class _LeaderboardRow extends ConsumerWidget {
             ? scheme.primary.withValues(alpha: 0.08)
             : (highlight
                 ? scheme.primary.withValues(alpha: 0.04)
-                : (appCardColor(context))),
+                : (appCardFill(context, ref))),
         borderRadius: BorderRadius.circular(12),
         border: isMe
             ? Border.all(color: scheme.primary.withValues(alpha: 0.3))
@@ -637,7 +637,7 @@ class _RankBadge extends ConsumerWidget {
       1 => (const Color(0xFFFFA500), Colors.white),
       2 => (const Color(0xFFA8A8A8), Colors.white),
       3 => (const Color(0xFFA0522D), Colors.white),
-      _ => (appCardColor(context), scheme.onSurfaceVariant),
+      _ => (appCardFill(context, ref), scheme.onSurfaceVariant),
     };
     return Container(
       width: 28,
@@ -683,18 +683,18 @@ class _Avatar extends ConsumerWidget {
         child: avatar.isNotEmpty
             ? UserAvatarImage(
                 avatar: avatar,
-                fallback: _fallback(context, scheme, char),
+                fallback: _fallback(context, ref, scheme, char),
                 size: 36,
               )
-            : _fallback(context, scheme, char),
+            : _fallback(context, ref, scheme, char),
       ),
     );
   }
 
   Widget _fallback(
-      BuildContext context, ColorScheme scheme, String char) {
+      BuildContext context, WidgetRef ref, ColorScheme scheme, String char) {
     return Container(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       alignment: Alignment.center,
       child: Text(
         char,
@@ -732,7 +732,7 @@ class _LoginRow extends ConsumerWidget {
                 height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: appCardColor(context),
+                  color: appCardFill(context, ref),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('—',
@@ -746,7 +746,7 @@ class _LoginRow extends ConsumerWidget {
                 child: Container(
                   width: 36,
                   height: 36,
-                  color: appCardColor(context),
+                  color: appCardFill(context, ref),
                   alignment: Alignment.center,
                   child: Text(tr('未'),
                       style: TextStyle(

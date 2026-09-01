@@ -1515,7 +1515,7 @@ class _FixedNavBar extends ConsumerWidget {
     final fill = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperGlassFill(context)
+            ? wallpaperNavGlassFill(context)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -1529,11 +1529,9 @@ class _FixedNavBar extends ConsumerWidget {
       return barBox;
     }
     // 伪毛玻璃：半透明白/暗 + 高斯模糊（安卓原生磨砂质感），壁纸时更透。
-    // sigma 只由预算离散档位决定，filter 为降采样模糊（cheapBackdropBlur）。
-    final barSigma = wallpaper
-        ? wallpaperGlassSigma(context)
-        : surfaceBlurSigma(
-            base: 14, budget: budget, type: BlurSurfaceType.bottomBar);
+    // 固定底栏模糊度恒定最深，不跟随「毛玻璃强度」档位、不随预算缩放
+    // （见 kNavSurfaceBlurSigma）——顶/底栏观感两态一致，壁纸模式同。
+    final barSigma = kNavSurfaceBlurSigma;
     return ClipRect(
       child: BackdropFilter(
         filter: cheapBackdropBlur(barSigma),
@@ -1761,15 +1759,8 @@ class _LiquidNavBar extends ConsumerWidget {
                 : Colors.white.withValues(alpha: 0.52)));
     final fill =
         (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = wallpaper
-        ? wallpaperGlassSigma(context)
-        : (budget == null
-            ? 14.0
-            : surfaceBlurSigma(
-                base: 14,
-                budget: budget,
-                type: BlurSurfaceType.bottomBar,
-              ));
+    // 底栏（悬浮液态 dock）模糊度同样恒定最深，壁纸/常规一致（kNavSurfaceBlurSigma）。
+    final sigma = kNavSurfaceBlurSigma;
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
@@ -2934,35 +2925,39 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                   budget: budget,
                   type: BlurSurfaceType.drawerOrSheet,
                 );
+          final panelBox = Container(
+            width: panelWidth,
+            decoration: BoxDecoration(
+              color: panelFill,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black
+                      .withValues(alpha: isDark ? 0.3 : 0.1),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: panelBody,
+          );
           // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，
           // 运动期保持玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
-          panelWidget = ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: cheapBackdropBlur(panelSigma),
-              child: Container(
-                width: panelWidth,
-                decoration: BoxDecoration(
-                  color: panelFill,
+          // 壁纸模式 sigma=0、fill=全透明：不铺模糊直接透出壁纸。
+          panelWidget = panelSigma <= 0
+              ? panelBox
+              : ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.18)
-                        : Colors.white.withValues(alpha: 0.45),
+                  child: BackdropFilter(
+                    filter: cheapBackdropBlur(panelSigma),
+                    child: panelBox,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black
-                          .withValues(alpha: isDark ? 0.3 : 0.1),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: panelBody,
-              ),
-            ),
-          );
+                );
         }
 
         return Positioned(
