@@ -866,6 +866,7 @@ class _TraditionalPlayerLayoutState
                     eq: _eq,
                     flash: _flashOn,
                     playing: isPlaying,
+                    onTap: () => _switchPage(1),
                   ),
                 ),
               ),
@@ -1629,17 +1630,19 @@ class _TraditionalCover extends StatelessWidget {
     required this.eq,
     required this.flash,
     required this.playing,
+    this.onTap,
   });
   final double size;
   final QueueItem? current;
   final AnimationController eq;
   final bool flash;
   final bool playing;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final cover = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -1704,6 +1707,13 @@ class _TraditionalCover extends StatelessWidget {
           ],
         ),
       ),
+    );
+
+    if (onTap == null) return cover;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: cover,
     );
   }
 }
