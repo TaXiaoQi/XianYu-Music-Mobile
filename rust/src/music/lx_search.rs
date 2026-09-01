@@ -927,6 +927,19 @@ pub(crate) fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem
                 },
             );
         }
+        let size_master = file
+            .get("size_master")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let size_atmos = file
+            .get("size_atmos")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let size_dolby = file
+            .get("size_dolby")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
         if size_hires > 0.0 {
             let s = size_formate(size_hires);
             types.push(LxTypeTuple {
@@ -936,6 +949,52 @@ pub(crate) fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem
             });
             lx_types.insert(
                 "flac24bit".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        // QQ 臻品母带 / 臻品全景声 / 杜比全景声，与桌面端 lxSearchTx.ts 对齐。
+        if size_master > 0.0 {
+            let s = size_formate(size_master);
+            types.push(LxTypeTuple {
+                quality_type: "master".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "master".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        if size_atmos > 0.0 {
+            let s = size_formate(size_atmos);
+            types.push(LxTypeTuple {
+                quality_type: "atmos".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "atmos".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        if size_dolby > 0.0 {
+            let s = size_formate(size_dolby);
+            types.push(LxTypeTuple {
+                quality_type: "dolby".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "dolby".into(),
                 LxTypeEntry {
                     size: Some(s),
                     hash: None,

@@ -1327,6 +1327,9 @@ class _LyricPreview extends ConsumerStatefulWidget {
 }
 
 class _LyricPreviewState extends ConsumerState<_LyricPreview> {
+  /// 单行高度：包含相邻行间隙，滚动一次即移动一行高度。
+  static const double _kLineH = 23.0;
+
   List<_LyricLineItem> _lines = const [];
   bool _loading = false;
 
@@ -1339,7 +1342,11 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
   @override
   void didUpdateWidget(_LyricPreview old) {
     super.didUpdateWidget(old);
-    if (old.current?.path != widget.current?.path) _load();
+    if (old.current?.path != widget.current?.path) {
+      _lines = const [];
+      _loading = false;
+      _load();
+    }
   }
 
   /// 获取插件源歌词（含 MusicFree/LX），返回待解析的纯歌词文本。
@@ -1458,67 +1465,54 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
         break;
       }
     }
-    final items = <_LyricLineItem?>[
-      active - 1 >= 0 ? _lines[active - 1] : null,
-      _lines[active],
-      active + 1 < _lines.length ? _lines[active + 1] : null,
-    ];
-    // 三个固定槽位（上/中/下）+ 槽内 AnimatedSwitcher：槽位尺寸恒定、列
-    // 永不整体换键重排，换行只是各槽内文本淡入淡出+轻微滑动。
-    // 旧实现整列用 ValueKey(active) 换键，新旧两列内容错位重叠（原中间行
-    // 在新列里变顶行、字号/内边距不同），观感为"错位再回位"。
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var j = 0; j < 3; j++)
-          SizedBox(
-            height: j == 1 ? 23.0 : 17.0,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                alignment: Alignment.centerLeft,
-                children: [...previousChildren, ?currentChild],
-              ),
-              transitionBuilder: (child, anim) {
-                // 进槽的行自下方滑入；出槽的行向上滑出（动画反向播放 1→0，
-                // 故 tween 同形）。方向以「child key == 当前槽位应显示的行」区分。
-                final expected =
-                    j == 0 ? active - 1 : (j == 1 ? active : active + 1);
-                final isNew =
-                    (child.key as ValueKey<int>?)?.value == expected;
-                final offset = isNew
-                    ? Tween<Offset>(begin: const Offset(0, 0.45), end: Offset.zero)
-                    : Tween<Offset>(begin: const Offset(0, -0.45), end: Offset.zero);
-                return FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: anim.drive(offset),
-                    child: child,
-                  ),
-                );
-              },
-              child: items[j] == null
-                  ? const SizedBox.shrink(key: ValueKey<int>(-1000))
-                  : Text(
-                      items[j]!.text,
-                      key: ValueKey<int>(
-                          j == 0 ? active - 1 : (j == 1 ? active : active + 1)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: j == 1
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.5),
-                        fontSize: j == 1 ? 14 : 12.5,
-                        height: 1.2,
-                      ),
+    // 定高滚动窗口：把歌词按行高 _kLineH 排成一列，ClipRect 只露出当前行 +
+    // 上下各一行（3 × _kLineH）。用 TweenAnimationBuilder（begin:null）随目标行
+    // 变化自动从当前值平滑续接，无手动 controller 的 stop/赋值竞态，逐字歌词
+    // 高频推进也不会跳动或卡死。当前行从底部滚入中间、旧当前行滚出顶部。
+    return ClipRect(
+      child: SizedBox(
+        width: double.infinity,
+        height: 3 * _kLineH,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: null, end: active.toDouble()),
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          builder: (context, cur, _) {
+            final activeLine = cur.round().clamp(0, _lines.length - 1);
+            // 只渲染视野内（当前行 ± 2 行）的行，避免整列全量构建。
+            final rows = <Widget>[];
+            for (var i = (cur - 2).floor(); i <= (cur + 2).ceil(); i++) {
+              if (i < 0 || i >= _lines.length) continue;
+              final y = (i - cur) * _kLineH + _kLineH;
+              if (y > 3 * _kLineH || y + _kLineH < 0) continue;
+              final isActive = i == activeLine;
+              rows.add(
+                Positioned(
+                  top: y,
+                  left: 0,
+                  right: 0,
+                  child: Text(
+                    _lines[i].text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isActive
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.5),
+                      fontSize: isActive ? 14 : 12.5,
+                      height: 1.2,
                     ),
-            ),
-          ),
-      ],
+                  ),
+                ),
+              );
+            }
+            return ClipRect(
+              clipBehavior: Clip.hardEdge,
+              child: Stack(children: rows),
+            );
+          },
+        ),
+      ),
     );
   }
 }

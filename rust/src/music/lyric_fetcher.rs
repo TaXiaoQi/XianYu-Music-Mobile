@@ -1471,79 +1471,114 @@ fn tx_parse(lrc: &str, tlrc: &str, rlrc: &str) -> LyricResult {
 }
 
 async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
-    let song_id = song_info
+    let song_id_num = song_info
         .song_id
         .as_ref()
-        .map(|v| v.as_str().unwrap_or("").to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| Some(song_info.songmid.clone()))
-        .unwrap_or_default();
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+        .unwrap_or(0);
     let songmid = &song_info.songmid;
-
-    let req_body = serde_json::json!({
-        "comm": { "uin": "0", "format": "json", "ct": "19", "cv": "1859" },
-        "req": {
-            "module": "music.musichallSong.PlayLyricInfo",
-            "method": "GetPlayLyricInfo",
-            "param": {
-                "songMID": songmid,
-                "songID": song_id.parse::<u64>().unwrap_or(0),
-                "songType": 0,
-                "qrc": 1,
-                "qrc_t": 1,
-            },
-        },
-    });
-
-    let resp = http_fetch_text(
-        "https://u.y.qq.com/cgi-bin/musicu.fcg",
-        "POST",
-        &[
-            ("referer", "https://y.qq.com"),
-            ("user-agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"),
-            ("Content-Type", "application/json"),
-        ],
-        Some(&req_body.to_string()),
-    )
-    .await?;
+    let interval_sec = song_info
+        .interval_ms
+        .map(|ms| (ms / 1000) as i64)
+        .or_else(|| song_info.interval.as_ref().and_then(|s| s.parse::<i64>().ok()))
+        .unwrap_or(0);
+    let album_mid = song_info.album_mid.clone().unwrap_or_default();
 
     let mut lxlyric = String::new();
     let mut lyric = String::new();
     let mut tlyric = String::new();
     let mut rlyric = String::new();
 
+    // 主接口：musicu.fcg + GetPlayLyricInfo，qrc=1&crypt=1 请求逐字 QRC（与桌面端对齐）。
+    // lyric_download.fcg 会被 QQ 风控包装成 <command-lable-xwl78-qq-music> 且 content 为空，
+    // 改用音乐统一接口，逐字数据在 data.lyric 字段（qrc_t 指示逐字）。crypt=1 必须带上，
+    // 否则接口不返回带逐字时间戳的 QRC 加密歌词。
+    let req_body = serde_json::json!({
+        "comm": { "g_tk": 5381, "uin": 0, "format": "json", "ct": 24, "cv": 0, "platform": "yqq.json", "needNewCode": 1 },
+        "req_0": {
+            "module": "music.musichallSong.PlayLyricInfo",
+            "method": "GetPlayLyricInfo",
+            "param": {
+                "songMID": songmid,
+                "songID": song_id_num,
+                "albumMID": album_mid,
+                "trans": 1,
+                "roma": 1,
+                "platform": "yqq",
+                "qrc": 1,
+                "crypt": 1,
+                "lrc_t": 0,
+                "qrc_t": 0,
+                "cv": 2111,
+                "ct": 19,
+                "interval": interval_sec
+            }
+        }
+    });
+
+    let resp = http_fetch_text(
+        "https://u.y.qq.com/cgi-bin/musicu.fcg",
+        "POST",
+        &[
+            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"),
+            ("Referer", "https://y.qq.com/"),
+            ("Origin", "https://y.qq.com"),
+            ("Content-Type", "application/json"),
+        ],
+        Some(&req_body.to_string()),
+    )
+    .await?;
+
     if resp.status == 200 {
         if let Ok(body) = serde_json::from_str::<serde_json::Value>(&resp.body) {
-            if body.get("code").and_then(|v| v.as_i64()) == Some(0) {
-                if let Some(data) = body.get("req").and_then(|v| v.get("data")) {
-                    if let Some(lyric_hex) = data.get("lyric").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(lyric_hex) {
+            if let Some(data) = body.get("req_0").and_then(|v| v.get("data")) {
+                let lyric_field = data
+                    .get("lyric")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let trans_field = data
+                    .get("trans")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let roma_field = data
+                    .get("roma")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !lyric_field.trim().is_empty() {
+                    match qrc_decrypt(lyric_field.trim()) {
+                        Ok(decrypted) => {
                             let parsed = tx_parse(&decrypted, "", "");
                             lyric = parsed.lyric;
                             lxlyric = parsed.lxlyric;
                         }
-                    }
-                    if let Some(trans_hex) = data.get("trans").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(trans_hex) {
-                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
-                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
-                            tlyric = re2
-                                .replace_all(&re1.replace_all(&decrypted, ""), "")
-                                .to_string();
+                        Err(e) => {
+                            eprintln!("[lyric_fetcher] tx musicu lyric 解密失败 err={}", e);
                         }
                     }
-                    if let Some(roma_hex) = data.get("roma").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(roma_hex) {
-                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
-                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
-                            rlyric = re2
-                                .replace_all(&re1.replace_all(&decrypted, ""), "")
-                                .to_string();
-                        }
+                }
+                if !trans_field.trim().is_empty() {
+                    if let Ok(decrypted) = qrc_decrypt(trans_field.trim()) {
+                        let cleaned = tx_remove_tag(&decrypted);
+                        tlyric = tx_fix_tlrc_time_tag(&cleaned, &lyric);
+                    }
+                }
+                if !roma_field.trim().is_empty() {
+                    if let Ok(decrypted) = qrc_decrypt(roma_field.trim()) {
+                        let cleaned = tx_remove_tag(&decrypted);
+                        let pr = tx_parse_rlyric(&cleaned);
+                        rlyric = tx_fix_rlrc_time_tag(&pr, &lyric);
                     }
                 }
             }
         }
+    } else {
+        eprintln!(
+            "[lyric_fetcher] tx musicu 失败 status={}",
+            resp.status
+        );
     }
 
     // Fallback to old API

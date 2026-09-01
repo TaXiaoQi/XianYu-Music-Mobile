@@ -1394,6 +1394,15 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   List<_CatalogItem> _items = const [];
   bool _loading = false;
   String _searchedHash = '';
+  // LX 歌单分页状态（宿主代取各源原生歌单接口，需翻页拉全）。
+  int _page = 1;
+  bool _hasMore = false;
+  bool _loadingMore = false;
+
+  /// 是否 LX 平台歌单（唯此场景支持翻页加载更多）。
+  bool get _isLxPlaylist =>
+      widget.source.type == _SourceType.lx &&
+      widget.kind == _CatalogKind.playlist;
 
   @override
   bool get wantKeepAlive => true;
@@ -1431,6 +1440,9 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       _searchedHash = hash;
       _loading = q.isNotEmpty;
       if (q.isEmpty) _items = const [];
+      _page = 1;
+      _hasMore = false;
+      _loadingMore = false;
     });
     if (q.isEmpty) return;
 
@@ -1441,9 +1453,11 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       } else if (src.type == _SourceType.musicfree) {
         out.addAll(await _searchMusicFree(q));
       } else {
-        // LX 平台：单曲内派生出歌手/专辑；歌单走各源原生歌单接口（宿主代取）。
+        // LX 平台：单曲内派生出歌手/专辑；歌单走各源原生歌单接口（宿主代取，支持翻页）。
         if (widget.kind == _CatalogKind.playlist) {
-          out.addAll(await _searchLxSheets(q));
+          final sheets = await _fetchLxSheets(q, 1);
+          _hasMore = sheets.length >= 30;
+          out.addAll(_lxSheetsItems(sheets));
         } else {
           out.addAll(await _searchLxDerive(q));
         }
@@ -1591,14 +1605,20 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     return map.values.toList();
   }
 
-  /// LX 平台歌单搜索：宿主代取各源原生歌单接口（kw/kg/tx/wy/mg）。
-  Future<List<_CatalogItem>> _searchLxSheets(String q) async {
+  /// LX 平台歌单搜索（分页）：宿主代取各源原生歌单接口（kw/kg/tx/wy/mg）。
+  Future<List<Map<String, dynamic>>> _fetchLxSheets(String q, int page) async {
     final source = widget.source;
-    final sheets = await lxHostPlaylistSearchFallback(
+    return lxHostPlaylistSearchFallback(
       source.plugin!,
       source.lxKey ?? '',
       q,
+      page: page,
+      limit: 30,
     );
+  }
+
+  List<_CatalogItem> _lxSheetsItems(List<Map<String, dynamic>> sheets) {
+    final source = widget.source;
     final out = <_CatalogItem>[];
     for (final s in sheets) {
       final trackCount = s['trackCount'];
@@ -1620,6 +1640,41 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       ));
     }
     return out;
+  }
+
+  /// 翻页加载下一页 LX 歌单（滚动接近底部时触发）。
+  Future<void> _loadNextLxPage() async {
+    if (_loading || _loadingMore || !_hasMore) return;
+    final q = widget.keyword.trim();
+    if (q.isEmpty) return;
+    setState(() => _loadingMore = true);
+    final next = _page + 1;
+    try {
+      final sheets = await _fetchLxSheets(q, next);
+      if (!mounted) return;
+      final add = _lxSheetsItems(sheets);
+      setState(() {
+        if (add.isNotEmpty) {
+          _items = [..._items, ...add];
+          _page = next;
+        }
+        _hasMore = sheets.length >= 30;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _hasMore = false;
+        _loadingMore = false;
+      });
+    }
+  }
+
+  /// 滚动接近底部时触发歌单翻页（仅 LX 平台歌单支持）。
+  void _maybeLoadMore(ScrollMetrics metrics) {
+    if (!_isLxPlaylist) return;
+    if (metrics.extentAfter > 320) return;
+    _loadNextLxPage();
   }
 
   void _open(_CatalogItem item) {
@@ -1708,36 +1763,55 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
-    return ListView.builder(
-      padding: EdgeInsets.only(
-        top: _ContentTopInsetScope.of(context),
-        bottom: bottomInset,
-      ),
-      itemCount: _items.length,
-      itemBuilder: (context, i) {
-        final item = _items[i];
-        final isArtist = item.kind == 'artist';
-        return CoverRow(
-          cover: _catalogLeading(item, isArtist, m, scheme),
-          title: highlightedText(item.title, q, scheme.primary,
-              maxLines: 1,
-              style: TextStyle(
-                  fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-          subtitle: Text(
-            [item.subtitle, item.sourceTag]
-                .where((x) => x.isNotEmpty)
-                .join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-          ),
-          verticalPadding: m.vPad,
-          trailing:
-              Icon(Icons.chevron_right, color: scheme.outline, size: 22),
-          onTap: () => _open(item),
-        );
+    final showMore = _isLxPlaylist && _loadingMore;
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.metrics.axis == Axis.vertical) _maybeLoadMore(n.metrics);
+        return false;
       },
+      child: ListView.builder(
+        padding: EdgeInsets.only(
+          top: _ContentTopInsetScope.of(context),
+          bottom: bottomInset,
+        ),
+        itemCount: _items.length + (showMore ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (i >= _items.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final item = _items[i];
+          final isArtist = item.kind == 'artist';
+          return CoverRow(
+            cover: _catalogLeading(item, isArtist, m, scheme),
+            title: highlightedText(item.title, q, scheme.primary,
+                maxLines: 1,
+                style: TextStyle(
+                    fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              [item.subtitle, item.sourceTag]
+                  .where((x) => x.isNotEmpty)
+                  .join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+            ),
+            verticalPadding: m.vPad,
+            trailing:
+                Icon(Icons.chevron_right, color: scheme.outline, size: 22),
+            onTap: () => _open(item),
+          );
+        },
+      ),
     );
   }
 

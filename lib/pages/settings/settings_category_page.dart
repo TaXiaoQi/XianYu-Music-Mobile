@@ -452,10 +452,29 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
           _switchTile(
             context,
+            icon: Icons.abc_outlined,
+            title: tr('显示罗马音'),
+            value: s?.showLyricsRomaji ?? false,
+            onChanged: (v) => n.setShowLyricsRomaji(v),
+          ),
+          _switchTile(
+            context,
             icon: Icons.spellcheck_outlined,
             title: tr('逐字动效'),
             value: s?.enableWordEffect ?? true,
             onChanged: (v) => n.setEnableWordEffect(v),
+          ),
+        ],
+      ),
+      _sectionHeader(context, tr('歌词同步')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.sync_outlined,
+            title: tr('同步偏移'),
+            subtitle: tr('正值让歌词更晚显示，负值让歌词更早显示，用于修正歌词与音频的对齐差异'),
+            trailing: _lyricsSyncOffsetSlider(s, n),
           ),
         ],
       ),
@@ -1259,6 +1278,33 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         onCommit: (x) => n.setFloatingLyricsFontScale(x.round()),
       ),
       onAdjust: (x) => n.setFloatingLyricsFontScale(x.round()),
+    );
+  }
+
+  /// 歌词同步偏移（参考桌面版 lyricsSyncOffset）：正=歌词更晚、负=更早，
+  /// 范围 -100~100ms、步进 5ms，纯滑块 + ± 按钮交互。
+  Widget _lyricsSyncOffsetSlider(AppSettings? s, SettingsNotifier n) {
+    final v = (s?.lyricOffsetMs ?? 0).toDouble();
+    return _StepperSliderRow(
+      enabled: true,
+      readValue: () => (s?.lyricOffsetMs ?? 0).toDouble(),
+      step: 5,
+      min: -100,
+      max: 100,
+      format: (x) {
+        final v = x.round();
+        return v > 0 ? '+$v' : '$v';
+      },
+      valueWidth: 32,
+      slider: CommittedSlider(
+        min: -100,
+        max: 100,
+        divisions: 40,
+        value: v,
+        enabled: true,
+        onCommit: (x) => n.setLyricOffsetMs(x.round()),
+      ),
+      onAdjust: (x) => n.setLyricOffsetMs(x.round()),
     );
   }
 

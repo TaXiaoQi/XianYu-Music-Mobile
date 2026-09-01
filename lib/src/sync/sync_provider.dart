@@ -449,6 +449,35 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   static String _normMeta(String s) => s.trim().toLowerCase();
 
+  /// 把任意值规整为 Map<String, dynamic>，非 Map/null 返回空表。
+  static Map<String, dynamic> _asMap(Object? v) =>
+      v is Map ? v.cast<String, dynamic>() : const {};
+
+  /// 仅返回 http(s) 开头的远程 URL，否则 null（本地缓存路径跨设备不可用）。
+  static String? _httpCover(Object? v) {
+    final s = v?.toString() ?? '';
+    return s.startsWith('http://') || s.startsWith('https://') ? s : null;
+  }
+
+  /// 解析 lx://source/... 的音源标识，非 lx:// 返回 null。
+  static String? _lxSourceOf(String path) {
+    if (!path.startsWith('lx://')) return null;
+    final rest = path.substring('lx://'.length);
+    final slash = rest.indexOf('/');
+    if (slash <= 0) return null;
+    return rest.substring(0, slash);
+  }
+
+  /// 解析 lx://source/... 的歌曲 ID（合并可能的 '/'）。
+  static String? _lxSongmidOf(String path) {
+    if (!path.startsWith('lx://')) return null;
+    final rest = path.substring('lx://'.length);
+    final slash = rest.indexOf('/');
+    if (slash <= 0) return null;
+    final id = rest.substring(slash + 1);
+    return id.isEmpty ? null : id;
+  }
+
   static bool _isLocalFilePath(String path) =>
       path.isNotEmpty &&
       !path.startsWith('lx://') &&
@@ -692,6 +721,26 @@ class SyncNotifier extends StateNotifier<SyncState> {
             .last) as String;
         final artist = (item['artist'] as String?) ?? '';
         final durationMs = (item['duration'] as num?)?.toInt() ?? 0;
+
+        // 桌面端同步下来的在线歌曲不携带 mobile 的 onlineSongJson/onlineInfoJson：
+        // 基于桌面端补充的 musicInfo（lx 歌曲信息）合成 onlineInfoJson，
+        // 使收藏的在线歌在移动端仍可解析直链播放；本地歌按元数据匹配回本地曲库。
+        final musicInfo = _asMap(item['musicInfo']);
+        var source = item['source'] as String?;
+        var onlineInfoJson = item['onlineInfoJson'] as String?;
+        final hasMobileJson =
+            (item['onlineSongJson'] as String?)?.isNotEmpty == true ||
+            onlineInfoJson?.isNotEmpty == true;
+        if (!hasMobileJson && musicInfo.isNotEmpty) {
+          source ??= musicInfo['source'] as String? ?? _lxSourceOf(path);
+          final mi = <String, dynamic>{'source': source, ...musicInfo};
+          if (mi['songmid'] == null) mi['songmid'] = _lxSongmidOf(path);
+          onlineInfoJson = jsonEncode(mi);
+        }
+        final coverUrl = (item['coverUrl'] as String?)?.isNotEmpty == true
+            ? item['coverUrl'] as String?
+            : _httpCover(musicInfo['img']) ?? _httpCover(item['cover_thumb_path']);
+
         final matched = _matchLocalLibrarySong(
             index.byPath, index.byMeta, path, title, artist, (durationMs / 1000).round());
         await notifier.add(
@@ -701,12 +750,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
             artist: matched?.artist ?? artist,
             album: matched?.album ?? (item['album'] as String?) ?? '',
             durationMs: durationMs,
-            coverUrl: item['coverUrl'] as String?,
+            coverUrl: coverUrl,
             coverPath: matched?.coverThumbPath,
-            source: item['source'] as String?,
+            source: source,
             onlineSongJson: item['onlineSongJson'] as String?,
             onlineQuality: item['onlineQuality'] as String?,
-            onlineInfoJson: item['onlineInfoJson'] as String?,
+            onlineInfoJson: onlineInfoJson,
           ),
         );
       }
