@@ -35,6 +35,8 @@ devtools_options.yaml
 /coverage/
 
 # Symbolication related
+app.symbols
+*.symbols
 app.*.symbols
 
 # Obfuscation related
