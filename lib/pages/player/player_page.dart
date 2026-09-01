@@ -2702,6 +2702,7 @@ class _DownloadQualitySheetState
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     // 高亮当前播放音质；无播放音质时回退设置中的下载音质。
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
     final settingsQ = ref.watch(
@@ -2741,43 +2742,66 @@ class _DownloadQualitySheetState
                   );
                 }
                 final opts = snap.data ?? const <String>[];
-                if (opts.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: Text(tr('暂无可下载音质'))),
-                  );
-                }
+                // 与音质选择弹窗一致：future 空时回退状态里已有的探测结果
+                // （availableQualities），避免探测时序/失败让下载弹窗空态。
+                final fallbackOpts = ref.watch(
+                  playerProvider.select((s) => s.availableQualities),
+                );
+                final shown = opts.isNotEmpty ? opts : fallbackOpts;
                 return FutureBuilder<Map<String, QualitySizeInfo>>(
                   future: _sizes,
                   builder: (ctx, sizeSnap) {
                     final sizes =
                         sizeSnap.data ?? const <String, QualitySizeInfo>{};
+                    // 仍无档位（非插件在线源探测全失败）：给一个「默认音质」
+                    // 兜底项，下载器会回退用户设置的下载音质，避免死胡同空态。
+                    final options = shown.isNotEmpty
+                        ? shown
+                        : const <String>[''];
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (final q in opts) ...[
+                          if (shown.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Text(
+                                tr('未能探测到可用音质，将以默认音质下载'),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          for (final q in options) ...[
                             ModernOptionTile<String>(
                               option: ModernChoiceOption(
-                                label:
-                                    '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
-                                value: q,
+                                label: shown.isEmpty
+                                    ? '${_qualityLabel(cur ?? settingsQ)} · ${tr('默认')}'
+                                    : '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
+                                value: shown.isEmpty ? '' : q,
                               ),
-                              isSelected: q == cur ||
-                                  (cur == null && q == settingsQ),
+                              isSelected: shown.isEmpty
+                                  ? true
+                                  : q == cur ||
+                                      (cur == null && q == settingsQ),
                               onTap: () {
                                 final overlay =
                                     Overlay.of(ctx, rootOverlay: true);
                                 Navigator.of(ctx).pop();
                                 ref
                                     .read(downloadProvider.notifier)
-                                    .download(widget.song, quality: q);
+                                    .download(
+                                  widget.song,
+                                  quality: q.isEmpty ? null : q,
+                                );
                                 showXianYuToastByOverlay(
                                   overlay,
                                   tr('开始下载：{title}（{quality}），请留意通知查看下载进度', {
                                     'title': widget.song.title,
-                                    'quality': _qualityLabel(q),
+                                    'quality': _qualityLabel(
+                                        q.isEmpty ? null : q),
                                   }),
                                 );
                               },
@@ -5721,6 +5745,11 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                   index: index,
                   child: ListTile(
                     dense: true,
+                    // 行尾关闭图标与顶部「清空垃圾桶」对齐：表头右侧内边距为 12，
+                    // 这里把 contentPadding.right 也设为 12，使两枚 48px 宽的
+                    // IconButton 图标中心落在同一垂直列(距右边 12+24px)。
+                    contentPadding: const EdgeInsets.only(
+                        left: 16, top: 0, right: 12, bottom: 0),
                     leading: isCurrent
                         ? Icon(
                             Icons.graphic_eq,

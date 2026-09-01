@@ -405,11 +405,12 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   String _selectedSourceId = '';
   int _activeIndex = 0;
 
-  /// 多音源时用于音源横滑切换的 TabController（参考榜单页切换效果：
-  /// 每个音源页独立加载，TabBarView 原生动画与搜索并行）。单音源时为 null，
-  /// 内容 TabBarView 原生横滑切 tab。
-  TabController? _sourceTab;
-  int _activeSourceIndex = 0;
+  /// 多音源时用于音源横滑切换的 PageController（完全对齐榜单页：每个音源
+  /// 一页，横滑切音源，onPageChanged 同步选中；动画用 animateToPage）。
+  /// 单音源时为 null，内容 TabBarView 原生横滑切内容 tab。
+  PageController? _pageCtrl;
+  /// 各音源来源条的 GlobalKey，切换音源时把对应 chip 滚入可视区（对齐榜单页）。
+  final Map<String, GlobalKey> _sourceKeys = {};
 
   /// 来源切换条是否处于壁纸抽透明态（见 ChoiceChip 的适配分支）。
   bool get _wallpaper => ref.watch(wallpaperActiveProvider);
@@ -433,27 +434,31 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     setState(() {});
   }
 
-  /// 音源 TabBarView 切换监听：同步 _selectedSourceId + searchSession，
-  /// 并在动画期间逐帧重建以更新子 tab 的 visible 标记（与榜单页同模式）。
-  void _onSourceTabChanged() {
-    if (!mounted || _sourceTab == null) return;
-    final newIdx = _sourceTab!.index;
-    if (newIdx != _activeSourceIndex) {
-      _activeSourceIndex = newIdx;
-      if (newIdx >= 0 && newIdx < _sources.length) {
-        _selectedSourceId = _sources[newIdx].id;
-        ref.read(searchSessionProvider.notifier).setSource(_sources[newIdx].id);
-      }
+  /// 音源 PageView 横滑/翻页落位：同步选中态 + searchSession，并把来源条
+  /// 对应 chip 滚入可视区（完全对齐榜单页 _onPageChanged）。
+  void _onSourcePageChanged(int index) {
+    if (!mounted || index < 0 || index >= _sources.length) return;
+    final s = _sources[index];
+    final changed = s.id != _selectedSourceId;
+    _selectedSourceId = s.id;
+    ref.read(searchSessionProvider.notifier).setSource(s.id);
+    if (changed) setState(() {});
+    final ctx = _sourceKeys[s.id]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastLinearToSlowEaseIn,
+        alignment: 0.5,
+      );
     }
-    setState(() {});
   }
 
   @override
   void dispose() {
     _tab.removeListener(_onTabChanged);
     _tab.dispose();
-    _sourceTab?.removeListener(_onSourceTabChanged);
-    _sourceTab?.dispose();
+    _pageCtrl?.dispose();
     _queryCtrl.dispose();
     super.dispose();
   }
@@ -514,19 +519,17 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final sessionSource = ref.read(searchSessionProvider).sourceId;
     final initial = sessionSource.isNotEmpty ? sessionSource : result.first.id;
 
-    // 初始化/重建音源 TabController（参考榜单页：多音源用 TabBarView 原生
-    // 横滑切换，动画与搜索并行；单音源时不用 _sourceTab）。
-    _sourceTab?.removeListener(_onSourceTabChanged);
-    _sourceTab?.dispose();
+    // 多音源：初始化/复用音源 PageController（完全对齐榜单页——每音源一页，
+    // 横滑切音源、点 chip 动画翻页）；单音源置 null，走内容 TabBarView 原生横滑。
     if (result.length > 1) {
-      _sourceTab = TabController(length: result.length, vsync: this);
-      _activeSourceIndex = result.indexWhere((s) => s.id == initial);
-      if (_activeSourceIndex < 0) _activeSourceIndex = 0;
-      _sourceTab!.index = _activeSourceIndex;
-      _sourceTab!.addListener(_onSourceTabChanged);
+      _pageCtrl ??= PageController();
+      for (final s in result) {
+        _sourceKeys[s.id] ??= GlobalKey();
+      }
+      _sourceKeys.removeWhere((id, _) => !result.any((s) => s.id == id));
     } else {
-      _sourceTab = null;
-      _activeSourceIndex = 0;
+      _pageCtrl = null;
+      _sourceKeys.clear();
     }
 
     setState(() {
@@ -540,7 +543,21 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     if (id == _selectedSourceId) return;
     final newIdx = _sources.indexWhere((s) => s.id == id);
     if (newIdx == -1) return;
-    _sourceTab?.animateTo(newIdx);
+    final ctrl = _pageCtrl;
+    if (ctrl != null) {
+      // 点 chip 切换音源：300ms + fastLinearToSlowEaseIn 动画翻页（完全对齐榜单页）。
+      if (!ctrl.hasClients) return;
+      ctrl.animateToPage(
+        newIdx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastLinearToSlowEaseIn,
+      );
+      return;
+    }
+    // 单音源：仅一个来源，直接同步选中态。
+    _selectedSourceId = id;
+    ref.read(searchSessionProvider.notifier).setSource(id);
+    setState(() {});
   }
 
   /// [floating]：悬浮顶栏模式下把每个来源拆成独立玻璃气泡（[FloatingSourcePill]），
@@ -556,6 +573,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
           children: [
             for (final s in _sources)
               Padding(
+                key: _sourceKeys[s.id],
                 padding: const EdgeInsets.only(right: 8),
                 child: FloatingSourcePill(
                   name: s.name,
@@ -576,6 +594,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         children: [
           for (final s in _sources)
             Padding(
+              key: _sourceKeys[s.id],
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
                 label: Text(s.name),
@@ -622,37 +641,44 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
       ],
     );
 
-    // 多音源：外层 TabBarView（_sourceTab）横滑切音源，内层 TabBarView（_tab）
-    // 禁用横滑（由外层接管），内容 tab 靠点击切换。每个音源页独立加载，
-    // TabBarView 原生动画与搜索并行（参考榜单页 _PeriodBoard）。
-    // 单音源：单层 TabBarView（_tab），横滑切内容 tab。
-    // 结果内容区：单层 TabBarView (controller: _tab) 承载 [单曲, 歌手, 专辑, 歌单]。
-    // 避免在多音源循环中嵌套多重 TabBarView 导致争抢同一个 _tab 控制器、
-    // 引起 RenderViewport 视图偏移移出屏幕外的严重布局崩溃 Bug。
-    final contentArea = TabBarView(
-      controller: _tab,
-      children: [
-        _TrackTab(
-          keyword: keyword,
-          source: selected,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.artist,
-          keyword: keyword,
-          source: selected,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.album,
-          keyword: keyword,
-          source: selected,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.playlist,
-          keyword: keyword,
-          source: selected,
-        ),
-      ],
-    );
+    // 多音源：外层 PageView 每音源一页，横滑直接切音源（onPageChanged 同步
+    // 选中，点 chip 动画翻页，完全对齐榜单页 _onPageChanged/_selectSource）。
+    // 内容 tab 不横滑，靠顶部 tabBar 点击切换（_tab.index 变更触发重建，
+    // 每个音源页渲染当前内容 tab）。
+    // 单音源：单层 TabBarView(_tab) 原生横滑切内容 tab。
+    // 注意：多音源不嵌套多重 TabBarView，避免争抢同一 _tab 导致 RenderViewport
+    // 偏移出屏的严重布局崩溃（内容 tab 改为重建式，横滑仅由外层接管）。
+    final Widget contentArea = _pageCtrl != null
+        ? PageView.builder(
+            controller: _pageCtrl,
+            onPageChanged: _onSourcePageChanged,
+            itemCount: _sources.length,
+            itemBuilder: (context, i) => _buildSourceContent(_sources[i]),
+          )
+        : TabBarView(
+            controller: _tab,
+            children: [
+              _TrackTab(
+                keyword: keyword,
+                source: selected,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.artist,
+                keyword: keyword,
+                source: selected,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.album,
+                keyword: keyword,
+                source: selected,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.playlist,
+                keyword: keyword,
+                source: selected,
+              ),
+            ],
+          );
 
     // 内嵌模式（横屏搜索容器）：顶栏由全局横屏顶栏承接（回退/搜索/皮肤/
     // 设置四大控件所有横屏容器共享，本页无额外 tab 行、无需独立悬浮适配）。
@@ -788,6 +814,34 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   /// 内容铺满全屏滚动时从顶栏/来源条下方穿过。
   Widget _withContentTopInset(Widget contentArea, double inset) {
     return _ContentTopInsetScope(inset: inset, child: contentArea);
+  }
+
+  /// 多音源：单个音源页的内容（渲染当前内容 tab，不横滑，靠顶部 tabBar
+  /// 点击切换）。与榜单页每个 source page 独立一致。
+  Widget _buildSourceContent(_SourceItem source) {
+    final keyword = ref.watch(searchSessionProvider).query;
+    switch (_tab.index) {
+      case 1:
+        return _CatalogTab(
+          kind: _CatalogKind.artist,
+          keyword: keyword,
+          source: source,
+        );
+      case 2:
+        return _CatalogTab(
+          kind: _CatalogKind.album,
+          keyword: keyword,
+          source: source,
+        );
+      case 3:
+        return _CatalogTab(
+          kind: _CatalogKind.playlist,
+          keyword: keyword,
+          source: source,
+        );
+      default:
+        return _TrackTab(keyword: keyword, source: source);
+    }
   }
 
   /// 结果页返回搜索页，在新搜索页发起新搜索。

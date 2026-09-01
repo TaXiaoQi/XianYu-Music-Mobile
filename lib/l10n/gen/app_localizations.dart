@@ -114,7 +114,7 @@ abstract class AppLocalizations {
   /// No description provided for @navHome.
   ///
   /// In zh, this message translates to:
-  /// **'首页'**
+  /// **'发现'**
   String get navHome;
 
   /// No description provided for @navLibrary.

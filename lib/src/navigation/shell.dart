@@ -1561,12 +1561,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                           onPressed: () => context.push('/wallpaper'),
                         ),
                         const SizedBox(width: 16),
-                      ] else
+                      ] else ...[
                         IconButton(
                           icon: const Icon(Icons.settings_outlined),
                           tooltip: tr('设置'),
                           onPressed: () => context.push('/settings'),
                         ),
+                        // 与首页「皮肤」按钮保持一致的右侧留白，避免首页↔我的
+                        // 切换时右上角按钮位置左右跳变（对齐到皮肤位）。
+                        const SizedBox(width: 16),
+                      ],
                     ],
                     bottom: PageSearchBarBottom(
                       onTap: () => context.push('/search'),

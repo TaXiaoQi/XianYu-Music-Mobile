@@ -61,21 +61,35 @@ class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
       return;
     }
 
-    final first = supported.first;
+    // 与完整「音源榜单页」保持一致：用同一排序（sortPluginSources），避免
+    // Future.wait 并行收集的 supported 顺序不确定，导致首页预览选中的首位
+    // 音源（恰好榜单为空）而完整榜单页却又能切到有内容的音源。
+    final ordered = sortPluginSources(supported);
     state = TopListsPreview(
       checking: false,
       loading: true,
       loaded: true,
       hasSource: true,
-      sourceName: first.name,
+      sourceName: ordered.first.name,
     );
-    final boards = await catalog.getTopLists(first);
+    // 依次取榜首：优先选首个「真能拉到榜单」的音源，保证首页预览与完整榜单页
+    // 展示一致；即便某音源榜单接口瞬时失败/为空，也会继续尝试后续音源。
+    var chosen = ordered.first;
+    var boards = const <MfSheetItem>[];
+    for (final s in ordered) {
+      final b = await catalog.getTopLists(s);
+      if (b.isNotEmpty) {
+        chosen = s;
+        boards = b;
+        break;
+      }
+    }
     state = TopListsPreview(
       checking: false,
       loading: false,
       loaded: true,
       hasSource: true,
-      sourceName: first.name,
+      sourceName: chosen.name,
       boards: boards.take(_previewCount).toList(),
     );
   }

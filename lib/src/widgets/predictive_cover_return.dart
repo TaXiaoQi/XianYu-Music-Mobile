@@ -241,28 +241,35 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
   }
 
   Widget _buildCover(BuildContext context) {
-    final src = PredictiveCoverReturn.instance.sourceRect;
-    if (src.isEmpty) return const SizedBox.shrink();
-    final (songPath, networkUrl, thumbPath) =
-        PredictiveCoverReturn.instance.coverSource;
-    final target = _target(context);
-
-    final p0 = src.center;
-    final p2 = target.center;
-    final s0 = src.width;
-    final s1 = target.width;
-    // 源封面是方形圆角（播放页大封面约 23-32，随机型不同），目标迷你条封面是
-    // 圆形。圆角从源的近似方形渐变到目标的圆形（半径 = 边长一半），贴合
-    // 原有封面回拨观感，避免全程画成圆盘（source cover big circle）显得怪异。
-    final srcRadius = math.min(32.0, s0 * 0.08);
-    final dstRadius = s1 / 2;
-
     return Stack(
       fit: StackFit.expand,
       children: [
         AnimatedBuilder(
           animation: widget.animation,
           builder: (context, _) {
+            // 源封面矩形必须在动画 builder 内「逐帧」解析：横竖屏切换后播放页
+            // 布局分支（LandscapeGate CoverReturnSource）可能尚未完成首帧布局，
+            // 此刻 RenderBox 无尺寸返回零矩形。若像旧实现那样在 builder 外只读
+            // 一次并直接短路返回空组件，后续帧将永远不再重试，整段预测返回手势
+            // 的封面回拨就被静默吞掉（表现为「有概率不触发飞行动画」）。放在
+            // builder 里后，每帧重读一次，一旦布局就绪即恢复飞行，且为 0 的那
+            // 一帧仅画空不打断动画。
+            final src = PredictiveCoverReturn.instance.sourceRect;
+            if (src.isEmpty) return const SizedBox.shrink();
+            final (songPath, networkUrl, thumbPath) =
+                PredictiveCoverReturn.instance.coverSource;
+            final target = _target(context);
+
+            final p0 = src.center;
+            final p2 = target.center;
+            final s0 = src.width;
+            final s1 = target.width;
+            // 源封面是方形圆角（播放页大封面约 23-32，随机型不同），目标迷你条封面是
+            // 圆形。圆角从源的近似方形渐变到目标的圆形（半径 = 边长一半），贴合
+            // 原有封面回拨观感，避免全程画成圆盘（source cover big circle）显得怪异。
+            final srcRadius = math.min(32.0, s0 * 0.08);
+            final dstRadius = s1 / 2;
+
             // 跟手量 raw：0（页完全在）→ 1（页完全退）。封面不随手势立即飞，
             // 而是等页面先退过 [_startProgress] 再启动，避免飞行封面与仍在原位
             // 的播放页封面重叠抢跑（「封面飞走了、原图上还有封面」）。

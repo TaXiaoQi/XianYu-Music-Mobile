@@ -15,7 +15,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appTagline => '纯净本地 · 在线音乐播放器';
 
   @override
-  String get navHome => '首页';
+  String get navHome => '发现';
 
   @override
   String get navLibrary => '本地';
@@ -331,7 +331,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get appTagline => '純淨本地 · 線上音樂播放器';
 
   @override
-  String get navHome => '首頁';
+  String get navHome => '發現';
 
   @override
   String get navLibrary => '本地';
