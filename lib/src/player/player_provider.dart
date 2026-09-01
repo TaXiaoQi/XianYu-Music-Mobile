@@ -336,7 +336,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<Duration?>? _durSub;
   StreamSubscription<dynamic>? _stateSub;
   StreamSubscription<ProcessingState>? _procSub;
+  StreamSubscription<dynamic>? _errSub;
   Timer? _listenTimer;
+  /// 播放错误处理互斥：错误风暴（换源探测失败链）时只处理一次。
+  bool _playbackErrorHandling = false;
   Timer? _exclusiveTimer;
   Timer? _sfxSyncTimer;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
@@ -405,6 +408,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _onTrackEnd();
       }
     });
+    // 播放中途错误（直链中途失效/网络断/解码失败）：just_audio 通过
+    // playbackEventStream 的 onError 上报。此前无人监听 → 播放器已死但
+    // UI 仍停在 isPlaying=true。统一路由：在线歌先尝试换源，失败透出错误。
+    _errSub = _player.playbackEventStream.listen(
+      (_) {},
+      onError: (Object e, StackTrace st) {
+        _onPlaybackError(e);
+      },
+    );
     // 播放中每 15 秒把当前会话的听歌时长增量刷写进数据库（首页统计/排行榜共用），
     // 避免长时间连续播放时统计迟迟不落库。
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -1065,7 +1077,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (start != null) {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
-        await _startUrl(start.url, headers: start.headers);
+        await _startOnlineUrl(start.url, headers: start.headers, item: item);
         state = state.copyWith(currentQuality: start.quality);
         _refreshQualityMenuState(probe);
         return;
@@ -1079,7 +1091,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       resolving: false,
       currentQuality: url.quality,
     );
-    await _startUrl(url.url, headers: url.headers);
+    await _startOnlineUrl(url.url, headers: url.headers, item: item);
   }
 
   /// 歌曲级探测 key：隔离不同歌曲且共享同一首歌的多路调用。
@@ -1556,6 +1568,32 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
   }
 
+  /// 在线直链专用起播：加载完成后校验实际时长与搜索元数据声明时长。
+  ///
+  /// 部分失效直链会返回 200 但内容为空/极短（防盗链页、CDN 下架后的兜底音频），
+  /// ExoPlayer 能正常加载甚至"播完"，但全程无声——用户看到的是"进度条在走
+  /// 却没声音"。与声明时长严重不符（实际 <5s 且声明 ≥30s）时抛错，走统一的
+  /// 换源/跳过/报错失败路径，而不是静默播一段空音频。
+  Future<void> _startOnlineUrl(
+    String url, {
+    Map<String, String>? headers,
+    required QueueItem item,
+  }) async {
+    final clean = sanitizeMediaUrl(url);
+    if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
+    final h = normalizeMediaRequestHeaders(clean, headers);
+    await _player.setUrl(clean, headers: h);
+    final declaredMs = item.durationMs;
+    final actualMs = _player.duration?.inMilliseconds ?? 0;
+    if (declaredMs >= 30000 && actualMs > 0 && actualMs < 5000) {
+      AppLog.warn('play', '[startOnlineUrl] 直链实际时长异常 '
+          'declared=${declaredMs}ms actual=${actualMs}ms url=$clean');
+      throw StateError(tr('直链已失效（返回内容与歌曲不符）'));
+    }
+    await _player.setVolume(_ref.read(volumeProvider));
+    await _player.play();
+  }
+
   /// 按候选音质依次调用 lxResolveUrl（已导入插件 → 公共 API），
   /// 返回首个合法 http(s) 直链。整体限时 12s，避免多档串行超时拖垮加载态。
   Future<ResolvedMediaUrl?> _tryLxResolve(
@@ -1735,7 +1773,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
-        await _startUrl(url.url, headers: url.headers);
+        await _startOnlineUrl(url.url, headers: url.headers, item: newItem);
       } catch (_) {
         _failedSources.add(src.id);
         continue;
@@ -2084,8 +2122,101 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
   }
 
+  /// 播放器中途错误（playbackEventStream onError）统一处理。
+  ///
+  /// 换源/切歌期间主动 stop/setUrl 一般不产生错误事件；真实错误（直链中途
+  /// 失效、网络断、解码失败）到达时：先把 isPlaying 拉回真实值，在线歌尝试
+  /// 自动换源（_autoSwitchSource 自带按 title|artist 隔离的失败源防环），
+  /// 换源失败透出错误。切歌后到达的旧源错误直接丢弃。
+  Future<void> _onPlaybackError(Object e) async {
+    if (_playbackErrorHandling) return;
+    final item = state.current;
+    if (item == null) return;
+    AppLog.error('play', '播放器错误 path=${item.path} error=$e');
+    _playbackErrorHandling = true;
+    try {
+      state = state.copyWith(isPlaying: false);
+      _syncToSystemMediaSession();
+      if (item.isOnline) {
+        final switched = await _autoSwitchSource(item);
+        if (switched) return;
+        // 换源不可用/失败：透出错误并保持暂停，交由用户决定（重试/跳过）。
+        if (state.current?.path != item.path) return;
+        state = state.copyWith(
+          error: tr('播放失败：{e}', {'e': e.toString()}),
+          isPlaying: false,
+        );
+        _syncToSystemMediaSession();
+      } else {
+        if (state.current?.path != item.path) return;
+        state = state.copyWith(
+          error: tr('本地播放失败：{e}', {'e': e.toString()}),
+          isPlaying: false,
+        );
+        _syncToSystemMediaSession();
+      }
+    } finally {
+      _playbackErrorHandling = false;
+    }
+  }
+
+  /// 在线流异常完成（实际时长远短于声明时长）的失败路由：
+  /// 换源 → 按在线失败行为跳过 → 停止并透出错误。对齐 _playAt 的 catch 分支。
+  Future<void> _handleBrokenOnlineStream(QueueItem item) async {
+    if (_playbackErrorHandling) return;
+    _playbackErrorHandling = true;
+    try {
+      state = state.copyWith(isPlaying: false, resolving: true);
+      final switched = await _autoSwitchSource(item);
+      if (switched) return;
+      if (state.current?.path != item.path) return;
+      final behavior = _ref
+              .read(settingsProvider)
+              .valueOrNull
+              ?.onlineFailureBehavior ??
+          'skip';
+      if (behavior == 'skip') {
+        _skipDepth++;
+        final next = _pickNextIndex();
+        if (next >= 0 && next != state.queueIndex) {
+          await _playAt(next);
+          return;
+        }
+      }
+      state = state.copyWith(
+        error: tr('在线音源已失效，未能自动换源'),
+        isPlaying: false,
+        resolving: false,
+      );
+      _syncToSystemMediaSession();
+    } finally {
+      _playbackErrorHandling = false;
+    }
+  }
+
   Future<void> _onTrackEnd() async {
     final ended = state.current;
+    // [在线流异常完成] 失效直链可能返回极短/空音频：ExoPlayer 正常走到
+    // completed，但实际时长与搜索元数据声明时长严重不符（几秒"播完"一首
+    // 几分钟的歌、全程无声）。这不算自然播完——否则会立刻跳到队列下一首，
+    // 混排队列里表现就是"拉一下时间轴跳去播放本地音乐"。按起播失败处理：
+    // 先尝试换源，再按在线失败行为（跳过/停止）兜底。
+    if (ended != null &&
+        ended.isOnline &&
+        !_playbackErrorHandling &&
+        _skipDepth < state.queue.length) {
+      final declaredMs = ended.durationMs;
+      final actualMs = state.duration * 1000.0;
+      if (declaredMs >= 30000 &&
+          actualMs > 0 &&
+          actualMs < declaredMs * 0.5 &&
+          actualMs < 15000) {
+        AppLog.warn('play', '[onTrackEnd] 在线流异常完成 '
+            'declared=${declaredMs}ms actual=${actualMs}ms path=${ended.path}');
+        await _handleBrokenOnlineStream(ended);
+        return;
+      }
+    }
     if (ended != null) _reportBehavior(ended, 'complete', 0);
     _flushPlayStats();
     if (state.playMode == 1) {
@@ -2239,6 +2370,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _durSub?.cancel();
     _stateSub?.cancel();
     _procSub?.cancel();
+    _errSub?.cancel();
     try {
       stopUsbExclusivePlayback();
     } catch (_) {}
