@@ -23,6 +23,7 @@ import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart';
+import '../widgets/page_search_bar.dart';
 import '../widgets/bilipai_glass.dart';
 import '../../pages/library/library_page.dart';
 import '../../pages/favorites/favorites_page.dart';
@@ -441,6 +442,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     WidgetsBinding.instance.removeObserver(this);
     _router.routerDelegate.removeListener(_onRouteChanged);
     _libPaneMountTimer?.cancel();
+    _chromeSettleTimer?.cancel();
     _rotationSub?.cancel();
     super.dispose();
   }
@@ -486,6 +488,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _libPaneMountTimer = Timer(const Duration(milliseconds: 400), () {
       _libPaneMountTimer = null;
       if (mounted) setState(() => _libPaneMountable = true);
+    });
+  }
+
+  /// 底栏/悬浮顶栏显隐动画窗口（见 [chromeGlassSettlingProvider]）：
+  /// hidden 翻转时置 true，动画结束后恢复毛玻璃。仅竖屏驱动——横屏
+  /// chrome 无淡入淡出，置 true 会让横屏搜索框等 header 表面无谓闪纯色。
+  bool? _lastChromeHidden;
+  Timer? _chromeSettleTimer;
+
+  void _syncChromeGlassSettle(bool hidden) {
+    if (_lastChromeHidden == hidden) return;
+    final first = _lastChromeHidden == null;
+    _lastChromeHidden = hidden;
+    // 首帧对齐初值，不触发降级窗口。
+    if (first) return;
+    _chromeSettleTimer?.cancel();
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      ref.read(chromeGlassSettlingProvider.notifier).state = true;
+    });
+    _chromeSettleTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      ref.read(chromeGlassSettlingProvider.notifier).state = false;
     });
   }
 
@@ -724,6 +749,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     setState(() {
       _isPlayerDragging = true;
     });
+    // 通知玻璃表面退回实时背板：拖动把播放条平移到新内容上，静止冻结的
+    // 快照还是旧位置抓的背景，不退实时会「液态效果不跟随、还在原地」。
+    setGlobalDragging(true);
   }
 
   /// 播放条拖拽/停靠上界：按当前形态顶栏底部夹紧（竖屏顶栏胶囊高 40 /
@@ -781,6 +809,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     setState(() {
       _isPlayerDragging = false;
     });
+    // 拖动结束：玻璃表面在新位置重新走「静止 → 抓屏冻结」流程。
+    setGlobalDragging(false);
 
     // 完全自由停放：松手后播放条停留在拖到的位置，不再被 60px 磁吸拉回
     // 靠近底栏的停靠位（原先「靠近底栏就会吸过去」即由此造成）。
@@ -790,6 +820,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     setState(() {
       _isPlayerDragging = false;
     });
+    setGlobalDragging(false);
   }
 
   /// 横屏右侧主 tab 容器：摄像头区域使用时抑制切口内边距。主页内容（导航组+
@@ -919,6 +950,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
     final anyPaneOpen = landPane != null;
 
+    // 音乐库 pane（本地/收藏/最近/歌单）激活：页内顶栏完整接管（与竖屏二级页
+    // 同构），全局横屏顶栏让位隐藏——否则悬浮模式下页内固定顶栏与全局悬浮
+    // 控件同位叠层，内容也无法穿透。
+    final libPaneActive = landscape && libSel != null;
+
     // 悬浮搜索框开关：开启后首页/我的页共用同一个实例（提至壳层，不随 tab
     // 重建，避免液态玻璃 shader 反复初始化渲染）。
     final floatingSearchBar =
@@ -974,6 +1010,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     // 动画结束才出现；路径在 pop 开始时即已收缩，可让底栏随一级页露出同步淡入。
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
+    // 竖屏底栏/悬浮顶栏显隐动画窗口内强制玻璃表面纯色（防背板采样黑帧）。
+    if (!landscape) _syncChromeGlassSettle(hidden);
 
     void select(int i) {
       // 切主 tab 时关闭横屏覆盖容器（参考桌面端：侧边栏导航即离开当前容器）。
@@ -1158,9 +1196,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                         left: 0,
                                         right: 0,
                                         child: IgnorePointer(
-                                          ignoring: anyPaneOpen,
+                                          ignoring:
+                                              anyPaneOpen || libPaneActive,
                                           child: Opacity(
-                                            opacity: anyPaneOpen ? 0 : 1,
+                                            opacity: anyPaneOpen ||
+                                                    libPaneActive
+                                                ? 0
+                                                : 1,
                                             child: LandscapeGlobalTopBar(
                                               currentIndex: widget.index,
                                               floating: true,
@@ -1177,9 +1219,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                 : Column(
                                     children: [
                                       IgnorePointer(
-                                        ignoring: anyPaneOpen,
+                                        ignoring:
+                                            anyPaneOpen || libPaneActive,
                                         child: Opacity(
-                                          opacity: anyPaneOpen ? 0 : 1,
+                                          opacity:
+                                              anyPaneOpen || libPaneActive
+                                                  ? 0
+                                                  : 1,
                                           child: LandscapeGlobalTopBar(
                                             currentIndex: widget.index,
                                             floating: false,
@@ -1253,21 +1299,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
           // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
           // 播放页是覆盖全屏的独立 root 路由，侧栏在下层不可见，无需处理。
+          // 悬浮顶部栏模式：侧栏缩为玻璃胶囊卡悬浮在左侧（避让悬浮顶栏控件，
+          // 左右 12 对齐竖屏 dock 边距），不再贴边全高。
           if (landscape)
             Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: _railWidth,
+              left: floatingSearchBar ? 12 : 0,
+              top: floatingSearchBar
+                  ? MediaQuery.paddingOf(context).top + 60 + 8
+                  : 0,
+              bottom: floatingSearchBar ? 18 : 0,
+              width: floatingSearchBar
+                  ? math.max(160.0, _railWidth - 24)
+                  : _railWidth,
               child: _LandscapeRail(
                 index: widget.index,
                 onSelect: select,
                 railWidth: _railWidth,
+                floating: floatingSearchBar,
               ),
             ),
 
           // 左缘侧栏右侧的可拖动分割条：静置为细分隔线，拖动实时调整侧栏宽度。
-          if (landscape) buildRailDivider(),
+          // 悬浮模式下侧栏是独立胶囊卡（固定宽度），不显示分割条。
+          if (landscape && !floatingSearchBar) buildRailDivider(),
 
           // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
           // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让
@@ -1428,6 +1482,72 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
             ),
+
+          // 固定顶部栏（竖屏非悬浮模式，首页/我的页共用同一实例，与悬浮顶栏
+          // 同位上提至壳层）：毛玻璃表面（BackdropFilter）常驻，首页↔我的 tab
+          // 切换时实例不卸载重建，仅标题/动作随分支切换；搜索框扩展区也是同一
+          // 实例。二级页 hidden 时随底栏一同淡出（显隐动画窗口内强制纯色防
+          // BackdropFilter 黑帧，见 chromeGlassSettlingProvider）。
+          if (!landscape && !floatingSearchBar)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                opacity: (widget.index == 0 || widget.index == 1) && !hidden
+                    ? 1.0
+                    : 0.0,
+                child: IgnorePointer(
+                  ignoring: hidden,
+                  child: GlassTopBar(
+                    titleSpacing: widget.index == 0 ? 18 : null,
+                    forceSolid: ref.watch(chromeGlassSettlingProvider),
+                    title: widget.index == 1
+                        ? Text(tr('个人中心'))
+                        : Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(text: tr('弦予')),
+                                TextSpan(
+                                  text: tr('音乐'),
+                                  style: const TextStyle(
+                                    color: Color(0xFFEC4141),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                    actions: [
+                      if (widget.index == 0) ...[
+                        IconButton(
+                          icon: const SkinIcon(),
+                          tooltip: tr('皮肤'),
+                          onPressed: () => context.push('/wallpaper'),
+                        ),
+                        const SizedBox(width: 16),
+                      ] else
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: tr('设置'),
+                          onPressed: () => context.push('/settings'),
+                        ),
+                    ],
+                    bottom: PageSearchBarBottom(
+                      onTap: () => context.push('/search'),
+                      onRecognize: () => context.push('/recognize'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: (!isSide && !floating)
@@ -1517,8 +1637,10 @@ class _FixedNavBar extends ConsumerWidget {
     // 液态玻璃仅属于悬浮底栏；固定底栏保持下方常规圆角样式，不走 shader。
     // 伪毛玻璃（液态/未开 默认）：半透明 + BackdropFilter 高斯模糊；
     // 低性能模式或关闭「毛玻璃」→ 高不透明度纯色回退（无模糊）。
-    final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf);
+    // 显隐动画窗口内（二级页进出）强制纯色：BackdropFilter 在透明度动画层
+    // 内背板采样会渲染成黑帧（「返回一级时玻璃黑一下再加载」）。
+    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf) ||
+        ref.watch(chromeGlassSettlingProvider);
     final wallpaper = wallpaperGlassActive(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final fill = solid
@@ -1694,12 +1816,22 @@ class _LiquidNavBar extends ConsumerWidget {
     );
     // 全局 blur 预算：滚动/转场时悬浮底栏玻璃降级。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    // 显隐动画窗口内（二级页进出）强制纯色铺底：BackdropFilter/液态 shader
+    // 在透明度/缩放动画层内背板采样会渲染成黑帧（「玻璃黑一下再加载」）。
+    final settling = ref.watch(chromeGlassSettlingProvider);
 
-    // 选择指示器统一为液态玻璃同款小号折射透镜（普通/毛玻璃/液态玻璃样式
-    // 一致），不再按玻璃档位切换成铺满整格的大块胶囊。
+    // 指示器随玻璃档位分流：液态玻璃（全档真液态 shader）→ BiliPai 折射
+    // 透镜水滴；毛玻璃/纯色 → 主题色淡红大胶囊（铺满整格）。
     // 水平留 10px：滑动指示条与最左/最右 tab 让开，避免顶到玻璃圆角边界。
+    final realLiquid = liquid;
+    // 玻璃外壳由 _SlidingNavBottom 自组装（水滴画在玻璃之上不被裁剪，
+    // 按住胀大可鼓出底栏边缘）；显隐动画窗口内退纯色毛玻璃，水滴回嵌内部。
     final tabs = _SlidingNavBottom(
       index: index,
+      lens: realLiquid,
+      glassBuilder: liquid && !settling
+          ? (Widget content) => _liquidGlass(context, ref, content)
+          : null,
       onSelect: (i) {
         triggerHaptic(haptic);
         onSelect(i);
@@ -1707,22 +1839,17 @@ class _LiquidNavBar extends ConsumerWidget {
     );
 
     if (liquid) {
-      // 液态玻璃低档：不跑 shader，用伪液态毛玻璃伪造（透明底 + 淡模糊）。
-      if (liquidUseFrosted(ref)) {
-        return pseudoLiquidSurface(
-          context: context,
-          ref: ref,
-          radius: 999,
-          child: SizedBox(height: 70, child: tabs),
-          lowPerf: lowPerf,
-          surfaceType: BlurSurfaceType.bottomBar,
-          budget: budget,
-        );
+      // 液态玻璃全档走真 shader（BiliPai 三档配方：低=CLEAR 零模糊，
+      // 中=BALANCED 4dp，高=FROSTED 24dp），不再用伪液态毛玻璃充数。
+      // 显隐动画窗口内不跑液态 shader（背板采样黑帧），退回纯色毛玻璃。
+      if (settling) {
+        return _frostedGlass(context, ref, tabs,
+            lowPerf: lowPerf, budget: budget, forceSolid: true);
       }
-      return _liquidGlass(context, ref, tabs);
+      return tabs;
     }
     return _frostedGlass(context, ref, tabs,
-        lowPerf: lowPerf, budget: budget);
+        lowPerf: lowPerf, budget: budget, forceSolid: settling);
   }
 
   /// BiliPai 化液态玻璃：实时背景采样 + 滚动波浪扭曲 + 色差 + 轻量模糊，胶囊形状。
@@ -1734,17 +1861,19 @@ class _LiquidNavBar extends ConsumerWidget {
       radius: 30,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
+      // BiliPai 三档配方：中档=CLEAR 零模糊（水晶玻璃，「液态感」核心），
+      // 高档=BALANCED 4dp 轻模糊。
       blurSigma: surfaceBlurSigma(
-        base: 4,
+        base: bilipaiBackdropBlurOf(quality),
         budget: budget,
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiGlassTint(isDark),
+      backgroundColor: bilipaiGlassTint(isDark, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
-      child: SizedBox(height: 70, child: tabs),
+      child: tabs,
     );
   }
 
@@ -1752,10 +1881,10 @@ class _LiquidNavBar extends ConsumerWidget {
   ///
   /// 规则：标准半透明磨砂（跟随毛玻璃开关）；低性能 → 高不透明度纯色。
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
-      {bool lowPerf = false, BlurBudget? budget}) {
+      {bool lowPerf = false, BlurBudget? budget, bool forceSolid = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf);
+        forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
@@ -1838,11 +1967,15 @@ class _LandscapeRail extends ConsumerWidget {
     required this.index,
     required this.onSelect,
     required this.railWidth,
+    required this.floating,
   });
 
   final int index;
   final ValueChanged<int> onSelect;
   final double railWidth;
+
+  /// 悬浮顶部栏模式：侧栏以玻璃胶囊卡悬浮（不贴边全高、不画分隔线）。
+  final bool floating;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1873,7 +2006,76 @@ class _LandscapeRail extends ConsumerWidget {
           ),
         );
 
-    final rail = SafeArea(
+    final content = Column(
+      children: [
+        SizedBox(height: floating ? 14 : 20),
+        // 顶部品牌标题（横屏时首页顶栏的「弦予音乐」标题移来这里，取代原三条竖线图标）。
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text.rich(
+            TextSpan(
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface,
+              ),
+              children: [
+                TextSpan(text: tr('弦予')),
+                TextSpan(
+                  text: tr('音乐'),
+                  style: const TextStyle(
+                    color: Color(0xFFEC4141),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的二级入口。
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
+            children: [
+              label(tr('导航')),
+              for (var i = 0; i < primary.length; i++)
+                _railItem(
+                  context,
+                  icon: primary[i].icon,
+                  title: navTitle(context, primary[i]),
+                  selected: libSel == null && i == index,
+                  onTap: () {
+                    ref.read(landscapeLibraryProvider.notifier).state = null;
+                    onSelect(i);
+                  },
+                ),
+              label(tr('音乐库')),
+              for (var j = 0; j < library.length; j++)
+                _railItem(
+                  context,
+                  icon: library[j].$2,
+                  title: library[j].$1,
+                  selected: libSel == j,
+                  onTap: () {
+                    // 切换音乐库入口时关闭横屏搜索容器（不遮挡新容器）。
+                    closeLandscapeSearch(ref);
+                    ref.read(landscapeLibraryProvider.notifier).state = j;
+                  },
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    // 悬浮顶部栏模式：侧边栏用玻璃容器包裹成悬浮胶囊卡（与竖屏悬浮底栏同一
+    // 套悬浮容器思路，玻璃口径同 FloatingGlassSurface：液态/伪液态/毛玻璃/低
+    // 性能纯色），不再贴边全高、不画分隔线。
+    if (floating) {
+      return FloatingGlassSurface(radius: 18, child: content);
+    }
+
+    return SafeArea(
       right: false,
       child: SizedBox(
         width: railWidth,
@@ -1887,73 +2089,10 @@ class _LandscapeRail extends ConsumerWidget {
               ),
             ),
           ),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              // 顶部品牌标题（横屏时首页顶栏的「弦予音乐」标题移来这里，取代原三条竖线图标）。
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text.rich(
-                  TextSpan(
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurface,
-                    ),
-                    children: [
-                      TextSpan(text: tr('弦予')),
-                      TextSpan(
-                        text: tr('音乐'),
-                        style: const TextStyle(
-                          color: Color(0xFFEC4141),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的二级入口。
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.only(top: 6, bottom: 12),
-                  children: [
-                    label(tr('导航')),
-                    for (var i = 0; i < primary.length; i++)
-                      _railItem(
-                        context,
-                        icon: primary[i].icon,
-                        title: navTitle(context, primary[i]),
-                        selected: libSel == null && i == index,
-                        onTap: () {
-                          ref.read(landscapeLibraryProvider.notifier).state =
-                              null;
-                          onSelect(i);
-                        },
-                      ),
-                    label(tr('音乐库')),
-                    for (var j = 0; j < library.length; j++)
-                      _railItem(
-                        context,
-                        icon: library[j].$2,
-                        title: library[j].$1,
-                        selected: libSel == j,
-                        onTap: () {
-                          // 切换音乐库入口时关闭横屏搜索容器（不遮挡新容器）。
-                          closeLandscapeSearch(ref);
-                          ref.read(landscapeLibraryProvider.notifier).state =
-                              j;
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: content,
         ),
       ),
     );
-    return rail;
   }
 
   /// 横屏侧栏单个入口（图标 + 文字，选中淡红胶囊）。
@@ -2165,10 +2304,23 @@ class _SlidingNavBottom extends StatefulWidget {
   const _SlidingNavBottom({
     required this.index,
     required this.onSelect,
+    this.lens = false,
+    this.glassBuilder,
   });
 
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// 真液态玻璃时用 BiliPai 折射透镜水滴；否则用主题色大胶囊选中指示器
+  /// （铺满整格的淡红底，与固定底栏观感一致）。
+  final bool lens;
+
+  /// 真液态时由状态内部组装玻璃外壳：水滴画在玻璃**之上**（外层 Stack 兄弟
+  /// 节点），不被玻璃的 clipPath 裁剪——按住胀大可以超出底栏边缘（BiliPai
+  /// dock 同款：56dp 水滴胀到 73dp，鼓出 64dp 栏外仍可见）。
+  /// null = 旧结构：整个 widget（含水滴）嵌进外部玻璃/纯色容器内（毛玻璃
+  /// 回退、显隐动画窗口纯色态）。
+  final Widget Function(Widget content)? glassBuilder;
 
   @override
   State<_SlidingNavBottom> createState() => _SlidingNavBottomState();
@@ -2243,12 +2395,18 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       animation: Listenable.merge([_move, _rebound, _press]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
+        // 玻璃外壳自组装（overlay 水滴）时高度自定 70（BiliPai dock 高）；
+        // 嵌入外部容器时由容器给高度（固定 70）。
+        final overlayDroplet = widget.lens && widget.glassBuilder != null;
         final maxW = constraints.maxWidth;
-        final maxH = constraints.maxHeight;
+        final maxH = overlayDroplet
+            ? 70.0
+            : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
         final tabW = (maxW - 20) / items.length;
-        // 透镜水滴直径按 BiliPai 56dp 水滴 / 64dp dock（0.8×栏高）比例加大，
-        // 完整罩住图标+文字内容。
-        final dropH = (maxH * 0.9).clamp(58.0, 66.0);
+        // 透镜水滴静止直径 0.8×栏高（BiliPai 56/64 同比例），完整罩住
+        // 图标+文字。按住再胀 ~30%——水滴画在玻璃外层（overlay），胀出
+        // 底栏边缘也可见，不再被玻璃 clip 吃掉放大效果。
+        final dropH = (maxH * 0.8).clamp(54.0, 60.0);
         final pos = _dragging ? _dragPos : _currentPosition;
 
         // —— 飞行速度形变（水滴拉伸）——
@@ -2265,14 +2423,18 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         double sy = 1 - vClamp * 0.5;
 
         // 按住放大：拖动中或指针按下（尚未过拖动 slop）都生效——纯按住
-        // 也要有 BiliPai/RwaS 的水滴胀大反馈（按住 1.2×、BiliPai pressed
-        // 高度 ~1.39×，但水滴被底栏玻璃裁剪，顶到栏高即止）。
+        // 也要有 BiliPai/RwaS 的水滴胀大反馈。静止直径 0.8 栏高，按住
+        // 高度 +30%（胀出栏缘）、横向再鼓 24%，肉眼可辨；折射量同步长满
+        // （pressG），水滴「活」起来。
         final pressG = Curves.easeOut.transform(_press.value);
         if (_dragging || pressG > 0) {
-          sx *= 1 + 0.20 * pressG;
-          sy *= 1 + 0.24 * pressG;
+          sx *= 1 + 0.24 * pressG;
+          sy *= 1 + 0.30 * pressG;
         }
-        sy = math.min(sy, maxH / dropH);
+        if (!overlayDroplet) {
+          // 嵌入玻璃内部时按住胀大被玻璃裁剪，上限钳到栏高防硬切边。
+          sy = math.min(sy, maxH / dropH);
+        }
         if (!_dragging && _move.isCompleted) {
           // —— 落点回弹（仅在到站后播放）——
           final rp = _rebound.value;
@@ -2295,44 +2457,95 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           }
         }
 
-        // 圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
-        //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移），并按
-        // 按压进度缩放（Halcyon：H=10dp·p / A=14dp·p，静止保底一半，
-        // 按住/拖动时折射满档）；depthEffect=1 让中心内容也「鼓起」
-        // 折射——水滴压到内容上立刻有放大镜观感。
+        // 真液态：圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
+        //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移）。
+        // 折射量完全由按压进度驱动（Halcyon：H=10dp·p / A=14dp·p）——
+        // 静止 p=0 纯 passthrough（BiliPai 同款），水滴只余极淡底色；
+        // 按住/拖动 p→1 折射满档，图标被连贯地「熔」进边缘。不能加静止
+        // 保底：半强度位移会让图标原图和折射副本错开成两层重影。
+        // depthEffect=1 让中心内容也「鼓起」，水滴压到内容上立刻有
+        // 放大镜观感。
+        // 非液态：铺满整格的主题色淡红大胶囊（恢复通用选中指示样式）。
         final d = dropH;
-        final pressS = 0.55 + 0.45 * pressG;
-        final band = math.max(5.0, d * 10.0 / 56.0) * pressS;
-        final amount = math.max(7.0, d * 14.0 / 56.0) * pressS;
-        final indicator = BiliPaiGlass(
-          radius: d / 2,
-          refract: amount,
-          chroma: 0.5,
-          // Halcyon 水滴是纯折射透镜（无模糊）：图标/文字被扭过来时保持
-          // 清晰，只靠底色+扫光提供存在感。
-          blurSigma: 0,
-          // BiliPai/Halcyon 静止水滴近乎全透（无染色无高光，progress=0 时
-          // 纯 passthrough）：这里只留极淡底色+弱扫光，否则水滴叠在壳体
-          // 染色上变成灰色实心球，失去「清水透镜」观感。
-          backgroundColor: isDark
-              ? Colors.white.withValues(alpha: 0.04)
-              : Colors.black.withValues(alpha: 0.02),
-          specular: 0.12,
-          edgeAmount: band,
-          saturation: 1.5,
-          depthEffect: 1.0,
-          child: const SizedBox.expand(),
+        final bool scaledIndicator = overlayDroplet; // 尺寸已含形变，无需 Transform
+        Widget indicator;
+        if (widget.lens) {
+          final pressS = pressG;
+          final band = d * 10.0 / 56.0 * pressS;
+          final amount = d * 14.0 / 56.0 * pressS;
+          indicator = BiliPaiGlass(
+            // overlay 模式尺寸含 sx/sy 形变，半径取缩放后短边的一半。
+            radius: scaledIndicator ? d * sy / 2 : d / 2,
+            refract: amount,
+            chroma: 0.5,
+            // Halcyon 水滴是纯折射透镜（无模糊）：图标/文字被扭过来时保持
+            // 清晰，只靠底色+扫光提供存在感。
+            blurSigma: 0,
+            // BiliPai/Halcyon 静止水滴近乎全透（无染色无高光，progress=0 时
+            // 纯 passthrough）：这里只留极淡底色+弱扫光，否则水滴叠在壳体
+            // 染色上变成灰色实心球，失去「清水透镜」观感。
+            backgroundColor: isDark
+                ? Colors.white.withValues(alpha: 0.04)
+                : Colors.black.withValues(alpha: 0.02),
+            specular: 0.12,
+            edgeAmount: band,
+            saturation: 1.5,
+            depthEffect: 1.0,
+            child: const SizedBox.expand(),
+          );
+        } else {
+          indicator = DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(d / 2),
+            ),
+            child: const SizedBox.expand(),
+          );
+        }
+
+        // 水滴=圆形；主题色胶囊=铺满整格（左右各让 4px）。
+        final indicatorW = widget.lens ? d : (tabW - 8);
+
+        final tabRow = Center(
+          child: Padding(
+            // 与指示器同一坐标系（左右各让 10px）：让每个 Expanded 恰好分到
+            // tabW，tab 中心 = 10+(i+0.5)·tabW，与水滴中心严格重合（Row 全宽
+            // 时 Expanded 分到 maxW/n，会错位）。
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  Expanded(
+                    child: _NavTab(
+                      item: items[i],
+                      selected: i == widget.index,
+                      // 水滴覆盖度：经过的图标放大，选中项常驻 1.2×
+                      //（仅透镜水滴模式，胶囊模式图标不缩放）。
+                      iconScale: widget.lens
+                          ? 1 +
+                              0.2 *
+                                  (1 - (i - pos).abs()).clamp(0.0, 1.0)
+                          : 1.0,
+                      onTap: () => widget.onSelect(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
 
-        final indicatorW = dropH;
-
-        return Listener(
+        final gestures = Listener(
           // 指针按下：水滴立刻滑向手指并胀大（不等拖动 slop，BiliPai/RwaS
           // 按住预览）；抬起/取消回缩。松手后的选中由 InkWell onTap 或
-          // 拖动结算接管。
-          onPointerDown: (e) => _onPointerDown(e, tabW, items.length),
-          onPointerUp: (_) => _setPressed(false),
-          onPointerCancel: (_) => _onPressCancel(),
+          // 拖动结算接管。仅透镜水滴模式生效，主题色胶囊走经典点按行为。
+          onPointerDown:
+              widget.lens ? (e) => _onPointerDown(e, tabW, items.length) : null,
+          onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
+          onPointerCancel:
+              widget.lens ? (_) => _onPressCancel() : null,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onHorizontalDragStart: (d) => _onDragStart(d, tabW, items.length),
@@ -2345,47 +2558,48 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                 // 图标/文字之上，其 backdrop 才包含 tab 内容——Halcyon 同款
                 // （combinedBackdrop 录制 tab 层），水滴压过去时图标/文字
                 // 本身被扭向水滴中心；若水滴在下，折射的只是空的栏背景。
-                Center(
-                  child: Padding(
-                    // 与指示器同一坐标系（左右各让 10px）：让每个 Expanded
-                    // 恰好分到 tabW，tab 中心 = 10+(i+0.5)·tabW，与水滴中心
-                    // 严格重合（Row 全宽时 Expanded 分到 maxW/n，会错位）。
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < items.length; i++)
-                          Expanded(
-                            child: _NavTab(
-                              item: items[i],
-                              selected: i == widget.index,
-                              // 水滴覆盖度：经过的图标放大，选中项常驻 1.2×。
-                              iconScale: 1 +
-                                  0.2 *
-                                      (1 - (i - pos).abs()).clamp(0.0, 1.0),
-                              onTap: () => widget.onSelect(i),
-                            ),
-                          ),
-                      ],
+                tabRow,
+                if (!overlayDroplet)
+                  Positioned(
+                    left: 10 + pos * tabW + (tabW - indicatorW) / 2,
+                    top: (maxH - dropH) / 2,
+                    bottom: (maxH - dropH) / 2,
+                    width: indicatorW,
+                    child: IgnorePointer(
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.diagonal3Values(sx, sy, 1),
+                        child: indicator,
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  left: 10 + pos * tabW + (tabW - indicatorW) / 2,
-                  top: (maxH - dropH) / 2,
-                  bottom: (maxH - dropH) / 2,
-                  width: indicatorW,
-                  child: IgnorePointer(
-                    child: Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.diagonal3Values(sx, sy, 1),
-                      child: indicator,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
         );
+
+        if (overlayDroplet) {
+          // 水滴画在玻璃之上（外层 Stack 兄弟节点，clipBehavior: none）：
+          // 不被玻璃 clipPath 裁剪，按住胀大可鼓出底栏边缘；BackdropFilter
+          // 的背板 = 玻璃+tab 内容（鼓出栏外的部分还能折射页面背景）。
+          final w = indicatorW * sx;
+          final h = dropH * sy;
+          final cx = 10 + pos * tabW + tabW / 2;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              widget.glassBuilder!(SizedBox(height: maxH, child: gestures)),
+              Positioned(
+                left: cx - w / 2,
+                top: maxH / 2 - h / 2,
+                width: w,
+                height: h,
+                child: IgnorePointer(child: indicator),
+              ),
+            ],
+          );
+        }
+        return gestures;
         },
       ),
     );
@@ -2863,37 +3077,24 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
 
         Widget panelWidget;
         if (liquid) {
-          if (liquidUseFrosted(ref)) {
-            // 液态玻璃低档：伪液态毛玻璃面板（透明底 + 淡模糊），不跑 shader。
-            panelWidget = pseudoLiquidSurface(
-              context: context,
-              ref: ref,
-              radius: 24,
-              child: SizedBox(width: panelWidth, child: panelBody),
-              lowPerf: lowPerf,
-              surfaceType: BlurSurfaceType.drawerOrSheet,
+          // BiliPai 液态玻璃面板（全档真 shader）：与底栏/迷你播放条同一套观感。
+          final quality = liquidGlassQualitySetting(ref);
+          panelWidget = BiliPaiGlass(
+            radius: 24,
+            refract: bilipaiRefractOf(quality),
+            chroma: bilipaiChromaOf(quality),
+            blurSigma: surfaceBlurSigma(
+              base: bilipaiBackdropBlurOf(quality),
               budget: budget,
-            );
-          } else {
-            // BiliPai 液态玻璃面板：与底栏/迷你播放条同一套 shader 观感。
-            final quality = liquidGlassQualitySetting(ref);
-            panelWidget = BiliPaiGlass(
-              radius: 24,
-              refract: bilipaiRefractOf(quality),
-              chroma: bilipaiChromaOf(quality),
-              blurSigma: surfaceBlurSigma(
-                base: 4,
-                budget: budget,
-                type: BlurSurfaceType.drawerOrSheet,
-                crispAtRest: true,
-              ),
-              backgroundColor: bilipaiGlassTint(isDark),
-              specular: bilipaiSpecularOf(quality),
-              edgeAmount: bilipaiEdgeOf(quality),
-              saturation: bilipaiSaturationOf(quality),
-              child: SizedBox(width: panelWidth, child: panelBody),
-            );
-          }
+              type: BlurSurfaceType.drawerOrSheet,
+              crispAtRest: true,
+            ),
+            backgroundColor: bilipaiGlassTint(isDark, quality),
+            specular: bilipaiSpecularOf(quality),
+            edgeAmount: bilipaiEdgeOf(quality),
+            saturation: bilipaiSaturationOf(quality),
+            child: SizedBox(width: panelWidth, child: panelBody),
+          );
         } else if (lowPerf) {
           // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
           panelWidget = Container(

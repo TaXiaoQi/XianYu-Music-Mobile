@@ -139,7 +139,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   }
 
   /// 整页搜索结果列表（跨 Tab 生效），带关键词高亮。
-  Widget _buildSearchResults() {
+  Widget _buildSearchResults(double topInset) {
     final result = _searchResult;
     if (result == null) {
       return const Center(child: CircularProgressIndicator());
@@ -151,6 +151,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       songs: result,
       highlight: _query,
       padding: EdgeInsets.only(
+        top: topInset,
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
@@ -162,12 +163,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
-    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
-    final floating = !inMusicPane &&
-        (ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.floatingSearchBar ?? false)));
+    // 悬浮形态（行 + Tab 气泡）横竖屏通用：竖屏二级页与横屏音乐库 pane 都
+    // 由本页自绘悬浮顶栏（横屏 pane 激活时壳层全局顶栏已让位隐藏）。
+    final floating = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final statusBar = MediaQuery.paddingOf(context).top;
+    // 横屏音乐库 pane（侧边栏激活本地页）：无返回键、无页内迷你条。
+    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
 
     // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
@@ -184,48 +186,50 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       ],
     );
 
+    // 顶栏下方的内容初始避让量：悬浮=整列高度；固定=GlassTopBar（含 TabBar）。
+    // 内容铺满全屏，避让量注入列表 padding.top——滚动时内容从顶栏下方穿过
+    //（与首页一致的悬浮穿透观感），而非被 Padding 压在顶栏下。
+    final topInset = floating
+        ? statusBar + 8 + 44 + 10 + 48 + 14
+        : GlassTopBar.height(context, bottom: tabBar);
+
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
           children: [
-            Padding(
-              // 面板模式下仍保留 TabBar，故内容顶部始终按顶栏高度（含 TabBar）避让。
-              // 悬浮模式顶栏（行 + Tab 气泡）浮于状态栏下方，内容按其整列高度避让。
-              padding: EdgeInsets.only(
-                top: floating
-                    ? statusBar + 8 + 44 + 10 + 48 + 14
-                    : GlassTopBar.height(context, bottom: tabBar),
+            if (lib.loading)
+              const Center(child: CircularProgressIndicator())
+            else if (lib.error != null)
+              _ErrorView(
+                message: lib.error!,
+                onRetry: () => ref.read(libraryProvider.notifier).load(),
+              )
+            else if (_query.isNotEmpty)
+              _buildSearchResults(topInset)
+            else
+              TabBarView(
+                controller: _tab,
+                children: [
+                  _AllSongsTab(topInset: topInset),
+                  _ArtistsTab(topInset: topInset),
+                  _AlbumsTab(topInset: topInset),
+                ],
               ),
-              child: lib.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : lib.error != null
-                      ? _ErrorView(
-                          message: lib.error!,
-                          onRetry: () =>
-                              ref.read(libraryProvider.notifier).load(),
-                        )
-                      : _query.isNotEmpty
-                          ? _buildSearchResults()
-                          : TabBarView(
-                              controller: _tab,
-                              children: [
-                                _AllSongsTab(),
-                                _ArtistsTab(),
-                                _AlbumsTab(),
-                              ],
-                            ),
-            ),
-            // 悬浮模式：整列悬浮顶栏（行 + Tab 气泡）；否则固定 GlassTopBar
-            // （面板模式保留 TabBar，仅去掉 leading / title / actions）。
+            // 悬浮模式：整列悬浮顶栏（行 + Tab 气泡）；否则固定 GlassTopBar。
+            // 横屏 pane 内无路由可弹：返回钮改为退出音乐库 pane（侧边栏回首页）。
             if (floating)
               Positioned(
                 top: statusBar + 8,
                 left: 12,
                 right: 12,
                 child: FloatingSearchTopBar(
-                  onBack: () => context.pop(),
+                  onBack: inMusicPane
+                      ? () => ref
+                          .read(landscapeLibraryProvider.notifier)
+                          .state = null
+                      : () => context.pop(),
                   field: FloatingGlassSearchField(
                     controller: _searchCtrl,
                     onChanged: _onSearchChanged,
@@ -249,7 +253,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
               child: GlassTopBar(
                 leading: inMusicPane ? null : const BackButton(),
                 titleSpacing: 4,
-                title: inMusicPane ? null : _buildSearchField(context),
+                // 横屏 pane 内全局顶栏已让位，页内补回搜索框（保持入口完整）。
+                title: _buildSearchField(context),
                 actions: [
                   // 文件夹页入口（已从 Tab 独立为二级页）。
                   IconButton(
@@ -342,6 +347,11 @@ List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
 
 /// 全部歌曲（支持本地搜索）。
 class _AllSongsTab extends ConsumerStatefulWidget {
+  const _AllSongsTab({required this.topInset});
+
+  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
+  final double topInset;
+
   @override
   ConsumerState<_AllSongsTab> createState() => _AllSongsTabState();
 }
@@ -387,67 +397,11 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
     final songs = _result ?? lib.songs;
     final scheme = Theme.of(context).colorScheme;
 
-    return Column(
+    // 列表铺满全屏（滚动时内容穿透悬浮顶栏与工具栏下方），排序工具栏悬浮
+    // 吸顶在顶栏避让量下方（不透明底色防止列表文字透叠）。
+    return Stack(
       children: [
-        // 工具栏：排序 / 去重 / 统计
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () => _openSortMenu(context),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sort,
-                            size: 18, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            _sortLabel(_sort),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.arrow_drop_down,
-                            size: 18, color: scheme.onSurfaceVariant),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Tooltip(
-                message: _hideDuplicates ? tr('已隐藏重复歌曲') : tr('隐藏重复歌曲'),
-                child: IconButton(
-                  icon: Icon(
-                    _hideDuplicates ? Icons.flip_to_front : Icons.flip_to_back,
-                    color: _hideDuplicates ? scheme.primary : null,
-                  ),
-                  onPressed: () {
-                    _hideDuplicates = !_hideDuplicates;
-                    _onCriteriaChanged();
-                  },
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.bar_chart),
-                tooltip: tr('曲库统计'),
-                onPressed: () => _showStats(context, lib),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
+        Positioned.fill(
           child: songs.isEmpty
               ?   Center(child: Text(tr('没有匹配的歌曲')))
               : _sort == _SongSort.none
@@ -455,6 +409,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   ? SongsListView(
                       songs: songs,
                       padding: EdgeInsets.only(
+                        top: widget.topInset + 54,
                         bottom: (ref.watch(playerProvider.select((s) => s.current != null))
                                 ? 92.0
                                 : 16.0) +
@@ -487,6 +442,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                         _SongSort.none || _SongSort.addedAt => null,
                       },
                       padding: EdgeInsets.only(
+                        top: widget.topInset + 54,
                         bottom: (ref.watch(playerProvider.select((s) => s.current != null))
                                 ? 92.0
                                 : 16.0) +
@@ -495,6 +451,72 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                       onPlay: (list, i) =>
                           ref.read(libraryProvider.notifier).playList(list, i),
                     ),
+        ),
+        // 工具栏：排序 / 去重 / 统计（悬浮吸顶层）。
+        Positioned(
+          top: widget.topInset,
+          left: 0,
+          right: 0,
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _openSortMenu(context),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.sort,
+                                size: 18, color: scheme.onSurfaceVariant),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _sortLabel(_sort),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.arrow_drop_down,
+                                size: 18, color: scheme.onSurfaceVariant),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: _hideDuplicates ? tr('已隐藏重复歌曲') : tr('隐藏重复歌曲'),
+                    child: IconButton(
+                      icon: Icon(
+                        _hideDuplicates ? Icons.flip_to_front : Icons.flip_to_back,
+                        color: _hideDuplicates ? scheme.primary : null,
+                      ),
+                      onPressed: () {
+                        _hideDuplicates = !_hideDuplicates;
+                        _onCriteriaChanged();
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.bar_chart),
+                    tooltip: tr('曲库统计'),
+                    onPressed: () => _showStats(context, lib),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -671,6 +693,11 @@ class _StatRow extends StatelessWidget {
 
 /// 歌手目录。
 class _ArtistsTab extends ConsumerWidget {
+  const _ArtistsTab({required this.topInset});
+
+  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
+  final double topInset;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
@@ -678,6 +705,7 @@ class _ArtistsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
+        top: topInset,
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
@@ -748,6 +776,11 @@ Widget _letterAvatar(BuildContext context, String name, ColorScheme scheme) {
 
 /// 专辑目录。
 class _AlbumsTab extends ConsumerWidget {
+  const _AlbumsTab({required this.topInset});
+
+  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
+  final double topInset;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
@@ -755,6 +788,7 @@ class _AlbumsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
+        top: topInset,
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),

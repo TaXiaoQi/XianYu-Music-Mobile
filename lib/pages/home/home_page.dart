@@ -12,7 +12,6 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/page_search_bar.dart';
-import '../../src/widgets/skin_icon.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -86,46 +85,9 @@ class _HomePageState extends ConsumerState<HomePage> {
             ],
             ),
           ),
-          // 顶栏（仅非悬浮模式）：状态栏+「弦予音乐」标题+搜索框，
-          // 滚动内容从其下方穿过被毛玻璃模糊；悬浮模式由壳层悬浮顶栏接管。
-          if (!floating)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-              titleSpacing: 18,
-              title:   Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(text: tr('弦予')),
-                    TextSpan(
-                      text: tr('音乐'),
-                      style: TextStyle(
-                        color: Color(0xFFEC4141),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              actions: [
-                // 皮肤（壁纸中心）入口：与我的页账号区的扫码入口位置互换
-                IconButton(
-                  icon: const SkinIcon(),
-                  tooltip: tr('皮肤'),
-                  onPressed: () => context.push('/wallpaper'),
-                ),
-                const SizedBox(width: 16),
-              ],
-              bottom: floating ? null : searchBar,
-            ),
-          ),
+          // 顶栏（仅非悬浮模式）已上提至壳层共用：竖屏固定顶栏（标题+搜索框）
+          // 由 shell 统一渲染为常驻毛玻璃 overlay，首页/我的页切换不再重建；
+          // 悬浮模式由壳层悬浮顶栏接管。本页只按其高度预留顶部避让。
         ],
       ),
     );

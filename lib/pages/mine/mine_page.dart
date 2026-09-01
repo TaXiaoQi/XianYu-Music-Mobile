@@ -80,24 +80,9 @@ class MinePage extends ConsumerWidget {
               _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
-          // 顶栏（仅非悬浮模式）：悬浮模式由壳层悬浮顶栏接管（含设置玻璃按钮）。
-          if (!floating)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-              title:   Text(tr('个人中心')),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: tr('设置'),
-                  onPressed: () => context.push('/settings'),
-                ),
-              ],
-              bottom: floating ? null : searchBar,
-            ),
-          ),
+          // 顶栏（仅非悬浮模式）已上提至壳层共用：竖屏固定顶栏（标题+搜索框）
+          // 由 shell 统一渲染为常驻毛玻璃 overlay，首页/我的页切换不再重建；
+          // 悬浮模式由壳层悬浮顶栏接管。本页只按其高度预留顶部避让。
         ],
         ),
       ),
