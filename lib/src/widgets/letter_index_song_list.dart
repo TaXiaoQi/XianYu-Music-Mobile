@@ -8,6 +8,7 @@ import '../library/library_provider.dart';
 import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
+import 'song_list_scroll_fabs.dart';
 import 'song_list_view.dart';
 import '../i18n/i18n.dart';
 
@@ -73,6 +74,8 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
   final EdgeInsets? padding;
   final String? highlight;
   final bool enableActions;
+  /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+  final bool enableScrollFabs;
   const LetterIndexSongList({
     super.key,
     required this.songs,
@@ -81,6 +84,7 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
     this.padding,
     this.highlight,
     this.enableActions = true,
+    this.enableScrollFabs = false,
   });
 
   @override
@@ -132,6 +136,22 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
     return gi * _headerExtent + songsBefore * _rowExtent;
   }
 
+  /// 指定歌曲行的内容坐标 top（含顶部 padding 与前置分组表头），供
+  /// 「回到顶部 / 定位播放」悬浮按钮定位与视口判定。
+  double _rowTopOf(int songIndex) {
+    final groups = _groups;
+    if (groups == null) return _padTop;
+    var before = _padTop;
+    for (final g in groups) {
+      if (songIndex >= g.startIndex && songIndex < g.startIndex + g.cou) {
+        before += (songIndex - g.startIndex) * _rowExtent;
+        return before;
+      }
+      before += _headerExtent + g.cou * _rowExtent;
+    }
+    return _padTop;
+  }
+
   void _jumpToLetter(String letter, List<_IndexGroup> groups) {
     if (!_controller.hasClients) return;
     for (var i = 0; i < groups.length; i++) {
@@ -162,6 +182,7 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
         padding: widget.padding,
         highlight: widget.highlight,
         enableActions: widget.enableActions,
+        enableScrollFabs: widget.enableScrollFabs,
       );
     }
 
@@ -238,6 +259,16 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
             ),
           ),
         ),
+        // 右下角「回到顶部 / 定位播放」悬浮按钮；right 让出右侧 A-Z 索引条。
+        if (widget.enableScrollFabs)
+          SongListScrollFabs(
+            controller: _controller,
+            songs: songs,
+            rowTopOf: _rowTopOf,
+            itemExtent: _rowExtent,
+            bottom: (widget.padding?.bottom ?? 0.0) + 8,
+            right: 40,
+          ),
       ],
     );
   }

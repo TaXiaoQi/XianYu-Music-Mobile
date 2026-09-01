@@ -150,6 +150,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     return SongsListView(
       songs: result,
       highlight: _query,
+      enableScrollFabs: true,
       padding: EdgeInsets.only(
         top: topInset,
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
@@ -477,6 +478,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   // 默认排序：支持长按把手拖动排序（顶级列表，拖到边缘自动滚动）。
                   ? SongsListView(
                       songs: songs,
+                      enableScrollFabs: true,
                       padding: EdgeInsets.only(
                         top: widget.topInset + 54,
                         bottom: (ref.watch(playerProvider.select((s) => s.current != null))
@@ -510,6 +512,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                         _SongSort.album => (Song s) => s.album,
                         _SongSort.none || _SongSort.addedAt => null,
                       },
+                      enableScrollFabs: true,
                       padding: EdgeInsets.only(
                         top: widget.topInset + 54,
                         bottom: (ref.watch(playerProvider.select((s) => s.current != null))

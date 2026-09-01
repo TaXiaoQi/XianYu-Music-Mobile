@@ -217,7 +217,7 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
-    this.onlineFailureBehavior = 'skip',
+    this.onlineFailureBehavior = 'pause',
     this.onlineQualityFallbackBehavior = 'lower',
     this.autoSwitchSourceOnFailure = false,
     this.usbExclusiveDeviceId = -1,
@@ -728,7 +728,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
       onlineFailureBehavior:
-          prefs.getString('onlineFailureBehavior') ?? 'skip',
+          prefs.getString('onlineFailureBehavior') ?? 'pause',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       autoSwitchSourceOnFailure:

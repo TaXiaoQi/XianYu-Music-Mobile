@@ -9,6 +9,7 @@ import 'drag_handle.dart';
 import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
+import 'song_list_scroll_fabs.dart';
 import '../i18n/i18n.dart';
 
 /// 歌曲行起播手势装配结果，配合 [songRowPlay] 使用：
@@ -122,7 +123,9 @@ class CoverRow extends StatelessWidget {
 ///
 /// 传入 [onReorder] 时切换为可拖动排序（顶级列表，拖到边缘自动滚动），
 /// 行首出现长按把手，排序结果由调用方持久化。
-class SongsListView extends ConsumerWidget {
+/// 传入 [enableScrollFabs] 时在右下角叠加「回到顶部 / 定位当前播放歌曲」
+/// 悬浮按钮（对齐桌面端 SongTable）。
+class SongsListView extends ConsumerStatefulWidget {
   final List<Song> songs;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
   /// 列表内边距。全屏页可留出底部安全区，嵌在 shell 内的页面可避让底栏。
@@ -135,6 +138,10 @@ class SongsListView extends ConsumerWidget {
   final bool enableActions;
   /// 非空时启用可拖动排序；onReorderItem 的 newIndex 已随移除项调整。
   final ReorderCallback? onReorder;
+  /// 外部提供的滚动控制器（可选）；缺省时内部自建并随组件释放。
+  final ScrollController? controller;
+  /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
+  final bool enableScrollFabs;
   const SongsListView({
     super.key,
     required this.songs,
@@ -143,10 +150,34 @@ class SongsListView extends ConsumerWidget {
     this.highlight,
     this.enableActions = true,
     this.onReorder,
+    this.controller,
+    this.enableScrollFabs = false,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SongsListView> createState() => _SongsListViewState();
+}
+
+class _SongsListViewState extends ConsumerState<SongsListView> {
+  late final ScrollController _controller;
+  bool _ownsController = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsController = widget.controller == null;
+    _controller = widget.controller ?? ScrollController();
+  }
+
+  @override
+  void dispose() {
+    if (_ownsController) _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final songs = widget.songs;
     if (songs.isEmpty) {
       return   Center(child: Text(tr('暂无歌曲')));
     }
@@ -156,6 +187,9 @@ class SongsListView extends ConsumerWidget {
             'single';
     final m = ListMetrics.ofRef(ref);
 
+    final onPlay = widget.onPlay;
+    final enableActions = widget.enableActions;
+    final highlight = widget.highlight;
     // 组装歌曲行（Builder 提供行自身 context，供飞封面取封面 RenderBox）。
     Widget buildRow(int i) {
       final s = songs[i];
@@ -174,7 +208,7 @@ class SongsListView extends ConsumerWidget {
                     thumbPath: s.coverThumbPath,
                     radius: m.songRadius,
                   );
-                  if (ok) onPlay!(songs, i);
+                  if (ok) onPlay(songs, i);
                 }
               : null;
           final openActions = enableActions
@@ -240,12 +274,15 @@ class SongsListView extends ConsumerWidget {
       );
     }
 
-    final onReorder = this.onReorder;
+    final onReorder = widget.onReorder;
+    final padding = widget.padding;
     // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
     // 跳过逐行布局测量，长列表快速滑动更省 CPU（对齐 PiliNara 列表优化）。
     final rowExtent = m.songCover + 2 * m.vPad;
+    final Widget list;
     if (onReorder == null) {
-      return ListView.builder(
+      list = ListView.builder(
+        controller: _controller,
         padding: padding,
         // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
         // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
@@ -262,43 +299,64 @@ class SongsListView extends ConsumerWidget {
           child: buildRow(i),
         ),
       );
+    } else {
+      list = ReorderableListView.builder(
+        scrollController: _controller,
+        padding: padding,
+        itemExtent: rowExtent,
+        // 顶级列表：拖到边缘时自动滚动。
+        buildDefaultDragHandles: false,
+        // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
+        // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
+        // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
+        proxyDecorator: (child, index, animation) =>
+            Material(type: MaterialType.transparency, child: child),
+        itemCount: songs.length,
+        onReorderItem: onReorder,
+        itemBuilder: (context, i) {
+          // ReorderableListView 要求最外层带 key 才能拖拽，同时隔离合成层防抽帧。
+          // 用「路径 + 下标」复合 Key：同一首歌可多次出现（如歌单多次添加），
+          // 若仅用 path 作 key 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+          return RepaintBoundary(
+            key: ValueKey('${songs[i].path}_$i'),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 44),
+                  child: buildRow(i),
+                ),
+                Positioned(
+                  left: 8,
+                  top: 0,
+                  bottom: 0,
+                  width: 36,
+                  child: Center(child: DragHandle(index: i)),
+                ),
+              ],
+            ),
+          );
+        },
+      );
     }
-    return ReorderableListView.builder(
-      padding: padding,
-      itemExtent: rowExtent,
-      // 顶级列表：拖到边缘时自动滚动。
-      buildDefaultDragHandles: false,
-      // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
-      // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
-      // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
-      proxyDecorator: (child, index, animation) =>
-          Material(type: MaterialType.transparency, child: child),
-      itemCount: songs.length,
-      onReorderItem: onReorder,
-      itemBuilder: (context, i) {
-        // ReorderableListView 要求最外层带 key 才能拖拽，同时隔离合成层防抽帧。
-        // 用「路径 + 下标」复合 Key：同一首歌可重复出现（如歌单多次添加），
-        // 若仅用 path 作 key 会在相邻重复项间拖拽时触发重复 Key 断言报错。
-        return RepaintBoundary(
-          key: ValueKey('${songs[i].path}_$i'),
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 44),
-                child: buildRow(i),
-              ),
-              Positioned(
-                left: 8,
-                top: 0,
-                bottom: 0,
-                width: 36,
-                child: Center(child: DragHandle(index: i)),
-              ),
-            ],
+
+    if (widget.enableScrollFabs) {
+      // 悬浮按钮层：右下角「回到顶部 / 定位当前播放歌曲」。
+      // bottom 放在列表底部 padding 之上，避开迷你播放条/安全区。
+      return Stack(
+        children: [
+          list,
+          SongListScrollFabs(
+            controller: _controller,
+            songs: songs,
+            rowTopOf: (i) => (padding?.top ?? 0.0) + i * rowExtent,
+            itemExtent: rowExtent,
+            bottom: (padding?.bottom ?? 0.0) + 8,
+            right: 12,
           ),
-        );
-      },
-    );
+        ],
+      );
+    }
+    return list;
   }
 
   String _fmt(int s) {

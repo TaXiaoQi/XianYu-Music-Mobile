@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import 'blur_budget.dart';
+import 'glass_settings.dart';
 import 'liquid_wave.dart';
 
 /// 实时背板绘制完成后的叠加绘制回调（十字淡变时在之上叠冻结图）。
@@ -722,8 +723,10 @@ class RenderLiquidBacking extends RenderBox {
     // dpr——乘过会导致模糊强度虚高 ~3 倍（实测中心糊成一片）。
     final targetSigma = _blurSigma;
     if (_cachedBlurFilter == null || _cachedBlurSigma != targetSigma) {
-      _cachedBlurFilter =
-          ui.ImageFilter.blur(sigmaX: targetSigma, sigmaY: targetSigma);
+      // 流光背板自身的模糊趟改降采样高斯（缩→小图模糊→放大，工作量 1/16，
+      // 观感几乎无差）。与底栏/迷你条的毛玻璃回退同一套，避免这里仍是
+      // 唯一全分辨率模糊点。
+      _cachedBlurFilter = cheapBackdropBlur(targetSigma);
       _cachedBlurSigma = targetSigma;
     }
     // 层对象每帧新建（句柄只保留最新一层供 dispose 清理）：复用同一

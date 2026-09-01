@@ -1,11 +1,11 @@
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
+import 'glass_settings.dart';
 
 /// 自定义壁纸背景渲染层（对齐桌面端 GlobalBackground 的自定义分支）。
 ///
@@ -59,8 +59,10 @@ class CustomBackgroundLayer extends StatelessWidget {
                         scale: cb.scale / 100,
                         alignment: Alignment.center,
                         child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(
-                              sigmaX: blurSig, sigmaY: blurSig),
+                          // 壁纸是大面积全分辨率模糊，最贵；改降采样高斯
+                          // （先缩小→小图模糊→放大），模糊工作量降为 1/16，
+                          // 观感与全分辨率几乎无差（高斯本身低频）。
+                          imageFilter: cheapBackdropBlur(blurSig),
                           child: Opacity(
                             opacity: cb.opacity / 100,
                             child: Image.file(

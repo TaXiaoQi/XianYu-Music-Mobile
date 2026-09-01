@@ -38,6 +38,8 @@ const Map<String, String> enDictManual = {
   '96k · 极速云端试听': '96k · Instant cloud preview',
   'Bit-perfect / DSD 直出中，音量由 DAC 控制': 'Bit-perfect / DSD direct output: volume is controlled by the DAC',
   'Bit-perfect / DSD 直出中，音效已锁定': 'Bit-perfect / DSD direct output: sound effects are locked',
+  '回到顶部': 'Back to top',
+  '定位当前播放歌曲': 'Locate the current song',
   'Bit-perfect 直出': 'Bit-perfect direct output',
   'b站': 'bilibili',
   'Dolby Atmos 沉浸环绕': 'Dolby Atmos immersive surround',

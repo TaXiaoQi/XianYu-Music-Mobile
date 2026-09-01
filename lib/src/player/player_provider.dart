@@ -28,6 +28,8 @@ import '../plugin/plugin_provider.dart';
 import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
+import '../widgets/app_toast.dart';
+import '../navigation/routes.dart';
 import 'media_url.dart';
 import 'online_quality_probe.dart';
 import '../i18n/i18n.dart';
@@ -38,6 +40,10 @@ XianYuAudioHandler? audioHandler;
 /// 直链体积缓存（url → 字节）：音质/下载弹窗重复打开不重复探测。
 /// 直链带过期参数会变化，超上限直接清空重建，避免无界增长。
 final Map<String, int> _qualitySizeByUrl = {};
+
+/// 已预热过体积的歌曲探测 key：避免切歌后台预热对同一首歌重复起跑全档解析。
+/// 有上限，防止长期运行无限增长。
+final Set<String> _prewarmKeys = {};
 
 /// 最近创建的播放控制器（playerProvider 为全局单例）。
 ///
@@ -1025,10 +1031,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       // 无下一首可跳（或 stop 行为）时透出错误信息。
       if (item.isOnline) {
-        state = state.copyWith(
-            error: e is PluginEngineException
-                ? e.message
-                : tr('播放失败：{e}', {'e': e.toString()}));
+        final msg = e is PluginEngineException
+            ? e.message
+            : tr('播放失败：{e}', {'e': e.toString()});
+        state = state.copyWith(error: msg);
+        _showPlaybackToast(tr('在线播放失败：{e}', {'e': e.toString()}));
       } else {
         // 本地歌曲失败同样透出：静默失败会让用户以为「点击没反应」。
         AppLog.error('play', '本地播放失败 path=${item.path} error=$e');
@@ -1080,6 +1087,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _startOnlineUrl(start.url, headers: start.headers, item: item);
         state = state.copyWith(currentQuality: start.quality);
         _refreshQualityMenuState(probe);
+        unawaited(_prewarmOnlineSizes(item));
         return;
       }
       throw StateError(tr('直链解析失败'));
@@ -1092,6 +1100,49 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       currentQuality: url.quality,
     );
     await _startOnlineUrl(url.url, headers: url.headers, item: item);
+    unawaited(_prewarmOnlineSizes(item));
+  }
+
+  /// 切歌/起播后台预热（对齐桌面 ensureFooterQualityInfo）：
+  /// 播放开始时在后台补齐当前在线歌各档位直链，并并行探测文件体积写入
+  /// 全局按直链缓存，使稍后打开音质/下载弹窗时体积多数已在手，减少冷探测
+  /// 延迟。不触碰菜单 UI 状态；失败时移除待办 key 以便后续重试。同一首歌只
+  /// 预热一次（见 _prewarmKeys），避免重复起跑全档解析。
+  Future<void> _prewarmOnlineSizes(QueueItem item) async {
+    final json = item.onlineSongJson ?? item.onlineInfoJson;
+    if (json == null || json.isEmpty) return;
+    String key;
+    try {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      key = _songProbeKey(songJson, item);
+    } catch (_) {
+      return;
+    }
+    if (!_prewarmKeys.add(key)) return;
+    if (_prewarmKeys.length > 16) _prewarmKeys.remove(_prewarmKeys.first);
+    try {
+      final probe = onlineQualityProbeRegistry.peek(key);
+      if (probe == null) {
+        _prewarmKeys.remove(key);
+        return;
+      }
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      // 1) 声明档就后台解析（填充 probe.resolved 供 qualitySizes 读取）；
+      //    无声明时探常用无损档 + 320k/128k 兜底档。
+      final declared = await _declaredQualities(songJson);
+      final targets = declared.isNotEmpty
+          ? kQualityLadder.reversed.where(declared.contains).toList()
+          : kQualityLadder.reversed
+              .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
+              .toList();
+      await Future.wait(targets.map(probe.probe).toList())
+          .timeout(const Duration(seconds: 30));
+      // 2) 读已解析直链并并行探体积，写入全局 _qualitySizeByUrl（按直链去重）。
+      await qualitySizes();
+    } catch (_) {
+      // 预热失败不阻塞播放，移除 key 允许后续重试。
+      _prewarmKeys.remove(key);
+    }
   }
 
   /// 歌曲级探测 key：隔离不同歌曲且共享同一首歌的多路调用。
@@ -1789,6 +1840,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _reportBehavior(newItem, 'play', 0);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
+      _showPlaybackToast(tr('已自动切换到 {source} 音源', {'source': src.label}));
       return true;
     }
     return false;
@@ -2122,6 +2174,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
   }
 
+  /// 播放错误提示（对齐桌面 showToast）。
+  ///
+  /// 播放链路常跨 async 间隙运行，无稳定页面 context，因此用 root Overlay 展示
+  ///（appNavigatorKey.currentState.overlay），后台播放/切歌期间同样生效。
+  void _showPlaybackToast(String message) {
+    final overlay = appNavigatorKey.currentState?.overlay;
+    if (overlay == null) return;
+    showXianYuToastByOverlay(overlay, message);
+  }
+
   /// 播放器中途错误（playbackEventStream onError）统一处理。
   ///
   /// 换源/切歌期间主动 stop/setUrl 一般不产生错误事件；真实错误（直链中途
@@ -2146,6 +2208,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           error: tr('播放失败：{e}', {'e': e.toString()}),
           isPlaying: false,
         );
+        _showPlaybackToast(tr('在线播放失败，已自动换源无果，请重试或更换音源'));
         _syncToSystemMediaSession();
       } else {
         if (state.current?.path != item.path) return;
@@ -2188,6 +2251,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         isPlaying: false,
         resolving: false,
       );
+      _showPlaybackToast(tr('在线音源已失效，未能自动换源'));
       _syncToSystemMediaSession();
     } finally {
       _playbackErrorHandling = false;

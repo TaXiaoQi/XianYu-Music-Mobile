@@ -608,30 +608,50 @@ String _normalizeKuwoCoverUrl(String url) {
 }
 
 String? _extractCoverFromNode(Map<String, dynamic> node) {
-  const direct = [
+  // 对齐桌面端 extractCoverFromNode：除 node 自身字段外，同时检查
+  // node.rawData / node.raw 里的同名字段（baka 等插件把封面藏在 raw 层）。
+  final raw = (node['rawData'] is Map
+          ? node['rawData'] as Map
+          : node['raw'] is Map
+              ? node['raw'] as Map
+              : null) ??
+      node;
+  final direct = [
     'artwork', 'cover', 'coverImg', 'coverUrl', 'cover_url', 'pic',
     'picurl', 'img', 'imgurl', 'imgUrl', 'albumPic', 'picture',
   ];
   for (final k in direct) {
     final v = node[k];
     if (v is String && v.startsWith('http')) return v;
+    final rv = raw[k];
+    if (rv is String && rv.startsWith('http')) return rv;
   }
-  for (final k in ['al', 'album']) {
-    final v = node[k];
-    if (v is Map) {
+  // 嵌套 al / album 里的 picUrl / blurPicUrl（node 与 raw 都检查，对齐桌面）。
+  for (final key in ['al', 'album']) {
+    for (final src in [node[key], raw[key]]) {
+      if (src is! Map) continue;
       for (final kk in ['picUrl', 'blurPicUrl']) {
-        final u = v[kk];
+        final u = src[kk];
         if (u is String && u.startsWith('http')) return u;
       }
     }
   }
+  // 顶部 coverImgUrl / picUrl。
   for (final k in ['picUrl', 'coverImgUrl']) {
     final v = node[k];
     if (v is String && v.startsWith('http')) return v;
+    final rv = raw[k];
+    if (rv is String && rv.startsWith('http')) return rv;
   }
   // 网易云 weapi/search 常只给 picId 不给 picUrl：直接加密拼 CDN 兜底，
   // 避免逐条再打 getMusicInfo（对齐桌面 extractCoverUrl）。
-  return _neteaseCoverUrl(node);
+  final ne = _neteaseCoverUrl(node);
+  if (ne != null) return ne;
+  if (raw != node) {
+    final re = _neteaseCoverUrl(Map<String, dynamic>.from(raw));
+    if (re != null) return re;
+  }
+  return null;
 }
 
 /// 提取封面（对齐桌面 extractCoverUrl：直接字段 + 嵌套一层 + 网易云 picId 兜底）。
