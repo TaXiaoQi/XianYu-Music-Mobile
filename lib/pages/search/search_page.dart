@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/app_logger.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
@@ -283,11 +284,12 @@ class _SearchPageState extends ConsumerState<SearchPage>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 仅非悬浮：顶部按固定顶栏高度避让；悬浮模式由 SearchIdleView 自带
-          // topPadding 让列表内容从悬浮玻璃控件下方穿过。
-          Padding(
-            padding: EdgeInsets.only(top: floating ? statusBar + 66 : GlassTopBar.height(context)),
-            child: SearchIdleView(onSearch: _submitSearch),
+          // 内容铺满全屏，避让量走 SearchIdleView.topPadding（列表滚动 padding）：
+          // 滚动时内容从顶栏下方穿过（与首页/本地音乐页一致的悬浮穿透观感）。
+          SearchIdleView(
+            onSearch: _submitSearch,
+            topPadding:
+                floating ? statusBar + 66 : GlassTopBar.height(context),
           ),
           if (floating)
             Positioned(
@@ -390,7 +392,7 @@ class SearchResultPage extends ConsumerStatefulWidget {
 }
 
 class _SearchResultPageState extends ConsumerState<SearchResultPage>
-    with SingleTickerProviderStateMixin, HidesShellChrome {
+    with TickerProviderStateMixin, HidesShellChrome {
   /// 内嵌容器模式不隐藏 shell 浮层（迷你播放条由壳层常驻承接）。
   @override
   bool get hidesChrome => !widget.embedded;
@@ -401,9 +403,15 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   List<_SourceItem> _sources = const [];
   String _selectedSourceId = '';
   int _activeIndex = 0;
-  /// 最近一次来源切换的滑动方向（+1 新来源在右侧 / -1 在左侧），
-  /// 传给子 tab 驱动内容横滑动画。
-  double _sourceSlideDx = 1;
+
+  /// 多音源时用于音源横滑切换的 TabController（参考榜单页切换效果：
+  /// 每个音源页独立加载，TabBarView 原生动画与搜索并行）。单音源时为 null，
+  /// 内容 TabBarView 原生横滑切 tab。
+  TabController? _sourceTab;
+  int _activeSourceIndex = 0;
+
+  /// 来源切换条是否处于壁纸抽透明态（见 ChoiceChip 的适配分支）。
+  bool get _wallpaper => ref.watch(wallpaperActiveProvider);
 
   @override
   void initState() {
@@ -424,10 +432,35 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     setState(() {});
   }
 
+  /// 音源 TabBarView 切换监听：同步 _selectedSourceId + searchSession，
+  /// 并在动画期间逐帧重建以更新子 tab 的 visible 标记（与榜单页同模式）。
+  void _onSourceTabChanged() {
+    if (!mounted || _sourceTab == null) return;
+    final newIdx = _sourceTab!.index;
+    if (newIdx != _activeSourceIndex) {
+      _activeSourceIndex = newIdx;
+      if (newIdx >= 0 && newIdx < _sources.length) {
+        _selectedSourceId = _sources[newIdx].id;
+        ref.read(searchSessionProvider.notifier).setSource(_sources[newIdx].id);
+      }
+    }
+    setState(() {});
+  }
+
+  /// 当前活动音源索引（取动画值实现半途即触发搜索，不等国画结束）。
+  int get _activeSourceIdx {
+    if (_sourceTab == null || _sources.length <= 1) return 0;
+    return (_sourceTab!.animation?.value ?? _activeSourceIndex.toDouble())
+        .round()
+        .clamp(0, _sources.length - 1);
+  }
+
   @override
   void dispose() {
     _tab.removeListener(_onTabChanged);
     _tab.dispose();
+    _sourceTab?.removeListener(_onSourceTabChanged);
+    _sourceTab?.dispose();
     _queryCtrl.dispose();
     super.dispose();
   }
@@ -487,6 +520,22 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     if (!mounted) return;
     final sessionSource = ref.read(searchSessionProvider).sourceId;
     final initial = sessionSource.isNotEmpty ? sessionSource : result.first.id;
+
+    // 初始化/重建音源 TabController（参考榜单页：多音源用 TabBarView 原生
+    // 横滑切换，动画与搜索并行；单音源时不用 _sourceTab）。
+    _sourceTab?.removeListener(_onSourceTabChanged);
+    _sourceTab?.dispose();
+    if (result.length > 1) {
+      _sourceTab = TabController(length: result.length, vsync: this);
+      _activeSourceIndex = result.indexWhere((s) => s.id == initial);
+      if (_activeSourceIndex < 0) _activeSourceIndex = 0;
+      _sourceTab!.index = _activeSourceIndex;
+      _sourceTab!.addListener(_onSourceTabChanged);
+    } else {
+      _sourceTab = null;
+      _activeSourceIndex = 0;
+    }
+
     setState(() {
       _sources = result;
       _selectedSourceId =
@@ -496,16 +545,9 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
 
   void _onSourceSelected(String id) {
     if (id == _selectedSourceId) return;
-    // 按来源条目顺序决定内容滑入方向，观感与内容 tab（TabBarView）一致。
-    final oldIdx = _sources.indexWhere((s) => s.id == _selectedSourceId);
     final newIdx = _sources.indexWhere((s) => s.id == id);
-    if (oldIdx != -1 && newIdx != -1 && newIdx != oldIdx) {
-      _sourceSlideDx = newIdx > oldIdx ? 1 : -1;
-    }
-    setState(() => _selectedSourceId = id);
-    ref.read(searchSessionProvider.notifier).setSource(id);
-    // 子 tab 通过 didUpdateWidget 感知来源变化并重搜（仅可见 tab），
-    // 新结果落地时以 _SlideSwitch 播放横滑过渡。
+    if (newIdx == -1) return;
+    _sourceTab?.animateTo(newIdx);
   }
 
   Widget _buildSourceBar() {
@@ -524,6 +566,22 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 showCheckmark: false,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 selected: s.id == _selected.id,
+                // 壁纸模式下抽透明：未选中透出壁纸、选中用轻量红底+细边，
+                // 避免来源选择条在壁纸上堆成实色色块；普通模式走主题原样。
+                backgroundColor: _wallpaper ? Colors.transparent : null,
+                selectedColor: _wallpaper
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
+                    : null,
+                side: _wallpaper
+                    ? BorderSide(
+                        color: s.id == _selected.id
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withValues(alpha: 0.35),
+                      )
+                    : null,
                 onSelected: (_) => _onSourceSelected(s.id),
               ),
             ),
@@ -548,42 +606,80 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
       ],
     );
 
-    final tabView = TabBarView(
-      controller: _tab,
-      children: [
-        _TrackTab(
-          keyword: keyword,
-          source: selected,
-          visible: _tab.index == 0,
-          slideDx: _sourceSlideDx,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.artist,
-          keyword: keyword,
-          source: selected,
-          visible: _tab.index == 1,
-          slideDx: _sourceSlideDx,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.album,
-          keyword: keyword,
-          source: selected,
-          visible: _tab.index == 2,
-          slideDx: _sourceSlideDx,
-        ),
-        _CatalogTab(
-          kind: _CatalogKind.playlist,
-          keyword: keyword,
-          source: selected,
-          visible: _tab.index == 3,
-          slideDx: _sourceSlideDx,
-        ),
-      ],
-    );
+    // 多音源：外层 TabBarView（_sourceTab）横滑切音源，内层 TabBarView（_tab）
+    // 禁用横滑（由外层接管），内容 tab 靠点击切换。每个音源页独立加载，
+    // TabBarView 原生动画与搜索并行（参考榜单页 _PeriodBoard）。
+    // 单音源：单层 TabBarView（_tab），横滑切内容 tab。
+    final sourceIdx = _activeSourceIdx;
+    final contentIdx = _tab.index;
+    final contentArea = _sources.length > 1
+        ? TabBarView(
+            controller: _sourceTab,
+            children: [
+              for (var si = 0; si < _sources.length; si++)
+                TabBarView(
+                  controller: _tab,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _TrackTab(
+                      keyword: keyword,
+                      source: _sources[si],
+                      visible: sourceIdx == si && contentIdx == 0,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.artist,
+                      keyword: keyword,
+                      source: _sources[si],
+                      visible: sourceIdx == si && contentIdx == 1,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.album,
+                      keyword: keyword,
+                      source: _sources[si],
+                      visible: sourceIdx == si && contentIdx == 2,
+                    ),
+                    _CatalogTab(
+                      kind: _CatalogKind.playlist,
+                      keyword: keyword,
+                      source: _sources[si],
+                      visible: sourceIdx == si && contentIdx == 3,
+                    ),
+                  ],
+                ),
+            ],
+          )
+        : TabBarView(
+            controller: _tab,
+            children: [
+              _TrackTab(
+                keyword: keyword,
+                source: selected,
+                visible: contentIdx == 0,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.artist,
+                keyword: keyword,
+                source: selected,
+                visible: contentIdx == 1,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.album,
+                keyword: keyword,
+                source: selected,
+                visible: contentIdx == 2,
+              ),
+              _CatalogTab(
+                kind: _CatalogKind.playlist,
+                keyword: keyword,
+                source: selected,
+                visible: contentIdx == 3,
+              ),
+            ],
+          );
 
-    // 内嵌模式：顶栏由全局横屏顶栏承接（内容下移避让其高度），内容 tab 与
-    // 来源切换条在内容区顶部展示；顶栏输入框提交的新搜索经
-    // searchSessionProvider 驱动，子 tab 通过 didUpdateWidget 重搜。
+    // 内嵌模式（横屏搜索容器）：顶栏由全局横屏顶栏承接（回退/搜索/皮肤/
+    // 设置四大控件所有横屏容器共享，本页无额外 tab 行、无需独立悬浮适配）。
+    // 内容 tab 与来源条静态避让在全局顶栏下方，结果列表在剩余区域内滚动。
     if (widget.embedded) {
       return Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
@@ -594,7 +690,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
             children: [
               tabBar,
               _buildSourceBar(),
-              Expanded(child: tabView),
+              Expanded(child: contentArea),
             ],
           ),
         ),
@@ -604,25 +700,21 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final statusBar = MediaQuery.paddingOf(context).top;
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    // 内容初始避让量：悬浮=悬浮列高度（首行44 + 间距10 + Tab气泡48 +
+    // 间距10 + 来源气泡46）；固定=GlassTopBar（含内容 tab）。
+    final topInset = floating
+        ? statusBar + 8 + 44 + 10 + 48 + 10
+        : GlassTopBar.height(context, bottom: tabBar);
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Padding(
-            // 悬浮模式：顶栏（行 + Tab 气泡）悬浮，内容按整列高度避让。
-            padding: EdgeInsets.only(
-              top: floating
-                  ? statusBar + 8 + 44 + 10 + 48 + 14
-                  : GlassTopBar.height(context, bottom: tabBar),
-            ),
-            child: Column(
-              children: [
-                _buildSourceBar(),
-                Expanded(child: tabView),
-              ],
-            ),
+          // 结果列表铺满全屏：避让量注入列表滚动 padding，滚动时内容从顶栏
+          // 与来源条下方穿过（悬浮穿透观感）。
+          Positioned.fill(
+            child: _withContentTopInset(contentArea, topInset + 46),
           ),
           if (floating)
             Positioned(
@@ -644,15 +736,27 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                   onTap: _goToSearchPage,
                 ),
                 tabPill: FloatingTabPill(child: tabBar),
+                // 来源插件切换条也包进玻璃气泡，与 Tab 气泡同材质。
+                bottomPill: FloatingTabPill(height: 46, child: _buildSourceBar()),
               ),
             )
-          else
+          else ...[
+            // 来源切换条悬浮吸顶（不透明底色防止列表文字透叠）。
             Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
+              top: topInset,
+              left: 0,
+              right: 0,
+              child: ColoredBox(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: _buildSourceBar(),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
               // 结果页输入框只读：点击返回搜索页，不在结果页内联搜索。
               // 固定对比色搜索框：带一点透明、不随毛玻璃开关变化，与玻璃顶栏形成对比。
               title: Container(
@@ -691,13 +795,20 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 ),
               ],
               bottom: tabBar,
+              ),
             ),
-          ),
+          ],
           // 搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
           const BottomPlayBarSlot(),
         ],
       ),
     );
+  }
+
+  /// 给内容区（结果 tab）注入顶部避让量：列表滚动 padding.top 增加 [inset]，
+  /// 内容铺满全屏滚动时从顶栏/来源条下方穿过。
+  Widget _withContentTopInset(Widget contentArea, double inset) {
+    return _ContentTopInsetScope(inset: inset, child: contentArea);
   }
 
   /// 结果页返回搜索页，在新搜索页发起新搜索。
@@ -959,18 +1070,33 @@ class _TrackTab extends ConsumerStatefulWidget {
   final String keyword;
   final _SourceItem source;
   final bool visible;
-  /// 最近一次来源切换的滑动方向（父级按来源条目顺序计算）。
-  final double slideDx;
 
   const _TrackTab({
     required this.keyword,
     required this.source,
     required this.visible,
-    required this.slideDx,
   });
 
   @override
   ConsumerState<_TrackTab> createState() => _TrackTabState();
+}
+
+/// 结果内容区顶部避让量注入：_TrackTab/_CatalogTab 的列表滚动 padding.top
+/// 取该值——内容铺满全屏，滚动时从顶栏/来源条下方穿过（悬浮穿透观感）。
+class _ContentTopInsetScope extends InheritedWidget {
+  const _ContentTopInsetScope({required this.inset, required super.child});
+
+  final double inset;
+
+  static double of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_ContentTopInsetScope>()
+          ?.inset ??
+      0;
+
+  @override
+  bool updateShouldNotify(_ContentTopInsetScope oldWidget) =>
+      oldWidget.inset != inset;
 }
 
 class _TrackTabState extends ConsumerState<_TrackTab>
@@ -978,8 +1104,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   List<_TrackEntry> _results = const [];
   bool _loading = false;
   String _searchedHash = '';
-  /// 内容代数：每次新结果落地 +1，作为切换动画的触发键。
-  int _epoch = 0;
+  /// 搜索失败原因（超时/插件异常等）。空串表示无错误——空结果与失败要分开
+  /// 提示，否则插件挂了用户只看到"无结果"，误以为是搜不到。
+  String _searchError = '';
 
   @override
   bool get wantKeepAlive => true;
@@ -1010,6 +1137,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     setState(() {
       _searchedHash = hash;
       _loading = q.isNotEmpty;
+      _searchError = '';
       if (q.isEmpty) _results = const [];
     });
     if (q.isEmpty) return;
@@ -1039,25 +1167,25 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             isLocal: false, pluginSource: src.plugin, pluginResult: r)));
         ref.read(accountApiProvider).reportSearch(q, 'online', items.length);
       }
-    } catch (_) {
-      // 单次失败保持空结果，由 UI 展示提示。
+    } catch (e) {
+      // 失败必须透出原因：空结果 + 无提示会让用户以为"搜不到"，实际是
+      // 插件超时/异常。记录错误供空态 UI 展示与重试。
+      AppLogger.instance.log('search', '音源搜索失败 source=${src.id} q=$q error=$e');
+      if (!mounted) return;
+      if (_searchedHash != hash) return;
+      setState(() {
+        _searchError = e.toString();
+        _results = const [];
+        _loading = false;
+      });
+      return;
     }
     if (!mounted) return;
+    if (_searchedHash != hash) return;
     setState(() {
       _results = out;
       _loading = false;
-      _epoch++;
     });
-  }
-
-  /// 结果内容切换的横滑过渡（观感对齐顶栏内容 tab 的 TabBarView）。
-  Widget _slideSwitch(Widget child) {
-    return _SlideSwitch(
-      dx: widget.slideDx,
-      epoch: _epoch,
-      background: appScaffoldBackground(context, ref),
-      child: child,
-    );
   }
 
   void _play(int index) {
@@ -1112,21 +1240,33 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final favorites = ref.watch(favoritesProvider);
 
     if (q.isEmpty) {
-      return _slideSwitch(_emptyHint(
-          tr('输入关键词搜索音乐'), scheme, source: widget.source.name));
+      return _emptyHint(
+          tr('输入关键词搜索音乐'), scheme, source: widget.source.name);
     }
     if (_loading && _results.isEmpty) {
-      return _slideSwitch(const Center(child: CircularProgressIndicator()));
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchError.isNotEmpty && _results.isEmpty) {
+      // 搜索失败与"没有找到"区分开：透出原因并给重试入口。
+      return _emptyHint(
+        tr('搜索失败：{e}', {'e': _searchError}),
+        scheme,
+        source: widget.source.name,
+        actionLabel: tr('重试'),
+        onAction: () => _search(q, '${widget.source.id}|$q'),
+      );
     }
     if (_results.isEmpty) {
-      return _slideSwitch(_emptyHint(
-          tr('没有找到相关歌曲'), scheme, source: widget.source.name));
+      return _emptyHint(
+          tr('没有找到相关歌曲'), scheme, source: widget.source.name);
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
-    return _slideSwitch(
-      ListView.builder(
-      padding: EdgeInsets.only(bottom: bottomInset),
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        top: _ContentTopInsetScope.of(context),
+        bottom: bottomInset,
+      ),
       itemCount: _results.length,
       itemBuilder: (context, i) {
         final e = _results[i];
@@ -1251,7 +1391,6 @@ class _TrackTabState extends ConsumerState<_TrackTab>
           },
         );
       },
-      ),
     );
   }
 }
@@ -1263,15 +1402,12 @@ class _CatalogTab extends ConsumerStatefulWidget {
   final String keyword;
   final _SourceItem source;
   final bool visible;
-  /// 最近一次来源切换的滑动方向（父级按来源条目顺序计算）。
-  final double slideDx;
 
   const _CatalogTab({
     required this.kind,
     required this.keyword,
     required this.source,
     required this.visible,
-    required this.slideDx,
   });
 
   @override
@@ -1283,8 +1419,6 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   List<_CatalogItem> _items = const [];
   bool _loading = false;
   String _searchedHash = '';
-  /// 内容代数：每次新结果落地 +1，作为切换动画的触发键。
-  int _epoch = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -1343,21 +1477,11 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       // 单次失败保持空结果。
     }
     if (!mounted) return;
+    if (_searchedHash != hash) return;
     setState(() {
       _items = out;
       _loading = false;
-      _epoch++;
     });
-  }
-
-  /// 结果内容切换的横滑过渡（观感对齐顶栏内容 tab 的 TabBarView）。
-  Widget _slideSwitch(Widget child) {
-    return _SlideSwitch(
-      dx: widget.slideDx,
-      epoch: _epoch,
-      background: appScaffoldBackground(context, ref),
-      child: child,
-    );
   }
 
   /// 本地库索引：按当前类型过滤歌手/专辑/歌单。
@@ -1593,25 +1717,27 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     final name = _kindName(widget.kind);
 
     if (q.isEmpty) {
-      return _slideSwitch(_emptyHint(
+      return _emptyHint(
           tr('输入关键词搜索{name}', {'name': name}),
           scheme,
-          source: widget.source.name));
+          source: widget.source.name);
     }
     if (_loading && _items.isEmpty) {
-      return _slideSwitch(const Center(child: CircularProgressIndicator()));
+      return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty) {
-      return _slideSwitch(_emptyHint(
+      return _emptyHint(
           tr('没有找到相关{name}', {'name': name}),
           scheme,
-          source: widget.source.name));
+          source: widget.source.name);
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
-    return _slideSwitch(
-      ListView.builder(
-      padding: EdgeInsets.only(bottom: bottomInset),
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        top: _ContentTopInsetScope.of(context),
+        bottom: bottomInset,
+      ),
       itemCount: _items.length,
       itemBuilder: (context, i) {
         final item = _items[i];
@@ -1637,7 +1763,6 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
           onTap: () => _open(item),
         );
       },
-      ),
     );
   }
 
@@ -1684,64 +1809,34 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
 
 // ==================== 公共组件 ====================
 
-/// 内容代际切换动画：新内容从方向侧整幅滑入、旧内容同速滑向另一侧，
-/// 时长与曲线对齐顶栏内容 tab 的点击切换（TabController 默认 300ms +
-/// fastLinearToSlowEaseIn），替换原来的瞬时硬切。
-class _SlideSwitch extends StatelessWidget {
-  const _SlideSwitch({
-    required this.dx,
-    required this.epoch,
-    required this.background,
-    required this.child,
-  });
-
-  /// 滑入方向：+1 从右滑入（新来源在右侧），-1 从左滑入。
-  final double dx;
-
-  /// 内容代数：值变化时触发一次切换动画。
-  final int epoch;
-
-  /// 滑入内容的底色（与页面背景同源），避免横滑途中新旧两份列表文字透叠。
-  final Color background;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchInCurve: Curves.fastLinearToSlowEaseIn,
-      switchOutCurve: Curves.fastLinearToSlowEaseIn.flipped,
-      transitionBuilder: (child, animation) {
-        // 离场内容（动画反向播放）滑向另一侧，与入场方向一致形成推挤观感。
-        final leaving = animation.status == AnimationStatus.reverse;
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: Offset(leaving ? -dx : dx, 0),
-            end: Offset.zero,
-          ).animate(animation),
-          child: ColoredBox(color: background, child: child),
-        );
-      },
-      child: KeyedSubtree(key: ValueKey<int>(epoch), child: child),
-    );
-  }
-}
-
 Widget _emptyHint(String message, ColorScheme scheme,
-    {required String source}) {
+    {required String source, String? actionLabel, VoidCallback? onAction}) {
   return Center(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.search_off, size: 40, color: scheme.outline),
         const SizedBox(height: 12),
-        Text(message, style: TextStyle(color: scheme.onSurfaceVariant)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            message,
+            style: TextStyle(color: scheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(
           tr('结果来自 {source}', {'source': source}),
           style: TextStyle(fontSize: 12, color: scheme.outline),
         ),
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: onAction,
+            child: Text(actionLabel),
+          ),
+        ],
       ],
     ),
   );

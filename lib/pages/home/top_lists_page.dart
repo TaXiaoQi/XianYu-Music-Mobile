@@ -8,6 +8,7 @@ import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
@@ -124,6 +125,9 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 壁纸抽透明态：来源 chip 未选中透出壁纸、选中轻量红底+细边，
+    // 避免榜单来源选择条在壁纸上堆成实色色块；普通模式走主题原样。
+    final wallpaper = ref.watch(wallpaperActiveProvider);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
@@ -134,26 +138,46 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
             child: Column(
               children: [
                 if (_sources.isNotEmpty)
-                  SizedBox(
-                    height: 46,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      children: [
-                        for (final s in _sources)
-                          Padding(
-                            key: _chipKeys[s.id],
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(s.name),
-                              showCheckmark: false,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              selected: _selectedId == s.id,
-                              onSelected: (_) =>
-                                  _selectSource(_sources.indexOf(s)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    // 来源插件切换条玻璃气泡：与悬浮顶栏气泡同材质。
+                    child: FloatingTabPill(
+                      height: 46,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 7),
+                        children: [
+                          for (final s in _sources)
+                            Padding(
+                              key: _chipKeys[s.id],
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(s.name),
+                                showCheckmark: false,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                selected: _selectedId == s.id,
+                                backgroundColor:
+                                    wallpaper ? Colors.transparent : null,
+                                selectedColor: wallpaper
+                                    ? scheme.primary.withValues(alpha: 0.14)
+                                    : null,
+                                side: wallpaper
+                                    ? BorderSide(
+                                        color: _selectedId == s.id
+                                            ? scheme.primary
+                                            : scheme.outline
+                                                .withValues(alpha: 0.35),
+                                      )
+                                    : null,
+                                onSelected: (_) =>
+                                    _selectSource(_sources.indexOf(s)),
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 Expanded(child: _buildBody(scheme)),
