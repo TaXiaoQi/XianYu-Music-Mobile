@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/account_api.dart' show appVersion;
 import '../auth/auth_provider.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
@@ -57,6 +59,14 @@ class WatchControlService {
   Future<String> _phoneDeviceId() async =>
       _deviceId ??= await _auth.deviceId();
 
+  /// 设备型号：从系统版本串里提取「Android <大版本>」，手表端展示用。
+  String get _deviceModel {
+    final v = Platform.operatingSystemVersion;
+    final m = RegExp(r'Android (\d+)').firstMatch(v);
+    if (m != null) return 'Android ${m.group(1)}';
+    return '${Platform.operatingSystem} ${v.split('(').first.trim()}';
+  }
+
   /// 上报当前播放信息（presence）。
   Future<void> _publishPresence() async {
     if (_publishing || !_loggedIn || !_enabled) return;
@@ -67,10 +77,10 @@ class WatchControlService {
       await _auth.requestAction('watch_phone_ping', {
         'ciyuanxi_id': _authState.user!.ciyuanxiId!,
         'device_id': await _phoneDeviceId(),
-        'device_model': _deviceModel(),
-        'app_version': _appVersion,
+        'device_model': _deviceModel,
+        'app_version': appVersion,
         'playing_title': cur?.title ?? '',
-        'playing_artist': (cur?.artist ?? '').join(' / '),
+        'playing_artist': cur?.artist ?? '',
         'playing_album': cur?.album ?? '',
         'playing_cover': _coverUrl(cur),
         'is_playing': _ref.read(playerProvider).isPlaying ? 1 : 0,
@@ -126,8 +136,8 @@ class WatchControlService {
       case 'un_favorite':
         await _setFavorite(op == 'favorite');
       case 'seek':
-        final secs = _num(payload, 'position', 'secs');
-        if (secs != null) await notifier.seek(secs);
+        final secs = _num(payload, const ['position', 'secs']);
+        if (secs != null) await notifier.seek(secs.toDouble());
       case 'play_mode':
         // 仅循环切换（无精确档位设置接口，避免误操作）。
         await notifier.cyclePlayMode();
@@ -144,7 +154,8 @@ class WatchControlService {
     }
   }
 
-  num? _num(Map? payload, String... keys) {
+  /// 取数值字段：依次尝试 [keys] 里的键名，首个 num 类型即返回。
+  num? _num(Map? payload, List<String> keys) {
     if (payload == null) return null;
     for (final k in keys) {
       final v = payload[k];
@@ -153,7 +164,12 @@ class WatchControlService {
     return null;
   }
 
-  String _coverUrl(playerState) => '';
+  /// 封面地址：在线歌曲直取 URL；本地歌曲用本地缩略图 file:// URI。
+  String _coverUrl(QueueItem? cur) {
+    if (cur == null) return '';
+    final path = cur.coverPath;
+    return cur.coverUrl ?? (path != null && path.isNotEmpty ? 'file://$path' : '');
+  }
 }
 
 final watchControlProvider = Provider<WatchControlService>((ref) {

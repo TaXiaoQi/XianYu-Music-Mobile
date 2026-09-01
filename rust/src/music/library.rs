@@ -798,6 +798,7 @@ pub fn get_library_song_paths_for_folder_view(
 pub fn scan_library(
     db_conn: Arc<Mutex<Connection>>,
     minimum_duration_seconds: Option<u32>,
+    cover_cache_dir: Option<PathBuf>,
 ) -> Result<Vec<LibrarySong>, String> {
     let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
 
@@ -824,6 +825,7 @@ pub fn scan_library(
             index + 1,
             folder_total.max(1),
             options.clone(),
+            cover_cache_dir.clone(),
         );
     }
 

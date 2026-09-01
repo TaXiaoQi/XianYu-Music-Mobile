@@ -13,6 +13,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/flat_top_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -189,8 +190,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Padding(
             padding: EdgeInsets.only(
               top: widget.embedded
-                  ? MediaQuery.of(context).padding.top +
-                      tabBar.preferredSize.height
+                  // 嵌入态（横屏 master-detail）：外层已渲染统一标题条并避开
+                  // 状态栏，TabBar 直接顶在其下，不再补状态栏高度。
+                  ? tabBar.preferredSize.height
                   : GlassTopBar.height(context, bottom: tabBar),
             ),
             child: RepaintBoundary(
@@ -203,30 +205,26 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ),
             ),
           ),
-          // 嵌入态（横屏 master-detail 右侧）：仅保留 TabBar 切换条（避开状态栏），标题/返回由外层接管。
+          // 嵌入态（横屏 master-detail 右侧）：标题「意见反馈」由外层统一标题
+          // 条承担并避开状态栏，此处仅保留 TabBar 切换条，直接顶在标题条之下。
           if (widget.embedded)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: Material(
-                color: Colors.transparent,
-                child: Padding(
-                  padding:
-                      EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-                  child: tabBar,
-                ),
-              ),
+              child: Material(color: Colors.transparent, child: tabBar),
             )
           else
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: GlassTopBar(
+              // 竖屏路由：与横屏嵌入统一纯色平面顶栏（标题条 + TabBar）。
+              child: FlatTopBar(
                 leading: const BackButton(),
-                title: Text(tr('意见反馈')),
+                title: tr('意见反馈'),
                 bottom: tabBar,
+                backgroundColor: appScaffoldBackground(context, ref),
               ),
             ),
         ],
@@ -254,7 +252,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -323,7 +321,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     if (logs.isEmpty) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(vertical: 4),

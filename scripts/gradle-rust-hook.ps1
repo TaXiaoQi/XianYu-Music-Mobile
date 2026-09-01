@@ -76,6 +76,27 @@ if ($needCodegen) {
         $pInfo.RedirectStandardOutput = $true
         $pInfo.RedirectStandardError = $true
         $pInfo.CreateNoWindow = $true
+        # rquickjs-sys 0.12+ 的 bindgen 需要 libclang：机器装有 LLVM 时自动注入路径
+        # （Gradle daemon 不继承新装软件的 PATH 变更，须显式传入）。
+        $llvmBin = "C:\Program Files\LLVM\bin"
+        if ((Test-Path (Join-Path $llvmBin "libclang.dll")) -and -not $pInfo.EnvironmentVariables.ContainsKey("LIBCLANG_PATH")) {
+            $pInfo.EnvironmentVariables["LIBCLANG_PATH"] = $llvmBin
+        }
+        # 本机 NDK sysroot 缺 stdbool.h 等编译器头文件：把 LLVM 自带的 clang 内置
+        # 头文件目录追加进 bindgen 搜索路径（进程环境变量，子进程继承）。
+        if (Test-Path (Join-Path $llvmBin "libclang.dll")) {
+            $clangRes = Get-ChildItem "C:\Program Files\LLVM\lib\clang" -Directory -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending | Select-Object -First 1
+            if ($null -ne $clangRes) {
+                $inc = Join-Path $clangRes.FullName "include"
+                $extra = "-I`"$inc`""
+                if ($env:BINDGEN_EXTRA_CLANG_ARGS) {
+                    $env:BINDGEN_EXTRA_CLANG_ARGS = "$($env:BINDGEN_EXTRA_CLANG_ARGS) $extra"
+                } else {
+                    $env:BINDGEN_EXTRA_CLANG_ARGS = $extra
+                }
+            }
+        }
         $p = [System.Diagnostics.Process]::Start($pInfo)
         $tOut = $p.StandardOutput.ReadToEndAsync()
         $tErr = $p.StandardError.ReadToEndAsync()
@@ -104,6 +125,27 @@ if ($needSo) {
         $pInfo.RedirectStandardOutput = $true
         $pInfo.RedirectStandardError = $true
         $pInfo.CreateNoWindow = $true
+        # rquickjs-sys 0.12+ 的 bindgen 需要 libclang：机器装有 LLVM 时自动注入路径
+        # （Gradle daemon 不继承新装软件的 PATH 变更，须显式传入）。
+        $llvmBin = "C:\Program Files\LLVM\bin"
+        if ((Test-Path (Join-Path $llvmBin "libclang.dll")) -and -not $pInfo.EnvironmentVariables.ContainsKey("LIBCLANG_PATH")) {
+            $pInfo.EnvironmentVariables["LIBCLANG_PATH"] = $llvmBin
+        }
+        # 本机 NDK sysroot 缺 stdbool.h 等编译器头文件：把 LLVM 自带的 clang 内置
+        # 头文件目录追加进 bindgen 搜索路径（进程环境变量，子进程继承）。
+        if (Test-Path (Join-Path $llvmBin "libclang.dll")) {
+            $clangRes = Get-ChildItem "C:\Program Files\LLVM\lib\clang" -Directory -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending | Select-Object -First 1
+            if ($null -ne $clangRes) {
+                $inc = Join-Path $clangRes.FullName "include"
+                $extra = "-I`"$inc`""
+                if ($env:BINDGEN_EXTRA_CLANG_ARGS) {
+                    $env:BINDGEN_EXTRA_CLANG_ARGS = "$($env:BINDGEN_EXTRA_CLANG_ARGS) $extra"
+                } else {
+                    $env:BINDGEN_EXTRA_CLANG_ARGS = $extra
+                }
+            }
+        }
         $p = [System.Diagnostics.Process]::Start($pInfo)
         $tOut = $p.StandardOutput.ReadToEndAsync()
         $tErr = $p.StandardError.ReadToEndAsync()

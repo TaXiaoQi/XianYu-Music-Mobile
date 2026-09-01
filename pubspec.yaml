@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0-beta9+1
+version: 1.0.1-beta5+1
 
 environment:
   sdk: ^3.12.2
@@ -79,6 +79,10 @@ dependencies:
   # QQ 互联分享（歌曲分享到 QQ 好友 / QQ 空间），Android 配置见下方顶层 tencent_kit 块
   tencent_kit: ^6.2.0
   pinyin: ^3.3.0
+  # 修复构建警告「Expected to find fonts for packages/cupertino_icons/CupertinoIcons」：
+  # liquid_glass_widgets 代码里硬编码引用了 CupertinoIcons 字体常量，但其 pubspec
+  # 未声明 cupertino_icons 依赖（上游 bug），需在本工程补上。tree-shake 后体积≈0。
+  cupertino_icons: ^1.0.8
 
 # 本地 vendor 的 tencent_kit（third_party/tencent_kit）：
 # pub 官方版 6.2.0 打包的 QQ OpenSDK 仍为 3.5.17.3，此副本已替换为官方
@@ -107,17 +111,19 @@ dev_dependencies:
 # 在 flutter run / flutter build 时自动重编更新。
 
 # 应用图标生成配置（运行：dart run flutter_launcher_icons）
+# 源图放在 tool/icons/（不参与打包）；assets/icon/ 仅保留运行时资源
+# （share_qq.png / share_qzone.jpg），否则整目录会打进 APK（曾多背 ~786KB）。
 flutter_launcher_icons:
   android: true
   ios: true
   # iOS 不支持透明，使用带白底的方形图
-  image_path_ios: "assets/icon/app_icon_bg.png"
+  image_path_ios: "tool/icons/app_icon_bg.png"
   remove_alpha_ios: true
   # Android 传统图标使用白底方形图
-  image_path_android: "assets/icon/app_icon_bg.png"
+  image_path_android: "tool/icons/app_icon_bg.png"
   # Android 8.0+ 自适应图标：白色背景 + 前景 logo 层
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  adaptive_icon_foreground: "tool/icons/app_icon_foreground.png"
   min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the

@@ -14,7 +14,7 @@ class EqPreset {
   const EqPreset(this.name, this.gains);
 }
 
-get eqPresets => <EqPreset>[
+List<EqPreset> get eqPresets => <EqPreset>[
   EqPreset(tr('默认'), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
   EqPreset(tr('流行'), [-1, 0, 1, 2, 2, 1, 0, -1, -1, -1]),
   EqPreset(tr('摇滚'), [3, 2, 1, 0, -1, -1, 0, 1, 2, 3]),
@@ -34,7 +34,7 @@ class ReverbPreset {
   const ReverbPreset(this.label, this.dry, this.wet);
 }
 
-get reverbPresets => <ReverbPreset>[
+List<ReverbPreset> get reverbPresets => <ReverbPreset>[
   ReverbPreset(tr('大厅'), 80, 40),
   ReverbPreset(tr('房间'), 85, 30),
   ReverbPreset(tr('浴室'), 75, 50),
@@ -44,7 +44,7 @@ get reverbPresets => <ReverbPreset>[
 ];
 
 /// 算法混响预设。
-get algoReverbPresets => <ReverbPreset>[
+List<ReverbPreset> get algoReverbPresets => <ReverbPreset>[
   ReverbPreset(tr('算法大厅'), 85, 40),
   ReverbPreset(tr('算法房间'), 90, 30),
   ReverbPreset(tr('算法板式'), 80, 50),

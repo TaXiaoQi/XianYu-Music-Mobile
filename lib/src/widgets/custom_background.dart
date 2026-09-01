@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/app_colors.dart';
 import '../core/settings.dart';
 
 /// 自定义壁纸背景渲染层（对齐桌面端 GlobalBackground 的自定义分支）。
@@ -101,11 +102,10 @@ class _SettingsBound extends ConsumerWidget {
   }
 }
 
-/// 页面底色层：回退为透明，页面透出根层壁纸/底色。
-///
-/// 纯平移转场（FadeForwards）下不在此烘焙壁纸，壁纸由根层
-/// [CustomBackgroundLayer] 统一渲染；转场期间则由 [TransitionBackdrop] 铺壁纸
-/// 垫底，避免透见下层造成「穿模」。
+/// 页面底色层：壁纸启用时把壁纸直接烘焙为页面背景，页面成为不透明「卡片」——
+/// 覆盖转场时新页（含壁纸底）整体滑入盖住旧页，与普通模式实色底完全同构，
+/// 天然无穿模，无需任何转场垫底/平移补偿；未启用时透传（页面 Scaffold 透明，
+/// 透出根层底色）。
 class AppPageBackground extends ConsumerWidget {
   const AppPageBackground({super.key, required this.child});
 
@@ -113,6 +113,20 @@ class AppPageBackground extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return child;
+    final cb = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.customBackground),
+    );
+    if (cb?.active != true) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 壁纸之下的实色基准（图片缺失时兜底），与根层底色一致。
+        ColoredBox(
+          color: appSurfaceBg(context),
+          child: CustomBackgroundLayer(background: cb),
+        ),
+        child,
+      ],
+    );
   }
 }

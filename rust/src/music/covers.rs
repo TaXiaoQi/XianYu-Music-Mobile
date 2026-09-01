@@ -6,6 +6,7 @@ use crate::remote::cache::{ensure_cached_path, is_remote_uri};
 use image::{DynamicImage, ImageFormat};
 use lofty::picture::MimeType;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -109,8 +110,59 @@ fn remove_cache_dir_contents(cache_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// ---- 无图负缓存（提取失败路径的 TTL 记忆） ----
+//
+// 对齐 RwaS CoilArtworkRuntime 的「无图缓存 TTL」：对提取不到内嵌封面的音频，
+// 在 TTL 窗口内不再重复尝试（避免列表滚动/重扫时对无封面文件反复
+// FFI + 解码 + 写盘），TTL 过后才允许重试，以便用户补写封面后能回流。
+const NO_COVER_NEGATIVE_TTL_SECS: u64 = 3600; // 1 小时
+const NO_COVER_NEGATIVE_CAP: usize = 100_000;
+
+/// 路径（规范化主键）→ 最近一次封面提取失败的 Unix 秒。
+fn no_cover_negative_cache() -> &'static Mutex<HashMap<String, u64>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cover_now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+/// 记录该路径最近一次封面提取失败的 Unix 秒（幂等刷新 TTL）。
+fn mark_no_cover(key: &str, at_secs: u64) {
+    if let Ok(mut map) = no_cover_negative_cache().lock() {
+        map.insert(key.to_string(), at_secs);
+        // 容量保护：进程内常驻且只在此处增长，超过上限时整体清空重建
+        if map.len() > NO_COVER_NEGATIVE_CAP {
+            map.clear();
+        }
+    }
+}
+
+/// 是否命中无图负缓存（TLL 窗口内跳过重试）。
+fn is_no_cover_cached(key: &str, now_secs: u64) -> bool {
+    no_cover_negative_cache()
+        .lock()
+        .map(|map| {
+            map.get(key)
+                .map(|&at| now_secs.saturating_sub(at) < NO_COVER_NEGATIVE_TTL_SECS)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 pub fn clear_cover_cache(cache_dir: &Path) -> Result<(), String> {
     remove_cache_dir_contents(cache_dir)
+}
+
+/// 清空无图负缓存（用户主动重扫/清缓存时释放记忆，允许立即可重试提取）。
+pub fn clear_no_cover_negative_cache() {
+    if let Ok(mut map) = no_cover_negative_cache().lock() {
+        map.clear();
+    }
 }
 
 fn generate_source_hash(path: &Path) -> String {
@@ -308,10 +360,17 @@ fn find_cached_full_cover(cache_dir: &Path, stem: &str) -> Option<String> {
 
 pub fn get_or_create_thumbnail(path: &Path, cache_dir: &Path) -> Option<String> {
     let source_hash = generate_source_hash(path);
+    let now = cover_now_unix_secs();
+    let path_key = normalize_path(&path.to_string_lossy());
     let alias_path = thumbnail_alias_path(cache_dir, &source_hash);
 
     if let Some(existing) = resolve_alias_target(cache_dir, &alias_path) {
         return Some(existing);
+    }
+
+    // 无图负缓存：TTL 内提取失败过的路径直接回落默认图，不再重读文件
+    if is_no_cover_cached(&path_key, now) {
+        return None;
     }
 
     if let Ok(tagged_file) = read_tagged_file_from_path(path) {
@@ -339,6 +398,7 @@ pub fn get_or_create_thumbnail(path: &Path, cache_dir: &Path) -> Option<String> 
             }
         }
     }
+    mark_no_cover(&path_key, now);
     None
 }
 
@@ -353,10 +413,17 @@ fn get_or_create_thumbnail_aliased(
     cache_dir: &Path,
 ) -> Option<String> {
     let source_hash = generate_source_hash(Path::new(source_key));
+    let now = cover_now_unix_secs();
+    let key = normalize_path(source_key);
     let alias_path = thumbnail_alias_path(cache_dir, &source_hash);
 
     if let Some(existing) = resolve_alias_target(cache_dir, &alias_path) {
         return Some(existing);
+    }
+
+    // 无图负缓存：TTL 内提取失败过的稳定主键直接回落默认图，不再重读
+    if is_no_cover_cached(&key, now) {
+        return None;
     }
 
     if let Ok(tagged_file) = read_tagged_file_from_path(read_path) {
@@ -386,6 +453,7 @@ fn get_or_create_thumbnail_aliased(
             }
         }
     }
+    mark_no_cover(&key, now);
     None
 }
 

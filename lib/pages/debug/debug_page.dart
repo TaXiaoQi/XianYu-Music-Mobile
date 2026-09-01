@@ -23,7 +23,7 @@ class DebugPage extends ConsumerWidget {
   const DebugPage({super.key});
 
   /// 假在线歌曲，用于触发需要歌曲参数的弹窗调试。
-  static get _fakeQueueItem => QueueItem(
+  static QueueItem get _fakeQueueItem => QueueItem(
     path: tr('plugin://demo/测试歌曲'),
     title: tr('测试歌曲'),
     artist: tr('测试歌手'),
@@ -34,7 +34,7 @@ class DebugPage extends ConsumerWidget {
     onlineSongJson: '{"pluginId":"mf_demo","source":"kw","musicInfo":{}}',
   );
 
-  static get _fakeImportedSong => ImportedSong(
+  static ImportedSong get _fakeImportedSong => ImportedSong(
     title: tr('测试歌曲'),
     artist: tr('测试歌手'),
     album: tr('测试专辑'),
@@ -45,7 +45,7 @@ class DebugPage extends ConsumerWidget {
     format: 'lx',
   );
 
-  static get _fakePlaylist => ImportedPlaylist(
+  static ImportedPlaylist get _fakePlaylist => ImportedPlaylist(
     id: 'demo-playlist-id',
     name: tr('测试歌单'),
     songs: [_fakeImportedSong],

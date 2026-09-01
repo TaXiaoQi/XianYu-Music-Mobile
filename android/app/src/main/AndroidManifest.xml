@@ -121,6 +121,18 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- 系统分享（xianyu/system_share）FileProvider：把封面文件以 content://
+             授予分享目标（share_plus 自带的 provider 不复用，避免依赖插件内部细节） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share_files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_file_paths" />
+        </provider>
+
         <!-- 桌面播放小组件 · 方形样式（2×2 固定：上封面/下歌名+小播放键），独立入口 -->
         <receiver
             android:name=".SquareWidgetProvider"

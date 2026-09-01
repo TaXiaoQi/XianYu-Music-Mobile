@@ -13,8 +13,12 @@ import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 音源榜单页：插件来源切换 + 榜单网格（对齐桌面 TopLists）。
+/// [embedded]=true 时作为横屏右侧「内容」容器内嵌（无自绘顶栏，顶部让位
+/// 为 0——容器外层 FlatTopBar 已承接返回与标题）。
 class TopListsPage extends ConsumerStatefulWidget {
-  const TopListsPage({super.key});
+  const TopListsPage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<TopListsPage> createState() => _TopListsPageState();
@@ -24,14 +28,24 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     with HidesShellChrome {
   List<PluginSource> _sources = const [];
   String? _selectedId;
-  List<MfSheetItem> _boards = const [];
-  bool _loading = true;
+  /// 内容区 PageView：每音源一页，支持横滑切换（与顶栏内容 tab 同源观感）。
+  PageController? _pageCtrl;
+  /// 各音源已加载的榜单缓存（横滑往返不重复请求）。
+  final Map<String, List<MfSheetItem>> _boardsCache = {};
+  final Set<String> _loadingIds = {};
   bool _checking = true;
+  final Map<String, GlobalKey> _chipKeys = {};
 
   @override
   void initState() {
     super.initState();
     _detectSources();
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl?.dispose();
+    super.dispose();
   }
 
   Future<void> _detectSources() async {
@@ -48,28 +62,63 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     setState(() {
       _sources = supported;
       _checking = false;
+      if (supported.isNotEmpty) {
+        _pageCtrl = PageController();
+        _selectedId = supported.first.id;
+        for (final s in supported) {
+          _chipKeys[s.id] ??= GlobalKey();
+        }
+      }
     });
     if (supported.isNotEmpty) {
-      await _load(supported.first);
-    } else {
-      setState(() => _loading = false);
+      _loadBoards(supported.first);
     }
   }
 
-  Future<void> _load(PluginSource source) async {
-    setState(() {
-      _selectedId = source.id;
-      _loading = true;
-    });
+  Future<void> _loadBoards(PluginSource source) async {
+    if (_boardsCache.containsKey(source.id) ||
+        _loadingIds.contains(source.id)) {
+      return;
+    }
+    setState(() => _loadingIds.add(source.id));
     final engine = await ref.read(pluginEngineProvider.future);
     final catalog = PluginCatalogService(engine,
         ref.read(pluginManagerProvider).sources);
     final boards = await catalog.getTopLists(source);
     if (!mounted) return;
     setState(() {
-      _boards = boards;
-      _loading = false;
+      _boardsCache[source.id] = boards;
+      _loadingIds.remove(source.id);
     });
+  }
+
+  /// 点 chip 切换音源：300ms + fastLinearToSlowEaseIn 动画翻页，
+  /// 与顶栏内容 tab 的点击切换一致。
+  void _selectSource(int index) {
+    final ctrl = _pageCtrl;
+    if (ctrl == null || !ctrl.hasClients) return;
+    ctrl.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.fastLinearToSlowEaseIn,
+    );
+  }
+
+  /// 横滑翻页 / 翻页动画落位：同步选中态、按需加载、chip 滚入可视区。
+  void _onPageChanged(int index) {
+    final s = _sources[index];
+    if (s.id == _selectedId) return;
+    setState(() => _selectedId = s.id);
+    _loadBoards(s);
+    final ctx = _chipKeys[s.id]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastLinearToSlowEaseIn,
+        alignment: 0.5,
+      );
+    }
   }
 
   @override
@@ -80,7 +129,8 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+                top: widget.embedded ? 0 : GlassTopBar.height(context)),
             child: Column(
               children: [
                 if (_sources.isNotEmpty)
@@ -92,13 +142,15 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                       children: [
                         for (final s in _sources)
                           Padding(
+                            key: _chipKeys[s.id],
                             padding: const EdgeInsets.only(right: 8),
                             child: ChoiceChip(
                               label: Text(s.name),
                               showCheckmark: false,
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               selected: _selectedId == s.id,
-                              onSelected: (_) => _load(s),
+                              onSelected: (_) =>
+                                  _selectSource(_sources.indexOf(s)),
                             ),
                           ),
                       ],
@@ -108,25 +160,26 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
               ],
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
+          if (!widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.pop(),
+                ),
+                title: Text(tr('音源榜单')),
               ),
-              title: Text(tr('音源榜单')),
             ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildBody(ColorScheme scheme) {
-    if (_checking || (_loading && _boards.isEmpty)) {
+    if (_checking) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -134,7 +187,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
             const CircularProgressIndicator(strokeWidth: 2),
             const SizedBox(height: 12),
             Text(
-              _checking ? tr('正在检测可用音源…') : tr('正在加载榜单…'),
+              tr('正在检测可用音源…'),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
           ],
@@ -148,7 +201,37 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         tr('暂无支持榜单的插件\n请先在「插件管理」安装支持排行榜的音源插件'),
       );
     }
-    if (_boards.isEmpty) {
+    final ctrl = _pageCtrl;
+    if (ctrl == null || !ctrl.hasClients && _selectedId == null) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    // 每音源一页：横滑直接切换，点 chip 动画翻页（见 _selectSource）。
+    return PageView.builder(
+      controller: ctrl,
+      itemCount: _sources.length,
+      onPageChanged: _onPageChanged,
+      itemBuilder: (context, i) => _buildSourcePage(scheme, _sources[i]),
+    );
+  }
+
+  Widget _buildSourcePage(ColorScheme scheme, PluginSource source) {
+    final boards = _boardsCache[source.id];
+    if (boards == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(strokeWidth: 2),
+            const SizedBox(height: 12),
+            Text(
+              tr('正在加载榜单…'),
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+    if (boards.isEmpty) {
       return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
     return GridView.builder(
@@ -159,9 +242,9 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         crossAxisSpacing: 12,
         childAspectRatio: 0.72,
       ),
-      itemCount: _boards.length,
+      itemCount: boards.length,
       itemBuilder: (context, i) {
-        final b = _boards[i];
+        final b = boards[i];
         return InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () => _openBoard(b),

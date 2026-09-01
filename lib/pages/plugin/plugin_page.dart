@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../../src/widgets/flat_top_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -123,8 +125,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(
-                top: widget.embedded ? 0 : GlassTopBar.height(context)),
+            // 顶栏（嵌入态=自绘纯色条，路由态=FlatTopBar）为 Stack 覆盖层，
+            // 内容统一让出同高，避免列表从容器最顶上开始、压在标题条底下。
+            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
             child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
@@ -274,22 +277,55 @@ class _PluginPageState extends ConsumerState<PluginPage> {
               top: 0,
               left: 0,
               right: 0,
-              child: GlassTopBar(
-                leading: widget.embedded ? null : const BackButton(),
-                title: Text(tr('音源')),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    tooltip: tr('插件设置'),
-                    onPressed: _showPluginSettingsSheet,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    tooltip: tr('安装插件'),
-                    onPressed: _installing ? null : _showInstallSheet,
-                  ),
-                ],
-              ),
+              // 嵌入设置横屏 master-detail 时不用毛玻璃条：与右侧其他分类的
+              // 纯色标题条同材质（同高度/字号），仅追加右侧操作按钮，避免
+              // 切到「音源」时顶部栏材质突变。
+              child: widget.embedded
+                  ? Container(
+                      height: GlassTopBar.height(context),
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.only(left: 18, right: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              tr('音源'),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.settings_outlined),
+                            tooltip: tr('插件设置'),
+                            onPressed: _showPluginSettingsSheet,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            tooltip: tr('安装插件'),
+                            onPressed: _installing ? null : _showInstallSheet,
+                          ),
+                        ],
+                      ),
+                    )
+                  : FlatTopBar(
+                      leading: const BackButton(),
+                      title: tr('音源'),
+                      backgroundColor: appScaffoldBackground(context, ref),
+                      actions: [
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: tr('插件设置'),
+                          onPressed: _showPluginSettingsSheet,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          tooltip: tr('安装插件'),
+                          onPressed: _installing ? null : _showInstallSheet,
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),

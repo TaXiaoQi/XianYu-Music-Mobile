@@ -12,8 +12,8 @@ final wallpaperActiveProvider = Provider<bool>((ref) {
 });
 
 /// 页面默认底色：未启用自定义壁纸时使用根层真实底色 [appSurfaceBg]（与设置页/
-/// 我的页一致，实色不像「没底色」）；启用壁纸时保持透明以透出根层的壁纸。
-/// 二者均为「实色底色之上直接覆盖壁纸」的模型，无需额外垫透明层。
+/// 我的页一致，实色不像「没底色」）；启用壁纸时保持透明，页面 Scaffold 透出
+/// [AppPageBackground] 烘焙的壁纸底色（不透明卡片模型，见 custom_background.dart）。
 Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
   return ref.watch(wallpaperActiveProvider)
       ? Colors.transparent
@@ -48,3 +48,12 @@ Color appCardColor(BuildContext context) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return dark ? const Color(0xFF303030) : const Color(0xFFFFFFFF);
 }
+
+/// 壁纸模式感知的控件/卡片底色：
+/// - 壁纸模式 → 全透明（卡片/列表条/文件夹控件直接透出壁纸）；
+/// - 常规模式 → [appCardColor]，统一卡片底色。
+/// 供需要跟随壁纸透明化的控件使用（榜单行/周期切换/文件夹控件等）。
+Color appCardFill(BuildContext context, WidgetRef ref) =>
+    ref.watch(wallpaperActiveProvider)
+        ? Colors.transparent
+        : appCardColor(context);

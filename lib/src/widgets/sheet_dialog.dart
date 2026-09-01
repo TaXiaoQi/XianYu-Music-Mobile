@@ -14,6 +14,7 @@ Future<T?> showSheetDialog<T>(
   BuildContext context,
   WidgetBuilder builder, {
   bool barrierDismissible = true,
+  double maxWidth = 380,
 }) {
   return showPredictiveDialog<T>(
     context: context,
@@ -24,7 +25,7 @@ Future<T?> showSheetDialog<T>(
             const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 380),
+          constraints: BoxConstraints(maxWidth: maxWidth),
           // 弹窗是屏幕居中的 Dialog，并不贴着状态栏/底部安全区；若内容里用了
           // SafeArea，会凭空多加一段状态栏高度的顶部/底部空白。这里把安全区内边距
           // 清零（保留 viewInsets，键盘避让仍正常），统一消除所有该风格弹窗的顶部空白。
@@ -43,14 +44,14 @@ Future<T?> showSheetDialog<T>(
       final base = Theme.of(dialogContext).brightness == Brightness.dark
           ? darkBaseScheme
           : lightBaseScheme;
-      return DialogKeyboardLift(
-        child: base == null
-            ? dialog
-            : Theme(
-                data: Theme.of(dialogContext).copyWith(colorScheme: base),
-                child: dialog,
-              ),
-      );
+      // 键盘避让已在 PredictiveBackDialogRoute 的 Center 下统一处理（DialogKeyboardLift），
+      // 这里不再重复包裹，避免二次位移。
+      return base == null
+          ? dialog
+          : Theme(
+              data: Theme.of(dialogContext).copyWith(colorScheme: base),
+              child: dialog,
+            );
     },
   );
 }
@@ -95,74 +96,6 @@ Future<T?> showBottomSheetDialog<T>(
   );
 }
 
-/// 键盘避让「仅遮挡才顶起」包装（所有 [showSheetDialog] 弹窗共用）。
-///
-/// - 默认保持弹窗原位置（居中），不因输入法弹出而移动；
-/// - 仅当弹窗底部即将被输入法盖住时才整体上移，上移量精确到「恰好露出底缘」，
-///   键盘收起后自动回到原位；
-/// - 顶起量是「键盘高度」与「弹窗内容高」的纯函数（弹窗屏幕居中推导），
-///   内容高首次布局后一次性缓存；走 [Transform]，不触发重排，键盘动画期间不掉帧。
-class DialogKeyboardLift extends StatefulWidget {
-  const DialogKeyboardLift({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<DialogKeyboardLift> createState() => _DialogKeyboardLiftState();
-}
-
-class _DialogKeyboardLiftState extends State<DialogKeyboardLift> {
-  final GlobalKey _key = GlobalKey();
-  // 弹窗内容高（首次布局后一次性缓存；内容在弹窗展示期内不变）。
-  double _dialogH = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureOnce());
-  }
-
-  void _measureOnce() {
-    if (!mounted || _dialogH > 0) return;
-    final ctx = _key.currentContext;
-    if (ctx == null) return;
-    final box = ctx.findRenderObject();
-    if (box is RenderBox && box.hasSize) {
-      _dialogH = box.size.height;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 弹窗由路由 Center 居中。adjustResize 设备上键盘把窗口缩小，Center 会把弹窗
-    // 自动抬高（这就是「离输入法很远却仍被顶起」的来源）。这里先用
-    // fullH（无键高全屏高）把弹窗钉回自然中央，只在键盘真的会盖住底缘时
-    // 才最小上移直到露出。该公式对「窗口会缩小」和「窗口不缩」两类设备都成立，
-    // 若不做窗口缩放的设备，下面 naturalTop == currentTop，退化为仅被遮挡才顶起。
-    final mq = MediaQuery.of(context);
-    final sizeH = mq.size.height;
-    final keyboard = mq.viewInsets.bottom;
-    double translateY = 0;
-    if (keyboard > 0 && _dialogH > 0) {
-      final fullH = sizeH + keyboard; // 无键盘时的全屏高
-      final naturalTop = (fullH - _dialogH) / 2; // 自然中央（无键盘时的居中位置）
-      final currentTop = (sizeH - _dialogH) / 2; // 窗口缩小+居中后的当前位置
-      final visibleBottom = sizeH; // 可视区底缘 == 键盘顶缘
-      double desiredTop = naturalTop;
-      if (desiredTop + _dialogH > visibleBottom) {
-        final floor = visibleBottom - _dialogH;
-        desiredTop = floor < 0 ? 0.0 : floor;
-      }
-      // 位移 = 目标位置 - 当前位置；正值表示向下还原，负值表示向上避让。
-      translateY = desiredTop - currentTop;
-    }
-    return Transform.translate(
-      offset: Offset(0, translateY),
-      // RepaintBoundary：把弹窗内容层缓存为一块位图层，键盘动画期间每帧只做
-      // 层位移（GPU 合成），不逐帧重新光栅化弹窗内容，避免顶起掉帧。
-      child: RepaintBoundary(
-        child: KeyedSubtree(key: _key, child: widget.child),
-      ),
-    );
-  }
-}
+/// 键盘避让已统一放到 [PredictiveBackDialogRoute] 的 Center 下（DialogKeyboardLift），
+/// 所有 showPredictiveDialog / showSheetDialog 居中弹窗自动生效；定义见
+/// predictive_dialog_route.dart。

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统分享（xianyu/system_share）FileProvider 的可共享目录：
+     封面临时文件在 cache，本地封面在应用外置目录或公共存储 -->
+<paths>
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-path name="external_storage" path="." />
+</paths>

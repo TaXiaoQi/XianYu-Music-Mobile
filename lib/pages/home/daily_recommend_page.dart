@@ -16,8 +16,12 @@ import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 每日推荐页：日期徽章 + 播放全部/换一批 + 推荐歌曲列表。
+/// [embedded]=true 时作为横屏右侧「内容」容器内嵌（无自绘顶栏、无自带迷你
+/// 条，顶部让位为 0——容器外层 FlatTopBar 已承接返回与标题）。
 class DailyRecommendPage extends ConsumerStatefulWidget {
-  const DailyRecommendPage({super.key});
+  const DailyRecommendPage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<DailyRecommendPage> createState() =>
@@ -37,7 +41,8 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+                top: widget.embedded ? 0 : GlassTopBar.height(context)),
             child: async.when(
               loading: () =>   Center(
                 child: Column(
@@ -62,7 +67,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.person_outline,
                     message: tr('登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制'),
                     action: tr('去登录'),
-                    onTap: () => context.go('/account'),
+                    onTap: () => context.push('/account'),
                   );
                 }
                 if (state.items.isEmpty) {
@@ -70,7 +75,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.music_off_outlined,
                     message: tr('今天还没有推荐\n请先在「插件管理」中安装音源插件'),
                     action: tr('去安装插件'),
-                    onTap: () => context.go('/plugin'),
+                    onTap: () => context.push('/plugin'),
                   );
                 }
                 return Column(
@@ -85,17 +90,19 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
               },
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title:   Text(tr('每日推荐')),
+          if (!widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title:   Text(tr('每日推荐')),
+              ),
             ),
-          ),
-          // 播放条显隐收敛为独立组件，播放状态变化不影响上方整页重建
-          const _BottomPlayBar(),
+          // 播放条显隐收敛为独立组件，播放状态变化不影响上方整页重建；
+          // 内嵌形态由外壳迷你条承载，不再自带。
+          if (!widget.embedded) const _BottomPlayBar(),
         ],
       ),
     );

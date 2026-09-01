@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
@@ -63,6 +64,11 @@ class PlayerPage extends ConsumerStatefulWidget {
 class _PlayerPageState extends ConsumerState<PlayerPage> {
   /// 是否显示歌词视图
   bool _showLyrics = false;
+
+  /// 歌词视图实例 key：本播放页实例内横竖屏翻转时 _LyricsView 凭它 reparent
+  /// （保留跟随锁定/居中/滚动位置）。key 跟实例走——关闭后销毁，快速重开的
+  /// 新实例拿新 key，避免与退出转场中的旧歌词视图撞 GlobalKey。
+  final GlobalKey _lyricsKey = GlobalKey();
 
   /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
   bool _lyricsViewHasRomaji = false;
@@ -216,8 +222,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           });
                         },
                         child: Center(
-                          child: Hero(
-                            tag: 'player-cover',
+                            child: Hero(
+                              tag: 'player-cover',
                             flightShuttleBuilder: (ctx, animation, direction,
                                 fromCtx, toCtx) {
                               return PlayerCoverShuttle(
@@ -254,6 +260,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                         child: ClipRect(
                           child: RepaintBoundary(
                             child: _LyricsView(
+                              key: _lyricsKey,
                               current: current,
                               visible: _showLyrics,
                               onTap: () {
@@ -403,9 +410,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                      // 左：封面（横屏横排常显，点击切换歌词显隐）；整体右移一点
+                      // 左封面 + 右歌词：固定横向对半布局，不提供可拖动中线。
                       Expanded(
-                        flex: 4,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 20),
                           child: LayoutBuilder(
@@ -421,54 +427,53 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   setState(
                                       () => _showLyrics = !_showLyrics);
                                 },
-                                child: Hero(
-                                  tag: 'player-cover',
-                                  flightShuttleBuilder: (ctx, animation,
-                                          direction, fromCtx, toCtx) =>
-                                      PlayerCoverShuttle(
-                                        animation: animation,
-                                        songPath: current?.path ?? '',
-                                        networkUrl: current?.coverUrl,
-                                        fromRadius: 23,
-                                        toRadius: 31,
-                                        borderColor: Colors.white
-                                            .withValues(alpha: 0.18),
-                                        shadow: BoxShadow(
-                                          color: scheme
-                                              .primary
-                                              .withValues(alpha: 0.28),
-                                          blurRadius: 36,
-                                          spreadRadius: 2,
-                                        ),
-                                        gradient: [
-                                          scheme.primary,
-                                          scheme
-                                              .primary
-                                              .withValues(alpha: 0.72),
-                                        ],
+                              child: Hero(
+                                tag: 'player-cover',
+                                flightShuttleBuilder: (ctx, animation,
+                                        direction, fromCtx, toCtx) =>
+                                    PlayerCoverShuttle(
+                                      animation: animation,
+                                      songPath: current?.path ?? '',
+                                      networkUrl: current?.coverUrl,
+                                      fromRadius: 23,
+                                      toRadius: 31,
+                                      borderColor: Colors.white
+                                          .withValues(alpha: 0.18),
+                                      shadow: BoxShadow(
+                                        color: scheme
+                                            .primary
+                                            .withValues(alpha: 0.28),
+                                        blurRadius: 36,
+                                        spreadRadius: 2,
                                       ),
-                                  child: CoverReturnSource(
-                                    songPath: current?.path,
-                                    networkUrl: current?.coverUrl,
-                                    child: _BigCover(
-                                      current: current,
-                                      size: coverSize,
+                                      gradient: [
+                                        scheme.primary,
+                                        scheme
+                                            .primary
+                                            .withValues(alpha: 0.72),
+                                      ],
                                     ),
+                                child: CoverReturnSource(
+                                  songPath: current?.path,
+                                  networkUrl: current?.coverUrl,
+                                  child: _BigCover(
+                                    current: current,
+                                    size: coverSize,
                                   ),
                                 ),
                               ),
-                            );
+                            ),
+                          );
                           },
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      // 右：歌词视口（垂直居中）
+                      // 右：歌词视口（剩余宽度占满）
                       Expanded(
-                        flex: 6,
                         child: ClipRect(
                           child: RepaintBoundary(
                             child: _LyricsView(
+                              key: _lyricsKey,
                               current: current,
                               // 横屏横排下歌词常显
                               visible: _showLyrics,
@@ -487,10 +492,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           ),
                         ),
                       ),
-                      ],
-                    ),
-                  ),
-                ),
+                            ],
+                          ),
+                        ),
+                      ),
                 // 底部：播放控制带（桌面版 PlayerFooter 语义，全宽置底）；整体下移一点
                 RepaintBoundary(
                   child: Padding(
@@ -563,6 +568,9 @@ class _TraditionalPlayerLayoutState
     with SingleTickerProviderStateMixin {
   bool _showLyrics = false;
 
+  /// 歌词视图实例 key：本实例内横竖屏翻转 reparent（同 _PlayerPageState）。
+  final GlobalKey _lyricsKey = GlobalKey();
+
   /// 封面/歌词左右滑动翻页控制器。
   late final PageController _pageController;
 
@@ -578,7 +586,8 @@ class _TraditionalPlayerLayoutState
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _pageController = PageController();
+    // 关闭即销毁，默认封面页（0），不再跨开关记忆歌词模式。
+    _pageController = PageController(initialPage: 0);
   }
 
   @override
@@ -652,6 +661,7 @@ class _TraditionalPlayerLayoutState
                       return ClipRect(
                         child: RepaintBoundary(
                           child: _LyricsView(
+                            key: _lyricsKey,
                             current: current,
                             visible: _showLyrics,
                             onTap: () {},
@@ -698,39 +708,38 @@ class _TraditionalPlayerLayoutState
               child: Column(
               children: [
                 _buildTopBar(context, landscape: true),
-                // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词）。
+                // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词），
+                // 固定横向对半布局，不提供可拖动中线。
                 Expanded(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // 封面整体右移一点：横屏下封面与左缘留出呼吸间距。
                       Expanded(
-                        flex: 5,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 24),
                           child: _buildCoverSection(
                               context, showLyricPreview: false),
                         ),
                       ),
-                      // 歌词贴近放大的封面左移（比原先的 8px 更紧）。
-                      const SizedBox(width: 2),
+                      // 歌词贴近放大的封面。
                       Expanded(
-                        flex: 7,
-                        child: ClipRect(
-                          child: RepaintBoundary(
-                            child: _LyricsView(
-                              current: current,
-                              // 横屏歌词常显
-                              visible: true,
-                              onTap: () {},
-                              onRomajiAvailable: (_) {},
+                            child: ClipRect(
+                              child: RepaintBoundary(
+                                child: _LyricsView(
+                                  key: _lyricsKey,
+                                  current: current,
+                                  // 横屏歌词常显
+                                  visible: true,
+                                  onTap: () {},
+                                  onRomajiAvailable: (_) {},
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
                 // 横屏播放控件：进度条 + 三区控制行（时长/下载/收藏｜播放顺序/三大键/歌词｜音质/音效/队列）。
                 RepaintBoundary(
                   child: Padding(
@@ -2139,7 +2148,7 @@ class _GlassControlCard extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 8,
+          base: 4,
           budget: budget,
           type: BlurSurfaceType.drawerOrSheet,
         ),
@@ -2151,19 +2160,25 @@ class _GlassControlCard extends ConsumerWidget {
       );
     }
 
-    final glassColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.6);
+    final glassColor = wallpaperGlassActive(ref)
+        ? wallpaperGlassFill(context)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.6));
 
-    final sigma = surfaceBlurSigma(
-      base: 15,
-      budget: budget,
-      type: BlurSurfaceType.drawerOrSheet,
-    );
+    final sigma = wallpaperGlassActive(ref)
+        ? wallpaperGlassSigma(context)
+        : surfaceBlurSigma(
+            base: 15,
+            budget: budget,
+            type: BlurSurfaceType.drawerOrSheet,
+          );
+    // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，运动期保持
+    // 玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        filter: cheapBackdropBlur(sigma),
         child: Container(
           decoration: BoxDecoration(
             color: surfaceFillWithBudget(glassColor, budget),
@@ -3481,8 +3496,10 @@ class _LyricLineItem {
 /// 逐字效果移植自桌面端方案：positionStream 约 200ms 一跳，直接驱动逐字
 /// 填充会呈阶梯跳变；这里用 Ticker 每帧外推（显示进度 = 锚点进度 + 锚点
 /// 以来的流逝时间），实现 60fps 平滑扫字。
+
 class _LyricsView extends ConsumerStatefulWidget {
   const _LyricsView({
+    super.key,
     required this.current,
     required this.visible,
     required this.onTap,
@@ -3499,7 +3516,7 @@ class _LyricsView extends ConsumerStatefulWidget {
 }
 
 class _LyricsViewState extends ConsumerState<_LyricsView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   List<_LyricLineItem> _lines = [];
   bool _loading = false;
   String? _loadedPath;
@@ -3507,15 +3524,27 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   /// 用户是否手动翻看/拖动了歌词
   bool _userInteracted = false;
+
   Timer? _recenterTimer;
   int _lastActiveIndex = -1;
 
-  /// 自动居中死区（px）：当前偏移与目标中心差值小于该值时不重新滚动。
-  /// 横屏视口更宽扁，行高占视口比例更大，死区收紧让居中更灵敏（build 时回写）。
-  double _centerDeadZone = 26;
+  /// 自动居中死区（px）已移除：RwaS 等字号样式下换行无布局跳变。
 
   /// 横屏歌词字号放大系数（build 时回写；竖屏 1.0 不变）。
   double _fontScale = 1.0;
+
+  // ---- RwaS 换行拽动（LyricPullEngine 移植）----
+  // 前进换行时，锚点之后的行在 550ms 窗口内先被“按住”（随滚动补偿位移），
+  // 再按 每行递增 delay 逐行弹回落位，形成整组歌词的弹性拽动。
+  bool _pullActive = false;
+  int _pullAnchor = -1;
+  double _pullDistance = 0;
+  int _pullDelayMs = 50; // 首行延迟，按滚动距离/视口比在 50→4ms 间取值
+  final Stopwatch _pullWatch = Stopwatch();
+  final Map<int, double> _pullOffsets = {};
+
+  /// 拽动位移修订号：行内 ListenableBuilder 监听，逐帧只重挂 Transform 不重建内容。
+  final ValueNotifier<int> _pullRevision = ValueNotifier<int>(0);
 
   /// 拖动选行播放（移植自 MusicFree）：视口中心对应的行索引，
   /// 拖动时显示中央指示条，点击播放按钮从该行开始播放。
@@ -3551,6 +3580,180 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 当前 build 渲染的活动行索引；_onTick 据此判断是否需要重建列表（换行才重建）。
   int _renderActiveIndex = -1;
 
+  /// 一次性精确居中待办：进入歌词页 / 开始播放（含恢复播放）/ 换歌后置位，
+  /// 等当前行完成实测布局后瞬时跳到视口正中（无动画，桌面版 AMLL 同款瞬移）。
+  /// 未完成前不做按比例估算的粗略滚动，避免落位后二次动画。
+  bool _pendingCenterJump = true;
+
+  /// 上一次歌词视口高度：横竖屏/分屏切换检测用。
+  double? _lastViewportHeight;
+
+  // ==================== 模糊行静态烘焙缓存（稳态省逐帧高斯模糊） ====================
+  // 稳态（换行/交互过渡结束）后，非活动行的"内容+模糊"几乎不变，却仍每帧
+  // 重跑 ImageFiltered 高斯模糊。烘焙方案：稳态行把清晰内容捕获成位图，一次性
+  // 施加 blur 后缓存，直接贴 RawImage；换行时只有距离变化的 2 行走实时滤镜。
+  // 过渡期（450ms，覆盖 300ms sigma/alpha 与 320ms scale 动画）走实时滤镜，
+  // 结束后烘焙落位，视觉无缝（同 sigma 逐像素等价）。
+
+  /// 稳态起始时间戳（ms）。早于该时刻 = 过渡期，走实时滤镜。
+  int _blurSteadyAtMs = 0;
+  Timer? _blurSteadyTimer;
+
+  /// 烘焙位图缓存（LRU）。key 见 _blurSnapshotKey。
+  final Map<String, _BlurredLineSnapshot> _blurSnapshots = {};
+
+  /// 上一次的活动行：自然换行时它从清晰退入模糊，是唯一保留 sigma 过渡
+  /// 动画的行（观众可感知）；其余行 sigma 只 ±1~2，直接跳变/贴近档图。
+  int _prevActiveIndex = -1;
+  static const int _blurSnapshotCap = 20;
+
+  /// 进行中的烘焙任务 key（防重复调度）。
+  final Set<String> _blurCapturing = {};
+
+  /// 捕获用 RepaintBoundary 的 GlobalKey（按行号复用，换歌清理）。
+  final Map<int, GlobalKey> _blurBoundaryKeys = {};
+
+  /// 是否处于稳态（可使用/可烘焙静态模糊位图）。
+  bool get _blurSteady =>
+      !_userInteracted &&
+      DateTime.now().millisecondsSinceEpoch >= _blurSteadyAtMs;
+
+  /// 进入过渡期：700ms 内走实时滤镜（覆盖 550ms 跟随滚动 + 300ms sigma/alpha
+  /// + 320ms scale 动画，避免滚动中途翻稳态），随后定时器触发重建切到烘焙位图。
+  void _enterBlurTransition() {
+    _blurSteadyAtMs = DateTime.now().millisecondsSinceEpoch + 700;
+    _blurSteadyTimer?.cancel();
+    _blurSteadyTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  String _blurSnapshotKey(
+      int index, double sigma, double mainFont, int widthBucket) {
+    return '${widget.current?.path}|$index|s${sigma.toStringAsFixed(1)}'
+        '|f${mainFont.toStringAsFixed(1)}|w$widthBucket'
+        '|t${_showTranslation ? 1 : 0}|r${_showRomaji ? 1 : 0}';
+  }
+
+  /// 近档兜底：同行、内容字段（字号/宽度/翻译/罗马音）一致、sigma 差 ≤1.5 的
+  /// 旧烘焙图。自然换行时每行 sigma 只 ±1~2，直接贴上一档位图在暗淡行
+  /// （alpha 0.16~0.28）上无可感差异——省掉换行后整屏重烘焙的 GPU 回读
+  /// 与实时滤镜窗口（这是 RwaS 用 GPU RenderEffect 免费得到、Flutter 需要
+  /// 烘焙来逼近的流畅度关键）。
+  _BlurredLineSnapshot? _findFallbackSnapshot(
+      int index, double sigma, double mainFont, int widthBucket) {
+    final pathPrefix = '${widget.current?.path}|$index|';
+    final tail = '|f${mainFont.toStringAsFixed(1)}|w$widthBucket'
+        '|t${_showTranslation ? 1 : 0}|r${_showRomaji ? 1 : 0}';
+    _BlurredLineSnapshot? best;
+    var bestDiff = 1.5;
+    for (final entry in _blurSnapshots.entries) {
+      final k = entry.key;
+      if (!k.startsWith(pathPrefix) || !k.endsWith(tail)) continue;
+      final parts = k.split('|');
+      if (parts.length < 3) continue;
+      final s = double.tryParse(parts[2].substring(1));
+      if (s == null) continue;
+      final diff = (s - sigma).abs();
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        best = entry.value;
+      }
+    }
+    return best;
+  }
+
+  /// 烘焙任务队列：稳态翻转时约 9 个可见行同时待烘焙，若同帧集中 toImage
+  /// （GPU 回读）+ blur 烘焙会造成换行后明显卡一下——改为每帧最多烘焙一行，
+  /// 逐帧摊平开销。
+  final List<_BlurCaptureTask> _blurCaptureQueue = [];
+  bool _blurCapturePumping = false;
+
+  /// 入队一次烘焙任务（_blurCapturing 防重复），并驱动逐帧泵。
+  void _scheduleBlurCapture(int index, String key, double sigma) {
+    if (_blurCapturing.contains(key)) return;
+    _blurCapturing.add(key);
+    _blurCaptureQueue.add(
+        _BlurCaptureTask(index: index, key: key, sigma: sigma));
+    _pumpBlurCaptures();
+  }
+
+  /// 每帧处理一个烘焙任务；处理完若队列非空，下一帧继续。
+  void _pumpBlurCaptures() {
+    if (_blurCapturePumping || !mounted) return;
+    if (_blurCaptureQueue.isEmpty) return;
+    _blurCapturePumping = true;
+    final task = _blurCaptureQueue.removeAt(0);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _captureBlurLine(task);
+      } finally {
+        _blurCapturePumping = false;
+        if (mounted && _blurCaptureQueue.isNotEmpty) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _pumpBlurCaptures());
+        }
+      }
+    });
+  }
+
+  /// 执行单个烘焙：捕获行内容位图 → 一次性施加 blur → 入缓存并触发重建。
+  Future<void> _captureBlurLine(_BlurCaptureTask task) async {
+    // 行可能在排队期间再次换行（sigma 已变）或用户开始翻看：丢弃过期任务。
+    if (!mounted || !_blurSteady) return;
+    final gk = _blurBoundaryKeys[task.index];
+    final boundary =
+        gk?.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null ||
+        !boundary.attached ||
+        !boundary.hasSize ||
+        boundary.debugNeedsPaint) {
+      return;
+    }
+    final dpr =
+        MediaQuery.of(context).devicePixelRatio.clamp(1.0, 2.0).toDouble();
+    final raw = await boundary.toImage(pixelRatio: dpr);
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawImage(
+      raw,
+      Offset.zero,
+      Paint()
+        ..imageFilter = ImageFilter.blur(sigmaX: task.sigma, sigmaY: task.sigma),
+    );
+    final picture = recorder.endRecording();
+    final blurred = await picture.toImage(raw.width, raw.height);
+    raw.dispose();
+    picture.dispose();
+    if (!mounted) {
+      blurred.dispose();
+      return;
+    }
+    // LRU 淘汰（Map 按插入序，重插实现"最近使用"）。
+    while (_blurSnapshots.length >= _blurSnapshotCap) {
+      _blurSnapshots.remove(_blurSnapshots.keys.first)?.dispose();
+    }
+    _blurSnapshots.remove(task.key)?.dispose();
+    _blurSnapshots[task.key] = _BlurredLineSnapshot(
+      image: blurred,
+      width: boundary.size.width,
+      height: boundary.size.height,
+    );
+    if (mounted) setState(() {});
+  }
+
+  void _clearBlurSnapshots() {
+    _blurSteadyTimer?.cancel();
+    _blurCaptureQueue.clear();
+    _blurCapturePumping = false;
+    for (final s in _blurSnapshots.values) {
+      s.dispose();
+    }
+    _blurSnapshots.clear();
+    _blurCapturing.clear();
+    _blurBoundaryKeys.clear();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -3574,12 +3777,89 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _progress.value = p;
       _lastActiveIndex = -1;
       _renderActiveIndex = -1;
+      _pendingCenterJump = true;
+      _clearBlurSnapshots();
+      _enterBlurTransition();
       _draggingIndexTimer?.cancel();
       _draggingIndex = null;
       _lineLayouts.clear();
       _syncTicker();
       _fetchLyrics();
+    } else if (!oldWidget.visible && widget.visible) {
+      // 歌词页重新可见：重新居中一次（页面常驻挂载时 visible 切换不走 initState）
+      _pendingCenterJump = true;
+      _enterBlurTransition();
     }
+  }
+
+  // ==================== RwaS 换行拽动（LyricPullEngine 移植） ====================
+
+  /// RwaS 减速插值（LyricPullSpec.interpolate）：距离远小于归一化常量，
+  /// factor≈1，退化为 1-(1-p)² 的二次减速。
+  static double _pullEase(double p) {
+    p = p.clamp(0.0, 1.0);
+    return 1.0 - (1.0 - p) * (1.0 - p);
+  }
+
+  /// 前进换行时启动拽动：后续行先按住、再逐行弹回。
+  void _beginPull(int anchor, double distancePx, double viewport) {
+    if (distancePx <= 1 || viewport <= 0) {
+      _cancelPull();
+      return;
+    }
+    _pullActive = true;
+    _pullAnchor = anchor;
+    _pullDistance = distancePx;
+    _pullOffsets.clear(); // 丢弃旧一轮拽动残留（含已回退到锚点上方的行）
+    // LyricPullSpec.itemDelayMs：距离占视口比例越大 delay 越小（50→4ms）。
+    final ratio = (distancePx.abs() / viewport).clamp(0.0, 1.0);
+    _pullDelayMs = (50 + ratio * (4 - 50)).round();
+    _pullWatch
+      ..reset()
+      ..start();
+  }
+
+  void _cancelPull() {
+    if (!_pullActive && _pullOffsets.isEmpty) return;
+    _pullActive = false;
+    _pullOffsets.clear();
+    _pullRevision.value++;
+  }
+
+  /// 每帧推进拽动位移（_onTick 驱动，仅播放中运行）。
+  void _advancePull() {
+    if (!_pullActive) return;
+    const durationMs = 550;
+    final t = _pullWatch.elapsedMilliseconds;
+    final globalE = _pullEase(t / durationMs);
+    final contribution = _pullDistance * globalE;
+    var changed = _pullOffsets.isNotEmpty;
+    var previous = 0.0; // 行序单调钳制：后行不能越过前行（RwaS 同款不变式）
+    for (var i = _pullAnchor + 1; i <= _pullAnchor + 16; i++) {
+      if (i >= _lines.length) break;
+      final startMs = _pullDelayMs * (i - _pullAnchor);
+      double offset;
+      if (t < startMs) {
+        offset = contribution; // 等待期：完全抵消列表滚动，视觉上按住不动
+      } else {
+        final itemE = _pullEase((t - startMs) / durationMs);
+        offset = (contribution - _pullDistance * itemE).clamp(0.0, double.infinity);
+      }
+      // 单调钳制（取与前行 offset 的较大者）：后行不能越过前行
+      final clamped = math.max(offset, previous);
+      previous = clamped;
+      if (_pullOffsets[i] != clamped) {
+        _pullOffsets[i] = clamped;
+        changed = true;
+      }
+    }
+    // 结束条件：全局窗口 + 最大行延迟均已过
+    if (t >= durationMs + _pullDelayMs * 16) {
+      _pullActive = false;
+      _pullOffsets.clear();
+      changed = true;
+    }
+    if (changed) _pullRevision.value++;
   }
 
   /// 播放进度锚点更新（positionStream 约 200ms 一跳）。与外推值偏差过大视为
@@ -3606,7 +3886,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     // 活动行切换时重建列表（seek/暂停跳行也即时刷新高亮）。
     final idx = _activeIndexFor(_displayPos);
     if (idx != _renderActiveIndex) {
+      _prevActiveIndex = _renderActiveIndex;
       _renderActiveIndex = idx;
+      _enterBlurTransition();
       if (mounted) setState(() {});
     }
   }
@@ -3615,22 +3897,29 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   void dispose() {
     _ticker.dispose();
     _progress.dispose();
+    _pullRevision.dispose();
     _recenterTimer?.cancel();
     _draggingIndexTimer?.cancel();
+    _clearBlurSnapshots();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
   /// 每帧外推平滑进度并刷新逐字填充。
   void _onTick(Duration _) {
+    _advancePull();
     final next = _anchorPos + _anchorWatch.elapsedMilliseconds / 1000.0;
     if ((next - _displayPos).abs() < 0.002) return;
     _displayPos = next;
     _progress.value = next;
     _autoScrollToActiveLine();
     // 仅活动行切换时重建列表（换行才 setState，逐字染色走 ValueListenableBuilder）。
+    // 注意：自然换行【不】进入模糊过渡期（_enterBlurTransition）——那会让全部
+    // 非活动行退回实时高斯 700ms，是换行掉帧的大头。稳态下各行换行后直接贴
+    // 近档兜底图（见 _findFallbackSnapshot），只有旧活动行走一次清晰→模糊过渡。
     final idx = _activeIndexFor(_displayPos);
     if (idx != _renderActiveIndex) {
+      _prevActiveIndex = _renderActiveIndex;
       _renderActiveIndex = idx;
       if (mounted) setState(() {});
     }
@@ -3644,6 +3933,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _anchorPos = st.position;
       _displayPos = _anchorPos;
       _progress.value = _anchorPos;
+      // （重新）开始播放：触发一次精确居中（恢复播放/进入歌词页共用此分支）
+      _pendingCenterJump = true;
       _anchorWatch
         ..reset()
         ..start();
@@ -3652,15 +3943,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _ticker.stop();
       _anchorWatch.stop();
       if (!st.isPlaying) {
-        // 暂停：定格在锚点
+        // 暂停：定格在锚点，取消进行中的拽动（RwaS isPlaying=false 同款）
         _displayPos = _anchorPos;
         _progress.value = _anchorPos;
+        _cancelPull();
       }
     }
   }
 
   void _onUserScrollStart() {
     _recenterTimer?.cancel();
+    _cancelPull();
     if (!_userInteracted) {
       setState(() {
         _userInteracted = true;
@@ -3670,8 +3963,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   void _scheduleAutoRecenter() {
     _recenterTimer?.cancel();
-    // 用户停止翻看 4 秒后，自动平滑对齐重聚焦到当前播放行
-    _recenterTimer = Timer(const Duration(seconds: 4), () {
+    // 用户停止翻看 1.8 秒后自动重聚焦当前行（对齐 RwaS follow 恢复延时）。
+    _recenterTimer = Timer(const Duration(milliseconds: 1800), () {
       if (mounted && _userInteracted) {
         _recenterToActiveLine();
       }
@@ -3684,6 +3977,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       setState(() {
         _userInteracted = false;
       });
+      // 模糊从 0 弹回目标值有 300ms 动画，过渡期内走实时滤镜
+      _enterBlurTransition();
       _autoScrollToActiveLine(force: true);
     }
   }
@@ -3929,9 +4224,53 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     return activeIndex;
   }
 
+  /// 一次性精确居中：等当前行实测布局后瞬时跳到视口正中（无动画）。
+  /// 目标行尚未被测量时按比例粗跳一次拉进视口，随即清除待办交还常规跟随——
+  /// 绝不长期锁住。对齐 RwaS LyricPlaybackState 数据驱动模型：活跃行始终由
+  /// position 重算、任何锚点变化都驱动一次滚动，不被"上一次是否精确落位"门闩阻塞。
+  void _tryPendingCenterJump() {
+    if (_userInteracted) return; // 用户正在手动翻看，不打扰
+    if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
+    final idx = _activeIndexFor(_displayPos);
+    final viewport = _scrollCtrl.position.viewportDimension;
+    if (viewport <= 0) return;
+    final layout = _lineLayouts[idx];
+    if (layout == null) {
+      // 目标活动行尚未被 LazyList 构造测量——典型于歌曲已播到中段才打开/重开
+      // 歌词页，当前行远在视口之外（比例粗跳的错位往往超过 200px 缓存区，该行
+      // 仍不会进入 _lineLayouts）。必须在此清除 _pendingCenterJump：否则后续每次
+      // _autoScrollToActiveLine 都被这扇门短路，歌词停在顶部、高亮行在屏外，
+      // 且"下一句也不跳转"。向 RwaS 看齐：粗跳一次即交还常规跟随路径，
+      // 活跃行每推进一格都由 _autoScrollToActiveLine 重新滚动逼近，不再卡死。
+      if (idx >= 0 && _lines.length > 1) {
+        final maxScroll = _scrollCtrl.position.maxScrollExtent;
+        final target = (maxScroll * idx / (_lines.length - 1))
+            .clamp(0.0, maxScroll);
+        if ((target - _scrollCtrl.offset).abs() >= 1) {
+          _scrollCtrl.jumpTo(target); // jumpTo 无动画，避免"先估再动画"两次移动
+        }
+      }
+      _pendingCenterJump = false; // 一次性尽力而为，不长期阻塞跟随
+      return;
+    }
+    _pendingCenterJump = false;
+    _lastActiveIndex = idx;
+    final target = (layout.$1 + layout.$2 / 2 - viewport / 2)
+        .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+    if ((target - _scrollCtrl.offset).abs() >= 1) {
+      _scrollCtrl.jumpTo(target);
+    }
+  }
+
   void _autoScrollToActiveLine({bool force = false}) {
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
     if (_userInteracted && !force) return; // 用户正在手动翻看歌词中，暂不打扰
+
+    // 一次性精确居中优先（seek 的 force 路径直接走动画滚动）
+    if (_pendingCenterJump && !force) {
+      _tryPendingCenterJump();
+      return;
+    }
 
     final curMs = ((_displayPos - _offsetMs / 1000.0) * 1000).toInt();
 
@@ -3945,12 +4284,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
 
     if (activeIndex == _lastActiveIndex && !force) return;
+    final prevIndex = _lastActiveIndex;
     _lastActiveIndex = activeIndex;
 
     final maxScroll = _scrollCtrl.position.maxScrollExtent;
     final viewport = _scrollCtrl.position.viewportDimension;
 
-    // 精确居中：用该行实测布局（内容坐标顶 + 高/2）对齐视口中心；
+    // 精确居中（弦予样式）：用该行实测布局（内容坐标顶 + 高/2）对齐视口中心；
     // 行尚未构建测量时（如长距离 seek）退回按比例估算。
     double targetOffset;
     final layout = _lineLayouts[activeIndex];
@@ -3962,20 +4302,26 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
     targetOffset = targetOffset.clamp(0.0, maxScroll);
 
-    // 死区：当前偏移已经很接近目标中心时不再重新滚动，避免每换一行都从头
-    // 发起新动画、并和活动行字号变化引起的布局重排“打架”，让逐行推进更稳。
-    // 横屏死区收紧（[_centerDeadZone]，居中更灵敏）；force（seek/重新聚焦）永远执行。
-    final current = _scrollCtrl.offset;
-    if (!force && (targetOffset - current).abs() < _centerDeadZone) return;
+    // RwaS 换行拽动：仅前进自然换行（播放中、非 seek、非用户翻看）触发。
+    final isPlaying = ref.read(playerProvider).isPlaying;
+    if (force || !isPlaying || _userInteracted || activeIndex <= prevIndex) {
+      _cancelPull();
+    } else if (layout != null) {
+      _beginPull(activeIndex, targetOffset - _scrollCtrl.offset, viewport);
+    }
 
-    // 柔和缓动：时长随滚动距离自适应（行间短滑轻快、长距 seek 舒缓，
-    // 下限 160ms 防近距闪跳），fastOutSlowIn 出发快、落位稳。
-    final distance = (targetOffset - current).abs();
-    final durationMs = (110 + distance * 0.9).clamp(160.0, 640.0).round();
+    final current = _scrollCtrl.offset;
+    if (!force && (targetOffset - current).abs() < 1) return;
+
+    // RwaS 跟随节奏（LyricPullSpec/LyricFollowEasing）：固定 550ms。
+    // 拽动激活时列表滚动与 pull 全局插值同用二次减速曲线（保证被"按住"的行
+    // 纹丝不动），否则用 LyricFollowEasing CubicBezier(0.40, 0.10, 0, 1)。
     _scrollCtrl.animateTo(
       targetOffset,
-      duration: Duration(milliseconds: durationMs),
-      curve: Curves.fastOutSlowIn,
+      duration: const Duration(milliseconds: 550),
+      curve: _pullActive
+          ? Curves.easeOutQuad
+          : const Cubic(0.40, 0.10, 0.00, 1.00),
     );
   }
 
@@ -3991,7 +4337,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       playerProvider.select((s) => s.isPlaying),
       (prev, next) => _syncTicker(),
     );
-    final scheme = Theme.of(context).colorScheme;
     // 歌词样式设置（移植自 MF LyricOperations）：字号档位 / 翻译开关 / 时间偏移。
     // 存到字段供 _onTick → _autoScrollToActiveLine 等非 build 路径使用。
     final settings = ref.watch(settingsProvider).valueOrNull;
@@ -4003,18 +4348,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         ? settings!.lyricFontName
         : null;
 
-    // 横屏（宽≥高×1.05，与壳层判定一致）：歌词字号整体放大、居中死区收紧。
+    // 横屏（宽≥高×1.05，与壳层判定一致）：歌词字号整体放大。
     final mqSize = MediaQuery.of(context).size;
     final isLandscape = mqSize.width >= mqSize.height * 1.05;
     _fontScale = isLandscape ? 1.18 : 1.0;
-    _centerDeadZone = isLandscape ? 12 : 26;
 
-    // 档位 → 字号（对应 MF fontSizeMap 的小/标准/大/特大）。
-    final inactiveFont =
-        [14.0, 15.5, 17.0, 19.0][_fontSizeIdx] * _fontScale;
-    final activeFont = inactiveFont + 2.5;
-    final transFont = inactiveFont - 2;
-    final romajiFont = inactiveFont - 1.5;
+    // RwaS 等字号样式：活动行不变号，靠缩放（1.0↔0.92）与亮度区分。
+    // 字号继承 RwaS 量级：主行档位 24/28/32/36（RwaS 默认 28sp，范围 24..40），
+    // 副行 = 主行 62%（RwaS secondarySize 比例，钳制 15..25）。
+    final mainFont = [24.0, 28.0, 32.0, 36.0][_fontSizeIdx] * _fontScale;
+    final transFont = (mainFont * 0.62).clamp(15.0, 25.0);
+    final romajiFont = transFont;
 
     // 活动行索引：build 与 ticker 共用同一计算，ticker 据此判断换行才重建。
     final activeIndex = _activeIndexFor(_displayPos);
@@ -4049,14 +4393,26 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       );
     } else {
       // 头尾空白区 = 半视口 − 半行高：首句/末句也能精确落在视口中心，
-      // 不再被滚动边界 clamp 顶到上/下缘。行高按当前字号档位估算
-      // （主行 + 翻译/罗马音行），LayoutBuilder 取实际视口高。
-      final typicalH = activeFont * 1.4 + 20 +
-          (_showTranslation ? transFont * 1.4 + 4 : 0) +
-          (_showRomaji ? romajiFont * 1.2 + 4 : 0);
+      // 不被滚动边界 clamp 顶到上/下缘。行高按当前字号档位估算。
+      final typicalH = mainFont * 1.35 +
+          (_showRomaji ? romajiFont * 1.2 + 5 : 0) +
+          (_showTranslation ? transFont * 1.35 + 6 : 0);
       content = LayoutBuilder(
         builder: (context, constraints) {
           final viewport = constraints.maxHeight;
+          // 横竖屏/分屏切换：视口高度变化后滚动偏移不再居中、行高随宽度
+          // 换行变化，重新执行一次性精确居中（等新尺寸下实测布局后瞬时跳回）。
+          // 行布局缓存按内容坐标记录，但行高会因宽度变化而变，一并清掉重测。
+          if (_lastViewportHeight != null &&
+              (_lastViewportHeight! - viewport).abs() > 1) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _lineLayouts.clear();
+              _pendingCenterJump = true;
+              _tryPendingCenterJump();
+            });
+          }
+          _lastViewportHeight = viewport;
           final blank = viewport / 2 - typicalH / 2;
           final topPad = blank < 20 ? 20.0 : blank;
           final bottomPad = blank < 40 ? 40.0 : blank;
@@ -4074,7 +4430,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         child: ListView.builder(
           controller: _scrollCtrl,
           // 头尾空白区：正在唱的行始终可以居中（见上方 typicalH 注释）。
-          padding: EdgeInsets.fromLTRB(24, topPad, 24, bottomPad),
+          // 水平内边距对齐 RwaS lineHorizontalPadding 28dp。
+          padding: EdgeInsets.fromLTRB(28, topPad, 28, bottomPad),
           // 缓存视口外约 200px 的行：滚动时只搬运已构建/已测量（onMeasured 回调
           // 已填充布局缓存）的行，拖动选行定位不依赖现建现量。
           scrollCacheExtent: ScrollCacheExtent.pixels(200),
@@ -4086,114 +4443,200 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           itemBuilder: (context, idx) {
             final line = _lines[idx];
             final isActive = idx == activeIndex;
-            final isPrimaryColor = isActive;
             final isDragging = idx == _draggingIndex;
-            // 距活动行越远越淡：近邻亮、远处暗，滚动时形成纵向景深渐变
-            // （配合 AnimatedDefaultTextStyle 颜色平滑过渡，不硬切）。
+            // RwaS 距离衰减（lyricLineVisuals）：近邻 0.42 / 次邻 0.28 / 其余 0.16。
             final dist = (idx - activeIndex).abs();
-            final inactiveAlpha = dist <= 1
-                ? 0.55
+            final inactiveAlpha = dist == 1
+                ? 0.42
                 : dist == 2
-                    ? 0.45
-                    : dist == 3
-                        ? 0.34
-                        : 0.24;
+                    ? 0.28
+                    : 0.16;
+            // 桌面版 AMLL 模糊规则（PatchedLyricPlayer blurLevel）：除活动行外
+            // 全部模糊且常驻不落（一次只显示一行清晰）——下方（未唱）行
+            // sigma = 1+dist，上方（已唱）行再 +1（糊得更狠），钳 8；
+            // 仅用户手动翻看时归 0（RwaS userScrolling 同款，省光栅化）。
+            final passed = idx < activeIndex;
+            final blurSigma = (!_userInteracted && !isActive)
+                ? math.min(1.0 + dist + (passed ? 1.0 : 0.0), 8.0)
+                : 0.0;
+
+            Widget lineChild = Column(
+              children: [
+                // 罗马音在主行上方（RwaS ComposeLyricLine 排布）
+                if (_showRomaji &&
+                    line.romaji != null &&
+                    line.romaji!.isNotEmpty) ...[
+                  Text(
+                    line.romaji!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: romajiFont,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.34),
+                      height: 1.2,
+                      fontFamily: lyricFontFamily,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                ],
+                // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
+                if (isActive && line.words.isNotEmpty)
+                  // 活动行卡拉OK独立成图层 + ValueListenableBuilder 局部刷新：
+                  // 逐字漫过只重建这一行的染色，不再整页每帧 setState。
+                  RepaintBoundary(
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: _progress,
+                      builder: (context, pos, _) {
+                        return Wrap(
+                          alignment: WrapAlignment.center,
+                          children: [
+                            for (final w in line.words)
+                              _buildKaraokeWordWidget(
+                                w,
+                                pos - _offsetMs / 1000.0,
+                                mainFont,
+                                lyricFontFamily,
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  )
+                else
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    style: TextStyle(
+                      // RwaS 等字号：主行恒定字号 w700；全白配色，
+                      // 亮度随距离衰减（拖动选中行提亮为纯白）。
+                      fontSize: mainFont,
+                      fontWeight: FontWeight.w700,
+                      color: isDragging
+                          ? Colors.white
+                          : Colors.white
+                              .withValues(alpha: isActive ? 1.0 : inactiveAlpha),
+                      height: 1.35,
+                      fontFamily: lyricFontFamily,
+                    ),
+                    child: Text(line.text, textAlign: TextAlign.center),
+                  ),
+                if (_showTranslation &&
+                    line.translation != null &&
+                    line.translation!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    line.translation!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: transFont,
+                      fontWeight: FontWeight.w500,
+                      color: isDragging
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : Colors.white
+                              .withValues(alpha: isActive ? 0.58 : 0.34),
+                      height: 1.35,
+                      fontFamily: lyricFontFamily,
+                    ),
+                  ),
+                ],
+              ],
+            );
+
+            // RwaS 行缩放（lyricLineVisuals spring 0.82/340 近似）：
+            // 活动行 1.0，其余 0.92；绘制层变换不影响布局测量。
+            lineChild = AnimatedScale(
+              scale: isActive ? 1.0 : 0.92,
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
+              child: lineChild,
+            );
+
+            // 景深模糊层（桌面版 AMLL：除活动行外全部模糊、一次只显示一行清晰）。
+            // 稳态行贴烘焙位图（_blurSnapshots，逐帧高斯模糊归零）；过渡期/
+            // 烘焙未就绪行走实时 ImageFiltered（sigma 连续动画，绝不卸载重挂）。
+            // 位移层放在模糊层之外：平移与高斯模糊可交换，烘焙内容不含位移。
+            if (dist >= 1) {
+              final steady = _blurSteady;
+              final widthBucket = constraints.maxWidth.isFinite
+                  ? constraints.maxWidth.round()
+                  : 0;
+              final snapKey =
+                  _blurSnapshotKey(idx, blurSigma, mainFont, widthBucket);
+              // 稳态命中优先精确档；未命中贴近档兜底图（sigma 差 ≤1.5 无感），
+              // 都没有才走实时滤镜。
+              final snap = steady
+                  ? (_blurSnapshots[snapKey] ??
+                      _findFallbackSnapshot(
+                          idx, blurSigma, mainFont, widthBucket))
+                  : null;
+              if (snap != null) {
+                // 命中：直接贴烘焙位图（布局尺寸与原内容一致）
+                lineChild = RawImage(
+                  image: snap.image,
+                  width: snap.width,
+                  height: snap.height,
+                  fit: BoxFit.fill,
+                );
+              } else {
+                if (steady) {
+                  // 稳态未命中：边界捕获清晰内容（置于滤镜内侧），
+                  // post-frame 烘焙一次性施加 blur 后入缓存
+                  lineChild = RepaintBoundary(
+                    key: _blurBoundaryKeys.putIfAbsent(idx, GlobalKey.new),
+                    child: lineChild,
+                  );
+                  _scheduleBlurCapture(idx, snapKey, blurSigma);
+                }
+                // 只有刚从清晰退入模糊的旧活动行保留 300ms sigma 过渡
+                //（观众可感知的动效）；其余行 sigma 跳变直出，不再逐帧实时
+                // 高斯整屏铺开。
+                if (idx == _prevActiveIndex) {
+                  lineChild = TweenAnimationBuilder<double>(
+                    tween: Tween(end: blurSigma.toDouble()),
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, sigma, child) => sigma <= 0.1
+                        ? child!
+                        : ImageFiltered(
+                            imageFilter: ImageFilter.blur(
+                                sigmaX: sigma, sigmaY: sigma),
+                            child: child,
+                          ),
+                    child: lineChild,
+                  );
+                } else {
+                  lineChild = blurSigma <= 0.1
+                      ? lineChild
+                      : ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                              sigmaX: blurSigma, sigmaY: blurSigma),
+                          child: lineChild,
+                        );
+                }
+              }
+            }
+
+            // RwaS 纵向位移（lyricLineVisuals graphicsLayer）：
+            // 静态项 = 各行向锚点轻微压缩（±2dp×距离，钳 ±4）；
+            // 拽动项 = 前进换行时后续行先按住再逐行弹回（_pullOffsets 逐帧更新）。
+            // ListenableBuilder 只重挂 Transform，不重建行内容。
+            lineChild = ListenableBuilder(
+              listenable: _pullRevision,
+              child: lineChild,
+              builder: (context, child) {
+                final signed = (idx - activeIndex).clamp(-4, 4);
+                final dy = signed * -2.0 + (_pullOffsets[idx] ?? 0.0);
+                if (dy == 0) return child!;
+                return Transform.translate(offset: Offset(0, dy), child: child);
+              },
+            );
 
             return _MeasuredLine(
               index: idx,
               onMeasured: _onLineMeasured,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Column(
-                  children: [
-                    // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
-                    if (isActive && line.words.isNotEmpty)
-                      // 活动行 ShaderMask 独立成图层 + ValueListenableBuilder 局部刷新：
-                      // 逐字漫过只重建这一行的染色，不再整页每帧 setState。
-                      RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: _progress,
-                          builder: (context, pos, _) {
-                            return Wrap(
-                              alignment: WrapAlignment.center,
-                              children: [
-                                for (final w in line.words)
-                                  _buildKaraokeWordWidget(
-                                    w,
-                                    pos - _offsetMs / 1000.0,
-                                    scheme,
-                                    activeFont,
-                                    lyricFontFamily,
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      )
-                    else
-                      AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 220),
-                        style: TextStyle(
-                          fontSize: isActive ? activeFont : inactiveFont,
-                          fontWeight: isActive
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          // 拖动选中行：提亮为白（对应 MusicFree 的 light 样式）；
-                          // 活动行品牌红，其余白色随距离渐淡（不受主题色控制）。
-                          color: isDragging
-                              ? Colors.white
-                              : isPrimaryColor
-                              ? const Color(0xFFEC4141)
-                              : Colors.white.withValues(alpha: inactiveAlpha),
-                          height: 1.4,
-                          fontFamily: lyricFontFamily,
-                        ),
-                        child: Text(line.text, textAlign: TextAlign.center),
-                      ),
-                    if (_showRomaji &&
-                        line.romaji != null &&
-                        line.romaji!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        line.romaji!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: isActive ? romajiFont + 1 : romajiFont,
-                          fontWeight: isActive
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: isDragging
-                              ? Colors.white.withValues(alpha: 0.75)
-                              : isPrimaryColor
-                              ? const Color(0xFFEC4141).withValues(alpha: 0.75)
-                              : Colors.white.withValues(alpha: inactiveAlpha * 0.7),
-                          height: 1.2,
-                          fontFamily: lyricFontFamily,
-                        ),
-                      ),
-                    ],
-                    if (_showTranslation &&
-                        line.translation != null &&
-                        line.translation!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        line.translation!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: isActive ? transFont + 1.5 : transFont,
-                          fontWeight: isActive
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: isDragging
-                              ? Colors.white.withValues(alpha: 0.8)
-                              : isPrimaryColor
-                              ? const Color(0xFFEC4141).withValues(alpha: 0.8)
-                              : Colors.white.withValues(alpha: inactiveAlpha * 0.78),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                child: lineChild,
               ),
             );
           },
@@ -4201,6 +4644,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       );
         },
       );
+      // 暂停态进入歌词页：逐帧时钟未运行，靠 post-frame 兜底完成一次性精确居中
+      if (_pendingCenterJump) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _tryPendingCenterJump();
+        });
+      }
     }
 
     return GestureDetector(
@@ -4516,44 +4965,94 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   Widget _buildKaraokeWordWidget(
     _LyricWordItem word,
     double position,
-    ColorScheme scheme,
     double fontSize,
     String? fontFamily,
   ) {
     final duration = math.max(0.001, word.end - word.start);
     final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
 
-    const activeColor = Color(0xFFEC4141);
-    final inactiveColor = scheme.onSurface.withValues(alpha: 0.45);
+    // RwaS 卡拉OK配色：高亮白 / 未唱白 28%（dimColor），无品牌红。
+    const highlightColor = Colors.white;
+    final dimColor = Colors.white.withValues(alpha: 0.28);
 
     final style = TextStyle(
       fontSize: fontSize,
       fontWeight: FontWeight.w700,
-      height: 1.4,
+      height: 1.35,
       fontFamily: fontFamily,
     );
 
     if (progress <= 0) {
-      return Text(word.text, style: style.copyWith(color: inactiveColor));
+      return Text(word.text, style: style.copyWith(color: dimColor));
     }
 
     if (progress >= 1.0) {
-      return Text(word.text, style: style.copyWith(color: activeColor));
+      // 已唱完的词带白色辉光（RwaS glowEnabled 的简化对应：已完成词加白晕）。
+      return Text(
+        word.text,
+        style: style.copyWith(
+          color: highlightColor,
+          shadows: [
+            Shadow(
+              color: Colors.white.withValues(alpha: 0.35),
+              blurRadius: 10,
+            ),
+          ],
+        ),
+      );
     }
 
-    // 正在唱当前词：渐变染色漫过 (ShaderMask)。
+    // 正在唱当前词：渐变染色漫过 (ShaderMask) + 轻微跳动。
+    // 跳动 = 进度驱动的正弦包络：起唱快速上浮并微放大，唱到中段最高，
+    // 收尾落回（RwaS KaraokeLyricLine wordLift / AMLL word pop 的简化对应）。
     // 填充前沿之后带 10% 宽度的羽化软边，对应桌面端 AMLL 的 wordFadeWidth 扫字效果。
     final featherEnd = (progress + 0.1).clamp(0.0, 1.0);
-    return ShaderMask(
-      shaderCallback: (bounds) {
-        return LinearGradient(
-          colors: [activeColor, inactiveColor],
-          stops: [progress, featherEnd],
-        ).createShader(bounds);
-      },
-      child: Text(word.text, style: style.copyWith(color: Colors.white)),
+    final pop = math.sin(progress * math.pi);
+    return Transform.translate(
+      offset: Offset(0, -2.5 * pop),
+      child: Transform.scale(
+        scale: 1.0 + 0.05 * pop,
+        child: ShaderMask(
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              colors: [highlightColor, dimColor],
+              stops: [progress, featherEnd],
+            ).createShader(bounds);
+          },
+          child: Text(word.text, style: style.copyWith(color: Colors.white)),
+        ),
+      ),
     );
   }
+}
+
+/// 模糊行稳态烘焙位图：清晰内容捕获后一次性施加 blur 的结果。
+/// width/height 为逻辑像素（与行内容布局尺寸一致，贴图时保证布局不变）。
+class _BlurredLineSnapshot {
+  _BlurredLineSnapshot({
+    required this.image,
+    required this.width,
+    required this.height,
+  });
+
+  final ui.Image image;
+  final double width;
+  final double height;
+
+  void dispose() => image.dispose();
+}
+
+/// 单个烘焙任务（逐帧队列消费）：目标行、缓存 key、烘焙用的 sigma。
+class _BlurCaptureTask {
+  _BlurCaptureTask({
+    required this.index,
+    required this.key,
+    required this.sigma,
+  });
+
+  final int index;
+  final String key;
+  final double sigma;
 }
 
 /// 行测量包装（拖动选行播放）：布局后上报该行在滚动内容中的偏移与高度。

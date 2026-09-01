@@ -1,0 +1,42 @@
+# Hand-authored baseline profile for 弦予音乐 (XianYu-Music) cold start & first interaction.
+#
+# 说明：Flutter 的业务逻辑（Dart）经 AOT 编译进 libapp.so，不由 Baseline Profile 管辖；
+# 本文件覆盖的是冷启动/首帧/进本地库/开播放页期间真正触达的 DeX 字节码面：
+#   1) 应用自家 Kotlin/Java 胶水（com/xianyumusic/**，同时覆盖 release 与 debug 包名）；
+#   2) Flutter 引擎 embedding（io/flutter/**，FlutterActivity / FlutterJNI / engine 等在首帧前触达）；
+#   3) 引擎创建时 GeneratedPluginRegistrant 会实例化的插件类。
+#
+# 格式为 AGP 支持的通配符 simple 格式（HSP=热启动配置, SPL/L=启动类加载，
+# `**->**(**)` 表示某类下的任意方法），AGP 打包时聚合进 assets/dexopt/baseline.prof，
+# 在 API 29+ 上预编译，减少冷启动 JIT 解释执行。对齐 RwaS 项目的 baseline-prof.txt 写法。
+
+# ---- 应用自家代码 ----
+HSPLcom/xianyumusic/**->**(**)
+SPLcom/xianyumusic/**->**(**)
+Lcom/xianyumusic/**
+
+# ---- Flutter 引擎 embedding 胶水（首帧前触达，热启动配置） ----
+HSPLio/flutter/**->**(**)
+Lio/flutter/**
+
+# ---- 引擎创建即注册的插件 ----
+# 首测交互（进本地库 × 播放起播）即触达的插件，配方法级热启动规则：
+HSPLcom/ryanheise/audioservice/**->**(**)
+HSPLcom/ryanheise/audio_session/**->**(**)
+HSPLcom/ryanheise/just_audio/**->**(**)
+HSPLcom/tekartik/sqflite/**->**(**)
+HSPLio/flutter/plugins/sharedpreferences/**->**(**)
+HSPLio/flutter/plugins/flutter_plugin_android_lifecycle/**->**(**)
+
+# 其余在引擎创建时仅做类加载（registerWith 实例化），完整路径到二级交互才触达，
+# 只配类加载规则，避免把整个插件大方法面塞进 profile 撑爆上限：
+Lcom/mr/flutter/plugin/filepicker/**
+Lio/flutter/plugins/imagepicker/**
+Lio/flutter/plugins/urllauncher/**
+Lcom/github/dart_lang/jni/**
+Lcom/github/dart_lang/jni_flutter/**
+Lcom/baseflow/permissionhandler/**
+Lcom/llfbandit/record/**
+Lio/github/v7lin/tencent_kit/**
+Ldev/steenbakker/mobile_scanner/**
+Ldev/fluttercommunity/plus/share/**

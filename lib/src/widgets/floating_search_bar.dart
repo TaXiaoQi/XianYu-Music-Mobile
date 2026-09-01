@@ -124,9 +124,10 @@ class FloatingGlassSurface extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 8,
+          base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
+          crispAtRest: true,
         ),
         backgroundColor: bilipaiGlassTint(isDark),
         specular: bilipaiSpecularOf(quality),
@@ -211,9 +212,10 @@ class BiliPaiPill extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
-          base: 8,
+          base: 4,
           budget: budget,
           type: BlurSurfaceType.header,
+          crispAtRest: true,
         ),
         backgroundColor: bilipaiGlassTint(isDark),
         specular: bilipaiSpecularOf(quality),
@@ -239,26 +241,36 @@ class BiliPaiPill extends ConsumerWidget {
 class BiliPaiIconButton extends StatelessWidget {
   const BiliPaiIconButton({
     super.key,
-    required this.icon,
+    this.icon,
+    this.iconChild,
     this.onTap,
     this.color,
     this.tooltip,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconChild;
   final VoidCallback? onTap;
   final Color? color;
   final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
+    // IconTheme 包裹：内置 Icon 用显式 color/size；iconChild（如自定义 SkinIcon）
+    // 不传 color 时也能从 IconTheme 继承按钮标准色与尺寸。
     final iconWidget = SizedBox(
       width: 40,
       height: 40,
-      child: Icon(
-        icon,
-        size: 20,
-        color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+      child: IconTheme(
+        data: const IconThemeData(size: 20).copyWith(
+          color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        child: iconChild ??
+            Icon(
+              icon,
+              size: 20,
+              color: color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
       ),
     );
     return BiliPaiPill(
@@ -316,6 +328,176 @@ class FloatingTopBar extends StatelessWidget {
         for (final action in actions) ...[
           const SizedBox(width: 10),
           action,
+        ],
+      ],
+    );
+  }
+}
+
+/// 悬浮搜索输入框胶囊：与 [FloatingTopBar] 同材质口径的 44 高玻璃胶囊，内嵌
+/// 一个 [TextField]。供搜索页 / 搜索结果页 / 本地页的悬浮顶栏复用（替代固定
+/// GlassTopBar 内的实色搜索框）。
+class FloatingGlassSearchField extends ConsumerWidget {
+  const FloatingGlassSearchField({
+    super.key,
+    required this.controller,
+    this.hint,
+    this.readOnly = false,
+    this.autofocus = false,
+    this.isDense = true,
+    this.onChanged,
+    this.onTap,
+    this.onSubmitted,
+    this.showClear = false,
+    this.onClear,
+  });
+
+  final TextEditingController controller;
+  final String? hint;
+  final bool readOnly;
+  final bool autofocus;
+
+  /// 直接使用 [TextField.isDense] 语义，作为朴素输入框（非整页搜索框）时关闭。
+  final bool isDense;
+
+  final ValueChanged<String>? onChanged;
+  final VoidCallback? onTap;
+  final ValueChanged<String>? onSubmitted;
+  final bool showClear;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return FloatingGlassSurface(
+      radius: 22,
+      child: SizedBox(
+        height: 44,
+        child: TextField(
+          controller: controller,
+          readOnly: readOnly,
+          autofocus: autofocus,
+          textInputAction: TextInputAction.search,
+          style: TextStyle(
+            fontSize: 14.5,
+            color: scheme.onSurface,
+          ),
+          // 字段被高 44 的前缀图标/清除按钮撑高后，dense 输入框默认顶部对齐，
+          // 文字会偏上；显式居中让键入文字与 hint 都垂直居中。
+          textAlignVertical: TextAlignVertical.center,
+          cursorColor: scheme.primary,
+          onChanged: onChanged,
+          onTap: onTap,
+          onSubmitted: onSubmitted,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(
+              fontSize: 14.5,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+            isDense: isDense,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 15),
+            border: InputBorder.none,
+            prefixIcon: Icon(Icons.search, size: 19, color: scheme.onSurfaceVariant),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 40, minHeight: 44),
+            suffixIcon: showClear
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 19),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                        width: 32, height: 44),
+                    onPressed: onClear,
+                  )
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 悬浮 Tab 气泡：把下方切换 Tab（[child]，通常为 [TabBar]）原位置用小气泡
+/// 包围起来，观感与首页/我的页悬浮顶栏一致（玻璃胶囊 + 描边 + 圆角）。
+class FloatingTabPill extends StatelessWidget {
+  const FloatingTabPill({super.key, required this.child, this.height = 48});
+
+  final Widget child;
+
+  /// 气泡高度：默认 48 容纳 46 高 TabBar（含底部指示器留白）。
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingGlassSurface(
+      radius: height / 2,
+      child: SizedBox(
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          // 覆盖 TabBar 底部默认分隔线：气泡内只需指示器/文字，去掉那条
+          // 既多余又和玻璃底冲突的横线（仅影响悬浮气泡，不改非悬浮形态）。
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              tabBarTheme: TabBarThemeData(
+                dividerColor: Colors.transparent,
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 二级页（搜索页/搜索结果页/本地页）共用的悬浮顶栏：一列——
+/// 第一行 [返回玻璃钮] + [搜索胶囊(自适应宽)] + [右侧玻璃钮]；
+/// 可选第二行 [悬浮 Tab 气泡]。整列悬浮在状态栏下方，取代页面固定 GlassTopBar。
+/// 仅竖屏悬浮顶栏模式渲染。
+class FloatingSearchTopBar extends StatelessWidget {
+  const FloatingSearchTopBar({
+    super.key,
+    required this.field,
+    this.onBack,
+    this.action,
+    this.tabPill,
+  });
+
+  /// 搜索输入/展示胶囊（[FloatingGlassSearchField] 或自定义）。
+  final Widget field;
+
+  /// 可选返回按钮；null 则不渲染（如面板模式无返回）。
+  final VoidCallback? onBack;
+
+  /// 可选右侧玻璃按钮（搜索按钮/文件夹按钮等）。
+  final Widget? action;
+
+  /// 可选第二行悬浮 Tab 气泡。
+  final Widget? tabPill;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            if (onBack != null) ...[
+              BiliPaiIconButton(icon: Icons.arrow_back, onTap: onBack),
+              const SizedBox(width: 10),
+            ],
+            Expanded(child: field),
+            if (action != null) ...[
+              const SizedBox(width: 10),
+              action!,
+            ],
+          ],
+        ),
+        if (tabPill != null) ...[
+          const SizedBox(height: 10),
+          tabPill!,
         ],
       ],
     );

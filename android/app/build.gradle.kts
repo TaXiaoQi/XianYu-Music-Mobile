@@ -36,8 +36,13 @@ android {
         targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // 仅打包 arm64：与发布脚本一致（等价 --target-platform android-arm64），
-        // 排除 armv7 / x86_64 引擎。debug 包同步受益（体积减半）。
+        // 仅打包 arm64：与发布脚本一致，排除 armv7 / x86_64 引擎。
+        // debug 包同步受益（体积减半）。
+        // 注意：abiFilters 只限制打包，不限制 AOT 编译——gen_snapshot 仍会为
+        // 3 个 ABI 各跑一次（白跑两次、构建变慢）。构建命令加
+        // --target-platform android-arm64 可只编译 arm64（无法写入
+        // gradle.properties，flutter 工具命令行参数优先级更高）；
+        // DWARF 警告已由 gradle.properties 的 --strip 清零，与此无关。
         ndk {
             abiFilters += "arm64-v8a"
         }

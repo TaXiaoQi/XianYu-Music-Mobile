@@ -3,6 +3,7 @@
 // 语言选项名称（简体中文/English/繁體中文）刻意不翻译，各语言显示自身名称。
 const Map<String, String> enDictManual = {
   ' · 文件缺失': ' · File missing',
+  '个人中心': 'Profile',
   '自定义壁纸': 'Custom wallpaper',
   '选择本地图片': 'Choose local image',
   '保存并使用': 'Save & apply',
@@ -10,6 +11,9 @@ const Map<String, String> enDictManual = {
   '遮罩': 'Mask',
   '缩放': 'Scale',
   '前景样式': 'Foreground style',
+  '默认': 'Default',
+  '亮色字体': 'Light text',
+  '暗色字体': 'Dark text',
   '亮字': 'Light text',
   '暗字': 'Dark text',
   '从相册选择一张图片作为应用背景': 'Pick an image from your gallery to use as the app background',
@@ -948,7 +952,7 @@ const Map<String, String> enDictManual = {
   '注销后账号数据将被清除且无法恢复。验证码将发送到注册邮箱：{email}':
       'All account data will be cleared and cannot be recovered. A code will be sent to {email}',
   '注销账号失败': 'Failed to delete the account',
-  '状态栏歌词': 'Status bar lyrics',
+  '车机歌词': 'Car lyrics',
   '资料修改前置确认': 'Profile change pre-confirmation',
   '自定义背景与动态壁纸': 'Custom backgrounds and live wallpapers',
   '自定义歌词字体': 'Custom lyrics font',

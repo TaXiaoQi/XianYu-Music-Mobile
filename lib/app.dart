@@ -51,6 +51,7 @@ class XianYuApp extends ConsumerStatefulWidget {
 class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
   int? _cachedAccent;
   bool? _cachedPredictiveBack;
+  WallpaperTextColor _cachedTextMode = WallpaperTextColor.follow;
   ThemeData? _lightTheme;
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
@@ -133,14 +134,17 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     );
   }
 
-  void _ensureThemes(int accent, bool predictiveBack) {
+  void _ensureThemes(int accent, bool predictiveBack,
+      WallpaperTextColor textMode) {
     if (_cachedAccent == accent &&
         _cachedPredictiveBack == predictiveBack &&
+        _cachedTextMode == textMode &&
         _lightTheme != null) {
       return;
     }
     _cachedAccent = accent;
     _cachedPredictiveBack = predictiveBack;
+    _cachedTextMode = textMode;
     final seed = Color(accent);
     // 安卓切换特效：纯平移转场。开启预测返回时用 PredictiveBackPageTransitionsBuilder——
     // 非手势的打开/关闭回退到 M3 FadeForwards（新页右滑入 + 旧页左移的纯平移），
@@ -167,7 +171,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final lightScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
     lightBaseScheme = lightScheme;
-    _lightTheme = ThemeData(
+    final lightBase = ThemeData(
       colorScheme: lightScheme,
       // 页面底色交给根层统一渲染（自定义壁纸/默认底色）：Scaffold 本身透明，
       // 由各页面背景透出根层。透明不改变 colorScheme.surface（卡片/输入底色不受影响）。
@@ -190,7 +194,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       useMaterial3: true,
     );
     // 记录原始（未 apply 壁纸前景的）textTheme，供不透明弹窗在壁纸下恢复基础明暗字。
-    lightBaseTextTheme = _lightTheme!.textTheme;
+    // 必须在壁纸亮字/暗字覆盖【之前】记录，弹窗才拿得到基础前景。
+    lightBaseTextTheme = lightBase.textTheme;
+    _lightTheme = _applyWallpaperTextMode(lightBase, textMode);
     final darkScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
     darkBaseScheme = darkScheme;
@@ -223,6 +229,61 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       useMaterial3: true,
     );
     darkBaseTextTheme = _darkTheme!.textTheme;
+    _darkTheme = _applyWallpaperTextMode(_darkTheme!, textMode);
+  }
+
+  /// 壁纸「亮色字体/暗色字体」档位的全局前景覆盖。
+  ///
+  /// 覆盖 onSurface/onSurfaceVariant 并同步 textTheme（全 App 页面文字/图标
+  /// 统一切换，复用 M3 默认 textTheme 从 onSurface 派生的链路）；容器层级
+  /// （surfaceContainer*）与文字同极性翻转，保证 ChoiceChip/卡片等显式取
+  /// 容器色的配对不失效。跟随主题档位原样返回。
+  ThemeData _applyWallpaperTextMode(ThemeData base, WallpaperTextColor mode) {
+    if (mode == WallpaperTextColor.follow) return base;
+    final Color onSurface;
+    final Color onSurfaceVariant;
+    if (mode == WallpaperTextColor.light) {
+      // 壁纸亮字：文字转白，容器转暗极性（与暗色主题同明度阶梯）。
+      onSurface = const Color(0xFFFFFFFF);
+      onSurfaceVariant = const Color(0xB3FFFFFF);
+    } else {
+      // 壁纸暗字：文字转黑，容器转亮极性。
+      onSurface = const Color(0xE6000000);
+      onSurfaceVariant = const Color(0x8A000000);
+    }
+    final ColorScheme containers;
+    if (mode == WallpaperTextColor.light) {
+      containers = base.colorScheme.copyWith(
+        surfaceContainerLowest: const Color(0xFF1f1f1f),
+        surfaceContainerLow: const Color(0xFF262626),
+        surfaceContainer: const Color(0xFF2c2c2c),
+        surfaceContainerHigh: const Color(0xFF333333),
+        surfaceContainerHighest: const Color(0xFF3a3a3a),
+      );
+    } else {
+      containers = base.colorScheme.copyWith(
+        surfaceContainerLowest: const Color(0xFFFFFFFF),
+        surfaceContainerLow: const Color(0xFFF7F7F8),
+        surfaceContainer: const Color(0xFFEFEFF1),
+        surfaceContainerHigh: const Color(0xFFE7E7EA),
+        surfaceContainerHighest: const Color(0xFFDFDFE4),
+      );
+    }
+    return base.copyWith(
+      colorScheme:
+          containers.copyWith(onSurface: onSurface, onSurfaceVariant: onSurfaceVariant),
+      textTheme:
+          base.textTheme.apply(bodyColor: onSurface, displayColor: onSurface),
+      // 壁纸「亮字/暗字」档位全局覆盖 iconTheme：无显式颜色的裸图标（设置/
+      // 播放/下载/关于/反馈/悬浮歌词等绝大多数控制图标）默认取 iconTheme.color，
+      // 而 ThemeData.build 在构造时按主题明暗自固化 iconTheme（亮主题黑54、
+      // 暗主题白70），copyWith 不会随新 colorScheme 重算。
+      // 若不覆盖，这些图标会固定为「原主题极性」的半透明色——在壁纸字色反转后
+      // （如暗壁纸配亮字，文字已转白）图标仍是深色，与壁纸同色而不可见。
+      // 这里把 iconTheme 同步为 onSurface（与文字同极性、不透明），图标即与
+      // 文字一致，跟随「亮色/暗色字体」档位切换。
+      iconTheme: IconThemeData(color: onSurface),
+    );
   }
 
   @override
@@ -235,7 +296,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    _ensureThemes(accent, settings?.enablePredictiveBack ?? true);
+    // 壁纸「亮色字体/暗色字体」档位：仅壁纸启用时生效，经 _ensureThemes
+    // 应用到主题（onSurface/textTheme 极性翻转），不做全局前景覆盖。
+    final cbActive = settings?.customBackground.active == true;
+    final textMode = cbActive
+        ? (settings!.customBackground.textMode)
+        : WallpaperTextColor.follow;
+    _ensureThemes(accent, settings?.enablePredictiveBack ?? true, textMode);
     // 壁纸模型：壁纸只是替换根层底色（CustomBackgroundLayer），页面文字、
     // 玻璃开关、卡片样式全部与普通模式一致，不再对主题做任何前景覆盖。
     final ThemeData theme = _lightTheme!;
@@ -318,8 +385,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                 final overlay = appNavigatorKey.currentState?.overlay;
                 if (overlay != null) FlyingCover.instance.attach(overlay);
               });
-              // 全局壁纸层：置于 Navigator 之下，作为所有页面（主 Tab + 二级页）
-              // 的统一底色。壁纸未启用时由 ColoredBox 提供原默认底色，视觉不变。
+              // 全局壁纸层：置于 Navigator 之下作兜底底色。页面壁纸由
+              // AppPageBackground 烘焙为页面自身底色（不透明卡片，转场即普通
+              // 模式整页滑动）；本层仅在页面未覆盖的透明区域（弹窗遮罩边缘、
+              // opaque=false 路由等）透出。壁纸未启用时由 ColoredBox 提供原
+              // 默认底色，视觉不变。
               // ScrollOffsetCapture：全局捕获任意页面的竖直滚动，驱动 blur 预算
               // 在滚动期间统一降级（覆盖主 Tab 与推入 root navigator 的二级页）。
               return Stack(

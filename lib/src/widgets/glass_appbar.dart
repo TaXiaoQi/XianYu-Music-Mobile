@@ -1,10 +1,9 @@
-import 'dart:ui';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
-import 'blur_budget.dart';
 import 'glass_settings.dart';
 
 /// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
@@ -33,6 +32,7 @@ class GlassTopBar extends ConsumerWidget {
     this.actions,
     this.bottom,
     this.titleSpacing,
+    this.flatBackdrop = false,
   });
 
   final Widget? leading;
@@ -40,6 +40,11 @@ class GlassTopBar extends ConsumerWidget {
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
   final double? titleSpacing;
+
+  /// 扁平背板：顶栏下方为已知固定的纯色（无内容穿过）时置 true，跳过
+  /// `BackdropFilter` 全屏离屏合成，直接用铺底填充——视觉不变、成本归零。
+  /// 典型：设置类页面顶栏（内容从 `GlassTopBar.height` 之后才开始）。
+  final bool flatBackdrop;
 
   /// 顶栏总高度（含状态栏、工具栏与底部 TabBar）：供内容区顶部 Padding 避让。
   /// 无论毛玻璃开/关高度一致，可安全用于布局。
@@ -61,20 +66,19 @@ class GlassTopBar extends ConsumerWidget {
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
     // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
     final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    // 全局 blur 预算（header 档：滚动/转场时保持模糊，仅缩小输入）。
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final sigma = surfaceBlurSigma(
-      base: 16,
-      budget: budget,
-      type: BlurSurfaceType.header,
-    );
+    final wallpaper = wallpaperGlassActive(ref);
+    // 固定顶栏：模糊度恒定最深，不跟随「毛玻璃强度」档位、不随壁纸/滚动
+    // 预算变化（见 kNavSurfaceBlurSigma）。四处玻璃表面观感统一、切换/
+    // 滑动/停止一致。强度档只影响非导航表面。
+    final sigma = kNavSurfaceBlurSigma;
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.white.withValues(alpha: 0.52));
-    final glassFill =
-        solid ? fill : surfaceFillWithBudget(fill, budget);
+        : (wallpaper
+            ? wallpaperNavGlassFill(context)
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.52)));
+    final glassFill = fill;
     final divider = scheme.onSurface.withValues(alpha: 0.06);
 
     final bar = _bar(context, statusBarHeight);
@@ -85,12 +89,20 @@ class GlassTopBar extends ConsumerWidget {
       ),
       child: bar,
     );
-    if (solid) return inner;
+    // 顶栏模糊度恒定最深（[kNavSurfaceBlurSigma]），壁纸模式与常规模式一致：
+    // 仅低性能/纯色回退与扁平背板跳过模糊，其余保持最深的固定模糊（顶/底栏
+    // 观感两态一致，不随壁纸/滚动/预算变化）。
+    if (solid || flatBackdrop) return inner;
 
+    // 顶栏与固定底栏一致，始终走实时 BackdropFilter，静止/滚动/切换三态
+    // 观感稳定、不再有快照态与实时态之间的视觉跳变。sigma 恒定
+    // （kNavSurfaceBlurSigma）。顶栏此处用**全分辨率**高斯模糊（不做降采样）：
+    // cheapBackdropBlur 的 1/4 降采样再放大，采样网格与物理像素不对齐时会
+    // 产生约 1~2px 的水平相位偏移（细长条贴邻屏幕边缘最明显，观感像"往右歪、
+    // 和背底没对上"）。全分辨率 blur(sigma) 与 cheapBackdropBlur 的等效半径一致，
+    // 但按原始像素精确对齐背板。顶栏仅一条窄带，全分辨率成本可控。
     return ClipRect(
       child: BackdropFilter(
-        // sigma 16：具毛玻璃质感又只在顶层细条上重采样，成本可控；
-        // 配合更高透明度的铺底呈现 RWAS 那种“通透磨砂”观感；按预算缩放。
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: inner,
       ),

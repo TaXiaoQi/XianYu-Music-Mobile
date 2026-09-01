@@ -19,7 +19,32 @@ void markScrollActivity() {
   });
 }
 
-/// 全局路由转场状态：push/pop 后 300ms 内为 true（精确匹配转场动画 300ms 窗口）。
+/// 全局主 tab 切换状态：底部导航主 tab 正在做整页平移动画（程序化切页）为 true。
+///
+/// 区别于路由转场（[globalIsTransitioning]）/内容滚动（[globalIsScrolling]）：
+/// 此开关只在 PageView 切主 tab 的平移动画期间激活，供离线缓存玻璃表面
+/// （CachedFrosted）退回实时 BackdropFilter。否则程序化切页会把整页（含顶栏）
+/// 相对固定壁纸平移，而顶栏却 blit 一张静止的旧快照——壁纸近乎全透的顶栏下
+/// 就会暴露「顶栏后壁纸错位/歪」「顶栏空了过会才加载」。
+final ValueNotifier<bool> globalIsTabSwitching = ValueNotifier(false);
+
+/// 标记一次主 tab 切换开始/结束。由调用方（PageSwitchTabView）在平移动画
+/// 开始前置 true、动画结束后置回 false。
+void setTabSwitching(bool value) {
+  globalIsTabSwitching.value = value;
+}
+
+/// 全局浮层拖动状态：播放条/侧栏等浮层被按住拖拽中为 true。区别于滚动/转场，
+/// 拖动会把玻璃平移盖到不同内容上，静止冻结图会错位，故拖动期间 BiliPaiGlass
+/// 须退回实时背板（每帧按当前位置重新采样背景），松开后再在新位置冻结。
+final ValueNotifier<bool> globalIsDragging = ValueNotifier(false);
+
+/// 标记一次浮层拖动开始/结束（start=true / end=false）。
+void setGlobalDragging(bool value) {
+  globalIsDragging.value = value;
+}
+
+/// 全局路由转场状态：push/pop 后 400ms 内为 true（转场动画窗口）。
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);
 Timer? _transitionTimer;
 
@@ -27,7 +52,7 @@ Timer? _transitionTimer;
 void markTransitionActivity() {
   globalIsTransitioning.value = true;
   _transitionTimer?.cancel();
-  _transitionTimer = Timer(const Duration(milliseconds: 300), () {
+  _transitionTimer = Timer(const Duration(milliseconds: 400), () {
     globalIsTransitioning.value = false;
   });
 }
@@ -35,12 +60,21 @@ void markTransitionActivity() {
 /// 路由转场监听：push/pop/remove 时标记转场活动，供全局 blur 预算降级。
 class TransitionTracker extends NavigatorObserver {
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      markTransitionActivity();
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // [dbg-wallpaper-cover-vanish] 关联插桩：转场事件与 provider 写入时序。
+    debugPrint(
+      '[dbg-t] didPush ${route.runtimeType} name=${route.settings.name}',
+    );
+    markTransitionActivity();
+  }
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      markTransitionActivity();
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    debugPrint(
+      '[dbg-t] didPop ${route.runtimeType} name=${route.settings.name}',
+    );
+    markTransitionActivity();
+  }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
@@ -51,27 +85,46 @@ class TransitionTracker extends NavigatorObserver {
 /// flutter_riverpod 2.6.1 已移除旧版 ValueNotifierProvider，这里用更底层的
 /// NotifierProvider + 监听器复刻等价的「跟随外部 ValueNotifier」语义。
 class _ValueNotifierState extends Notifier<bool> {
-  _ValueNotifierState(this._source);
+  _ValueNotifierState(this._source, this._label);
 
   final ValueNotifier<bool> _source;
+  final String _label;
   late final VoidCallback _listener;
+  var _disposed = false;
 
   @override
   bool build() {
-    _listener = () => state = _source.value;
+    // 注意：push/pop 由 Navigator.didUpdateWidget 在「widget 构建阶段」回调
+    // （_flushHistoryUpdates），此时若同步 state= 会触发 Riverpod 守卫异常
+    // 「Tried to modify a provider while the widget tree was building」，
+    // 中断当前帧的 Navigator 构建——壁纸模式下表现为路由内容瞬间消失、
+    // 只剩根层壁纸。故延迟到本次构建/帧结束后再同步 state。
+    _listener = () {
+      final value = _source.value;
+      // [dbg-wallpaper-cover-vanish] 关联插桩。
+      debugPrint('[dbg-t] notifier[$_label] <- $value');
+      scheduleMicrotask(() {
+        if (_disposed) return;
+        debugPrint('[dbg-t] notifier[$_label] apply microtask -> $value');
+        state = value;
+      });
+    };
     _source.addListener(_listener);
-    ref.onDispose(() => _source.removeListener(_listener));
+    ref.onDispose(() {
+      _disposed = true;
+      _source.removeListener(_listener);
+    });
     return _source.value;
   }
 }
 
 final isScrollingProvider =
     NotifierProvider<_ValueNotifierState, bool>(
-      () => _ValueNotifierState(globalIsScrolling),
+      () => _ValueNotifierState(globalIsScrolling, 'scrolling'),
     );
 final isTransitioningProvider =
     NotifierProvider<_ValueNotifierState, bool>(
-      () => _ValueNotifierState(globalIsTransitioning),
+      () => _ValueNotifierState(globalIsTransitioning, 'transitioning'),
     );
 
 /// 玻璃表面类型（决定基础模糊预算与降级优先级）。
@@ -152,7 +205,7 @@ BlurBudget resolveBlurBudget({
   // 滚动/转场：非顶栏表面降级到最轻。例外：bottomBar（迷你播放条/底栏/横屏侧栏）
   // 面积小、模糊成本极低，若随滚动把 sigma 降到最轻，叠加本就较高的铺底透明度，
   // 会让下方滚动的列表内容清晰透出播放条（「透底」）。故 bottomBar 滚动/转场时
-  // 保持满档模糊，仅关闭实时输入（sigma 略缩）。
+  // 保持满档模糊，仅缩输入（sigma 按 resolveBlurInputScale 运动档缩减）。
   if (isScrolling || isTransitionRunning) {
     if (type != BlurSurfaceType.header &&
         type != BlurSurfaceType.bottomBar) {
@@ -175,32 +228,39 @@ BlurBudget resolveBlurBudget({
   );
 }
 
+/// 非实时（滚动/转场/降级/液态玻璃静止）档位的模糊输入缩放，按表面类型给出
+/// 比全档更轻的高斯模糊输入。header/bottomBar 明显更轻（0.60/0.70）：
+/// 滚动/转场期间背板逐帧全变，轻化 sigma 可省数倍模糊算力，同时保有一定
+/// 磨砂质感（铺底不透明度不变，不会透底）。
+double nonRealtimeBlurInputScale(BlurSurfaceType type) => switch (type) {
+  BlurSurfaceType.header => 0.60,
+  BlurSurfaceType.drawerOrSheet => 0.84,
+  BlurSurfaceType.bottomBar => 0.70,
+  BlurSurfaceType.overlay => 0.84,
+  BlurSurfaceType.generic => 0.84,
+};
+
 /// 模糊输入缩放：实时模式 1.0；降级（滚动/转场/低动态）时按表面类型缩小
 /// 高斯模糊输入，省算力同时保留一定玻璃质感。
 double resolveBlurInputScale(BlurBudget budget, BlurSurfaceType type) {
   if (budget.allowRealtime) return 1.0;
-  return switch (type) {
-    BlurSurfaceType.header => 0.88,
-    BlurSurfaceType.drawerOrSheet => 0.84,
-    BlurSurfaceType.bottomBar => 0.82,
-    BlurSurfaceType.overlay => 0.84,
-    BlurSurfaceType.generic => 0.84,
-  };
+  return nonRealtimeBlurInputScale(type);
 }
 
 /// 结合预算得到表面实际高斯模糊 sigma。
 ///
-/// [maxBlurLevel] 决定强度档（0=最轻，1/2=满档），再乘降级输入缩放。
+/// **sigma 在滑动/停止/切换三态恒定一致，完全不随滚动/转场预算降级**——
+/// 降档（[levelScale]）/ 缩输入（[inputScale]）就是「滚动时玻璃变轻」的根因。
+/// 毛玻璃视觉强度必须稳定（见工程约定），滚动/转场卡顿改由离线缓存
+/// [CachedFrosted] 整页快照与降采样模糊（cheapBackdropBlur）承担，而不是
+/// 牺牲模糊效果。故直接返回 [base]（base 本身已按档位/表面计算好）。
 double surfaceBlurSigma({
   required double base,
   required BlurBudget budget,
   required BlurSurfaceType type,
+  bool crispAtRest = false,
 }) {
-  final levelScale = switch (budget.maxBlurLevel) {
-    0 => 0.6,
-    _ => 1.0,
-  };
-  return base * levelScale * resolveBlurInputScale(budget, type);
+  return base;
 }
 
 /// 结合预算调整半透明铺底 alpha（预算不足时更透）。

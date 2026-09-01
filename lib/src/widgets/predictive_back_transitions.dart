@@ -2,6 +2,10 @@ import 'dart:ui' show clampDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/settings.dart';
+import 'custom_background.dart';
 
 /// 让任意 [PageRoute] 参与 Android 预测返回的公共转场组件。
 ///
@@ -243,17 +247,43 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
 /// 路由不露出 Navigator 之外的透底层。壁纸模式下根层已铺壁纸、页面 Scaffold
 /// 透明透出壁纸，此处的实色垫底只会在转场瞬间短暂出现——壁纸只是替换底色，
 /// 垫底色即壁纸所替代的那个底色，视觉连续。
-class TransitionBackdrop extends StatelessWidget {
+class TransitionBackdrop extends ConsumerWidget {
   const TransitionBackdrop({super.key, this.backgroundColor, this.child});
 
   final Color? backgroundColor;
   final Widget? child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 显式指定底色时优先使用（调用方自定义场景，不烘焙壁纸）。
+    if (backgroundColor != null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: backgroundColor),
+        child: child,
+      );
+    }
+    // 壁纸模式：铺与根层 CustomBackgroundLayer 完全一致的静态壁纸（不随
+    // 页面滑动）。转场中垫住下层页面，避免透明背景的滑入页透视下层内容
+    // 造成「双页叠加」穿模；转场结束静态时页面透出根层壁纸，两者像素级
+    // 对齐，无「纯色↔壁纸」切换跳变。
+    final cb = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.customBackground),
+    );
+    if (cb?.active == true) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: CustomBackgroundLayer(background: cb),
+          ),
+          ?child,
+        ],
+      );
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
+        color: Theme.of(context).scaffoldBackgroundColor,
       ),
       child: child,
     );

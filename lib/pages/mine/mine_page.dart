@@ -25,6 +25,7 @@ import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/page_search_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../home/discover_section.dart' show StatsSummaryCard;
 import '../home/online_detail_page.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/i18n/i18n.dart';
@@ -68,6 +69,10 @@ class MinePage extends ConsumerWidget {
               SizedBox(height: 18),
               _AccountArea(),
               SizedBox(height: 22),
+              // 听歌统计三格卡（原首页「统计」tab 迁入）：账号区与音乐库入口之间，
+              // 整卡点击打开完整听歌排行榜。
+              StatsSummaryCard(),
+              SizedBox(height: 22),
               _QuickEntries(),
               SizedBox(height: 24),
               _MyPlaylistsSection(),
@@ -82,7 +87,7 @@ class MinePage extends ConsumerWidget {
               left: 0,
               right: 0,
               child: GlassTopBar(
-              title:   Text(tr('我的')),
+              title:   Text(tr('个人中心')),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.settings_outlined),
@@ -123,7 +128,9 @@ class MinePage extends ConsumerWidget {
         children: const [
           SizedBox(height: 18),
           _AccountArea(),
-          SizedBox(height: 22),
+          SizedBox(height: 16),
+          StatsSummaryCard(),
+          SizedBox(height: 16),
           _StatsRow(),
           SizedBox(height: 24),
           _QuickCards(),

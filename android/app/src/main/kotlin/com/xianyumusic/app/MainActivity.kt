@@ -2,6 +2,7 @@ package com.xianyumusic.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
@@ -9,9 +10,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.view.Surface
 import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,7 +25,13 @@ class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
     private val SAF_CHANNEL = "xianyu/saf"
     private val DEEP_LINK_CHANNEL = "xianyu/deeplink"
+    private val ROTATION_EVENT_CHANNEL = "xianyu/rotation/events"
     private val REQ_CHOOSE_TREE = 1001
+
+    // 横竖屏旋转事件：旋转一开始系统即回调 onConfigurationChanged，把当前屏幕
+    // 方向（1 竖 / 2 横）推给 Dart 侧，让布局在旋转开始就切换，尽量第一帧出横屏，
+    // 缩短系统旋转期间「拉伸竖屏」的停留。
+    private var rotationEvents: EventChannel.EventSink? = null
 
     // xianyu:// 深链：分享落地页拉起后把 intent 交给 Flutter 解析播放。
     private var deepLinkChannel: MethodChannel? = null
@@ -83,6 +92,23 @@ class MainActivity : AudioServiceActivity() {
         processDeepLink(intent, dispatch = true)
     }
 
+    /** 旋转一开始系统即回调：把当前屏幕方向推给 Dart 侧，实现旋转即切横竖屏布局。 */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        emitRotation()
+    }
+
+    /** 推送当前屏幕方向（1 竖 / 2 横）：主动读 Display 旋转角（0/90/180/270），
+     *  仅旋转那一瞬上报、非常节能，最贴近原生行为。 */
+    private fun emitRotation() {
+        val rotation = windowManager.defaultDisplay.rotation
+        // Surface.ROTATION_*：0 自然竖 / 90 横 / 180 反向竖 / 270 反向横。
+        val landscape = rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+        val orientation =
+            if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+        mainHandler.post { runCatching { rotationEvents?.success(orientation) } }
+    }
+
     private fun processDeepLink(intent: Intent?, dispatch: Boolean) {
         val data = intent?.data ?: return
         if (data.scheme != "xianyu") return
@@ -108,6 +134,8 @@ class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         FlutterMessengerHolder.messenger = flutterEngine.dartExecutor.binaryMessenger
+        // 系统分享：原生 ACTION_SEND + 普通 startActivity，国产 ROM 才会弹自家分享面板
+        SystemShare.register(flutterEngine.dartExecutor.binaryMessenger, this)
         deepLinkChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger, DEEP_LINK_CHANNEL)
             .apply {
@@ -129,9 +157,20 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, ROTATION_EVENT_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    rotationEvents = events
+                    emitRotation()
+                }
+                override fun onCancel(arguments: Any?) {
+                    rotationEvents = null
+                }
+            })
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SAF_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "getSdkInt" -> result.success(Build.VERSION.SDK_INT)
                     "chooseFolderTree" -> {
                         SafEngine.pendingTreeResult = result
                         startActivityForResult(

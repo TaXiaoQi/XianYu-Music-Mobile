@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ 系统闪屏图标。
+     安卓 16（EMUI）实测三连：
+     1) windowSplashScreenAnimatedIcon 写非自适应 drawable（layer-list）会被
+        忽略；windowSplashScreenIconBackgroundColor 也无效；
+     2) 写透明底 adaptive icon 会被采用（至少亮色模式），但 EMUI 把图标整块
+        合成到不透明画布上——透明背景层被垫成黑色，出现黑方块；
+     3) 深色模式仍可能回退启动器图标（白板 + logo，即用户认可的「正常」大小）。
+     对策：背景层用 @color/splash_background（昼白 #FFFFFF / 夜 #121212，与
+     窗口背景同资源）——被垫色时方块与窗口背景无缝同色隐形；前景 splash_
+     foreground 按 0.31 占比把 logo 预缩放进 108dp 方形画布（0.187 版实测
+     屏显仅 ~14% 屏宽，按目标 23.5% 校准），并带 drawable-night 反白变体。
+     启动器图标不受影响。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/splash_background"/>
+    <foreground android:drawable="@drawable/splash_foreground"/>
+</adaptive-icon>

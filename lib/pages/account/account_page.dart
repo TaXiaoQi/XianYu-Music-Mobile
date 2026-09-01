@@ -323,7 +323,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Container(
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(4),
@@ -1050,7 +1050,7 @@ class _ProfileHeaderCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
@@ -1290,7 +1290,7 @@ class _GlassCard extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
@@ -1404,13 +1404,14 @@ class _GlassTile extends StatelessWidget {
 }
 
 /// 沉浸氛围背景。
-class _AmbientBackground extends StatelessWidget {
+class _AmbientBackground extends ConsumerWidget {
   const _AmbientBackground();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return IgnorePointer(
-      child: Container(color: appSurfaceBg(context)),
+      // 跟随页面底色：壁纸模式下透明透出壁纸，常规模式保持统一页面底色。
+      child: Container(color: appScaffoldBackground(context, ref)),
     );
   }
 }

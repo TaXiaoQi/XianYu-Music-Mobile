@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 正常图标：前景直接铺 source.jpg 白底方框（logo 居中），背景同为白色，
-     无缝呈现一个标准白底图标。源图 logo 自带充足内边距，无需 inset 二次缩放。 -->
+<!-- 正常图标：背景层纯白，前景层仅 logo（透明底）。
+     前景必须透明底，不能铺满不透明白底：安卓 11 的启动器会检测前景不透明
+     边界并缩小整块 + 加环境阴影环，白底方块会呈现「灰底包白块」的断层。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/ic_launcher_background"/>
   <foreground android:drawable="@drawable/ic_launcher_foreground"/>

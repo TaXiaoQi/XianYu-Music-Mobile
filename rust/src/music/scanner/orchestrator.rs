@@ -6,6 +6,7 @@ use super::progress::{ScanProgressReporter, ScanProgressSink};
 use super::repository::apply_scan_changes;
 use super::ScanOptions;
 use rusqlite::{params, OptionalExtension};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,7 @@ pub(crate) fn scan_single_directory_internal(
     folder_index: usize,
     folder_total: usize,
     options: ScanOptions,
+    cover_cache_dir: Option<PathBuf>,
 ) -> Result<Vec<Song>, String> {
     let normalized_folder = normalize_path(&folder_path);
     let reporter = sink.map(|sink| {
@@ -73,6 +75,67 @@ pub(crate) fn scan_single_directory_internal(
             }
         }
         let _ = song.artist_avatar_bytes.take();
+    }
+
+    // 扫描期同步提取缩略图回写 cover_thumb_path（STD 路径收藏统一在此抽取封面并写库），
+    // 使本地页滚动时前端可直接命中缓存，避免逐行懒提取（FFI + 解码 + 写盘）卡顿。
+    // 覆盖新增/更新/复用的所有行（含存量歌曲一次性回填）。CUE 合成曲目无独立文件，跳过。
+    if let Some(cache_dir) = cover_cache_dir.as_ref() {
+        let to_add_paths: HashSet<&str> = scan_diff
+            .to_add
+            .iter()
+            .map(|song| song.path.as_str())
+            .collect();
+        let to_update_paths: HashSet<&str> = scan_diff
+            .to_update
+            .iter()
+            .map(|song| song.path.as_str())
+            .collect();
+
+        // 存量(复用)行的旧封面值：仅这些行需在抽取后单独回写 cover_thumb_path，
+        // 新增/更新行由 apply_scan_changes 按 Song 字段统一入库。
+        let mut reused_old_cover: HashMap<String, Option<String>> = HashMap::new();
+        for song in &scan_diff.songs {
+            if to_add_paths.contains(song.path.as_str())
+                || to_update_paths.contains(song.path.as_str())
+            {
+                continue;
+            }
+            reused_old_cover.insert(song.path.clone(), song.cover_thumb_path.clone());
+        }
+
+        for song in &mut scan_diff.songs {
+            let has_cover = song
+                .cover_thumb_path
+                .as_deref()
+                .map_or(false, |value| !value.trim().is_empty());
+            if has_cover || song.path.contains("::track") {
+                continue;
+            }
+            if let Some(thumb) =
+                super::super::covers::get_or_create_thumbnail(Path::new(&song.path), cache_dir)
+            {
+                song.cover_thumb_path = Some(thumb);
+            }
+        }
+
+        if !reused_old_cover.is_empty() {
+            let conn = db_conn.lock().map_err(|error| error.to_string())?;
+            for song in &scan_diff.songs {
+                let Some(old) = reused_old_cover.get(&song.path) else {
+                    continue;
+                };
+                if old.as_deref() == song.cover_thumb_path.as_deref() {
+                    continue;
+                }
+                if let Some(ref path) = song.cover_thumb_path {
+                    let _ = conn.execute(
+                        "UPDATE songs SET cover_thumb_path = ?1 WHERE path = ?2",
+                        params![path, &song.path],
+                    );
+                }
+            }
+        }
     }
 
     {

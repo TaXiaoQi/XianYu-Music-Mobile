@@ -122,14 +122,14 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         direct.isNotEmpty &&
         File(direct).existsSync()) {
       _cache[widget.songPath] = direct;
-      if (mounted) setState(() => _path = direct);
+      _setPath(direct);
       return;
     }
     final cacheKey =
         widget.highQuality ? '${widget.songPath}\u0000full' : widget.songPath;
     final cached = _cache[cacheKey];
     if (cached != null) {
-      if (mounted) setState(() => _path = cached.isEmpty ? null : cached);
+      _setPath(cached.isEmpty ? null : cached);
       return;
     }
     try {
@@ -159,23 +159,51 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         }
       }
       _cache[cacheKey] = p;
-      if (mounted) setState(() => _path = p.isEmpty ? null : p);
+      _setPath(p.isEmpty ? null : p);
     } catch (_) {
       _cache[cacheKey] = '';
-      if (mounted) setState(() => _path = null);
+      _setPath(null);
     }
+  }
+
+  /// 设定缩略图路径并更新 UI；解析成功后把渲染端同款 provider 送入 Flutter
+  /// 图片缓存做预解码，使行还在 cacheExtent（滚动即将进入可视区）时解码就已
+  /// 完成，避免首次绘制时的解码卡顿。post-frame 回调内 MediaQuery 依赖已就绪。
+  ///
+  /// 高清模式（详情页大图）与网络封面按需解码，不预载。
+  void _setPath(String? p) {
+    if (!mounted) return;
+    setState(() => _path = p);
+    if (p == null || p.isEmpty || widget.highQuality) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _path == null || _path!.isEmpty) return;
+      final provider = ResizeImage.resizeIfNeeded(
+        _cacheWidth,
+        null,
+        FileImage(File(_path!)),
+      );
+      precacheImage(provider, context).catchError((_) => <void>[]);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final url = widget.networkUrl;
-    final box = SizedBox(
-      width: widget.width,
-      height: widget.height,
-      child: (url != null && url.isNotEmpty)
-          ? _networkImage(url)
-          : _localImage(),
-    );
+    final content = (url != null && url.isNotEmpty)
+        ? _networkImage(url)
+        : _localImage();
+    // 仅对有限宽高套紧约束的 SizedBox；无穷宽高（如 Hero 飞行封面、全屏占满卡片）
+    // 用 Align 填充：父级有界则填满，父级无界（0.0<=h<=Infinity）则收缩子级，
+    // 避免 RenderConstrainedBox 拿到无限尺寸触发布局断言。
+    final finiteW = widget.width.isFinite ? widget.width : null;
+    final finiteH = widget.height.isFinite ? widget.height : null;
+    final box = (finiteW == null && finiteH == null)
+        ? Align(alignment: Alignment.center, child: content)
+        : SizedBox(
+            width: finiteW,
+            height: finiteH,
+            child: content,
+          );
     // radius <= 0 时没必要套 ClipRRect（全屏背景等整张展示），省一层剪裁。
     if (widget.radius <= 0) return box;
     return ClipRRect(
@@ -229,6 +257,20 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   /// 非高清（列表缩略图）模式强制封顶低清解码宽度：即使封面在网格/大行里
   /// 显示得较大，也最多按 256px 解码，滚动时只搬运低清图层；高清模式
   /// （详情页大封面）不封顶，保留清晰度。
+  ///
+  /// 缩略图宽度量化到尺寸槽位（就近取大的幂次档），使同一封面在列表行/网格/
+  /// 歌手头像等“尺寸相近”的位置共用 Flutter 图片缓存里同一张解码图，避免按
+  /// 每个精确显示宽度分别解码多份（RwaS SizeSlotCache 同款“就近复用大图”）。
+  static const List<int> _sizeSlots = <int>[
+    32,
+    48,
+    64,
+    96,
+    128,
+    192,
+    256,
+  ];
+
   int? get _cacheWidth {
     if (widget.cacheWidth != null) return widget.cacheWidth;
     final w = widget.width;
@@ -236,7 +278,15 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     final px = w * MediaQuery.of(context).devicePixelRatio;
     if (!px.isFinite) return null;
     if (widget.highQuality) return px.round();
-    return px.round().clamp(1, 256);
+    // 就近取大的槽位（RwaS 口径：相同距离取更大的槽，避免 256 解码被旧 192 命中发糊）。
+    int slot = px.round().clamp(1, 256);
+    for (final s in _sizeSlots) {
+      if (slot <= s) {
+        slot = s;
+        break;
+      }
+    }
+    return slot.clamp(1, 256);
   }
 
   Widget _placeholder() {
