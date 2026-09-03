@@ -63,27 +63,82 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
 
   /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
   void syncMediaItem(QueueItem item, double durationSecs) {
-    // 封面：在线歌曲用网络 URL；本地歌曲用缩略图文件路径（file:// URI）。
-    Uri? artUri;
+    _lastSyncItem = item;
+    _lastSyncDuration = durationSecs;
+    mediaItem.add(_buildMediaItem(item, durationSecs, _artUriFor(item)));
+    // 在线封面异步落盘，成功后补推一次本地 file:// 封面（见 _materializeOnlineArt）。
+    unawaited(_materializeOnlineArt(item));
+  }
+
+  /// 最近一次广播的歌曲与时长（封面落盘完成后补推用）。
+  QueueItem? _lastSyncItem;
+  double _lastSyncDuration = 0;
+
+  /// 在线封面落盘缓存（url → 本地文件路径）。
+  final Map<String, String> _artFileCache = {};
+  /// 正在落盘的 url，防并发重复写。
+  final Set<String> _artMaterializing = {};
+
+  /// 计算系统卡片封面 URI。
+  ///
+  /// 鸿蒙 4.2 及更早版本的「媒体播控中心」运行在安卓兼容层，不会联网加载
+  /// https 远程封面 URI（华为系统服务不做网络请求），加载失败会导致播控
+  /// 卡片无封面甚至表现异常；故已落盘的在线封面一律用本地 file:// URI，
+  /// 未落盘前先用 https 兜底，落盘完成后补推本地封面。
+  Uri? _artUriFor(QueueItem item) {
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty) {
-      artUri = Uri.tryParse(url);
-    } else {
-      final local = item.coverPath;
-      if (local != null && local.isNotEmpty) {
-        artUri = Uri.file(local);
-      }
+      final cached = _artFileCache[url];
+      if (cached != null) return Uri.file(cached);
+      return Uri.tryParse(url);
     }
-    mediaItem.add(
-      as_pkg.MediaItem(
-        id: item.path,
-        album: item.album.isEmpty ? tr('弦予音乐') : item.album,
-        title: item.title,
-        artist: item.artist.isEmpty ? tr('未知歌手') : item.artist,
-        duration: Duration(milliseconds: (durationSecs * 1000).round()),
-        artUri: artUri,
-      ),
+    final local = item.coverPath;
+    if (local != null && local.isNotEmpty) return Uri.file(local);
+    return null;
+  }
+
+  as_pkg.MediaItem _buildMediaItem(
+      QueueItem item, double durationSecs, Uri? artUri) {
+    return as_pkg.MediaItem(
+      id: item.path,
+      album: item.album.isEmpty ? tr('弦予音乐') : item.album,
+      title: item.title,
+      artist: item.artist.isEmpty ? tr('未知歌手') : item.artist,
+      // 时长无效（在线歌起播瞬间尚未探测到时长）时不下发 0：
+      // METADATA_KEY_DURATION=0 在鸿蒙播控中心会被判定无效元数据，卡片不显示。
+      duration:
+          durationSecs > 0 ? Duration(milliseconds: (durationSecs * 1000).round()) : null,
+      artUri: artUri,
     );
+  }
+
+  /// 在线封面经 CoverProxy 取回字节后写入临时目录，artUri 换成本地文件。
+  /// 只在 Android 生效（iOS 控制中心可加载网络图，桌面端无此桥接）。
+  Future<void> _materializeOnlineArt(QueueItem item) async {
+    if (!Platform.isAndroid) return;
+    final url = item.coverUrl;
+    if (url == null || url.isEmpty) return;
+    if (_artFileCache.containsKey(url)) return;
+    if (!_artMaterializing.add(url)) return;
+    try {
+      final bytes = await CoverProxy.fetch(url);
+      if (bytes == null || bytes.isEmpty) return;
+      final dir = await getTemporaryDirectory();
+      final key = md5.convert(utf8.encode(url)).toString();
+      final file = File('${dir.path}/media_art_$key.jpg');
+      await file.writeAsBytes(bytes, flush: true);
+      _artFileCache[url] = file.path;
+      // 仍是当前这首歌时补推一次，让播控卡片尽快换成本地封面。
+      if (_lastSyncItem?.path == item.path) {
+        mediaItem.add(
+          _buildMediaItem(item, _lastSyncDuration, Uri.file(file.path)),
+        );
+      }
+    } catch (_) {
+      // 落盘失败静默：保留 https artUri 兜底。
+    } finally {
+      _artMaterializing.remove(url);
+    }
   }
 
   /// 广播更新系统的 PlaybackState（播放状态/进度/控制动作/循环模式）
