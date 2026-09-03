@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -98,35 +99,36 @@ class DailyRecommendAlgorithm {
 
 /// 单条推荐结果 + 命中策略。
 ///
-/// - 有可用插件时：优先用已启用音源插件搜索并播放（对齐桌面端日推只走插件），
-///   [song] 为 [PluginSearchResult.toJson]（camelCase，musicfree 含 rawData），
-///   [pluginId]/[pluginFormat] 记录来源插件，播放走 `_resolvePluginUrl`，不依赖
-///   LX 公共代理直链（该代理在移动端经常超时导致「直链解析失败/自动跳下一首」）。
-/// - 无插件兜底：走 Rust 内置 `lxSearch`（LX 公共直链），[song] 为 snake_case。
+/// 只走已启用音源插件搜索并播放（对齐桌面端日推；无可用插件时日推为空），
+/// [song] 为 [PluginSearchResult.toJson]（camelCase，musicfree 含 rawData），
+/// [pluginId]/[pluginFormat] 记录来源插件，播放走插件直链。
 class DailyRecommendItem {
   final Map<String, dynamic> song;
   final String reason;
   final String strategyId;
-  /// 来源插件 id；null 表示走 LX 原生搜索（公共代理兜底）。
-  final String? pluginId;
-  /// 来源插件格式：'lx' / 'musicfree'（仅 [pluginId] 非空时有意义）。
+  /// 来源插件 id。
+  final String pluginId;
+  /// 来源插件格式：'lx' / 'musicfree'。
   final String pluginFormat;
 
   const DailyRecommendItem({
     required this.song,
     required this.reason,
     required this.strategyId,
-    this.pluginId,
-    this.pluginFormat = 'lx',
+    required this.pluginId,
+    this.pluginFormat = 'musicfree',
   });
-
-  bool get isPlugin => pluginId != null && pluginId!.isNotEmpty;
 
   String get title => (song['name'] as String?) ?? '';
   String get artist => (song['singer'] as String?) ?? '';
-  String get album =>
-      (song[isPlugin ? 'albumName' : 'album_name'] as String?) ?? '';
-  String? get coverUrl => song['img'] as String?;
+  String get album => (song['albumName'] as String?) ?? '';
+  /// 可显示封面：完整复用桌面端提取逻辑（酷我域名归一化 / 短路径 / 网易云
+  /// picId 兜底），失败再回退插件原始 img 字段。
+  String? get coverUrl {
+    final resolved = resolveSongCoverUrl(song);
+    if (resolved != null && resolved.isNotEmpty) return resolved;
+    return song['img'] as String?;
+  }
 
   int get durationMs => _intervalToMs((song['interval'] as String?) ?? '');
 
@@ -138,44 +140,29 @@ class DailyRecommendItem {
     return '$normTitle|$normArtist';
   }
 
-  /// 构造在线播放队列项。
-  ///
-  /// 插件来源：生成带 pluginId 的 onlineSongJson，播放走插件直链（可靠）；
-  /// LX 原生兜底：lx:// 伪路径，播放时按需解析公共直链。
+  /// 构造在线播放队列项：生成带 pluginId 的 onlineSongJson，播放走插件直链。
   QueueItem toQueueItem(String quality) {
-    if (isPlugin) {
-      final isMf = pluginFormat == 'musicfree';
-      final src = (song['source'] as String?) ?? '';
-      final mid = (song['songmid'] as String?) ?? '';
-      return QueueItem(
-        path: isMf ? 'plugin://$pluginId/$mid' : 'lx://$src/$mid',
-        title: title,
-        artist: artist,
-        album: album,
-        durationMs: durationMs,
-        coverUrl: coverUrl,
-        onlineSongJson: jsonEncode({
-          'pluginId': pluginId,
-          'format': pluginFormat,
-          if (!isMf) 'source': src,
-          'musicInfo': song,
-        }),
-        onlineQuality: quality,
-        // LX 插件歌词兜底：走 Rust 内置各源直连歌词（与 PluginSearchService 一致）；
-        // musicfree 插件不附加，避免被当成 LX 在线歌词走 LoL 逻辑。
-        source: isMf ? null : src,
-        onlineInfoJson: isMf ? null : jsonEncode(song),
-      );
-    }
+    final isMf = pluginFormat == 'musicfree';
+    final src = (song['source'] as String?) ?? '';
+    final mid = (song['songmid'] as String?) ?? '';
     return QueueItem(
-      path: 'lx://${song['source']}/${song['songmid']}',
+      path: isMf ? 'plugin://$pluginId/$mid' : 'lx://$src/$mid',
       title: title,
       artist: artist,
       album: album,
       durationMs: durationMs,
       coverUrl: coverUrl,
-      onlineSongJson: jsonEncode(_toUrlSongInfo(song)),
+      onlineSongJson: jsonEncode({
+        'pluginId': pluginId,
+        'format': pluginFormat,
+        if (!isMf) 'source': src,
+        'musicInfo': song,
+      }),
       onlineQuality: quality,
+      // LX 插件歌词兜底：走 Rust 内置各源直连歌词（与 PluginSearchService 一致）；
+      // musicfree 插件不附加，避免被当成 LX 在线歌词走 LoL 逻辑。
+      source: isMf ? null : src,
+      onlineInfoJson: isMf ? null : jsonEncode(song),
     );
   }
 }
@@ -195,8 +182,6 @@ class DailyRecommendState {
 
 // ─── 常量 ────────────────────────────────────────────────────────
 
-/// 参与搜索的 LX 音源（与 Rust 端解析优先级一致）
-const _searchSources = ['kw', 'tx', 'wy'];
 /// 每个查询词取的搜索结果数
 const _searchLimit = 20;
 /// 并发搜索数上限
@@ -205,8 +190,8 @@ const _searchConcurrency = 4;
 const _maxCandidates = 90;
 /// 低于该时长（毫秒）的结果视为试听/铃声，过滤
 const _minDurationMs = 45000;
-/// 本地缓存键（换账号/跨天自动失效；v2 引入插件来源）
-const _cacheKey = 'daily_recommend_v2';
+/// 本地缓存键（换账号/跨天自动失效；v3 移除 LX 原生兜底来源）
+const _cacheKey = 'daily_recommend_v3';
 
 // ─── 工具函数（与桌面端 dailyRecommend.ts 对齐） ─────────────────
 
@@ -246,22 +231,6 @@ int _intervalToMs(String interval) {
   return (int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!)) * 1000;
 }
 
-/// LxSearchItem(snake_case) → LxUrlSongInfo(camelCase)，供直链解析
-Map<String, dynamic> _toUrlSongInfo(Map<String, dynamic> song) => {
-      'songmid': song['songmid'] ?? '',
-      'source': song['source'] ?? '',
-      'hash': song['hash'],
-      'name': song['name'],
-      'singer': song['singer'],
-      'albumName': song['album_name'],
-      'albumId': song['album_id'],
-      'albumMid': song['album_mid'],
-      'copyrightId': song['copyright_id'],
-      'strMediaMid': song['str_media_mid'],
-      'songId': song['song_id'],
-      '_types': song['lx_types'],
-    };
-
 String _localDateKey() {
   final now = DateTime.now();
   return '${now.year.toString().padLeft(4, '0')}-'
@@ -270,13 +239,6 @@ String _localDateKey() {
 }
 
 // ─── 算法执行 ────────────────────────────────────────────────────
-
-class _SearchTask {
-  final DailyRecommendStrategy strategy;
-  final String query;
-  final String source;
-  const _SearchTask(this.strategy, this.query, this.source);
-}
 
 /// 插件搜索任务：策略查询词在已启用插件间轮询分配（对齐桌面端 buildSearchTasks）。
 class _PluginSearchTask {
@@ -289,8 +251,8 @@ class _PluginSearchTask {
 /// 已收集但尚未去重的中间结果。
 typedef _Collected = ({DailyRecommendItem item, double score});
 
-/// 执行推荐算法：搜索(插件优先，无插件退回 LX) → 排除/过滤 → 打分去重 →
-/// 每日种子洗牌 → 候选池。单个搜索失败静默跳过，整体无结果时返回空列表。
+/// 执行推荐算法：插件搜索 → 排除/过滤 → 打分去重 → 每日种子洗牌 → 候选池。
+/// 单个搜索失败静默跳过，无可用插件或整体无结果时返回空列表。
 Future<List<DailyRecommendItem>> _executeAlgorithm(
     DailyRecommendAlgorithm algorithm,
     PluginEngine engine,
@@ -301,13 +263,16 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
     exclusionSet.add('${_normalizeText(e.title)}|${_normalizeText(_firstArtist(e.artist))}');
   }
 
+  // 只保留「可播放」的插件（MusicFree 需实现 getMediaSource、LX 需声明 musicUrl），
+  // 对齐桌面端日推只走可播放插件；无可用插件时日推为空（页面展示空态）。
   final enabledPlugins = pluginSources.where((s) => s.enabled).toList();
-  final collected = <_Collected>[];
-  if (enabledPlugins.isNotEmpty) {
-    await _searchAll(engine, algorithm, enabledPlugins, exclusionSet, collected);
-  } else {
-    await _searchLx(algorithm, exclusionSet, collected);
+  final playable = <PluginSource>[];
+  for (final p in enabledPlugins) {
+    if (await engine.canPlayMusic(p)) playable.add(p);
   }
+  final collected = <_Collected>[];
+  if (playable.isEmpty) return const [];
+  await _searchAll(engine, algorithm, playable, exclusionSet, collected);
 
   // 打分去重：score = 策略权重 + 搜索排名，同曲多源保留最高分
   final best = <String, _Collected>{};
@@ -361,8 +326,11 @@ Future<void> _searchAll(
         for (var rank = 0; rank < results.length; rank++) {
           final r = results[rank];
           final item = _fromPluginResult(task.plugin, r, task.strategy);
-          if (!_accept(item, durationMs: item.durationMs,
-              exclusionSet: exclusionSet)) continue;
+          if (!_accept(item,
+              durationMs: item.durationMs,
+              exclusionSet: exclusionSet)) {
+            continue;
+          }
           collected.add((
             item: item,
             score: task.strategy.weight * 0.6 + (1 - rank / _searchLimit) * 0.4,
@@ -376,67 +344,6 @@ Future<void> _searchAll(
 
   final workerCount = math.min(_searchConcurrency, tasks.length);
   await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
-}
-
-/// LX 原生搜索兜底（字典分 source，alias 为原 _buildTasks）。无插件时退化公共代理。
-Future<void> _searchLx(
-  DailyRecommendAlgorithm algorithm,
-  Set<String> exclusionSet,
-  List<_Collected> collected,
-) async {
-  final tasks = <_SearchTask>[];
-  {
-    var slot = 0;
-    for (final strategy in algorithm.strategies) {
-      for (var qi = 0; qi < strategy.queries.length; qi++) {
-        final source = _searchSources[(slot + qi) % _searchSources.length];
-        tasks.add(_SearchTask(strategy, strategy.queries[qi], source));
-      }
-      slot += strategy.queries.length;
-    }
-  }
-
-  final results = <_SearchTask, List<Map<String, dynamic>>>{};
-  var cursor = 0;
-  Future<void> worker() async {
-    while (cursor < tasks.length) {
-      final task = tasks[cursor++];
-      try {
-        final json = await lxSearch(
-          source: task.source,
-          keyword: task.query,
-          limit: _searchLimit,
-        );
-        results[task] = (jsonDecode(json) as List)
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
-      } catch (_) {
-        /* 单个音源搜索失败静默 */
-      }
-    }
-  }
-
-  final workerCount = math.min(_searchConcurrency, tasks.length);
-  await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
-
-  for (final task in tasks) {
-    final songs = results[task];
-    if (songs == null) continue;
-    for (var rank = 0; rank < songs.length; rank++) {
-      final song = songs[rank];
-      final item = DailyRecommendItem(
-        song: song,
-        reason: task.strategy.reason,
-        strategyId: task.strategy.id,
-      );
-      if (!_accept(item, durationMs: item.durationMs,
-          exclusionSet: exclusionSet)) continue;
-      collected.add((
-        item: item,
-        score: task.strategy.weight * 0.6 + (1 - rank / _searchLimit) * 0.4,
-      ));
-    }
-  }
 }
 
 /// 单个插件按关键字搜索（MusicFree 走 search music，LX 逐声明音源搜索）。
@@ -546,10 +453,10 @@ class _DailyCache {
               song: (e['song'] as Map?)?.cast<String, dynamic>() ?? const {},
               reason: (e['reason'] as String?) ?? '',
               strategyId: (e['strategyId'] as String?) ?? '',
-              pluginId: e['pluginId'] as String?,
-              pluginFormat: e['pluginFormat'] as String? ?? 'lx',
+              pluginId: (e['pluginId'] as String?) ?? '',
+              pluginFormat: e['pluginFormat'] as String? ?? 'musicfree',
             ))
-        .where((c) => c.song.isNotEmpty)
+        .where((c) => c.song.isNotEmpty && c.pluginId.isNotEmpty)
         .toList();
     if (candidates.isEmpty) return null;
     return _DailyCache(
@@ -589,6 +496,82 @@ Future<void> clearDailyRecommendCache() async {
   } catch (_) {}
 }
 
+// ─── 网易云缺省元数据补齐（对齐桌面 fetchWyTrackMetaByIds） ─────────
+//
+// 部分第三方网易云 MusicFree 插件（如时迁酱）在 search 结果里既不返回可用
+// artwork（weapi/search 的 album 只有 picId 无 picUrl），也就解析不出封面。
+// 这里用官方 weapi song/detail 按 ID 批量补全封面/时长，绕过插件实现差异。
+
+/// 从日推条目 song map 中取网易云纯数字 ID（musicfree 插件的 songmid 即歌曲 ID）。
+String? _wySongId(Map<String, dynamic> song) {
+  final id = (song['songmid'] ?? song['songId'] ?? song['id'] ?? '').toString().trim();
+  if (RegExp(r'^\d+$').hasMatch(id) && id != '0') return id;
+  return null;
+}
+
+/// 网易云单曲补齐结果（封面 + 时长 ms）。
+typedef _WyTrackPatch = ({String coverUrl, int durationMs});
+
+/// weapi song/detail 批量补齐 → Map<歌曲ID, patch>；失败返回空 Map。
+Future<Map<String, _WyTrackPatch>> _fetchWyTrackMeta(List<String> ids) async {
+  final result = <String, _WyTrackPatch>{};
+  final all = ids.where((id) => RegExp(r'^\d+$').hasMatch(id)).toList();
+  if (all.isEmpty) return result;
+
+  HttpClient? client;
+  try {
+    final payload = jsonEncode({
+      'c': '[${all.map((id) => '{"id":$id}').join(',')}]',
+      'ids': '[${all.join(',')}]',
+    });
+    final encRaw = await hostWeapiEncrypt(payload: payload);
+    final enc = jsonDecode(encRaw) as Map<String, dynamic>;
+    final params = enc['params']?.toString() ?? '';
+    final encSecKey = enc['encSecKey']?.toString() ?? '';
+    if (params.isEmpty || encSecKey.isEmpty) return result;
+
+    final body =
+        'params=${Uri.encodeComponent(params)}&encSecKey=${Uri.encodeComponent(encSecKey)}';
+
+    client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    final req = await client.postUrl(
+        Uri.parse('https://music.163.com/weapi/v3/song/detail'));
+    req.headers
+      ..set('Content-Type', 'application/x-www-form-urlencoded')
+      ..set('User-Agent',
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+              '(KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36')
+      ..set('Origin', 'https://music.163.com')
+      ..set('Referer', 'https://music.163.com/');
+    req.write(body);
+    final resp = await req.close().timeout(const Duration(seconds: 15));
+    if (resp.statusCode < 200 || resp.statusCode >= 400) return result;
+    final text = await resp.transform(utf8.decoder).join();
+    final data = jsonDecode(text);
+    if (data is! Map || data['code'] != 200) return result;
+    final songs = data['songs'];
+    if (songs is! List) return result;
+    for (final s in songs) {
+      if (s is! Map) continue;
+      final id = (s['id'] ?? '').toString();
+      if (!RegExp(r'^\d+$').hasMatch(id)) continue;
+      final al = s['al'] is Map ? (s['al'] as Map).cast<String, dynamic>() : null;
+      final album =
+          s['album'] is Map ? (s['album'] as Map).cast<String, dynamic>() : null;
+      final img = (al?['picUrl'] as String?) ?? (album?['picUrl'] as String?) ?? '';
+      if (img.isEmpty) continue;
+      final dtRaw = s['dt'] ?? s['duration'];
+      final dur = dtRaw is num && dtRaw > 0 ? dtRaw.toInt() : 0;
+      result[id] = (coverUrl: img, durationMs: dur);
+    }
+  } catch (_) {
+    // 网络/解析失败静默，保持原样
+  } finally {
+    client?.close();
+  }
+  return result;
+}
+
 // ─── Provider ────────────────────────────────────────────────────
 
 final dailyRecommendProvider =
@@ -610,8 +593,10 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
     if (cached != null &&
         cached.ciyuanxiId == ciyuanxiId &&
         cached.date == today) {
+      final items = _pickBatch(cached.candidates, cached.algorithm, cached.batch);
+      unawaited(_backfillWyCovers(items));
       return DailyRecommendState(
-        items: _pickBatch(cached.candidates, cached.algorithm, cached.batch),
+        items: items,
         algorithm: cached.algorithm,
         batch: cached.batch,
       );
@@ -632,11 +617,82 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       algorithm: algorithm,
       candidates: candidates,
     ));
+    final items = _pickBatch(candidates, algorithm, 0);
+    unawaited(_backfillWyCovers(items));
     return DailyRecommendState(
-      items: _pickBatch(candidates, algorithm, 0),
+      items: items,
       algorithm: algorithm,
       batch: 0,
     );
+  }
+
+  /// 网易云缺省封面的歌曲补齐（异步，不阻塞列表渲染，完成后再刷新）。
+  ///
+  /// 部分网易云 MusicFree 插件的搜索结果既无 picUrl 也无 duration，导致日推里
+  /// 网易云歌曲无封面。这里只挑「缺封面 + 纯数字 ID + 来自网易云 musicfree 插件」
+  /// 的条目，经官方 weapi song/detail 批量取回封面/时长，写入 `song['coverUrl']`
+  ///（`resolveSongCoverUrl` 会读取它）后重新 emit，封面对齐桌面端。
+  Future<void> _backfillWyCovers(List<DailyRecommendItem> items) async {
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final pluginSources = await engine.store.loadSources();
+      final wyIds = <String>{
+        for (final p in pluginSources)
+          if (p.enabled && lxPlatformCodeOf(p) == 'wy') p.id,
+      };
+      if (wyIds.isEmpty) return;
+
+      final pending = <DailyRecommendItem>[];
+      final ids = <String>[];
+      final seen = <String>{};
+      for (final it in items) {
+        if (it.pluginFormat != PluginFormat.musicfree.value) {
+          continue;
+        }
+        if (!wyIds.contains(it.pluginId)) continue;
+        final cover = it.coverUrl;
+        if (cover != null && cover.isNotEmpty) continue;
+        final id = _wySongId(it.song);
+        if (id == null || !seen.add(id)) continue;
+        pending.add(it);
+        ids.add(id);
+      }
+      if (pending.isEmpty) return;
+
+      final patches = await _fetchWyTrackMeta(ids);
+      if (patches.isEmpty) return;
+
+      var changed = false;
+      for (final it in pending) {
+        final id = _wySongId(it.song);
+        if (id == null) continue;
+        final p = patches[id];
+        if (p == null) continue;
+        if (p.coverUrl.isNotEmpty) {
+          it.song['coverUrl'] = p.coverUrl;
+          changed = true;
+        }
+        if (it.durationMs <= 0 && p.durationMs > 0) {
+          it.song['durationMs'] = p.durationMs;
+          it.song['dt'] = p.durationMs;
+          final sec = p.durationMs ~/ 1000;
+          it.song['interval'] =
+              '${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}';
+          changed = true;
+        }
+      }
+      if (!changed || state is! AsyncData) return;
+      final cur = state.valueOrNull;
+      if (cur == null) return;
+      state = AsyncData(DailyRecommendState(
+        items: cur.items,
+        algorithm: cur.algorithm,
+        batch: cur.batch,
+        loggedIn: cur.loggedIn,
+      ));
+    } catch (_) {
+      // 补齐失败不影响列表展示
+    }
   }
 
   /// 换一批：候选池当日复用，批次 +1 按批次种子重新洗牌取样。
