@@ -21,9 +21,12 @@ import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/cast_provider.dart';
+import '../../src/widgets/dlna_device_dialog.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/responsive/landscape.dart';
+import '../../src/navigation/shell.dart' show isLandscapeProvider;
 import '../../src/share/share_service.dart';
 import '../../src/share/share_sheet.dart';
 import '../../src/widgets/app_toast.dart';
@@ -1036,6 +1039,18 @@ class _TraditionalPlayerLayoutState
                       onChanged: _switchPage,
                     ),
             ),
+          ),
+          // [DLNA 投屏] 投屏入口：高亮表示投屏中，点开设备弹窗管理连接。
+          IconButton(
+            icon: Icon(
+              Icons.cast,
+              size: 26,
+              color: ref.watch(dlnaCastProvider.select((c) => c.isCasting))
+                  ? const Color(0xFFEC4141)
+                  : Colors.white.withValues(alpha: 0.9),
+            ),
+            tooltip: tr('DLNA 投屏'),
+            onPressed: () => showDlnaDeviceDialog(context, ref),
           ),
           IconButton(
             icon: const Icon(

@@ -43,6 +43,32 @@ class MainActivity : AudioServiceActivity() {
     private lateinit var saf: SafEngine
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // DLNA 渲染器：Wi-Fi 组播锁（SSDP 1900 端口组播接收必需）。
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+    /** 获取组播锁（引用计数为 0 时真正加锁，幂等）。 */
+    private fun dlnaMulticastLock() {
+        if (multicastLock?.isHeld == true) return
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        val lock = multicastLock ?: wifi.createMulticastLock("xianyu_dlna").apply {
+            setReferenceCounted(false)
+            multicastLock = this
+        }
+        try {
+            lock.acquire()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 释放组播锁（未持有时为 no-op）。 */
+    private fun dlnaMulticastRelease() {
+        val lock = multicastLock ?: return
+        try {
+            if (lock.isHeld) lock.release()
+        } catch (_: Exception) {
+        }
+    }
+
     // SAF 枚举/复制都是重 I/O，必须离开主线程，否则扫描与切歌时整个 UI 冻结。
     private val safExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -387,6 +413,22 @@ class MainActivity : AudioServiceActivity() {
                     }
                     "update" -> {
                         WidgetShared.updateAll(this)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/dlna")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // DLNA 渲染器：SSDP 组播发现/广播依赖接收组播包，
+                    // Wi-Fi 组播默认被系统过滤，需持有 MulticastLock。
+                    "acquireMulticast" -> {
+                        dlnaMulticastLock()
+                        result.success(null)
+                    }
+                    "releaseMulticast" -> {
+                        dlnaMulticastRelease()
                         result.success(null)
                     }
                     else -> result.notImplemented()

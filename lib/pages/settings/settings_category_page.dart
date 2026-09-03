@@ -801,7 +801,64 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      // DLNA 渲染器（接收端），与桌面端「高级设置 → DLNA 渲染器」对齐。
+      _sectionHeader(context, tr('DLNA 渲染器')),
+      _CardGroup(
+        children: [
+          Builder(builder: (ctx) {
+            final dlnaCast = ref.watch(dlnaCastProvider);
+            return _switchTile(
+              context,
+              icon: Icons.album_outlined,
+              title: tr('接收其它设备投屏'),
+              subtitle: dlnaCast.rendererRunning
+                  ? tr('运行中 · 端口 {port}',
+                      {'port': dlnaCast.rendererPort.toString()})
+                  : tr('开启后本机作为 DLNA 设备出现在局域网，其它 App 可直接投歌到本端'),
+              value: s?.dlnaRendererEnabled ?? false,
+              onChanged: (v) async {
+                await n.setDlnaRendererEnabled(v);
+                await ref.read(dlnaCastProvider.notifier).applyRendererSetting();
+              },
+            );
+          }),
+          _tile(
+            context,
+            icon: Icons.badge_outlined,
+            title: tr('设备名称'),
+            subtitle: tr('投送端看到的名字'),
+            trailing: Text(
+              (s?.dlnaRendererName ?? '').trim().isEmpty
+                  ? tr('弦予音乐')
+                  : s!.dlnaRendererName.trim(),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => _editDlnaRendererName(context, ref),
+          ),
+        ],
+      ),
     ];
+  }
+
+  /// 编辑渲染器对外展示名（保存后运行中幂等重建）。
+  Future<void> _editDlnaRendererName(BuildContext context, WidgetRef ref) async {
+    final s = ref.read(settingsProvider).valueOrNull;
+    final name = await showModernInputDialog(
+      context: context,
+      title: tr('设备名称'),
+      subtitle: tr('投送端看到的名字'),
+      initialValue: (s?.dlnaRendererName ?? '').trim(),
+      hintText: tr('弦予音乐'),
+      keyboardType: TextInputType.text,
+    );
+    if (name == null) return;
+    final trimmed = name.trim().substring(0, name.trim().length.clamp(0, 40));
+    await ref.read(settingsProvider.notifier).setDlnaRendererName(trimmed);
+    await ref.read(dlnaCastProvider.notifier).rebuildRendererIfRunning();
   }
 
   // ---- 下载 ----

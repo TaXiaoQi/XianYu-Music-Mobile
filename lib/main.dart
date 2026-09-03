@@ -10,6 +10,8 @@ import 'app.dart';
 import 'src/core/app_logger.dart';
 import 'src/core/application_logger.dart';
 import 'src/core/rust_init.dart';
+import 'src/core/settings.dart';
+import 'src/player/cast_provider.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/auth/account_api.dart';
 import 'src/player/player_provider.dart';
@@ -178,6 +180,16 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
     // rust 初始化完成（无论成功/失败）即触发启动插件自动更新。
     ref.listenManual(rustInitProvider, (prev, next) {
       if (next.hasValue || next.hasError) _runStartupPluginAutoUpdate();
+    });
+
+    // 设置加载完成后按设置恢复 DLNA 渲染器（接收端开机自启，幂等）。
+    ref.listenManual(settingsProvider, (prev, next) {
+      if (next.hasValue) {
+        final container = ProviderScope.containerOf(context);
+        unawaited(container
+            .read(dlnaCastProvider.notifier)
+            .applyRendererSetting());
+      }
     });
   }
 

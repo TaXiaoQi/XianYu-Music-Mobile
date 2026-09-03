@@ -261,6 +261,10 @@ class AppSettings {
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
+    // DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。
+    this.dlnaRendererEnabled = false,
+    // DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
+    this.dlnaRendererName = '',
   });
 
   final double volume;
@@ -472,6 +476,13 @@ class AppSettings {
   /// 手表联动总开关：开启后在登录且连接手表时上报播放信息并执行手表控制命令。
   final bool watchLinkageEnabled;
 
+  /// DLNA 渲染器（接收端）：开启后本机作为 DLNA 设备出现在局域网，
+  /// 其它 App（如 QQ 音乐、网易云音乐）可直接投歌到本端播放。
+  final bool dlnaRendererEnabled;
+
+  /// DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
+  final String dlnaRendererName;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -553,6 +564,8 @@ class AppSettings {
     int? floatingLyricsX,
     int? floatingLyricsY,
     bool? watchLinkageEnabled,
+    bool? dlnaRendererEnabled,
+    String? dlnaRendererName,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -665,6 +678,8 @@ class AppSettings {
       floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
       floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
       watchLinkageEnabled: watchLinkageEnabled ?? this.watchLinkageEnabled,
+      dlnaRendererEnabled: dlnaRendererEnabled ?? this.dlnaRendererEnabled,
+      dlnaRendererName: dlnaRendererName ?? this.dlnaRendererName,
     );
   }
 }
@@ -799,6 +814,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
       watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,
+      dlnaRendererEnabled: prefs.getBool('dlnaRendererEnabled') ?? false,
+      dlnaRendererName: prefs.getString('dlnaRendererName') ?? '',
       customBackground: CustomBackground(
         enabled: prefs.getBool('customBackgroundEnabled') ?? false,
         imagePath: prefs.getString('customBackgroundImagePath') ?? '',
@@ -959,6 +976,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
+      prefs.setBool('dlnaRendererEnabled', next.dlnaRendererEnabled),
+      prefs.setString('dlnaRendererName', next.dlnaRendererName),
       prefs.setBool('customBackgroundEnabled', next.customBackground.enabled),
       prefs.setString('customBackgroundImagePath', next.customBackground.imagePath),
       prefs.setInt('customBackgroundBlur', next.customBackground.blur),
@@ -977,6 +996,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setPlayMode(int m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playMode: m));
   Future<void> setLastTab(int t) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lastTab: t));
   Future<void> setWatchLinkageEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkageEnabled: v));
+  Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
+  Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
   Future<void> setKeepScreenOn(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepScreenOn: v));
   Future<void> setEnablePredictiveBack(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enablePredictiveBack: v));
   Future<void> setThemeMode(ThemeModePreference m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(themeMode: m));
