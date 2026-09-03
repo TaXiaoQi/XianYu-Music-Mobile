@@ -11,6 +11,7 @@ import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/library/scan_settings_provider.dart';
+import '../../src/remote/remote_library_service.dart';
 import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
@@ -251,6 +252,14 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
 
   Future<void> _startScan() async {
     if (_scanning) return;
+    // 本地与远程文件夹都为空时，先提示需要添加文件夹，避免空扫。
+    final localFolders =
+        ref.read(scanFoldersProvider).valueOrNull ?? const <ScanFolder>[];
+    final remoteSources = ref.read(remoteLibraryProvider).sources;
+    if (localFolders.isEmpty && remoteSources.isEmpty) {
+      showXianYuToast(context, tr('请先添加本地或远程文件夹，再开始扫描'));
+      return;
+    }
     setState(() => _scanning = true);
     try {
       final count = await ref.read(libraryProvider.notifier).scanAllFolders();

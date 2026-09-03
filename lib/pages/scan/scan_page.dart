@@ -111,14 +111,17 @@ class _ScanPageState extends ConsumerState<ScanPage> {
         await c.stop();
       } catch (_) {}
     }
+    if (!mounted) {
+      _handling = false;
+      return;
+    }
     final notifier = ref.read(authProvider.notifier);
     final user = ref.read(authProvider).user;
-    final ctx = context;
 
     // 未登录：引导去登录。
     if (user == null) {
       final go = await showPredictiveDialog<bool>(
-        context: ctx,
+        context: context,
         barrierDismissible: false,
         builder: (dctx) => AlertDialog(
           title: Text(tr('请先登录')),
@@ -138,8 +141,8 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       _handling = false;
       if (!mounted) return;
       if (go == true) {
-        ctx.pop();
-        ctx.push('/account');
+        context.pop();
+        context.push('/account');
         return;
       }
       await _resume();
@@ -160,7 +163,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     }
     if (scanError != null || info == null) {
       await showPredictiveDialog<void>(
-        context: ctx,
+        context: context,
         barrierDismissible: false,
         builder: (dctx) => AlertDialog(
           title: Text(tr('扫码失败')),
@@ -179,7 +182,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     }
 
     // 进入确认登录页（展示设备信息 + 同意协议 + 确认）。
-    final confirmed = await ctx.push<bool>('/tv-login-confirm', extra: {
+    final confirmed = await context.push<bool>('/tv-login-confirm', extra: {
       'code': code,
       'info': info,
     });
@@ -195,7 +198,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
 
     // 确认成功：桌面端已登录，提示后返回。
     await showPredictiveDialog<void>(
-      context: ctx,
+      context: context,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
         title: Text(tr('登录成功')),
@@ -204,7 +207,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
           FilledButton(
             onPressed: () {
               Navigator.of(dctx).pop();
-              if (mounted) ctx.pop();
+              if (mounted) context.pop();
             },
             child: Text(tr('完成')),
           ),

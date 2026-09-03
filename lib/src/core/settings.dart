@@ -93,7 +93,13 @@ enum ListSize {
 }
 
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
-const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'aiff', 'dsf', 'dff'];
+const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
+
+/// 已持久化的扫描格式与支持列表取并集（后补格式自动启用），未持久化时用全量默认。
+List<String> _mergeScanFormats(List<String>? saved) {
+  if (saved == null) return kSupportedScanFormats;
+  return {...saved, ...kSupportedScanFormats}.toList(growable: false);
+}
 
 /// 壁纸模式全局字体颜色档位：
 /// - follow：跟随主题明暗（默认）
@@ -778,7 +784,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       updateCheckMode: prefs.getString('updateCheckMode') ?? 'startup',
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
-      scanFormats: prefs.getStringList('scanFormats') ?? kSupportedScanFormats,
+      // 历史持久化数据可能缺少后补的扫描格式（ape/wv/opus 等，此前无 UI 可勾选），
+      // 与支持列表取并集，保证新格式对所有用户生效（对齐桌面端全量扫描行为）。
+      scanFormats: _mergeScanFormats(prefs.getStringList('scanFormats')),
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
       navBarPosition:

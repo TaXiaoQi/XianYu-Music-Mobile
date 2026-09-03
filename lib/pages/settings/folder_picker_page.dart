@@ -67,6 +67,25 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     }
   }
 
+  /// 系统选择器兜底：任意目录自由选择（含空目录 / SD 卡 / USB）。
+  /// 应用内列表只聚合「含音频的真实目录」，想扫没歌的新目录只能走这里。
+  Future<void> _browseAllViaSaf() async {
+    if (_adding) return;
+    setState(() => _adding = true);
+    try {
+      final treeUri = await SafChannel.chooseFolderTree();
+      if (treeUri == null) return;
+      await SafChannel.persistPermission(treeUri);
+      await ref.read(scanFoldersProvider.notifier).addFolder(treeUri);
+      if (!mounted) return;
+      Navigator.of(context).pop(1);
+    } catch (e) {
+      if (mounted) showXianYuToast(context, tr('添加失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
   /// 由扁平目录列表构建目录树，并折叠单链前缀（/storage/emulated/0 一类）。
   List<_PathNode> _buildTree(List<MediaFolderInfo> folders) {
     final root = _PathNode('', '', 0);
@@ -195,11 +214,17 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                                 style: TextStyle(fontWeight: FontWeight.w600)),
                             const SizedBox(height: 4),
                             Text(
-                              tr('若音乐存放在 DSD / USB 等特殊目录，\n请返回上一页使用顶栏的系统选择器添加'),
+                              tr('空目录、SD 卡 / USB 等任意位置可用下方按钮浏览'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   fontSize: 13,
                                   color: scheme.onSurfaceVariant),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.tonalIcon(
+                              onPressed: _adding ? null : _browseAllViaSaf,
+                              icon: const Icon(Icons.folder_open),
+                              label: Text(tr('浏览全部目录…')),
                             ),
                           ],
                         ),
@@ -216,6 +241,22 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                                 fontSize: 12, color: scheme.onSurfaceVariant),
                           ),
                         ),
+                        ListTile(
+                          dense: true,
+                          contentPadding:
+                              const EdgeInsets.only(left: 12, right: 12),
+                          leading: Icon(Icons.folder_open,
+                              color: scheme.primary),
+                          title: Text(tr('浏览全部目录…'),
+                              style: const TextStyle(fontSize: 14.5)),
+                          subtitle: Text(
+                            tr('空目录、SD 卡 / USB 等任意位置（系统选择器）'),
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.onSurfaceVariant),
+                          ),
+                          onTap: _adding ? null : _browseAllViaSaf,
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
                         for (final node in _roots) _tile(node, 0),
                       ],
                     ),
