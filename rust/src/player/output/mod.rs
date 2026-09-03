@@ -36,6 +36,11 @@ pub struct ExclusivePlayRequest {
     /// DSD 原生 DoP 直通开关：仅对 .dsf/.dff 且为真时走 DoP 打包直出
     /// （绕过解码器与 DSP）；为假时 DSD 容器按 PCM 解码走常规管线。
     pub dsd_native_passthrough: bool,
+    /// 共享模式 DSP 管线（日常播放）：AAudio 共享流走系统混音器输出到
+    /// 当前默认设备，全效果链（EQ/混响/空间音效/变速变调）生效。
+    /// 共享模式下 bit_perfect/DSD 直通/device_id 均被忽略。
+    #[serde(default)]
+    pub shared_mode: bool,
 }
 
 // =========================================================================

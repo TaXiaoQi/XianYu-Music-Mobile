@@ -767,7 +767,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.speaker_outlined,
             title: tr('输出设备'),
-            subtitle: tr('USB 独占 / DSD 直出到所选设备，可查看设备支持格式'),
+            subtitle:
+                tr('独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式'),
             trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
             onTap: () => _pickOutputDevice(context, ref),
           ),

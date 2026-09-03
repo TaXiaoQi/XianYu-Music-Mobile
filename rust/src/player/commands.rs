@@ -13,7 +13,7 @@ use crate::player::output;
 /// 统一播放命令。
 #[derive(Clone, Debug)]
 pub enum PlaybackCommand {
-    /// 启动独占播放（含 Bit-perfect/DSD 直出参数）。
+    /// 启动播放（独占或共享 DSP 管线，见 `shared_mode`）。
     Play {
         path: String,
         device_id: i32,
@@ -25,6 +25,7 @@ pub enum PlaybackCommand {
         sound_effect_settings_json: String,
         bit_perfect: bool,
         dsd_native_passthrough: bool,
+        shared_mode: bool,
     },
     /// 暂停（保持进度）。
     Pause,
@@ -62,6 +63,7 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
             sound_effect_settings_json,
             bit_perfect,
             dsd_native_passthrough,
+            shared_mode,
         } => {
             let request = output::ExclusivePlayRequest {
                 path,
@@ -74,6 +76,7 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
                 sound_effect_settings_json,
                 bit_perfect,
                 dsd_native_passthrough,
+                shared_mode,
             };
             output::start_exclusive_playback(request)
         }

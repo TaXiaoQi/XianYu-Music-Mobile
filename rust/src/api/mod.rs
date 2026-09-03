@@ -1065,6 +1065,7 @@ pub fn start_usb_exclusive_playback(
     sound_effect_settings_json: String,
     bit_perfect: bool,
     dsd_native_passthrough: bool,
+    shared_mode: bool,
 ) -> Result<String, String> {
     crate::player::commands::dispatch_playback_command(
         crate::player::commands::PlaybackCommand::Play {
@@ -1078,6 +1079,7 @@ pub fn start_usb_exclusive_playback(
             sound_effect_settings_json,
             bit_perfect,
             dsd_native_passthrough,
+            shared_mode,
         },
     )
 }

@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 use crate::player::buffered_source::{BlockProducer, BufferedSource};
+use crate::player::output::ExclusivePlayRequest;
 use crate::player::dsd_dop::{parse_dsd_info, DopStreamSource};
 use crate::player::equalizer::{Equalizer, EqualizerHandle, EqualizerSettings};
 use crate::player::loudness::VolumeNormalizer;
@@ -416,6 +417,8 @@ struct ExclusiveProgress {
     samples_played: AtomicU64,
     sample_rate: AtomicU32,
     channels: AtomicU32,
+    /// 源总时长（毫秒），供 Flutter 侧在 DSP 管线播放时更新进度条。
+    duration_ms: AtomicU64,
 }
 
 impl ExclusiveProgress {
@@ -424,6 +427,7 @@ impl ExclusiveProgress {
             samples_played: AtomicU64::new(0),
             sample_rate: AtomicU32::new(0),
             channels: AtomicU32::new(0),
+            duration_ms: AtomicU64::new(0),
         }
     }
 }
@@ -488,8 +492,12 @@ fn instance() -> &'static Mutex<Option<AndroidExclusivePlayback>> {
 // =========================================================================
 
 pub fn start_exclusive_playback(
-    request: super::ExclusivePlayRequest,
+    mut request: ExclusivePlayRequest,
 ) -> Result<String, String> {
+    // 共享模式（日常 DSP 管线）不涉及 Bit-perfect 直出。
+    if request.shared_mode {
+        request.bit_perfect = false;
+    }
     // 先停止已有实例
     stop_exclusive_playback();
 
@@ -693,7 +701,7 @@ pub fn get_exclusive_channels() -> u16 {
 /// 供前端检测热插拔断开并自动回退到普通播放。
 /// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
 pub fn get_exclusive_device_info() -> String {
-    let (active, device_name, sample_rate, channels, bit_perfect) =
+    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms) =
         if let Ok(guard) = instance().lock() {
             if let Some(playback) = guard.as_ref() {
                 (
@@ -702,12 +710,13 @@ pub fn get_exclusive_device_info() -> String {
                     playback.progress.sample_rate.load(Ordering::Relaxed),
                     playback.progress.channels.load(Ordering::Relaxed) as u16,
                     playback.bit_perfect.load(Ordering::Relaxed),
+                    playback.progress.duration_ms.load(Ordering::Relaxed),
                 )
             } else {
-                (false, String::new(), 0, 0, false)
+                (false, String::new(), 0, 0, false, 0)
             }
         } else {
-            (false, String::new(), 0, 0, false)
+            (false, String::new(), 0, 0, false, 0)
         };
     serde_json::json!({
         "active": active,
@@ -715,6 +724,7 @@ pub fn get_exclusive_device_info() -> String {
         "sampleRate": sample_rate,
         "channels": channels,
         "bitPerfect": bit_perfect,
+        "durationSecs": duration_ms as f64 / 1000.0,
     })
     .to_string()
 }
@@ -743,7 +753,8 @@ fn run_exclusive_playback(
     // 1.5 DSD（dsf/dff）原生 DoP 直出：仅当打开「DSD 原生直通」且当前处于
     // Bit-perfect 直出状态才走 DoP 打包（绕过解码器与 DSP，逐帧打包 24-bit）。
     // 关闭直通时 DSD 容器降级为 PCM 解码，走常规 DSP 管线。
-    if request.dsd_native_passthrough && is_dsd_path(&request.path) {
+    // 共享模式不走 DoP（系统混音器无法透传 DSD）。
+    if request.dsd_native_passthrough && !request.shared_mode && is_dsd_path(&request.path) {
         run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress, bit_perfect, running);
         return;
     }
@@ -814,10 +825,20 @@ fn run_exclusive_playback(
     let user_volume = Arc::new(AtomicU32::new(request.volume.to_bits()));
     let is_paused = Arc::new(AtomicBool::new(!request.is_playing));
 
-    // 6. 创建 AAudio 独占流。
-    // Bit-perfect 时优先按源位深协商整数格式（≤16bit→Int16，>16bit→Int24，
-    // 深层浮点回退），实现「按源位深整数直出」；常规模式仍 Float32→Int16。
-    let (stream, device_format, stream_sample_rate, stream_channels) = if initial_bit_perfect {
+    // 6. 创建 AAudio 流。
+    // 共享模式：SHARED 共享流走系统混音器（全效果链生效），输出到所选设备
+    //（-1 = 系统默认设备，对齐桌面端共享模式可选输出设备）。
+    // 独占 Bit-perfect 时优先按源位深协商整数格式（≤16bit→Int16，>16bit→Int24，
+    // 深层浮点回退），实现「按源位深整数直出」；常规独占仍 Float32→Int16。
+    let (stream, device_format, stream_sample_rate, stream_channels) = if request.shared_mode {
+        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels, true) {
+            Ok(result) => result,
+            Err(e) => {
+                let _ = init_tx.send(Err(e));
+                return;
+            }
+        }
+    } else if initial_bit_perfect {
         let depth = probe_source_bit_depth(&request.path);
         match create_aaudio_stream_bitperfect(
             &lib,
@@ -833,7 +854,8 @@ fn run_exclusive_playback(
             }
         }
     } else {
-        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels) {
+        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels, false)
+        {
             Ok(result) => result,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
@@ -845,6 +867,10 @@ fn run_exclusive_playback(
     let effective_rate = sound_effect.effective_sample_rate();
     progress.sample_rate.store(effective_rate, Ordering::Relaxed);
     progress.channels.store(stream_channels as u32, Ordering::Relaxed);
+    progress.duration_ms.store(
+        total_duration.map(|d| d.as_millis() as u64).unwrap_or(0),
+        Ordering::Relaxed,
+    );
     progress.samples_played.store(
         (request.start_time_secs * source_sample_rate as f64 * source_channels as f64) as u64,
         Ordering::Relaxed,
@@ -863,16 +889,20 @@ fn run_exclusive_playback(
     }
 
     // 8. 通知初始化成功
-    let device_name = format!(
-        "USB DAC ({}Hz, {}ch, {}bit exclusive)",
-        stream_sample_rate,
-        stream_channels,
-        match device_format {
-            DeviceFormat::Float32 => 32,
-            DeviceFormat::Int16 => 16,
-            DeviceFormat::I24Packed => 24,
-        }
-    );
+    let device_name = if request.shared_mode {
+        format!("系统混音器 ({}Hz, {}ch shared)", stream_sample_rate, stream_channels)
+    } else {
+        format!(
+            "USB DAC ({}Hz, {}ch, {}bit exclusive)",
+            stream_sample_rate,
+            stream_channels,
+            match device_format {
+                DeviceFormat::Float32 => 32,
+                DeviceFormat::Int16 => 16,
+                DeviceFormat::I24Packed => 24,
+            }
+        )
+    };
     let _ = init_tx.send(Ok((device_name, stream_sample_rate, stream_channels)));
 
     // 9. 轮询循环
@@ -1069,7 +1099,7 @@ fn run_dsd_passthrough(
 
     // 打开 DoP DAC：仅尝试 24-bit packed 独占流。
     let (stream, stream_rate, stream_channels) = match unsafe {
-        try_open_stream(&lib, request.device_id, dop_rate, channels, DeviceFormat::I24Packed)
+        try_open_stream(&lib, request.device_id, dop_rate, channels, DeviceFormat::I24Packed, false)
     } {
         Ok(s) => {
             let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
@@ -1207,28 +1237,48 @@ fn run_dsd_passthrough(
     }
 }
 
-/// 协商创建 AAudio 独占流。先试 Float32 独占，失败再试 Int16 独占。
+/// 协商创建 AAudio 流。独占：先试 Float32 失败再试 Int16；
+/// 共享：走系统混音器（默认设备），按实际协商出的格式回读。
 fn create_aaudio_stream(
     lib: &AAudioLib,
     device_id: i32,
     sample_rate: u32,
     channels: u16,
+    shared: bool,
 ) -> Result<(*mut AAudioStream, DeviceFormat, u32, u16), String> {
     let formats = [DeviceFormat::Float32, DeviceFormat::Int16];
 
     for &fmt in &formats {
-        let stream = unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt) };
+        let stream =
+            unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, shared) };
         match stream {
             Ok(s) => {
                 let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
                 let actual_channels = unsafe { (lib.stream_get_channel_count)(s) } as u16;
-                return Ok((s, fmt, actual_rate, actual_channels));
+                // 共享模式下系统可能重协商格式，按实际格式回读供字节转换使用。
+                let actual_fmt = if shared {
+                    device_format_of(unsafe { (lib.stream_get_format)(s) })
+                } else {
+                    Some(fmt)
+                };
+                let actual_fmt = match actual_fmt {
+                    Some(f) => f,
+                    None => {
+                        unsafe { (lib.stream_close)(s) };
+                        continue;
+                    }
+                };
+                return Ok((s, actual_fmt, actual_rate, actual_channels));
             }
             Err(_e) => continue,
         }
     }
 
-    Err("无法创建 AAudio 独占流（设备不支持独占模式或已被占用）".to_string())
+    Err(if shared {
+        "无法创建 AAudio 共享流（需要 Android API 26+）".to_string()
+    } else {
+        "无法创建 AAudio 独占流（设备不支持独占模式或已被占用）".to_string()
+    })
 }
 
 /// Bit-perfect 流协商：按源位深优先尝试整数格式（≤16bit→Int16，>16bit→Int24，
@@ -1254,7 +1304,8 @@ fn create_aaudio_stream_bitperfect(
     }
 
     for &fmt in &attempts {
-        let stream = unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt) };
+        let stream =
+            unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, false) };
         match stream {
             Ok(s) => {
                 let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
@@ -1350,6 +1401,7 @@ unsafe fn try_open_stream(
     sample_rate: u32,
     channels: u16,
     fmt: DeviceFormat,
+    shared: bool,
 ) -> Result<*mut AAudioStream, String> {
     let mut builder: *mut AAudioStreamBuilder = std::ptr::null_mut();
     let result = (lib.create_stream_builder)(&mut builder);
@@ -1364,8 +1416,13 @@ unsafe fn try_open_stream(
     (lib.builder_set_sample_rate)(builder, sample_rate as i32);
     (lib.builder_set_channel_count)(builder, channels as i32);
     (lib.builder_set_format)(builder, fmt.aaudio_format());
-    (lib.builder_set_sharing_mode)(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
-    (lib.builder_set_performance_mode)(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    if shared {
+        // 共享模式走系统混音器：不设性能档（默认 NONE，省电）。
+        (lib.builder_set_sharing_mode)(builder, AAUDIO_SHARING_MODE_SHARED);
+    } else {
+        (lib.builder_set_sharing_mode)(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
+        (lib.builder_set_performance_mode)(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    }
     (lib.builder_set_buffer_capacity)(builder, 4096);
 
     let mut stream: *mut AAudioStream = std::ptr::null_mut();
@@ -1376,14 +1433,24 @@ unsafe fn try_open_stream(
         return Err(lib.result_text(result));
     }
 
-    // 验证实际格式
+    // 验证实际格式（共享模式允许系统重协商，由调用方按实际格式回读）
     let actual_format = (lib.stream_get_format)(stream);
-    if actual_format != fmt.aaudio_format() {
+    if !shared && actual_format != fmt.aaudio_format() {
         (lib.stream_close)(stream);
         return Err("设备拒绝了请求的格式".to_string());
     }
 
     Ok(stream)
+}
+
+/// AAudio 格式常量 → 管线字节转换格式；未知格式返回 None。
+fn device_format_of(format: i32) -> Option<DeviceFormat> {
+    match format {
+        AAUDIO_FORMAT_PCM_FLOAT => Some(DeviceFormat::Float32),
+        AAUDIO_FORMAT_PCM_I16 => Some(DeviceFormat::Int16),
+        AAUDIO_FORMAT_PCM_I24_PACKED => Some(DeviceFormat::I24Packed),
+        _ => None,
+    }
 }
 
 // =========================================================================
