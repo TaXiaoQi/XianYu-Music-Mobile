@@ -43,8 +43,15 @@ class CoverProxy {
   static final Map<String, Uint8List> _cache = {};
   static int _totalBytes = 0;
 
-  /// 已尝试且失败的 URL，避免反复请求。
-  static final Set<String> _failed = {};
+  /// 已尝试且失败的 URL → 最近一次失败时间。
+  ///
+  /// 封面拉取失败多为瞬时网络抖动 / CDN 防盗链偶发 403，永久拉黑会让一张
+  /// 恰好失败过的封面整个会话都无法恢复。故改为按冷却时间短时屏蔽，
+  /// 冷却过后允许 `OnlineCover` 重试，恢复被误判的封面。
+  static final Map<String, DateTime> _failed = {};
+
+  /// 失败后的冷却时长，期间视为失败、不重复请求；过后允许重试。
+  static const retryAfter = Duration(seconds: 20);
 
   /// 判断该 URL 是否需要经后端代理。
   static bool needsProxy(String url) {
@@ -63,23 +70,27 @@ class CoverProxy {
     return hit;
   }
 
-  /// 该 URL 是否已确认失败。
-  static bool hasFailed(String url) => _failed.contains(url);
+  /// 该 URL 是否处于失败冷却期内。
+  static bool hasFailed(String url) {
+    final t = _failed[url];
+    if (t == null) return false;
+    return DateTime.now().difference(t) < retryAfter;
+  }
 
   /// 经后端代理获取图片字节。
   ///
-  /// 成功后写入缓存；失败记录到 [_failed] 并返回 null。
+  /// 成功后写入缓存；失败记录冷却时间并返回 null（冷却过后允许重试）。
   static Future<Uint8List?> fetch(String url) async {
     if (url.isEmpty) return null;
     final hit = cached(url);
     if (hit != null) return hit;
-    if (_failed.contains(url)) return null;
+    if (hasFailed(url)) return null;
 
     try {
       final dataUrl = await proxyImage(url: url);
       final bytes = _decodeDataUrl(dataUrl);
       if (bytes == null) {
-        _failed.add(url);
+        _failed[url] = DateTime.now();
         return null;
       }
       final old = _cache.remove(url);
@@ -87,9 +98,10 @@ class CoverProxy {
       _cache[url] = bytes;
       _totalBytes += bytes.length;
       _evict();
+      _failed.remove(url);
       return bytes;
     } catch (_) {
-      _failed.add(url);
+      _failed[url] = DateTime.now();
       return null;
     }
   }

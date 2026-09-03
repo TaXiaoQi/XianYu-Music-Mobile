@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -29,6 +30,12 @@ class OnlineCover extends StatefulWidget {
 class _OnlineCoverState extends State<OnlineCover> {
   Uint8List? _bytes;
 
+  /// 已连续失败的次数，控制重试上限，避免真坏死 URL 无限请求。
+  int _attempts = 0;
+  Timer? _retryTimer;
+
+  static const _maxAttempts = 4;
+
   @override
   void initState() {
     super.initState();
@@ -39,9 +46,18 @@ class _OnlineCoverState extends State<OnlineCover> {
   void didUpdateWidget(OnlineCover old) {
     super.didUpdateWidget(old);
     if (old.url != widget.url) {
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _attempts = 0;
       _bytes = null;
       _maybeProxy();
     }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
   }
 
   /// 需要代理时异步拉取；直连场景交给 CachedNetworkImage。
@@ -56,13 +72,32 @@ class _OnlineCoverState extends State<OnlineCover> {
       _bytes = hit;
       return;
     }
-    if (CoverProxy.hasFailed(url)) return;
+    if (CoverProxy.hasFailed(url)) {
+      _scheduleRetryIfPossible(url);
+      return;
+    }
 
     CoverProxy.fetch(url).then((bytes) {
-      if (!mounted || bytes == null) return;
-      // 拉取期间可能已切换到别的封面。
+      if (!mounted) return;
       if (widget.url != url) return;
-      setState(() => _bytes = bytes);
+      if (bytes != null) {
+        _attempts = 0;
+        setState(() => _bytes = bytes);
+        return;
+      }
+      // 失败：进入冷却，冷却过后重试一次，恢复被误判的封面。
+      _scheduleRetryIfPossible(url);
+    });
+  }
+
+  /// 失败后按冷却时长定时重试；超过最大次数则停止。
+  void _scheduleRetryIfPossible(String url) {
+    if (_attempts >= _maxAttempts) return;
+    _attempts++;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(CoverProxy.retryAfter, () {
+      if (!mounted || widget.url != url) return;
+      _maybeProxy();
     });
   }
 
