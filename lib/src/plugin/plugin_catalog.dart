@@ -555,6 +555,24 @@ String _extractAlbumText(Map<String, dynamic> item) {
   return '';
 }
 
+/// 提取专辑 ID（网易云 MF 曲目常为 `al.id` / `album.id`，供宿主 lx_cover 专辑接口补封面）。
+String? _extractAlbumId(Map<String, dynamic> item) {
+  for (final key in ['albumId', 'album_id', 'al', 'album']) {
+    final v = item[key];
+    if (v is String) {
+      final t = v.trim();
+      if (t.isNotEmpty) return t;
+    } else if (v is num && v != 0) {
+      return v.toInt().toString();
+    } else if (v is Map) {
+      final id = v['id'];
+      if (id is String && id.trim().isNotEmpty) return id.trim();
+      if (id is num && id != 0) return id.toInt().toString();
+    }
+  }
+  return null;
+}
+
 /// 网易云 picId 加密路径段（与官方 CDN 路径一致，对齐桌面 encryptNeteasePicId）。
 String _encryptNeteasePicId(String id) {
   const magic = '3go8&\$8*3*3h0k(2)2';
@@ -719,6 +737,12 @@ String? _extractCover(Map<String, dynamic> item) {
   return out;
 }
 
+/// 解析统一歌曲条目（[PluginSearchResult.toJson]、LX snake_case、MusicFree raw）
+/// 的可显示封面 URL，复用 [PluginCatalogService] 的完整提取逻辑（桌面端
+/// `extractCoverUrl`）：直接字段 + 嵌套 + 酷我域名归一化 + 短路径 + 网易云 picId 兜底。
+/// 无可用封面返回 null。
+String? resolveSongCoverUrl(Map<String, dynamic> item) => _extractCover(item);
+
 /// 提取歌手头像。
 String? _extractAvatar(Map<String, dynamic> item) {
   const candidates = [
@@ -808,6 +832,7 @@ PluginSearchResult mfItemToSearchResult(
     name: _stripHtml(item['title'] ?? item['name'] ?? item['songname'] ?? ''),
     singer: _extractArtistText(item),
     albumName: _extractAlbumText(item),
+    albumId: _extractAlbumId(item),
     songmid: id,
     source: item['platform'] is String ? item['platform'] as String : source.name,
     interval: interval,

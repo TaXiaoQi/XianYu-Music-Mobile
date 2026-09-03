@@ -306,6 +306,8 @@ class PluginManager extends StateNotifier<PluginListState> {
       // 禁用时销毁沙箱实例
       await engine.destroy(id);
     }
+    // 启停改变插件加载状态：Baka 判定缓存（false 可能是未就绪临时误判）与媒体缓存失效
+    engine.bakaManager.clearCache(id);
   }
 
   /// 卸载插件。
@@ -316,6 +318,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list = state.sources.where((s) => s.id != id).toList();
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
+    engine.bakaManager.clearCache(id);
   }
 
   /// 按用户拖拽后的顺序重排插件：重写所有插件的 sortOrder 并持久化
@@ -361,6 +364,9 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list = state.sources.where((s) => s.id != oldId).toList();
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
+    // 插件已更新（新 id 可能是新插件生态）：Baka 判定与媒体缓存失效
+    engine.bakaManager.clearCache(oldId);
+    if (newSource.id != oldId) engine.bakaManager.clearCache(newSource.id);
   }
 
   /// 获取插件的用户变量定义（触发懒加载读取 metadata）。

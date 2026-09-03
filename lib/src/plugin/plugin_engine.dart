@@ -8,6 +8,7 @@ import '../i18n/i18n.dart';
 import 'plugin_models.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_store.dart';
+import 'baka_plugin_manager.dart';
 
 /// 插件引擎编排层：负责插件加载/调用/生命周期，LX 请求封装。
 ///
@@ -40,6 +41,10 @@ class PluginEngine {
   static const int _maxPluginSize = 2 * 1024 * 1024;
 
   PluginEngine(this.dataDir, this.store);
+
+  /// Baka/Toskysun 系列插件独立管理器（对齐桌面 bakaPluginManager 架构拆分）：
+  /// 识别锚点、声明档读取与原生键媒体解析收拢于此，MF 主路径保持纯净。
+  late final BakaPluginManager bakaManager = BakaPluginManager(this);
 
   String _resolveId(String pluginId) => _aliases[pluginId] ?? pluginId;
 
@@ -249,6 +254,36 @@ class PluginEngine {
     }
   }
 
+  // ==================== 可播放能力 ====================
+
+  /// 判断插件是否具备可播能力，供日推等聚合场景在收录歌曲前过滤，
+  /// 避免把「能搜到但无法播放」的插件歌曲混入列表（对齐桌面端日推只走可播放插件）。
+  /// - MusicFree：需实现 `getMediaSource`（元数据 `_availableMethods` 含该键）。
+  /// - LX：需声明至少一个 `music` 音源且在 `actions` 中含 `musicUrl`。
+  /// 加载失败或无对应方法一律视为不可播。
+  Future<bool> canPlayMusic(PluginSource source) async {
+    if (!source.enabled) return false;
+    try {
+      final meta = await ensureLoaded(source);
+      if (meta == null) return false;
+      if (source.format == PluginFormat.musicfree) {
+        final methods = meta['_availableMethods'];
+        return methods is List && methods.contains('getMediaSource');
+      }
+      final sources = meta['sources'];
+      if (sources is! Map) return false;
+      for (final v in sources.values) {
+        if (v is! Map) continue;
+        if (v['type'] is String && v['type'] != 'music') continue;
+        final actions = v['actions'];
+        if (actions is List && actions.contains('musicUrl')) return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ==================== LX 请求协议 ====================
 
   /// 内部音质键 → LX 插件音质串（对齐桌面端 qualityKeyToLxQuality）：
@@ -342,6 +377,13 @@ class PluginEngine {
   /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）。
   static String _qualityKeyToPluginString(String q) => q == 'mgg' ? '96k' : q;
 
+  /// 12 档音质阶梯（低 → 高）公开只读（供 Baka 管理器/探测层复用）。
+  static const List<String> qualityLadder = _qualityLadder;
+
+  /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）公开包装。
+  static String qualityKeyToPluginString(String q) =>
+      _qualityKeyToPluginString(q);
+
   static bool _isLossless(String q) =>
       _qualityLadder.indexOf(q) >= _qualityLadder.indexOf('flac');
 
@@ -359,6 +401,9 @@ class PluginEngine {
     if (rank >= 3) return 'standard';
     return 'low';
   }
+
+  /// 内部键 → MusicFree 四级键公开包装（供探测层按四级键分组代表档）。
+  static String qualityKeyToMfQuality(String q) => _qualityKeyToMfQuality(q);
 
   /// MusicFree 四级键顺序（低 → 高），对齐桌面 MF_QUALITY_ORDER。
   static const List<String> _mfQualityOrder = ['low', 'standard', 'high', 'super'];
@@ -443,111 +488,16 @@ class PluginEngine {
     return candidates.take(1).toList();
   }
 
-  /// Baka 插件旧四级键回退（对齐桌面 BAKA_TO_LEGACY_QUALITY_MAP）。
-  static String? _bakaLegacyQuality(String q) {
-    switch (q) {
-      case 'mgg':
-      case '128k':
-        return 'low';
-      case '192k':
-        return 'standard';
-      case '320k':
-        return 'high';
-      case 'flac':
-      case 'flac24bit':
-      case 'hires':
-      case 'vinyl':
-      case 'dolby':
-      case 'atmos':
-      case 'atmos_plus':
-      case 'master':
-        return 'super';
-    }
-    return null;
-  }
-
-  /// 是否 Baka 系列插件（对齐桌面 BakaPluginManager.isBakaPlugin）：
-  /// 实现了 getMusicComments 评论区 API，或声明了 12 档风格 supportedQualities。
-  bool isBakaPlugin(String pluginId) {
-    final meta = metadataOf(pluginId);
-    if (meta == null) return false;
-    final methods = meta['_availableMethods'];
-    if (methods is List && methods.contains('getMusicComments')) return true;
-    final author = (meta['author'] as String? ?? '').toLowerCase();
-    if (author.contains('toskysun')) return true;
-    if (author.contains('时迁酱')) return false;
-    final raw = meta['supportedQualities'];
-    if (raw is List) {
-      for (final dq in raw) {
-        if (_normalizeQualityKey(dq) != null) return true;
-      }
-    }
-    return false;
-  }
-
-  /// 构建 Baka 插件音质候选（对齐桌面 BakaPluginManager.getMediaSource）：
-  /// 12 档原生键优先（mgg→96k），按首选→更高→更低顺序，声明键过滤后
-  /// 逐档补旧四级键回退（newToLegacyQualityMap）。未声明 supportedQualities
-  /// 时只试首选 + 相邻一档，避免每档一次网络请求拖慢起播。
-  static List<String> _bakaQualityCandidates(
-    String preferred,
-    String fallback,
-    Set<String> declaredKeys,
-  ) {
-    final ladderDesc = _qualityLadder.reversed.toList();
-    final native = <String>[];
-    final seen = <String>{};
-    void add(String qk) {
-      if (seen.add(qk)) native.add(qk);
-    }
-
-    if (fallback == 'pause') {
-      add(preferred);
-    } else if (fallback == 'higher') {
-      final start = _qualityLadder.indexOf(preferred);
-      if (start >= 0) {
-        for (var i = start; i < _qualityLadder.length; i++) {
-          add(_qualityLadder[i]);
-        }
-      } else {
-        add(preferred);
-      }
-    } else {
-      final start = ladderDesc.indexOf(preferred);
-      if (start >= 0) {
-        for (var i = start; i < ladderDesc.length; i++) {
-          add(ladderDesc[i]);
-        }
-      } else {
-        add(preferred);
-      }
-    }
-
-    if (declaredKeys.isNotEmpty) {
-      final filtered = native.where(declaredKeys.contains).toList();
-      if (filtered.isNotEmpty) {
-        native
-          ..clear()
-          ..addAll(filtered);
-      }
-    } else {
-      // 未声明 supportedQualities（Baka 自回落插件）：只补一个相邻档。
-      final idx = _qualityLadder.indexOf(preferred);
-      if (idx >= 0) {
-        final adj = fallback == 'higher'
-            ? (idx + 1 < _qualityLadder.length ? _qualityLadder[idx + 1] : null)
-            : (idx - 1 >= 0 ? _qualityLadder[idx - 1] : null);
-        if (adj != null) add(adj);
-      }
-    }
-    return native;
-  }
+  /// 是否 Baka 系列插件：委托独立管理器（锚点顺序与缓存语义见
+  /// [BakaPluginManager.isBakaPlugin]，对齐桌面 BakaPluginManager.isBakaPlugin）。
+  bool isBakaPlugin(String pluginId) => bakaManager.isBakaPlugin(pluginId);
 
   /// 解析 MusicFree 插件播放直链。
   ///
   /// 与桌面端 pluginGetMusicInfo 对齐：主路径传 MF 四级键（low/standard/high/super），
   /// 四级键全部报「不支持音质」时兜底补试原生键；参考包内同时带 url/headers。
-  /// Baka 系列插件走 12 档原生键（对齐 BakaPluginManager.getMediaSource）。
+  /// Baka 系列插件在入口转交独立管理器（对齐桌面 pluginEngineMedia 分发：
+  /// BakaMusic API 向下兼容 MF，但播放音质应优先使用 Baka 原生键）。
   /// musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
@@ -591,41 +541,16 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
-    // Baka 系列插件：12 档原生键主路径（对齐桌面 BakaPluginManager.getMediaSource）。
-    // 新键无结果时按 BAKA_TO_LEGACY_QUALITY_MAP 逐档补试旧四级键。
-    if (isBakaPlugin(source.id)) {
-      final tryKeys = _bakaQualityCandidates(preferred, fallback, declaredKeys);
-      final attempted = <String>{};
-      for (final qk in tryKeys) {
-        final pluginQ = _qualityKeyToPluginString(qk);
-        if (!attempted.add(pluginQ)) continue;
-        try {
-          final response = await call(
-            source.id,
-            'getMediaSource',
-            [musicItem, pluginQ],
-          );
-          final url = _extractMfPlayableUrl(response);
-          if (url != null) return url;
-        } catch (_) {
-          // 单档失败继续下一档
-        }
-        final legacy = _bakaLegacyQuality(qk);
-        if (legacy != null && attempted.add(legacy)) {
-          try {
-            final response = await call(
-              source.id,
-              'getMediaSource',
-              [musicItem, legacy],
-            );
-            final url = _extractMfPlayableUrl(response);
-            if (url != null) return url;
-          } catch (_) {
-            // 单档失败继续下一档
-          }
-        }
-      }
-      return null;
+    // Baka 系列插件转交独立管理器：12 档原生键主路径 + legacy 逐档回退 +
+    // 在途去重/结果缓存（对齐桌面 pluginEngineMedia 分发 + bakaPluginManagerMedia）。
+    if (bakaManager.isBakaPlugin(source.id)) {
+      return bakaManager.getMediaSource(
+        source,
+        musicItem,
+        preferred: preferred,
+        fallback: fallback,
+        declaredKeys: declaredKeys,
+      );
     }
 
     // 主路径：MF 四级键按 asc 顺序尝试；记录是否出现「不支持音质」错误。
@@ -638,7 +563,7 @@ class PluginEngine {
           'getMediaSource',
           [musicItem, q],
         );
-        final url = _extractMfPlayableUrl(response);
+        final url = extractMfPlayableUrl(response, requestedKey: q);
         if (url != null) return url;
       } catch (e) {
         final msg = e is PluginEngineException ? e.message : e.toString();
@@ -658,7 +583,7 @@ class PluginEngine {
             'getMediaSource',
             [musicItem, q],
           );
-          final url = _extractMfPlayableUrl(response);
+          final url = extractMfPlayableUrl(response, requestedKey: q);
           if (url != null) return url;
         } catch (_) {
           // 单档失败继续下一档
@@ -668,19 +593,29 @@ class PluginEngine {
     return null;
   }
 
-  static ResolvedMediaUrl? _extractMfPlayableUrl(dynamic response) {
+  /// 从插件 getMediaSource 返回中提取可播放直链（公开：Baka 管理器复用）。
+  static ResolvedMediaUrl? extractMfPlayableUrl(
+    dynamic response, {
+    String? requestedKey,
+  }) {
     if (response == null) return null;
     // QQ 60 秒试听链（RS02 前缀）不是可用播放源：走免费公共中转的 QQ 插件游客
     // 模板恒返试听且各音质档同一文件。若照常返回用户只能听到 60 秒还误以为歌
     // 就这「那么短」。拒收并继续下一音质档，全档失败由起播失败行为透出（对齐桌面
     // bakaPluginManagerMedia 的 shouldAcceptMediaResult）。
     bool notQqTrial(String url) => !isQqTrialMediaUrl(url);
+    // 采用插件实际返回的档位（quality/type/actualQuality），对齐桌面端
+    // `actualQuality = normalizeQualityKey(result.quality) ?? inferActualQualityFromMediaUrl`。
+    // 插件把 flac 请求降级为 320k 时会如实报告，丢掉它会导致音质菜单/体积探测虚高，
+    // 出现「假音质」。归一化失败则回落到请求档，由下游无损扩展名校验兜底。
+    final requestedNorm =
+        requestedKey == null ? null : _normalizeQualityKey(requestedKey);
     if (response is String) {
       return response.isNotEmpty &&
               response.length <= 2048 &&
               RegExp(r'^https?:').hasMatch(response) &&
               notQqTrial(response)
-          ? ResolvedMediaUrl(url: response)
+          ? ResolvedMediaUrl(url: response, quality: requestedNorm)
           : null;
     }
     if (response is Map) {
@@ -691,10 +626,17 @@ class PluginEngine {
           url.length <= 2048 &&
           RegExp(r'^https?:').hasMatch(url) &&
           notQqTrial(url)) {
+        String? reported;
+        final qField =
+            obj['quality'] ?? obj['type'] ?? obj['actualQuality'];
+        if (qField is String && qField.isNotEmpty) {
+          reported = _normalizeQualityKey(qField);
+        }
         final h = obj['headers'];
         return ResolvedMediaUrl(
           url: url,
           headers: h is Map ? h.cast<String, String>() : null,
+          quality: reported ?? requestedNorm,
         );
       }
     }
