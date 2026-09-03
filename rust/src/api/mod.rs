@@ -210,6 +210,21 @@ pub async fn webdav_test_connection(source_json: String) -> Result<(), String> {
     crate::remote::webdav::test_connection(&source).await
 }
 
+/// 按表单连接信息浏览 WebDAV 目录（新增源未保存时也可浏览，返回 [`RemoteFileEntry[]`] JSON）。
+pub async fn webdav_browse_directory(
+    source_json: String,
+    path: String,
+) -> Result<String, String> {
+    let source = parse_remote_source(&source_json)?;
+    let entries = crate::remote::webdav::list_directory(
+        crate::remote::webdav::shared_client(),
+        &source,
+        &path,
+    )
+    .await?;
+    serde_json::to_string(&entries).map_err(|e| e.to_string())
+}
+
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]

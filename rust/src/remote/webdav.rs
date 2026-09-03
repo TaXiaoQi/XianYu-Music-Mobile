@@ -211,6 +211,8 @@ fn supported_audio_extension(path: &str) -> bool {
             if matches!(
                 ext.as_str(),
                 "mp3" | "flac" | "wav" | "m4a" | "aac" | "ogg" | "opus" | "aiff" | "aif"
+                    // 对齐桌面端 c97d1df8：WebDAV 同步不能漏掉 DSD/APE/WV
+                    | "dsf" | "dff" | "ape" | "wv"
             )
     )
 }
@@ -375,7 +377,12 @@ pub(crate) async fn list_directory(
         .map_err(|error| error.to_string())?;
 
     if !response.status().is_success() {
-        return Err(format!("WebDAV 返回状态码 {}", response.status()));
+        // 带上实际请求 URL：便于区分「根目录配置错误」与「递归扫描中某个子目录 404」
+        return Err(format!(
+            "WebDAV 返回状态码 {}（PROPFIND {}）",
+            response.status(),
+            build_url(source, path)
+        ));
     }
 
     let text = response.text().await.map_err(|error| error.to_string())?;
