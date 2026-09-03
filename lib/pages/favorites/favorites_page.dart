@@ -24,6 +24,7 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
+import '../../src/widgets/source_tag.dart';
 import '../home/online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -423,6 +424,12 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                     color: scheme.onSurfaceVariant),
               ),
               verticalPadding: m.vPad,
+              trailing: SourceTag(
+                path: entry.path,
+                isOnline: entry.isOnline,
+                source: entry.source,
+                onlineSongJson: entry.onlineSongJson,
+              ),
               onTap: () => batch.toggle(entry.path),
             );
             return wrapBatchRow(
@@ -776,11 +783,23 @@ class _FavoriteTile extends ConsumerWidget {
               TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
         ),
         verticalPadding: m.vPad,
-        trailing: IconButton(
-          icon: Icon(Icons.favorite,
-              size: 20, color: scheme.primary),
-          tooltip: tr('取消收藏'),
-          onPressed: onRemove,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SourceTag(
+              path: entry.path,
+              isOnline: entry.isOnline,
+              source: entry.source,
+              onlineSongJson: entry.onlineSongJson,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.favorite,
+                  size: 20, color: scheme.primary),
+              tooltip: tr('取消收藏'),
+              onPressed: onRemove,
+            ),
+          ],
         ),
       ),
     );

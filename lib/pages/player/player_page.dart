@@ -40,6 +40,7 @@ import '../../src/widgets/modern_dialog.dart';
 import '../../src/widgets/predictive_cover_return.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
@@ -6264,27 +6265,11 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHigh
-                                .withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color:
-                                  scheme.outlineVariant.withValues(alpha: 0.3),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Text(
-                            _formatItemSource(item),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: scheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                        SourceTag(
+                          path: item.path,
+                          isOnline: item.isOnline,
+                          source: item.source,
+                          onlineSongJson: item.onlineSongJson,
                         ),
                         const SizedBox(width: 4),
                         IconButton(

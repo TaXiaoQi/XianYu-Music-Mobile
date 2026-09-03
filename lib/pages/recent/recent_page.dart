@@ -15,6 +15,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 最近播放页：展示播放历史，支持点播/移除/清空。
@@ -333,14 +334,31 @@ class _RecentTile extends ConsumerWidget {
             color: scheme.onSurfaceVariant,
           ),
         ),
-        trailing: IconButton(
-          icon: Icon(Icons.close, size: 18, color: scheme.outline),
-          tooltip: tr('移除'),
-          onPressed: onRemove,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SourceTag(
+              path: entry.songPath,
+              isOnline:
+                  item?.isOnline ?? _isOnlinePath(entry.songPath),
+              source: item?.source,
+              onlineSongJson: item?.onlineSongJson,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.close, size: 18, color: scheme.outline),
+              tooltip: tr('移除'),
+              onPressed: onRemove,
+            ),
+          ],
         ),
       ),
     );
   }
+
+  /// 由路径判定是否为在线歌曲（无元数据时可仅凭路径识别来源标签）。
+  bool _isOnlinePath(String p) =>
+      p.startsWith('lx://') || p.startsWith('plugin://');
 
   String _titleFromPath(String p) {
     final name = p.split(RegExp(r'[\\/]')).last;

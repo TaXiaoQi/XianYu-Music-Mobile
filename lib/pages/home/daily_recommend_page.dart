@@ -14,6 +14,7 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -228,6 +229,17 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
     super.dispose();
   }
 
+  Widget _buildSourceTag(DailyRecommendItem item) {
+    final q = item.toQueueItem('320k');
+    return SourceTag(
+      path: q.path,
+      isOnline: true,
+      source: q.source,
+      onlineSongJson: q.onlineSongJson,
+      pluginId: item.pluginId,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -306,14 +318,23 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 1),
-                    Text(
-                      item.artist.isEmpty
-                          ? item.album
-                          : '${item.artist} · ${item.album}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.artist.isEmpty
+                                ? item.album
+                                : '${item.artist} · ${item.album}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _buildSourceTag(item),
+                      ],
                     ),
                     if (item.reason.isNotEmpty)
                       Padding(

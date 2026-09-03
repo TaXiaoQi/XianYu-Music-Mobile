@@ -26,6 +26,7 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
 
@@ -926,6 +927,12 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
               style: TextStyle(
                   fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
             ),
+            trailing: SourceTag(
+              path: song.path,
+              isOnline: !song.isLocal,
+              source: song.source,
+              pluginId: song.pluginId,
+            ),
           );
           return wrapBatchRow(
             context,
@@ -1025,11 +1032,23 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                                   fontSize: m.subtitleSize,
                                   color: scheme.onSurfaceVariant),
                             ),
-                            trailing: IconButton(
-                              icon: Icon(Icons.close,
-                                  size: 18, color: scheme.outline),
-                              tooltip: tr('从歌单移除'),
-                              onPressed: () => widget.onRemove(index),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SourceTag(
+                                  path: song.path,
+                                  isOnline: !song.isLocal,
+                                  source: song.source,
+                                  pluginId: song.pluginId,
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: Icon(Icons.close,
+                                      size: 18, color: scheme.outline),
+                                  tooltip: tr('从歌单移除'),
+                                  onPressed: () => widget.onRemove(index),
+                                ),
+                              ],
                             ),
                           ),
                         );
