@@ -414,9 +414,6 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   /// 各音源来源条的 GlobalKey，切换音源时把对应 chip 滚入可视区（对齐榜单页）。
   final Map<String, GlobalKey> _sourceKeys = {};
 
-  /// 来源切换条是否处于壁纸抽透明态（见 ChoiceChip 的适配分支）。
-  bool get _wallpaper => ref.watch(wallpaperActiveProvider);
-
   @override
   void initState() {
     super.initState();
@@ -562,64 +559,26 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     setState(() {});
   }
 
-  /// [floating]：悬浮顶栏模式下把每个来源拆成独立玻璃气泡（[FloatingSourcePill]），
-  /// 替换原来的 ChoiceChip 底色；否则保留原 ChoiceChip（固定/内嵌模式）。
+  /// 来源插件切换条：与音源榜单一致，拆成独立玻璃气泡（[FloatingSourcePill]），
+  /// 不再铺实色底板，壁纸反色下来源仍清晰可读。
   Widget _buildSourceBar({bool floating = false}) {
-    if (floating) {
-      return SizedBox(
-        height: 40,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 0),
-          children: [
-            for (final s in _sources)
-              Padding(
-                key: _sourceKeys[s.id],
-                padding: const EdgeInsets.only(right: 8),
-                child: FloatingSourcePill(
-                  name: s.name,
-                  selected: s.id == _selected.id,
-                  onTap: () => _onSourceSelected(s.id),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
     return SizedBox(
-      height: 46,
+      height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: EdgeInsets.symmetric(
+          horizontal: floating ? 2 : 14,
+        ),
         children: [
           for (final s in _sources)
             Padding(
               key: _sourceKeys[s.id],
               padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(s.name),
-                showCheckmark: false,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FloatingSourcePill(
+                name: s.name,
                 selected: s.id == _selected.id,
-                // 壁纸模式下抽透明：未选中透出壁纸、选中用轻量红底+细边，
-                // 避免来源选择条在壁纸上堆成实色色块；普通模式走主题原样。
-                backgroundColor: _wallpaper ? Colors.transparent : null,
-                selectedColor: _wallpaper
-                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
-                    : null,
-                side: _wallpaper
-                    ? BorderSide(
-                        color: s.id == _selected.id
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context)
-                                .colorScheme
-                                .outline
-                                .withValues(alpha: 0.35),
-                      )
-                    : null,
-                onSelected: (_) => _onSourceSelected(s.id),
+                onTap: () => _onSourceSelected(s.id),
               ),
             ),
         ],
@@ -747,13 +706,17 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
               ),
             )
           else ...[
-            // 来源切换条悬浮吸顶（实色底色防止列表文字透叠）。
+            // 来源切换条悬浮吸顶（玻璃气泡自带材质，铺实色底板在壁纸反色下
+            // 会遮挡来源，故不再包 ColoredBox）。
             Positioned(
               top: topInset,
               left: 0,
               right: 0,
-              child: ColoredBox(
-                color: appSurfaceBg(context),
+              child: Padding(
+                // 壁纸模式下来源气泡与上方切换 tab 拉开一点间距，避免贴死。
+                padding: EdgeInsets.only(
+                  top: ref.watch(wallpaperActiveProvider) ? 8 : 0,
+                ),
                 child: _buildSourceBar(),
               ),
             ),
