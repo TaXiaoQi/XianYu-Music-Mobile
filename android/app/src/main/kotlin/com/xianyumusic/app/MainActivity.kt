@@ -280,6 +280,38 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // 下载 MediaStore 回退：直写受限的国产 ROM 上经 ContentResolver 落盘
+        // （API 29+ 自有媒体条目免存储权限），详见 MediaStoreWriter 注释。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/media_store")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getSdkInt" -> result.success(Build.VERSION.SDK_INT)
+                    "writeFromPath" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                            result.error("unsupported", "需要 Android 10+", null)
+                        } else {
+                            val relativePath = call.argument<String>("relativePath") ?: "Music/弦予"
+                            val displayName = call.argument<String>("displayName")
+                                ?: return@setMethodCallHandler result.error("args", "缺 displayName", null)
+                            val mime = call.argument<String>("mime") ?: "application/octet-stream"
+                            val srcPath = call.argument<String>("srcPath") ?: ""
+                            safAsync(result) {
+                                MediaStoreWriter.writeFromPath(
+                                    this, relativePath, displayName, mime, srcPath)
+                            }
+                        }
+                    }
+                    "deleteMedia" -> {
+                        val path = call.argument<String>("path") ?: ""
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                            result.success(false)
+                        } else {
+                            safAsync(result) { MediaStoreWriter.deleteMedia(this, path) }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, ROTATION_EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
