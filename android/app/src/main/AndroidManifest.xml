@@ -83,6 +83,29 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="xianyu"/>
             </intent-filter>
+            <!-- 系统文件管理器/分享面板打开本地音频：ACTION_VIEW 拉起本应用并播放该歌曲。
+                 data 为 content://（文件管理器授予读权限）或 file://（低版本直读路径），
+                 mime 用 audio/* 覆盖绝大多数音频类型，再用 pathPattern 补 flac/ogg 等
+                 mime 探测不精准的格式。统一走自定义 MethodChannel(xianyu/deeplink)，
+                 由 Flutter 侧按 target=file 深链直接播本地文件。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/ogg"/>
+                <data android:mimeType="application/x-ogg"/>
+                <data android:mimeType="application/flac"/>
+                <data android:pathPattern=".*\\.mp3"/>
+                <data android:pathPattern=".*\\.flac"/>
+                <data android:pathPattern=".*\\.wav"/>
+                <data android:pathPattern=".*\\.m4a"/>
+                <data android:pathPattern=".*\\.aac"/>
+                <data android:pathPattern=".*\\.ogg"/>
+                <data android:pathPattern=".*\\.opus"/>
+                <data android:pathPattern=".*\\.aiff"/>
+            </intent-filter>
             <!-- 禁用 Flutter 引擎自带的深链处理：否则引擎会把 intent 的 data URI
                  （xianyu://song?...）当作 initial route / pushRouteInformation 传给
                  GoRouter，导致 "no routes for location: xianyu://..." 的 Page Not

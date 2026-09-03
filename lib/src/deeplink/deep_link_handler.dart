@@ -11,8 +11,6 @@ import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../core/app_logger.dart';
 import '../core/rust_init.dart';
-import '../auth/auth_provider.dart';
-import '../share/share_service.dart';
 import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
 import '../i18n/i18n.dart';
@@ -92,6 +90,16 @@ class XianYuDeepLink {
       // 目前支持 recognize（桌面组件右上识曲钮）。
       final openUri = Uri.tryParse(raw);
       if (openUri != null && openUri.host == 'open') {
+        // 系统文件管理器/分享面板把本地音频文件交给本应用打开：原生侧已把
+        // content/file URI 物化为真实路径并封装成 target=file，这里直接播本地文件。
+        if (openUri.queryParameters['target'] == 'file') {
+          final file = openUri.queryParameters['file'] ?? '';
+          final name = openUri.queryParameters['name'] ?? '';
+          if (file.isNotEmpty) {
+            await _playOpenedFile(container, router, file, name);
+          }
+          return;
+        }
         final target = openUri.queryParameters['target'] ?? '';
         if (target == 'recognize' &&
             router.routerDelegate.currentConfiguration.uri.toString() != '/recognize') {
@@ -421,6 +429,39 @@ class XianYuDeepLink {
       return;
     }
     router.push('/player');
+  }
+
+  /// 播放系统打开/分享进来的本地音频文件。文件路径由原生侧物化到缓存目录，
+  /// 标题取文件原名的去扩展名部分（artist/album 置空）。直接浅层入队单曲并跳播放页。
+  static Future<void> _playOpenedFile(
+    ProviderContainer container,
+    GoRouter router,
+    String filePath,
+    String rawName,
+  ) async {
+    AppLogger.instance.log('deeplink', '系统打开本地音乐: $filePath');
+    var title = rawName.trim();
+    if (title.isEmpty) {
+      final seg = filePath.replaceAll('\\', '/').split('/').last;
+      title = seg;
+    }
+    final dot = title.lastIndexOf('.');
+    if (dot > 0) title = title.substring(0, dot);
+    if (title.isEmpty) title = tr('未知歌曲');
+
+    final item = QueueItem(
+      path: filePath,
+      title: title,
+      artist: '',
+      album: '',
+    );
+    final playerNotifier = container.read(playerProvider.notifier);
+    try {
+      await playerNotifier.playQueue([item], startIndex: 0, shareLinkPlayback: true);
+      _openPlayerOnce(router);
+    } catch (e, st) {
+      AppLogger.instance.log('deeplink', '播放系统打开的本地音乐失败: $e\n$st');
+    }
   }
 
   /// 本地分享且本地无音源时在线定位：先 lx 在线音源（来源感知，默认 kw），

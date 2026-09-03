@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.view.Surface
 import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -20,6 +21,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.io.File
 
 class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "xianyu/audio_devices"
@@ -111,9 +113,60 @@ class MainActivity : AudioServiceActivity() {
 
     private fun processDeepLink(intent: Intent?, dispatch: Boolean) {
         val data = intent?.data ?: return
-        if (data.scheme != "xianyu") return
-        pendingDeepLink = data.toString()
-        if (dispatch) dispatchIfReady()
+        if (data.scheme == "xianyu") {
+            pendingDeepLink = data.toString()
+            if (dispatch) dispatchIfReady()
+            return
+        }
+        // 系统文件管理器/分享面板打开本地音频：ACTION_VIEW 的 data 为 file:// 或
+        // content://。just_audio 无法可靠播放 content 流，且这是受让的一次性读权限，
+        // 因此先把内容物化到应用缓存目录得到真实路径，再封装成
+        // xianyu://open?target=file&file=<path>&name=<原标题> 深链交给 Flutter 直播。
+        // 复制为重 I/O，放后台线程；完成后在主线程派发深链。
+        // 标题取内容提供者声明的 DisplayName（content:// 的 lastPathSegment 通常是
+        // media 数字 ID，直接当歌名就会变成一串数字）。
+        val rawName = queryDisplayName(data) ?: data.lastPathSegment ?: "song"
+        safExecutor.execute {
+            val localPath = copyContentToCache(data, rawName)
+            if (localPath == null) return@execute
+            val link = "xianyu://open?target=file" +
+                "&name=${Uri.encode(rawName)}&file=${Uri.encode(localPath)}"
+            pendingDeepLink = link
+            mainHandler.post { dispatchIfReady() }
+        }
+    }
+
+    /** 查询内容提供者声明的展示名（OpenableColumns.DISPLAY_NAME）。
+     *  content:// 的 lastPathSegment 常是 media 数字 ID，不能直接当歌名；
+     *  用提供者元数据取真实文件名，失败返回 null 走回退。 */
+    private fun queryDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0 && !c.isNull(idx)) c.getString(idx) else null
+                } else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 把一次性的 file/content 音频读权限物化为应用缓存目录里的真实文件，返回其路径。
+     *  类名无法规避重复，用原文件名以保证展示标题干净；失败返回 null（交给 Flutter 报错）。 */
+    private fun copyContentToCache(uri: Uri, rawName: String): String? {
+        return try {
+            val destDir = File(cacheDir, "opened")
+            if (!destDir.exists()) destDir.mkdirs()
+            // 文件名若被文件管理器追加了随机后缀（.tmp 等），仅保留可识别的主体；否则用原名。
+            val name = if (rawName.endsWith(".tmp")) "song" else rawName
+            val dest = File(destDir, name)
+            val input = contentResolver.openInputStream(uri) ?: return null
+            input.use { ins -> dest.outputStream().use { out -> ins.copyTo(out) } }
+            dest.absolutePath
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** 引擎就绪（warm start / onNewIntent）时走事件通道主动派发。 */
