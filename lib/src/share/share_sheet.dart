@@ -21,6 +21,7 @@ import '../rust/api.dart';
 import '../player/player_provider.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/dlna_device_dialog.dart';
 import '../widgets/sheet_dialog.dart';
 import 'qq_share_service.dart';
 import 'share_service.dart';
@@ -88,6 +89,22 @@ Future<void> showSongShareSheet(
             onTap: () async {
               Navigator.pop(ctx);
               await _copyLink(overlay, ref, song);
+            },
+          ),
+          ListTile(
+            // DLNA 投屏本就是分享的一种：投放到局域网电视/音箱，点击拉起设备弹窗。
+            leading: _customBadge(
+                context, _CastPainter(Theme.of(context).colorScheme.primary)),
+            title:   Text(tr('投屏到 DLNA 设备')),
+            subtitle:   Text(tr('在局域网电视/音箱上播放这首歌')),
+            onTap: () {
+              Navigator.pop(ctx);
+              // 连接即投当前曲：分享目标与当前曲不同时，先把它起播为当前曲。
+              final current = ref.read(playerProvider).current;
+              if (current == null || current.path != song.path) {
+                ref.read(playerProvider.notifier).playQueue([song]);
+              }
+              showDlnaDeviceDialog(context, ref);
             },
           ),
           const SizedBox(height: 8),
@@ -195,6 +212,59 @@ class _LinkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LinkPainter old) => old.color != color;
+}
+
+/// lucide Cast：投屏图标（屏幕 + 信号波纹），DLNA 投屏入口专用。
+class _CastPainter extends CustomPainter {
+  _CastPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final u = size.shortestSide / 24;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = u * 1.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // 屏幕外框（右下角开口，与信号波纹衔接）。
+    final screen = Path()
+      ..moveTo(2 * u, 8 * u)
+      ..lineTo(2 * u, 6 * u)
+      ..arcToPoint(Offset(4 * u, 4 * u),
+          radius: Radius.circular(2 * u), clockwise: true)
+      ..lineTo(20 * u, 4 * u)
+      ..arcToPoint(Offset(22 * u, 6 * u),
+          radius: Radius.circular(2 * u), clockwise: true)
+      ..lineTo(22 * u, 18 * u)
+      ..arcToPoint(Offset(20 * u, 20 * u),
+          radius: Radius.circular(2 * u), clockwise: true)
+      ..lineTo(16 * u, 20 * u);
+    canvas.drawPath(screen, stroke);
+
+    // 两层信号波纹 + 左下角圆点。
+    final wave1 = Path()
+      ..moveTo(2 * u, 12 * u)
+      ..arcToPoint(Offset(10 * u, 20 * u),
+          radius: Radius.circular(9 * u), clockwise: true);
+    canvas.drawPath(wave1, stroke);
+    final wave2 = Path()
+      ..moveTo(2 * u, 16 * u)
+      ..arcToPoint(Offset(6 * u, 20 * u),
+          radius: Radius.circular(5 * u), clockwise: true);
+    canvas.drawPath(wave2, stroke);
+    canvas.drawCircle(
+        Offset(2 * u, 20 * u),
+        u * 0.9,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.fill);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CastPainter old) => old.color != color;
 }
 
 /// 获取（必要时生成）分享链接；失败返回空串。
