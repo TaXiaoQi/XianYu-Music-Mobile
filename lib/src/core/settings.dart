@@ -198,6 +198,11 @@ class AppSettings {
     this.embedDownloadMetadata = true,
     this.embedDownloadLyrics = true,
     this.embedDownloadCover = true,
+    this.downloadBehavior = 'default',
+    this.downloadQualityFallbackBehavior = 'lower',
+    this.keepSourceFilename = false,
+    this.downloadLyricsFormat = 'lrc',
+    this.downloadLyricsStyle = 'word-by-word',
     this.organizeRule = '{Artist}/{Album}/{Title}',
     this.lyricFontSize = 1,
     this.lyricOffsetMs = 0,
@@ -314,6 +319,21 @@ class AppSettings {
 
   /// 下载后是否把封面嵌入音频文件 tag。
   final bool embedDownloadCover;
+
+  /// 下载行为：default = 直接按默认设置下载；ask = 每次下载前弹窗选音质。
+  final String downloadBehavior;
+
+  /// 下载音质缺失行为：lower = 向下降级（默认）；higher = 向上升级。
+  final String downloadQualityFallbackBehavior;
+
+  /// 是否保留音源原始文件名（否则按文件名样式重新命名）。
+  final bool keepSourceFilename;
+
+  /// 独立歌词文件格式：lrc（带时间标签）/ txt（纯文本）。
+  final String downloadLyricsFormat;
+
+  /// 下载歌词样式：word-by-word（逐字优先，回退逐行）/ line-by-line（仅逐行）。
+  final String downloadLyricsStyle;
 
   final String organizeRule;
   final int lyricFontSize;
@@ -509,6 +529,11 @@ class AppSettings {
     bool? embedDownloadMetadata,
     bool? embedDownloadLyrics,
     bool? embedDownloadCover,
+    String? downloadBehavior,
+    String? downloadQualityFallbackBehavior,
+    bool? keepSourceFilename,
+    String? downloadLyricsFormat,
+    String? downloadLyricsStyle,
     String? organizeRule,
     int? lyricFontSize,
     int? lyricOffsetMs,
@@ -597,6 +622,13 @@ class AppSettings {
           embedDownloadMetadata ?? this.embedDownloadMetadata,
       embedDownloadLyrics: embedDownloadLyrics ?? this.embedDownloadLyrics,
       embedDownloadCover: embedDownloadCover ?? this.embedDownloadCover,
+      downloadBehavior: downloadBehavior ?? this.downloadBehavior,
+      downloadQualityFallbackBehavior:
+          downloadQualityFallbackBehavior ??
+          this.downloadQualityFallbackBehavior,
+      keepSourceFilename: keepSourceFilename ?? this.keepSourceFilename,
+      downloadLyricsFormat: downloadLyricsFormat ?? this.downloadLyricsFormat,
+      downloadLyricsStyle: downloadLyricsStyle ?? this.downloadLyricsStyle,
       organizeRule: organizeRule ?? this.organizeRule,
       lyricFontSize: lyricFontSize ?? this.lyricFontSize,
       lyricOffsetMs: lyricOffsetMs ?? this.lyricOffsetMs,
@@ -726,6 +758,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('embedDownloadMetadata') ?? true,
       embedDownloadLyrics: prefs.getBool('embedDownloadLyrics') ?? true,
       embedDownloadCover: prefs.getBool('embedDownloadCover') ?? true,
+      downloadBehavior: prefs.getString('downloadBehavior') ?? 'default',
+      downloadQualityFallbackBehavior:
+          prefs.getString('downloadQualityFallbackBehavior') ?? 'lower',
+      keepSourceFilename: prefs.getBool('keepSourceFilename') ?? false,
+      downloadLyricsFormat: prefs.getString('downloadLyricsFormat') ?? 'lrc',
+      downloadLyricsStyle: prefs.getString('downloadLyricsStyle') ?? 'word-by-word',
       organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
@@ -911,6 +949,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('embedDownloadMetadata', next.embedDownloadMetadata),
       prefs.setBool('embedDownloadLyrics', next.embedDownloadLyrics),
       prefs.setBool('embedDownloadCover', next.embedDownloadCover),
+      prefs.setString('downloadBehavior', next.downloadBehavior),
+      prefs.setString(
+          'downloadQualityFallbackBehavior',
+          next.downloadQualityFallbackBehavior),
+      prefs.setBool('keepSourceFilename', next.keepSourceFilename),
+      prefs.setString('downloadLyricsFormat', next.downloadLyricsFormat),
+      prefs.setString('downloadLyricsStyle', next.downloadLyricsStyle),
       prefs.setString('organizeRule', next.organizeRule),
       prefs.setInt('lyricFontSize', next.lyricFontSize),
       prefs.setInt('lyricOffsetMs', next.lyricOffsetMs),
@@ -1020,6 +1065,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setEmbedDownloadMetadata(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadMetadata: v));
   Future<void> setEmbedDownloadLyrics(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadLyrics: v));
   Future<void> setEmbedDownloadCover(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadCover: v));
+  Future<void> setDownloadBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadBehavior: v));
+  Future<void> setDownloadQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQualityFallbackBehavior: v));
+  Future<void> setKeepSourceFilename(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepSourceFilename: v));
+  Future<void> setDownloadLyricsFormat(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyricsFormat: v));
+  Future<void> setDownloadLyricsStyle(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyricsStyle: v));
   Future<void> setOrganizeRule(String r) => _save((state.valueOrNull ?? const AppSettings()).copyWith(organizeRule: r));
   Future<void> setLyricFontSize(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricFontSize: v));
   Future<void> setLyricOffsetMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lyricOffsetMs: v));

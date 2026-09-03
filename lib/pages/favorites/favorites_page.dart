@@ -303,17 +303,42 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
     batch.exit();
   }
 
-  void _batchDownload(
-      List<FavoriteEntry> entries, SongBatchController batch) {
-    final sel = _selectedEntries(entries, batch).where((e) => e.isOnline).toList();
-    if (sel.isEmpty) {
+  Future<void> _batchDownload(
+      List<FavoriteEntry> entries, SongBatchController batch) async {
+    final selected = _selectedEntries(entries, batch);
+    if (selected.isEmpty) return;
+    final dn = ref.read(downloadProvider.notifier);
+    // 未设置自定义下载目录/无「所有文件访问」权限：禁止批量下载并提示。
+    if (!await dn.requireDownloadDir(context)) return;
+    // 本地歌曲不计入下载（对齐桌面端「跳过本地歌曲」）。
+    final localSkipped = selected.where((e) => !e.isOnline).length;
+    // 在线歌曲里已下载（下载历史 + 文件仍存在）的一并跳过，避免重复下载。
+    var downloadedSkipped = 0;
+    final toDownload = <FavoriteEntry>[];
+    for (final e in selected.where((e) => e.isOnline)) {
+      if (await dn.isAlreadyDownloaded(e.path)) {
+        downloadedSkipped++;
+      } else {
+        toDownload.add(e);
+      }
+    }
+    if (!mounted) return;
+    if (localSkipped > 0) {
+      showXianYuToast(
+          context, tr('已跳过 {n} 首本地歌曲', {'n': localSkipped}));
+    }
+    if (downloadedSkipped > 0) {
+      showXianYuToast(
+          context, tr('已跳过 {n} 首已下载歌曲', {'n': downloadedSkipped}));
+    }
+    if (toDownload.isEmpty) {
       showXianYuToast(context, tr('没有可下载的在线歌曲'));
       return;
     }
-    for (final e in sel) {
-      ref.read(downloadProvider.notifier).download(e.toQueueItem());
+    for (final e in toDownload) {
+      dn.download(e.toQueueItem());
     }
-    showXianYuToast(context, tr('开始下载 {n} 首歌曲', {'n': sel.length}));
+    showXianYuToast(context, tr('开始下载 {n} 首歌曲', {'n': toDownload.length}));
     batch.exit();
   }
 
