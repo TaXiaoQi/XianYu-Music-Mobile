@@ -335,8 +335,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       _loggedHomeFirstFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         debugPrint('[startup] home first frame rendered');
-        // 首帧后静默查一次服务端版本，有更新且当日未弹过才自动弹升级窗。
-        unawaited(maybePromptStartupUpdate(ref));
+        // 首帧后静默做启动版本检查：先内测门槛（未授权 beta 构建直接全局拦截，
+        // 弹不可退出的申请弹窗并跳过更新提示），再查服务端新版本。
+        unawaited(runStartupVersionChecks(ref));
       });
     }
 

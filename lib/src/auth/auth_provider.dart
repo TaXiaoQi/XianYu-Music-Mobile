@@ -145,20 +145,52 @@ class HumanCaptcha {
       );
 }
 
-/// 人机验证结果载荷（算术题：id + 答案）。
+/// 人机验证配置（服务端下发，与桌面端 email_get_captcha_config 一致）。
+class HumanCaptchaConfig {
+  final bool enabled;
+  /// 'off' / 'turnstile' / 'hcaptcha'。
+  final String provider;
+  final String siteKey;
+  const HumanCaptchaConfig({
+    this.enabled = false,
+    this.provider = 'off',
+    this.siteKey = '',
+  });
+
+  /// 第三方验证组件（Turnstile/hCaptcha）是否可用。
+  bool get isProviderEnabled => enabled && siteKey.isNotEmpty && provider != 'off';
+}
+
+/// 人机验证结果载荷。
+///
+/// - 算术题模式：id + 答案
+/// - 第三方模式（Turnstile/hCaptcha）：仅 providerToken，服务端用 secret 直验
 class HumanCaptchaPayload {
   final String captchaId;
   final String captchaAnswer;
+  final String providerToken;
+  final String provider;
   const HumanCaptchaPayload({
-    required this.captchaId,
-    required this.captchaAnswer,
+    this.captchaId = '',
+    this.captchaAnswer = '',
+    this.providerToken = '',
+    this.provider = '',
   });
 
+  /// 是否为第三方组件 token 模式。
+  bool get isProviderToken => providerToken.isNotEmpty;
+
   /// 并入请求体的 captcha 字段（与桌面端 withCaptcha 一致）。
-  Map<String, dynamic> toBodyFields() => {
-        'captcha_id': captchaId,
-        'captcha_answer': captchaAnswer,
-      };
+  Map<String, dynamic> toBodyFields() => isProviderToken
+      ? {
+          'captcha_token': providerToken,
+          'turnstile_token': providerToken,
+          'captcha_provider': provider,
+        }
+      : {
+          'captcha_id': captchaId,
+          'captcha_answer': captchaAnswer,
+        };
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
@@ -168,6 +200,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   final Ref _ref;
   final Random _rand = Random();
+
+  /// 人机验证配置缓存（配置, 获取时间）。
+  static (HumanCaptchaConfig, DateTime)? _captchaConfigCache;
 
   /// 当前登录 token（仅内存持有，持久化在 Rust 侧）。
   String? _token;
@@ -326,9 +361,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return HumanCaptcha.fromJson(data);
   }
 
+  /// 获取服务端人机验证配置（10 分钟缓存，对齐桌面端 getHumanCaptchaConfig）。
+  /// 服务端启用 Turnstile/hCaptcha 时弹窗渲染第三方组件；失败时回退旧算术题。
+  /// 请求失败时保留旧缓存（若有），避免网络抖动时误降级为算术题。
+  Future<HumanCaptchaConfig> fetchCaptchaConfig() async {
+    final cached = _captchaConfigCache;
+    if (cached != null &&
+        DateTime.now().difference(cached.$2) < const Duration(minutes: 10)) {
+      return cached.$1;
+    }
+    try {
+      final data = await requestAction('email_get_captcha_config', {});
+      final cfg = HumanCaptchaConfig(
+        enabled: (data['enabled'] == true) &&
+            (data['site_key'] ?? '').toString().isNotEmpty,
+        provider: (data['provider'] ?? 'off').toString(),
+        siteKey: (data['site_key'] ?? '').toString(),
+      );
+      _captchaConfigCache = (cfg, DateTime.now());
+      return cfg;
+    } catch (_) {
+      if (cached != null) return cached.$1;
+      return const HumanCaptchaConfig();
+    }
+  }
+
   /// 预校验人机验证答案。答案正确返回，错误抛 AuthException。
+  /// 第三方组件 token 模式跳过（token 由服务端在真实请求中直验，对齐桌面端）。
   /// 此接口只确认答案，不消费验证码；后续登录/注册/发码请求会再次校验并消费。
   Future<void> verifyCaptcha(HumanCaptchaPayload payload) async {
+    if (payload.isProviderToken) return;
     await requestAction('verify_captcha', {
       'purpose': 'auth',
       'captcha_id': payload.captchaId,

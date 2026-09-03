@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../device/device_info.dart' show fetchDeviceInfo;
 import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
@@ -82,15 +83,30 @@ class AccountApi {
 
   // ─── 版本更新 ───────────────────────────────────────────
 
+  /// 获取服务端最新版本信息。
+  /// 返回 null 表示服务端未发布版本（正常情况，非错误）；
+  /// 请求失败（网络/签名/超时）时抛异常，由调用方区分提示。
+  /// 兼容旧服务器把空结果序列化为数组的情况。
   Future<LatestVersion?> fetchServerUpdate() async {
-    try {
-      final data = await _action('get_latest_version',
-        {'platform': 'mobile'}, fetchTimeoutMs: 15000);
-      if (data['version'] == null) return null;
-      return LatestVersion.fromJson(data);
-    } catch (_) {
-      return null;
-    }
+    // 携带设备ID：服务端据此判断是否下发测试版（内测名单设备专属）
+    final data = await _auth.requestActionList('get_latest_version', {
+      'platform': 'mobile',
+      'device_id': await _auth.deviceId(),
+    }, fetchTimeoutMs: 15000);
+    if (data is! Map || data['version'] == null) return null;
+    return LatestVersion.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// 内测资格检查：返回 (是否在名单, 是否有待审核的内测申请)。
+  /// 请求失败/响应异常返回 (true, false) → fail-open 放行。
+  Future<(bool, bool)> checkBetaAccess() async {
+    final data = await _auth.requestActionList('check_beta_access', {
+      'device_id': await _auth.deviceId(),
+    }, fetchTimeoutMs: 15000);
+    if (data is! Map) return (true, false);
+    final allowed = (data['allowed'] as bool?) ?? false;
+    final pending = (data['pending'] as bool?) ?? false;
+    return (allowed, pending);
   }
 
   // ─── 用户协议 ───────────────────────────────────────────
@@ -139,7 +155,7 @@ class AccountApi {
       'feedback_type': feedbackType,
       'platform': 'mobile',
       'app_version': appVersion,
-      'device_id': await _auth.deviceId(),
+      ...await _deviceInfo(),
       if (errorLogs != null && errorLogs.isNotEmpty) 'error_logs': errorLogs,
       if (allLogs != null && allLogs.isNotEmpty) 'all_logs': allLogs,
       if (images != null && images.isNotEmpty) 'images': images,
@@ -649,7 +665,8 @@ class AccountApi {
 
   Future<void> reportAppOpen() async {
     final info = await _deviceInfo();
-    await _fireAndForget('open', {...info, 'ciyuanxi_id': _ciyuanxiId ?? ''});
+    await _fireAndForget(
+        'open', {...info, 'platform': 'mobile', 'ciyuanxi_id': _ciyuanxiId ?? ''});
   }
 
   Future<void> reportSearch(
@@ -684,7 +701,6 @@ class AccountApi {
     await _fireAndForget('error', {
       ...info,
       'platform': 'android',
-      'device_brand': '',
       'error_type': errorType,
       'error_message': errorMessage,
       'error_stack': errorStack,
@@ -717,11 +733,14 @@ class AccountApi {
   }
 
   Future<Map<String, dynamic>> _deviceInfo() async {
+    final dev = await fetchDeviceInfo();
     return {
       'device_id': await _auth.deviceId(),
       'app_version': appVersion,
-      'os_version': 'Android',
-      'device_model': 'Android',
+      'os_version': dev.osVersion,
+      'device_model': dev.model,
+      'device_brand': dev.brand,
+      'device_manufacturer': dev.manufacturer,
     };
   }
 

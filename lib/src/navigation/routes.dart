@@ -256,14 +256,18 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
-    // 意见反馈页（从设置页进入）。
+    // 意见反馈页（从设置页进入；?tab=N 支持内测门槛弹窗直跳内测申请 tab）。
     GoRoute(
       path: '/feedback',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const FeedbackPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) {
+        final tab =
+            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+        return _coverPage(
+          context,
+          (_) => FeedbackPage(initialTab: tab),
+          key: state.pageKey,
+        );
+      },
     ),
     // 关于页（从设置页进入）。
     GoRoute(

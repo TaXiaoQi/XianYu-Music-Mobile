@@ -28,6 +28,7 @@ class MainActivity : AudioServiceActivity() {
     private val SAF_CHANNEL = "xianyu/saf"
     private val DEEP_LINK_CHANNEL = "xianyu/deeplink"
     private val ROTATION_EVENT_CHANNEL = "xianyu/rotation/events"
+    private val DEVICE_INFO_CHANNEL = "xianyu/device_info"
     private val REQ_CHOOSE_TREE = 1001
 
     // 横竖屏旋转事件：旋转一开始系统即回调 onConfigurationChanged，把当前屏幕
@@ -238,6 +239,18 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "listOutputDevices" -> result.success(listOutputDevices())
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_INFO_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getDeviceInfo" -> result.success(JSONObject().apply {
+                        put("brand", Build.BRAND)
+                        put("manufacturer", Build.MANUFACTURER)
+                        put("model", Build.MODEL)
+                        put("os_version", Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
+                    }.toString())
                     else -> result.notImplemented()
                 }
             }

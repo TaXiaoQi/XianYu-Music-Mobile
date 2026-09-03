@@ -19,10 +19,13 @@ import '../../src/i18n/i18n.dart';
 
 /// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
-  const FeedbackPage({super.key, this.embedded = false});
+  const FeedbackPage({super.key, this.embedded = false, this.initialTab = 0});
 
   /// 横屏嵌入 mode：隐藏自带标题栏，仅保留 TabBar 以切换「提交/我的」反馈。
   final bool embedded;
+
+  /// 初始 tab：0=提交反馈，1=申请内测，2=我的反馈（内测门槛弹窗跳转用）。
+  final int initialTab;
 
   @override
   ConsumerState<FeedbackPage> createState() => _FeedbackPageState();
@@ -32,6 +35,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
   final _contentCtrl = TextEditingController();
+  final _betaCtrl = TextEditingController();
 
   // 提交反馈
   String _feedbackType = 'problem'; // problem / suggestion
@@ -50,18 +54,31 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 2),
+    );
     _tab.addListener(() {
-      if (_tab.index == 1 && _myFeedback.isEmpty && !_loadingFeedback) {
+      if (_tab.index == 2 && _myFeedback.isEmpty && !_loadingFeedback) {
         _loadMyFeedback();
       }
     });
+    // 直接落到「我的反馈」tab 时主动拉取（listener 不触发 initialIndex 变更）。
+    if (widget.initialTab == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _myFeedback.isEmpty && !_loadingFeedback) {
+          _loadMyFeedback();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _tab.dispose();
     _contentCtrl.dispose();
+    _betaCtrl.dispose();
     super.dispose();
   }
 
@@ -139,7 +156,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         images: _feedbackType == 'suggestion' ? [..._images] : null,
       );
       if (!mounted) return;
-      _toast(tr('反馈已提交，感谢您的支持'));
+      // 收起键盘进入非输入状态，用完成弹窗替代小提示，避免输入法一直停留。
+      FocusScope.of(context).unfocus();
+      await _showDoneDialog(tr('反馈已提交，感谢您的支持'));
+      if (!mounted) return;
       setState(() {
         _contentCtrl.clear();
         _images.clear();
@@ -150,6 +170,63 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// 内测申请提交：与反馈共用 submit_feedback 框架，仅类型为 beta。
+  /// 同一设备存在待审核申请时服务端会拒绝（防刷屏），弹窗提示审核中。
+  Future<void> _submitBeta() async {
+    if (_submitting) return;
+    final reason = _betaCtrl.text.trim();
+    if (reason.isEmpty) {
+      _toast(tr('请填写内测申请理由'));
+      return;
+    }
+    if (reason.length > 1000) {
+      _toast(tr('内容不能超过 1000 字'));
+      return;
+    }
+    final api = ref.read(accountApiProvider);
+    setState(() => _submitting = true);
+    try {
+      await api.submitFeedback(
+        title: tr('内测申请'),
+        content: reason,
+        feedbackType: 'beta',
+      );
+      if (!mounted) return;
+      FocusScope.of(context).unfocus();
+      await _showDoneDialog(tr('申请已提交，请留意审核结果'));
+      if (!mounted) return;
+      setState(() => _betaCtrl.clear());
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is AuthException ? e.message : tr('提交失败');
+      // 重复申请被拒（服务端 429）：弹窗明示「审核中」，比小提示更显眼。
+      if (msg.contains('正在审核')) {
+        await _showDoneDialog(msg);
+      } else {
+        _toast(msg);
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// 完成弹窗（提交成功/申请审核中），单「确定」按钮。
+  Future<void> _showDoneDialog(String msg) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('提示')),
+        content: Text(msg, style: const TextStyle(fontSize: 14, height: 1.5)),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('确定')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadMyFeedback() async {
@@ -180,7 +257,11 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final auth = ref.watch(authProvider);
     final tabBar = TabBar(
       controller: _tab,
-      tabs: [Tab(text: tr('提交反馈')), Tab(text: tr('我的反馈'))],
+      tabs: [
+        Tab(text: tr('提交反馈')),
+        Tab(text: tr('申请内测')),
+        Tab(text: tr('我的反馈')),
+      ],
     );
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -200,6 +281,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 controller: _tab,
                 children: [
                   _buildSubmitTab(context),
+                  _buildBetaTab(context),
                   _buildMyFeedbackTab(context, auth),
                 ],
               ),
@@ -306,6 +388,83 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 :   Text(tr('提交反馈'),
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 申请内测 tab：复用反馈提交样式，仅填写申请理由。
+  Widget _buildBetaTab(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final auth = ref.watch(authProvider);
+    if (!auth.isLoggedIn) {
+      return _emptyHint(
+        icon: Icons.lock_outline,
+        text: tr('登录后即可申请内测'),
+        action: () => _toast(tr('请先登录')),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 说明卡片
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: appCardFill(context, ref),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.science_outlined, size: 18, color: scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tr('内测版本包含尚未正式发布的新功能，可能存在不稳定情况。提交申请后请留意审核结果，同意后你的设备将自动加入内测名单。'),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.5,
+                        color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _betaCtrl,
+            maxLines: 6,
+            maxLength: 1000,
+            decoration: InputDecoration(
+              hintText: tr('请填写内测申请理由…'),
+              filled: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _submitting ? null : _submitBeta,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _submitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(tr('提交申请'),
                     style:
                         TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),
@@ -535,6 +694,25 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   }
 }
 
+/// 反馈类型徽章。
+class _TypeBadge extends StatelessWidget {
+  const _TypeBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0x1A7C3AED),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label,
+          style: const TextStyle(fontSize: 11, color: Color(0xFF7C3AED))),
+    );
+  }
+}
+
 /// 反馈状态徽章。
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
@@ -587,6 +765,12 @@ class _FeedbackCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (item.category != 'appeal' &&
+                      item.feedbackType == 'beta') ...[
+                    const SizedBox(width: 6),
+                    _TypeBadge(label: tr('内测申请')),
+                  ],
+                  const SizedBox(width: 6),
                   _StatusBadge(status: item.status),
                 ],
               ),
