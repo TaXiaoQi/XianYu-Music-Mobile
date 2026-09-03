@@ -316,7 +316,13 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     'aac': ['aac'],
     'm4a': ['m4a', 'm4b', 'mp4'],
     'ogg': ['ogg', 'oga'],
+    'opus': ['opus'],
     'aiff': ['aif', 'aiff'],
+    'dsf': ['dsf', 'dff'],
+    'ape': ['ape'],
+    'wv': ['wv'],
+    // QQ 音乐 QMC 加密格式（播放/解析前按需解密，与桌面端一致）
+    'qmc': ['mgg', 'mgg0', 'mggl', 'mflac', 'mflac0', 'qmc0', 'qmc2', 'qmc3', 'qmcflac', 'qmcogg'],
   };
 
   /// 起始即只从 DB 读取当前已入库歌曲，刷新到 UI（不动 loading/目录/目录树）。

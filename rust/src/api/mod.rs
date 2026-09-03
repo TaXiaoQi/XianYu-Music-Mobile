@@ -421,7 +421,7 @@ pub fn stats_import_statistics_file(
 }
 
 /// 打开扫描/曲库数据库连接并确保 schema 存在。
-fn open_scan_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
+pub(crate) fn open_scan_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
     crate::database::schema::configure_connection(&conn)?;
     crate::database::schema::ensure_base_schema(&conn)?;
@@ -1701,6 +1701,24 @@ pub async fn list_remote_directory(
     )
     .await?;
     serde_json::to_string(&entries).map_err(|e| e.to_string())
+}
+
+/// 将 ExoPlayer 不支持的音频转换为可播放的缓存文件（远程源 `remote://` 自动先下载缓存）。
+/// 处理范围：APE/WV → 解码 WAV；AIFF → 解码 WAV；QMC 加密 → 解密为内部格式。
+/// 其余格式原样返回源路径。
+/// 返回 JSON：{path: 可播放路径, decodedNow: 本次是否实际执行转换}。
+pub async fn transcode_audio_to_wav(
+    db_path: String,
+    cache_root: String,
+    src_path: String,
+) -> Result<String, String> {
+    let outcome = crate::player::transcode::transcode_to_wav(
+        &db_path,
+        std::path::Path::new(&cache_root),
+        &src_path,
+    )
+    .await?;
+    serde_json::to_string(&outcome).map_err(|e| e.to_string())
 }
 
 // =========================================================================

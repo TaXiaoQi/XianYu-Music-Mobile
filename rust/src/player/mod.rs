@@ -8,6 +8,7 @@ pub mod buffered_source;
 pub mod crossfade;
 pub mod sound_effect;
 pub mod stream_cache;
+pub mod transcode;
 pub mod types;
 pub mod session;
 pub mod output;

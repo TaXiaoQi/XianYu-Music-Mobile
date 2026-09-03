@@ -48,6 +48,17 @@ fn read_tagged_file_from_path_with_cover_mode(
 ) -> lofty::error::Result<TaggedFile> {
     let options = ParseOptions::new().read_cover_art(read_cover_art);
 
+    // QMC 加密文件（mflac/mgg/qmc0 等）需要先解密再解析标签，
+    // 否则 lofty 拿到的是密文，无法识别格式和读取元数据。
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if crate::player::qmc2::is_qmc_extension(ext) {
+            if let Some(tagged) = read_qmc_tagged_file(path, options) {
+                return Ok(tagged);
+            }
+            // 解密失败时回落到直接读（仍可能成功读出部分标签）
+        }
+    }
+
     match Probe::open(path)?
         .guess_file_type()?
         .options(options)
@@ -68,6 +79,43 @@ fn read_tagged_file_from_path_with_cover_mode(
         }
         Err(original_err) => Err(original_err),
     }
+}
+
+/// 将 QMC 加密文件解密后交给 lofty 读取标签。
+/// 先尝试流式解密读取器（内存效率高），按解密后格式提示文件类型。
+fn read_qmc_tagged_file(path: &Path, options: ParseOptions) -> Option<TaggedFile> {
+    let crypto = crate::player::qmc2::detect_qmc_crypto(path)?;
+    let file = File::open(path).ok()?;
+    let reader = crate::player::qmc2::QmcDecryptReader::new(file, crypto);
+
+    // 推断解密后实际格式（qmcflac→flac、mgg→ogg、qmc0→mp3 等）
+    let inner_ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(crate::player::qmc2::inner_audio_extension);
+    let mut probe = if let Some(ext) = inner_ext {
+        let mut p = Probe::new(reader);
+        if let Ok(ft) = lofty_file_type_from_ext(ext) {
+            p = p.set_file_type(ft);
+        }
+        p
+    } else {
+        Probe::new(reader).guess_file_type().ok()?
+    };
+
+    probe = probe.options(options);
+    probe.read().ok()
+}
+
+/// 将扩展名映射为 lofty FileType（仅支持 QMC 解密后的常见格式）。
+fn lofty_file_type_from_ext(ext: &str) -> Result<FileType, ()> {
+    Ok(match ext {
+        "flac" => FileType::Flac,
+        "mp3" => FileType::Mpeg,
+        "ogg" => FileType::Vorbis,
+        "m4a" | "mp4" => FileType::Mp4,
+        _ => return Err(()),
+    })
 }
 
 pub fn extract_text_metadata<T>(tagged_file: &T) -> TagTextMetadata

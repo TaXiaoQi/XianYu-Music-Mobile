@@ -374,9 +374,25 @@ fn detect_audio_identity(path: &Path, ext: &str) -> AudioIdentity {
         }
     };
 
-    let media_source = MediaSourceStream::new(Box::new(file), Default::default());
+    // QMC 加密文件：先套解密读取器，再推断实际扩展名给 Symphonia 提示。
+    let qmc_inner = crate::player::qmc2::inner_audio_extension(ext);
+    let actual_ext = qmc_inner.unwrap_or(ext);
+
+    let media_source: Box<dyn symphonia::core::io::MediaSource> = if qmc_inner.is_some() {
+        match crate::player::qmc2::detect_qmc_crypto(path) {
+            Some(crypto) => {
+                let reader = crate::player::qmc2::QmcDecryptReader::new(file, crypto);
+                Box::new(reader)
+            }
+            None => Box::new(file),
+        }
+    } else {
+        Box::new(file)
+    };
+
+    let media_source = MediaSourceStream::new(media_source, Default::default());
     let mut hint = Hint::new();
-    hint.with_extension(ext);
+    hint.with_extension(actual_ext);
 
     let probed = match symphonia::default::get_probe().format(
         &hint,

@@ -48,6 +48,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 rquickjs = { version = "0.12", features = ["futures", "parallel", "bindgen"] }
 getrandom = "0.3"
 url = "2"
+# APE/WV 解码（与桌面端 vendor rodio 同源 crate），转码为 WAV 供 ExoPlayer 播放
+ape-decoder = "0.3"
+wavicle = { version = "0.1", default-features = false, features = ["decode"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
