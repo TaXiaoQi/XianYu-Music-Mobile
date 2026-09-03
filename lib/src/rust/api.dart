@@ -7,7 +7,7 @@ import 'frb_generated.dart';
 import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `derive_cover_cache_dir`, `global_playback_session`, `open_scan_conn`, `open_stats_conn`, `parse_remote_source`
+// These functions are ignored because they are not marked as `pub`: `derive_cover_cache_dir`, `global_playback_session`, `open_scan_conn`, `open_stats_conn`, `parse_device`, `parse_media`, `parse_remote_source`
 
 /// 解析原始歌词文本（LRC/YRC/QRC/ESLRC/TTML/Lys 等），
 /// 返回 [`StructuredLyricsPayload`] 的 JSON（camelCase）。
@@ -169,6 +169,15 @@ Future<String> fetchLyricFromSource({
 /// 测试 WebDAV 连接（列出根目录）。
 Future<void> webdavTestConnection({required String sourceJson}) =>
     RustLib.instance.api.crateApiWebdavTestConnection(sourceJson: sourceJson);
+
+/// 按表单连接信息浏览 WebDAV 目录（新增源未保存时也可浏览，返回 [`RemoteFileEntry[]`] JSON）。
+Future<String> webdavBrowseDirectory({
+  required String sourceJson,
+  required String path,
+}) => RustLib.instance.api.crateApiWebdavBrowseDirectory(
+  sourceJson: sourceJson,
+  path: path,
+);
 
 /// 按已保存远程源测试连接：读取存储凭证（含密码），叠加表单覆盖项后 PROPFIND 根目录。
 ///
@@ -796,6 +805,7 @@ Future<String> startUsbExclusivePlayback({
   required String soundEffectSettingsJson,
   required bool bitPerfect,
   required bool dsdNativePassthrough,
+  required bool sharedMode,
 }) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
   path: path,
   deviceId: deviceId,
@@ -807,6 +817,7 @@ Future<String> startUsbExclusivePlayback({
   soundEffectSettingsJson: soundEffectSettingsJson,
   bitPerfect: bitPerfect,
   dsdNativePassthrough: dsdNativePassthrough,
+  sharedMode: sharedMode,
 );
 
 /// 停止 USB 独占播放并释放设备。
@@ -1245,6 +1256,20 @@ Future<String> listRemoteDirectory({
   path: path,
 );
 
+/// 将 ExoPlayer 不支持的音频转换为可播放的缓存文件（远程源 `remote://` 自动先下载缓存）。
+/// 处理范围：APE/WV → 解码 WAV；AIFF → 解码 WAV；QMC 加密 → 解密为内部格式。
+/// 其余格式原样返回源路径。
+/// 返回 JSON：{path: 可播放路径, decodedNow: 本次是否实际执行转换}。
+Future<String> transcodeAudioToWav({
+  required String dbPath,
+  required String cacheRoot,
+  required String srcPath,
+}) => RustLib.instance.api.crateApiTranscodeAudioToWav(
+  dbPath: dbPath,
+  cacheRoot: cacheRoot,
+  srcPath: srcPath,
+);
+
 /// 用 `Range: bytes=0-0` 探测直链文件大小（返回 [`ProbeUrlInfo`] JSON）。
 Future<String> probeUrlSize({required String url}) =>
     RustLib.instance.api.crateApiProbeUrlSize(url: url);
@@ -1528,6 +1553,102 @@ Future<String> pluginEngineCookieHeaderForDomain({
 /// 获取插件引擎会话快照，返回 `{"cookies":..., "storage":...}` JSON。
 Future<String> pluginEngineStoreSnapshot({required String dataDir}) =>
     RustLib.instance.api.crateApiPluginEngineStoreSnapshot(dataDir: dataDir);
+
+/// 搜索局域网 DLNA 渲染器，返回 `Vec<DlnaDevice>` JSON。
+Future<String> dlnaSearchDevices({required BigInt timeoutMs}) =>
+    RustLib.instance.api.crateApiDlnaSearchDevices(timeoutMs: timeoutMs);
+
+/// 投递媒体到渲染器（SetAVTransportURI），返回 `CastMediaInfo` JSON（含续投 token）。
+Future<String> dlnaCastSetUri({
+  required String deviceJson,
+  required String mediaJson,
+  String? coverJson,
+  required String title,
+  required String artist,
+  required String album,
+  required BigInt durationMs,
+}) => RustLib.instance.api.crateApiDlnaCastSetUri(
+  deviceJson: deviceJson,
+  mediaJson: mediaJson,
+  coverJson: coverJson,
+  title: title,
+  artist: artist,
+  album: album,
+  durationMs: durationMs,
+);
+
+Future<void> dlnaCastPlay({required String deviceJson}) =>
+    RustLib.instance.api.crateApiDlnaCastPlay(deviceJson: deviceJson);
+
+Future<void> dlnaCastPause({required String deviceJson}) =>
+    RustLib.instance.api.crateApiDlnaCastPause(deviceJson: deviceJson);
+
+Future<void> dlnaCastStop({required String deviceJson}) =>
+    RustLib.instance.api.crateApiDlnaCastStop(deviceJson: deviceJson);
+
+Future<void> dlnaCastSeek({required String deviceJson, required double secs}) =>
+    RustLib.instance.api.crateApiDlnaCastSeek(
+      deviceJson: deviceJson,
+      secs: secs,
+    );
+
+Future<void> dlnaCastSetVolume({
+  required String deviceJson,
+  required int percent,
+}) => RustLib.instance.api.crateApiDlnaCastSetVolume(
+  deviceJson: deviceJson,
+  percent: percent,
+);
+
+/// 查询渲染器传输状态，返回 `CastTransportState` JSON。
+Future<String> dlnaCastGetState({required String deviceJson}) =>
+    RustLib.instance.api.crateApiDlnaCastGetState(deviceJson: deviceJson);
+
+/// TTL 续投：热替换 token 上游（电视不断流）。
+Future<bool> dlnaUpdateMediaToken({
+  required String token,
+  required String payloadJson,
+}) => RustLib.instance.api.crateApiDlnaUpdateMediaToken(
+  token: token,
+  payloadJson: payloadJson,
+);
+
+/// 启用本机渲染器（SSDP 广播 + SOAP 端点），返回实际端口。
+Future<int> dlnaEnableRenderer({
+  required String friendlyName,
+  required String udn,
+}) => RustLib.instance.api.crateApiDlnaEnableRenderer(
+  friendlyName: friendlyName,
+  udn: udn,
+);
+
+Future<void> dlnaDisableRenderer() =>
+    RustLib.instance.api.crateApiDlnaDisableRenderer();
+
+/// 渲染器状态，返回 `{"running":bool,"friendlyName":String,"port":u16}` JSON。
+Future<String> dlnaRendererStatus() =>
+    RustLib.instance.api.crateApiDlnaRendererStatus();
+
+/// 长轮询下一条 DMR 指令（超时返回 None），返回 `DmrCommand` JSON。
+Future<String?> dlnaDmrNextCommand({required BigInt timeoutMs}) =>
+    RustLib.instance.api.crateApiDlnaDmrNextCommand(timeoutMs: timeoutMs);
+
+/// Dart 侧上报播放快照（供 DMR SOAP 状态应答）。
+///
+/// `state` ∈ "playing" / "paused" / "stopped" / "no_media" / "transitioning"。
+Future<void> dlnaDmrReportPlayback({
+  required String state,
+  required double positionSecs,
+  required double durationSecs,
+  required int volumePercent,
+  required bool muted,
+}) => RustLib.instance.api.crateApiDlnaDmrReportPlayback(
+  state: state,
+  positionSecs: positionSecs,
+  durationSecs: durationSecs,
+  volumePercent: volumePercent,
+  muted: muted,
+);
 
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {
