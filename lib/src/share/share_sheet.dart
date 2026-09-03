@@ -372,15 +372,19 @@ Future<void> _shareViaQQ(
   } catch (_) {}
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
+  // QQ 好友场景走「音乐卡片」（QQ_SHARE_TYPE_AUDIO）：封面在左、歌名/歌手在右
+  // 的对齐卡片，避免普通网页卡片那张「歌名左上、缩略图右下」的对角样式。
+  // QQ 音乐卡片需 audio_url 才有向左对齐的封面；这里把落地页深链同时作为
+  // audio_url 与 target_url，接收方点卡片即拉起 App 播放。QQ 空间不支持音乐卡片，
+  // 仍走网页卡片。
+  final useMusicCard = scene == TencentScene.kScene_QQ;
   final result = await qq.share(
     scene: scene,
     title: song.title,
     summary: artist,
     targetUrl: url,
     coverPath: coverPath,
-    // 统一走普通网页卡片（QQ 对已上线应用渲染增强模板：封面右上 + 底部应用图标，
-    // 同网易云/QQ 音乐观感）；音乐类型卡片会被 QQ 自动叠加播放角标，弃用。
-    musicUrl: null,
+    musicUrl: useMusicCard ? url : null,
   );
 
   switch (result) {
