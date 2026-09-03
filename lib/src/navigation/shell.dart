@@ -18,6 +18,7 @@ import '../widgets/custom_background.dart';
 import '../widgets/landscape_page_fade.dart';
 import 'landscape_tab_switcher.dart';
 import '../widgets/blur_budget.dart';
+import '../widgets/orientation_transition.dart';
 import '../widgets/app_toast.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
@@ -1088,10 +1089,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           child: _ShellRailDivider(
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
+              // 摄像头侧（侧栏固定贴左）最小宽度要避开左挖孔后仍能「刚好露出图标」。
+              // 只认本朝向真实的左安全边距(padding.left)，不叠全局固定边距，否则
+              // 摄像头在左/在右两种翻转下侧栏两侧的留白不一致。
+              final leftSafe = padding.left;
               setState(() {
-                // 最远划到屏幕中部（对半）；最小可缩到「仅图标」宽。
+                // 最远划到屏幕中部（对半）；最小可缩到「左挖孔避让 + 仅图标」宽。
                 _railWidth = (_railWidth + dx)
-                    .clamp(kLandscapeRailIconWidth, screenW * 0.5);
+                    .clamp(leftSafe + kLandscapeRailIconWidth, screenW * 0.5);
               });
             },
           ),
@@ -1613,6 +1618,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
             ),
+          // 横竖屏形态切换转场蒙层：最顶层，旋转那 1~2 帧用摘要色盖住拉伸。
+          const OrientationTransitionOverlay(),
         ],
       ),
       bottomNavigationBar: (!isSide && !floating)
