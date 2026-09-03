@@ -1889,11 +1889,16 @@ class _LiquidNavBar extends ConsumerWidget {
     // 透镜水滴；毛玻璃/纯色 → 主题色淡红大胶囊（铺满整格）。
     // 水平留 10px：滑动指示条与最左/最右 tab 让开，避免顶到玻璃圆角边界。
     final realLiquid = liquid;
+    // 水滴按档增强（官方 LiquidGlassTuning：折射/边带/色差三组随档衰减）。
+    final dropletQuality = liquidGlassQualitySetting(ref);
     // 玻璃外壳由 _SlidingNavBottom 自组装（水滴画在玻璃之上不被裁剪，
     // 按住胀大可鼓出底栏边缘）；显隐动画窗口内退纯色毛玻璃，水滴回嵌内部。
     final tabs = _SlidingNavBottom(
       index: index,
       lens: realLiquid,
+      lensBoost: bilipaiIndicatorLensBoostOf(dropletQuality),
+      edgeBoost: bilipaiIndicatorEdgeBoostOf(dropletQuality),
+      dropletChroma: bilipaiIndicatorChromaOf(dropletQuality),
       glassBuilder: liquid && !settling
           ? (Widget content) => _liquidGlass(context, ref, content)
           : null,
@@ -1926,8 +1931,10 @@ class _LiquidNavBar extends ConsumerWidget {
       radius: 30,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
-      // BiliPai 三档配方：中档=CLEAR 零模糊（水晶玻璃，「液态感」核心），
-      // 高档=BALANCED 4dp 轻模糊。
+      // BiliPai 官方 LiquidGlassTuning 三档：轻度 CLEAR 零模糊（水晶玻璃，
+      // 「液态感」核心）、中度 BALANCED 4dp（官方默认档）、重度 FROSTED
+      // 24dp 重磨砂。4dp 走全分辨率模糊（cheapBackdropBlur 自适应降采样），
+      // 与 BiliPai 真高斯观感一致。
       blurSigma: surfaceBlurSigma(
         base: bilipaiBackdropBlurOf(quality),
         budget: budget,
@@ -2382,6 +2389,9 @@ class _SlidingNavBottom extends StatefulWidget {
     required this.onSelect,
     this.lens = false,
     this.glassBuilder,
+    this.lensBoost = 1.0,
+    this.edgeBoost = 1.0,
+    this.dropletChroma = 0.5,
   });
 
   final int index;
@@ -2390,6 +2400,13 @@ class _SlidingNavBottom extends StatefulWidget {
   /// 真液态玻璃时用 BiliPai 折射透镜水滴；否则用主题色大胶囊选中指示器
   /// （铺满整格的淡红底，与固定底栏观感一致）。
   final bool lens;
+
+  /// BiliPai 水滴指示器按档位增强（官方 LiquidGlassTuning indicatorLensBoost /
+  /// indicatorEdgeWarpBoost / indicatorChromaticAberration），由 _LiquidNavBar
+  /// 按当前液态档位传入。
+  final double lensBoost;
+  final double edgeBoost;
+  final double dropletChroma;
 
   /// 真液态时由状态内部组装玻璃外壳：水滴画在玻璃**之上**（外层 Stack 兄弟
   /// 节点），不被玻璃的 clipPath 裁剪——按住胀大可以超出底栏边缘（BiliPai
@@ -2464,7 +2481,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final items = bottomNavItems;
     // 三个控制器任一走帧都要重绘（水滴飞行/落点回弹/按住放大）。
     return AnimatedBuilder(
@@ -2485,24 +2501,30 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final dropH = (maxH * 0.8).clamp(54.0, 60.0);
         final pos = _dragging ? _dragPos : _currentPosition;
 
-        // —— 飞行速度形变（水滴拉伸）——
-        // 点击飞行用 easeOutCubic 导数 3(1−t)²（起步最快、到站归零）；
-        // 拖动用指针实时速度。
-        final tMove = _move.value;
-        final delta = (_to - _from).abs();
-        final speed = _dragging
-            ? _dragVel
-            : delta * 3 * math.pow(1 - tMove, 2) / 0.26;
-        final vClamp =
-            (speed.isFinite ? speed.abs() : 0.0).clamp(0.0, 1.8) / 10;
-        double sx = 1 / (1 - vClamp * 0.75);
-        double sy = 1 - vClamp * 0.5;
-
-        // 按住放大：拖动中或指针按下（尚未过拖动 slop）都生效——纯按住
-        // 也要有 BiliPai/RwaS 的水滴胀大反馈。静止直径 0.8 栏高，按住
-        // 高度 +30%（胀出栏缘）、横向再鼓 24%，肉眼可辨；折射量同步长满
-        // （pressG），水滴「活」起来。
+        // —— 透镜档案（BiliPai resolveLiquidLensProfile DEFAULT 配方）——
+        // 静止 shouldRefract=false（官方测试锁定：idle 折射量=0，纯 passthrough）；
+        // 拖动有折射下限 dragProgressFloor=0.18（近零速度也折射），速度线性
+        // 满档于 lensVelocityRangePxPerSecond=2600px/s；
+        // 非拖动的指针滑动阈值 movingVelocityThreshold=45px/s、满档除数
+        // speedProgressDivisor=1400px/s。此处速度源：拖动=指针实时速度
+        // （tabs/s×tabW→px/s）；按住不动=按压进度 pressG 驱动（等价 BiliPai
+        // dock 按住预览的 panelOffset 效果）。
+        final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
+        final dragMf = _dragging
+            ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
+            : (velPx > 45
+                ? ((velPx - 45) / 1400).clamp(0.0, 1.0)
+                : 0.0);
         final pressG = Curves.easeOut.transform(_press.value);
+        final mf = math.max(pressG, dragMf);
+
+        // —— 速度形变（BiliPai DEFAULT indicator 规格）——
+        // 拖动拉伸：scaleX += motionFraction×0.34，Y 压缩比 0.52——比旧版
+        // 自研曲线（max +16%）饱满得多，快甩时水滴明显拉成胶囊再弹回。
+        // 按住放大保留自研口径：静止直径 0.8 栏高，按住高 +30%（胀出栏缘）、
+        // 横向再鼓 24%；落点回弹沿用阻尼正弦波。
+        double sx = 1 + dragMf * 0.34;
+        double sy = 1 - dragMf * 0.34 * 0.52;
         if (_dragging || pressG > 0) {
           sx *= 1 + 0.24 * pressG;
           sy *= 1 + 0.30 * pressG;
@@ -2535,34 +2557,33 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
         // 真液态：圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
         //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移）。
-        // 折射量完全由按压进度驱动（Halcyon：H=10dp·p / A=14dp·p）——
-        // 静止 p=0 纯 passthrough（BiliPai 同款），水滴只余极淡底色；
-        // 按住/拖动 p→1 折射满档，图标被连贯地「熔」进边缘。不能加静止
-        // 保底：半强度位移会让图标原图和折射副本错开成两层重影。
+        // 折射量由透镜档案 mf 驱动（拖动速度 + 按压），再乘官方按档增强
+        // indicatorLensBoost（1.35/1.0/0.78）与 indicatorEdgeWarpBoost
+        // （1.40/1.0/0.82）：静止 mf=0 纯 passthrough（BiliPai 同款），
+        // 拖动/按住水滴「活」起来，图标被连贯地「熔」进边缘。
         // depthEffect=1 让中心内容也「鼓起」，水滴压到内容上立刻有
         // 放大镜观感。
+        // 水滴染色对齐官方 drawLiquidSphereSurface baseColor =
+        // colorScheme.primary @0.18（清水透镜带主题色淡染，BiliPai dock 同款）。
         // 非液态：铺满整格的主题色淡红大胶囊（恢复通用选中指示样式）。
         final d = dropH;
         final bool scaledIndicator = overlayDroplet; // 尺寸已含形变，无需 Transform
         Widget indicator;
         if (widget.lens) {
-          final pressS = pressG;
-          final band = d * 10.0 / 56.0 * pressS;
-          final amount = d * 14.0 / 56.0 * pressS;
+          final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
+          final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
           indicator = BiliPaiGlass(
             // overlay 模式尺寸含 sx/sy 形变，半径取缩放后短边的一半。
             radius: scaledIndicator ? d * sy / 2 : d / 2,
             refract: amount,
-            chroma: 0.5,
+            chroma: widget.dropletChroma,
             // Halcyon 水滴是纯折射透镜（无模糊）：图标/文字被扭过来时保持
             // 清晰，只靠底色+扫光提供存在感。
             blurSigma: 0,
-            // BiliPai/Halcyon 静止水滴近乎全透（无染色无高光，progress=0 时
-            // 纯 passthrough）：这里只留极淡底色+弱扫光，否则水滴叠在壳体
-            // 染色上变成灰色实心球，失去「清水透镜」观感。
-            backgroundColor: isDark
-                ? Colors.white.withValues(alpha: 0.04)
-                : Colors.black.withValues(alpha: 0.02),
+            backgroundColor: Theme.of(context)
+                .colorScheme
+                .primary
+                .withValues(alpha: 0.18),
             specular: 0.12,
             edgeAmount: band,
             saturation: 1.5,

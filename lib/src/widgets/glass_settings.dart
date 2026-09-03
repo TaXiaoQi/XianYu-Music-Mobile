@@ -78,15 +78,16 @@ List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
 double wallpaperGlassSigma(BuildContext context) => 0.0;
 
 /// 毛玻璃模糊强度档位 → sigma 缩放系数。
-/// strongest = 1.0（当前默认，观感最强）/ medium = 0.6 / light = 0.16。
+/// strongest = 1.0（当前默认，观感最强）/ medium = 0.6 / light = 0.4。
 /// 该缩放仅作用于非导航类毛玻璃表面（迷你播放条、播放面板等）；
 /// 顶栏、底栏、横屏侧栏等导航表面保持各自固定模糊度，不受档位影响。
-/// 轻度档 sigma 收敛到很小（播放条 ~1.6 / 面板 ~1.3），近乎透明、仅留一点模糊，
-/// 适合壁纸下强调通透的观感。
+/// 轻度档曾用 0.16（sigma≈2.6），经降采样模糊（内部再 ÷4 采样）后实际
+/// 小图 sigma 仅 0.64，模糊完全不可感知、与纯半透明色块无差别；现提到
+/// 0.4（sigma≈6.4）——仍是最通透档位，但「带点模糊」肉眼可辨。
 double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
       FrostedGlassLevel.strongest => 1.0,
       FrostedGlassLevel.medium => 0.6,
-      FrostedGlassLevel.light => 0.16,
+      FrostedGlassLevel.light => 0.4,
     };
 
 /// 固定式导航表面（顶栏、固定底栏）的统一模糊 sigma。
@@ -201,7 +202,10 @@ LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(
         LiquidGlassQuality.medium));
 
 /// BiliPai 化液态玻璃折射强度（边缘透镜最大位移）按档位映射。
-/// 对齐原版三档配方：CLEAR 24 / BALANCED 24 / FROSTED 8（重磨砂档折射收敛）。
+/// **逐值对齐官方 LiquidGlassTuning.kt**：refractionAmount =
+/// midpointLerp(24, 24, 8, progress) → CLEAR 24 / BALANCED 24 / FROSTED 8。
+/// （此前自行配平成 24/20/12 又回滚：BiliPai 三档差异本就主要靠模糊与
+/// 底色/白 overlay 体现，折射恒定 24 正是它 CLEAR≈BALANCED 的原味。）
 /// 逻辑像素 = BiliPai refractionAmount（64dp dock 名义 24dp），剖面为原版
 /// circleMap 圆弧曲线。
 double bilipaiRefractOf(LiquidGlassQuality q) => switch (q) {
@@ -211,8 +215,10 @@ double bilipaiRefractOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃色差强度按档位映射。
-/// BiliPai shell 恒为无色差（"Miuix keeps the shell achromatic"），全档归零；
-/// 保留参数位便于日后微调。
+/// 官方口径：**shell 恒为无色差**（"Miuix keeps the 24dp shell achromatic"），
+/// 0.5 的色散只给移动的**水滴指示器**（UPSTREAM_INDICATOR_CHROMATIC_ABERRATION
+/// = 0.5，且 CLEAR 档 allowChromaticAberration=false）。水滴色差见
+/// [bilipaiIndicatorChromaOf]。
 double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
       LiquidGlassQuality.medium => 0.0,
@@ -224,7 +230,13 @@ double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
 /// 0.40，frosted 0.54）——亮色为白；暗色原版是暗色 surfaceContainer，
 /// 即深灰烟熏玻璃（此前暗色用白色 0.26 薄纱，透明度过高且发灰）。
 Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
-  final a = quality == LiquidGlassQuality.high ? 0.54 : 0.40;
+  // **逐值对齐官方 LiquidGlassTuning.kt**：surfaceAlpha =
+  // midpointLerp(0.40, 0.40, 0.54, progress) → 0.40 / 0.40 / 0.54。
+  final a = switch (quality) {
+    LiquidGlassQuality.low => 0.40,
+    LiquidGlassQuality.medium => 0.40,
+    LiquidGlassQuality.high => 0.54,
+  };
   return isDark
       ? Color.fromARGB((a * 255).round(), 0x26, 0x26, 0x2A)
       : Color.fromARGB((a * 255).round(), 0xFF, 0xFF, 0xFF);
@@ -239,10 +251,9 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃背景模糊半径（逻辑像素）按档位映射。
-/// 对齐原版 LiquidGlassTuning 三档配方：低=CLEAR 0 / 中=BALANCED 4dp /
-/// 高=FROSTED 24dp——「液态感」的核心是 CLEAR 档零模糊水晶玻璃；
-/// BALANCED 是原版默认观感；FROSTED 重磨砂接近毛玻璃但折射/饱和仍按
-/// 液态配方走。
+/// **逐值对齐官方 LiquidGlassTuning.kt**：backdropBlurRadius =
+/// midpointLerp(0, 4, 24, progress) → CLEAR 0（水晶玻璃，「液态感」核心）/
+/// BALANCED 4dp（原版默认档）/ FROSTED 24dp（重磨砂）。
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
       LiquidGlassQuality.medium => 4.0,
@@ -250,9 +261,10 @@ double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃边缘透镜折射幅度（逻辑像素）按档位映射。
-/// 边带厚度 = BiliPai refractionHeight：低/中档 24dp（64dp dock 名义值），
-/// 高档 FROSTED 收敛 8dp。剖面为原版 circleMap，位移集中在贴边 1/2 带内
-/// （半带处仅 ~13%），不会「还没靠近就弯」；小表面另有 0.42×短边安全钳制。
+/// **逐值对齐官方 LiquidGlassTuning.kt**：refractionHeight =
+/// midpointLerp(24, 24, 8, progress) → 24 / 24 / 8。剖面为原版 circleMap，
+/// 位移集中在贴边 1/2 带内（半带处仅 ~13%），不会「还没靠近就弯」；
+/// 小表面另有 0.42×短边安全钳制。
 double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 24.0,
       LiquidGlassQuality.medium => 24.0,
@@ -260,11 +272,43 @@ double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃饱和度增益按档位映射。
-/// 原版 clear/balanced 档 1.5（水晶透亮感核心），frosted 档收敛 1.24。
+/// **逐值对齐官方 LiquidGlassTuning.kt**：saturation =
+/// midpointLerp(1.5, 1.5, 1.24, progress) → 1.5 / 1.5 / 1.24。
 double bilipaiSaturationOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 1.5,
       LiquidGlassQuality.medium => 1.5,
       LiquidGlassQuality.high => 1.24,
+    };
+
+/// —— BiliPai 水滴指示器专属档位（官方 LiquidGlassTuning.kt）——
+/// shell 参数之上，水滴指示器另有三组随档位衰减的增强系数：
+///   indicatorLensBoost     = midpointLerp(1.35, 1, 0.78)  → 折射量
+///   indicatorEdgeWarpBoost = midpointLerp(1.40, 1, 0.82)  → 边带/边缘扭曲
+///   indicatorChromaticBoost= midpointLerp(1.20, 1, 0.70)  → 色差
+/// CLEAR 档水滴折射/边缘最强（1.35/1.40）——低档无模糊全靠透镜水滴撑「液态感」；
+/// FROSTED 档收弱（0.78/0.82）避免重磨砂上过度扭曲。
+
+/// 水滴折射量增强按档位映射（官方 indicatorLensBoost 三锚点）。
+double bilipaiIndicatorLensBoostOf(LiquidGlassQuality q) => switch (q) {
+      LiquidGlassQuality.low => 1.35,
+      LiquidGlassQuality.medium => 1.0,
+      LiquidGlassQuality.high => 0.78,
+    };
+
+/// 水滴边带/边缘扭曲增强按档位映射（官方 indicatorEdgeWarpBoost 三锚点）。
+double bilipaiIndicatorEdgeBoostOf(LiquidGlassQuality q) => switch (q) {
+      LiquidGlassQuality.low => 1.40,
+      LiquidGlassQuality.medium => 1.0,
+      LiquidGlassQuality.high => 0.82,
+    };
+
+/// 水滴色差强度按档位映射。官方：色散只给水滴不给 shell，
+/// 上限 UPSTREAM_INDICATOR_CHROMATIC_ABERRATION = 0.5；CLEAR 档
+/// allowChromaticAberration=false → 0（无色差，保持水晶纯净）。
+double bilipaiIndicatorChromaOf(LiquidGlassQuality q) => switch (q) {
+      LiquidGlassQuality.low => 0.0,
+      LiquidGlassQuality.medium => 0.5,
+      LiquidGlassQuality.high => 0.5,
     };
 
 /// 玻璃表面是否回退为「高不透明度纯色」（关闭毛玻璃 / 低性能模式）。
@@ -312,17 +356,42 @@ ImageFilter cachedBlur(double sigma) {
 /// 跳变）。Flutter 的 BackdropFilter 每实例每帧各自捕获背板，模糊按全分辨率
 /// 像素算，这是切页掉帧根因。等价优化：先把背板按 1/[downscale] 采样缩小、
 /// 在小图上做 sigma/downscale 的模糊、再放大回去——模糊像素工作量降为
-/// 1/downscale²（4x 时 1/16），观感与全分辨率高斯几乎无差（模糊本身低频）。
+/// 1/downscale²（4x 时 1/16）。**downscale 自适应**（见 [_resolveBlurDownscale]）：
+/// 小 sigma 时降采样会把模糊稀释到不可见（4dp÷4=1px，放大后几乎纯色，
+/// 与零模糊的轻度档无法区分），必须走全分辨率才对得起 BiliPai 的真高斯观感。
 /// filter 按 (sigma, downscale) 缓存复用。
 final Map<String, ImageFilter> _cheapBlurCache = <String, ImageFilter>{};
 
-ImageFilter cheapBackdropBlur(double sigma, {int downscale = 4}) {
-  final key = '$sigma/$downscale';
+/// 按目标 sigma 选择降采样倍率：保证小图上的等效模糊 ≥ ~5px（缩放回去后
+/// 糊感不流失）。sigma ≥ 20 → 1/4（省 16 倍）；≥ 10 → 1/2；更小全分辨率。
+int _resolveBlurDownscale(double sigma) {
+  if (sigma >= 20) return 4;
+  if (sigma >= 10) return 2;
+  return 1;
+}
+
+ImageFilter cheapBackdropBlur(double sigma, {int? downscale}) {
+  final d = downscale ?? _resolveBlurDownscale(sigma);
+  final key = '$sigma/$d';
   final hit = _cheapBlurCache[key];
   if (hit != null) return hit;
   if (_cheapBlurCache.length > 64) _cheapBlurCache.clear();
+  return _cheapBlurCache[key] = _composeCheapBlur(sigma, d);
+}
+
+/// 非缓存变体：每次新建 filter 实例（组合结构相同）。
+///
+/// 用于液态玻璃拖拽场景：Impeller 对 BackdropFilterLayer 的背板快照可能按
+/// filter 实例命中缓存，复用全局缓存的同一 filter 对象时，玻璃平移（层
+/// 实例已每帧新建）仍可能读到拖拽起点的旧背板——折射采样停在旧位置，
+/// 「拖拽时折射效果留在原地/不明显」的根因之一。拖拽期间每帧新建实例
+/// 强制重新抓背板，拖拽结束回到缓存路径，无常态开销。
+ImageFilter cheapBackdropBlurFresh(double sigma, {int? downscale}) =>
+    _composeCheapBlur(sigma, downscale ?? _resolveBlurDownscale(sigma));
+
+ImageFilter _composeCheapBlur(double sigma, int downscale) {
   final d = downscale.toDouble();
-  return _cheapBlurCache[key] = ImageFilter.compose(
+  return ImageFilter.compose(
     // 最后一步：把小图模糊结果放大回原尺寸。
     outer: ImageFilter.matrix(Matrix4.diagonal3Values(d, d, 1).storage),
     inner: ImageFilter.compose(
@@ -350,7 +419,7 @@ Widget pseudoLiquidSurface({
   BlurBudget? budget,
   // 传入非 null 时，模糊强度跟随指定毛玻璃档位（毛玻璃表面如悬浮搜索框用
   // frostedBlurScale(ref) 跟随用户档位）；不传（液态 low 档伪液态）默认用
-  // 毛玻璃「轻度」档 0.16。
+  // 毛玻璃「轻度」档缩放（0.4，见 frostedBlurScaleOf）。
   double? frostedScale,
   // true 时无视玻璃设置直接纯色铺底（跳过 BackdropFilter/shader）。
   // 用于底栏/悬浮顶栏的显隐动画窗口：BackdropFilter 处于 Opacity 动画层内

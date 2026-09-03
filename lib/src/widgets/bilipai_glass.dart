@@ -718,23 +718,27 @@ class RenderLiquidBacking extends RenderBox {
     // 贴着模糊内部的拼接缝（「折射对不上背景」的根因）。
     final bg = _backgroundColor;
 
-    // Pass1 模糊 filter 按 sigma 缓存；shader filter 每帧重建（包内同做法）。
+    // Pass1 模糊 filter：静止/滚动按 sigma 缓存复用；**拖拽中每帧新建**——
+    // Impeller 的背板快照对层树结构 + filter 实例敏感，复用缓存 filter 时
+    // 玻璃平移仍可能命中拖拽起点的旧快照，折射采样停在旧位置（「拖拽时
+    // 折射效果留在原地/不明显」根因）。层对象本就每帧新建（见下），拖拽
+    // 期 filter 一并新建，两处口径对齐；拖拽结束回到缓存路径，无常态开销。
     // 注意：ImageFilter.blur 的 sigma 就是逻辑像素（画布坐标系），不能再乘
     // dpr——乘过会导致模糊强度虚高 ~3 倍（实测中心糊成一片）。
     final targetSigma = _blurSigma;
-    if (_cachedBlurFilter == null || _cachedBlurSigma != targetSigma) {
-      // 流光背板自身的模糊趟改降采样高斯（缩→小图模糊→放大，工作量 1/16，
-      // 观感几乎无差）。与底栏/迷你条的毛玻璃回退同一套，避免这里仍是
-      // 唯一全分辨率模糊点。
-      _cachedBlurFilter = cheapBackdropBlur(targetSigma);
-      _cachedBlurSigma = targetSigma;
-    }
+    _cachedBlurFilter = globalIsDragging.value
+        ? cheapBackdropBlurFresh(targetSigma)
+        : (_cachedBlurFilter != null && _cachedBlurSigma == targetSigma
+            ? _cachedBlurFilter!
+            : cheapBackdropBlur(targetSigma));
+    _cachedBlurSigma = targetSigma;
+    final liveBlurFilter = _cachedBlurFilter!;
     // 层对象每帧新建（句柄只保留最新一层供 dispose 清理）：复用同一
     // BackdropFilterLayer 时，Impeller 对 shader 背板快照按层实例缓存，
     // 玻璃平移（层位置变化、背后内容不变）时不会重新快照——拖动播放条
     // 「折射效果留在原地」的根因。新建层实例强制引擎每帧重新抓背板。
     final blurLayer = _blurHandle.layer = BackdropFilterLayer();
-    blurLayer.filter = _cachedBlurFilter!;
+    blurLayer.filter = liveBlurFilter;
 
     final clipPath = Path()
       ..addRRect(RRect.fromRectAndRadius(

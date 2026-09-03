@@ -100,14 +100,13 @@ class FloatingGlassSurface extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    // 壁纸模式下抽掉液态实色底：顶栏类胶囊一致走极淡磨砂（wallpaperNavGlassFill），
-    // 让壁纸从气泡/胶囊下透出，与 GlassTopBar 同口径。
-    final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式不再排除液态玻璃：悬浮顶栏与播放条同口径（playbarGlassSurface
+    // 的液态条件也不排除壁纸），BiliPaiGlass 半透明铺底（alpha 0.40~0.50）
+    // 本就透出壁纸，可读性由底色保证。仅低性能模式回退毛玻璃/纯色。
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf &&
-            !wallpaper;
+            !lowPerf;
 
     if (liquid) {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
@@ -171,14 +170,12 @@ class BiliPaiPill extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    // 壁纸模式下抽掉液态实色底：顶栏类胶囊一致走极淡磨砂（wallpaperNavGlassFill），
-    // 让壁纸从气泡/胶囊下透出，与 GlassTopBar 同口径。
-    final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式不再排除液态玻璃：与 FloatingGlassSurface / 播放条同口径，
+    // BiliPaiGlass 半透明铺底本就透出壁纸。仅低性能模式回退毛玻璃/纯色。
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
-            !lowPerf &&
-            !wallpaper;
+            !lowPerf;
 
     final content = Material(
       color: Colors.transparent,
