@@ -438,6 +438,41 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
     }
   }
 
+  /// 浏览远程目录并选取根目录。
+  ///
+  /// 编辑态密码留空：沿用存储密码浏览已保存源；其余按表单连接信息浏览
+  /// （新增源未保存也能浏览）。
+  Future<void> _browseRoot() async {
+    final url = _baseUrl.text.trim();
+    if (!RegExp(r'^https?://').hasMatch(url)) {
+      setState(() => _error = tr('请先填写以 http:// 或 https:// 开头的服务器地址'));
+      return;
+    }
+    final service = ref.read(remoteLibraryServiceProvider);
+    Future<List<RemoteDirEntryInfo>> fetcher(String path) async {
+      if (_isEditing && _password.text.isEmpty) {
+        return service.listDirectory(widget.editing!.id, path);
+      }
+      return service.browseDirectory(
+        baseUrl: url,
+        username: _username.text.trim(),
+        password: _password.text,
+        path: path,
+      );
+    }
+
+    final picked = await showSheetDialog<String>(
+      context,
+      (_) => _RemoteDirBrowserSheet(
+        fetcher: fetcher,
+        initialPath: _rootPath.text.trim().isEmpty ? '/' : _rootPath.text.trim(),
+      ),
+      barrierDismissible: false,
+    );
+    if (picked == null || picked.isEmpty) return;
+    if (mounted) setState(() => _rootPath.text = picked);
+  }
+
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
       setState(() => _error = tr('请填写名称'));
@@ -522,10 +557,15 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                 controller: _rootPath,
                 label: tr('根目录'),
                 hint: '/',
-                keyboard: TextInputType.text),
+                keyboard: TextInputType.text,
+                suffix: IconButton(
+                  icon: const Icon(Icons.folder_open_outlined, size: 20),
+                  tooltip: tr('浏览目录'),
+                  onPressed: _browseRoot,
+                )),
             const SizedBox(height: 6),
             Text(
-              tr('从根目录开始递归扫描音频文件（mp3/flac/wav/m4a/aac/ogg/opus/aiff）'),
+              tr('从根目录开始递归扫描音频文件（含 ape/wv/dsf/dff，远程 DSD 需 USB 独占直通）'),
               style: TextStyle(fontSize: 11, color: scheme.outline),
             ),
             if (_error != null) ...[
@@ -576,6 +616,7 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
     TextInputType? keyboard,
     bool obscure = false,
     VoidCallback? onToggleObscure,
+    Widget? suffix,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return TextField(
@@ -594,14 +635,191 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
         ),
-        suffixIcon: onToggleObscure == null
-            ? null
-            : IconButton(
+        suffixIcon: onToggleObscure != null
+            ? IconButton(
                 icon: Icon(obscure ? Icons.visibility_off : Icons.visibility,
                     size: 19),
                 onPressed: onToggleObscure,
-              ),
+              )
+            : suffix,
       ),
+    );
+  }
+}
+
+/// 远程目录浏览弹窗：逐级进入子目录，选取作为 WebDAV 根目录。
+class _RemoteDirBrowserSheet extends StatefulWidget {
+  const _RemoteDirBrowserSheet({
+    required this.fetcher,
+    required this.initialPath,
+  });
+
+  final Future<List<RemoteDirEntryInfo>> Function(String path) fetcher;
+  final String initialPath;
+
+  @override
+  State<_RemoteDirBrowserSheet> createState() => _RemoteDirBrowserSheetState();
+}
+
+class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
+  late String _path = widget.initialPath;
+  List<RemoteDirEntryInfo> _dirs = const [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final entries = await widget.fetcher(_path);
+      if (!mounted) return;
+      final dirs = entries.where((e) => e.isDir).toList()
+        ..sort((a, b) =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      setState(() => _dirs = dirs);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = tr('加载失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// 上级目录：去掉末尾段；根目录的上级仍是根目录。
+  String get _parentPath {
+    var p = _path;
+    if (p.isEmpty || p == '/') return '/';
+    if (p.endsWith('/')) p = p.substring(0, p.length - 1);
+    final idx = p.lastIndexOf('/');
+    return idx <= 0 ? '/' : p.substring(0, idx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr('选择根目录'),
+                  style:
+                      const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (_path != '/' && _path.isNotEmpty)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.arrow_upward, size: 20),
+                      tooltip: tr('上级目录'),
+                      onPressed: _loading ? null : () {
+                        setState(() => _path = _parentPath);
+                        _load();
+                      },
+                    ),
+                  Expanded(
+                    child: Text(
+                      _path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12.5, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Flexible(
+          child: SizedBox(
+            width: double.maxFinite,
+            height: 320,
+            child: _loading
+                ? const Center(
+                    child: SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(strokeWidth: 2.4)))
+                : _error != null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Center(
+                          child: Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 12.5, color: scheme.error)),
+                        ),
+                      )
+                    : _dirs.isEmpty
+                        ? Center(
+                            child: Text(tr('此目录下没有子目录'),
+                                style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: scheme.onSurfaceVariant)),
+                          )
+                        : ListView.builder(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            itemCount: _dirs.length,
+                            itemBuilder: (_, i) {
+                              final dir = _dirs[i];
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(Icons.folder_outlined,
+                                    size: 22, color: scheme.primary),
+                                title: Text(dir.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 14)),
+                                trailing: const Icon(Icons.chevron_right,
+                                    size: 20),
+                                onTap: () {
+                                  setState(() => _path = dir.remotePath);
+                                  _load();
+                                },
+                              );
+                            },
+                          ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(tr('取消')),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => Navigator.pop(context, _path),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: Text(tr('选择此目录')),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

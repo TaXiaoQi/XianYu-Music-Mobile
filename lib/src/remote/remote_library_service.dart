@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/db_path.dart';
+import '../library/library_provider.dart';
 import '../rust/api.dart' as frb;
 import '../i18n/i18n.dart';
 
@@ -103,6 +106,41 @@ class RemoteSyncResultInfo {
         indexedFiles: (j['indexedFiles'] as num?)?.toInt() ?? 0,
         audioFiles: (j['audioFiles'] as num?)?.toInt() ?? 0,
         parsedSongs: (j['parsedSongs'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 远程目录条目（WebDAV PROPFIND 解析结果）。
+class RemoteDirEntryInfo {
+  final String name;
+  final String remotePath;
+  final bool isDir;
+  final int size;
+  const RemoteDirEntryInfo({
+    required this.name,
+    required this.remotePath,
+    required this.isDir,
+    required this.size,
+  });
+
+  factory RemoteDirEntryInfo.fromJson(Map<String, dynamic> j) =>
+      RemoteDirEntryInfo(
+        name: j['name'] as String? ?? '',
+        remotePath: j['remotePath'] as String? ?? '/',
+        isDir: j['isDir'] as bool? ?? false,
+        size: (j['size'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// APE/WV 转码结果：`path` = 可播放文件路径，`decodedNow` = 本次是否实际解码。
+class TranscodeResultInfo {
+  final String path;
+  final bool decodedNow;
+  const TranscodeResultInfo({required this.path, required this.decodedNow});
+
+  factory TranscodeResultInfo.fromJson(Map<String, dynamic> j) =>
+      TranscodeResultInfo(
+        path: j['path'] as String? ?? '',
+        decodedNow: j['decodedNow'] as bool? ?? false,
       );
 }
 
@@ -238,6 +276,66 @@ class RemoteLibraryService {
       password: map['password'] as String?,
     );
   }
+
+  /// 预缓存远程歌曲（下载进远程缓存，已缓存则立即返回）。
+  Future<void> precacheRemote(String remoteUri) async {
+    await frb.precacheRemoteSong(
+      dbPath: await _dbPath(),
+      cacheRoot: await _cacheRoot(),
+      remoteUri: remoteUri,
+    );
+  }
+
+  /// 浏览已保存源的远程目录（列出目录与文件）。
+  Future<List<RemoteDirEntryInfo>> listDirectory(
+      String sourceId, String path) async {
+    final json = await frb.listRemoteDirectory(
+      dbPath: await _dbPath(),
+      sourceId: sourceId,
+      path: path,
+    );
+    final list = jsonDecode(json) as List;
+    return list
+        .map((e) =>
+            RemoteDirEntryInfo.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// 按表单连接信息浏览远程目录（新增源未保存时也可浏览）。
+  Future<List<RemoteDirEntryInfo>> browseDirectory({
+    required String baseUrl,
+    String? username,
+    String? password,
+    required String path,
+  }) async {
+    final json = await frb.webdavBrowseDirectory(
+      sourceJson: jsonEncode(<String, dynamic>{
+        'name': 'browse',
+        'provider': 'webdav',
+        'baseUrl': baseUrl.trim(),
+        'username': (username == null || username.isEmpty) ? null : username,
+        'password': (password == null || password.isEmpty) ? null : password,
+        'rootPath': '/',
+      }),
+      path: path,
+    );
+    final list = jsonDecode(json) as List;
+    return list
+        .map((e) =>
+            RemoteDirEntryInfo.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// APE/WV 转码缓存：返回可播放路径（远程源自动先下载缓存）。
+  Future<TranscodeResultInfo> transcodeToWav(String srcPath) async {
+    final json = await frb.transcodeAudioToWav(
+      dbPath: await _dbPath(),
+      cacheRoot: await _cacheRoot(),
+      srcPath: srcPath,
+    );
+    return TranscodeResultInfo.fromJson(
+        (jsonDecode(json) as Map).cast<String, dynamic>());
+  }
 }
 
 /// 远程歌曲播放计划。
@@ -361,4 +459,59 @@ class RemoteLibraryNotifier extends StateNotifier<RemoteLibraryState> {
 final remoteLibraryProvider =
     StateNotifierProvider<RemoteLibraryNotifier, RemoteLibraryState>(
   (ref) => RemoteLibraryNotifier(ref.read(remoteLibraryServiceProvider)),
+);
+
+/// WebDAV 源 24h 自动同步（对齐桌面端 playerLifecycle 的 remoteAutoSyncTimer）。
+///
+/// 启动即检查一次，此后每小时轮询；每个源距上次自动同步超过 24h 才静默执行，
+/// 时间戳按源独立存于 SharedPreferences（`xianyu_remote_auto_sync_at:<id>`）。
+class RemoteAutoSyncService {
+  static const _interval = Duration(hours: 24);
+  static const _keyPrefix = 'xianyu_remote_auto_sync_at:';
+  final Ref _ref;
+  Timer? _timer;
+  bool _running = false;
+
+  RemoteAutoSyncService(this._ref);
+
+  void start() {
+    if (_timer != null) return;
+    unawaited(_check());
+    _timer = Timer.periodic(const Duration(hours: 1), (_) => _check());
+  }
+
+  Future<void> _check() async {
+    if (_running) return;
+    _running = true;
+    var synced = false;
+    try {
+      final sources = await _ref.read(remoteLibraryServiceProvider).listSources();
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final source in sources) {
+        if (!source.enabled) continue;
+        final last = prefs.getInt('$_keyPrefix${source.id}') ?? 0;
+        if (now - last < _interval.inMilliseconds) continue;
+        try {
+          // 手动同步进行中则顺延到下一轮询，避免同时扫描同一源。
+          if (_ref.read(remoteLibraryProvider).syncingSourceId != null) break;
+          await _ref.read(remoteLibraryServiceProvider).syncSource(source.id);
+          await prefs.setInt('$_keyPrefix${source.id}',
+              DateTime.now().millisecondsSinceEpoch);
+          synced = true;
+        } catch (_) {}
+      }
+    } catch (_) {} finally {
+      _running = false;
+    }
+    if (synced) {
+      // 静默刷新远程源列表（同步时间/错误）与曲库条目。
+      _ref.read(remoteLibraryProvider.notifier).refresh();
+      _ref.read(libraryProvider.notifier).load();
+    }
+  }
+}
+
+final remoteAutoSyncProvider = Provider<RemoteAutoSyncService>(
+  (ref) => RemoteAutoSyncService(ref),
 );
