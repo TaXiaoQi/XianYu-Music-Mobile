@@ -19,8 +19,8 @@ sha1 = "0.10"
 hex = "0.4"
 md5 = "0.7"
 urlencoding = "2"
-reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate"] }
-tokio = { version = "1.48.0", features = ["sync", "rt-multi-thread", "time", "macros", "fs", "io-util"] }
+reqwest = { version = "0.12.26", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate", "stream"] }
+tokio = { version = "1.48.0", features = ["sync", "rt-multi-thread", "time", "macros", "fs", "io-util", "net"] }
 rustfft = "6.4.1"
 base64 = "0.22.1"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
@@ -48,6 +48,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 rquickjs = { version = "0.12", features = ["futures", "parallel", "bindgen"] }
 getrandom = "0.3"
 url = "2"
+# DLNA 双向投屏（dlna/ 模块，双端同步一份代码）
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio-util = { version = "0.7", default-features = false, features = ["io"] }
+socket2 = "0.6"
 # APE/WV 解码（与桌面端 vendor rodio 同源 crate），转码为 WAV 供 ExoPlayer 播放
 ape-decoder = "0.3"
 wavicle = { version = "0.1", default-features = false, features = ["decode"] }

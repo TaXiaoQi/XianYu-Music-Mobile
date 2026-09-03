@@ -11,6 +11,7 @@ pub mod music;
 pub mod player;
 pub mod security;
 pub mod database;
+pub mod dlna;
 pub mod remote;
 pub mod statistics;
 pub mod plugins;

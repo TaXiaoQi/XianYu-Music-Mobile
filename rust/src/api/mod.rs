@@ -2076,3 +2076,140 @@ pub async fn plugin_engine_store_snapshot(data_dir: String) -> Result<String, St
     });
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
+
+// =========================================================================
+// DLNA 双向投屏（发送端 DMC + 接收端 DMR）
+// =========================================================================
+// 约定沿用本文件：复合类型走 JSON 字符串（serde camelCase / core 默认字段名）。
+
+use crate::dlna::{DlnaCore, DlnaDevice, MediaPayload, TransportState};
+
+fn parse_device(device_json: &str) -> Result<DlnaDevice, String> {
+    serde_json::from_str(device_json).map_err(|e| format!("设备参数解析失败: {e}"))
+}
+
+fn parse_media(media_json: &str) -> Result<MediaPayload, String> {
+    serde_json::from_str(media_json).map_err(|e| format!("媒体参数解析失败: {e}"))
+}
+
+/// 搜索局域网 DLNA 渲染器，返回 `Vec<DlnaDevice>` JSON。
+pub async fn dlna_search_devices(timeout_ms: u64) -> Result<String, String> {
+    let devices = DlnaCore::shared().search_devices(timeout_ms).await;
+    serde_json::to_string(&devices).map_err(|e| e.to_string())
+}
+
+/// 投递媒体到渲染器（SetAVTransportURI），返回 `CastMediaInfo` JSON（含续投 token）。
+pub async fn dlna_cast_set_uri(
+    device_json: String,
+    media_json: String,
+    cover_json: Option<String>,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: u64,
+) -> Result<String, String> {
+    let device = parse_device(&device_json)?;
+    let media = parse_media(&media_json)?;
+    let cover = match cover_json {
+        Some(s) => Some(parse_media(&s)?),
+        None => None,
+    };
+    let info = DlnaCore::shared()
+        .cast_set_uri(&device, media, cover, &title, &artist, &album, duration_ms)
+        .await?;
+    serde_json::to_string(&info).map_err(|e| e.to_string())
+}
+
+pub async fn dlna_cast_play(device_json: String) -> Result<(), String> {
+    DlnaCore::shared().cast_play(&parse_device(&device_json)?).await
+}
+
+pub async fn dlna_cast_pause(device_json: String) -> Result<(), String> {
+    DlnaCore::shared().cast_pause(&parse_device(&device_json)?).await
+}
+
+pub async fn dlna_cast_stop(device_json: String) -> Result<(), String> {
+    DlnaCore::shared().cast_stop(&parse_device(&device_json)?).await
+}
+
+pub async fn dlna_cast_seek(device_json: String, secs: f64) -> Result<(), String> {
+    DlnaCore::shared().cast_seek(&parse_device(&device_json)?, secs).await
+}
+
+pub async fn dlna_cast_set_volume(device_json: String, percent: u8) -> Result<(), String> {
+    DlnaCore::shared()
+        .cast_set_volume(&parse_device(&device_json)?, percent)
+        .await
+}
+
+/// 查询渲染器传输状态，返回 `CastTransportState` JSON。
+pub async fn dlna_cast_get_state(device_json: String) -> Result<String, String> {
+    let state = DlnaCore::shared()
+        .cast_get_state(&parse_device(&device_json)?)
+        .await?;
+    serde_json::to_string(&state).map_err(|e| e.to_string())
+}
+
+/// TTL 续投：热替换 token 上游（电视不断流）。
+pub fn dlna_update_media_token(token: String, payload_json: String) -> Result<bool, String> {
+    let payload = parse_media(&payload_json)?;
+    Ok(DlnaCore::shared().update_media_token(&token, payload))
+}
+
+/// 启用本机渲染器（SSDP 广播 + SOAP 端点），返回实际端口。
+pub async fn dlna_enable_renderer(friendly_name: String, udn: String) -> Result<u16, String> {
+    DlnaCore::shared()
+        .enable_renderer(
+            crate::dlna::RendererConfig {
+                friendly_name,
+                udn,
+            },
+            crate::dlna::bridge::host(),
+        )
+        .await
+}
+
+pub async fn dlna_disable_renderer() -> Result<(), String> {
+    DlnaCore::shared().disable_renderer().await;
+    crate::dlna::bridge::reset_playback();
+    Ok(())
+}
+
+/// 渲染器状态，返回 `{"running":bool,"friendlyName":String,"port":u16}` JSON。
+pub fn dlna_renderer_status() -> String {
+    let core = DlnaCore::shared();
+    let running = core.renderer_running();
+    let (friendly_name, port) = core.renderer_info().unwrap_or_default();
+    serde_json::json!({
+        "running": running,
+        "friendlyName": friendly_name,
+        "port": port,
+    })
+    .to_string()
+}
+
+/// 长轮询下一条 DMR 指令（超时返回 None），返回 `DmrCommand` JSON。
+pub async fn dlna_dmr_next_command(timeout_ms: u64) -> Option<String> {
+    let cmd = DlnaCore::shared().dmr_next_command(timeout_ms).await?;
+    serde_json::to_string(&cmd).ok()
+}
+
+/// Dart 侧上报播放快照（供 DMR SOAP 状态应答）。
+///
+/// `state` ∈ "playing" / "paused" / "stopped" / "no_media" / "transitioning"。
+pub fn dlna_dmr_report_playback(
+    state: String,
+    position_secs: f64,
+    duration_secs: f64,
+    volume_percent: u8,
+    muted: bool,
+) {
+    let state = match state.as_str() {
+        "playing" => TransportState::Playing,
+        "paused" => TransportState::PausedPlayback,
+        "stopped" => TransportState::Stopped,
+        "transitioning" => TransportState::Transitioning,
+        _ => TransportState::NoMedia,
+    };
+    crate::dlna::bridge::report_playback(state, position_secs, duration_secs, volume_percent, muted);
+}
