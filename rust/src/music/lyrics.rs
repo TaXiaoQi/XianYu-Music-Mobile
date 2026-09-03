@@ -386,7 +386,6 @@ static CREDIT_LINE_RE: OnceLock<Regex> = OnceLock::new();
 static NON_SPEAKER_LABEL_RE: OnceLock<Regex> = OnceLock::new();
 static SPEAKER_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 static PARENTHETICAL_VOCAL_RE: OnceLock<Regex> = OnceLock::new();
-static INLINE_WORD_MARKER_RE: OnceLock<Regex> = OnceLock::new();
 static LQE_LIKE_MARKER_RE: OnceLock<Regex> = OnceLock::new();
 
 /// 制作信息行（作词/作曲/编曲/演唱/混音等），不是可演唱歌词，应排除出主歌词。
@@ -826,130 +825,6 @@ fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
         });
     }
     result
-}
-
-/// 网易云 JSON 单行：`{"t":1234,"c":[{"tx":"你"},{"tx":"好"}]}`。
-/// 出现在 LRC 文件内混排时按逐字行解析；无 `x` 结束时间时按行起始 + 500ms 兜底。
-fn parse_netease_json_single_line(line: &str, source_index: usize) -> Option<ParsedLine> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
-        return None;
-    }
-    let value: serde_json::Value = serde_json::from_str(trimmed).ok()?;
-    let start_ms = value.get("t").and_then(|v| v.as_i64())?;
-    let chars = value.get("c").and_then(|v| v.as_array())?;
-    if chars.is_empty() {
-        return None;
-    }
-
-    let mut words = Vec::new();
-    let mut text = String::new();
-    for char_obj in chars {
-        let Some(tx) = char_obj.get("tx").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if tx.is_empty() {
-            continue;
-        }
-        text.push_str(tx);
-        words.push(ParsedWord {
-            text: tx.to_string(),
-            start_ms: start_ms.max(0) as u32,
-            end_ms: start_ms.max(0) as u32,
-            roman_text: None,
-        });
-    }
-    if text.trim().is_empty() {
-        return None;
-    }
-
-    let start_ms = start_ms.max(0) as u32;
-    let end_ms = value
-        .get("x")
-        .and_then(|v| v.as_i64())
-        .map(|v| v.max(0) as u32)
-        .unwrap_or(start_ms.saturating_add(500));
-    let (explicit_role, normalized_text) = detect_explicit_role(&text);
-    Some(ParsedLine {
-        start_ms,
-        end_ms: end_ms.max(start_ms),
-        text: normalized_text,
-        words: Some(words),
-        translated_text: None,
-        roman_text: None,
-        source_format: ParsedLineSourceFormat::Yrc,
-        source_index: source_index as f64,
-        explicit_role,
-        speaker: None,
-        is_bg: false,
-        is_duet: false,
-        is_duet_partner: false,
-    })
-}
-
-/// 内联逐字 LRC 格式：`[mm:ss.xx]词(start,dur)词(start,dur)...`。
-/// 行首 `[mm:ss.xx]` 为行起始时间，每个词后跟 `(相对毫秒, 时长毫秒[, 额外])` 标记。
-fn parse_inline_word_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine> {
-    let leading = collect_markers(line, '[', ']');
-    let (_, body_start, line_start_ms) = *leading.first()?;
-    let body = &line[body_start..];
-    if !body.contains('(') || !body.contains(')') {
-        return None;
-    }
-
-    let word_re = INLINE_WORD_MARKER_RE
-        .get_or_init(|| Regex::new(r"([^()]*)\((\d+),(\d+)(?:,\d+)?\)").unwrap());
-
-    let mut words = Vec::new();
-    for captures in word_re.captures_iter(body) {
-        let text = sanitize_word_text(&captures[1]);
-        if text.is_empty() {
-            continue;
-        }
-        let relative_start: u32 = captures[2].parse().unwrap_or(0);
-        let duration: u32 = captures[3].parse().unwrap_or(0);
-        let start_ms = line_start_ms.saturating_add(relative_start);
-        words.push(ParsedWord {
-            text,
-            start_ms,
-            end_ms: start_ms.saturating_add(duration),
-            roman_text: None,
-        });
-    }
-
-    if words.is_empty() {
-        return None;
-    }
-
-    let text = sanitize_line_text(
-        &words
-            .iter()
-            .map(|word| word.text.clone())
-            .collect::<String>(),
-    );
-    if text.is_empty() {
-        return None;
-    }
-
-    let (explicit_role, normalized_text) = detect_explicit_role(&text);
-    let first_start = words.first()?.start_ms;
-    let last_end = words.last().map(|word| word.end_ms).unwrap_or(first_start);
-
-    Some(ParsedLine {
-        start_ms: first_start,
-        end_ms: last_end.max(first_start),
-        text: normalized_text,
-        words: Some(words),
-        translated_text: None,
-        roman_text: None,
-        source_format: ParsedLineSourceFormat::Eslrc,
-        source_index: source_index as f64,
-        explicit_role,
-        speaker: None,
-        is_bg: false,
-        is_duet: false,
-        is_duet_partner: false,
-    })
 }
 
 /// Lyricify Quick Export（LQE）与 LyricifyLines（LYL）共用行格式：`[start,end,type]text`。

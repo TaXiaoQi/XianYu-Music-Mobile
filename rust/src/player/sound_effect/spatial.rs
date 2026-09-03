@@ -31,10 +31,7 @@
 
 use super::dsp::{Biquad, DelayLine, SmoothedValue};
 use super::{SoundEffectSettings, SpatialMode, VirtualSurroundMode};
-use std::f32::consts::PI;
-
-/// √2，用于等功率 pan 归一化（中心方位补 +3dB，使中心输出 = 输入）
-const SQRT_2: f32 = 1.41421356;
+use std::f32::consts::{PI, SQRT_2};
 
 /// 最大 ITD（耳间时间差）≈ 0.6ms（球径 ~21cm，声速 343m/s）
 const MAX_ITD_MS: f32 = 0.6;

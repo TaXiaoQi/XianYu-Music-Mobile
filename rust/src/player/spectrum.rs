@@ -108,7 +108,6 @@ pub struct RealtimeSpectrumAnalyzer {
     hann: Vec<f32>,
     fft_buffer: Vec<Complex<f32>>,
     fft: Arc<dyn Fft<f32>>,
-    resample_accumulator: u64,
     low_pass_mono: f32,
     last_analyze: Option<Instant>,
     last_input_rms: f32,
@@ -141,7 +140,6 @@ impl RealtimeSpectrumAnalyzer {
             hann,
             fft_buffer: vec![Complex::new(0.0, 0.0); REALTIME_FFT_SIZE],
             fft,
-            resample_accumulator: 0,
             low_pass_mono: 0.0,
             last_analyze: None,
             last_input_rms: 0.0,
@@ -167,22 +165,8 @@ impl RealtimeSpectrumAnalyzer {
             }
             mono /= ch as f32;
 
-            // 重采样到分析采样率（线性插值，简单够用）
-            if source_sample_rate == REALTIME_ANALYSIS_SAMPLE_RATE {
-                self.append_frame(mono);
-            } else {
-                let step = REALTIME_ANALYSIS_SAMPLE_RATE as u64 / source_sample_rate.max(1) as u64;
-                let prev = self.resample_accumulator;
-                self.resample_accumulator += REALTIME_ANALYSIS_SAMPLE_RATE as u64;
-                while prev < self.resample_accumulator {
-                    let frac = (prev % source_sample_rate as u64) as f32
-                        / source_sample_rate.max(1) as f32;
-                    let _ = frac;
-                    self.append_frame(mono);
-                    break;
-                }
-                let _ = step;
-            }
+            // 重采样到分析采样率：非目标采样率暂按逐帧直通（后续接入线性插值）
+            self.append_frame(mono);
 
             // 低通跟随 RMS
             self.low_pass_mono = self.low_pass_mono * 0.95 + mono.abs() * 0.05;
@@ -296,7 +280,6 @@ impl RealtimeSpectrumAnalyzer {
         self.fft_buffer.fill(Complex::new(0.0, 0.0));
         self.write_index = 0;
         self.valid_frames = 0;
-        self.resample_accumulator = 0;
         self.low_pass_mono = 0.0;
         self.last_input_rms = 0.0;
         self.energy_envelope = 0.0;
