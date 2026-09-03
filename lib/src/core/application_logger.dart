@@ -126,7 +126,12 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
 
   void _flush() {
     _flushScheduled = false;
-    if (_pending.isEmpty || !mounted) return;
+    // 注意：不能因 `!mounted` 就丢弃本次 flush——本单例在启动期（尚无任何
+    // UI 订阅 applicationLogsProvider 时）就记日志，此时 mounted=false，
+    // 若在此 return，启动/运行期日志会一直卡在 [_pending]，既不上屏也不落盘，
+    // 用户打开日志页看到的就是「没有日志」。真正的防递归靠 microtask 延后
+    // 换 state + onError 的 reportingError 抑制，与是否有监听者无关。
+    if (_pending.isEmpty) return;
     final entries = _pending;
     _pending.clear();
     state = _retain([...state, ...entries]);
@@ -188,7 +193,8 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
           .whereType<AppLogEntry>()
           .toList();
       if (entries.isEmpty) return;
-      if (!mounted) return;
+      // 同样不因 `!mounted` 跳过恢复：启动期 bootstrap 时通常尚无 UI 订阅，
+      // 否则上次会话的日志永远加载不回来（恢复只填充 state，无副作用）。
       state = _retain(entries);
     } catch (_) {
       // 恢复失败静默：日志只是辅助信息，不影响应用运行。

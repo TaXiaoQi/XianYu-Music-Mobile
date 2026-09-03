@@ -47,6 +47,7 @@ class NotificationService {
         await _showNicknameChangeDialog(context, nicknameNotices.first);
         return;
       }
+      if (!context.mounted) return;
       await showPendingListenResetNotice(context);
     } finally {
       _checking = false;
