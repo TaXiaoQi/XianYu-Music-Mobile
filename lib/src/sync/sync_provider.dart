@@ -449,7 +449,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   static String _normMeta(String s) => s.trim().toLowerCase();
 
-  /// 把任意值规整为 Map<String, dynamic>，非 Map/null 返回空表。
+  /// 把任意值规整为 `Map<String, dynamic>`，非 Map/null 返回空表。
   static Map<String, dynamic> _asMap(Object? v) =>
       v is Map ? v.cast<String, dynamic>() : const {};
 

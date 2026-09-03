@@ -358,8 +358,8 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       final container = (detail['container'] as String?)?.trim();
       final codec = (detail['codec'] as String?)?.trim();
       if (sr != null && sr > 0) tech.add((tr('采样率'), _fmtSampleRate(sr)));
-      if (bd != null && bd > 0) tech.add((tr('位深'), '${bd} bit'));
-      if (br != null && br > 0) tech.add((tr('码率'), '${br} kbps'));
+      if (bd != null && bd > 0) tech.add((tr('位深'), '$bd bit'));
+      if (br != null && br > 0) tech.add((tr('码率'), '$br kbps'));
       if (codec != null && codec.isNotEmpty) {
         tech.add((tr('编码'), codec.toUpperCase()));
       } else if (fmt != null && fmt.isNotEmpty) {
