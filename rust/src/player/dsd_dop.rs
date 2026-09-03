@@ -92,7 +92,7 @@ fn read_u64_be(buf: &[u8]) -> u64 {
 ///
 /// fmt 负载（52 字节，@fmt+12 起点）各字段偏移：
 /// 0:format_version  4:format_id  8:channel_type  12:channel_num
-/// 16:sampling_freq  20:bits_per_sample  24:sample_count(u64)  32:block_size  36:reserved
+/// 16:sampling_freq  20:bits_per_sample  24:sample_count(u64)  32:block_size(u64)  40:reserved
 pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
 
@@ -129,15 +129,18 @@ pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
             if chunk_size < 52 {
                 return Err("invalid DSF fmt size".to_string());
             }
-            let mut fmt = [0u8; 52];
+            // fmt 负载 = chunk_size(52) - 8 字节块头 = 44 字节；
+            // 此前误读 52 字节会吞掉 data 块头，导致后续解析失败。
+            let mut fmt = [0u8; 44];
             file.read_exact(&mut fmt).map_err(|_| "bad fmt payload".to_string())?;
             format_id = read_u32_le(&fmt[4..8]);
             channels = read_u32_le(&fmt[12..16]) as u16;
             dsd_rate = read_u32_le(&fmt[16..20]);
             bits_per_sample = read_u32_le(&fmt[20..24]);
             sample_count = read_u64_le(&fmt[24..32]);
-            block_size = read_u32_le(&fmt[32..36]);
-            // 跳过 fmt 负载剩余部分
+            // DSF 规范 block_size_per_channel 为 u64（固定 4096）
+            block_size = read_u64_le(&fmt[32..40]) as u32;
+            // 跳过 fmt 负载剩余部分（52 为含块头的规范总长）
             let skip = chunk_size as i64 - 52;
             if skip > 0 {
                 file.seek(SeekFrom::Current(skip)).map_err(|e| e.to_string())?;
@@ -482,7 +485,8 @@ mod tests {
         fmt_payload.extend_from_slice(&dsd_rate.to_le_bytes());
         fmt_payload.extend_from_slice(&1u32.to_le_bytes()); // bits_per_sample
         fmt_payload.extend_from_slice(&(blocks.len() as u64).to_le_bytes()); // sample_count
-        fmt_payload.extend_from_slice(&block_size.to_le_bytes());
+        // DSF 规范 block_size_per_channel 为 u64（测试夹具此前误用 u32 导致 40≠44）
+        fmt_payload.extend_from_slice(&(block_size as u64).to_le_bytes());
         fmt_payload.extend_from_slice(&0u32.to_le_bytes()); // reserved
         assert_eq!(fmt_payload.len(), 44);
 
