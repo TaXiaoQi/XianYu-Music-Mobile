@@ -45,9 +45,12 @@ bool isDegradedLossless(String quality, String url) {
 
 /// 修正实际音质：被降级的无损档回落到紧邻的较低无损档；再低则落到 320k。
 String resolveActualQuality(String quality, String url) {
+  if (!isDegradedLossless(quality, url)) return quality;
   final idx = _rankOf(quality, kQualityLadder);
-  if (idx >= _losslessStart && isDegradedLossless(quality, url)) {
-    return idx > _losslessStart ? kQualityLadder[idx - 1] : '320k';
+  if (idx <= 0) return quality;
+  // 对齐桌面端 audioQualityVerify：从声称档向下找最近的非无损档，而不是硬编码 320k。
+  for (var i = idx - 1; i >= 0; i--) {
+    if (!isLosslessQuality(kQualityLadder[i])) return kQualityLadder[i];
   }
   return quality;
 }
@@ -81,9 +84,21 @@ class SongQualityProbe {
 
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
   final List<QualityProbeResult> _done = [];
+  /// 信任声明档位：Baka 插件最高档实测未降级后直接采用声明档列表，免逐档实测。
+  List<String> _trustedDeclared = const [];
   final ListQueue<Future<void> Function()> _queue = ListQueue();
   int _active = 0;
   bool _disposed = false;
+
+  /// 信任声明档：将声明档位并入可用列表（对齐桌面 probeDownloadableQualities 的
+  /// Baka 快径）。只影响音质菜单展示；直链/体积仍以实际解析结果为准。
+  void trustDeclared(List<String> declared) {
+    final listed = kQualityLadder.reversed
+        .where(declared.contains)
+        .toList();
+    if (listed.isEmpty) return;
+    _trustedDeclared = listed;
+  }
 
   /// 是否仍有档位在排队或解析中。
   bool get probing => _disposed ? false : _active > 0 || _queue.isNotEmpty;
@@ -98,12 +113,16 @@ class SongQualityProbe {
       if (_disposed) return null;
       final res = await resolveQuality(quality);
       if (res == null || res.url.isEmpty) return null;
-      final actual = resolveActualQuality(quality, res.url);
+      // 优先采用插件报告的实际音质（res.quality）而非请求档位——插件可能把
+      // flac 请求静默降级为 128k 并如实报告，此时要修正到报告档，再叠加
+      // 无损扩展名校验兜底，避免 UI 出现与体积对不上的「假音质」。
+      final actual = resolveActualQuality(res.quality ?? quality, res.url);
       _done.add(QualityProbeResult(
         url: res.url,
         quality: actual,
         headers: res.headers,
       ));
+      _dedupeSameUrl();
       return QualityProbeResult(
         url: res.url,
         quality: actual,
@@ -112,6 +131,46 @@ class SongQualityProbe {
     });
     _perQuality[quality] = future;
     return future;
+  }
+
+  /// 档位排名未知（不在阶梯内）时视为最高，不参与「归到最低档」。
+  int _rankOrMax(String q) {
+    final r = _rankOf(q, kQualityLadder);
+    return r < 0 ? 1 << 30 : r;
+  }
+
+  /// 同直链去重：部分音源插件对不同档位请求返回同一个低音质直链
+  /// （典型表现：音质菜单里每个档位体积都是同一个 ~4MB 文件）。
+  /// 同一 URL 被多个档位解析出时，全部归并到该文件实际归属的
+  /// 最低档，保证菜单/当前音质/体积展示与真实文件一致。
+  /// 探测受控并发完成顺序不定，故在每次新增结果后全量修正一次。
+  void _dedupeSameUrl() {
+    final byUrl = <String, List<int>>{};
+    for (var i = 0; i < _done.length; i++) {
+      byUrl.putIfAbsent(_done[i].url, () => []).add(i);
+    }
+    for (final indices in byUrl.values) {
+      if (indices.length < 2) continue;
+      var bestIdx = indices.first;
+      var bestRank = _rankOrMax(_done[bestIdx].quality);
+      for (final i in indices.skip(1)) {
+        final r = _rankOrMax(_done[i].quality);
+        if (r < bestRank) {
+          bestRank = r;
+          bestIdx = i;
+        }
+      }
+      for (final i in indices) {
+        if (i == bestIdx) continue;
+        if (_done[i].quality != _done[bestIdx].quality) {
+          _done[i] = QualityProbeResult(
+            url: _done[i].url,
+            quality: _done[bestIdx].quality,
+            headers: _done[i].headers,
+          );
+        }
+      }
+    }
   }
 
   Future<T> _runInSlot<T>(Future<T> Function() action) {
@@ -138,10 +197,15 @@ class SongQualityProbe {
     }
   }
 
-  /// 探测完成的真实可用档位（按实际音质去重，高 → 低）。
+  /// 可用档位（高 → 低，去重）：
+  /// - 信任声明档优先（Baka 信任模式），保证菜单完整、不因逐档未测而残缺；
+  /// - 其次并入实际解析完成的档位（按实际音质去重）。
   List<String> get availableQualities {
     final seen = <String>{};
     final out = <String>[];
+    for (final q in _trustedDeclared) {
+      if (seen.add(q)) out.add(q);
+    }
     for (final r in _done.reversed) {
       if (seen.add(r.quality)) out.add(r.quality);
     }
