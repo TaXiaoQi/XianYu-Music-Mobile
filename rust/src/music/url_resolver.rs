@@ -388,6 +388,42 @@ fn normalize_kuwo_cover_url(url: &str) -> Option<String> {
     Some(url)
 }
 
+/// 网易云专辑封面缓存 key 前缀（复用 URL_CACHE，与播放 URL 隔离避免碰撞）
+const WY_ALBUM_COVER_PREFIX: &str = "wy_album_cover";
+/// 网易云专辑接口对并发请求风控严格（code:-462），两次专辑请求至少间隔的时长
+const WY_ALBUM_FETCH_INTERVAL: Duration = Duration::from_millis(250);
+/// 全局串行锁：并发补封面时逐个请求专辑接口，避免集群突发触发 -462 风控
+static WY_ALBUM_FETCH_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn get_cached_wy_album_cover(album_id: &str) -> Option<String> {
+    let key = format!("{}/{}/{}", WY_ALBUM_COVER_PREFIX, "wy", album_id);
+    let mut cache = url_cache().write().await;
+    let now = Instant::now();
+    let entry = cache.get_mut(&key)?;
+    if entry.expires_at <= now {
+        cache.remove(&key);
+        return None;
+    }
+    entry.last_access = now;
+    Some(entry.url.clone())
+}
+
+async fn set_cached_wy_album_cover(album_id: &str, cover: String) {
+    let key = format!("{}/{}/{}", WY_ALBUM_COVER_PREFIX, "wy", album_id);
+    let mut cache = url_cache().write().await;
+    let now = Instant::now();
+    cache.insert(
+        key,
+        CacheEntry {
+            url: cover,
+            quality: String::new(),
+            expires_at: now + Duration::from_secs(URL_CACHE_TTL_SECS),
+            last_access: now,
+        },
+    );
+    evict_url_cache(&mut cache, now);
+}
+
 /// 获取落雪 LX 音源的封面图片 URL
 ///
 /// - kw: 通过 artistpicserver 获取
@@ -511,19 +547,70 @@ pub async fn get_lx_cover_url(song_info: &LxUrlSongInfo) -> Option<String> {
         }
 
         "wy" => {
+            // 网易云搜索接口已不再返回 album.picUrl（只给超大整数 picId，JSON 解析后丢精度），
+            // song/detail 接口现被限流返回 405。专辑接口 /api/album/{id}?ext=true 稳定返回 picUrl，
+            // 且搜索结果中的 album.id 是可靠的安全整数，故优先走专辑接口。
+            let album_id: String = song_info
+                .album_id
+                .as_ref()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .or_else(|| {
+                    song_info
+                        .album_id
+                        .as_ref()
+                        .and_then(|v| v.as_i64().map(|n| n.to_string()))
+                })
+                .unwrap_or_default();
+
+            let headers: &[(&str, &str)] = &[
+                ("Referer", "https://music.163.com"),
+                ("Cookie", "MUSIC_A=1"),
+            ];
+
+            // 优先专辑接口（稳定）。先查同专辑缓存，避免同一张专辑被重复请求；
+            // 缓存未命中时通过全局串行锁逐个请求，并保证两次请求留有间隔，
+            // 规避网易云对并发请求的风控（code:-462）。
+            if !album_id.is_empty() {
+                if let Some(cached) = get_cached_wy_album_cover(&album_id).await {
+                    if !cached.is_empty() {
+                        return Some(cached);
+                    }
+                }
+                let _guard = WY_ALBUM_FETCH_LOCK
+                    .get_or_init(|| tokio::sync::Mutex::new(()))
+                    .lock()
+                    .await;
+                // 拿到锁后再查一次缓存（前一个持锁者可能已填充）
+                if let Some(cached) = get_cached_wy_album_cover(&album_id).await {
+                    if !cached.is_empty() {
+                        return Some(cached);
+                    }
+                }
+                tokio::time::sleep(WY_ALBUM_FETCH_INTERVAL).await;
+                let album_url = format!("https://music.163.com/api/album/{}?ext=true", album_id);
+                if let Ok((status, body)) = http_get_text(&album_url, headers).await {
+                    if status == 200 {
+                        if let Ok(body_json) = serde_json::from_str::<serde_json::Value>(&body) {
+                            if let Some(pic_url) = body_json
+                                .pointer("/album/picUrl")
+                                .and_then(|v| v.as_str())
+                            {
+                                if !pic_url.is_empty() {
+                                    set_cached_wy_album_cover(&album_id, pic_url.to_string()).await;
+                                    return Some(pic_url.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 专辑接口失败时回退 song/detail（可能被限流）
             let url = format!(
                 "https://music.163.com/api/song/detail/?id={}&ids=%5B{}%5D",
                 song_info.songmid, song_info.songmid
             );
-            match http_get_text(
-                &url,
-                &[
-                    ("Referer", "https://music.163.com"),
-                    ("Cookie", "MUSIC_A=1"),
-                ],
-            )
-            .await
-            {
+            match http_get_text(&url, headers).await {
                 Ok((status, body)) if status == 200 => {
                     if let Ok(body_json) = serde_json::from_str::<serde_json::Value>(&body) {
                         if let Some(pic_url) = body_json
