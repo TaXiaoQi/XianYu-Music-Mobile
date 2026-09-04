@@ -90,9 +90,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       return;
     }
     final files = await ImagePicker().pickMultiImage(
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 90,
     );
     if (files.isEmpty || !mounted) return;
     setState(() => _compressing = true);
@@ -116,12 +116,22 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     }
   }
 
-  /// 压缩图片：256px 宽度、JPEG 质量 75%（与桌面端一致）。
+  /// 压缩图片：长边 ≤1600px、JPEG 质量 85%（与桌面端 1600/0.82 对齐），
+  /// 小图不放大；服务端最终按 1600/82 重存。
   Future<String> _compressImage(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw   FormatException(tr('无法解析图片'));
-    final resized = img.copyResize(decoded, width: 256);
-    final jpg = img.encodeJpg(resized, quality: 75);
+    if (decoded == null) throw FormatException(tr('无法解析图片'));
+    final longest = decoded.width > decoded.height ? decoded.width : decoded.height;
+    var out = decoded;
+    if (longest > 1600) {
+      final scale = 1600 / longest;
+      out = img.copyResize(
+        decoded,
+        width: (decoded.width * scale).round(),
+        height: (decoded.height * scale).round(),
+      );
+    }
+    final jpg = img.encodeJpg(out, quality: 85);
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
