@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/download/download_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
@@ -31,22 +32,40 @@ class DownloadPage extends ConsumerWidget {
     final state = ref.watch(downloadProvider);
     final notifier = ref.read(downloadProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+    // 竖屏悬浮顶栏：列表铺满全屏、避让量注入列表 padding，滚动时内容从顶栏
+    // 胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由横屏壳层顶栏
+    // 承接，不参与悬浮。
+    final portraitFloating = !embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
 
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-              child: state.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _DownloadList(
-                      state: state,
-                      notifier: notifier,
-                      scheme: scheme,
-                    ),
-            ),
+            if (portraitFloating && !state.loading)
+              Positioned.fill(
+                child: _DownloadList(
+                  state: state,
+                  notifier: notifier,
+                  scheme: scheme,
+                  contentTop: GlassTopBar.height(context) + 6,
+                ),
+              )
+            else
+              Padding(
+                padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+                child: state.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _DownloadList(
+                        state: state,
+                        notifier: notifier,
+                        scheme: scheme,
+                      ),
+              ),
             // 内嵌模式由全局顶栏承接（搜索框左侧带回退），本页不渲染自身顶栏。
             if (!embedded)
               Positioned(
@@ -159,11 +178,15 @@ class _DownloadList extends ConsumerWidget {
     required this.state,
     required this.notifier,
     required this.scheme,
+    this.contentTop,
   });
 
   final DownloadState state;
   final DownloadManager notifier;
   final ColorScheme scheme;
+
+  /// 悬浮模式避让量：注入列表 padding.top，内容穿透顶栏；null=固定模式。
+  final double? contentTop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -181,6 +204,7 @@ class _DownloadList extends ConsumerWidget {
 
     return ListView(
       padding: EdgeInsets.only(
+        top: contentTop ?? 0,
         bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),

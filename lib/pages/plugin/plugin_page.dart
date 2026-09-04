@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_preferences.dart';
@@ -106,6 +107,16 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
 
+    // 竖屏悬浮顶栏（路由态）：列表铺满全屏、避让量注入列表 padding，滚动时
+    // 内容从顶栏胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由
+    // 横屏壳层顶栏承接，不参与悬浮。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
+    final contentTop = portraitFloating ? GlassTopBar.height(context) + 6 : null;
+
     final sources = state.sources;
     final q = _query.trim().toLowerCase();
     final filtered = q.isEmpty
@@ -124,11 +135,12 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Padding(
-            // 顶栏（嵌入态=自绘纯色条，路由态=FlatTopBar）为 Stack 覆盖层，
-            // 内容统一让出同高，避免列表从容器最顶上开始、压在标题条底下。
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: NotificationListener<ScrollNotification>(
+          _listHost(
+            portraitFloating,
+            // 顶栏（嵌入态=自绘纯色条，路由态=FlatTopBar）为 Stack 覆盖层：
+            // 固定模式内容统一让出同高，避免列表压在标题条底下；悬浮模式列表
+            // 铺满全屏穿透顶栏（避让量注入列表 padding）。
+            NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
           if (notification is ScrollEndNotification) {
@@ -141,7 +153,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             : sources.isEmpty && subscriptions.isEmpty
                 ? _EmptyState(onInstall: _showInstallSheet)
                 : ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 150),
+                  padding: EdgeInsets.fromLTRB(16, contentTop ?? 8, 16, 150),
                   buildDefaultDragHandles: false,
                   itemCount: sources.isNotEmpty && filtered.isEmpty
                       ? 0
@@ -330,6 +342,16 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           ],
         ),
       );
+  }
+
+  /// 列表容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
+  /// 模式沿用外层 Padding 避让（顶栏为 Stack 覆盖层，内容让出同高）。
+  Widget _listHost(bool floating, Widget child) {
+    if (floating) return Positioned.fill(child: child);
+    return Padding(
+      padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+      child: child,
+    );
   }
 
   /// 拖拽排序结束：把调整后的完整插件顺序持久化到 sortOrder。

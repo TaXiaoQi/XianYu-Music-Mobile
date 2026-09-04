@@ -11,6 +11,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/flat_top_bar.dart';
@@ -255,6 +256,14 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+    // 竖屏悬浮顶栏（路由态）：TabBarView 铺满全屏、避让量注入各 tab 滚动体
+    // padding，内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感）；嵌入态由横屏
+    // 壳层顶栏承接，不参与悬浮。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
     final tabBar = TabBar(
       controller: _tab,
       tabs: [
@@ -263,26 +272,33 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         Tab(text: tr('我的反馈')),
       ],
     );
+    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
+    // + Tab 气泡原高）+ 6 呼吸；固定/嵌入模式 0（沿用原 Padding 避让结构）。
+    final topInset = portraitFloating
+        ? MediaQuery.paddingOf(context).top +
+            66 +
+            tabBar.preferredSize.height +
+            6
+        : 0.0;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              top: widget.embedded
-                  // 嵌入态（横屏 master-detail）：外层已渲染统一标题条并避开
-                  // 状态栏，TabBar 直接顶在其下，不再补状态栏高度。
-                  ? tabBar.preferredSize.height
-                  : GlassTopBar.height(context, bottom: tabBar),
-            ),
-            child: RepaintBoundary(
+          _tabHost(
+            portraitFloating,
+            // 嵌入态（横屏 master-detail）：外层已渲染统一标题条并避开状态栏，
+            // TabBar 直接顶在其下，不再补状态栏高度。
+            widget.embedded
+                ? tabBar.preferredSize.height
+                : GlassTopBar.height(context, bottom: tabBar),
+            RepaintBoundary(
               child: TabBarView(
                 controller: _tab,
                 children: [
-                  _buildSubmitTab(context),
-                  _buildBetaTab(context),
-                  _buildMyFeedbackTab(context, auth),
+                  _buildSubmitTab(context, topInset: topInset),
+                  _buildBetaTab(context, topInset: topInset),
+                  _buildMyFeedbackTab(context, auth, topInset: topInset),
                 ],
               ),
             ),
@@ -314,7 +330,17 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  Widget _buildSubmitTab(BuildContext context) {
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
+  /// 固定模式沿用 Padding 避让（避让量由调用方按嵌入态计算）。
+  Widget _tabHost(bool floating, double dockedTop, Widget child) {
+    if (floating) return Positioned.fill(child: child);
+    return Padding(
+      padding: EdgeInsets.only(top: dockedTop),
+      child: child,
+    );
+  }
+
+  Widget _buildSubmitTab(BuildContext context, {double topInset = 0}) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     final logs = ref.watch(applicationLogsProvider);
@@ -326,7 +352,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       );
     }
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16 + topInset, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -397,7 +423,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   }
 
   /// 申请内测 tab：复用反馈提交样式，仅填写申请理由。
-  Widget _buildBetaTab(BuildContext context) {
+  Widget _buildBetaTab(BuildContext context, {double topInset = 0}) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     if (!auth.isLoggedIn) {
@@ -408,7 +434,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       );
     }
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16 + topInset, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -630,7 +656,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  Widget _buildMyFeedbackTab(BuildContext context, AuthState auth) {
+  Widget _buildMyFeedbackTab(BuildContext context, AuthState auth,
+      {double topInset = 0}) {
     if (!auth.isLoggedIn) {
       return _emptyHint(
         icon: Icons.lock_outline,
@@ -651,7 +678,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     return RefreshIndicator(
       onRefresh: _loadMyFeedback,
       child: ListView.separated(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16 + topInset, 16, 16),
         itemCount: _myFeedback.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
