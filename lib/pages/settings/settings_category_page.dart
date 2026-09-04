@@ -1041,9 +1041,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return InkWell(
       onTap: enabled ? onTap : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        // 紧凑行（6+48+6=60px），与设置导航页 dense 两行 ListTile 行高一致，
+        // 保证两级设置页条目视觉统一。
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 56),
+          constraints: const BoxConstraints(minHeight: 48),
           child: LayoutBuilder(builder: (context, cons) {
             return Row(
               children: [

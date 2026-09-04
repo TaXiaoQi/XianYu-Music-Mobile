@@ -588,67 +588,33 @@ class _CategoryTile extends StatelessWidget {
   final VoidCallback? onTapOverride;
   final bool selected;
 
-  /// 紧凑模式（横屏左列）：收窄水平内边距，并隐藏副标题。
+  /// 紧凑模式（横屏左列）：收窄 ListTile 水平内边距，让内容更贴近卡片边缘。
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    // 与设置详情页 _tile 同一套行结构（vertical:14 + minHeight:56 ≈ 84px 行高），
-    // 保证两级设置页条目视觉一致；compact（横屏左列）隐藏副标题。
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Material(
-        color: selected ? scheme.primary.withValues(alpha: 0.10) : Colors.transparent,
-        child: InkWell(
-          onTap: onTapOverride ?? () => context.push(entry.path),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 12 : 16,
-              vertical: 14,
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 56),
-              child: Row(
-                children: [
-                  Icon(
-                    entry.icon,
-                    size: 24,
-                    color: selected ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.title,
-                          style: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
-                            color: selected ? scheme.primary : scheme.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (!compact) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            entry.subtitle,
-                            style: textTheme.bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.chevron_right, size: 18, color: scheme.outline),
-                ],
-              ),
-            ),
-          ),
-        ),
+    return ListTile(
+      // 横屏 compact：标准 ListTile 行高（无 subtitle 高 56），与右侧详情分组卡片的 ListTile 完全一致，保证左右卡片高度统一
+      dense: !compact,
+      contentPadding: compact
+          ? const EdgeInsets.symmetric(horizontal: 12)
+          : null,
+      selected: selected,
+      selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+      selectedColor: scheme.primary,
+      leading: Icon(
+        entry.icon,
+        color: selected ? scheme.primary : null,
       ),
+      title: Text(entry.title),
+      subtitle: compact
+          ? null
+          : Text(
+              entry.subtitle,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+      onTap: onTapOverride ?? () => context.push(entry.path),
     );
   }
 }

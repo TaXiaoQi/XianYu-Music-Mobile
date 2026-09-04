@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_provider.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
+import '../plugin/plugin_provider.dart';
 
 /// 面向 UI 的分享服务实例（预加载 + 取缓存 + 生成分享链接）。
 final shareServiceProvider = Provider<ShareService>((ref) => ShareService(ref));
@@ -152,15 +153,26 @@ class ShareService {
     }
 
     // 来源信息：按播放协议提取——lx://<source>/<songmid> → 音源 key
-    // （kw/wy/kg/tx/mg），plugin://<platform>/<id> → 插件名/插件 id，
+    // （kw/wy/kg/tx/mg），plugin://<pluginId>/<songmid> → 插件声明的平台 key，
     // 本地歌曲标记为 local（与桌面端 getSongSource 同构）。
     // 服务端透传进深链，客户端据此显示来源并选择播放路径。
+    // 注意：插件 path 首段是 sha256（与安装实例绑定，跨端必不同），深链必须
+    // 携带语义化平台 key，接收端才能按平台跨设备匹配插件并正确展示来源。
     String source = 'local';
     if (song.isOnline) {
       if (song.path.startsWith('lx://')) {
         source = song.path.substring('lx://'.length).split('/').first;
       } else if (song.path.startsWith('plugin://')) {
-        source = song.path.substring('plugin://'.length).split('/').first;
+        final pid = song.path.substring('plugin://'.length).split('/').first;
+        var platform = '';
+        for (final p in _ref.read(pluginManagerProvider).sources) {
+          if (p.id == pid) {
+            if (p.sources.isNotEmpty) platform = p.sources.first;
+            if (platform.isEmpty) platform = p.name;
+            break;
+          }
+        }
+        source = platform.isNotEmpty ? platform : pid;
       }
       if (source.isEmpty) {
         final onlineSource =

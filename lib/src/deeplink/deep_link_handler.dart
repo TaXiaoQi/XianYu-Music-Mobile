@@ -9,6 +9,7 @@ import '../library/library_provider.dart';
 import '../navigation/routes.dart' show appNavigatorKey;
 import '../online/online_search_provider.dart';
 import '../player/player_provider.dart';
+import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../core/app_logger.dart';
@@ -235,7 +236,7 @@ class XianYuDeepLink {
           context: ctx,
           name: name,
           artist: artist,
-          sourceLabel: _sourceLabel(source),
+          sourceLabel: _sourceLabel(container, source),
           cover: cover,
         );
         if (action == ShareLinkPreviewAction.cancel) return;
@@ -300,13 +301,31 @@ class XianYuDeepLink {
     };
   }
 
-  /// 分享来源展示名：本地 → 本地音乐；lx 音源 → 平台名；
-  /// 插件来源（深链携带插件名/id，如「酷我音乐」）→ 直接展示；其余 → 在线搜索。
-  static String _sourceLabel(String source) {
+  /// 按深链 source 匹配本地已启用插件：插件 id/名/声明平台（sources，如 kw）
+  /// 均可命中。新格式深链携带平台 key（跨设备稳定），旧链接可能携带插件 sha256。
+  static PluginSource? _matchPlugin(
+    ProviderContainer container,
+    String source,
+  ) {
+    if (source.isEmpty) return null;
+    for (final p in container.read(pluginManagerProvider).sources) {
+      if (!p.enabled) continue;
+      if (p.id == source || p.name == source || p.sources.contains(source)) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  /// 分享来源展示名：本地 → 本地音乐；lx 音源/插件平台 key → 平台名；
+  /// 插件 sha256（旧链接）→ 已装插件名；其余原样展示。
+  static String _sourceLabel(ProviderContainer container, String source) {
     if (source == 'local') return tr('本地音乐');
     for (final s in kOnlineSources) {
       if (s.id == source) return s.label;
     }
+    final plugin = _matchPlugin(container, source);
+    if (plugin != null) return plugin.name;
     if (source.isNotEmpty) return source;
     return tr('在线搜索');
   }
@@ -356,6 +375,29 @@ class XianYuDeepLink {
       }
 
       final searchNotifier = container.read(onlineSearchProvider.notifier);
+      // 分享来源命中本地插件（id/名/平台）→ 直接用该插件搜索播放，命中率
+      // 最高（歌曲本就来自该插件平台）；插件无结果再走 lx 音源兜底。
+      final matchedPlugin = _matchPlugin(container, source);
+      if (matchedPlugin != null) {
+        final item = await _searchViaPlugin(
+            container, matchedPlugin, name, artist);
+        if (item != null) {
+          final playerNotifier = container.read(playerProvider.notifier);
+          try {
+            await playerNotifier.playQueue(
+              [item],
+              startIndex: 0,
+              shareLinkPlayback: true,
+            );
+            _openPlayerOnce(router);
+          } catch (e) {
+            AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+            _openPlayerOnce(router);
+          }
+          return;
+        }
+      }
+
       // 来源感知：分享链接带音源 key（kw/wy/kg/tx/mg）时优先用该音源搜索，
       // 命中率更高；'local' 或未知来源则回到默认音源。
       final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
@@ -373,7 +415,8 @@ class XianYuDeepLink {
       final results = container.read(onlineSearchProvider).results;
       if (results.isEmpty) return;
 
-      final index = _bestMatch(results, name, artist);
+      final index =
+          _bestMatch([for (final t in results) (t.title, t.artist)], name, artist);
       final track = results[index];
       final playerNotifier = container.read(playerProvider.notifier);
       // 浅层播放分享曲：只入队最佳匹配这一首（不连播整个搜索结果）。
@@ -417,6 +460,18 @@ class XianYuDeepLink {
         return;
       }
 
+      // 分享来源命中本地插件（id/名/平台）→ 优先用该插件搜索，插队不解析失败。
+      final matchedPlugin = _matchPlugin(container, source);
+      if (matchedPlugin != null) {
+        final item =
+            await _searchViaPlugin(container, matchedPlugin, name, artist);
+        if (item != null) {
+          await playerNotifier.playNextShare(item);
+          showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
+          return;
+        }
+      }
+
       // 来源感知：带音源 key（kw/wy/kg/tx/mg）优先用该音源搜索。
       final searchNotifier = container.read(onlineSearchProvider.notifier);
       final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
@@ -434,7 +489,8 @@ class XianYuDeepLink {
         showXianYuToastByOverlay(overlay, tr('未找到分享的歌曲'));
         return;
       }
-      final index = _bestMatch(results, name, artist);
+      final index =
+          _bestMatch([for (final t in results) (t.title, t.artist)], name, artist);
       final track = results[index];
       await playerNotifier.playNextShare(track.toQueueItem());
       showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
@@ -506,7 +562,9 @@ class XianYuDeepLink {
     }
     final results = container.read(onlineSearchProvider).results;
     if (results.isNotEmpty) {
-      return results[_bestMatch(results, name, artist)].toQueueItem();
+      return results[_bestMatch(
+              [for (final t in results) (t.title, t.artist)], name, artist)]
+          .toQueueItem();
     }
 
     // 2. 音源插件搜索
@@ -569,6 +627,33 @@ class XianYuDeepLink {
     return (specified: specified, any: true);
   }
 
+  /// 用指定插件按「歌名+歌手」搜索并返回最佳匹配的可播放条目；无结果/异常返回 null。
+  static Future<QueueItem?> _searchViaPlugin(
+    ProviderContainer container,
+    PluginSource plugin,
+    String name,
+    String artist,
+  ) async {
+    try {
+      final engine = await container.read(pluginEngineProvider.future);
+      final service = PluginSearchService(engine, [plugin]);
+      final keyword = artist.isEmpty ? name : '$name $artist';
+      final all = await service.searchAll(keyword, limit: 30);
+      for (final (_, items) in all) {
+        if (items.isEmpty) continue;
+        final idx = _bestMatch(
+          [for (final r in items) (r.name, r.singer)],
+          name,
+          artist,
+        );
+        return service.toQueueItem(plugin, items[idx]);
+      }
+    } catch (e) {
+      AppLogger.instance.log('deeplink', '插件搜索分享曲失败: $e');
+    }
+    return null;
+  }
+
   /// 无指定音源时用其他可用源在线播放（lx + 全部已启用插件兜底）。
   static Future<void> _playFallback(
     ProviderContainer container,
@@ -585,8 +670,9 @@ class XianYuDeepLink {
   }
 
   /// 优先最接近的歌名，再叠加歌手匹配；都无则默认第一条。
+  /// 行元组为 (标题, 歌手)，供 lx OnlineTrack 与插件 PluginSearchResult 共用。
   static int _bestMatch(
-    List<OnlineTrack> results,
+    List<(String, String)> results,
     String name,
     String artist,
   ) {
@@ -594,9 +680,9 @@ class XianYuDeepLink {
     int best = 0;
     int bestScore = -1;
     for (var i = 0; i < results.length; i++) {
-      final t = results[i];
+      final tn = results[i].$1.trim().toLowerCase();
+      final ta = results[i].$2.trim().toLowerCase();
       var score = 0;
-      final tn = t.title.trim().toLowerCase();
       if (tn == ln) {
         score += 3;
       } else if (tn.contains(ln)) {
@@ -604,8 +690,7 @@ class XianYuDeepLink {
       } else if (ln.contains(tn)) {
         score += 1;
       }
-      if (artist.isNotEmpty &&
-          t.artist.trim().toLowerCase().contains(artist.trim().toLowerCase())) {
+      if (artist.isNotEmpty && ta.contains(artist.trim().toLowerCase())) {
         score += 2;
       }
       if (score > bestScore) {
