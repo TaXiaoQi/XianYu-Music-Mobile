@@ -21,8 +21,6 @@ import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
-import '../../src/player/cast_provider.dart';
-import '../../src/widgets/dlna_device_dialog.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/responsive/landscape.dart';
@@ -34,6 +32,7 @@ import '../../src/widgets/bilipai_glass.dart';
 import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
+import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/modern_dialog.dart';
@@ -387,6 +386,31 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   /// 已预加载分享链接的歌曲 path（切歌时预生成，避免点击分享才等网络）。
   String? _sharePreloadPath;
 
+  // ── 横屏播放页顶栏/底栏自动隐藏（对齐桌面版：无操作 3.5s 淡出让位，触摸唤回）──
+
+  /// 顶栏/底栏是否可见（仅横屏参与隐藏，竖屏常显）。
+  bool _chromeVisible = true;
+  Timer? _chromeHideTimer;
+
+  /// 任意触摸唤回顶栏/底栏并重新计时（竖屏下为 no-op）。
+  void _wakeChrome() {
+    _chromeHideTimer?.cancel();
+    _chromeHideTimer = null;
+    final needRestore = !_chromeVisible;
+    if (ref.read(isLandscapeProvider)) _armChromeHide();
+    if (needRestore && mounted) setState(() => _chromeVisible = true);
+  }
+
+  /// 启动隐藏倒计时；到点且仍处于横屏时收起顶栏/底栏。
+  void _armChromeHide() {
+    _chromeHideTimer?.cancel();
+    _chromeHideTimer = Timer(const Duration(milliseconds: 3500), () {
+      _chromeHideTimer = null;
+      if (!mounted || !ref.read(isLandscapeProvider)) return;
+      if (_chromeVisible) setState(() => _chromeVisible = false);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // 顶层只订阅当前歌曲（切歌才重建整页）；播放态/进度/音量等由各自叶子
@@ -434,6 +458,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final hasRomaji = _lyricsViewHasRomaji;
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
+    // 横屏自动隐藏：进入横屏后开始计时；转回竖屏立即恢复常显并停表。
+    final landscapeNow = ref.watch(isLandscapeProvider);
+    if (!landscapeNow) {
+      _chromeHideTimer?.cancel();
+      _chromeHideTimer = null;
+      if (!_chromeVisible) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_chromeVisible) setState(() => _chromeVisible = true);
+        });
+      }
+    } else if (_chromeVisible && _chromeHideTimer == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _armChromeHide();
+      });
+    }
+
     return Theme(
       data: Theme.of(context).copyWith(
         brightness: Brightness.dark,
@@ -441,21 +481,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
       child: _DragDismissSheet(
-        child: playerStyle == PlayerStyle.traditional
-            ? _TraditionalPlayerLayout(
-                notifier: notifier,
-                current: current,
-              )
-            : _buildAdvancedBody(
-                notifier: notifier,
-                current: current,
-                scheme: scheme,
-                fontSizeIdx: fontSizeIdx,
-                showTranslation: showTranslation,
-                showRomaji: showRomaji,
-                offsetMs: offsetMs,
-                hasRomaji: hasRomaji,
-              ),
+        // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _wakeChrome(),
+          child: playerStyle == PlayerStyle.traditional
+              ? _TraditionalPlayerLayout(
+                  notifier: notifier,
+                  current: current,
+                )
+              : _buildAdvancedBody(
+                  notifier: notifier,
+                  current: current,
+                  scheme: scheme,
+                  fontSizeIdx: fontSizeIdx,
+                  showTranslation: showTranslation,
+                  showRomaji: showRomaji,
+                  offsetMs: offsetMs,
+                  hasRomaji: hasRomaji,
+                ),
+        ),
       ),
     );
   }
@@ -646,46 +691,51 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       current: current,
       backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
       isLandscape: true,
-      // 顶栏：返回 + 居中歌名/歌手（参照桌面版顶部，无「正在播放」占位标题）。
+      // 顶栏：返回 + 居中歌名/歌手（参照桌面版顶部，无「正在播放」占位标题）；
+      // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
       top: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      current?.title ?? tr('正在播放'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    if (current?.artist != null)
+        AutoHideChrome(
+          visible: _chromeVisible,
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        current!.artist,
+                        current?.title ?? tr('正在播放'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.6),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                       ),
-                  ],
+                      if (current?.artist != null)
+                        Text(
+                          current!.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              // 右侧留位 44px 占位，保持标题居中
-              const SizedBox(width: 44),
-            ],
+                // 右侧留位 44px 占位，保持标题居中
+                const SizedBox(width: 44),
+              ],
+            ),
           ),
         ),
       ],
@@ -747,22 +797,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
               ),
             ),
-            // 右：歌词视口（剩余宽度占满）
+            // 右：歌词视口（剩余宽度占满；整体再左移一截，
+            // 避免行内容贴到挖孔/右缘，与桌面歌词区留白观感一致）
             Expanded(
-              child: ClipRect(
-                child: RepaintBoundary(
-                  child: _LyricsView(
-                    key: _lyricsKey,
-                    current: current,
-                    // 横屏横排下歌词常显
-                    visible: _showLyrics,
-                    onTap: () =>
-                        setState(() => _showLyrics = !_showLyrics),
-                    onRomajiAvailable: (has) {
-                      if (_lyricsViewHasRomaji != has) {
-                        setState(() => _lyricsViewHasRomaji = has);
-                      }
-                    },
+              child: Padding(
+                padding: const EdgeInsets.only(right: 22),
+                child: ClipRect(
+                  child: RepaintBoundary(
+                    child: _LyricsView(
+                      key: _lyricsKey,
+                      current: current,
+                      // 横屏横排下歌词常显
+                      visible: _showLyrics,
+                      onTap: () =>
+                          setState(() => _showLyrics = !_showLyrics),
+                      onRomajiAvailable: (has) {
+                        if (_lyricsViewHasRomaji != has) {
+                          setState(() => _lyricsViewHasRomaji = has);
+                        }
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -771,20 +825,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         ),
       ),
       // 底部：播放控制带（桌面版 PlayerFooter 语义，全宽置底）；整体下移一点。
+      // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
       bottom: [
         RepaintBoundary(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            child: _GlassControlCard(
-              notifier: notifier,
-              current: current,
-              landscape: true,
-              // 横屏歌词调节并入底栏最右组件（对齐桌面歌词页最右菜单）。
-              onLyricAdjust: () => _TraditionalPlayerLayoutState
-                  ._showLyricAdjustMenu(
-                context,
-                ref,
-                hasRomaji: hasRomaji,
+          child: AutoHideChrome(
+            visible: _chromeVisible,
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: _GlassControlCard(
+                notifier: notifier,
+                current: current,
+                landscape: true,
+                // 横屏歌词调节并入底栏最右组件（对齐桌面歌词页最右菜单）。
+                onLyricAdjust: () => _TraditionalPlayerLayoutState
+                    ._showLyricAdjustMenu(
+                  context,
+                  ref,
+                  hasRomaji: hasRomaji,
+                ),
               ),
             ),
           ),
@@ -1301,18 +1360,6 @@ class _TraditionalPlayerLayoutState
                       onChanged: _switchPage,
                     ),
             ),
-          ),
-          // [DLNA 投屏] 投屏入口：高亮表示投屏中，点开设备弹窗管理连接。
-          IconButton(
-            icon: Icon(
-              Icons.cast,
-              size: 26,
-              color: ref.watch(dlnaCastProvider.select((c) => c.isCasting))
-                  ? const Color(0xFFEC4141)
-                  : Colors.white.withValues(alpha: 0.9),
-            ),
-            tooltip: tr('DLNA 投屏'),
-            onPressed: () => showDlnaDeviceDialog(context, ref),
           ),
           IconButton(
             icon: const Icon(
