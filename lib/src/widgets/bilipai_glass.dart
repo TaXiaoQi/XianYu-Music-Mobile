@@ -791,7 +791,25 @@ class RenderLiquidBacking extends RenderBox {
       clipPath,
       (context, offset) {
         // Pass1（下）：真高斯模糊背景（Halcyon blur(4dp)）。
-        context.pushLayer(blurLayer, (context, offset) {}, offset);
+        // 拖拽中在层 child 注入 1/255 透明度的逐帧交替像素（视觉不可见）：
+        // Impeller 背板快照对「被采样内容静止」的玻璃平移场景按内容版本
+        // 缓存——层实例与 filter 实例已双新建（见上），但内容版本未变仍
+        // 命中拖拽起点的旧背板，表现为「播放条拖动毛玻璃不跟随、页面滚动
+        // 才有液态效果」。child 内容逐帧变化强制背板重抓；滚动/转场路径
+        // 被采样内容本就在变，child 恒空零开销。
+        if (globalIsDragging.value) {
+          final parity = (uiTime * 1000).toInt().isEven;
+          context.pushLayer(blurLayer, (context, offset) {
+            context.canvas.drawRect(
+              offset & const Size(1, 1),
+              Paint()
+                ..color = (parity ? Colors.black : Colors.white)
+                    .withValues(alpha: 1 / 255),
+            );
+          }, offset);
+        } else {
+          context.pushLayer(blurLayer, (context, offset) {}, offset);
+        }
         // Pass2（上）：折射 shader 采样上面的模糊结果做边缘透镜位移，
         // 并铺底色/饱和度/抖动——整块玻璃含边带全是模糊内容（BiliPai 同序）。
         context.pushLayer(shaderLayer, (context, offset) {}, offset);
