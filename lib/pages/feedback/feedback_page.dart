@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
@@ -437,10 +438,13 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     if (!auth.isLoggedIn) {
+      // 内测锁场景：弹窗锁住全局时用户只能在本页完成登录，
+      // 按钮直接转去账号页；push 返回仍落回本页（登录态自动刷新）。
       return _emptyHint(
         icon: Icons.lock_outline,
         text: tr('登录后即可申请内测'),
-        action: () => _toast(tr('请先登录')),
+        action: () => context.push('/account'),
+        actionLabel: tr('去登录'),
       );
     }
     return SingleChildScrollView(
@@ -706,6 +710,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     required IconData icon,
     required String text,
     required VoidCallback action,
+    String? actionLabel,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return Center(
@@ -717,7 +722,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Text(text,
               style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: action, child:   Text(tr('刷新'))),
+          OutlinedButton(
+              onPressed: action, child: Text(actionLabel ?? tr('刷新'))),
         ],
       ),
     );

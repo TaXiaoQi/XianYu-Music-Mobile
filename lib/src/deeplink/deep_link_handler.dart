@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -80,6 +82,17 @@ class XianYuDeepLink {
     }
   }
 
+  /// 等待导航上下文就绪（冷启动深链可能早于首帧路由挂载到达）。
+  /// 最长等 2s（20×100ms），超时返回 null 交由调用方记日志放弃。
+  static Future<BuildContext?> _waitNavigatorContext() async {
+    for (var i = 0; i < 20; i++) {
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) return ctx;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return null;
+  }
+
   static Future<void> _run(
     ProviderContainer container,
     GoRouter router,
@@ -137,9 +150,9 @@ class XianYuDeepLink {
       final isLocalShare = source == 'local' || source.isEmpty;
 
       // 分享预览窗：不同形态渲染不同按钮
-      final ctx = appNavigatorKey.currentContext;
-      if (ctx == null || !ctx.mounted) {
-        AppLogger.instance.log('deeplink', '无可用的导航上下文，跳过分享预览窗');
+      final ctx = await _waitNavigatorContext();
+      if (ctx == null) {
+        AppLogger.instance.log('deeplink', '等待导航上下文超时，跳过分享预览窗');
         return;
       }
       final overlay = Overlay.of(ctx, rootOverlay: true);
@@ -171,10 +184,8 @@ class XianYuDeepLink {
         final online = await _searchOnlineShare(
             container, name, artist, source, durationSec);
         if (online != null) {
-          final dctx = appNavigatorKey.currentContext;
-          if (dctx == null || !dctx.mounted) return;
           final action = await showShareLinkPreviewDialog(
-            context: dctx,
+            context: ctx,
             name: name,
             artist: artist,
             sourceLabel: tr('本地无音源'),
@@ -194,10 +205,8 @@ class XianYuDeepLink {
           return;
         }
 
-        final dctx = appNavigatorKey.currentContext;
-        if (dctx == null || !dctx.mounted) return;
         final action = await showShareLinkPreviewDialog(
-          context: dctx,
+          context: ctx,
           name: name,
           artist: artist,
           sourceLabel: tr('未找到在线音源'),

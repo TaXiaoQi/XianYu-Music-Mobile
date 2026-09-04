@@ -35,6 +35,12 @@ class _OrientationTransitionOverlayState
   /// 代数守卫：连续翻转丢弃过期回调。
   int _gen = 0;
 
+  /// 是否已手动订阅朝向变化（didChangeDependencies 可能多次触发，只注册一次）。
+  bool _listening = false;
+
+  /// 手动订阅句柄（dispose 时关闭）。
+  ProviderSubscription<bool>? _sub;
+
   static const _ease = Cubic(0.16, 1.0, 0.3, 1.0);
   static const _outDuration = Duration(milliseconds: 110);
   static const _inDuration = Duration(milliseconds: 200);
@@ -49,7 +55,13 @@ class _OrientationTransitionOverlayState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    ref.listen(isLandscapeProvider, (prev, next) {
+    if (_listening) return;
+    _listening = true;
+    // ref.listen 只允许在 build 中调用（riverpod 断言 debugDoingBuild），而本组件
+    // 是常驻蒙层、首帧 didChangeDependencies 期间调用会抛断言并使 widget 树进入
+    // 异常状态（表现为启动黑屏 + 每帧 debugFrameWasSentToEngine 风暴）。
+    // 用 listenManual 手动订阅，效果等价且不依赖 build 阶段。
+    _sub = ref.listenManual(isLandscapeProvider, (prev, next) {
       if (prev == null || prev == next) return;
       _run();
     });
@@ -94,6 +106,7 @@ class _OrientationTransitionOverlayState
 
   @override
   void dispose() {
+    _sub?.close();
     _c.dispose();
     super.dispose();
   }

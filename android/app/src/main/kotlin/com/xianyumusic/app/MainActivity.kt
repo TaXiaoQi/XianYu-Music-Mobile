@@ -139,7 +139,11 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun processDeepLink(intent: Intent?, dispatch: Boolean) {
-        val data = intent?.data ?: return
+        val data = intent?.data
+        // 诊断日志：确认深链 intent 是否到达、data 原文是什么（落地页 intent:// 拉起时
+        // scheme 解析失败的唯一观测点）。
+        android.util.Log.i("XyDeepLink", "processDeepLink dispatch=$dispatch data=${data?.toString() ?: "null"}")
+        if (data == null) return
         if (data.scheme == "xianyu") {
             pendingDeepLink = data.toString()
             if (dispatch) dispatchIfReady()

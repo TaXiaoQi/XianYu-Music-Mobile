@@ -69,6 +69,9 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
 
     private Tencent tencent;
 
+    // 最近一次分享回执的 Intent（onActivityResult 时暂存，供 wrapper 区分「真取消」与「回执格式不识别」）。
+    private Intent lastShareData;
+
     // --- FlutterPlugin
 
     @Override
@@ -113,12 +116,26 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
 
     @Override
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        // 无条件入口日志：任何 requestCode 都记录，用于确认回调是否到达及 requestCode 实际值。
+        android.util.Log.i("XyQQShare", "onActivityResult enter: req=" + requestCode + " res=" + resultCode
+                + " data=" + (data != null ? "non-null" : "null"));
         switch (requestCode) {
             case Constants.REQUEST_LOGIN:
                 return Tencent.onActivityResultData(requestCode, resultCode, data, loginListener);
             case Constants.REQUEST_QQ_SHARE:
             case Constants.REQUEST_QZONE_SHARE:
-                return Tencent.onActivityResultData(requestCode, resultCode, data, shareListener);
+                // 诊断日志：dump QQ 客户端回执原文，便于排查各版本回执格式差异。
+                android.util.Log.i("XyQQShare", "onActivityResult req=" + requestCode + " res=" + resultCode
+                        + " data=" + (data != null ? data.getExtras() : "null"));
+                // data 为空说明 QQ 客户端未回传任何结果（用户中途返回/异常退出）。
+                // SDK 默认判 onError（会误触发调用方的「分享失败」兜底），这里改为按取消处理。
+                if (data == null) {
+                    android.util.Log.i("XyQQShare", "onActivityResult: data=null -> treat as cancel");
+                    shareListener.onCancel();
+                    return true;
+                }
+                lastShareData = data;
+                return Tencent.onActivityResultData(requestCode, resultCode, data, shareListenerWrapper);
             default:
                 break;
         }
@@ -153,6 +170,8 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
             } else {
                 tencent = Tencent.createInstance(appId, applicationContext);
             }
+            // 版本标记：分享前必经此初始化，看到这行日志即确认原生新代码已打进安装包。
+            android.util.Log.i("XyQQShare", "registerApp ok: vendored plugin, OpenSDK 3.5.17.3 (rolled back)");
             result.success(null);
         } else if ("isQQInstalled".equals(call.method)) {
             result.success(tencent != null && isAppInstalled(applicationContext, "com.tencent.mobileqq"));
@@ -294,7 +313,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
                 params.putInt(QzonePublish.PUBLISH_TO_QZONE_KEY_TYPE, QzonePublish.PUBLISH_TO_QZONE_TYPE_PUBLISHMOOD);
             }
             if (tencent != null) {
-                tencent.publishToQzone(activityPluginBinding.getActivity(), params, shareListener);
+                tencent.publishToQzone(activityPluginBinding.getActivity(), params, shareListenerWrapper);
             }
         }
         result.success(null);
@@ -344,7 +363,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
             }
             params.putInt(QQShare.SHARE_TO_QQ_EXT_INT, extInt);
             if (tencent != null) {
-                tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListener);
+                tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListenerWrapper);
             }
         }
         result.success(null);
@@ -382,7 +401,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
             }
             params.putInt(QQShare.SHARE_TO_QQ_EXT_INT, extInt);
             if (tencent != null) {
-                tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListener);
+                tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListenerWrapper);
             }
         }
         result.success(null);
@@ -419,7 +438,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
                 }
                 params.putInt(QQShare.SHARE_TO_QQ_EXT_INT, extInt);
                 if (tencent != null) {
-                    tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListener);
+                    tencent.shareToQQ(activityPluginBinding.getActivity(), params, shareListenerWrapper);
                 }
                 break;
             case TencentScene.SCENE_QZONE:
@@ -440,7 +459,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
                 }
                 params.putString(QzoneShare.SHARE_TO_QQ_TARGET_URL, targetUrl);
                 if (tencent != null) {
-                    tencent.shareToQzone(activityPluginBinding.getActivity(), params, shareListener);
+                    tencent.shareToQzone(activityPluginBinding.getActivity(), params, shareListenerWrapper);
                 }
                 break;
             default:
@@ -505,6 +524,40 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
             if (code == Constants.ERROR_NO_AUTHORITY) {
                 // 如果authorities为空，sdk会回调这个接口，提醒开发者适配FileProvider
             }
+        }
+    };
+
+    // 分享回调包装：QQ 新版客户端的回执 key_action 可能不在 SDK 认识的列表里，
+    // 会掉进 SDK「无法识别回执」的兜底分支而误调 onCancel（表现为分享成功也提示已取消）。
+    // 只有回执明确携带 result=cancel 才认取消，其余 onCancel 一律按成功兜底。
+    private IUiListener shareListenerWrapper = new IUiListener() {
+        @Override
+        public void onComplete(Object o) {
+            shareListener.onComplete(o);
+        }
+
+        @Override
+        public void onError(UiError error) {
+            shareListener.onError(error);
+        }
+
+        @Override
+        public void onCancel() {
+            final Intent data = lastShareData;
+            final String result = data != null ? data.getStringExtra("result") : null;
+            if (result != null && "cancel".equals(result)) {
+                android.util.Log.i("XyQQShare", "onCancel: explicit result=cancel");
+                shareListener.onCancel();
+            } else {
+                android.util.Log.w("XyQQShare", "onCancel intercepted without explicit cancel flag (result="
+                        + result + "), treat as success");
+                shareListener.onComplete(null);
+            }
+        }
+
+        @Override
+        public void onWarning(int code) {
+            shareListener.onWarning(code);
         }
     };
 
