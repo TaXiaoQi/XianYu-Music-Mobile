@@ -1058,18 +1058,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                     children: [
                       Text(
                         title,
+                        // 与设置导航页 ListTile 同字号/字重：bodyLarge 常规权重。
                         style: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
                           color: titleColor,
-                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          style: (textTheme.bodySmall ?? const TextStyle()).copyWith(
-                            color: subtitleColor,
-                          ),
+                          // 同导航页副标题：bodyMedium（14px）。
+                          style: (textTheme.bodyMedium ?? const TextStyle())
+                              .copyWith(color: subtitleColor),
                         ),
                       ],
                     ],

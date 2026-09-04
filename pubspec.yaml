@@ -87,9 +87,11 @@ dependencies:
   cupertino_icons: ^1.0.8
 
 # 本地 vendor 的 tencent_kit（third_party/tencent_kit）：
-# 3.5.19（open_sdk_3.5.19_r9483ffc7_lite.jar）期间分享回执异常（成功也回调
-# onCancel），已回退为官方 3.5.17.3（android/libs/open_sdk_3.5.17.3_r75955a58_lite.jar），
-# 并保留插件层分享回执兜底（TencentKitPlugin shareListenerWrapper + XyQQShare 日志）。
+# 2026-09-04 起使用官方最新 OpenSDK 3.5.19（open_sdk_3.5.19_r9483ffc7_lite.jar，
+# 官网 2026-04-14 包，与旧 r9483ffc7 同构建号=官方未再出新构建）。
+# 新版 QQ 客户端分享完成后回执普遍为 data=null（不再回传结果 extras），
+# 插件层分享回执兜底（TencentKitPlugin shareListenerWrapper + XyQQShare 日志）：
+# 显式 result=cancel 才判取消，其余无回执/未知回执一律按成功兜底。
 dependency_overrides:
   tencent_kit:
     path: third_party/tencent_kit

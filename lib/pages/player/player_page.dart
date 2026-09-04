@@ -2970,7 +2970,7 @@ class _GlassControlCard extends ConsumerWidget {
           budget: budget,
           type: BlurSurfaceType.drawerOrSheet,
         ),
-        backgroundColor: bilipaiGlassTint(isDark, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),

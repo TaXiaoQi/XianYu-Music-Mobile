@@ -5,6 +5,7 @@
 //   接收方点开落地页再拉起 App 播放；QQ 好友与 QQ 空间均支持网页分享。
 import 'dart:async';
 
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 import '../i18n/i18n.dart';
@@ -19,6 +20,10 @@ class QqShareService {
   static const String appId = '1905495962';
 
   bool _inited = false;
+
+  /// 前后台监听：留在 QQ 分享后经任务切换返回 App 时，新版 QQ 客户端不回传
+  /// 任何回执（onActivityResult 也不会触发），恢复前台即视为分享完成。
+  AppLifecycleListener? _lifecycle;
 
   /// 当前一次分享的回调接收器（respStream 异步回传结果）。
   Completer<QqShareResult>? _pending;
@@ -76,10 +81,11 @@ class QqShareService {
       if (!completer.isCompleted) completer.complete(QqShareResult.failed);
     }
 
-    // 超时兜底，避免播放页 await 卡死。
+    // 超时兜底，避免播放页 await 卡死；新版 QQ 无回执，超时也按成功兜底
+    //（真实失败只有发起阶段异常一种，已在上面 catch 判 failed）。
     return completer.future.timeout(
       const Duration(seconds: 30),
-      onTimeout: () => QqShareResult.failed,
+      onTimeout: () => QqShareResult.success,
     );
   }
 
@@ -103,11 +109,21 @@ class QqShareService {
       await TencentKitPlatform.instance.setIsPermissionGranted(granted: true);
       await TencentKitPlatform.instance.registerApp(appId: appId);
       TencentKitPlatform.instance.respStream().listen(_onResp);
+      // 留在 QQ 分享后经任务切换返回 App 不会触发 onActivityResult，恢复
+      // 前台即视为分享完成（新版 QQ 无回执，默认按成功）。
+      _lifecycle ??= AppLifecycleListener(onResume: _completePendingSuccess);
       _inited = true;
       return true;
     } catch (_) {
       _inited = false;
       return false;
+    }
+  }
+
+  void _completePendingSuccess() {
+    final pending = _pending;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(QqShareResult.success);
     }
   }
 

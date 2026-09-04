@@ -47,7 +47,6 @@ Widget playbarGlassSurface(
           !lowPerf;
 
   if (liquid) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
     return BiliPaiGlass(
       radius: radius,
@@ -59,7 +58,7 @@ Widget playbarGlassSurface(
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiGlassTint(isDark, quality),
+      backgroundColor: bilipaiSurfaceTint(context, ref, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
@@ -583,7 +582,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   /// 冻结/涟漪/blur 预算全不参与），改用独立极简实时表面（标准
   /// BackdropFilter widget + 每帧重建驱动），拖动/滚动背板都实时抓取。
   Widget _liquidSurface(BuildContext context, Widget content) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
     // 高度必须约束在液态表面【外层】：shell/独立两种嵌入方式（AnimatedPositioned
     // 只给 left/top/width）都不传高度，而 _LiveLiquidSurface 内部是
@@ -596,7 +594,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: bilipaiBackdropBlurOf(quality),
-        backgroundColor: bilipaiGlassTint(isDark, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),

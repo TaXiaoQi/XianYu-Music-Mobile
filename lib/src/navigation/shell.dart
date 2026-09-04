@@ -1931,7 +1931,6 @@ class _LiquidNavBar extends ConsumerWidget {
 
   /// BiliPai 化液态玻璃：实时背景采样 + 滚动波浪扭曲 + 色差 + 轻量模糊，胶囊形状。
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     return BiliPaiGlass(
@@ -1947,7 +1946,7 @@ class _LiquidNavBar extends ConsumerWidget {
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiGlassTint(isDark, quality),
+      backgroundColor: bilipaiSurfaceTint(context, ref, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
@@ -3192,7 +3191,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               type: BlurSurfaceType.drawerOrSheet,
               crispAtRest: true,
             ),
-            backgroundColor: bilipaiGlassTint(isDark, quality),
+            backgroundColor: bilipaiSurfaceTint(context, ref, quality),
             specular: bilipaiSpecularOf(quality),
             edgeAmount: bilipaiEdgeOf(quality),
             saturation: bilipaiSaturationOf(quality),

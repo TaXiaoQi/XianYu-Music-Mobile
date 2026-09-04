@@ -246,6 +246,18 @@ Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
       : Color.fromARGB((a * 255).round(), 0xFF, 0xFF, 0xFF);
 }
 
+/// 液态玻璃表面底色（壁纸模式感知）：
+/// - 壁纸模式 → 白薄纱（[wallpaperNavGlassFill]，与毛玻璃路径的顶栏/底栏/
+///   迷你播放条口径一致）。BiliPai 暗色烟熏底（[bilipaiGlassTint]）在壁纸
+///   上会渲染成「黑色底」（2026-09-05 用户反馈），壁纸模式统一回白纱。
+/// - 非壁纸模式 → BiliPai 官方底色（亮白 / 暗烟熏）。
+Color bilipaiSurfaceTint(BuildContext context, WidgetRef ref,
+        LiquidGlassQuality quality) =>
+    wallpaperGlassActive(ref)
+        ? wallpaperNavGlassFill(context)
+        : bilipaiGlassTint(
+            Theme.of(context).brightness == Brightness.dark, quality);
+
 /// BiliPai 化液态玻璃表面流动高光强度（滚动时在玻璃上扫过的反光带）。
 /// 全档真液态：低档轻量高光，中/高档渐强。
 double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {

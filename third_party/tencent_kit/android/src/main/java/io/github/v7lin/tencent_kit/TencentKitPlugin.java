@@ -127,11 +127,12 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
                 // 诊断日志：dump QQ 客户端回执原文，便于排查各版本回执格式差异。
                 android.util.Log.i("XyQQShare", "onActivityResult req=" + requestCode + " res=" + resultCode
                         + " data=" + (data != null ? data.getExtras() : "null"));
-                // data 为空说明 QQ 客户端未回传任何结果（用户中途返回/异常退出）。
-                // SDK 默认判 onError（会误触发调用方的「分享失败」兜底），这里改为按取消处理。
+                // 新版 QQ 客户端分享完成后不再回传结果 extras（data=null，实测
+                // res=0/-1 均有），无回执时唯一可靠的取消信号是显式 result=cancel
+                // 的回执（走 data!=null 分支），这里按成功兜底。
                 if (data == null) {
-                    android.util.Log.i("XyQQShare", "onActivityResult: data=null -> treat as cancel");
-                    shareListener.onCancel();
+                    android.util.Log.i("XyQQShare", "onActivityResult: data=null (no receipt) -> treat as success");
+                    shareListener.onComplete(null);
                     return true;
                 }
                 lastShareData = data;
@@ -171,7 +172,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
                 tencent = Tencent.createInstance(appId, applicationContext);
             }
             // 版本标记：分享前必经此初始化，看到这行日志即确认原生新代码已打进安装包。
-            android.util.Log.i("XyQQShare", "registerApp ok: vendored plugin, OpenSDK 3.5.17.3 (rolled back)");
+            android.util.Log.i("XyQQShare", "registerApp ok: vendored plugin, OpenSDK 3.5.19 (official latest)");
             result.success(null);
         } else if ("isQQInstalled".equals(call.method)) {
             result.success(tencent != null && isAppInstalled(applicationContext, "com.tencent.mobileqq"));

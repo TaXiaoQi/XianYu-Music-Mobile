@@ -25,6 +25,12 @@ fn bind_multicast_socket() -> std::io::Result<Socket> {
     let _ = sock.set_reuse_port(true);
     let bind_addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, SSDP_PORT));
     sock.bind(&bind_addr.into())?;
+    // 加入 SSDP 组播组：不加入则内核不会把控制点的 M-SEARCH 组播报文投递给本 socket
+    // （Windows 上尤其如此），DMR 将无法被主动搜索发现。加入失败不致命：仍可发 alive
+    // 广播、应答单播 M-SEARCH，仅主动搜索路径不可用。
+    if let Err(e) = sock.join_multicast_v4(&SSDP_MULTICAST_V4, &Ipv4Addr::UNSPECIFIED) {
+        eprintln!("[dlna] join SSDP multicast group failed: {e}");
+    }
     Ok(sock)
 }
 
@@ -296,5 +302,49 @@ mod tests {
         assert_eq!(msgs.len(), 5);
         assert!(msgs[0].contains("NTS: ssdp:alive"));
         assert!(msgs.iter().all(|m| m.contains("udn-1")));
+    }
+
+    /// 回归：DMR 必须加入 SSDP 组播组，否则收不到控制点的 M-SEARCH，无法被主动发现。
+    /// 环境不支持（1900 被独占 / 无组播）时跳过，避免 CI 误报。
+    #[tokio::test]
+    async fn advertiser_answers_msearch_after_join() {
+        let probe = match std::net::UdpSocket::bind("0.0.0.0:0") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        probe
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let adv = match SsdpAdvertiser::start(AdvertiseConfig {
+            udn: "test-udn-1234".into(),
+            location: "http://127.0.0.1:9958/dlna/desc.xml".into(),
+        })
+        .await
+        {
+            Ok(a) => a,
+            Err(_) => return,
+        };
+
+        let target: SocketAddr = SocketAddrV4::new(SSDP_MULTICAST_V4, SSDP_PORT).into();
+        let msg = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: ssdp:all\r\n\r\n";
+        probe.send_to(msg.as_bytes(), target).unwrap();
+
+        let mut buf = vec![0u8; 2048];
+        let mut got = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match probe.recv_from(&mut buf) {
+                Ok((n, _)) => {
+                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                    if text.starts_with("HTTP/1.1 200") && text.contains("test-udn-1234") {
+                        got = true;
+                        break;
+                    }
+                }
+                Err(_) => continue, // 超时继续等（应答带 0~500ms 抖动）
+            }
+        }
+        adv.stop();
+        assert!(got, "DMR 未应答 M-SEARCH（组播加入可能失败）");
     }
 }

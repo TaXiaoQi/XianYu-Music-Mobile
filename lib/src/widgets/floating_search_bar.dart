@@ -95,7 +95,6 @@ class FloatingGlassSurface extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
@@ -122,7 +121,7 @@ class FloatingGlassSurface extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiGlassTint(isDark, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -165,7 +164,6 @@ class BiliPaiPill extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
@@ -201,7 +199,7 @@ class BiliPaiPill extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiGlassTint(isDark, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
