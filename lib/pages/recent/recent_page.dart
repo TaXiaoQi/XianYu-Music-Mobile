@@ -41,47 +41,64 @@ class RecentPage extends ConsumerWidget {
     final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
     // 有记录时渲染「清空」内容头，否则直接以全局顶栏为头。
     final hasHeader = inMusicPane && recent.entries.isNotEmpty;
+    // 竖屏悬浮顶栏（非面板）：顶栏自动换装玻璃胶囊组，播放记录列表铺满
+    // 全屏、滚动时从顶栏下方穿过（穿透观感，与歌单页同口径）。
+    final portraitFloating = !inMusicPane &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        floating;
 
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.only(
-                // 面板模式下内容头在全局顶栏下方，内容按内容头避让；非面板模式
-                // 沿用完整 GlassTopBar 高度避让。
-                top: inMusicPane
-                    ? paneTop + (hasHeader ? 48 : 8)
-                    : GlassTopBar.height(context),
-              ),
-              child: recent.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : recent.entries.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.history,
-                                  size: 48,
-                                  color: scheme.onSurface
-                                      .withValues(alpha: 0.25)),
-                              const SizedBox(height: 12),
-                              Text(
-                                tr('暂无播放记录'),
-                                style: TextStyle(
-                                    fontSize: 14,
-                                    color: scheme.onSurfaceVariant),
-                              ),
-                            ],
+            // 竖屏悬浮：列表视口铺满全屏，避让量注入列表内部 padding，
+            // 滚动时内容从顶栏胶囊下方穿过；固定/面板沿用原 Padding 避让。
+            if (portraitFloating && !recent.loading && recent.entries.isNotEmpty)
+              Positioned.fill(
+                child: _RecentList(
+                  recent: recent,
+                  notifier: notifier,
+                  filter: filter,
+                  contentTop: GlassTopBar.height(context) + 6,
+                ),
+              )
+            else
+              Padding(
+                padding: EdgeInsets.only(
+                  // 面板模式下内容头在全局顶栏下方，内容按内容头避让；非面板模式
+                  // 沿用完整 GlassTopBar 高度避让。
+                  top: inMusicPane
+                      ? paneTop + (hasHeader ? 48 : 8)
+                      : GlassTopBar.height(context),
+                ),
+                child: recent.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : recent.entries.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.history,
+                                    size: 48,
+                                    color: scheme.onSurface
+                                        .withValues(alpha: 0.25)),
+                                const SizedBox(height: 12),
+                                Text(
+                                  tr('暂无播放记录'),
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: scheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _RecentList(
+                            recent: recent,
+                            notifier: notifier,
+                            filter: filter,
                           ),
-                        )
-                      : _RecentList(
-                          recent: recent,
-                          notifier: notifier,
-                          filter: filter,
-                        ),
-            ),
+              ),
             // 内容头：面板模式仅保留右侧「清空」；非面板模式完整 GlassTopBar。
             if (inMusicPane)
               Positioned(
@@ -156,10 +173,15 @@ class _RecentList extends ConsumerStatefulWidget {
     required this.recent,
     required this.notifier,
     this.filter = '',
+    this.contentTop,
   });
 
   final RecentState recent;
   final RecentManager notifier;
+
+  /// 竖屏悬浮顶栏模式的顶部避让量：注入列表滚动 padding.top，内容穿透
+  /// 顶栏胶囊；null=固定/面板模式，无额外顶距。
+  final double? contentTop;
 
   /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
   final String filter;
@@ -231,7 +253,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
       children: [
         ListView.builder(
           controller: _controller,
-          padding: EdgeInsets.only(bottom: bottomPad),
+          padding: EdgeInsets.only(top: widget.contentTop ?? 0, bottom: bottomPad),
           itemExtent: rowExtent,
           // 提前半屏预缓存，避免新行进场时突然解码封面掉帧（对齐 SongsListView）。
           scrollCacheExtent: ScrollCacheExtent.pixels(500),

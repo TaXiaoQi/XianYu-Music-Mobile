@@ -52,6 +52,11 @@ class PlaylistsPage extends ConsumerWidget {
     final statusBar = MediaQuery.paddingOf(context).top;
     final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
     const headerH = 48.0;
+    // 竖屏悬浮顶栏（非面板）：顶栏自动换装玻璃胶囊组，歌单列表铺满全屏、
+    // 滚动时从顶栏下方穿过（穿透观感，与搜索结果页/榜单页同口径）。
+    final portraitFloating = !inMusicPane &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        floating;
 
     return HideShellChrome(
       child: Scaffold(
@@ -59,50 +64,61 @@ class PlaylistsPage extends ConsumerWidget {
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.only(
-                // 面板模式下内容头在全局顶栏下方，内容按其避让；非面板模式
-                // 沿用完整 GlassTopBar 高度避让。
-                top: inMusicPane ? paneTop + headerH + 4 : GlassTopBar.height(context),
+            // 竖屏悬浮：列表视口铺满全屏，避让量注入列表内部 padding，
+            // 滚动时内容从顶栏胶囊下方穿过；固定/面板沿用原 Padding 避让。
+            if (portraitFloating && !state.loading && state.playlists.isNotEmpty)
+              Positioned.fill(
+                child: _PlaylistList(
+                  state: state,
+                  filter: filter,
+                  contentTop: GlassTopBar.height(context) + 6,
+                ),
+              )
+            else
+              Padding(
+                padding: EdgeInsets.only(
+                  // 面板模式下内容头在全局顶栏下方，内容按其避让；非面板模式
+                  // 沿用完整 GlassTopBar 高度避让。
+                  top: inMusicPane ? paneTop + headerH + 4 : GlassTopBar.height(context),
+                ),
+                child: state.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : state.playlists.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.queue_music_outlined,
+                                    size: 56, color: scheme.outline),
+                                const SizedBox(height: 12),
+                                Text(tr('还没有歌单'),
+                                    style:
+                                        TextStyle(color: scheme.onSurfaceVariant)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  tr('点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 12, color: scheme.outline),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.tonalIcon(
+                                  onPressed: () => _promptCreate(context, manager),
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label:   Text(tr('新建歌单')),
+                                ),
+                                const SizedBox(height: 8),
+                                TextButton.icon(
+                                  onPressed: () => context.push('/playlist-import'),
+                                  icon: const Icon(Icons.file_download_outlined,
+                                      size: 16),
+                                  label:   Text(tr('导入歌单')),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _PlaylistList(state: state, filter: filter),
               ),
-              child: state.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : state.playlists.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.queue_music_outlined,
-                                  size: 56, color: scheme.outline),
-                              const SizedBox(height: 12),
-                              Text(tr('还没有歌单'),
-                                  style:
-                                      TextStyle(color: scheme.onSurfaceVariant)),
-                              const SizedBox(height: 4),
-                              Text(
-                                tr('点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入'),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 12, color: scheme.outline),
-                              ),
-                              const SizedBox(height: 16),
-                              FilledButton.tonalIcon(
-                                onPressed: () => _promptCreate(context, manager),
-                                icon: const Icon(Icons.add, size: 18),
-                                label:   Text(tr('新建歌单')),
-                              ),
-                              const SizedBox(height: 8),
-                              TextButton.icon(
-                                onPressed: () => context.push('/playlist-import'),
-                                icon: const Icon(Icons.file_download_outlined,
-                                    size: 16),
-                                label:   Text(tr('导入歌单')),
-                              ),
-                            ],
-                          ),
-                        )
-                      : _PlaylistList(state: state, filter: filter),
-            ),
             // 内容头：面板模式仅保留右侧「新建/导入」（悬浮玻璃圆钮 / 固定普通钮）；
             // 非面板模式渲染完整 GlassTopBar。
             if (inMusicPane)
@@ -209,12 +225,16 @@ Future<String?> _promptName(BuildContext context, String title) {
 
 /// 我的歌单列表：独立订阅播放状态以调整底部留白，避免播放状态翻转波及页头。
 class _PlaylistList extends ConsumerWidget {
-  const _PlaylistList({required this.state, this.filter = ''});
+  const _PlaylistList({required this.state, this.filter = '', this.contentTop});
 
   final ImportedPlaylistState state;
 
   /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
   final String filter;
+
+  /// 竖屏悬浮顶栏模式的顶部避让量：注入列表滚动 padding.top，内容穿透
+  /// 顶栏胶囊；null=固定/面板模式，沿用 8px 顶距。
+  final double? contentTop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -246,7 +266,7 @@ class _PlaylistList extends ConsumerWidget {
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(
         16,
-        8,
+        contentTop ?? 8,
         16,
         (hasSong ? 92.0 : 150.0) + MediaQuery.of(context).padding.bottom,
       ),
