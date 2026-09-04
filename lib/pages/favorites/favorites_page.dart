@@ -139,20 +139,31 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
           )
         : tabBar;
 
+    // 竖屏悬浮顶栏（非面板）：TabBarView 铺满全屏、避让量注入各 tab 滚动体
+    // padding，内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感，与反馈/壁纸中心
+    // 同口径）；面板/横屏由壳层全局顶栏承接，不参与悬浮。
+    final portraitFloating = !inMusicPane &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        floating;
+    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
+    // + Tab 气泡原高）+ 6 呼吸；固定模式 0。
+    final topInset = portraitFloating
+        ? statusBar + 66 + tabBar.preferredSize.height + 6
+        : 0.0;
+
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
-            Padding(
+            _tabHost(
+              portraitFloating,
               // 面板模式下内容头位于全局顶栏下方，内容按其避让；非面板模式沿用
               // 完整 GlassTopBar（含 TabBar）高度避让。
-              padding: EdgeInsets.only(
-                top: inMusicPane
-                    ? paneTop + tabBarHeight + 2
-                    : GlassTopBar.height(context, bottom: tabBar),
-              ),
-              child: fav.loading
+              inMusicPane
+                  ? paneTop + tabBarHeight + 2
+                  : GlassTopBar.height(context, bottom: tabBar),
+              fav.loading
                   ? const Center(child: CircularProgressIndicator())
                   : TabBarView(
                       controller: _tab,
@@ -161,9 +172,18 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                             fav: fav,
                             notifier: notifier,
                             batch: _batch,
-                            filter: filter),
-                        _CollectionsTab(fav: fav, kind: 'playlist', filter: filter),
-                        _CollectionsTab(fav: fav, kind: 'album', filter: filter),
+                            filter: filter,
+                            topInset: topInset),
+                        _CollectionsTab(
+                            fav: fav,
+                            kind: 'playlist',
+                            filter: filter,
+                            topInset: topInset),
+                        _CollectionsTab(
+                            fav: fav,
+                            kind: 'album',
+                            filter: filter,
+                            topInset: topInset),
                       ],
                     ),
             ),
@@ -197,6 +217,16 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
           ],
         ),
       ),
+    );
+  }
+
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
+  /// 固定模式沿用 Padding 避让（避让量由调用方按面板/固定形态计算）。
+  Widget _tabHost(bool floating, double dockedTop, Widget child) {
+    if (floating) return Positioned.fill(child: child);
+    return Padding(
+      padding: EdgeInsets.only(top: dockedTop),
+      child: child,
     );
   }
 
@@ -253,6 +283,7 @@ class _SongsTab extends ConsumerStatefulWidget {
     required this.notifier,
     required this.batch,
     this.filter = '',
+    this.topInset = 0,
   });
 
   final FavoritesState fav;
@@ -261,6 +292,10 @@ class _SongsTab extends ConsumerStatefulWidget {
 
   /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
   final String filter;
+
+  /// 悬浮模式避让量：注入列表滚动 padding.top，内容穿透顶栏；0=固定模式。
+  /// FAB 行位推算（rowTopOf）需同步加上此值。
+  final double topInset;
 
   @override
   ConsumerState<_SongsTab> createState() => _SongsTabState();
@@ -486,7 +521,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
             children: [
               ListView.builder(
                 controller: _controller,
-                padding: EdgeInsets.only(bottom: bottomPad),
+                padding: EdgeInsets.only(
+                    top: widget.topInset, bottom: bottomPad),
                 itemExtent: rowExtent,
                 addAutomaticKeepAlives: false,
                 itemCount: visible.length,
@@ -503,7 +539,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
               SongListScrollFabs(
                 controller: _controller,
                 paths: visible.map((e) => e.path).toList(),
-                rowTopOf: (i) => i * rowExtent,
+                // 悬浮模式 padding.top 注入后行位整体下移，推算同步偏移。
+                rowTopOf: (i) => widget.topInset + i * rowExtent,
                 itemExtent: rowExtent,
                 bottom: bottomPad + 8,
                 right: 12,
@@ -519,7 +556,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
             if (inBatch)
               ListView.builder(
                 controller: _batchController,
-                padding: EdgeInsets.only(bottom: bottomPad + 140),
+                padding: EdgeInsets.only(
+                    top: widget.topInset, bottom: bottomPad + 140),
                 itemExtent: rowExtent,
                 addAutomaticKeepAlives: false,
                 itemCount: entries.length,
@@ -531,7 +569,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
             else
               ReorderableListView.builder(
                 scrollController: _controller,
-                padding: EdgeInsets.only(bottom: bottomPad),
+                padding: EdgeInsets.only(
+                    top: widget.topInset, bottom: bottomPad),
                 buildDefaultDragHandles: false,
                 // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell 会以
                 // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
@@ -591,7 +630,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
               SongListScrollFabs(
                 controller: _controller,
                 paths: entries.map((e) => e.path).toList(),
-                rowTopOf: (i) => i * rowExtent,
+                // 悬浮模式 padding.top 注入后行位整体下移，推算同步偏移。
+                rowTopOf: (i) => widget.topInset + i * rowExtent,
                 itemExtent: rowExtent,
                 bottom: bottomPad + 8,
                 right: 12,
@@ -609,6 +649,7 @@ class _CollectionsTab extends ConsumerWidget {
     required this.fav,
     required this.kind,
     this.filter = '',
+    this.topInset = 0,
   });
 
   final FavoritesState fav;
@@ -616,6 +657,9 @@ class _CollectionsTab extends ConsumerWidget {
 
   /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
   final String filter;
+
+  /// 悬浮模式避让量：注入列表滚动 padding.top，内容穿透顶栏；0=固定模式。
+  final double topInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -666,6 +710,7 @@ class _CollectionsTab extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
+        top: topInset,
         bottom: (hasSong ? 92.0 : 24.0) +
             MediaQuery.of(context).padding.bottom,
       ),
