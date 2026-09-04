@@ -585,16 +585,23 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   Widget _liquidSurface(BuildContext context, Widget content) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
-    return _LiveLiquidSurface(
-      radius: 29,
-      refract: bilipaiRefractOf(quality),
-      chroma: bilipaiChromaOf(quality),
-      blurSigma: bilipaiBackdropBlurOf(quality),
-      backgroundColor: bilipaiGlassTint(isDark, quality),
-      specular: bilipaiSpecularOf(quality),
-      edgeAmount: bilipaiEdgeOf(quality),
-      saturation: bilipaiSaturationOf(quality),
-      child: SizedBox(height: 58, child: content),
+    // 高度必须约束在液态表面【外层】：shell/独立两种嵌入方式（AnimatedPositioned
+    // 只给 left/top/width）都不传高度，而 _LiveLiquidSurface 内部是
+    // Stack(fit: StackFit.expand)，不设外层高度时 Stack 取 constraints.biggest
+    // 得到 h=Infinity → 布局崩溃（帧管线被污染，弹窗等后续路由全部渲染失败）。
+    return SizedBox(
+      height: 58,
+      child: _LiveLiquidSurface(
+        radius: 29,
+        refract: bilipaiRefractOf(quality),
+        chroma: bilipaiChromaOf(quality),
+        blurSigma: bilipaiBackdropBlurOf(quality),
+        backgroundColor: bilipaiGlassTint(isDark, quality),
+        specular: bilipaiSpecularOf(quality),
+        edgeAmount: bilipaiEdgeOf(quality),
+        saturation: bilipaiSaturationOf(quality),
+        child: content,
+      ),
     );
   }
 

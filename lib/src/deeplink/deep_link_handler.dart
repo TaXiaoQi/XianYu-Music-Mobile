@@ -12,6 +12,7 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../core/app_logger.dart';
+import '../core/application_logger.dart';
 import '../core/rust_init.dart';
 import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
@@ -155,7 +156,14 @@ class XianYuDeepLink {
         AppLogger.instance.log('deeplink', '等待导航上下文超时，跳过分享预览窗');
         return;
       }
-      final overlay = Overlay.of(ctx, rootOverlay: true);
+      // 根 Navigator 自身的 context 上 Overlay.of 必抛（Overlay 在 Navigator
+      // 内部、不在祖先链上 → No Overlay widget found），改经 NavigatorState
+      // 拿根 Overlay。
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay == null) {
+        AppLogger.instance.log('deeplink', '根 Overlay 未就绪，跳过分享预览窗');
+        return;
+      }
 
       // 本地命中 → 现有「本地方案」：播放 / 下一首播放 / 取消
       if (localSong != null) {
@@ -271,6 +279,9 @@ class XianYuDeepLink {
       if (action == ShareLinkPreviewAction.import) router.push('/plugin');
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
+      // console 可见：内存诊断缓冲需要导出才能看到，静默吞掉会让这类
+      // 「弹窗不出现」问题无法定位（2026-09-04 No Overlay widget found 教训）。
+      AppLog.error('deeplink', '深链处理异常: $e');
     }
   }
 

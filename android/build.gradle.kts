@@ -25,10 +25,20 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    // 跳过 app 模块：其 compileOptions 已被 Flutter Gradle 插件 finalize（锁定），
+    // 且 app 已在自身 build.gradle.kts 显式配置 Java 17，无需覆盖。
+    if (name == "app") return@subprojects
     // 统一所有插件子项目的 compileSdk，避免个别插件（如 audio_session 的 34）触发 SDK 自动下载
     fun forceCompileSdk() {
         extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
             compileSdkVersion(36)
+            // 统一 Java 编译级别为 17：tencent_kit / just_audio /
+            // permission_handler_android 仍写死 source/target 8，JDK 21 下
+            // 触发「源值 8 已过时」构建警告。字节码向后兼容由 D8 desugar 保证。
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
         }
     }
     if (project.state.executed) {
