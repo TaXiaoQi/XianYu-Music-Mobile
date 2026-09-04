@@ -171,7 +171,7 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           ),
         ),
         const SizedBox(height: 16),
-        // 左/中/右 对齐分段（仅横屏歌词菜单；竖屏歌词页去掉对齐入口）。
+        // 左/中/右 对齐分段（横竖屏歌词菜单完全一致）。
         if (widget.showAlign) ...[
           _TraditionalPlayerLayoutState._buildAlignSegmented(
               context, align, notifier),
@@ -1125,9 +1125,13 @@ class _TraditionalPlayerLayoutState
               child: _buildCoverSection(context, showLyricPreview: false),
             ),
           ),
-          // 歌词贴近放大的封面。
+          // 歌词贴近放大的封面；左 12 贴中线侧留呼吸、右 56 多让位——
+          // 不对称让位使歌词内容整体往屏幕中间靠（原居中于 75% 屏宽偏右，
+          // 左移约 22px），左对齐模式下歌词也随之前移贴近封面。
           Expanded(
-            child: ClipRect(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 12, right: 56),
+              child: ClipRect(
               child: RepaintBoundary(
                 child: _LyricsView(
                   key: _lyricsKey,
@@ -1142,6 +1146,7 @@ class _TraditionalPlayerLayoutState
                   },
                 ),
               ),
+            ),
             ),
           ),
         ],
@@ -1177,8 +1182,8 @@ class _TraditionalPlayerLayoutState
   }
 
   /// 歌词调节菜单（居中弹窗，对齐桌面歌词页）。
-  /// 含（横屏时可选的左/中/右对齐）+ 字号/翻译/罗马音/偏移入口。
-  /// 传统/高级、横屏/竖屏歌词页共用；竖屏封面页的入口保持「桌面歌词」原状。
+  /// 含左/中/右对齐 + 字号/翻译/罗马音/偏移入口，横竖屏弹窗完全一致；
+  /// 竖屏封面页的入口保持「桌面歌词」原状。
   static void _showLyricAdjustMenu(
     BuildContext context,
     WidgetRef ref, {
@@ -1630,8 +1635,8 @@ class _TraditionalPlayerLayoutState
   }
 
   /// 进度条上方动作行最右的歌词控件：封面页是「桌面歌词·词」按钮；
-  /// 歌词页变为「歌词调节」入口（打开调节菜单，含字号/翻译/罗马音/偏移，
-  /// 横屏才含左中右对齐），不再挤压右上角分享按钮。
+  /// 歌词页变为「歌词调节」入口（打开调节菜单，含字号/翻译/罗马音/偏移
+  /// 与左中右对齐，横竖屏弹窗完全一致），不再挤压右上角分享按钮。
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
     final accent = Theme.of(context).colorScheme.primary;
     // 歌词页：桌面歌词控件变身歌词调节控件。默认白色，仅触发调节菜单时才点亮。
@@ -1648,8 +1653,8 @@ class _TraditionalPlayerLayoutState
           context,
           ref,
           hasRomaji: _lyricsViewHasRomaji,
-          // 竖屏歌词菜单不提供左/中/右对齐（对齐只限横屏歌词菜单）。
-          showAlign: false,
+          // 横竖屏歌词菜单一致：都提供左/中/右对齐。
+          showAlign: true,
         ),
       );
     }
