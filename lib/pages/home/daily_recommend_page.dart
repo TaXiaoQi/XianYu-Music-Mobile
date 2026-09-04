@@ -38,15 +38,21 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
     final scheme = Theme.of(context).colorScheme;
     // 只依赖推荐数据；播放状态由 _BottomPlayBar 单独订阅，避免翻转时整页重建
     final async = ref.watch(dailyRecommendProvider);
+    // 竖屏悬浮顶栏：内容铺满全屏、避让量注入顶部，页面背景从顶栏胶囊下方
+    // 穿过（与歌单/最近页同口径）；嵌入态由横屏壳层顶栏承接，不参与悬浮。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-                top: widget.embedded ? 0 : GlassTopBar.height(context)),
-            child: async.when(
+          _floatHost(
+            portraitFloating,
+            async.when(
               loading: () =>   Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -108,6 +114,23 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
           if (!widget.embedded) const _BottomPlayBar(),
         ],
       ),
+    );
+  }
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，页面背景穿透顶栏），
+  /// 固定模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
+  Widget _floatHost(bool floating, Widget child) {
+    if (floating) {
+      return Positioned.fill(
+        child: Padding(
+          padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
+          child: child,
+        ),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.only(
+          top: widget.embedded ? 0 : GlassTopBar.height(context)),
+      child: child,
     );
   }
 }

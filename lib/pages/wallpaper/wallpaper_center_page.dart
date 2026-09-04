@@ -61,23 +61,39 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
 
   @override
   Widget build(BuildContext context) {
+    // 竖屏悬浮顶栏：TabBarView 铺满全屏、避让量注入各 tab 滚动体 padding，
+    // 内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感）。
+    final portraitFloating =
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+            (ref.watch(settingsProvider.select(
+                    (s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+                true);
+    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
+    // + Tab 气泡原高）+ 6 呼吸；固定模式 0（沿用原 Padding 避让结构）。
+    final topInset = portraitFloating
+        ? MediaQuery.paddingOf(context).top +
+            66 +
+            _tabBar.preferredSize.height +
+            6
+        : 0.0;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              top: GlassTopBar.height(context, bottom: _tabBar),
-            ),
-            child: RepaintBoundary(
+          _tabHost(
+            portraitFloating,
+            topInset,
+            RepaintBoundary(
               child: TabBarView(
                 controller: _tab,
-                children: const [
-                  _WallpaperBrowseTab(),
-                  _MyUploadsTab(),
-                  _MyDownloadsTab(),
-                  CustomWallpaperEditor(),
+                children: [
+                  _WallpaperBrowseTab(topInset: topInset),
+                  _MyUploadsTab(topInset: topInset),
+                  _MyDownloadsTab(topInset: topInset),
+                  // 编辑器 tab 自带整页预览（StackFit.expand），悬浮模式下
+                  // 预览直接顶到屏幕顶，无需避让。
+                  const CustomWallpaperEditor(),
                 ],
               ),
             ),
@@ -96,6 +112,18 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       ),
     );
   }
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
+  /// 固定模式沿用 Padding 避让（避让量注入各 tab 滚动体 padding）。
+  Widget _tabHost(bool floating, double topInset, Widget child) {
+    if (floating) return Positioned.fill(child: child);
+    return Padding(
+      padding: EdgeInsets.only(
+        top: GlassTopBar.height(context, bottom: _tabBar),
+      ),
+      child: child,
+    );
+  }
+
 }
 
 // ───────────────────────────────────────────────────────────
@@ -103,7 +131,10 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
 // ───────────────────────────────────────────────────────────
 
 class _WallpaperBrowseTab extends ConsumerStatefulWidget {
-  const _WallpaperBrowseTab();
+  const _WallpaperBrowseTab({this.topInset = 0});
+
+  /// 悬浮模式避让量：注入网格滚动 padding.top，内容穿透顶栏；0=固定模式。
+  final double topInset;
 
   @override
   ConsumerState<_WallpaperBrowseTab> createState() =>
@@ -176,7 +207,7 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
     return RefreshIndicator(
       onRefresh: _load,
       child: GridView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.fromLTRB(12, 12 + widget.topInset, 12, 12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 12,
@@ -589,7 +620,10 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
 // ───────────────────────────────────────────────────────────
 
 class _MyUploadsTab extends ConsumerStatefulWidget {
-  const _MyUploadsTab();
+  const _MyUploadsTab({this.topInset = 0});
+
+  /// 悬浮模式避让量：注入网格滚动 padding.top，内容穿透顶栏；0=固定模式。
+  final double topInset;
 
   @override
   ConsumerState<_MyUploadsTab> createState() => _MyUploadsTabState();
@@ -709,7 +743,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
           RefreshIndicator(
             onRefresh: _load,
             child: GridView.builder(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.fromLTRB(12, 12 + widget.topInset, 12, 12),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 mainAxisSpacing: 12,
@@ -928,7 +962,10 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
 // ───────────────────────────────────────────────────────────
 
 class _MyDownloadsTab extends StatefulWidget {
-  const _MyDownloadsTab();
+  const _MyDownloadsTab({this.topInset = 0});
+
+  /// 悬浮模式避让量：注入列表滚动 padding.top，内容穿透顶栏；0=固定模式。
+  final double topInset;
 
   @override
   State<_MyDownloadsTab> createState() => _MyDownloadsTabState();
@@ -996,7 +1033,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16 + widget.topInset, 16, 16),
       itemCount: _downloads.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, i) {

@@ -10,6 +10,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/db_path.dart';
+import '../../src/core/settings.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -62,15 +63,21 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 竖屏悬浮顶栏：内容铺满全屏、避让量注入顶部，页面背景从顶栏胶囊下方
+    // 穿过（与歌单/最近页同口径）；嵌入态由横屏壳层顶栏承接，不参与悬浮。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-                top: widget.embedded ? 0 : GlassTopBar.height(context)),
-            child: Column(
+          _floatHost(
+            portraitFloating,
+            Column(
               children: [
                 // 周期切换（标签与选中态随横滑实时同步）
                 Padding(
@@ -142,6 +149,23 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
             ),
         ],
       ),
+    );
+  }
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，页面背景穿透顶栏），
+  /// 固定模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
+  Widget _floatHost(bool floating, Widget child) {
+    if (floating) {
+      return Positioned.fill(
+        child: Padding(
+          padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
+          child: child,
+        ),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.only(
+          top: widget.embedded ? 0 : GlassTopBar.height(context)),
+      child: child,
     );
   }
 }
