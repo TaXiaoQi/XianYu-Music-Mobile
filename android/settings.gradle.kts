@@ -11,7 +11,9 @@ run {
         System.getenv("XIANMU_SKIP_VERSION_SYNC") != "1"
     ) {
         val flutterSdk = props.getProperty("flutter.sdk")
-        val dartBin = file("$flutterSdk/bin/cache/dart-sdk/bin/dart.exe")
+        // dart 可执行文件按 OS 取（F-Droid 等 Linux 云端构建机也要能跑版本同步）
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val dartBin = file("$flutterSdk/bin/cache/dart-sdk/bin/" + if (isWindows) "dart.exe" else "dart")
         if (dartBin.exists()) {
             val rootDir = file("..").canonicalFile
             val proc = ProcessBuilder(dartBin.absolutePath, "run", "tool/sync_version.dart")
