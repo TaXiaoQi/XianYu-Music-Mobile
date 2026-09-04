@@ -15,6 +15,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/cast_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
