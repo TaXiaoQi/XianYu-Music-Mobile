@@ -11,12 +11,22 @@ import '../auth/account_api.dart';
 import '../auth/auth_provider.dart' show defaultAuthBaseUrl;
 import '../auth/server_models.dart';
 import '../core/settings.dart';
+import '../device/device_info.dart';
 import '../navigation/routes.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
 /// 最近一次「启动自动弹升级窗」的日期。默认当日只自动弹一次，避免每次冷启动打扰。
 const _lastPromptKey = 'app_update_last_prompt_date';
+
+/// 商店托管安装（F-Droid / Google Play 等）时禁用 APK 内自更新：
+/// F-Droid 政策要求绕过其更新需显式 opt-in，Play 政策直接禁止；
+/// 官网直发（侧载，installer 为 null）保持现状。结果缓存。
+Future<bool> _isStoreInstall() async {
+  final source = await fetchInstallerSource();
+  if (source == null) return false;
+  return source == 'com.android.vending' || source.contains('fdroid');
+}
 
 /// 服务端版本是否比本地新。
 bool hasNewVersion(LatestVersion latest) =>
@@ -152,6 +162,13 @@ Future<void> checkAppUpdate(
   WidgetRef ref, {
   bool silent = false,
 }) async {
+  // 商店安装版不提供应用内自更新，明示用户走商店渠道
+  if (await _isStoreInstall()) {
+    if (!silent && context.mounted) {
+      _toast(context, tr('商店安装版请在安装渠道（商店）内更新'));
+    }
+    return;
+  }
   final LatestVersion? latest;
   try {
     latest = await ref.read(accountApiProvider).fetchServerUpdate();
@@ -177,7 +194,9 @@ Future<void> checkAppUpdate(
 }
 
 /// 启动自动检查：静默。仅当设置开启「启动检测」且当日未弹过时，弹出升级窗。
+/// 商店托管安装（F-Droid/Play）时直接跳过，不请求、不弹窗。
 Future<void> maybePromptStartupUpdate(WidgetRef ref) async {
+  if (await _isStoreInstall()) return;
   final mode = ref.read(settingsProvider).valueOrNull?.updateCheckMode;
   if (mode == 'never') return;
 

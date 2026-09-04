@@ -277,6 +277,9 @@ class MainActivity : AudioServiceActivity() {
                         put("model", Build.MODEL)
                         put("os_version", Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
                     }.toString())
+                    // 安装来源（installer 包名，侧载/未知为 null）：自更新逻辑据此
+                    // 判定商店渠道（F-Droid/Play），商店政策禁止绕过商店自更新
+                    "getInstallerSource" -> result.success(installerSource())
                     else -> result.notImplemented()
                 }
             }
@@ -485,6 +488,20 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /** 应用安装来源：返回 installer 包名（如 Google Play 的 com.android.vending、
+     *  F-Droid 客户端的 org.fdroid.fdroid）；adb/文件管理器侧载或查询失败返回 null。
+     *  API 30+ 用 getInstallSourceInfo，低版本回退 getInstallerPackageName。 */
+    private fun installerSource(): String? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            packageManager.getInstallSourceInfo(packageName).installingPackageName
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getInstallerPackageName(packageName)
+        }
+    } catch (_: Exception) {
+        null
     }
 
     /** 枚举全部输出音频设备，返回 JSON 数组 JSON。id 与 AAudio setDeviceId 一致。 */

@@ -51,3 +51,23 @@ Future<MobileDeviceInfo> fetchDeviceInfo() async {
   }
 }
 
+String? _cachedInstallerSource;
+
+/// 应用安装来源（installer 包名，如 Google Play 的 com.android.vending、
+/// F-Droid 客户端的 org.fdroid.fdroid）；侧载/未知/非 Android 返回 null。
+/// 结果缓存。供自更新逻辑判定商店渠道（商店政策禁止绕过商店自更新）。
+Future<String?> fetchInstallerSource() async {
+  if (_cachedInstallerSource != null) return _cachedInstallerSource;
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
+  try {
+    const channel = MethodChannel('xianyu/device_info');
+    final source = await channel.invokeMethod<String>('getInstallerSource');
+    _cachedInstallerSource = (source == null || source.isEmpty) ? '' : source;
+    return _cachedInstallerSource!.isEmpty ? null : _cachedInstallerSource;
+  } catch (_) {
+    // 查询失败视为侧载（沿用官网直发自更新），缓存空串避免反复探测
+    _cachedInstallerSource = '';
+    return null;
+  }
+}
+
