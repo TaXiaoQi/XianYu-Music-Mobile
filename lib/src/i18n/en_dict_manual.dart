@@ -262,7 +262,7 @@ const Map<String, String> enDictManual = {
   '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）':
       'Once a share link expires it is discarded by the server and can no longer be opened (5 min to 24 h)',
   '分享失败，链接已复制': 'Share failed; the link was copied',
-  '分享文案已复制': 'Share text copied',
+  '分享链接已复制': 'Share link copied',
   '粉红': 'Pink',
   '封面': 'Cover',
   '封装': 'Container',

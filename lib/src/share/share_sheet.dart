@@ -326,6 +326,9 @@ String _buildShareText(WidgetRef ref, QueueItem song, String url) {
 }
 
 /// 生成并复制分享链接。
+///
+/// 只复制裸链接：粘贴整段「邀请文案 + 链接」时，Edge 等浏览器会把
+/// 开头中文连链接一起当搜索词搜索，URL 永远不会被打开。
 Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) async {
   final (song2, _) = await _resolveLocalCover(ref, song);
   final url = await _ensureUrl(ref, song2);
@@ -334,8 +337,8 @@ Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) asyn
     return;
   }
   ref.read(shareServiceProvider).reportShareAction();
-  await Clipboard.setData(ClipboardData(text: _buildShareText(ref, song, url)));
-  showXianYuToastByOverlay(overlay, tr('分享文案已复制'));
+  await Clipboard.setData(ClipboardData(text: url));
+  showXianYuToastByOverlay(overlay, tr('分享链接已复制'));
 }
 
 /// 分享网页卡片到指定 QQ 场景（好友 / 空间）。
