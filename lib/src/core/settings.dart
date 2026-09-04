@@ -48,10 +48,11 @@ enum PlayerStyle {
   traditional,
 }
 
-/// 液态玻璃效果档位：low 透亮（CLEAR，零背景模糊+满档折射 24，最省电）/
-/// medium 均衡（BALANCED，轻模糊 4dp，默认）/ high 磨砂（FROSTED，重磨砂
-/// 24dp，折射收敛 8dp）。**逐值对齐 BiliPai 官方 LiquidGlassTuning.kt**，
-/// 参数见 glass_settings.dart 各 *_Of。
+/// 液态玻璃效果档位：low 透亮（轻模糊 1.5+满档折射 24，折射最明显）/
+/// medium 均衡（轻模糊 2.75，默认）/ high 磨砂（糊度上限 4，折射收敛 8）。
+/// 官方 LiquidGlassTuning.kt 原始锚点 0/4/24 已于 2026-09-05 按用户观感
+/// 重排收敛为轻模糊区间（原低档全透、原中档即糊度上限），参数见
+/// glass_settings.dart 各 *_Of。
 enum LiquidGlassQuality {
   low,
   medium,

@@ -1831,7 +1831,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       options:   [
         ModernChoiceOption(
             label: tr('低 · 透亮'),
-            subtitle: tr('水晶透亮，零背景模糊，最省电'),
+            subtitle: tr('轻透微磨，折射最明显'),
             value: LiquidGlassQuality.low,
             icon: Icons.battery_saver_outlined),
         ModernChoiceOption(
@@ -1841,7 +1841,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.tune_outlined),
         ModernChoiceOption(
             label: tr('高 · 磨砂'),
-            subtitle: tr('重磨砂，折射与饱和收敛'),
+            subtitle: tr('磨砂最重档，糊度上限'),
             value: LiquidGlassQuality.high,
             icon: Icons.blur_on),
       ],

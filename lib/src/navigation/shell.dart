@@ -1916,8 +1916,8 @@ class _LiquidNavBar extends ConsumerWidget {
     );
 
     if (liquid) {
-      // 液态玻璃全档走真 shader（BiliPai 三档配方：低=CLEAR 零模糊，
-      // 中=BALANCED 4dp，高=FROSTED 24dp），不再用伪液态毛玻璃充数。
+      // 液态玻璃全档走真 shader（BiliPai 三档：低/中=轻模糊区间，高=磨砂
+      // 上限 4dp），不再用伪液态毛玻璃充数。
       // 显隐动画窗口内不跑液态 shader（背板采样黑帧），退回纯色毛玻璃。
       if (settling) {
         return _frostedGlass(context, ref, tabs,
@@ -1938,10 +1938,9 @@ class _LiquidNavBar extends ConsumerWidget {
       radius: 30,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
-      // BiliPai 官方 LiquidGlassTuning 三档：轻度 CLEAR 零模糊（水晶玻璃，
-      // 「液态感」核心）、中度 BALANCED 4dp（官方默认档）、重度 FROSTED
-      // 24dp 重磨砂。4dp 走全分辨率模糊（cheapBackdropBlur 自适应降采样），
-      // 与 BiliPai 真高斯观感一致。
+      // 液态玻璃三档模糊（2026-09-05 用户定案重排）：低 1.5 轻透微磨 /
+      // 中 2.75 均衡 / 高 4 磨砂上限。走全分辨率模糊（cheapBackdropBlur
+      // 自适应降采样），与 BiliPai 真高斯观感一致。
       blurSigma: surfaceBlurSigma(
         base: bilipaiBackdropBlurOf(quality),
         budget: budget,

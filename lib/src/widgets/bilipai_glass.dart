@@ -21,7 +21,7 @@ typedef BackingOverlayCallback =
 /// - 着色器经 `BackdropFilterLayer` + `ImageFilter.shader` 绑定背景采样
 ///   （第一个 sampler 由引擎绑定到玻璃下方的实时内容），无需像旧 LiquidWave
 ///   那样整页离屏捕获，成本更低；
-/// - 全档真液态生效（BiliPai 三档配方：低/中=CLEAR 零模糊、高=BALANCED
+/// - 全档真液态生效（BiliPai 三档配方：低/中=轻模糊区间、高=磨砂上限，
 ///   4dp）；液态玻璃关闭时的毛玻璃回退走 [pseudoLiquidSurface]。
 ///
 /// **静止缓存（停下不动缓存当前效果）**：玻璃只分「背板」与「内容」两层——

@@ -255,13 +255,15 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 /// BiliPai 化液态玻璃背景模糊半径（逻辑像素）按档位映射。
-/// **逐值对齐官方 LiquidGlassTuning.kt**：backdropBlurRadius =
-/// midpointLerp(0, 4, 24, progress) → CLEAR 0（水晶玻璃，「液态感」核心）/
-/// BALANCED 4dp（原版默认档）/ FROSTED 24dp（重磨砂）。
+/// 官方 LiquidGlassTuning.kt 原始三锚点为 0 / 4 / 24（CLEAR/BALANCED/FROSTED）。
+/// **2026-09-05 用户定案重排**：原低档零模糊观感太透、原中档 4dp 糊度即可当
+/// 最强（更会把边带折射糊平——位移被高斯拉平后「只剩毛玻璃」，播放条拖拽时
+/// 尤其明显），故三档收敛为轻模糊区间：low 1.5（一点点模糊）/ medium 2.75
+/// （轻与强中间值）/ high 4.0（原中档糊度=用户认可的最强档）。
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
-      LiquidGlassQuality.low => 0.0,
-      LiquidGlassQuality.medium => 4.0,
-      LiquidGlassQuality.high => 24.0,
+      LiquidGlassQuality.low => 1.5,
+      LiquidGlassQuality.medium => 2.75,
+      LiquidGlassQuality.high => 4.0,
     };
 
 /// BiliPai 化液态玻璃边缘透镜折射幅度（逻辑像素）按档位映射。
