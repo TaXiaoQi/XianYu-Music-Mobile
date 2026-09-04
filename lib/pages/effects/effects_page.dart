@@ -19,6 +19,10 @@ class EffectsPage extends ConsumerWidget {
     final notifier = ref.read(soundEffectProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final locked = ref.watch(playerProvider.select((s) => s.usbExclusive));
+    final dspActive =
+        ref.watch(playerProvider.select((s) => s.dspActive));
+    final hasCurrent =
+        ref.watch(playerProvider.select((s) => s.current != null));
 
     // 横屏摄像头挖孔避让（参考主页侧边栏机制）：底色随根层铺满全屏、
     // 可以透到摄像头下方；内容（列表与顶栏文字/按钮）避开挖孔区。
@@ -71,6 +75,64 @@ class EffectsPage extends ConsumerWidget {
                               tr('Bit-perfect / DSD 直出中，音效已锁定'),
                               style: TextStyle(
                                   fontSize: 13, color: scheme.primary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (!locked && dspActive)
+                    Container(
+                      width: double.infinity,
+                      margin:
+                          const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: scheme.primary.withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.graphic_eq,
+                              size: 16, color: scheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              tr('音效引擎处理中（Rust DSP 管线）'),
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.primary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (!locked && !dspActive && hasCurrent)
+                    Container(
+                      width: double.infinity,
+                      margin:
+                          const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: scheme.outline.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: scheme.outline.withValues(alpha: 0.30)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16, color: scheme.outline),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              tr('当前播放未经过音效引擎，音效不生效'),
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.outline),
                             ),
                           ),
                         ],

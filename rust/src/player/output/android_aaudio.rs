@@ -248,39 +248,53 @@ impl SymphoniaDecoder {
         use symphonia::core::meta::MetadataOptions;
         use symphonia::core::probe::Hint;
 
-        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-
-        // 检查 QMC2 加密
-        let mut header = [0u8; 8];
-        let header_len = file.read(&mut header).unwrap_or(0);
-        file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-
-        let is_qmc = header_len >= 4 && looks_like_qmc_encrypted(&header[..header_len]);
-
-        // 动态分发：普通文件 vs QMC 解密包装
-        let mss: MediaSourceStream = if is_qmc {
-            // 读取文件末尾 1024 字节提取 ekey
-            let file_size = file.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
-            let tail_size = (file_size.min(1024)) as usize;
-            file.seek(SeekFrom::End(-(tail_size as i64))).map_err(|e| e.to_string())?;
-            let mut tail = vec![0u8; tail_size];
-            file.read_exact(&mut tail).ok();
-            file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-
-            let crypto = if let Some(ekey) = extract_ekey_from_footer(&tail) {
-                QmcCrypto::from_ekey(&ekey).unwrap_or_else(|_| QmcCrypto::qmc1())
-            } else {
-                QmcCrypto::qmc1()
-            };
-            let reader = QmcDecryptReader::new(file, crypto);
-            MediaSourceStream::new(Box::new(reader), Default::default())
-        } else {
-            MediaSourceStream::new(Box::new(file), Default::default())
-        };
+        // HTTP 流式源（本地回环代理转发的在线歌曲）：跳过本地文件相关检查，
+        // 扩展名从 URL 路径提取（去掉 query）供格式探测。
+        let is_http = path.starts_with("http://") || path.starts_with("https://");
 
         let mut hint = Hint::new();
-        if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
-            hint.with_extension(ext);
+        let mss: MediaSourceStream = if is_http {
+            if let Some(ext) = url_path_extension(path) {
+                hint.with_extension(&ext);
+            }
+            let reader = crate::player::http_source::HttpSeekableReader::open(path)?;
+            MediaSourceStream::new(Box::new(reader), Default::default())
+        } else {
+            let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+
+            // 检查 QMC2 加密
+            let mut header = [0u8; 8];
+            let header_len = file.read(&mut header).unwrap_or(0);
+            file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+
+            let is_qmc = header_len >= 4 && looks_like_qmc_encrypted(&header[..header_len]);
+
+            // 动态分发：普通文件 vs QMC 解密包装
+            if is_qmc {
+                // 读取文件末尾 1024 字节提取 ekey
+                let file_size = file.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
+                let tail_size = (file_size.min(1024)) as usize;
+                file.seek(SeekFrom::End(-(tail_size as i64))).map_err(|e| e.to_string())?;
+                let mut tail = vec![0u8; tail_size];
+                file.read_exact(&mut tail).ok();
+                file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+
+                let crypto = if let Some(ekey) = extract_ekey_from_footer(&tail) {
+                    QmcCrypto::from_ekey(&ekey).unwrap_or_else(|_| QmcCrypto::qmc1())
+                } else {
+                    QmcCrypto::qmc1()
+                };
+                let reader = QmcDecryptReader::new(file, crypto);
+                MediaSourceStream::new(Box::new(reader), Default::default())
+            } else {
+                MediaSourceStream::new(Box::new(file), Default::default())
+            }
+        };
+
+        if !is_http {
+            if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+                hint.with_extension(ext);
+            }
         }
 
         let probed = symphonia::default::get_probe()
@@ -510,6 +524,9 @@ pub fn start_exclusive_playback(
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
 
+    // 共享模式标记先取出：request 即将整体 move 进播放线程。
+    let shared_mode = request.shared_mode;
+
     let handle = thread::Builder::new()
         .name("xy-aaudio-exclusive".to_string())
         .spawn(move || {
@@ -517,8 +534,14 @@ pub fn start_exclusive_playback(
         })
         .map_err(|e| e.to_string())?;
 
-    // 等待初始化结果（3s 超时）
-    let device_name = match init_rx.recv_timeout(Duration::from_secs(3)) {
+    // 等待初始化结果。共享模式（在线流）需经代理向上游 CDN 拉取探测头，
+    // 网络耗时高于本地文件，放宽到 6s；超时由调用方回退 ExoPlayer。
+    let init_wait = if shared_mode {
+        Duration::from_secs(6)
+    } else {
+        Duration::from_secs(3)
+    };
+    let device_name = match init_rx.recv_timeout(init_wait) {
         Ok(Ok((name, sr, ch))) => {
             progress.sample_rate.store(sr, Ordering::Relaxed);
             progress.channels.store(ch as u32, Ordering::Relaxed);
@@ -530,7 +553,7 @@ pub fn start_exclusive_playback(
         }
         Err(_) => {
             let _ = handle.join();
-            return Err("AAudio 独占模式初始化超时".to_string());
+            return Err("AAudio 管线初始化超时".to_string());
         }
     };
 
@@ -1064,6 +1087,23 @@ fn run_exclusive_playback(
 fn is_dsd_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     lower.ends_with(".dsf") || lower.ends_with(".dff") || lower.ends_with(".dsd")
+}
+
+/// 从 URL 提取小写扩展名（去掉 query/fragment），供流式源格式探测。
+/// 无扩展名返回 None（此时 symphonia 依赖嗅探）。
+fn url_path_extension(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next()?;
+    let file = path.rsplit('/').next()?;
+    let ext = file.rsplit('.').next()?;
+    if ext.is_empty() || ext.len() == file.len() {
+        return None;
+    }
+    let lower = ext.to_ascii_lowercase();
+    // 仅接受合理扩展名形态（字母数字），排除版本号类路径段。
+    if !lower.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some(lower)
 }
 
 /// DSD 原生 DoP 直出：读 1-bit DSD 流按 DoP 1.0 打包成 24-bit 帧，

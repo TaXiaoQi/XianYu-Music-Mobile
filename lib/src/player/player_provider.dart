@@ -31,9 +31,12 @@ import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import '../widgets/app_toast.dart';
 import '../navigation/routes.dart';
+import 'audio_head_cache.dart';
+import 'audio_proxy_server.dart';
 import 'media_url.dart';
 import 'cast_provider.dart';
 import 'online_quality_probe.dart';
+import 'online_precache.dart';
 import '../i18n/i18n.dart';
 
 /// 全局系统控制中心 AudioHandler 句柄
@@ -726,7 +729,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       final sfx = _ref.read(soundEffectProvider).settings;
       final settings = _ref.read(settingsProvider).valueOrNull;
-      await startUsbExclusivePlayback(
+      final deviceName = await startUsbExclusivePlayback(
         path: path,
         // 共享 DSP 管线同样输出到「输出设备」所选设备（-1 = 系统默认，
         // 对齐桌面端共享模式可选输出设备）。
@@ -744,12 +747,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(usbExclusive: false, dspActive: true, isPlaying: isPlaying);
       _startExclusivePolling();
       _syncToSystemMediaSession();
+      AppLogger.instance.log('dsp', '共享 DSP 管线已接管播放: $deviceName');
       return true;
     } catch (e) {
       state = state.copyWith(dspActive: false);
-      // AAudio 库加载失败（API < 26 等）属于会话级不可用，避免每首歌都空等 3s 超时。
+      // AAudio 库加载失败（API < 26，错误信息含 libaaudio）属于会话级不可用，
+      // 避免每首歌都空等超时；网络超时/流创建失败仅单次回退，不禁用会话。
       final msg = e.toString();
-      if (msg.contains('AAudio') || msg.contains('aaudio')) {
+      if (msg.contains('libaaudio')) {
         _dspAvailable = false;
       }
       AppLogger.instance.log('dsp', '共享 DSP 管线启动失败，回退 ExoPlayer: $e');
@@ -2202,12 +2207,64 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
+  // —— 在线歌曲预缓存协作（online_precache.dart 调用）——
+
+  /// 歌曲级探测 key（与起播/音质菜单/下载共用一套注册表）。
+  String precacheProbeKey(Map<String, dynamic> songJson, QueueItem item) =>
+      _songProbeKey(songJson, item);
+
+  /// 确保歌曲级共享探针存在（预取探测结果与起播链路共享，播种直链）。
+  SongQualityProbe precacheProbeEnsure(
+    Map<String, dynamic> songJson,
+    QueueItem item,
+    String key,
+  ) =>
+      onlineQualityProbeRegistry.ensure(
+        key,
+        _buildResolveCallback(songJson, item),
+      );
+
+  /// 按播放设置的在线默认音质 + 回退策略推导候选链（与起播一致）。
+  List<String> precacheCandidates(String preferred, String fallback) =>
+      _qualityCandidates(preferred, fallback);
+
+  /// 本首在线歌起播成功后触发 next-5 预缓存
+  /// （音质直链播种 / 封面 / 歌词 / 15 秒片头，切歌秒开）。
+  void _triggerOnlinePrecache(QueueItem item) {
+    try {
+      if (!item.isOnline) return;
+      final s = _ref.read(settingsProvider).valueOrNull;
+      // 播放优先级：会话覆盖 > 设置的在线默认音质 > 歌曲自带档位。
+      final preferred = _sessionQualityOverride ??
+          s?.onlineDefaultQuality ??
+          item.onlineQuality ??
+          '320k';
+      final fb = s?.onlineQualityFallbackBehavior ?? 'lower';
+      OnlinePrecache.instance.schedule(
+        ref: _ref,
+        notifier: this,
+        queue: state.queue,
+        queueIndex: state.queueIndex,
+        playMode: state.playMode,
+        currentPath: state.current?.path ?? item.path,
+        preferred: preferred,
+        fallback: fb,
+      );
+    } catch (_) {
+      // 预缓存失败不影响播放。
+    }
+  }
+
   Future<void> _startUrl(String url, {Map<String, String>? headers}) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
     // 合并插件 headers 与按域名补齐的防盗链头（Referer/Origin/Accept）。
     final h = normalizeMediaRequestHeaders(clean, headers);
-    await _player.setUrl(clean, headers: h);
+    // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
+    await AudioProxyServer.instance.ensureStarted();
+    AudioHeadCache.instance.registerHeaders(clean, h);
+    final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    await _player.setUrl(playUrl, headers: h);
     await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
   }
@@ -2226,7 +2283,28 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
     final h = normalizeMediaRequestHeaders(clean, headers);
-    await _player.setUrl(clean, headers: h);
+    // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
+    await AudioProxyServer.instance.ensureStarted();
+    AudioHeadCache.instance.registerHeaders(clean, h);
+    // 在线歌曲优先走共享 DSP 管线（音效全链生效）：经本地代理转发（代理注入
+    // 插件请求头），Rust 侧 HTTP Range 流式解码。失败（死链/超时/流创建失败）
+    // 回退 ExoPlayer 原路径。
+    final proxyUrl = AudioProxyServer.instance.proxyUrlFor(clean);
+    if (proxyUrl != null) {
+      // 先停掉 ExoPlayer 残留音源（上一首可能仍在其上出声），避免双声重叠。
+      try {
+        await _player.stop();
+      } catch (_) {}
+      final ok = await _tryStartDspPipeline(proxyUrl,
+          startAtSecs: 0, isPlaying: true);
+      if (ok) {
+        // 本首起播成功：预取队列后续 ≤5 首在线歌的直链/封面/歌词/15 秒片头。
+        _triggerOnlinePrecache(item);
+        return;
+      }
+    }
+    final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    await _player.setUrl(playUrl, headers: h);
     final declaredMs = item.durationMs;
     final actualMs = _player.duration?.inMilliseconds ?? 0;
     if (declaredMs >= 30000 && actualMs > 0 && actualMs < 5000) {
@@ -2236,6 +2314,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
+    // 本首起播成功：预取队列后续 ≤5 首在线歌的直链/封面/歌词/15 秒片头。
+    _triggerOnlinePrecache(item);
   }
 
   /// 按候选音质依次调用 lxResolveUrl（已导入插件 → 公共 API），
@@ -2494,11 +2574,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
 
       if (format == 'musicfree') {
-        // MusicFree 插件：调用 getMediaSource(musicItem, quality)，内部做音质降级映射。
+        // MusicFree 插件：单档只调一次 getMediaSource（对齐桌面 tryPairs 语义），
+        // 音质降级由外层候选链逐档负责。单档内部级联会把一次探测放大成
+        // 4-8 次串行插件请求，极易击穿起播总超时导致「直链解析失败」。
         return await engine.getMusicFreeUrl(
           source.first,
           musicInfo,
           preferred: quality,
+          fallback: 'pause',
         );
       }
 

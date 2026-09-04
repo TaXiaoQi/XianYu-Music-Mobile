@@ -554,15 +554,13 @@ class PluginEngine {
     }
 
     // 主路径：MF 四级键按 asc 顺序尝试；记录是否出现「不支持音质」错误。
+    // 单档 = 1 次调用（降级由调用方候选链逐档负责），失败延迟重试 1 次
+    // （对齐桌面 pluginEngineMedia 每档重试语义，吸收插件网络抖动）。
     final tryQs = _musicFreeQualityCandidates(preferred, fallback, declaredKeys);
     var unsupportedQuality = false;
     for (final q in tryQs) {
       try {
-        final response = await call(
-          source.id,
-          'getMediaSource',
-          [musicItem, q],
-        );
+        final response = await _callGetMediaSourceWithRetry(source.id, musicItem, q);
         final url = extractMfPlayableUrl(response, requestedKey: q);
         if (url != null) return url;
       } catch (e) {
@@ -578,11 +576,8 @@ class PluginEngine {
       for (final q in _musicFreeNativeCandidates(preferred, fallback, declaredKeys)) {
         if (tried.contains(q)) continue;
         try {
-          final response = await call(
-            source.id,
-            'getMediaSource',
-            [musicItem, q],
-          );
+          final response =
+              await _callGetMediaSourceWithRetry(source.id, musicItem, q);
           final url = extractMfPlayableUrl(response, requestedKey: q);
           if (url != null) return url;
         } catch (_) {
@@ -591,6 +586,20 @@ class PluginEngine {
       }
     }
     return null;
+  }
+
+  /// 单档 getMediaSource 调用 + 失败延迟重试 1 次（对齐桌面每档重试）。
+  /// 「不支持音质」属确定性失败，直接抛出不重试；空结果由调用方按下一档处理。
+  Future<dynamic> _callGetMediaSourceWithRetry(
+      String pluginId, Map<String, dynamic> musicItem, String q) async {
+    try {
+      return await call(pluginId, 'getMediaSource', [musicItem, q]);
+    } catch (e) {
+      final msg = e is PluginEngineException ? e.message : e.toString();
+      if (isUnsupportedQualityError(msg)) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      return call(pluginId, 'getMediaSource', [musicItem, q]);
+    }
   }
 
   /// 从插件 getMediaSource 返回中提取可播放直链（公开：Baka 管理器复用）。
