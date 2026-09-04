@@ -1,11 +1,9 @@
 // url_resolver.rs - LX 音源 URL 解析与封面获取
 //
 // 将前端 lxMusicSdk.ts 中的 lxGetMusicUrl / lxGetPic 迁移到 Rust。
-// 通过公共 API 代理服务解析音频链接，与 lx-music-desktop 的 api-test.js 一致。
+// 播放直链经已导入的 LX 音源插件解析（原公共 API 代理已失效，2026-09-04 移除）。
 //
 // 支持的音源：kw / kg / tx / wy / mg
-// 主 API: https://lxmusicapi.onrender.com
-// 备用 API: http://ts.tempmusics.tk
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -144,28 +142,6 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
-async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
-    let client = http_client();
-
-    let mut req = client.get(url).timeout(Duration::from_secs(15));
-    for (key, value) in headers {
-        req = req.header(*key, *value);
-    }
-
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-
-    if status == 429 {
-        return Err("请求过于频繁，请稍后再试".to_string());
-    }
-    if status != 200 {
-        return Err(format!("HTTP {} for {}", status, url));
-    }
-
-    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
-}
-
 // ==================== URL Resolution ====================
 
 /// 根据音源和歌曲信息解析出实际播放 URL
@@ -244,19 +220,8 @@ pub async fn resolve_lx_music_url_with_plugins(
         }
     }
 
-    // 回退：公共 API
-    match resolve_url_via_api(&source, &id, quality).await {
-        Ok(url) => {
-            set_cached_url(&source, &id, quality, url.clone()).await;
-            Some(ResolvedUrl {
-                url,
-                quality: quality.to_string(),
-            })
-        }
-        Err(_) => {
-            None
-        }
-    }
+    // 无插件可用或插件解析失败：快速失败（原公共 API 代理已 403/503 失效，移除）。
+    None
 }
 
 /// 调用插件解析直链。
@@ -286,48 +251,6 @@ async fn resolve_via_plugins(
     crate::plugins::manager::resolve_url_with_plugins(data_dir, source, &info_json, quality)
         .await
         .ok()
-}
-
-/// 通过公共 API 代理解析音频 URL
-///
-/// 主 API: https://lxmusicapi.onrender.com/url/{source}/{id}/{type}
-/// 备用 API: http://ts.tempmusics.tk/url/{source}/{id}/{type}
-async fn resolve_url_via_api(source: &str, id: &str, quality: &str) -> Result<String, String> {
-    let headers = [("User-Agent", "lx-music request")];
-
-    // 主 API
-    let primary_url = format!(
-        "https://lxmusicapi.onrender.com/url/{}/{}/{}",
-        source, id, quality
-    );
-    match http_get_json(&primary_url, &headers).await {
-        Ok(body) => {
-            if let Some(data) = body.get("data").and_then(|d| d.as_str()) {
-                if !data.is_empty() {
-                    return Ok(data.to_string());
-                }
-            }
-        }
-        Err(_) => {}
-    }
-
-    // 备用 API
-    let fallback_url = format!("http://ts.tempmusics.tk/url/{}/{}/{}", source, id, quality);
-    match http_get_json(&fallback_url, &headers).await {
-        Ok(body) => {
-            if let Some(data) = body.get("data").and_then(|d| d.as_str()) {
-                if !data.is_empty() {
-                    return Ok(data.to_string());
-                }
-            }
-            let msg = body
-                .get("msg")
-                .and_then(|m| m.as_str())
-                .unwrap_or("未知错误");
-            Err(format!("获取播放链接失败: {}", msg))
-        }
-        Err(e) => Err(format!("获取播放链接失败: {}", e)),
-    }
 }
 
 // ==================== Cover URL Resolution ====================
