@@ -790,26 +790,25 @@ class RenderLiquidBacking extends RenderBox {
       Offset.zero & size,
       clipPath,
       (context, offset) {
-        // Pass1（下）：真高斯模糊背景（Halcyon blur(4dp)）。
-        // 拖拽中在层 child 注入 1/255 透明度的逐帧交替像素（视觉不可见）：
-        // Impeller 背板快照对「被采样内容静止」的玻璃平移场景按内容版本
-        // 缓存——层实例与 filter 实例已双新建（见上），但内容版本未变仍
-        // 命中拖拽起点的旧背板，表现为「播放条拖动毛玻璃不跟随、页面滚动
-        // 才有液态效果」。child 内容逐帧变化强制背板重抓；滚动/转场路径
-        // 被采样内容本就在变，child 恒空零开销。
+        // 拖拽中在 blur 层 push【之前】画 1/255 透明度逐帧黑白交替像素（视觉
+        // 不可见）。BackdropFilter 的背板输入 = 该层 push 时画布上已有的内容
+        // ——像素画在这里才属于背板输入，逐帧变化即强制引擎重抓背板，玻璃
+        // 平移时模糊/折射跟随。此前把像素画在 blurLayer 的 child 里属于滤镜
+        // 输出侧，根本不进背板输入，故「拖动毛玻璃不跟随」依旧。滚动/转场
+        // 路径被采样内容本就在变，恒不画、零开销。
         if (globalIsDragging.value) {
           final parity = (uiTime * 1000).toInt().isEven;
-          context.pushLayer(blurLayer, (context, offset) {
-            context.canvas.drawRect(
-              offset & const Size(1, 1),
-              Paint()
-                ..color = (parity ? Colors.black : Colors.white)
-                    .withValues(alpha: 1 / 255),
-            );
-          }, offset);
-        } else {
-          context.pushLayer(blurLayer, (context, offset) {}, offset);
+          // 画在玻璃中心：左上角原点在圆角裁剪弧外会被 clipPath 裁掉。
+          context.canvas.drawRect(
+            offset.translate(size.width / 2, size.height / 2) &
+                const Size(1, 1),
+            Paint()
+              ..color = (parity ? Colors.black : Colors.white)
+                  .withValues(alpha: 1 / 255),
+          );
         }
+        // Pass1（下）：真高斯模糊背景（Halcyon blur(4dp)）。
+        context.pushLayer(blurLayer, (context, offset) {}, offset);
         // Pass2（上）：折射 shader 采样上面的模糊结果做边缘透镜位移，
         // 并铺底色/饱和度/抖动——整块玻璃含边带全是模糊内容（BiliPai 同序）。
         context.pushLayer(shaderLayer, (context, offset) {}, offset);
