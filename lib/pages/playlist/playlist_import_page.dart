@@ -659,6 +659,14 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       );
       final sheets = await catalog.searchSheets(source, keyword);
       if (!mounted) return;
+      if (sheets.isEmpty) {
+        // 兜底：插件实现 importMusicItem 时，链接可能指向单曲，尝试单曲导入。
+        final single = await catalog.importMusicItem(source, keyword);
+        if (single != null) {
+          await _importSingleSong(source, single);
+          return;
+        }
+      }
       setState(() {
         _sheets = sheets;
         if (sheets.isEmpty) _error = tr('未找到匹配的歌单，换个关键词或链接试试');
@@ -739,6 +747,34 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       _toast(tr('导入失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  /// 单曲导入兜底：插件 importMusicItem 解析出的单曲直接建歌单写入。
+  Future<void> _importSingleSong(
+      PluginSource source, PluginSearchResult song) async {
+    try {
+      final rename = _renameCtrl.text.trim();
+      final name = rename.isNotEmpty ? rename : song.name;
+      final manager = ref.read(playlistManagerProvider.notifier);
+      await manager.create(name);
+      final created = ref.read(playlistManagerProvider).playlists;
+      if (created.isEmpty) {
+        if (!mounted) return;
+        _toast(tr('歌单创建失败'));
+        return;
+      }
+      await manager.addSongs(created.last.id, [
+        importedSongFromQueueItem(
+            PluginCatalogService.toQueueItem(source, song)),
+      ]);
+      if (!mounted) return;
+      _toast(tr('已导入单曲「{name}」', {'name': song.name}));
+    } catch (e) {
+      if (!mounted) return;
+      _toast(tr('导入失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _searching = false);
     }
   }
 

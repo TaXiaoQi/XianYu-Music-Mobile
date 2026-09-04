@@ -170,6 +170,18 @@ class PluginCatalogService {
   Future<List<PluginSearchResult>> getMusicSheetInfo(
       PluginSource source, Map<String, dynamic> item,
       {int page = 1}) async {
+    // importMusicSheet 导入的收藏夹歌单：曲目已整单缓存，直接返回
+    // （对齐桌面 pluginCatalogDetails 的 _importedTracks 快径，免翻页）。
+    final imported = _importedTracksOf(item);
+    if (imported != null) {
+      if (page != 1) return const [];
+      return _maybeFillQqDurations(
+          source,
+          imported
+              .map((e) => mfItemToSearchResult(e, source))
+              .where((r) => r.name.isNotEmpty)
+              .toList());
+    }
     final methods = await _availableMethods(source);
     if (methods.contains('getMusicSheetInfo')) {
       final list =
@@ -191,6 +203,17 @@ class PluginCatalogService {
   Future<({List<PluginSearchResult> songs, bool? isEnd})> getMusicSheetInfoWithEnd(
       PluginSource source, Map<String, dynamic> item,
       {int page = 1}) async {
+    // importMusicSheet 导入的收藏夹歌单快径（同上，对齐桌面）。
+    final imported = _importedTracksOf(item);
+    if (imported != null) {
+      final songs = page == 1
+          ? imported
+              .map((e) => mfItemToSearchResult(e, source))
+              .where((r) => r.name.isNotEmpty)
+              .toList()
+          : const <PluginSearchResult>[];
+      return (songs: await _maybeFillQqDurations(source, songs), isEnd: true);
+    }
     final methods = await _availableMethods(source);
     if (methods.contains('getMusicSheetInfo')) {
       final raw = await _tryCallRaw(source, 'getMusicSheetInfo', [item, page]);
@@ -218,7 +241,63 @@ class PluginCatalogService {
     return (songs: const <PluginSearchResult>[], isEnd: true);
   }
 
-  /// 歌单搜索：sheet → playlist → 专辑回退（专辑也按歌单索引，对齐桌面）。
+  /// 提取歌单条目上缓存的整单导入曲目（importMusicSheet 写入 raw['_importedTracks']）。
+  List<Map<String, dynamic>>? _importedTracksOf(Map<String, dynamic> item) {
+    final raw = item['_importedTracks'];
+    if (raw is List && raw.isNotEmpty) {
+      return raw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    }
+    return null;
+  }
+
+  /// 插件是否实现 importMusicSheet 整单导入。
+  Future<bool> supportsSheetImport(PluginSource source) =>
+      _availableMethods(source).then((m) => m.contains('importMusicSheet'));
+
+  /// 插件原生整单导入：importMusicSheet(urlLike)（收藏夹链接/ID 等，由插件解析）。
+  /// 返回原始条目（保留插件原始字段，供合成歌单 raw 缓存与详情页映射）。
+  Future<List<Map<String, dynamic>>> _importSheetRaw(
+      PluginSource source, String urlLike) async {
+    final methods = await _availableMethods(source);
+    if (!methods.contains('importMusicSheet')) return const [];
+    return _tryCallRawList(source, 'importMusicSheet', [urlLike]);
+  }
+
+  /// 插件原生整单导入（映射为搜索结果，上限 2000，对齐桌面 pluginImportMusicSheet）。
+  Future<List<PluginSearchResult>> importMusicSheet(
+      PluginSource source, String urlLike) async {
+    final raw = await _importSheetRaw(source, urlLike);
+    if (raw.isEmpty) return const [];
+    final songs = raw
+        .map((e) => mfItemToSearchResult(e, source))
+        .where((r) => r.name.isNotEmpty)
+        .take(2000)
+        .toList();
+    return _maybeFillQqDurations(source, songs);
+  }
+
+  /// 插件原生单曲导入：importMusicItem(urlLike)，成功返回单曲搜索结果。
+  Future<PluginSearchResult?> importMusicItem(
+      PluginSource source, String urlLike) async {
+    final methods = await _availableMethods(source);
+    if (!methods.contains('importMusicItem')) return null;
+    final raw = await _tryCallRaw(source, 'importMusicItem', [urlLike]);
+    if (raw == null) return null;
+    Map<String, dynamic>? item;
+    if (raw is Map && (raw['id'] != null || raw['songmid'] != null)) {
+      item = raw.cast<String, dynamic>();
+    } else {
+      final list = extractMfResultList(raw);
+      if (list.isNotEmpty) item = list.first;
+    }
+    if (item == null) return null;
+    final r = mfItemToSearchResult(item, source);
+    return r.name.isEmpty ? null : r;
+  }
+
+  /// 歌单搜索：sheet → playlist → 专辑回退（专辑也按歌单索引，对齐桌面）；
+  /// 全部为空且插件实现 importMusicSheet 时，回退解析收藏夹链接/ID
+  /// （对齐桌面 pluginCatalogSearch 回退 1，合成收藏夹歌单条目）。
   Future<List<MfSheetItem>> searchSheets(
       PluginSource source, String keyword) async {
     for (final type in ['sheet', 'playlist', 'album']) {
@@ -229,6 +308,27 @@ class PluginCatalogService {
         return _toSheet(m, source);
       }).where((s) => s.title.isNotEmpty).toList();
       if (sheets.isNotEmpty) return sheets;
+    }
+    // 回退：importMusicSheet（用户输入收藏夹 URL/ID 时）。
+    final rawTracks = await _tryCallRawList(source, 'importMusicSheet', [keyword]);
+    if (rawTracks.isNotEmpty) {
+      final title = tr('{name}收藏夹', {'name': source.name});
+      return [
+        MfSheetItem(
+          id: keyword,
+          title: title,
+          coverUrl: _extractCover(rawTracks.first),
+          trackCount: rawTracks.length,
+          platform: source.name,
+          pluginId: source.id,
+          raw: {
+            'id': keyword,
+            'title': title,
+            // 整单曲目缓存：详情页/导入走快径免翻页（对齐桌面 _importedTracks）。
+            '_importedTracks': rawTracks,
+          },
+        ),
+      ];
     }
     return const [];
   }

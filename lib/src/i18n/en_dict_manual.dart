@@ -1311,6 +1311,8 @@ const Map<String, String> enDictManual = {
   '移除失败：{e}': 'Remove failed: {e}',
   '已创建歌单「{name}」，共导入 {n} 首歌曲': 'Playlist "{name}" created with {n} songs imported',
   '已导入「{name}」，共 {n} 首歌曲': 'Imported "{name}" with {n} songs',
+  '已导入单曲「{name}」': 'Imported single song "{name}"',
+  '{name}收藏夹': '{name} Favorites',
   '已复制{label}：{text}': 'Copied {label}: {text}',
   '已过滤时长小于 {n} 秒的音频文件': 'Filtered audio files shorter than {n} seconds',
   '已将 {n} 首歌曲导入到歌单「{name}」': 'Imported {n} songs into "{name}"',
