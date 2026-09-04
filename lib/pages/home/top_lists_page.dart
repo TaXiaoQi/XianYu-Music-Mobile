@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
@@ -125,46 +126,64 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final statusBar = MediaQuery.paddingOf(context).top;
+    final embedded = widget.embedded;
+    // 竖屏悬浮顶栏模式（横屏面板内嵌不参与）：顶栏自动换装玻璃胶囊组，
+    // 来源条独立悬浮于顶栏下方，榜单网格铺满全屏、滚动时从顶栏与来源条
+    // 下方穿过（穿透观感，与搜索结果页同口径）。
+    final floating = !embedded &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
+    // 固定模式：来源条并入顶栏本体（bottom 底段，同材质同分割线），不再
+    // 悬在页面底色上形成「灰带」；壁纸模式下来源条与工具行拉开 8px。
+    final wallpaperGap = ref.watch(wallpaperActiveProvider) ? 8.0 : 0.0;
+    final chromeBottom = _sources.isEmpty
+        ? null
+        : PreferredSizeProxy(
+            height: 40 + wallpaperGap,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(height: wallpaperGap),
+                _buildSourceBar(),
+              ],
+            ),
+          );
+    // 悬浮模式网格顶部避让：顶栏胶囊列（状态栏+8+48）+ 间距10 + 来源条40
+    // + 呼吸6；固定/内嵌走原 Padding 避让结构，网格自带 8px 顶距。
+    final contentTop =
+        floating ? statusBar + 8 + 48 + 10 + 40 + 6 : null;
+
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-                top: widget.embedded ? 0 : GlassTopBar.height(context)),
-            child: Column(
-              children: [
-                if (_sources.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                    // 来源插件切换条：拆成独立玻璃气泡，不再用一个大泡包裹全部来源。
-                    child: SizedBox(
-                      height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        children: [
-                          for (final s in _sources)
-                            Padding(
-                              key: _chipKeys[s.id],
-                              padding: const EdgeInsets.only(right: 8),
-                              child: FloatingSourcePill(
-                                name: s.name,
-                                selected: _selectedId == s.id,
-                                onTap: () =>
-                                    _selectSource(_sources.indexOf(s)),
-                              ),
-                            ),
-                        ],
-                      ),
+          if (floating)
+            Positioned.fill(child: _buildBody(scheme, contentTop: contentTop))
+          else
+            Padding(
+              padding:
+                  EdgeInsets.only(top: embedded ? 0 : GlassTopBar.height(context)),
+              child: Column(
+                children: [
+                  if (embedded && _sources.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: _buildSourceBar(),
                     ),
-                  ),
-                Expanded(child: _buildBody(scheme)),
-              ],
+                  Expanded(child: _buildBody(scheme)),
+                ],
+              ),
             ),
-          ),
-          if (!widget.embedded)
+          if (floating)
+            Positioned(
+              top: statusBar + 8 + 48 + 10,
+              left: 12,
+              right: 12,
+              child: _buildSourceBar(floating: true),
+            ),
+          if (!embedded)
             Positioned(
               top: 0,
               left: 0,
@@ -175,6 +194,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                   onPressed: () => context.pop(),
                 ),
                 title: Text(tr('音源榜单')),
+                bottom: floating ? null : chromeBottom,
               ),
             ),
         ],
@@ -182,7 +202,35 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     );
   }
 
-  Widget _buildBody(ColorScheme scheme) {
+  /// 来源插件切换条：与搜索结果页一致，独立玻璃气泡（[FloatingSourcePill]）。
+  /// [floating]=悬浮顶栏模式（居于顶栏下方悬浮行，内边距 2）；固定模式并入
+  /// 顶栏底段（内边距 14，与工具行对齐）。
+  Widget _buildSourceBar({bool floating = false}) {
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.symmetric(horizontal: floating ? 2 : 14),
+        children: [
+          for (final s in _sources)
+            Padding(
+              key: _chipKeys[s.id],
+              padding: const EdgeInsets.only(right: 8),
+              child: FloatingSourcePill(
+                name: s.name,
+                selected: _selectedId == s.id,
+                onTap: () => _selectSource(_sources.indexOf(s)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// [contentTop]=悬浮模式下注入网格滚动 padding.top 的顶部避让量
+  /// （内容从顶栏与来源条下方穿过）；固定/内嵌为 null，网格自带 8px 顶距。
+  Widget _buildBody(ColorScheme scheme, {double? contentTop}) {
     if (_checking) {
       return Center(
         child: Column(
@@ -214,11 +262,16 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
       controller: ctrl,
       itemCount: _sources.length,
       onPageChanged: _onPageChanged,
-      itemBuilder: (context, i) => _buildSourcePage(scheme, _sources[i]),
+      itemBuilder: (context, i) =>
+          _buildSourcePage(scheme, _sources[i], contentTop: contentTop),
     );
   }
 
-  Widget _buildSourcePage(ColorScheme scheme, PluginSource source) {
+  Widget _buildSourcePage(
+    ColorScheme scheme,
+    PluginSource source, {
+    double? contentTop,
+  }) {
     final boards = _boardsCache[source.id];
     if (boards == null) {
       return Center(
@@ -239,10 +292,15 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
       return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
     // 横屏容器内嵌：卡片对齐发现页音源榜单小尺寸（~92 宽、圆角 10、标题 12），
-    // 用 maxCrossAxisExtent 让列宽贴近发现页小卡，而非固定 3 列大网格。
+    // 用 maxCrossAxisExtent 让列宽贴近发现页小卡，而非固定 3 列大卡。
     final isEmbedded = widget.embedded;
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(14, 8, 14, MediaQuery.of(context).padding.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        contentTop ?? 8,
+        14,
+        MediaQuery.of(context).padding.bottom + 24,
+      ),
       gridDelegate: isEmbedded
           ? const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 92,

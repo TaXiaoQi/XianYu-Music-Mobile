@@ -174,3 +174,22 @@ class GlassTopBar extends ConsumerWidget {
     );
   }
 }
+
+/// 任意 Widget 的 PreferredSize 包装：让组合底段（内容 tab + 来源条等）能作为
+/// [GlassTopBar] 的 bottom 参与总高与避让计算（height 由调用方按内容实算）。
+class PreferredSizeProxy extends StatelessWidget implements PreferredSizeWidget {
+  const PreferredSizeProxy({
+    super.key,
+    required this.height,
+    required this.child,
+  });
+
+  final double height;
+  final Widget child;
+
+  @override
+  Size get preferredSize => Size.fromHeight(height);
+
+  @override
+  Widget build(BuildContext context) => child;
+}

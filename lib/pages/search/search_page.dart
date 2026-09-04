@@ -664,11 +664,28 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final statusBar = MediaQuery.paddingOf(context).top;
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
-    // 内容初始避让量：悬浮=悬浮列高度（首行44 + 间距10 + Tab气泡48 +
-    // 间距10 + 来源独立气泡40）；固定=GlassTopBar（含内容 tab）。
+    // 壁纸模式下来源气泡与上方切换 tab 拉开一点间距，避免贴死。
+    final wallpaperGap = ref.watch(wallpaperActiveProvider) ? 8.0 : 0.0;
+    // 顶栏底段：内容 tab + 来源切换条（固定模式并入顶栏本体，同材质同分割线，
+    // 不再是悬在页面底色上的「灰带」；悬浮模式由 FloatingSearchTopBar.bottomPill
+    // 承载同款来源条）。两种模式顶栏总高都含来源条。
+    final chromeBottom = PreferredSizeProxy(
+      height: tabBar.preferredSize.height + wallpaperGap + 40,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          tabBar,
+          SizedBox(height: wallpaperGap),
+          _buildSourceBar(),
+        ],
+      ),
+    );
+    // 内容初始避让量：两种模式顶栏总高（含内容 tab 与来源条）+ 6px 呼吸间距。
+    // 悬浮=首行44 + 间距10 + Tab气泡48 + 间距10 + 来源独立气泡40；
+    // 固定=工具行56 + 内容tab48 + 来源条40。
     final topInset = floating
         ? statusBar + 8 + 44 + 10 + 48 + 10 + 40
-        : GlassTopBar.height(context, bottom: tabBar);
+        : GlassTopBar.height(context, bottom: chromeBottom);
 
     return AppPageBackground(
       child: Scaffold(
@@ -679,7 +696,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
           // 结果列表铺满全屏：避让量注入列表滚动 padding，滚动时内容从顶栏
           // 与来源条下方穿过（悬浮穿透观感）。
           Positioned.fill(
-            child: _withContentTopInset(contentArea, topInset + 46),
+            child: _withContentTopInset(contentArea, topInset + 6),
           ),
           if (floating)
             Positioned(
@@ -705,21 +722,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 bottomPill: _buildSourceBar(floating: true),
               ),
             )
-          else ...[
-            // 来源切换条悬浮吸顶（玻璃气泡自带材质，铺实色底板在壁纸反色下
-            // 会遮挡来源，故不再包 ColoredBox）。
-            Positioned(
-              top: topInset,
-              left: 0,
-              right: 0,
-              child: Padding(
-                // 壁纸模式下来源气泡与上方切换 tab 拉开一点间距，避免贴死。
-                padding: EdgeInsets.only(
-                  top: ref.watch(wallpaperActiveProvider) ? 8 : 0,
-                ),
-                child: _buildSourceBar(),
-              ),
-            ),
+          else
             Positioned(
               top: 0,
               left: 0,
@@ -763,10 +766,9 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                   onPressed: _goToSearchPage,
                 ),
               ],
-              bottom: tabBar,
+              bottom: chromeBottom,
               ),
             ),
-          ],
           // 搜索结果页显示迷你播放条；搜索在线页（历史+热搜）不显示。
           const BottomPlayBarSlot(),
         ],
