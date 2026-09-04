@@ -7,6 +7,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/core/settings.dart';
 import '../../src/update/app_update.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -180,15 +181,23 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       if (_config.referenceProjectUrl.isNotEmpty)
         (icon: Icons.book_outlined, label: tr('参考项目'), url: _config.referenceProjectUrl),
     ];
+    // 竖屏悬浮顶栏：列表铺满全屏、避让量注入列表 padding，滚动时内容从顶栏
+    // 胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由横屏壳层顶栏
+    // 承接，不参与悬浮。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-                top: widget.embedded ? 0 : GlassTopBar.height(context)),
-            child: ListView(
-        padding: const EdgeInsets.all(24),
+          _floatHost(
+            portraitFloating,
+            ListView(
+        padding: EdgeInsets.fromLTRB(
+            24, portraitFloating ? GlassTopBar.height(context) + 6 : 24, 24, 24),
         children: [
           // 品牌区
           Center(
@@ -332,6 +341,17 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
         ],
       ),
+    );
+  }
+
+  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
+  /// 模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
+  Widget _floatHost(bool floating, Widget child) {
+    if (floating) return Positioned.fill(child: child);
+    return Padding(
+      padding: EdgeInsets.only(
+          top: widget.embedded ? 0 : GlassTopBar.height(context)),
+      child: child,
     );
   }
 }

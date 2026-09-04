@@ -1,4 +1,4 @@
-﻿import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/sync/sync_provider.dart' show syncProvider;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/user_agreement.dart';
@@ -194,6 +195,13 @@ class _AccountPageState extends ConsumerState<AccountPage>
         _showSessionExpiredDialog();
       });
     }
+    // 竖屏悬浮顶栏：内容在胶囊下方留 6px 呼吸，环境背景从顶栏下方穿过
+    // （嵌入态由横屏壳层顶栏承接，不参与悬浮）。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
@@ -204,7 +212,9 @@ class _AccountPageState extends ConsumerState<AccountPage>
           SafeArea(
             top: false,
             child: Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+              padding: EdgeInsets.only(
+                  top: GlassTopBar.height(context) +
+                      (portraitFloating ? 6 : 0)),
               child: auth.isLoggedIn
                   ? _ProfileView(
                       user: auth.user!,
