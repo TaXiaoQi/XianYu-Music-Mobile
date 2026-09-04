@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/settings.dart';
+import 'floating_search_bar.dart';
 
 /// 纯色平面顶栏（无毛玻璃材质）：与横屏 master-detail 右侧分类标题条同款
 /// 观感（纯底色 + 16/w600 标题），「音源」「意见反馈」等页面竖屏路由与横屏
@@ -6,7 +10,7 @@ import 'package:flutter/material.dart';
 ///
 /// 高度公式与 [GlassTopBar.height] 一致（状态栏 + kToolbarHeight + bottom），
 /// 页面内容区顶部 Padding 无需改动。
-class FlatTopBar extends StatelessWidget {
+class FlatTopBar extends ConsumerWidget {
   const FlatTopBar({
     super.key,
     this.leading,
@@ -34,7 +38,32 @@ class FlatTopBar extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 竖屏悬浮顶栏模式：与 [GlassTopBar] 同口径整条换装玻璃胶囊组（总高一致，
+    // 页面避让零改动）；横屏保持固定平面形态（横屏有壳层全局胶囊顶栏）。
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final floating = !landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
+    if (floating) {
+      return floatingChromeBar(
+        context,
+        leading: leading,
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.3,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        actions: actions,
+        bottom: bottom,
+      );
+    }
     return Container(
       color:
           backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,

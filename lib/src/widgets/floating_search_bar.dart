@@ -6,6 +6,7 @@ import '../i18n/i18n.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
+import 'page_search_bar.dart';
 
 /// 首页/我的页「悬浮搜索框」：独立悬浮胶囊，固定悬浮在顶栏下方，不随内容滚动。
 ///
@@ -547,4 +548,123 @@ class FloatingSearchTopBar extends StatelessWidget {
       ],
     );
   }
+}
+
+/// 二级页悬浮顶栏通用骨架（竖屏悬浮顶栏模式）：[返回玻璃钮] + [标题胶囊] +
+/// 右侧玻璃钮，可选底部附加条（搜索胶囊 / Tab 气泡）。供 [GlassTopBar] /
+/// [FlatTopBar] 在悬浮模式下整条换装复用——总高度与固定形态逐像素一致
+/// （状态栏 + kToolbarHeight + bottom.preferredSize.height），页面内容顶部
+/// 避让零改动。
+Widget floatingChromeBar(
+  BuildContext context, {
+  Widget? leading,
+  required Widget title,
+  List<Widget> actions = const [],
+  PreferredSizeWidget? bottom,
+}) {
+  final statusBar = MediaQuery.paddingOf(context).top;
+  final bottomH = bottom?.preferredSize.height ?? 0;
+  // 返回钮 + 间距（leading 为 null 时为空，避免集合内 if 判空展开触发 lint）。
+  final lead = leading == null
+      ? const <Widget>[]
+      : [
+          _chromeGlassAction(context, leading),
+          const SizedBox(width: 10),
+        ];
+  Widget? bottomRow;
+  if (bottom is PageSearchBarBottom) {
+    // 搜索胶囊行：44 高胶囊撑满宽度（与壳层悬浮顶栏搜索胶囊同口径），
+    // 在原 band 高度内垂直居中，总高不变。
+    bottomRow = SizedBox(
+      height: bottomH,
+      child: Align(
+        alignment: Alignment.center,
+        child: FloatingSearchBar(
+          onTap: bottom.onTap,
+          onRecognize: bottom.onRecognize,
+        ),
+      ),
+    );
+  } else if (bottom != null) {
+    // TabBar 等附加条：悬浮 Tab 气泡原高包裹（收藏/反馈/榜单等页同款）。
+    bottomRow = FloatingTabPill(height: bottomH, child: bottom);
+  }
+  return Padding(
+    padding: EdgeInsets.fromLTRB(12, statusBar + 8, 12, 0),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 标题行：上浮 8 + 行高 48 = kToolbarHeight(56)，与固定形态总高逐像素
+        // 一致；40/44 高胶囊在行内垂直居中。
+        SizedBox(
+          height: kToolbarHeight - 8,
+          child: Row(
+            children: [
+              ...lead,
+              BiliPaiPill(
+                radius: 20,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: SizedBox(
+                    height: 40,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: DefaultTextStyle(
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        child: title,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              for (final a in actions) ...[
+                const SizedBox(width: 10),
+                _chromeGlassAction(context, a),
+              ],
+            ],
+          ),
+        ),
+        ?bottomRow,
+      ],
+    ),
+  );
+}
+
+/// 把固定顶栏的 leading/action 控件换装为玻璃圆钮（与壳层悬浮顶栏 40×40
+/// 观感一致）：BackButton/IconButton 重建为 [BiliPaiIconButton]（保留原
+/// 图标/tooltip/回调），其余自定义控件玻璃胶囊原样包裹（不强制尺寸防溢出）。
+Widget _chromeGlassAction(BuildContext context, Widget w) {
+  if (w is BackButton) {
+    return BiliPaiIconButton(
+      icon: Icons.arrow_back,
+      onTap: w.onPressed ?? () => Navigator.of(context).maybePop(),
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+    );
+  }
+  if (w is IconButton) {
+    final ic = w.icon;
+    return BiliPaiIconButton(
+      icon: ic is Icon ? ic.icon : null,
+      iconChild: ic is Icon ? null : ic,
+      color: w.color ?? (ic is Icon ? ic.color : null),
+      tooltip: w.tooltip,
+      onTap: w.onPressed,
+    );
+  }
+  if (w is SizedBox) return w;
+  return BiliPaiPill(
+    radius: 20,
+    child: IconTheme(
+      data: const IconThemeData(size: 20)
+          .copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      child: w,
+    ),
+  );
 }

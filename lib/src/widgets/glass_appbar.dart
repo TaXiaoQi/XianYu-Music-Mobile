@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 
 /// 顶栏伪毛玻璃条（透明 + 高斯模糊）。
@@ -62,6 +63,26 @@ class GlassTopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 竖屏悬浮顶栏模式：整条换装为「玻璃胶囊组」（返回钮/标题/动作/底部搜索
+    // 或 Tab 气泡，见 floatingChromeBar），总高度与固定形态逐像素一致，页面
+    // 内容顶部避让零改动；forceSolid/flatBackdrop 为固定条专属，胶囊自管材质。
+    // 横屏不换装——横屏有壳层全局胶囊顶栏，页面条保持固定形态。
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final floating = !landscape &&
+        (ref.watch(settingsProvider
+                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+            true);
+    if (floating) {
+      return floatingChromeBar(
+        context,
+        leading: leading,
+        title: title ?? const SizedBox.shrink(),
+        actions: actions ?? const [],
+        bottom: bottom,
+      );
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
     final statusBarHeight = MediaQuery.of(context).padding.top;

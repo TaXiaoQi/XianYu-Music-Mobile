@@ -55,13 +55,17 @@ Color wallpaperNavGlassFill(BuildContext context) {
   return isDark ? const Color(0x26FFFFFF) : const Color(0x4CFFFFFF);
 }
 
-/// 浮动导航胶囊（迷你播放条 / 悬浮底栏 / 悬浮顶栏等）的投影。
+/// 浮动导航胶囊（迷你播放条 / 悬浮底栏）的投影。
 ///
 /// 常规（非壁纸）模式下：浮动即「胶囊 + 黑色投影」（该形态设计本体），仅贴边
 /// 固定的顶/底栏无投影。但在**壁纸模式**下这些胶囊 fill 是半透明磨砂
 /// （[wallpaperNavGlassFill]，~30% 白），黑色投影会透过半透明胶囊透显出来、
 /// 整根胶囊看着像黑色块（固定顶/底栏贴边无投影所以正常）。故壁纸模式下去掉
 /// 投影，仅靠描边 + 模糊维持浮层层次，避免「胶囊本身黑」。
+///
+/// 注意：**悬浮顶栏胶囊组不在本函数作用范围**（[pseudoLiquidSurface] 对
+/// `BlurSurfaceType.header` 恒定无投影）——顶栏胶囊在液态模式走 shader 本就
+/// 无投影，毛玻璃/常规模式同样保持无影，与悬浮底栏观感统一。
 List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
   if (wallpaperGlassActive(ref)) return const [];
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -467,7 +471,12 @@ Widget pseudoLiquidSurface({
       color: fill,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: border),
-      boxShadow: navFloatShadows(context, ref),
+      // 顶栏类表面（悬浮顶栏胶囊组，BlurSurfaceType.header）不叠投影：液态
+      // 模式下同款胶囊走 shader 本就无投影，毛玻璃模式不再「顶栏有影、底栏
+      // 无影」双标；悬浮投影仅保留给底栏/迷你播放条（其投影为形态设计本体）。
+      boxShadow: surfaceType == BlurSurfaceType.header
+          ? const []
+          : navFloatShadows(context, ref),
     ),
     child: child,
   );
