@@ -1066,20 +1066,22 @@ class _TraditionalPlayerLayoutState
         },
         itemBuilder: (context, i) {
           if (i == 0) {
-            return _buildCoverSection(context);
+            return _KeepAliveWrap(child: _buildCoverSection(context));
           }
-          return ClipRect(
-            child: RepaintBoundary(
-              child: _LyricsView(
-                key: _lyricsKey,
-                current: current,
-                visible: _showLyrics,
-                onTap: () {},
-                onRomajiAvailable: (has) {
-                  if (_lyricsViewHasRomaji != has) {
-                    setState(() => _lyricsViewHasRomaji = has);
-                  }
-                },
+          return _KeepAliveWrap(
+            child: ClipRect(
+              child: RepaintBoundary(
+                child: _LyricsView(
+                  key: _lyricsKey,
+                  current: current,
+                  visible: _showLyrics,
+                  onTap: () {},
+                  onRomajiAvailable: (has) {
+                    if (_lyricsViewHasRomaji != has) {
+                      setState(() => _lyricsViewHasRomaji = has);
+                    }
+                  },
+                ),
               ),
             ),
           );
@@ -4416,6 +4418,31 @@ class _LyricLineItem {
 /// 填充会呈阶梯跳变；这里用 Ticker 每帧外推（显示进度 = 锚点进度 + 锚点
 /// 以来的流逝时间），实现 60fps 平滑扫字。
 
+/// PageView 页保活包装：传统播放页封面/歌词左右滑切换时，保持两页的
+/// Element/State 不被销毁重建（滚动位置、行布局缓存、模糊烘焙全部留存）。
+/// 每次切换销毁+重建一页（全列表逐字排版 + 模糊重烘焙）是切换卡顿与歌词
+/// 居中跳动的根源；keepAlive 后视口外仍不布局不绘制，无常驻成本。
+class _KeepAliveWrap extends StatefulWidget {
+  const _KeepAliveWrap({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveWrap> createState() => _KeepAliveWrapState();
+}
+
+class _KeepAliveWrapState extends State<_KeepAliveWrap>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
 class _LyricsView extends ConsumerStatefulWidget {
   const _LyricsView({
     super.key,
@@ -4716,12 +4743,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _syncTicker();
       _fetchLyrics();
     } else if (!oldWidget.visible && widget.visible) {
-      // 歌词页重新可见：清除过时布局缓存（页面隐藏期间行高/视口可能已变），
-      // 重新居中一次。_tryPendingCenterJump 会粗跳拉入目标行后重试精确居中。
+      // 歌词页重新可见：仅置重新居中待办，定位到当前行（隐藏期间歌曲可能
+      // 前进）。PageView 保活后滚动位置、行布局缓存、模糊烘焙全部留存，
+      // 不再清缓存——清缓存会令 _tryPendingCenterJump 退化为按比例粗跳
+      //（估算位与精确位偏差可上可下），粗跳→精跳二段修正正是切换时歌词
+      // 「一会儿上一会儿下」的根源。行高/视口真变化（横竖屏切换）由 build
+      // 内 viewport 检测兜底清缓存；目标行从未测量过时粗跳仍可用。
       _pendingCenterJump = true;
       _pendingCenterFallback?.cancel();
-      _lineLayouts.clear();
-      _enterBlurTransition();
+      // 立即恢复逐字时钟（隐藏期间 _syncTicker 停帧），不等 200ms 后的
+      // position 回调，避免扫字短暂凝滞。
+      _syncTicker();
     }
   }
 
