@@ -275,6 +275,7 @@ class MainActivity : AudioServiceActivity() {
                         put("brand", Build.BRAND)
                         put("manufacturer", Build.MANUFACTURER)
                         put("model", Build.MODEL)
+                        put("market_name", marketName())
                         put("os_version", Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
                     }.toString())
                     // 安装来源（installer 包名，侧载/未知为 null）：自更新逻辑据此
@@ -502,6 +503,22 @@ class MainActivity : AudioServiceActivity() {
         }
     } catch (_: Exception) {
         null
+    }
+
+    /** 设备市场名（如「小米16」）：反射读 ro.product.marketname（小米/OPPO/vivo/荣耀等
+     *  国产 ROM 均有）；读不到返回空串，上层回退用 Build.MODEL。 */
+    private fun marketName(): String = try {
+        val sp = Class.forName("android.os.SystemProperties")
+        val get = sp.getMethod("get", String::class.java)
+        listOf(
+            "ro.product.marketname",
+            "ro.product.vendor.marketname",
+            "ro.product.odm.marketname",
+        ).firstNotNullOfOrNull { key ->
+            (get.invoke(null, key) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        } ?: ""
+    } catch (_: Exception) {
+        ""
     }
 
     /** 枚举全部输出音频设备，返回 JSON 数组 JSON。id 与 AAudio setDeviceId 一致。 */

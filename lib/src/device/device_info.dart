@@ -3,17 +3,20 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// 设备信息：反馈 / 错误上报时携带，便于后台定位具体机型。
+/// 设备信息：反馈 / 错误上报 / 启动统计时携带，便于后台定位具体机型。
 class MobileDeviceInfo {
   final String brand;
   final String manufacturer;
   final String model;
+  /// 设备市场名（如「小米16」，国产 ROM 经 ro.product.marketname 读取），可能为空
+  final String marketName;
   final String osVersion;
 
   const MobileDeviceInfo({
     required this.brand,
     required this.manufacturer,
     required this.model,
+    this.marketName = '',
     required this.osVersion,
   });
 }
@@ -43,6 +46,7 @@ Future<MobileDeviceInfo> fetchDeviceInfo() async {
       brand: j['brand'] as String? ?? 'Android',
       manufacturer: j['manufacturer'] as String? ?? '',
       model: j['model'] as String? ?? '',
+      marketName: j['market_name'] as String? ?? '',
       osVersion: j['os_version'] as String? ?? 'Android',
     );
     return _cached!;

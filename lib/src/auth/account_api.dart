@@ -739,6 +739,8 @@ class AccountApi {
       'app_version': appVersion,
       'os_version': dev.osVersion,
       'device_model': dev.model,
+      // 设备市场名（如「小米16」）：后台设备管理展示名优先用它，无则回退型号
+      'device_name': dev.marketName,
       'device_brand': dev.brand,
       'device_manufacturer': dev.manufacturer,
     };
