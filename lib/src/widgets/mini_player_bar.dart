@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'cover_image.dart';
 import 'flying_cover.dart';
 import 'predictive_cover_return.dart';
 import 'glass_settings.dart';
+import 'liquid_wave.dart';
 
 /// 批量操作栏当前在底部占用的高度（px）——即批量菜单作为「底栏」托起播放条所需
 /// 上移的量。批量操作栏挂载时按自身实测高度写入，卸载（批量模式退出）时归零。
@@ -577,28 +579,21 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   /// BiliPai 化液态玻璃表面：与底栏同一套参数，保证两者观感一致。
+  /// 2026-09-05 用户定案：播放条彻底摘出 BiliPaiGlass 优化体系（层管理/
+  /// 冻结/涟漪/blur 预算全不参与），改用独立极简实时表面（标准
+  /// BackdropFilter widget + 每帧重建驱动），拖动/滚动背板都实时抓取。
   Widget _liquidSurface(BuildContext context, Widget content) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final quality = liquidGlassQualitySetting(ref);
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    return BiliPaiGlass(
+    return _LiveLiquidSurface(
       radius: 29,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
-      blurSigma: surfaceBlurSigma(
-        base: bilipaiBackdropBlurOf(quality),
-        budget: budget,
-        type: BlurSurfaceType.bottomBar,
-        crispAtRest: true,
-      ),
+      blurSigma: bilipaiBackdropBlurOf(quality),
       backgroundColor: bilipaiGlassTint(isDark, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
-      // 播放条可拖拽/平移盖到不同内容上，不能容忍「静止冻结背板」在拖动时
-      // 错位（旧位置的液态折射固化在原地、新位置没有折射）。开启常驻实时：
-      // 关闭抓屏冻结，背板始终实时采样跟随，涟漪常转提供拖动时的液态观感。
-      alwaysLive: true,
       child: SizedBox(height: 58, child: content),
     );
   }
@@ -756,4 +751,171 @@ class _RingPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.color != color;
+}
+
+/// 播放条专用极简实时液态玻璃（2026-09-05 用户定案：播放条摘出 BiliPaiGlass
+/// 优化体系——层管理/抓屏冻结/涟漪背板/blur 预算/全局滚动联动全不参与）。
+///
+/// 结构即两个标准 `BackdropFilter` widget（框架最基础路径，与全 App 毛玻璃
+/// 同源）：blur 在下、折射 shader 在上（BiliPai Pass1/Pass2 同序）。动画时钟
+/// 常转，每帧先写 uniform 再 setState 重建——每帧全新 build 让框架按标准
+/// 流程重新 push BackdropFilterLayer，拖动平移/页面滚动时背板都实时重抓，
+/// 不依赖任何缓存命中策略。内容 child 为同一实例传入，不被每帧重建波及。
+class _LiveLiquidSurface extends StatefulWidget {
+  const _LiveLiquidSurface({
+    required this.radius,
+    required this.refract,
+    required this.chroma,
+    required this.blurSigma,
+    required this.backgroundColor,
+    required this.specular,
+    required this.edgeAmount,
+    required this.saturation,
+    required this.child,
+  });
+
+  final double radius;
+  final double refract;
+  final double chroma;
+  final double blurSigma;
+  final Color backgroundColor;
+  final double specular;
+  final double edgeAmount;
+  final double saturation;
+  final Widget child;
+
+  @override
+  State<_LiveLiquidSurface> createState() => _LiveLiquidSurfaceState();
+}
+
+class _LiveLiquidSurfaceState extends State<_LiveLiquidSurface>
+    with SingleTickerProviderStateMixin {
+  /// FragmentProgram 进程级缓存（与 BiliPai 共享同一 asset，加载一次）。
+  static Future<ui.FragmentProgram>? _programFuture;
+
+  late final AnimationController _tick = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 8),
+    value: 3.0,
+  )..repeat();
+
+  ui.FragmentShader? _shader;
+  final GlobalKey _surfaceKey = GlobalKey();
+
+  /// 玻璃表面屏幕物理几何（每帧从 RenderObject 实测，拖动中随位置更新）。
+  double _glassDx = 0;
+  double _glassDy = 0;
+  double _glassW = 1;
+  double _glassH = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _programFuture ??=
+        ui.FragmentProgram.fromAsset('assets/shaders/bilipai_liquid.frag');
+    _programFuture!.then((p) {
+      if (mounted) setState(() => _shader = p.fragmentShader());
+    });
+    _tick.addListener(_onTick);
+  }
+
+  @override
+  void dispose() {
+    _tick.removeListener(_onTick);
+    _tick.dispose();
+    super.dispose();
+  }
+
+  /// 每帧：先实测几何并写 uniform，再 setState 让 BackdropFilter 以最新
+  /// uniform 重绘。绘制发生在本帧 paint 阶段，读到的一定是刚写的值。
+  void _onTick() {
+    if (!mounted) return;
+    _measureGeometry();
+    final shader = _shader;
+    if (shader != null) _writeUniforms(shader);
+    setState(() {});
+  }
+
+  void _measureGeometry() {
+    final ro = _surfaceKey.currentContext?.findRenderObject();
+    if (ro is! RenderBox || !ro.attached || !ro.hasSize) return;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final global = ro.localToGlobal(Offset.zero);
+    _glassDx = global.dx * dpr;
+    _glassDy = global.dy * dpr;
+    _glassW = math.max(1.0, ro.size.width * dpr);
+    _glassH = math.max(1.0, ro.size.height * dpr);
+  }
+
+  /// uniform 槽位与 bilipai_liquid.frag 对齐（同 RenderLiquidBacking 注释表）。
+  void _writeUniforms(ui.FragmentShader shader) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final view = View.of(context);
+    final bg = widget.backgroundColor;
+    final a = bg.a;
+    final minSide = math.min(_glassW, _glassH) / dpr;
+    shader
+      ..setFloat(0, view.physicalSize.width)
+      ..setFloat(1, view.physicalSize.height)
+      ..setFloat(2, globalScrollOffset.value)
+      ..setFloat(3, math.min(widget.refract, minSide * 0.375) * dpr)
+      ..setFloat(4, widget.chroma)
+      ..setFloat(5, 1.5 * dpr)
+      ..setFloat(6, bg.r * a)
+      ..setFloat(7, bg.g * a)
+      ..setFloat(8, bg.b * a)
+      ..setFloat(9, a)
+      ..setFloat(10, widget.specular)
+      ..setFloat(11, widget.radius * dpr)
+      ..setFloat(12, _glassDx)
+      ..setFloat(13, _glassDy)
+      ..setFloat(14, _glassW)
+      ..setFloat(15, _glassH)
+      ..setFloat(16, math.min(widget.edgeAmount, minSide * 0.42) * dpr)
+      ..setFloat(17, widget.saturation)
+      ..setFloat(18, 0.0)
+      ..setFloat(19, _tick.value * 8.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shader = _shader;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (shader == null || !ui.ImageFilter.isShaderFilterSupported) {
+      // shader 未就绪/不支持：纯色占位（与 BiliPaiGlass 回退口径一致）。
+      return Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
+          borderRadius: BorderRadius.circular(widget.radius),
+        ),
+        child: widget.child,
+      );
+    }
+    return ClipRRect(
+      key: _surfaceKey,
+      borderRadius: BorderRadius.circular(widget.radius),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Pass1（下）：标准 BackdropFilter 真高斯模糊。sigma 小、全分辨率，
+          // 每帧新实例（轻对象，无缓存策略——播放条不参与优化）。
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(
+                  sigmaX: widget.blurSigma, sigmaY: widget.blurSigma),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          // Pass2（上）：折射 shader 采样模糊结果，铺底色/饱和度/高光。
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.shader(shader),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          widget.child,
+        ],
+      ),
+    );
+  }
 }
