@@ -452,23 +452,28 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
     private IUiListener shareListener = new IUiListener() {
         @Override
         public void onComplete(Object o) {
+            // onComplete 即 QQ 客户端已确认回执，默认按成功处理；
+            // 仅当响应显式携带非 0 的 ret 时才判失败。
+            // 各版本 QQ 回执格式不统一（可能缺 ret / 空响应 / 仅携带其他字段），
+            // 旧逻辑缺 ret 时判 RET_FAILED，导致「分享成功也提示失败」。
             final Map<String, Object> map = new HashMap<>();
+            map.put("ret", TencentRetCode.RET_SUCCESS);
             try {
                 if (o != null && o instanceof JSONObject) {
                     final JSONObject object = (JSONObject) o;
-                    final int ret = !object.isNull("ret") ? object.getInt("ret") : TencentRetCode.RET_FAILED;
-                    final String msg = !object.isNull("msg") ? object.getString("msg") : null;
-                    if (ret == TencentRetCode.RET_SUCCESS) {
-                        map.put("ret", TencentRetCode.RET_SUCCESS);
-                    } else {
-                        map.put("ret", TencentRetCode.RET_COMMON);
-                        map.put("msg", msg);
+                    if (!object.isNull("ret")) {
+                        final int ret = object.getInt("ret");
+                        if (ret != TencentRetCode.RET_SUCCESS) {
+                            map.put("ret", TencentRetCode.RET_COMMON);
+                            map.put("msg", !object.isNull("msg") ? object.getString("msg") : null);
+                        }
                     }
                 }
             } catch (JSONException e) {
                 map.put("ret", TencentRetCode.RET_COMMON);
                 map.put("msg", e.getMessage());
             }
+            android.util.Log.i("XyQQShare", "onComplete: " + o + " -> ret=" + map.get("ret"));
             if (channel != null) {
                 channel.invokeMethod("onShareResp", map);
             }
@@ -479,6 +484,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
             final Map<String, Object> map = new HashMap<>();
             map.put("ret", TencentRetCode.RET_COMMON);
             map.put("msg", error.errorMessage);
+            android.util.Log.w("XyQQShare", "onError: code=" + error.errorCode + " msg=" + error.errorMessage);
             if (channel != null) {
                 channel.invokeMethod("onShareResp", map);
             }
@@ -486,6 +492,7 @@ public class TencentKitPlugin implements FlutterPlugin, ActivityAware, ActivityR
 
         @Override
         public void onCancel() {
+            android.util.Log.i("XyQQShare", "onCancel");
             final Map<String, Object> map = new HashMap<>();
             map.put("ret", TencentRetCode.RET_USERCANCEL);
             if (channel != null) {

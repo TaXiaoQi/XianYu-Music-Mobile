@@ -115,9 +115,10 @@ class QqShareService {
     if (resp is TencentShareMsgResp) {
       final pending = _pending;
       if (pending != null && !pending.isCompleted) {
+        // 插件取消码是 kRetUserCancel(-2)（此前误用微信的 -4，导致取消也提示失败）。
         final result = switch (resp.ret) {
-          0 => QqShareResult.success,
-          -4 => QqShareResult.canceled,
+          TencentResp.kRetSuccess => QqShareResult.success,
+          TencentResp.kRetUserCancel => QqShareResult.canceled,
           _ => QqShareResult.failed,
         };
         pending.complete(result);
