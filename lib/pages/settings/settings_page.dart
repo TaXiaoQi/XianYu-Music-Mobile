@@ -95,6 +95,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
+              // 设置类页面不参与悬浮顶栏：内容从顶栏高度之下才开始，
+              // 固定条保持扁平背板布局（forceDocked 见 GlassTopBar）。
+              forceDocked: true,
               leading: const BackButton(),
               title: Text(tr('设置')),
               bottom: searchBox,

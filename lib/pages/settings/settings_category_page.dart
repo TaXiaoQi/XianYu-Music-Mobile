@@ -136,7 +136,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             child: GlassTopBar(
               // 设置页内容从顶栏高度之下才开始，下方是纯色底色：
               // 扁平背板，跳过全屏 BackdropFilter，消除切页卡顿（视觉不变）。
+              // 设置类页面不参与悬浮顶栏（forceDocked），保持固定条。
               flatBackdrop: true,
+              forceDocked: true,
               leading: const BackButton(),
               title: Text(category.title),
             ),

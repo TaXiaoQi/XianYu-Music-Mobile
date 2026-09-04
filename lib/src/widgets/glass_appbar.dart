@@ -35,6 +35,7 @@ class GlassTopBar extends ConsumerWidget {
     this.titleSpacing,
     this.flatBackdrop = false,
     this.forceSolid = false,
+    this.forceDocked = false,
   });
 
   final Widget? leading;
@@ -47,6 +48,10 @@ class GlassTopBar extends ConsumerWidget {
   /// 顶栏的显隐动画窗口（[chromeGlassSettlingProvider]）：BackdropFilter 处于
   /// Opacity 动画层内背板采样会渲染成黑帧，动画期间强制纯色。
   final bool forceSolid;
+
+  /// true 时即使处于竖屏悬浮顶栏模式也保持固定形态（不换装玻璃胶囊组）。
+  /// 用于设置类页面：内容不从顶栏下穿过，固定条更贴合其扁平背板布局。
+  final bool forceDocked;
 
   /// 扁平背板：顶栏下方为已知固定的纯色（无内容穿过）时置 true，跳过
   /// `BackdropFilter` 全屏离屏合成，直接用铺底填充——视觉不变、成本归零。
@@ -69,7 +74,8 @@ class GlassTopBar extends ConsumerWidget {
     // 横屏不换装——横屏有壳层全局胶囊顶栏，页面条保持固定形态。
     final landscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
-    final floating = !landscape &&
+    final floating = !forceDocked &&
+        !landscape &&
         (ref.watch(settingsProvider
                 .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
             true);
