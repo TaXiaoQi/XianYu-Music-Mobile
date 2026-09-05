@@ -443,6 +443,10 @@ Widget pseudoLiquidSurface({
   // 用于底栏/悬浮顶栏的显隐动画窗口：BackdropFilter 处于 Opacity 动画层内
   // 背板采样会渲染成黑帧（「玻璃黑一下再加载」），动画期间强制纯色。
   bool forceSolid = false,
+  // [forceSolid] 且 [keepFilter] 置 true 时不卸载 BackdropFilter，只把铺底
+  // 换成全不透明：滤镜常驻、背板持续合成，显隐窗口结束时不会「重建滤镜→
+  // 首帧黑」（与底栏/固定顶栏 keepFilter 同口径）。
+  bool keepFilter = false,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
@@ -451,7 +455,11 @@ Widget pseudoLiquidSurface({
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallTransparent = wallpaper && !frostedOn;
-  final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final solid = forceSolid || prefSolid;
+  // 显隐窗口内由 forceSolid 驱动的纯色：保留滤镜常驻、用全不透明铺底遮住
+  // 背板黑帧；真实低性能/关玻璃偏好（非 forceSolid）仍走无滤镜纯色。
+  final keepAlive = forceSolid && keepFilter && !prefSolid;
   // 壁纸模式：导航类表面（顶栏 header、底栏/迷你播放条 bottomBar、顶栏液态
   // 胶囊等）恒定极淡半透明磨砂（wallpaperNavGlassFill + 最深固定模糊），与
   // GlassTopBar 一致、不随「毛玻璃」开关变化——壁纸仍透出但有玻璃质感；其余
@@ -460,7 +468,9 @@ Widget pseudoLiquidSurface({
       surfaceType == BlurSurfaceType.bottomBar;
   final wallpaperNav = wallpaper && navSurface;
   final bg = solid
-      ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+      ? (keepAlive
+          ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+          : (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF)))
       : (wallpaperNav
           ? wallpaperNavGlassFill(context)
           : wallTransparent
@@ -494,7 +504,7 @@ Widget pseudoLiquidSurface({
     ),
     child: child,
   );
-  if (solid) return surface;
+  if (solid && !keepAlive) return surface;
   // 壁纸模式 sigma=0、fill=全透明：不铺任何模糊，直接透出壁纸（仅保留描边）。
   if (sigma <= 0) return surface;
   // 降采样模糊（cheapBackdropBlur）把运动期模糊成本降为 1/16，玻璃可恒定

@@ -1867,14 +1867,42 @@ class _JellySwitchState extends State<_JellySwitch>
 ///
 /// 液态玻璃走 shader 渲染（折射、动态光照、镜面高光），观感更接近 iOS 26；
 /// 关闭后退回 [BackdropFilter] 毛玻璃，开销更低。
-class _LiquidNavBar extends ConsumerWidget {
+class _LiquidNavBar extends ConsumerStatefulWidget {
   const _LiquidNavBar({required this.index, required this.onSelect});
 
   final int index;
   final ValueChanged<int> onSelect;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LiquidNavBar> createState() => _LiquidNavBarState();
+}
+
+class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
+  /// 显隐动画窗口（[chromeGlassSettlingProvider]）复位后多保持一帧纯色：先让
+  /// 背后的页面完成一次合成，再放 BackdropFilter 采样，否则「切回首页」那一帧
+  /// BackdropFilter 背板还没就绪会只显示半透明色块底、毛玻璃才出现。
+  bool _holdSolid = false;
+  bool _lastSettling = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final settling = ref.watch(chromeGlassSettlingProvider);
+    if (settling != _lastSettling) {
+      final prior = _lastSettling;
+      _lastSettling = settling;
+      // settling 由 true 复位 false：先顶住一帧纯色，下一帧再切毛玻璃。
+      if (prior && !settling) {
+        _holdSolid = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_holdSolid) return;
+          setState(() => _holdSolid = false);
+        });
+      }
+    }
+    final effectiveSettling = settling || _holdSolid;
+
+    final index = widget.index;
+    final onSelect = widget.onSelect;
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
@@ -1890,7 +1918,7 @@ class _LiquidNavBar extends ConsumerWidget {
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     // 显隐动画窗口内（二级页进出）强制纯色铺底：BackdropFilter/液态 shader
     // 在透明度/缩放动画层内背板采样会渲染成黑帧（「玻璃黑一下再加载」）。
-    final settling = ref.watch(chromeGlassSettlingProvider);
+    // 复位后按 [_holdSolid] 再顶住一帧，规避切回时的色块底。
 
     // 指示器随玻璃档位分流：液态玻璃（全档真液态 shader）→ BiliPai 折射
     // 透镜水滴；毛玻璃/纯色 → 主题色淡红大胶囊（铺满整格）。
@@ -1899,15 +1927,18 @@ class _LiquidNavBar extends ConsumerWidget {
     // 水滴按档增强（官方 LiquidGlassTuning：折射/边带/色差三组随档衰减）。
     final dropletQuality = liquidGlassQualitySetting(ref);
     // 玻璃外壳由 _SlidingNavBottom 自组装（水滴画在玻璃之上不被裁剪，
-    // 按住胀大可鼓出底栏边缘）；显隐动画窗口内退纯色毛玻璃，水滴回嵌内部。
+    // 按住胀大可鼓出底栏边缘）。BiliPai 常驻永不卸载：显隐动画窗口内仅把
+    // 铺底换不透明（[effectiveSettling]），cheapBackdropBlur/shader 背板持续
+    // 合成，切回时不再「重建滤镜→首帧黑」。
     final tabs = _SlidingNavBottom(
       index: index,
       lens: realLiquid,
       lensBoost: bilipaiIndicatorLensBoostOf(dropletQuality),
       edgeBoost: bilipaiIndicatorEdgeBoostOf(dropletQuality),
       dropletChroma: bilipaiIndicatorChromaOf(dropletQuality),
-      glassBuilder: liquid && !settling
-          ? (Widget content) => _liquidGlass(context, ref, content)
+      glassBuilder: liquid
+          ? (Widget content) =>
+              _liquidGlass(context, ref, content, solid: effectiveSettling)
           : null,
       onSelect: (i) {
         triggerHaptic(haptic);
@@ -1917,22 +1948,26 @@ class _LiquidNavBar extends ConsumerWidget {
 
     if (liquid) {
       // 液态玻璃全档走真 shader（BiliPai 三档：低/中=轻模糊区间，高=磨砂
-      // 上限 4dp），不再用伪液态毛玻璃充数。
-      // 显隐动画窗口内不跑液态 shader（背板采样黑帧），退回纯色毛玻璃。
-      if (settling) {
-        return _frostedGlass(context, ref, tabs,
-            lowPerf: lowPerf, budget: budget, forceSolid: true);
-      }
+      // 上限 4dp），常驻渲染；显隐动画窗口内铺底换不透明，背板持续合成。
       return tabs;
     }
+    // 毛玻璃/纯色：显隐动画窗口内滤镜常驻 + 不透明铺底（keepFilter）。
     return _frostedGlass(context, ref, tabs,
-        lowPerf: lowPerf, budget: budget, forceSolid: settling);
+        lowPerf: lowPerf,
+        budget: budget,
+        forceSolid: effectiveSettling,
+        keepFilter: effectiveSettling);
   }
 
   /// BiliPai 化液态玻璃：实时背景采样 + 滚动波浪扭曲 + 色差 + 轻量模糊，胶囊形状。
-  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
+  /// [solid]=true（[chromeGlassSettlingProvider] 显隐动画窗口）时不卸载 shader，
+  /// 只把铺底换成不透明，让 BackdropFilter 常驻、背板持续合成，切回时不再
+  /// 「重建滤镜→首帧黑」。
+  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs,
+      {bool solid = false}) {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return BiliPaiGlass(
       radius: 30,
       refract: bilipaiRefractOf(quality),
@@ -1946,7 +1981,9 @@ class _LiquidNavBar extends ConsumerWidget {
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+      backgroundColor: solid
+          ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+          : bilipaiSurfaceTint(context, ref, quality),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
@@ -1957,11 +1994,19 @@ class _LiquidNavBar extends ConsumerWidget {
   /// 伪毛玻璃：液态玻璃关闭时的默认样式。
   ///
   /// 规则：标准半透明磨砂（跟随毛玻璃开关）；低性能 → 高不透明度纯色。
+  /// [forceSolid] 且 [keepFilter]（[chromeGlassSettlingProvider] 显隐窗口）时
+  /// 不卸载 BackdropFilter，只把铺底换不透明：滤镜常驻、背板持续合成，避免
+  /// 切回时「重建滤镜→首帧黑」。真正的低性能/关玻璃纯色偏好（非 forceSolid）
+  /// 仍走无滤镜纯色，与显隐无关、静态稳定。
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
-      {bool lowPerf = false, BlurBudget? budget, bool forceSolid = false}) {
+      {bool lowPerf = false,
+      BlurBudget? budget,
+      bool forceSolid = false,
+      bool keepFilter = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final solid =
-        forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final solid = forceSolid || prefSolid;
+    final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
@@ -1989,7 +2034,7 @@ class _LiquidNavBar extends ConsumerWidget {
       ),
       child: tabs,
     );
-    if (solid) return capsule;
+    if (solid && !keepFilterAlive) return capsule;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(

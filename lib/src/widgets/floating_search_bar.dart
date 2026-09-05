@@ -100,6 +100,9 @@ class FloatingGlassSurface extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    // 显隐动画窗口内（[chromeGlassSettlingProvider]）切全不透明铺底、滤镜常驻，
+    // 让 BackdropFilter/shader 背板持续合成且被不透明底遮住，切回时不再黑帧。
+    final settling = ref.watch(chromeGlassSettlingProvider);
     // 壁纸模式不再排除液态玻璃：悬浮顶栏与播放条同口径（playbarGlassSurface
     // 的液态条件也不排除壁纸），BiliPaiGlass 半透明铺底（alpha 0.40~0.50）
     // 本就透出壁纸，可读性由底色保证。仅低性能模式回退毛玻璃/纯色。
@@ -111,6 +114,7 @@ class FloatingGlassSurface extends ConsumerWidget {
     if (liquid) {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
+      final isDark = Theme.of(context).brightness == Brightness.dark;
       return BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
@@ -121,7 +125,9 @@ class FloatingGlassSurface extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: settling
+            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+            : bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -139,6 +145,8 @@ class FloatingGlassSurface extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
+      forceSolid: settling,
+      keepFilter: settling,
     );
   }
 }
@@ -169,6 +177,9 @@ class BiliPaiPill extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    // 显隐动画窗口内（[chromeGlassSettlingProvider]）切全不透明铺底、滤镜常驻，
+    // 防 BackdropFilter/shader 背板采样黑帧（与 [FloatingGlassSurface] 同口径）。
+    final settling = ref.watch(chromeGlassSettlingProvider);
     // 壁纸模式不再排除液态玻璃：与 FloatingGlassSurface / 播放条同口径，
     // BiliPaiGlass 半透明铺底本就透出壁纸。仅低性能模式回退毛玻璃/纯色。
     final liquid =
@@ -189,6 +200,7 @@ class BiliPaiPill extends ConsumerWidget {
     if (liquid) {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
+      final isDark = Theme.of(context).brightness == Brightness.dark;
       return BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
@@ -199,7 +211,9 @@ class BiliPaiPill extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: settling
+            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+            : bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -215,6 +229,8 @@ class BiliPaiPill extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
+      forceSolid: settling,
+      keepFilter: settling,
     );
   }
 }

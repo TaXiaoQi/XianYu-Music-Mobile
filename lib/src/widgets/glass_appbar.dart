@@ -98,7 +98,12 @@ class GlassTopBar extends ConsumerWidget {
     );
     // 伪毛玻璃默认：半透明 + 高斯模糊质感；低性能模式或关闭「毛玻璃」回退纯色。
     // 壁纸模式与普通模式共用同一套样式（壁纸只是替换底色）。
-    final solid = forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+    final solid = forceSolid || prefSolid;
+    // 显隐动画窗口（[chromeGlassSettlingProvider]）期间即使铺底换不透明也不
+    // 卸载 BackdropFilter：滤镜常驻、背板持续合成，切回时不再「重建滤镜→首
+    // 帧黑」（与底栏 keepFilter 同口径）。真正的低性能/关玻璃偏好仍走纯色。
+    final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
     // 固定顶栏：模糊度恒定最深，不跟随「毛玻璃强度」档位、不随壁纸/滚动
     // 预算变化（见 kNavSurfaceBlurSigma）。四处玻璃表面观感统一、切换/
@@ -125,7 +130,7 @@ class GlassTopBar extends ConsumerWidget {
     // 顶栏模糊度恒定最深（[kNavSurfaceBlurSigma]），壁纸模式与常规模式一致：
     // 仅低性能/纯色回退与扁平背板跳过模糊，其余保持最深的固定模糊（顶/底栏
     // 观感两态一致，不随壁纸/滚动/预算变化）。
-    if (solid || flatBackdrop) return inner;
+    if ((solid && !keepFilterAlive) || flatBackdrop) return inner;
 
     // 顶栏与固定底栏一致，始终走实时 BackdropFilter，静止/滚动/切换三态
     // 观感稳定、不再有快照态与实时态之间的视觉跳变。sigma 恒定
