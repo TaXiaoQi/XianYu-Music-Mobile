@@ -347,7 +347,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   /// 列表容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
   /// 模式沿用外层 Padding 避让（顶栏为 Stack 覆盖层，内容让出同高）。
   Widget _listHost(bool floating, Widget child) {
-    if (floating) return Positioned.fill(child: child);
+    if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
       padding: EdgeInsets.only(top: GlassTopBar.height(context)),
       child: child,

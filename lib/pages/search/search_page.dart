@@ -694,8 +694,10 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         body: Stack(
         children: [
           // 结果列表铺满全屏：避让量注入列表滚动 padding，滚动时内容从顶栏
-          // 与来源条下方穿过（悬浮穿透观感）。
-          Positioned.fill(
+          // 与来源条下方穿过（悬浮穿透观感）。必须用非定位（非 Positioned）
+          // 全尺寸子项撑起 body Stack，否则 Stack 只剩定位子项坍缩成 0×0
+          //（搜索结果页在悬浮顶栏开启时白屏）。
+          SizedBox.expand(
             child: _withContentTopInset(contentArea, topInset + 6),
           ),
           if (floating)

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -230,6 +231,9 @@ bool get isBetaBuild {
 /// 有 → 弹「审核中」弹窗（仅退出软件）；无 → 弹「申请资格」弹窗。
 /// 返回 true 表示已拦截（调用方跳过后续启动检查）；网络失败 fail-open 放行。
 Future<bool> maybeGateBetaAccess(WidgetRef ref) async {
+  // run/dev/profile 等非正式构建不做内测锁检测，仅正式 release 构建才拦截
+  // 未授权设备（与桌面端一致，便于开发/调试直接进入）。
+  if (!kReleaseMode) return false;
   if (!isBetaBuild) return false;
   (bool, bool) access;
   try {

@@ -55,7 +55,9 @@ class RecentPage extends ConsumerWidget {
             // 竖屏悬浮：列表视口铺满全屏，避让量注入列表内部 padding，
             // 滚动时内容从顶栏胶囊下方穿过；固定/面板沿用原 Padding 避让。
             if (portraitFloating && !recent.loading && recent.entries.isNotEmpty)
-              Positioned.fill(
+              // 必须用非定位（非 Positioned）全尺寸子项撑起 body Stack，否则
+              // Stack 只剩定位子项坍缩成 0×0（悬浮顶栏开启白屏）。
+              SizedBox.expand(
                 child: _RecentList(
                   recent: recent,
                   notifier: notifier,

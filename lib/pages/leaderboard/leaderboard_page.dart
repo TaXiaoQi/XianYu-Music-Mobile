@@ -156,9 +156,11 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
       return Positioned.fill(
-        child: Padding(
-          padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
-          child: child,
+        child: RepaintBoundary(
+          child: Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
+            child: child,
+          ),
         ),
       );
     }

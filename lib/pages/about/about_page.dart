@@ -347,7 +347,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
   /// 模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
   Widget _floatHost(bool floating, Widget child) {
-    if (floating) return Positioned.fill(child: child);
+    if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
       padding: EdgeInsets.only(
           top: widget.embedded ? 0 : GlassTopBar.height(context)),

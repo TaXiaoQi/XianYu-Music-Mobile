@@ -587,50 +587,52 @@ Widget floatingChromeBar(
     // TabBar 等附加条：悬浮 Tab 气泡原高包裹（收藏/反馈/榜单等页同款）。
     bottomRow = FloatingTabPill(height: bottomH, child: bottom);
   }
-  return Padding(
-    padding: EdgeInsets.fromLTRB(12, statusBar + 8, 12, 0),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // 标题行：上浮 8 + 行高 48 = kToolbarHeight(56)，与固定形态总高逐像素
-        // 一致；40/44 高胶囊在行内垂直居中。
-        SizedBox(
-          height: kToolbarHeight - 8,
-          child: Row(
-            children: [
-              ...lead,
-              BiliPaiPill(
-                radius: 20,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: SizedBox(
-                    height: 40,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: DefaultTextStyle(
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
-                          color: Theme.of(context).colorScheme.onSurface,
+  return RepaintBoundary(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(12, statusBar + 8, 12, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 标题行：上浮 8 + 行高 48 = kToolbarHeight(56)，与固定形态总高逐像素
+          // 一致；40/44 高胶囊在行内垂直居中。
+          SizedBox(
+            height: kToolbarHeight - 8,
+            child: Row(
+              children: [
+                ...lead,
+                BiliPaiPill(
+                  radius: 20,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: SizedBox(
+                      height: 40,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: DefaultTextStyle(
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          child: title,
                         ),
-                        child: title,
                       ),
                     ),
                   ),
                 ),
-              ),
-              const Spacer(),
-              for (final a in actions) ...[
-                const SizedBox(width: 10),
-                _chromeGlassAction(context, a),
+                const Spacer(),
+                for (final a in actions) ...[
+                  const SizedBox(width: 10),
+                  _chromeGlassAction(context, a),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-        ?bottomRow,
-      ],
+          ?bottomRow,
+        ],
+      ),
     ),
   );
 }

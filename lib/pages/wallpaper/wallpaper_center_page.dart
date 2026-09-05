@@ -115,7 +115,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
   /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
   /// 固定模式沿用 Padding 避让（避让量注入各 tab 滚动体 padding）。
   Widget _tabHost(bool floating, double topInset, Widget child) {
-    if (floating) return Positioned.fill(child: child);
+    if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
       padding: EdgeInsets.only(
         top: GlassTopBar.height(context, bottom: _tabBar),

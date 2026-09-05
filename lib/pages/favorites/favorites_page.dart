@@ -220,10 +220,15 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     );
   }
 
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
+  /// 内容容器：悬浮模式铺满全屏（[SizedBox.expand]，内容穿透顶栏与 Tab 气泡），
   /// 固定模式沿用 Padding 避让（避让量由调用方按面板/固定形态计算）。
   Widget _tabHost(bool floating, double dockedTop, Widget child) {
-    if (floating) return Positioned.fill(child: child);
+    // 悬浮模式必须用非定位（非 Positioned）的全尺寸子项撑起外层 body Stack：
+    // 若用 Positioned.fill，外层 Stack 只剩定位子项、无「非定位子项驱动自身尺寸」，
+    // 在 StackFit.loose 下 Stack 会坍缩成 0×0——页面内容全白屏（收藏/日推/最近/
+    // 搜索结果页在悬浮顶栏开启时均复现）。SizedBox.expand 与 Positioned.fill 对子项
+    // 视觉效果一致（都铺满填满），但不破坏 Stack 的自适应尺寸。
+    if (floating) return SizedBox.expand(child: child);
     return Padding(
       padding: EdgeInsets.only(top: dockedTop),
       child: child,

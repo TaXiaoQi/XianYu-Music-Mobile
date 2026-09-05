@@ -344,7 +344,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
   /// 固定模式沿用 Padding 避让（避让量由调用方按嵌入态计算）。
   Widget _tabHost(bool floating, double dockedTop, Widget child) {
-    if (floating) return Positioned.fill(child: child);
+    if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
       padding: EdgeInsets.only(top: dockedTop),
       child: child,

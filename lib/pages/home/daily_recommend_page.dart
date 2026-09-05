@@ -116,14 +116,19 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
       ),
     );
   }
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，页面背景穿透顶栏），
+  /// 内容容器：悬浮模式铺满全屏（[SizedBox.expand]，页面背景穿透顶栏），
   /// 固定模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
-      return Positioned.fill(
-        child: Padding(
-          padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
-          child: child,
+      // 必须用非定位（非 Positioned）的全尺寸子项撑起外层 body Stack：
+      // Positioned.fill 使 Stack 只剩定位子项而坍缩成 0×0（悬浮顶栏开启白屏）。
+      // SizedBox.expand 视觉等同，但不破坏 Stack 自适应尺寸。
+      return SizedBox.expand(
+        child: RepaintBoundary(
+          child: Padding(
+            padding: EdgeInsets.only(top: GlassTopBar.height(context) + 6),
+            child: child,
+          ),
         ),
       );
     }
