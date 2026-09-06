@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/favorites/favorites_delete.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
@@ -255,7 +256,18 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     );
   }
 
-  void _confirmClear(BuildContext context, FavoritesManager notifier) {
+  Future<void> _confirmClear(
+      BuildContext context, FavoritesManager notifier) async {
+    // 已登录且收藏存在云端副本：先弹删除范围三选一（对齐桌面端）。
+    final paths =
+        ref.read(favoritesProvider).entries.map((e) => e.path).toList();
+    final scope = await resolveFavoriteDeleteScope(context, ref, paths);
+    if (!context.mounted) return;
+    if (scope != null) {
+      await applyFavoriteDeleteScope(context, ref, scope, paths,
+          onLocalRemove: () => notifier.clear());
+      return;
+    }
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -386,6 +398,20 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
       List<FavoriteEntry> entries, SongBatchController batch) async {
     final sel = _selectedEntries(entries, batch);
     if (sel.isEmpty) return;
+    final paths = sel.map((e) => e.path).toList();
+    // 已登录且存在云端副本：先弹删除范围三选一（对齐桌面端）。
+    final scope = await resolveFavoriteDeleteScope(context, ref, paths);
+    if (!mounted) return;
+    if (scope != null) {
+      await applyFavoriteDeleteScope(context, ref, scope, paths,
+          onLocalRemove: () async {
+        for (final e in sel) {
+          await widget.notifier.remove(e.path);
+        }
+      });
+      batch.exit();
+      return;
+    }
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

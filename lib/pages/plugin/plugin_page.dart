@@ -24,6 +24,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
+import 'plugin_delete.dart';
 
 /// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
 class PluginPage extends ConsumerStatefulWidget {
@@ -938,7 +939,7 @@ class _PluginCard extends ConsumerWidget {
                   context,
                   Icons.delete_outline,
                   tr('删除'),
-                  () => _confirmRemove(context, manager),
+                  () => _confirmRemove(context, ref, manager),
                 ),
               ],
             ),
@@ -1041,27 +1042,9 @@ class _PluginCard extends ConsumerWidget {
     showXianYuToast(context, outcome.message);
   }
 
-  void _confirmRemove(BuildContext context, PluginManager manager) {
-    showPredictiveDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('卸载插件')),
-        content: Text(tr('确定要卸载「{name}」吗？', {'name': source.name})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              manager.remove(source.id);
-            },
-            child:   Text(tr('卸载')),
-          ),
-        ],
-      ),
-    );
+  void _confirmRemove(BuildContext context, WidgetRef ref, PluginManager manager) {
+    // 已同步插件弹「删除范围」三选一（plugin_delete.dart），未同步走普通确认框
+    unawaited(confirmRemovePlugin(context, ref, source));
   }
 }
 

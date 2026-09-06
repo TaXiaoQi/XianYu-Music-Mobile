@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/playlist/playlist_delete.dart';
 import '../../src/playlist/playlist_provider.dart';
+import '../../src/playlist/playlist_song_delete.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
@@ -301,7 +304,7 @@ class _PlaylistCard extends ConsumerWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _openPlaylist(context, ref, playlist.id),
-        onLongPress: () => _sheetActions(context, manager),
+        onLongPress: () => _sheetActions(context, manager, ref),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
           child: Row(
@@ -353,7 +356,7 @@ class _PlaylistCard extends ConsumerWidget {
                 icon: Icon(Icons.delete_outline,
                     size: 20, color: scheme.outline),
                 tooltip: tr('删除歌单'),
-                onPressed: () => _confirmRemove(context, manager),
+                onPressed: () => confirmRemovePlaylist(context, ref, playlist),
               ),
             ],
           ),
@@ -372,7 +375,8 @@ class _PlaylistCard extends ConsumerWidget {
     context.push('/playlist/$id');
   }
 
-  void _sheetActions(BuildContext context, PlaylistManager manager) {
+  void _sheetActions(
+      BuildContext context, PlaylistManager manager, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     showSheetDialog<void>(
         context,
@@ -396,7 +400,7 @@ class _PlaylistCard extends ConsumerWidget {
                   title:   Text(tr('删除歌单')),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _confirmRemove(context, manager);
+                    confirmRemovePlaylist(context, ref, playlist);
                   },
                 ),
               ],
@@ -411,29 +415,45 @@ class _PlaylistCard extends ConsumerWidget {
     if (name == null || name.trim().isEmpty) return;
     await manager.rename(playlist.id, name.trim());
   }
+}
 
-  void _confirmRemove(BuildContext context, PlaylistManager manager) {
-    showPredictiveDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('删除歌单')),
-        content: Text(tr('确定要删除「{name}」吗？', {'name': playlist.name})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              manager.remove(playlist.id);
-            },
-            child:   Text(tr('删除')),
-          ),
-        ],
-      ),
-    );
+/// 从歌单移除歌曲（单曲/批量共用）：已同步歌单（已登录且持有 cloudId）先弹
+/// 「删除范围三选一」（本机/全部/云端，对齐桌面 SyncDeleteScopeModal），
+/// 未同步歌单直接本地移除。返回是否执行了移除（取消返回 false）。
+Future<bool> removePlaylistSongsWithScope(
+  BuildContext context,
+  WidgetRef ref,
+  ImportedPlaylist playlist,
+  List<ImportedSong> songs,
+) async {
+  if (songs.isEmpty) return false;
+  final manager = ref.read(playlistManagerProvider.notifier);
+  final loggedIn =
+      (ref.read(accountApiProvider).ciyuanxiId ?? '').isNotEmpty;
+  final synced = loggedIn && (playlist.cloudId ?? '').isNotEmpty;
+  String? scope;
+  if (synced) {
+    scope = await resolvePlaylistSongDeleteScope(context, ref, playlist,
+        songCount: songs.length);
+    if (scope == null) return false; // 已同步：用户取消则不动作
+    if (!context.mounted) return false; // 弹窗期间页面已销毁则中止
   }
+  Future<void> removeLocal() async {
+    for (final s in songs) {
+      await manager.removeSong(playlist.id, s.path);
+    }
+  }
+
+  // 未同步时 cloudId 为空，apply 内部直接走本地移除。
+  await applyPlaylistSongDeleteScope(
+    context,
+    ref,
+    scope ?? '',
+    playlist,
+    songs,
+    onLocalRemove: removeLocal,
+  );
+  return true;
 }
 
 /// 歌单详情：从 provider 实时取最新数据，增删歌曲即时刷新。
@@ -628,8 +648,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
                             playlist: playlist,
                             manager: manager,
                             batch: _batch,
-                            onRemove: (index) => manager.removeSong(
-                                playlist.id, playlist.songs[index].path),
+                            // 移除单曲：已同步歌单先弹删除范围三选一，
+                            // 未同步直接本地移除。
+                            onRemove: (index) => removePlaylistSongsWithScope(
+                                context, ref, playlist, [playlist.songs[index]]),
                           ),
                   ),
                 ],
@@ -883,10 +905,21 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
     widget.batch.exit();
   }
 
-  /// 批量从歌单移除（确认弹窗后逐个移除）。
+  /// 批量从歌单移除：已同步歌单直接弹删除范围三选一（范围弹窗本身即确认），
+  /// 未同步沿用普通确认弹窗后逐个移除。
   Future<void> _confirmBatchRemove(List<ImportedSong> songs) async {
     final sel = _selected(songs);
     if (sel.isEmpty) return;
+    final loggedIn =
+        (ref.read(accountApiProvider).ciyuanxiId ?? '').isNotEmpty;
+    final synced =
+        loggedIn && (widget.playlist.cloudId ?? '').isNotEmpty;
+    if (synced) {
+      final removed = await removePlaylistSongsWithScope(
+          context, ref, widget.playlist, sel);
+      if (removed) widget.batch.exit();
+      return;
+    }
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

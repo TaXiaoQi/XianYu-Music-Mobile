@@ -13,6 +13,8 @@ class ImportedPlaylist {
   final int importedAt;
   /// 云端歌单 ID（三端统一为字符串稳定 ID，同步绑定）。
   final String? cloudId;
+  /// 是否来自云端（下载合并时标记；cloudId 可能因历史数据缺失，用此标记判定"已同步"）。
+  final bool isCloud;
 
   ImportedPlaylist({
     required this.id,
@@ -20,6 +22,7 @@ class ImportedPlaylist {
     required this.songs,
     required this.importedAt,
     this.cloudId,
+    this.isCloud = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -28,6 +31,7 @@ class ImportedPlaylist {
         'songs': songs.map((s) => s.toJson()).toList(),
         'importedAt': importedAt,
         if (cloudId != null) 'cloudId': cloudId,
+        if (isCloud) 'isCloud': true,
       };
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
@@ -39,6 +43,7 @@ class ImportedPlaylist {
             .toList(),
         importedAt: (j['importedAt'] as num?)?.toInt() ?? 0,
         cloudId: j['cloudId'] as String?,
+        isCloud: j['isCloud'] == true,
       );
 }
 
@@ -91,6 +96,7 @@ class PlaylistStore {
           songs: merged.values.toList(),
           importedAt: existing.importedAt,
           cloudId: existing.cloudId ?? pl.cloudId,
+          isCloud: existing.isCloud || pl.isCloud,
         );
       } else {
         result.add(ImportedPlaylist(
@@ -99,6 +105,7 @@ class PlaylistStore {
           songs: pl.songs,
           importedAt: DateTime.now().millisecondsSinceEpoch,
           cloudId: pl.cloudId,
+          isCloud: pl.isCloud,
         ));
       }
     }
@@ -125,6 +132,7 @@ class PlaylistStore {
                 songs: p.songs,
                 importedAt: p.importedAt,
                 cloudId: next,
+                isCloud: p.isCloud,
               )
             : p)
         .toList();
@@ -160,6 +168,7 @@ class PlaylistStore {
                 songs: p.songs,
                 importedAt: p.importedAt,
                 cloudId: p.cloudId,
+                isCloud: p.isCloud,
               )
             : p)
         .toList();
@@ -187,6 +196,7 @@ class PlaylistStore {
         songs: merged.values.toList(),
         importedAt: p.importedAt,
         cloudId: p.cloudId,
+        isCloud: p.isCloud,
       );
     }).toList();
     await saveAll(result);
@@ -204,6 +214,8 @@ class PlaylistStore {
         name: p.name,
         songs: p.songs.where((s) => s.path != path).toList(),
         importedAt: p.importedAt,
+        cloudId: p.cloudId,
+        isCloud: p.isCloud,
       );
     }).toList();
     await saveAll(result);
@@ -230,6 +242,7 @@ class PlaylistStore {
         songs: next,
         importedAt: p.importedAt,
         cloudId: p.cloudId,
+        isCloud: p.isCloud,
       );
     }).toList();
     await saveAll(result);

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
 import '../rust/api.dart' as frb;
+import '../sync/plugin_sync_state.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_store.dart';
@@ -173,6 +174,9 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list = [...state.sources, source];
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
+    // 重新安装新 id 插件：清除双向同步墓碑，恢复正常同步行为
+    // （仅在新安装路径执行；同 id 已存在时提前返回，保留原有墓碑状态）
+    await PluginSyncState.clearTombstones([source.id]);
     return source;
   }
 

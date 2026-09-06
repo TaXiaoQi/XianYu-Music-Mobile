@@ -542,6 +542,19 @@ class AccountApi {
         fetchTimeoutMs: 15000);
   }
 
+  /// 按 id 从云端删除插件（「删除全部 / 仅保留本地」的云端落盘操作）。
+  Future<void> deleteCloudPlugins(List<String> pluginIds) async {
+    if (pluginIds.isEmpty) return;
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步插件'));
+    }
+    await _action('plugin_sync_delete', {
+      'user_id': ciyuanxiId,
+      'plugin_ids': pluginIds,
+    }, fetchTimeoutMs: 15000);
+  }
+
   // ─── 壁纸中心 ───────────────────────────────────────────
 
   /// 壁纸列表原始字段映射（camelCase 优先、snake_case 兜底，

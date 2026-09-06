@@ -82,12 +82,15 @@ class PluginBackupPlaylist {
   final int originalSongCount;
   /// 云端歌单 ID（下载合并时绑定，为 null 表示普通备份导入/全新云端歌单）。
   final String? cloudId;
+  /// 是否来自云端（下载合并时标记，cloudId 可能因历史数据缺失，用此标记判定已同步）。
+  final bool isCloud;
 
   PluginBackupPlaylist({
     required this.name,
     required this.songs,
     required this.originalSongCount,
     this.cloudId,
+    this.isCloud = false,
   });
 }
 

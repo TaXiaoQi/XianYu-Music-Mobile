@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
+import '../playlist/playlist_delete.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../plugin/plugin_backup_import.dart';
@@ -222,30 +223,9 @@ Future<void> showPlaylistActionsSheet(
           ListTile(
             leading: Icon(Icons.delete_outline, color: scheme.error),
             title: Text(tr('删除歌单'), style: TextStyle(color: scheme.error)),
-            onTap: () async {
-              final ok = await showPredictiveDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title:   Text(tr('删除歌单'),
-                      style: TextStyle(fontSize: 16)),
-                  content: Text(tr('确定删除「{name}」？该操作不可恢复。', {'name': playlist.name})),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child:   Text(tr('取消')),
-                    ),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                          backgroundColor: scheme.error),
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child:   Text(tr('删除')),
-                    ),
-                  ],
-                ),
-              );
-              if (ok != true) return;
-              await manager.remove(playlist.id);
-              if (context.mounted) Navigator.of(context).pop();
+            onTap: () {
+              Navigator.of(context).pop();
+              confirmRemovePlaylist(context, ref, playlist);
             },
           ),
           const SizedBox(height: 6),

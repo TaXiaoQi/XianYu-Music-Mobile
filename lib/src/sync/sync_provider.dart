@@ -23,6 +23,9 @@ import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_subscriptions.dart';
 import '../plugin/plugin_sync_crypto.dart';
 import '../plugin/plugin_user_vars.dart';
+import 'plugin_sync_state.dart';
+import 'favorites_sync_state.dart';
+import 'playlist_song_sync_state.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
 import 'settings_conflict_dialog.dart';
@@ -550,17 +553,61 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
         return;
       }
-      final payload = local
-          .map((p) => {
-                'id': p.id,
-                'name': p.name,
-                // 移动端歌单无自定义封面，取歌单内第一首在线歌曲封面作为云端封面，
-                // 避免覆盖桌面端已上传的 cloudCoverUrl。
-                'cloudCoverUrl': _firstRemoteSongCover(p.songs),
-                'cloudId': p.cloudId,
-                'songs': p.songs.map(_songToSyncPayload).toList(),
-              })
-          .toList();
+      final payload = <Map<String, dynamic>>[];
+      for (final p in local) {
+        var payloadSongs = p.songs.map(_songToSyncPayload).toList();
+        List<String>? deletedSongPaths;
+        final cloudId = p.cloudId ?? '';
+        if (cloudId.isNotEmpty) {
+          final localPaths = p.songs.map((s) => s.path).toSet();
+          // 「仅删本地」墓碑回填：本地已移除但云端保留的歌曲，用缓存载荷补回上传列表
+          final keepMap = await PlaylistSongSyncState.cloudKeepSongs(cloudId);
+          for (final entry in keepMap.entries) {
+            if (!payloadSongs.any((s) => s['path'] == entry.key)) {
+              try {
+                final decoded = jsonDecode(entry.value);
+                if (decoded is Map<String, dynamic>) payloadSongs.add(decoded);
+              } catch (_) {
+                // 缓存载荷损坏时忽略，云端将由下次有效上传覆盖
+              }
+            }
+          }
+          // 重新添加回本机的 path 清除「仅删本地」墓碑（恢复正常同步）
+          await PlaylistSongSyncState.pruneCloudKeepSongs(cloudId, localPaths);
+          // 「仅保留本地」墓碑：本机保留、云端已删的歌曲剔除出上传列表（防复活）；
+          // 已从本机移除的 path 自然失效（清除墓碑）
+          final localOnly = await PlaylistSongSyncState.localOnlySongs(cloudId);
+          if (localOnly.isNotEmpty) {
+            payloadSongs = payloadSongs
+                .where((s) => !localOnly.contains(s['path']))
+                .toList();
+            await PlaylistSongSyncState.pruneLocalOnlySongs(
+                cloudId, localPaths);
+          }
+          // 「待上报删除」墓碑（删除全部）：重新添加回本机的 path 清除，其余随本次上传上报
+          final pending = await PlaylistSongSyncState.pendingDeletedSongs(cloudId);
+          if (pending.isNotEmpty) {
+            await PlaylistSongSyncState.prunePendingDeletedSongs(
+                cloudId, pending.where(localPaths.contains));
+          }
+          final report = {
+            ...await PlaylistSongSyncState.localOnlySongs(cloudId),
+            ...await PlaylistSongSyncState.pendingDeletedSongs(cloudId),
+          };
+          if (report.isNotEmpty) deletedSongPaths = report.toList();
+        }
+        payload.add({
+          'id': p.id,
+          'name': p.name,
+          // 移动端歌单无自定义封面，取歌单内第一首在线歌曲封面作为云端封面，
+          // 避免覆盖桌面端已上传的 cloudCoverUrl。
+          'cloudCoverUrl': _firstRemoteSongCover(p.songs),
+          'cloudId': p.cloudId,
+          'songs': payloadSongs,
+          // 为 null 时不生成字段（null-aware 元素）
+          'deletedSongPaths': ?deletedSongPaths,
+        });
+      }
       final res = await _api.fileSyncUpload(payload);
       // 服务端回传 id_map：本地 id → 云端字符串 cloudId，写回本地，
       // 覆盖历史缺失/数字 cloudId，保证跨设备稳定识别为"已同步"。
@@ -617,18 +664,57 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       final index = _buildLibraryIndex();
       for (final pl in cloudPlaylists) {
-        final songs = ((pl['songs'] as List?) ?? const [])
-            .whereType<Map>()
+        final cloudId = (pl['cloudId'] as String?) ?? '';
+        final plName = (pl['name'] as String?) ?? tr('未命名歌单');
+        // 服务端已记录删除的歌曲 path（其他端「删除全部/仅保留本地」传播）
+        final deletedPaths = ((pl['deletedSongPaths'] as List?) ?? const [])
+            .whereType<String>()
+            .toSet();
+        final keepMap = cloudId.isNotEmpty
+            ? await PlaylistSongSyncState.cloudKeepSongs(cloudId)
+            : const <String, String>{};
+        final pendingSet = cloudId.isNotEmpty
+            ? await PlaylistSongSyncState.pendingDeletedSongs(cloudId)
+            : const <String>{};
+        final rawSongs =
+            ((pl['songs'] as List?) ?? const []).whereType<Map>().toList();
+        // 过滤：服务端已删除(D) / 本机待上报删除 / 仅删本地墓碑（云端保留但本机已移除）
+        final visibleRaw = rawSongs.where((e) {
+          final p = e['path'] as String?;
+          if (p == null) return true;
+          if (deletedPaths.contains(p) || pendingSet.contains(p)) return false;
+          return !keepMap.containsKey(p);
+        }).toList();
+        final songs = visibleRaw
             .map((e) =>
                 _songFromSyncPayload(e.cast<String, dynamic>(), index.byPath, index.byMeta))
             .toList();
         songCount += songs.length;
         toImport.add(PluginBackupPlaylist(
-          name: (pl['name'] as String?) ?? tr('未命名歌单'),
+          name: plName,
           songs: songs,
           originalSongCount: songs.length,
           cloudId: pl['cloudId'] as String?,
+          // 来自云端即标记，确保即使历史小概率缺 cloudId 也能被识别为已同步。
+          isCloud: true,
         ));
+        // 其他端传播的歌曲级删除：从本地既有歌单移除对应歌曲，
+        // 并清除服务端已确认记录的「待上报删除」墓碑
+        if (deletedPaths.isNotEmpty) {
+          final removePaths = <String>{};
+          for (final raw in rawSongs) {
+            final p = raw['path'] as String?;
+            if (p == null || !deletedPaths.contains(p)) continue;
+            removePaths.add(p);
+            removePaths.add(_songFromSyncPayload(
+                    raw.cast<String, dynamic>(), index.byPath, index.byMeta)
+                .path);
+          }
+          removePaths.remove('');
+          await _propagateDeletedSongsToLocal(cloudId, plName, removePaths);
+          await PlaylistSongSyncState.prunePendingDeletedSongs(
+              cloudId, deletedPaths);
+        }
       }
       await PlaylistStore().addPlaylists(toImport);
       await _ref.read(playlistManagerProvider.notifier).refresh();
@@ -643,6 +729,37 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } catch (e) {
       AppLogger.instance.log('sync', '歌单下载失败: $e');
       _setPlaylistError(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
+    }
+  }
+
+  /// 其他端传播的歌曲级删除：按 cloudId（缺省回退按名称）匹配本地歌单，
+  /// 移除 [removePaths] 中的歌曲（path 含本地曲库重映射后的路径）。
+  Future<void> _propagateDeletedSongsToLocal(
+      String cloudId, String name, Set<String> removePaths) async {
+    if (removePaths.isEmpty) return;
+    final store = PlaylistStore();
+    final all = await store.loadAll();
+    var changed = false;
+    final next = all.map((p) {
+      final matched =
+          (cloudId.isNotEmpty && p.cloudId == cloudId) || p.name == name;
+      if (!matched) return p;
+      final filtered =
+          p.songs.where((s) => !removePaths.contains(s.path)).toList();
+      if (filtered.length == p.songs.length) return p;
+      changed = true;
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: filtered,
+        importedAt: p.importedAt,
+        cloudId: p.cloudId,
+        isCloud: p.isCloud,
+      );
+    }).toList();
+    if (changed) {
+      await store.saveAll(next);
+      await _ref.read(playlistManagerProvider.notifier).refresh();
     }
   }
 
@@ -676,7 +793,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
         return;
       }
-      final payload = favEntries.map((e) {
+      // 「仅保留本地」墓碑：已从云端删除、保留本机的收藏不再上传，防止复活
+      final localOnly = await FavoritesSyncState.localOnlyPaths();
+      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏
+      final cloudKeep = await FavoritesSyncState.cloudKeepPaths();
+      final payload = favEntries.where((e) => !localOnly.contains(e.path)).map((e) {
         return {
           'title': e.title,
           'name': e.title,
@@ -693,10 +814,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }).toList();
       // 收藏按键合并：删除跟踪 = 上次已同步路径 − 当前收藏，
       // 交给服务端 merge 模式删除对应云端收藏，新增仍按键保留（跨设备互不抹掉）。
+      // 「仅删本地」墓碑的 path 云端保留，从删除跟踪中排除。
       final prefs = await SharedPreferences.getInstance();
       final currentPaths = favEntries.map((e) => e.path).toSet();
+      // 墓碑清理：不再收藏的 path 清除「仅保留本地」墓碑（取消收藏自然失效）；
+      // 重新收藏的 path 清除「仅删本地」墓碑（恢复正常同步行为）。
+      await FavoritesSyncState
+          .removeLocalOnlyPaths(localOnly.where((p) => !currentPaths.contains(p)));
+      await FavoritesSyncState.removeCloudKeepPaths(currentPaths);
       final deletePaths = (prefs.getStringList('synced_favorites_paths') ?? [])
-          .where((p) => !currentPaths.contains(p))
+          .where((p) => !currentPaths.contains(p) && !cloudKeep.contains(p))
           .toList();
       final count = await _api.uploadFavorites(payload, deletePaths: deletePaths);
       await prefs.setStringList('synced_favorites_paths', currentPaths.toList());
@@ -737,6 +864,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _ref.read(libraryProvider.notifier).load();
       }
       final index = _buildLibraryIndex();
+      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏，跳过回灌防止删除回流
+      final cloudKeep = await FavoritesSyncState.cloudKeepPaths();
       for (final item in favs) {
         final path = item['path'] as String?;
         if (path == null || path.isEmpty) continue;
@@ -767,6 +896,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
         final matched = _matchLocalLibrarySong(
             index.byPath, index.byMeta, path, title, artist, (durationMs / 1000).round());
+        if (cloudKeep.contains(path) ||
+            (matched != null && cloudKeep.contains(matched.path))) {
+          continue;
+        }
         await notifier.add(
           QueueItem(
             path: matched?.path ?? path,
@@ -826,12 +959,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _ref.read(pluginManagerProvider.notifier).refresh();
         sources = _ref.read(pluginManagerProvider).sources;
       }
+      // 「仅保留本地」墓碑过滤：已从云端删除、保留本机的插件不再上传，防止复活
+      final uploadSkip = await PluginSyncState.uploadSkipIds();
+      final targets =
+          sources.where((p) => !uploadSkip.contains(p.id)).toList();
       // 订阅链接列表随插件一起上传（服务端整包替换）
       final subs = _ref
           .read(pluginSubscriptionsProvider)
           .map((s) => s.toJson())
           .toList();
-      if (sources.isEmpty) {
+      if (targets.isEmpty) {
         if (subs.isNotEmpty) {
           // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
           try {
@@ -856,13 +993,16 @@ class SyncNotifier extends StateNotifier<SyncState> {
             ),
           );
         }
+        // 无插件上传（isFirst 重建云端为空）：已同步标记清空
+        await PluginSyncState.setSyncedIds(const <String>[]);
         return;
       }
       final dir = await _dataDir();
       final errors = <String>[];
       var uploaded = 0;
-      for (var i = 0; i < sources.length; i++) {
-        final p = sources[i];
+      final uploadedIds = <String>[];
+      for (var i = 0; i < targets.length; i++) {
+        final p = targets[i];
         final scriptPath = '$dir/plugins/${p.id}.js';
         try {
           final script = await rust.readPluginFile(path: scriptPath);
@@ -894,11 +1034,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
           }
           await _api.uploadPlugin(plugin, isFirst: i == 0, subscriptions: subs);
           uploaded++;
+          uploadedIds.add(p.id);
         } catch (e) {
           AppLogger.instance.log('sync', '插件 ${p.name} 上传失败: $e');
           errors.add(tr('插件 "{name}" 上传失败', {'name': p.name}));
         }
       }
+      // 上传成功的插件即云端权威副本：整集替换「已同步」标记
+      await PluginSyncState.setSyncedIds(uploadedIds);
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,
@@ -951,8 +1094,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       final errors = <String>[];
       var installed = 0;
+      final restoredIds = <String>[];
+      // 「仅删本地」墓碑：用户已从本机删除但云端保留的插件，跳过恢复防止回流
+      final downloadSkip = await PluginSyncState.downloadSkipIds();
       final pluginManager = _ref.read(pluginManagerProvider.notifier);
       for (final item in items) {
+        final cloudId = (item['id'] as String?)?.trim() ?? '';
+        if (cloudId.isNotEmpty && downloadSkip.contains(cloudId)) {
+          continue;
+        }
         final cloudName = (item['name'] as String?)?.trim() ?? '';
         final name = cloudName.isNotEmpty ? cloudName : tr('未知插件');
         var script = (item['script'] as String?) ?? '';
@@ -998,11 +1148,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
             }
           }
           installed++;
+          restoredIds.add(source.id);
         } catch (e) {
           AppLogger.instance.log('sync', '插件 $name 恢复失败: $e');
           errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
+      // 恢复成功说明云端确有副本：并集追加「已同步」标记
+      await PluginSyncState.addSyncedIds(restoredIds);
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
           syncing: false,

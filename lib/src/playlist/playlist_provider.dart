@@ -52,6 +52,12 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  /// 仅保留本地：解绑云端标记（清除 cloudId），保留本地歌单。
+  Future<void> detachCloud(String id) async {
+    final playlists = await _store.setCloudId(id, null);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
   /// 按指定 id 顺序重排歌单（未列出的歌单保持在队尾）。
   Future<void> reorder(List<String> orderedIds) async {
     final current = state.playlists;
