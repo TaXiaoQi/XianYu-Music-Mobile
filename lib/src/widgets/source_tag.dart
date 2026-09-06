@@ -3,8 +3,34 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import '../plugin/plugin_provider.dart';
+
+/// 「小X」规避审查别名 → 平台真名映射。
+/// 插件开发者常用同音字/形近字代指真实平台以规避应用商店审查，
+/// 开启「显示真实音源名」后统一还原。
+const Map<String, String> kSourceAliasToReal = {
+  '小蜗': '酷我',
+  '小枸': '酷狗',
+  '小秋': 'QQ',
+  '小芸': '网易云',
+  '小蜜': '咪咕',
+  '哔哩': '哔哩哔哩',
+  '汽水': '汽水音乐',
+  'K歌': '全民K歌',
+};
+
+/// 把插件名/别名中的「小X」替换为真实平台名（如「小枸音乐」→「酷狗音乐」）。
+/// 若未命中映射则原样返回。
+String resolveRealSourceName(String name) {
+  for (final entry in kSourceAliasToReal.entries) {
+    if (name.contains(entry.key)) {
+      return name.replaceAll(entry.key, entry.value);
+    }
+  }
+  return name;
+}
 
 /// 来源标签最多显示的字数（对齐桌面端，与播放队列一致）。
 const int kSourceTagMaxChars = 5;
@@ -30,13 +56,18 @@ String songSourceLabel(
 }) {
   if (!isOnline) return tr('本地');
 
+  final showReal = ref.watch(settingsProvider
+          .select((s) => s.valueOrNull?.showRealSourceName ?? false));
+
   // 1. 优先匹配已安装插件名：QueueItem/收藏走 onlineSongJson.pluginId，
   //    歌单 ImportedSong 直接给插件 id。
   final pid = pluginId ?? _pluginIdFromJson(onlineSongJson);
   if (pid != null && pid.isNotEmpty) {
     final pluginState = ref.read(pluginManagerProvider);
     for (final p in pluginState.sources) {
-      if (p.id == pid) return p.name;
+      if (p.id == pid) {
+        return showReal ? resolveRealSourceName(p.name) : p.name;
+      }
     }
   }
 
@@ -44,7 +75,7 @@ String songSourceLabel(
   final raw = source?.trim();
   if (raw != null && raw.isNotEmpty) {
     final lower = raw.toLowerCase();
-    final short = _shortSourceName(lower);
+    final short = _shortSourceName(lower, showReal: showReal);
     if (short != null) return short;
     return raw.length <= 6 ? raw.toUpperCase() : raw;
   }
@@ -53,7 +84,7 @@ String songSourceLabel(
   if (path.startsWith('lx://')) {
     final parts = path.substring(5).split('/');
     if (parts.isNotEmpty && parts.first.isNotEmpty) {
-      final short = _shortSourceName(parts.first.toLowerCase());
+      final short = _shortSourceName(parts.first.toLowerCase(), showReal: showReal);
       if (short != null) return short;
       return parts.first.toUpperCase();
     }
@@ -63,25 +94,26 @@ String songSourceLabel(
 }
 
 /// 简短音源 key -> 显示名（与播放队列 `_formatItemSource` 一致）。
-String? _shortSourceName(String lower) {
+/// [showReal] 为 true 时返回平台真名而非「小X」别名。
+String? _shortSourceName(String lower, {bool showReal = false}) {
   switch (lower) {
     case 'kw':
-      return tr('小蜗');
+      return showReal ? '酷我' : tr('小蜗');
     case 'kg':
-      return tr('小枸');
+      return showReal ? '酷狗' : tr('小枸');
     case 'tx':
-      return tr('小秋');
+      return showReal ? 'QQ' : tr('小秋');
     case 'wy':
-      return tr('小芸');
+      return showReal ? '网易云' : tr('小芸');
     case 'mg':
-      return tr('小蜜');
+      return showReal ? '咪咕' : tr('小蜜');
     case 'bilibili':
     case 'bili':
-      return tr('哔哩');
+      return showReal ? '哔哩哔哩' : tr('哔哩');
     case 'qishui':
-      return tr('汽水');
+      return showReal ? '汽水音乐' : tr('汽水');
     case 'qmkg':
-      return tr('K歌');
+      return showReal ? '全民K歌' : tr('K歌');
     case 'kuaishou':
       return tr('快手');
     case 'youtube':

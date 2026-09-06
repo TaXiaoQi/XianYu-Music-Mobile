@@ -278,6 +278,8 @@ class AppSettings {
     this.dlnaRendererEnabled = false,
     // DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
     this.dlnaRendererName = '',
+    // 显示真实音源名：把插件用「小X」规避审查的别名还原为平台真名（网易云/酷狗/QQ 等）。
+    this.showRealSourceName = false,
   });
 
   final double volume;
@@ -511,6 +513,9 @@ class AppSettings {
   /// DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
   final String dlnaRendererName;
 
+  /// 显示真实音源名：把插件用「小X」规避审查的别名还原为平台真名。
+  final bool showRealSourceName;
+
   AppSettings copyWith({
     double? volume,
     int? playMode,
@@ -599,6 +604,7 @@ class AppSettings {
     bool? watchLinkageEnabled,
     bool? dlnaRendererEnabled,
     String? dlnaRendererName,
+    bool? showRealSourceName,
   }) {
     return AppSettings(
       volume: volume ?? this.volume,
@@ -720,6 +726,7 @@ class AppSettings {
       watchLinkageEnabled: watchLinkageEnabled ?? this.watchLinkageEnabled,
       dlnaRendererEnabled: dlnaRendererEnabled ?? this.dlnaRendererEnabled,
       dlnaRendererName: dlnaRendererName ?? this.dlnaRendererName,
+      showRealSourceName: showRealSourceName ?? this.showRealSourceName,
     );
   }
 }
@@ -864,6 +871,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,
       dlnaRendererEnabled: prefs.getBool('dlnaRendererEnabled') ?? false,
       dlnaRendererName: prefs.getString('dlnaRendererName') ?? '',
+      showRealSourceName: prefs.getBool('showRealSourceName') ?? false,
       customBackground: CustomBackground(
         enabled: prefs.getBool('customBackgroundEnabled') ?? false,
         imagePath: prefs.getString('customBackgroundImagePath') ?? '',
@@ -1033,6 +1041,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
       prefs.setBool('dlnaRendererEnabled', next.dlnaRendererEnabled),
       prefs.setString('dlnaRendererName', next.dlnaRendererName),
+      prefs.setBool('showRealSourceName', next.showRealSourceName),
       prefs.setBool('customBackgroundEnabled', next.customBackground.enabled),
       prefs.setString('customBackgroundImagePath', next.customBackground.imagePath),
       prefs.setInt('customBackgroundBlur', next.customBackground.blur),
@@ -1053,6 +1062,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setWatchLinkageEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkageEnabled: v));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
   Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
+  Future<void> setShowRealSourceName(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showRealSourceName: v));
   Future<void> setKeepScreenOn(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepScreenOn: v));
   Future<void> setEnablePredictiveBack(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(enablePredictiveBack: v));
   Future<void> setThemeMode(ThemeModePreference m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(themeMode: m));

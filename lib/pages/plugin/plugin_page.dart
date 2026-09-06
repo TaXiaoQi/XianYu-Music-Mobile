@@ -486,6 +486,15 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                       },
               ),
               const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('显示真实音源名'),
+                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
+                subtitle: Text(tr('把插件用「小X」规避审查的别名还原为平台真名（网易云/酷狗/QQ 等）')),
+                value: ref.watch(settingsProvider.select((s) => s.valueOrNull?.showRealSourceName ?? false)),
+                onChanged: (val) => ref.read(settingsProvider.notifier).setShowRealSourceName(val),
+              ),
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

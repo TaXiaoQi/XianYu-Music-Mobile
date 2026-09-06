@@ -32,6 +32,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
@@ -475,6 +476,8 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   /// 从插件音源构建来源列表；无插件时返回“本地”。
   void _refreshSources() {
     final plugins = ref.read(pluginManagerProvider).sources;
+    final showReal =
+        ref.read(settingsProvider).valueOrNull?.showRealSourceName ?? false;
     // 按用户拖拽排序展示（插件管理页顺序），未排序项用安装顺序兜底
     final enabled = sortPluginSources(plugins.where((p) => p.enabled).toList());
     debugPrint('[searchSources] enabled plugins=${enabled.length}');
@@ -484,24 +487,26 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     }
     final items = <_SourceItem>[];
     for (final p in enabled) {
+      final pName = showReal ? resolveRealSourceName(p.name) : p.name;
       if (p.format == PluginFormat.musicfree) {
         items.add(_SourceItem(
-            id: p.id, name: p.name, type: _SourceType.musicfree, plugin: p));
+            id: p.id, name: pName, type: _SourceType.musicfree, plugin: p));
       } else if (p.format == PluginFormat.lx) {
         final lx = p.sources.where(_validLxSources.contains).toList();
         if (lx.isEmpty) continue;
         if (lx.length == 1) {
           items.add(_SourceItem(
               id: p.id,
-              name: p.name,
+              name: pName,
               type: _SourceType.lx,
               plugin: p,
               lxKey: lx.first));
         } else {
           for (final key in lx) {
+            final rawName = _lxSourceNames[key] ?? key;
             items.add(_SourceItem(
                 id: '${p.id}__$key',
-                name: _lxSourceNames[key] ?? key,
+                name: showReal ? resolveRealSourceName(rawName) : rawName,
                 type: _SourceType.lx,
                 plugin: p,
                 lxKey: key));

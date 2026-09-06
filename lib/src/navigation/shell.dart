@@ -3133,13 +3133,18 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     EdgeInsets padding,
   ) {
     _dragDistance += details.delta.distance;
-    final currentTop = _top ?? (padding.top + 10.0);
-    final currentLeft = _left ?? 10.0;
+    final floatingSearchBar =
+        ref.read(settingsProvider).valueOrNull?.floatingSearchBar ?? false;
+    final topBarBottom =
+        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final currentTop = _top ?? (topBarBottom + 24.0);
+    final currentLeft = _left ?? 12.0;
 
-    final panelW = widget.expanded ? 84.0 : 48.0;
+    final panelW = widget.expanded ? 84.0 : 52.0;
 
-    final minTop = padding.top + 6.0;
-    final maxTop = screenSize.height - padding.bottom - 48.0 - 12.0;
+    // 拖动下限不低于顶栏下方 12px，防止拖到顶栏背后被遮挡。
+    final minTop = topBarBottom + 12.0;
+    final maxTop = screenSize.height - padding.bottom - 52.0 - 12.0;
     final minLeft = 8.0;
     final maxLeft = screenSize.width - panelW - 8.0;
 
@@ -3185,8 +3190,19 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
 
-    final currentTop = _top ?? (padding.top + 10.0);
-    final left = _left ?? 10.0;
+    // 顶栏底边（含 8px 玻璃阴影安全冗余）：
+    // 悬浮顶栏：padding.top+52；固定顶栏：padding.top+114（含 58px 搜索框）。
+    // 侧边栏默认落在顶栏下方 24px，拖动下限不低于顶栏下方 12px，
+    // 避免被顶栏（Stack 中渲染顺序更靠后、z-index 更高）遮挡。
+    final floatingSearchBar = ref.watch(settingsProvider
+            .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final topBarBottom =
+        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final safeMinTop = topBarBottom + 12.0;
+    // 渲染时强制把 _top 限制在顶栏下方，防止历史拖动的旧 state 把按钮留在顶栏区。
+    final currentTop =
+        (_top ?? (topBarBottom + 24.0)).clamp(safeMinTop, double.infinity);
+    final left = _left ?? 12.0;
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -3207,14 +3223,17 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     // 全局 blur 预算：滚动/转场时侧栏面板玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
-    // 展开面板预估高度 (用于方向判断)
-    const double approxExpandedH = 295.0;
+    // 展开面板预估高度 (用于方向判断)：
+    // logo 按钮 52 + 4 个 Tab（各约 66）+ 分割线/间距 ≈ 330。
+    // 取偏大值确保向上展开时顶部不会越入顶栏区域。
+    const double approxExpandedH = 330.0;
 
     // 检测向下与向上展开是否能够被屏幕完整包裹
     final bool canFitDown =
         (currentTop + approxExpandedH) <= (screenSize.height - padding.bottom - 8.0);
     final bool canFitUp =
-        (currentTop + 48.0 - approxExpandedH) >= (padding.top + 6.0);
+        (currentTop + 52.0 - approxExpandedH) >= (topBarBottom + 12.0);
+    // topBarBottom 在上方 build 中已含 8px 安全冗余，此处复用同一值。
 
     // 智能决策实际展开方向
     SideBarExpandDirection effectiveDir = preferredDir;
@@ -3236,7 +3255,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
       animation: _curvedAnim,
       builder: (context, child) {
         final progress = _curvedAnim.value;
-        final panelWidth = lerpDouble(48.0, 84.0, progress)!;
+        // 折叠态 52px（原 48 偏小不易发现），展开态 84px。
+        final panelWidth = lerpDouble(52.0, 84.0, progress)!;
 
         // 3条竖线 Logo 按钮组件（随 progress 旋转与变色）
         final logoButton = GestureDetector(
@@ -3247,7 +3267,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           behavior: HitTestBehavior.opaque,
           child: SizedBox(
             width: panelWidth,
-            height: 48,
+            height: 52,
             child: Center(
               child: Transform.rotate(
                 angle: progress * (3.141592653589793 / 2),
@@ -3425,10 +3445,32 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 );
         }
 
+        // 折叠态（progress 低）时强制叠加一层不透明背景，避免液态玻璃/毛玻璃
+        // 在浅色壁纸或高亮度背景下几乎看不见，导致用户找不到导航入口。
+        // 展开后背景层淡出，让位给玻璃材质本身的观感。
+        final collapsedHintAlpha = (1.0 - progress).clamp(0.0, 1.0);
+        if (collapsedHintAlpha > 0.01) {
+          panelWidget = Stack(
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.45 * collapsedHintAlpha)
+                        : Colors.white.withValues(alpha: 0.70 * collapsedHintAlpha),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+              panelWidget,
+            ],
+          );
+        }
+
         return Positioned(
           left: left,
           top: isUp ? null : currentTop,
-          bottom: isUp ? (screenSize.height - currentTop - 48.0) : null,
+          bottom: isUp ? (screenSize.height - currentTop - 52.0) : null,
           child: IgnorePointer(
             ignoring: widget.hidden,
             child: AnimatedOpacity(
