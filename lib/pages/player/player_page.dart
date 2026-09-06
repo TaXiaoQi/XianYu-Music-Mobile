@@ -16,6 +16,7 @@ import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/effects/sound_effect_provider.dart';
+import '../../src/auth/auth_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
@@ -28,6 +29,7 @@ import '../../src/navigation/shell.dart' show isLandscapeProvider;
 import '../../src/share/share_service.dart';
 import '../../src/share/share_sheet.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/bilipai_glass.dart';
 import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/committed_slider.dart';
@@ -1369,9 +1371,10 @@ class _TraditionalPlayerLayoutState
             ),
           ),
           IconButton(
+            // 右上角分享：收窄视觉尺寸，避免与返回键争夺顶栏视觉重心。
             icon: const Icon(
               Icons.ios_share,
-              size: 28,
+              size: 20,
               color: Colors.white,
             ),
             tooltip: tr('分享歌曲'),
@@ -1474,6 +1477,8 @@ class _TraditionalPlayerLayoutState
     final c = widget.current;
     final isFav = c != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
+    // 仅日推队列显示「不喜欢」：跳过本曲并上报负反馈，帮助调整日推算法。
+    final fromDaily = c?.fromDailyRecommend ?? false;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: inset),
       child: Row(
@@ -1513,6 +1518,30 @@ class _TraditionalPlayerLayoutState
               ],
             ),
           ),
+          if (fromDaily)
+            InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () => _reportDailyDislike(context, c),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  // 样式：收藏爱心 + 一条贯穿斜线（不喜欢）。
+                  child: CustomPaint(
+                    painter: _DislikeStrokePainter(
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    child: Icon(
+                      Icons.favorite_border,
+                      size: 26,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (fromDaily) const SizedBox(width: 8),
           InkWell(
             borderRadius: BorderRadius.circular(22),
             onTap: () {
@@ -1534,6 +1563,31 @@ class _TraditionalPlayerLayoutState
         ],
       ),
     );
+  }
+
+  /// 「不喜欢」当前日推歌曲：上报负反馈到服务器（调整日推算法），随后跳过本曲。
+  Future<void> _reportDailyDislike(BuildContext context, QueueItem? c) async {
+    if (c == null) return;
+    final ciyuanxiId = ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '';
+    if (ciyuanxiId.isEmpty) {
+      showXianYuToast(context, tr('请先登录后使用每日推荐'));
+      return;
+    }
+    try {
+      await ref.read(authProvider.notifier).requestAction(
+        'report_daily_dislike',
+        {
+          'ciyuanxi_id': ciyuanxiId,
+          'song_name': c.title,
+          'singer': c.artist,
+        },
+      );
+    } catch (_) {
+      // 上报失败不阻断跳过体验。
+    }
+    if (!mounted) return;
+    showXianYuToast(context, tr('已减少此类推荐'));
+    await ref.read(playerProvider.notifier).next();
   }
 
   Widget _buildActionsRow(BuildContext context) {
@@ -1636,11 +1690,10 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 进度条上方动作行最右的歌词控件：封面页是「桌面歌词·词」按钮；
+  /// 进度条上方动作行最右的控件：封面页是「更多」弹层入口；
   /// 歌词页变为「歌词调节」入口（打开调节菜单，含字号/翻译/罗马音/偏移
   /// 与左中右对齐，横竖屏弹窗完全一致），不再挤压右上角分享按钮。
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
-    final accent = Theme.of(context).colorScheme.primary;
     // 歌词页：桌面歌词控件变身歌词调节控件。默认白色，仅触发调节菜单时才点亮。
     if (_showLyrics) {
       return IconButton(
@@ -1660,32 +1713,87 @@ class _TraditionalPlayerLayoutState
         ),
       );
     }
-    // 封面页：桌面歌词「词」按钮正常显示（切换悬浮歌词）。
+    // 封面页：「更多」按钮（弹层内含桌面歌词开关与添加到歌单），
+    // 原桌面歌词直达入口已收进弹层，避免动作行语义拥挤。
     return IconButton(
       iconSize: 28,
-      tooltip: tr('桌面歌词'),
-      icon: Container(
-        width: 28,
-        height: 28,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: lyricsEnabled
-              ? accent.withValues(alpha: 0.14)
-              : Colors.transparent,
-        ),
-        child: Text(
-          tr('词'),
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-            color: lyricsEnabled
-                ? accent
-                : Colors.white.withValues(alpha: 0.85),
-          ),
-        ),
+      tooltip: tr('更多'),
+      icon: Icon(
+        Icons.more_horiz,
+        size: 24,
+        color: Colors.white.withValues(alpha: 0.85),
       ),
-      onPressed: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+      onPressed: () => _showCoverMoreSheet(context, lyricsEnabled),
+    );
+  }
+
+  /// 封面页「更多」弹层：桌面歌词开关 + 添加到歌单。
+  Future<void> _showCoverMoreSheet(
+      BuildContext context, bool lyricsEnabled) async {
+    final c = widget.current;
+    if (c == null) return;
+    await showSheetDialog<void>(
+      context,
+      (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Text(
+                  c.title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Text(
+                  c.artist.isEmpty ? tr('未知歌手') : c.artist,
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onSurfaceVariant),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.closed_caption_outlined,
+                  color: lyricsEnabled
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                  size: 22,
+                ),
+                title: Text(tr('桌面歌词')),
+                trailing: Text(
+                  lyricsEnabled ? tr('已开启') : tr('已关闭'),
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onSurfaceVariant),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
+                },
+              ),
+              ListTile(
+                leading:
+                    Icon(Icons.playlist_add, color: scheme.primary, size: 22),
+                title: Text(tr('添加到歌单')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showAddToPlaylistSheet(
+                      ctx, ref, [importedSongFromQueueItem(c)]);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -6580,4 +6688,29 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
       ),
     );
   }
+}
+
+/// 「不喜欢」图标：在爱心上叠加一条贯穿斜线（左上 → 右下），
+/// 与收藏爱心形成同源对比，表达「不想要此类推荐」。
+class _DislikeStrokePainter extends CustomPainter {
+  final Color color;
+  const _DislikeStrokePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    // 斜线稍微超出爱心边缘，确保「贯穿」观感。
+    canvas.drawLine(
+      Offset(size.width * 0.14, size.height * 0.14),
+      Offset(size.width * 0.86, size.height * 0.86),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DislikeStrokePainter old) =>
+      old.color != color;
 }

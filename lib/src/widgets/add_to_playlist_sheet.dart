@@ -1,9 +1,13 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'dart:convert';
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/auth_provider.dart';
+import '../home/daily_recommend.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../playlist/playlist_delete.dart';
@@ -143,6 +147,16 @@ Future<void> showAddToPlaylistSheet(
                               style: const TextStyle(fontSize: 12)),
                           onTap: () async {
                             await manager.addSongs(p.id, songs);
+                            // 正反馈：添加到歌单 = 「喜欢这类歌」，上报日推画像（失败静默）。
+                            unawaited(reportDailyLikeSignals(
+                              ref.read(authProvider.notifier),
+                              ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
+                              signalType: 'playlist',
+                              songs: [
+                                for (final s in songs)
+                                  (songName: s.title, singer: s.artist),
+                              ],
+                            ));
                             if (!context.mounted) return;
                             Navigator.of(context).pop();
                             showXianYuToast(

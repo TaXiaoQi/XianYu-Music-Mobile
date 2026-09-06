@@ -23,6 +23,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/source_tag.dart';
@@ -258,16 +259,20 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 
   Future<void> _confirmClear(
       BuildContext context, FavoritesManager notifier) async {
-    // 已登录且收藏存在云端副本：先弹删除范围三选一（对齐桌面端）。
+    // 已登录且收藏存在云端副本：先弹删除范围三选一（对齐桌面端），
+    // 用户取消则不动作；未同步走原普通确认框。
     final paths =
         ref.read(favoritesProvider).entries.map((e) => e.path).toList();
-    final scope = await resolveFavoriteDeleteScope(context, ref, paths);
-    if (!context.mounted) return;
-    if (scope != null) {
+    if (await shouldAskFavoriteDeleteScope(ref, paths)) {
+      if (!context.mounted) return;
+      final scope = await resolveFavoriteDeleteScope(context, ref, paths);
+      if (!context.mounted) return;
+      if (scope == null) return; // 用户取消
       await applyFavoriteDeleteScope(context, ref, scope, paths,
           onLocalRemove: () => notifier.clear());
       return;
     }
+    if (!context.mounted) return;
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -399,10 +404,13 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
     final sel = _selectedEntries(entries, batch);
     if (sel.isEmpty) return;
     final paths = sel.map((e) => e.path).toList();
-    // 已登录且存在云端副本：先弹删除范围三选一（对齐桌面端）。
-    final scope = await resolveFavoriteDeleteScope(context, ref, paths);
-    if (!mounted) return;
-    if (scope != null) {
+    // 已登录且存在云端副本：先弹删除范围三选一（对齐桌面端），
+    // 用户取消则不动作（保持批量选中状态）；未同步走原普通确认框。
+    if (await shouldAskFavoriteDeleteScope(ref, paths)) {
+      if (!mounted) return;
+      final scope = await resolveFavoriteDeleteScope(context, ref, paths);
+      if (!mounted) return;
+      if (scope == null) return; // 用户取消
       await applyFavoriteDeleteScope(context, ref, scope, paths,
           onLocalRemove: () async {
         for (final e in sel) {
@@ -412,6 +420,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
       batch.exit();
       return;
     }
+    if (!mounted) return;
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -842,7 +851,7 @@ class _FavoriteTile extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
     BuildContext? coverCtx;
-    final g = songRowPlay(ref, onPlay: () async {
+    Future<void> play() async {
       // 等封面落地后再播放：播放条封面随落地同步更新。
       final ok = await launchFlyCover(
         context,
@@ -854,7 +863,17 @@ class _FavoriteTile extends ConsumerWidget {
         radius: m.songRadius,
       );
       if (ok) onPlay();
-    });
+    }
+
+    final g = songRowPlay(ref, onPlay: play);
+    // 长按 / 行尾「更多」：通用歌曲操作弹层（收藏/下一首/加歌单/分享/信息/下载，
+    // 与本地音乐列表一致）；菜单「播放」复用完整起播手势（含飞封面）。
+    void openActions() => showSongActionsSheet(
+          context,
+          ref: ref,
+          item: entry.toQueueItem(),
+          onPlay: play,
+        );
     return g.wrap(
       CoverRow(
         cover: Builder(
@@ -871,6 +890,7 @@ class _FavoriteTile extends ConsumerWidget {
           },
         ),
         onTap: g.onTap,
+        onLongPress: openActions,
         title: Text(entry.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -899,6 +919,12 @@ class _FavoriteTile extends ConsumerWidget {
                   size: 20, color: scheme.primary),
               tooltip: tr('取消收藏'),
               onPressed: onRemove,
+            ),
+            IconButton(
+              icon: const Icon(Icons.more_horiz, size: 22),
+              color: scheme.onSurfaceVariant,
+              tooltip: tr('更多'),
+              onPressed: openActions,
             ),
           ],
         ),

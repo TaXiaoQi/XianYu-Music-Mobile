@@ -14,15 +14,23 @@ import '../widgets/sheet_dialog.dart';
 /// 弹「删除本地/删除全部/仅保留本地」三选一；否则返回 null（调用方走原确认流程）。
 /// [applyFavoriteDeleteScope]：按范围应用删除动作。
 
-/// 已同步收藏弹出删除范围选择；返回 'local' | 'all' | 'cloud'，取消或未同步返回 null。
-Future<String?> resolveFavoriteDeleteScope(
-    BuildContext context, WidgetRef ref, List<String> paths) async {
+/// 收藏是否存在云端副本（已登录且任一 path 在「上次已同步」集合中）。
+/// 调用方先据此分流：false → 未同步走原普通确认框；true → 弹范围三选一，
+/// 此时 [resolveFavoriteDeleteScope] 返回 null 即用户取消，应直接中止不再弹普通框。
+Future<bool> shouldAskFavoriteDeleteScope(
+    WidgetRef ref, List<String> paths) async {
   final api = ref.read(accountApiProvider);
   final loggedIn = (api.ciyuanxiId ?? '').isNotEmpty;
-  if (!loggedIn || paths.isEmpty) return null;
+  if (!loggedIn || paths.isEmpty) return false;
   final prefs = await SharedPreferences.getInstance();
   final synced = prefs.getStringList('synced_favorites_paths') ?? const <String>[];
-  if (!paths.any(synced.contains)) return null;
+  return paths.any(synced.contains);
+}
+
+/// 已同步收藏弹出删除范围选择；返回 'local' | 'all' | 'cloud'，取消返回 null。
+Future<String?> resolveFavoriteDeleteScope(
+    BuildContext context, WidgetRef ref, List<String> paths) async {
+  if (!await shouldAskFavoriteDeleteScope(ref, paths)) return null;
   if (!context.mounted) return null;
 
   final scheme = Theme.of(context).colorScheme;

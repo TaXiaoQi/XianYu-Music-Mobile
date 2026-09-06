@@ -163,6 +163,8 @@ class DailyRecommendItem {
       // musicfree 插件不附加，避免被当成 LX 在线歌词走 LoL 逻辑。
       source: isMf ? null : src,
       onlineInfoJson: isMf ? null : jsonEncode(song),
+      // 标记来源：播放页据此显示「不喜欢」按钮（跳过并上报负反馈）。
+      fromDailyRecommend: true,
     );
   }
 }
@@ -732,5 +734,33 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
     await ref
         .read(playerProvider.notifier)
         .playQueue(queue, startIndex: index);
+  }
+}
+
+// ─── 正反馈上报：收藏 / 添加到歌单 = 「喜欢这类歌」信号 ─────────────
+
+/// 收藏或添加到歌单时上报正反馈（失败静默，不阻塞主流程）。
+/// 服务端将该信号加权并入日推画像（提升相关歌手/歌曲的推荐权重）。
+Future<void> reportDailyLikeSignals(
+  AuthNotifier auth,
+  String ciyuanxiId, {
+  required String signalType, // favorite | playlist
+  required List<({String songName, String singer})> songs,
+}) async {
+  if (ciyuanxiId.isEmpty) return;
+  final payload = [
+    for (final s in songs)
+      if (s.songName.trim().isNotEmpty)
+        {'song_name': s.songName.trim(), 'singer': s.singer.trim()},
+  ];
+  if (payload.isEmpty) return;
+  try {
+    await auth.requestAction('report_daily_like', {
+      'ciyuanxi_id': ciyuanxiId,
+      'signal_type': signalType,
+      'songs': payload,
+    });
+  } catch (_) {
+    // 上报失败不影响收藏/加歌单主流程。
   }
 }

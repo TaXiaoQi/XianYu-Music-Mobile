@@ -1,8 +1,11 @@
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../auth/auth_provider.dart';
+import '../home/daily_recommend.dart';
 import '../player/player_provider.dart';
 
 /// 收藏歌曲（本地或在线）。
@@ -251,6 +254,13 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final entries = [entry, ...state.entries];
     await _store.saveAll(entries);
     state = FavoritesState(entries: entries, loading: false);
+    // 正反馈：收藏 = 「喜欢这类歌」，上报日推画像（失败静默，不阻塞收藏）。
+    unawaited(reportDailyLikeSignals(
+      _ref.read(authProvider.notifier),
+      _ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
+      signalType: 'favorite',
+      songs: [(songName: item.title, singer: item.artist)],
+    ));
   }
 
   Future<void> remove(String path) async {

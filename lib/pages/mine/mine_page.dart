@@ -13,6 +13,7 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/playlist/playlist_delete.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/recent/recent_provider.dart';
@@ -926,35 +927,12 @@ class _PlaylistRow extends ConsumerWidget {
                 title:   Text(tr('删除歌单')),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _confirmRemove(context, manager);
+                  confirmRemovePlaylist(context, ref, playlist);
                 },
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _confirmRemove(BuildContext context, PlaylistManager manager) {
-    showPredictiveDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('删除歌单')),
-        content: Text(tr('确定要删除「{name}」吗？', {'name': playlist.name})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              manager.remove(playlist.id);
-            },
-            child:   Text(tr('删除')),
-          ),
-        ],
       ),
     );
   }

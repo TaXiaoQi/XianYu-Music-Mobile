@@ -262,6 +262,8 @@ class QueueItem {
   final String? source;
   /// 在线歌曲信息 JSON（歌词抓取用，LyricSongInfo 格式）。
   final String? onlineInfoJson;
+  /// 来自每日推荐队列：播放页据此显示「不喜欢」按钮（跳过并上报负反馈）。
+  final bool fromDailyRecommend;
   const QueueItem({
     required this.path,
     required this.title,
@@ -274,6 +276,7 @@ class QueueItem {
     this.coverPath,
     this.source,
     this.onlineInfoJson,
+    this.fromDailyRecommend = false,
   });
 
   bool get isOnline =>
@@ -293,6 +296,7 @@ class QueueItem {
         coverPath: coverPath ?? this.coverPath,
         source: source,
         onlineInfoJson: onlineInfoJson,
+        fromDailyRecommend: fromDailyRecommend,
       );
 
   /// 复制并更新在线音质（音质切换后写回队列项，切歌/重播沿用该档）。
@@ -308,6 +312,7 @@ class QueueItem {
         coverPath: coverPath,
         source: source,
         onlineInfoJson: onlineInfoJson,
+        fromDailyRecommend: fromDailyRecommend,
       );
 }
 
@@ -1034,6 +1039,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             onlineSongJson: meta['onlineSongJson'] as String?,
             onlineQuality: meta['onlineQuality'] as String?,
             onlineInfoJson: meta['onlineInfoJson'] as String?,
+            fromDailyRecommend: meta['fromDailyRecommend'] as bool? ?? false,
           ));
         } else {
           queue.add(QueueItem(
