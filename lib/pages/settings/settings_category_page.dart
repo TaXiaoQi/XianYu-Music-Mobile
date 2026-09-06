@@ -112,7 +112,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: RepaintBoundary(child: ListView(
+            // 不要用 RepaintBoundary 包住列表：会隔离毛玻璃卡片与壁纸，
+            // BackdropFilter 够不到壁纸只能退薄色片，回弹露出壁纸原色。
+            child: ListView(
               padding: EdgeInsets.fromLTRB(
                 16,
                 8,
@@ -127,7 +129,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                 notifier,
                 exclusivePlaying,
               ),
-            )),
+            ),
           ),
           Positioned(
             top: 0,
@@ -1067,8 +1069,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          // 同导航页副标题：bodyMedium（14px）。
-                          style: (textTheme.bodyMedium ?? const TextStyle())
+                          // 与设置导航页副标题一致：bodySmall（12px）。
+                          style: (textTheme.bodySmall ?? const TextStyle())
                               .copyWith(color: subtitleColor),
                         ),
                       ],
@@ -1081,7 +1083,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    child: trailing,
+                    // 具体设置值统一为次要小字（同导航页副标题 bodySmall），
+                    // 不与标题抢层级。
+                    child: DefaultTextStyle(
+                      style: (textTheme.bodySmall ?? const TextStyle())
+                          .copyWith(color: subtitleColor),
+                      child: trailing,
+                    ),
                   ),
                 ),
                 if (onTap != null) ...[

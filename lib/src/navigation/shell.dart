@@ -1074,6 +1074,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     if (!landscape) _syncChromeGlassSettle(hidden);
 
     void select(int i) {
+      // 重复点击当前 tab 直接忽略：再走 goBranch 会触发一次到分支初始位置的
+      // 重路由，导致底栏重建、指示器从首页(0)重新飞向当前 tab（首页 index 0
+      // 重导航后索引不变故不飞，我的页 index 1 会飞）。
+      if (i == widget.index) return;
       // 切主 tab 时关闭横屏覆盖容器（参考桌面端：侧边栏导航即离开当前容器）。
       if (searchOpenRaw) closeLandscapeSearch(ref);
       ref.read(landscapeContentPathProvider.notifier).state = null;
@@ -2568,42 +2572,35 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final pressG = Curves.easeOut.transform(_press.value);
         final mf = math.max(pressG, dragMf);
 
-        // —— 速度形变（BiliPai DEFAULT indicator 规格）——
-        // 拖动拉伸：scaleX += motionFraction×0.34，Y 压缩比 0.52——比旧版
-        // 自研曲线（max +16%）饱满得多，快甩时水滴明显拉成胶囊再弹回。
-        // 按住放大保留自研口径：静止直径 0.8 栏高，按住高 +30%（胀出栏缘）、
-        // 横向再鼓 24%；落点回弹沿用阻尼正弦波。
-        double sx = 1 + dragMf * 0.34;
-        double sy = 1 - dragMf * 0.34 * 0.52;
-        if (_dragging || pressG > 0) {
-          sx *= 1 + 0.24 * pressG;
-          sy *= 1 + 0.30 * pressG;
-        }
+        // —— 圆形态变（用户定案：水滴始终是正圆，不做椭圆/胶囊拉伸）——
+        // 统一缩放系数 k：拖动速度 + 按压缩放，各向同性保持圆形；按住放大、
+        // 落点回弹（阻尼正弦）也按统一系数整体缩放，始终是一个圆的放大/缩小，
+        // BiliPai 清水滴观感。
+        double k = 1 + dragMf * 0.22 + pressG * 0.55;
         if (!overlayDroplet) {
           // 嵌入玻璃内部时按住胀大被玻璃裁剪，上限钳到栏高防硬切边。
-          sy = math.min(sy, maxH / dropH);
+          k = math.min(k, maxH / dropH);
         }
         if (!_dragging && _move.isCompleted) {
           // —— 落点回弹（仅在到站后播放）——
           final rp = _rebound.value;
           if (rp < 1) {
-            double rx;
-            double ry;
+            double r;
             if (rp <= 0.20) {
               final e = Curves.easeOut.transform(rp / 0.20);
-              rx = 1 - 0.035 * e;
-              ry = 1 + 0.028 * e;
+              r = 1 - 0.05 * e;
             } else {
               final rel = (rp - 0.20) / 0.80;
               final damping = (1 - rel) * math.exp(-3.2 * rel);
               final wave = damping * math.sin(math.pi * rel);
-              rx = 1 + 0.085 * wave;
-              ry = 1 + 0.075 * wave;
+              r = 1 + 0.09 * wave;
             }
-            sx *= rx;
-            sy *= ry;
+            k *= r;
           }
         }
+        // 各向同性：横向/纵向缩放一致，水滴恒为正圆。
+        final sx = k;
+        final sy = k;
 
         // 真液态：圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
         //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移）。
@@ -2613,40 +2610,78 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         // 拖动/按住水滴「活」起来，图标被连贯地「熔」进边缘。
         // depthEffect=1 让中心内容也「鼓起」，水滴压到内容上立刻有
         // 放大镜观感。
-        // 水滴染色对齐官方 drawLiquidSphereSurface baseColor =
-        // colorScheme.primary @0.18（清水透镜带主题色淡染，BiliPai dock 同款）。
+        // 静止 = 静态指示器，交互 = 水滴（BiliPai 对齐）；
+        // 水滴底座纯透明，存在感来自折射 + specular 扫光 + 图标缩放。
         // 非液态：铺满整格的主题色淡红大胶囊（恢复通用选中指示样式）。
         final d = dropH;
         final bool scaledIndicator = overlayDroplet; // 尺寸已含形变，无需 Transform
+        // 对齐 BiliPai：只有交互（按住预览 / 拖动）时水滴才是「活」的折射透镜，
+        // 静止纯静态指示器。
+        final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
         Widget indicator;
-        if (widget.lens) {
+        if (widget.lens && dropletOn) {
           final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
           final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
-          indicator = BiliPaiGlass(
-            // overlay 模式尺寸含 sx/sy 形变，半径取缩放后短边的一半。
-            radius: scaledIndicator ? d * sy / 2 : d / 2,
-            refract: amount,
-            chroma: widget.dropletChroma,
-            // Halcyon 水滴是纯折射透镜（无模糊）：图标/文字被扭过来时保持
-            // 清晰，只靠底色+扫光提供存在感。
-            blurSigma: 0,
-            backgroundColor: Theme.of(context)
-                .colorScheme
-                .primary
-                .withValues(alpha: 0.18),
-            specular: 0.12,
-            edgeAmount: band,
-            saturation: 1.5,
-            depthEffect: 1.0,
-            child: const SizedBox.expand(),
-          );
-        } else {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          // BiliPai 水滴带一圈极淡勾边作为边缘定义线（0x08 白/黑≈3%）。之前
+          // 提到 0.10~0.12 导致按住时深色底栏上一圈白色亮环（用户反馈「亮色」），
+          // 现按 BiliPai 原值回落到极淡，只留可辨的边缘、不发亮。
           indicator = DecoratedBox(
             decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .colorScheme
-                  .primary
-                  .withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+              border: Border.all(
+                // 亮色系水滴的分辩关键=一圈看得见的深色勾边（BiliPai 亮底就是靠
+                // 细环凸显圆形边界）；暗色下深环不可见、白环会发亮成「亮环」
+                //（当初教训），故暗色保持发暗的极淡白。
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.14),
+                width: 1,
+              ),
+            ),
+            // 水滴改用 LiveLiquidSurface（标准 BackdropFilter，播放条同款可靠
+            // 路径）：BiliPaiGlass 的 RenderLiquidBacking 走自定义 pushLayer 抓
+            // 背板，水滴平移时背板不重抓、折射不跟随滑动（当初播放条同根因）。
+            // LiveLiquidSurface 每帧实测自身几何写 uGlassOrigin + 标准
+            // BackdropFilter 重新 push，拖动/滑动时背板实时重抓、折射跟随手指。
+            child: LiveLiquidSurface(
+              // overlay 模式尺寸含 sx/sy 形变，半径取缩放后短边的一半。
+              radius: scaledIndicator ? d * sy / 2 : d / 2,
+              refract: amount,
+              chroma: widget.dropletChroma,
+              blurSigma: 0,
+              // 水滴可见性交给「实色圆座」而非折射透镜（BiliPai 纯色样式的做法）：
+// 浅色=白底上一格浅灰圆座，暗色=深灰底上一格更深的黑圆座——圆座实色
+// 让选中态一眼可辨，透镜只留一点轻量水滴点缀，不靠高倍放大硬凑。
+// 注意：圆座是平面等同系淡色调（非带阴影凸起的按钮，那是 White 底翻车处）。
+backgroundColor: isDark
+    ? Colors.black.withValues(alpha: 0.18)
+    : Colors.black.withValues(alpha: 0.05),
+specular: 0.12,
+edgeAmount: band,
+saturation: 1.4,
+// 深度放大退回轻档辅助（BiliPai 纯色样式基本是平的）：「圆座实色」已承载
+// 可见性，放大只留一丝水滴感，避免重演亮斑/像圆镜的过曝。
+depthEffect: 1.2,
+              child: const SizedBox.expand(),
+            ),
+          );
+        } else {
+          // 静止指示器：
+          //  - 液态模式：BiliPai NavigationIndicator 官方静态胶囊
+          //    （0x10 黑 / 0x15 白，极淡的透明胶囊）
+          //  - 非液态：主题色淡红大胶囊（铺满整格）
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          indicator = DecoratedBox(
+            decoration: BoxDecoration(
+              color: widget.lens
+                  ? (isDark
+                      ? const Color(0x15FFFFFF)
+                      : const Color(0x10000000))
+                  : Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(d / 2),
             ),
             child: const SizedBox.expand(),
@@ -2677,6 +2712,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                                   (1 - (i - pos).abs()).clamp(0.0, 1.0)
                           : 1.0,
                       onTap: () => widget.onSelect(i),
+                      // 液态模式水滴即按压反馈，不再叠 InkWell 点击亮色。
+                      suppressSplash: widget.lens,
                     ),
                   ),
               ],
@@ -2776,16 +2813,16 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     }
   }
 
-  /// 指针被系统取消（未触发 onTap 也未走拖动结算）：回缩并滑回选中 tab，
-  /// 防止水滴停在按住预览的位置。
+  /// 指针被系统取消（未触发 onTap 也未走拖动结算）：立即终止飞行并归位到
+  /// 真实选中 tab（[widget.index]）。若不中断动画，按下时「按住预览」滑出去的
+  /// 水滴会滞留在别的 tab 上，页面却还在当前 tab——再点当前 tab 又会从滞留位
+  /// 飞回来，造成「指示器脱同步」（指示器在哪儿就在哪儿）。
   void _onPressCancel() {
     if (_dragging) return;
     _press.reverse();
-    if (!_move.isAnimating && (_currentPosition - widget.index).abs() > 0.02) {
-      _from = _currentPosition;
-      _to = widget.index.toDouble();
-      _move.forward(from: 0);
-    }
+    _move.stop();
+    _from = _to = widget.index.toDouble();
+    setState(() {});
   }
 
   void _onDragStart(DragStartDetails d, double tabW, int count) {
@@ -2849,12 +2886,17 @@ class _NavTab extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.iconScale = 1.0,
+    this.suppressSplash = false,
   });
 
   final BottomNavItem item;
   final bool selected;
   final VoidCallback onTap;
   final double iconScale;
+
+  /// 液态玻璃模式下关闭 InkWell 涟漪/高亮（水滴本体即是按压反馈，splash
+  /// 会在背景叠出一圈「点击亮色」）。
+  final bool suppressSplash;
 
   @override
   Widget build(BuildContext context) {
@@ -2863,31 +2905,36 @@ class _NavTab extends StatelessWidget {
     final color = selected
         ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
+    final tab = Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Transform.scale(
+            scale: iconScale,
+            child: Icon(item.icon, size: 22, color: color),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            navTitle(context, item),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+    // 液态模式彻底不用 InkWell（水滴即按压反馈）：InkWell 的 highlight/splash
+    // 会在按住时给整格叠一层「长指示器」式的底色高亮，且 highlight 在按住期间
+    // 持续显示。改 GestureDetector 从根上杜绝任何 Material 点击高亮。
+    if (suppressSplash) return GestureDetector(onTap: onTap, child: tab);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Transform.scale(
-              scale: iconScale,
-              child: Icon(item.icon, size: 22, color: color),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              navTitle(context, item),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: tab,
     );
   }
 }

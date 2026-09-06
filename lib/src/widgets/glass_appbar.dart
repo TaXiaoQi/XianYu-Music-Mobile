@@ -114,7 +114,7 @@ class GlassTopBar extends ConsumerWidget {
         : (wallpaper
             ? wallpaperNavGlassFill(context)
             : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
+                ? Colors.white.withValues(alpha: 0.20)
                 : Colors.white.withValues(alpha: 0.52)));
     final glassFill = fill;
     final divider = scheme.onSurface.withValues(alpha: 0.06);

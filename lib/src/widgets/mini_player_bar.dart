@@ -584,12 +584,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   Widget _liquidSurface(BuildContext context, Widget content) {
     final quality = liquidGlassQualitySetting(ref);
     // 高度必须约束在液态表面【外层】：shell/独立两种嵌入方式（AnimatedPositioned
-    // 只给 left/top/width）都不传高度，而 _LiveLiquidSurface 内部是
+    // 只给 left/top/width）都不传高度，而 LiveLiquidSurface 内部是
     // Stack(fit: StackFit.expand)，不设外层高度时 Stack 取 constraints.biggest
     // 得到 h=Infinity → 布局崩溃（帧管线被污染，弹窗等后续路由全部渲染失败）。
     return SizedBox(
       height: 58,
-      child: _LiveLiquidSurface(
+      child: LiveLiquidSurface(
         radius: 29,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
@@ -766,8 +766,9 @@ class _RingPainter extends CustomPainter {
 /// 常转，每帧先写 uniform 再 setState 重建——每帧全新 build 让框架按标准
 /// 流程重新 push BackdropFilterLayer，拖动平移/页面滚动时背板都实时重抓，
 /// 不依赖任何缓存命中策略。内容 child 为同一实例传入，不被每帧重建波及。
-class _LiveLiquidSurface extends StatefulWidget {
-  const _LiveLiquidSurface({
+class LiveLiquidSurface extends StatefulWidget {
+  const LiveLiquidSurface({
+    super.key,
     required this.radius,
     required this.refract,
     required this.chroma,
@@ -776,6 +777,7 @@ class _LiveLiquidSurface extends StatefulWidget {
     required this.specular,
     required this.edgeAmount,
     required this.saturation,
+    this.depthEffect = 0.0,
     required this.child,
   });
 
@@ -787,13 +789,18 @@ class _LiveLiquidSurface extends StatefulWidget {
   final double specular;
   final double edgeAmount;
   final double saturation;
+
+  /// 径向深度放大（slot 18）。>0 时把径向内容放大成「透镜鼓起」，是水滴质感
+  /// 的关键；播放条保持默认 0（平面液态），水滴等透镜场景才传入。
+  final double depthEffect;
+
   final Widget child;
 
   @override
-  State<_LiveLiquidSurface> createState() => _LiveLiquidSurfaceState();
+  State<LiveLiquidSurface> createState() => LiveLiquidSurfaceState();
 }
 
-class _LiveLiquidSurfaceState extends State<_LiveLiquidSurface>
+class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
   /// FragmentProgram 进程级缓存（与 BiliPai 共享同一 asset，加载一次）。
   static Future<ui.FragmentProgram>? _programFuture;
@@ -878,7 +885,7 @@ class _LiveLiquidSurfaceState extends State<_LiveLiquidSurface>
       ..setFloat(15, _glassH)
       ..setFloat(16, math.min(widget.edgeAmount, minSide * 0.42) * dpr)
       ..setFloat(17, widget.saturation)
-      ..setFloat(18, 0.0)
+      ..setFloat(18, widget.depthEffect)
       ..setFloat(19, _tick.value * 8.0);
   }
 

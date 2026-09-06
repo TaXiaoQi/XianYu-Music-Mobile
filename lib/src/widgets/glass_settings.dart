@@ -49,10 +49,13 @@ Color wallpaperGlassFill(BuildContext context, WidgetRef ref) =>
 ///
 /// 透明度的底线：原先暗色仅 5%、亮色 19%，叠在「带深色遮罩」的壁纸背上几乎
 /// 等于黑色（尤以迷你播放条常见「毛玻璃发黑」）。故量值适当提高，确保任何
-/// 壁纸上都渲染为可见的半透明磨砂、而非沉成黑色。
+/// 壁纸上都渲染为可见的半透明磨砂、而非沉成黑色。又因壁纸层被独立
+/// RepaintBoundary 隔离、毛玻璃 BackdropFilter 采样不到壁纸，背板为空，仅靠这
+/// 层色片维持观感——再提高到暗色 ~24%、亮色 ~42%，回弹/贴边时不至于露出壁纸
+/// 原色，始终是一层可辨的磨砂薄纱。
 Color wallpaperNavGlassFill(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  return isDark ? const Color(0x26FFFFFF) : const Color(0x4CFFFFFF);
+  return isDark ? const Color(0x3DFFFFFF) : const Color(0x6BFFFFFF);
 }
 
 /// 浮动导航胶囊（迷你播放条 / 悬浮底栏）的投影。
@@ -135,7 +138,7 @@ Widget frostedCardSurface({
   final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   final frostedFill = isDark
-      ? Colors.white.withValues(alpha: 0.10)
+      ? Colors.white.withValues(alpha: 0.20)
       : Colors.white.withValues(alpha: 0.52);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
