@@ -21,6 +21,8 @@ import '../player/player_provider.dart' show QueueItem;
 import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_subscriptions.dart';
+import '../plugin/plugin_sync_crypto.dart';
+import '../plugin/plugin_user_vars.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
 import 'settings_conflict_dialog.dart';
@@ -555,10 +557,23 @@ class SyncNotifier extends StateNotifier<SyncState> {
                 // 移动端歌单无自定义封面，取歌单内第一首在线歌曲封面作为云端封面，
                 // 避免覆盖桌面端已上传的 cloudCoverUrl。
                 'cloudCoverUrl': _firstRemoteSongCover(p.songs),
+                'cloudId': p.cloudId,
                 'songs': p.songs.map(_songToSyncPayload).toList(),
               })
           .toList();
       final res = await _api.fileSyncUpload(payload);
+      // 服务端回传 id_map：本地 id → 云端字符串 cloudId，写回本地，
+      // 覆盖历史缺失/数字 cloudId，保证跨设备稳定识别为"已同步"。
+      final store = PlaylistStore();
+      if (res.idMap.isNotEmpty) {
+        for (final entry in res.idMap) {
+          final localId = (entry['id'] as String?);
+          final cloudId = (entry['cloudId'] as String?);
+          if (localId != null && localId.isNotEmpty) {
+            await store.setCloudId(localId, cloudId);
+          }
+        }
+      }
       state = state.copyWith(
         playlistSync: state.playlistSync.copyWith(
           syncing: false,
@@ -612,6 +627,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           name: (pl['name'] as String?) ?? tr('未命名歌单'),
           songs: songs,
           originalSongCount: songs.length,
+          cloudId: pl['cloudId'] as String?,
         ));
       }
       await PlaylistStore().addPlaylists(toImport);
@@ -675,7 +691,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
           'onlineInfoJson': e.onlineInfoJson,
         };
       }).toList();
-      final count = await _api.uploadFavorites(payload);
+      // 收藏按键合并：删除跟踪 = 上次已同步路径 − 当前收藏，
+      // 交给服务端 merge 模式删除对应云端收藏，新增仍按键保留（跨设备互不抹掉）。
+      final prefs = await SharedPreferences.getInstance();
+      final currentPaths = favEntries.map((e) => e.path).toSet();
+      final deletePaths = (prefs.getStringList('synced_favorites_paths') ?? [])
+          .where((p) => !currentPaths.contains(p))
+          .toList();
+      final count = await _api.uploadFavorites(payload, deletePaths: deletePaths);
+      await prefs.setStringList('synced_favorites_paths', currentPaths.toList());
       state = state.copyWith(
         favoritesSync: state.favoritesSync.copyWith(
           syncing: false,
@@ -846,7 +870,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             errors.add(tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
             continue;
           }
-          await _api.uploadPlugin({
+          final plugin = <String, dynamic>{
             'id': p.id,
             'name': p.name,
             'version': p.version,
@@ -857,7 +881,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
             'filePath': scriptPath,
             'script': _encodeRevBase64(script),
             'scriptEncoded': true,
-          }, isFirst: i == 0, subscriptions: subs);
+          };
+          // 附加 AES 加密的用户变量值（失败仅跳过变量同步，不影响插件本身上传）
+          final ciyuanxiId = _api.ciyuanxiId;
+          if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
+            final userVars =
+                await _ref.read(pluginUserVarValuesProvider.notifier).valuesOf(p.id);
+            if (userVars.isNotEmpty) {
+              final block = PluginUserVarCrypto.encrypt(ciyuanxiId, userVars);
+              if (block != null) plugin['userVariablesEncrypted'] = block;
+            }
+          }
+          await _api.uploadPlugin(plugin, isFirst: i == 0, subscriptions: subs);
           uploaded++;
         } catch (e) {
           AppLogger.instance.log('sync', '插件 ${p.name} 上传失败: $e');
@@ -945,6 +980,22 @@ class SyncNotifier extends StateNotifier<SyncState> {
           // 云端标记停用的插件同步后保持停用
           if (item['enabled'] == false && source.enabled) {
             await pluginManager.toggleEnabled(source.id);
+          }
+          // 还原 AES 加密的用户变量值（用本地安装插件 id 作为键，与上传端一致）
+          final encBlock = item['userVariablesEncrypted'];
+          if (encBlock is Map) {
+            final ciyuanxiId = _api.ciyuanxiId;
+            if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
+              final values = PluginUserVarCrypto.decrypt(
+                  ciyuanxiId, encBlock.cast<String, dynamic>());
+              if (values != null && values.isNotEmpty) {
+                await _ref
+                    .read(pluginUserVarValuesProvider.notifier)
+                    .save(source.id, values);
+              } else {
+                errors.add(tr('插件 "{name}" 用户变量解密失败', {'name': name}));
+              }
+            }
           }
           installed++;
         } catch (e) {

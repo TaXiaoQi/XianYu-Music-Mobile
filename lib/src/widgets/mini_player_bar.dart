@@ -48,7 +48,7 @@ Widget playbarGlassSurface(
 
   if (liquid) {
     final quality = liquidGlassQualitySetting(ref);
-    return BiliPaiGlass(
+    final glass = BiliPaiGlass(
       radius: radius,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
@@ -66,6 +66,8 @@ Widget playbarGlassSurface(
       alwaysLive: true,
       child: child,
     );
+    // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
+    return liquidGlassShell(context, child: glass, radius: radius);
   }
 
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -589,16 +591,21 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     // 得到 h=Infinity → 布局崩溃（帧管线被污染，弹窗等后续路由全部渲染失败）。
     return SizedBox(
       height: 58,
-      child: LiveLiquidSurface(
-        radius: 29,
-        refract: bilipaiRefractOf(quality),
-        chroma: bilipaiChromaOf(quality),
-        blurSigma: bilipaiBackdropBlurOf(quality),
-        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
-        specular: bilipaiSpecularOf(quality),
-        edgeAmount: bilipaiEdgeOf(quality),
-        saturation: bilipaiSaturationOf(quality),
-        child: content,
+      // 与底栏/顶栏共用 BiliPai 发光描边外壳（播放条此前漏套）。
+      child: liquidGlassShell(
+        context,
+        radius: 999,
+        child: LiveLiquidSurface(
+          radius: 29,
+          refract: bilipaiRefractOf(quality),
+          chroma: bilipaiChromaOf(quality),
+          blurSigma: bilipaiBackdropBlurOf(quality),
+          backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+          specular: bilipaiSpecularOf(quality),
+          edgeAmount: bilipaiEdgeOf(quality),
+          saturation: bilipaiSaturationOf(quality),
+          child: content,
+        ),
       ),
     );
   }

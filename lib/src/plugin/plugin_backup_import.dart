@@ -80,11 +80,14 @@ class PluginBackupPlaylist {
   final String name;
   final List<ImportedSong> songs;
   final int originalSongCount;
+  /// 云端歌单 ID（下载合并时绑定，为 null 表示普通备份导入/全新云端歌单）。
+  final String? cloudId;
 
   PluginBackupPlaylist({
     required this.name,
     required this.songs,
     required this.originalSongCount,
+    this.cloudId,
   });
 }
 

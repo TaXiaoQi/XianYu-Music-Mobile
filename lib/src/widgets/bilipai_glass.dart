@@ -830,3 +830,99 @@ class RenderLiquidBacking extends RenderBox {
     super.dispose();
   }
 }
+
+/// BiliPai 液态玻璃外壳「勾边」的可见性外框：
+///
+/// 沿胶囊内缘画一圈「内发光描边」——顶部强、底部弱的非对称高光
+///（对应官方 FloatingDockChrome 的 BloomStroke：primaryLight 上 +
+///  secondaryLight 下 + dualPeak + innerBlur），并做 blur 柔和成玻璃
+///  截面的柔光，而不是 Border.all 硬平线。深色模式用浅色高亮，
+/// 浅色模式用深色细线。底栏 / 悬浮顶栏 / 播放条等悬浮玻璃胶囊共用。
+Widget liquidGlassShell(
+  BuildContext context, {
+  required Widget child,
+  double radius = 999,
+  Color? lightBorder,
+  Color? darkBorder,
+  double borderWidth = 0.8,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  // 分开处理：深色→白色内发光勾边；浅色→沿外缘一圈柔晕阴影
+  //（下缘略重，模拟阴影吸附边缘；避免整块投影变"全局阴影"）。
+  return CustomPaint(
+    foregroundPainter: _LiquidGlassRimPainter(
+      isDark: isDark,
+      radius: radius,
+      strokeWidth: borderWidth,
+      lightBorder: lightBorder,
+      darkBorder: darkBorder,
+    ),
+    child: child,
+  );
+}
+
+/// BiliPai BloomStroke 边界的 Flutter 版：沿胶囊内缘一圈非对称发光描边，
+/// 顶部亮、底部近乎透明，叠加 blur 模拟玻璃截面的内发光。
+class _LiquidGlassRimPainter extends CustomPainter {
+  _LiquidGlassRimPainter({
+    required this.isDark,
+    required this.radius,
+    required this.strokeWidth,
+    this.lightBorder,
+    this.darkBorder,
+  });
+
+  final bool isDark;
+  final double radius;
+  final double strokeWidth;
+  final Color? lightBorder;
+  final Color? darkBorder;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outer = Offset.zero & size;
+    final shortest = outer.shortestSide;
+    if (shortest <= 0) return;
+    final rr = RRect.fromRectAndRadius(
+      outer.deflate(strokeWidth / 2),
+      Radius.circular(radius.clamp(0.0, shortest / 2)),
+    );
+    final base = isDark
+        ? (darkBorder ?? Colors.white)
+        : (lightBorder ?? Colors.black);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      // 深色：细锐的顶部发光描边；浅色：柔和外缘晕影，下缘略重模拟阴影。
+      ..maskFilter =
+          MaskFilter.blur(BlurStyle.normal, isDark ? 0.5 : 2.2);
+    paint.shader = isDark
+        ? RadialGradient(
+            center: const Alignment(0, -1.4),
+            radius: 1.6,
+            colors: [
+              base.withValues(alpha: 0.55),
+              base.withValues(alpha: 0.12),
+              base.withValues(alpha: 0.03),
+            ],
+          ).createShader(outer)
+        : LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              base.withValues(alpha: 0.05),
+              base.withValues(alpha: 0.13),
+              base.withValues(alpha: 0.17),
+            ],
+          ).createShader(outer);
+    canvas.drawRRect(rr, paint);
+  }
+
+  @override
+  bool shouldRepaint(_LiquidGlassRimPainter old) =>
+      old.isDark != isDark ||
+      old.radius != radius ||
+      old.strokeWidth != strokeWidth ||
+      old.lightBorder != lightBorder ||
+      old.darkBorder != darkBorder;
+}

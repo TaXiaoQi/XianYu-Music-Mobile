@@ -4,6 +4,8 @@ import 'dart:ui';
 
 import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1077,11 +1079,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       // 重复点击当前 tab 直接忽略：再走 goBranch 会触发一次到分支初始位置的
       // 重路由，导致底栏重建、指示器从首页(0)重新飞向当前 tab（首页 index 0
       // 重导航后索引不变故不飞，我的页 index 1 会飞）。
-      if (i == widget.index) return;
+      // widget.index / navigationShell.currentIndex 双双作为「当前选中」判定源，
+      // 任一与 i 相等都视为已在当前 tab，直接忽略，杜绝重复点击重导航乱飞。
+      debugPrint(
+          '[nav-select] i=$i current=${widget.navigationShell.currentIndex} widget=${widget.index}');
+      if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       // 切主 tab 时关闭横屏覆盖容器（参考桌面端：侧边栏导航即离开当前容器）。
       if (searchOpenRaw) closeLandscapeSearch(ref);
       ref.read(landscapeContentPathProvider.notifier).state = null;
-      widget.navigationShell.goBranch(i, initialLocation: i == widget.index);
+      widget.navigationShell.goBranch(
+          i, initialLocation: i == widget.navigationShell.currentIndex);
     }
 
     // 左缘侧栏分割条：覆盖在侧栏右边界上（hit 区跨边界居中），拖动实时改宽。
@@ -1972,7 +1979,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return BiliPaiGlass(
+    final glass = BiliPaiGlass(
       radius: 30,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
@@ -1993,6 +2000,9 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       saturation: bilipaiSaturationOf(quality),
       child: tabs,
     );
+    // 对齐 BiliPai FloatingDockChrome：液态玻璃外壳「勾边/阴影分开处理」
+    //（深色白描边 / 浅色黑色投影），纯色背景下容器可见性不靠折射/扫光兜底。
+    return liquidGlassShell(context, child: glass, radius: 30);
   }
 
   /// 伪毛玻璃：液态玻璃关闭时的默认样式。
@@ -2475,70 +2485,113 @@ class _SlidingNavBottom extends StatefulWidget {
 
 class _SlidingNavBottomState extends State<_SlidingNavBottom>
     with TickerProviderStateMixin {
-  late final AnimationController _move = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 260),
-  );
-  late final AnimationController _rebound = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 260),
-  );
+  // 位置切换动画对齐 BiliPai DampedDragAnimation：单一欠阻尼弹簧
+  // spring(dampingRatio=0.62, stiffness=420) 收敛到目标 tab，自带轻微
+  // overshoot 后回正，替代旧「tween 匀速飞行 + _rebound 落点回弹」双段——
+  // 那套是匀速到站再补一个独立回弹，物理感不如弹簧天然收敛。
   late final AnimationController _press = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 150),
   );
 
-  /// 水滴起止位置（tab 索引，double 支持中途改向时从当前视觉位置续飞）。
-  double _from = 0;
-  double _to = 0;
+  // 位置切换动画（BiliPai DampedDragAnimation 语义）：由 [_move] 承载
+  // `SpringSimulation(spring(0.62, 420))` 欠阻尼收敛到目标 tab，自带轻微
+  // overshoot 回正；拖动时 DIRECT 直跟手指（snapTo）。用 Flutter 内置
+  // Simulation 而非手写欧拉积分，保证切换必然有逐帧动画。
+  late final AnimationController _move = AnimationController(vsync: this);
+
+  // 独立 scaleX/scaleY 弹簧的每帧驱动器（对齐 BiliPai DampedDragAnimation 的
+  // 独立 Animatable + spring 回弹）。区别于把积分放在 build：这里由真实 Ticker
+  // 每帧驱动二阶欠阻尼振荡，拖动连贯、松手后仍持续回弹直至自然收敛。
+  late final Ticker _springTicker = createTicker(_onSpringTick);
+  Duration _springLast = Duration.zero;
+
+  void _ensureTicker() {
+    if (!_springTicker.isActive) {
+      _springLast = Duration.zero;
+      _springTicker.start();
+    }
+  }
+
+  void _onSpringTick(Duration elapsed) {
+    final rawDt = (elapsed - _springLast).inMicroseconds / 1e6;
+    _springLast = elapsed;
+    final dt = (rawDt < 0 || rawDt > 0.05) ? 0.016 : rawDt;
+
+    // —— 独立 scaleX/scaleY（BiliPai motionSpec.indicator）——
+    // 仅【真正拖动】时才由归一速度 vn 驱动形变；非拖拽强制归 0 保持正圆。
+    // deformationScaleXDelta=0.40、scaleYCompression=0.54，
+    // scaleSpring dampingRatio=0.46 / stiffness=620 → sDamp=0.46·2·√620。
+    final vn = _dragging ? (_dragVel.abs() / 4.0).clamp(0.0, 1.0) : 0.0;
+    const defX = 0.40, compY = 0.54;
+    final tX = _dragging ? vn * defX : 0.0;
+    final tY = _dragging ? -vn * defX * compY : 0.0;
+    const sStiff = 620.0, sDamp = 22.9;
+    _sxSpd += ((tX - _sxPos) * sStiff - _sxSpd * sDamp) * dt;
+    _sxPos += _sxSpd * dt;
+    _sySpd += ((tY - _syPos) * sStiff - _sySpd * sDamp) * dt;
+    _syPos += _sySpd * dt;
+
+    final settled = !_dragging &&
+        _sxSpd.abs() < 0.001 && _sxPos.abs() < 0.002 &&
+        _sySpd.abs() < 0.001 && _syPos.abs() < 0.002;
+    if (settled) {
+      _sxPos = _sxSpd = _syPos = _sySpd = 0;
+      _springTicker.stop();
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// 水滴起止位置由位置弹簧 [_move] 承载（SpringSimulation 收敛，改向也连贯）。
 
   // —— 按住拖动（BiliPai drag-to-switch）——
   bool _dragging = false;
   double _dragPos = 0;
   double _dragVel = 0; // tabs/s（带符号）
+  // BiliPai 独立 scaleX/scaleY spring（0=正圆，sx 拖拽速度驱动拉长、sy 反相压扁）
+  double _sxPos = 0, _sxSpd = 0;
+  double _syPos = 0, _sySpd = 0;
   Duration? _lastDragTime;
 
   @override
   void initState() {
     super.initState();
-    _from = _to = widget.index.toDouble();
-    _move.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _from = _to;
-        if (mounted) _rebound.forward(from: 0);
-      }
-    });
+    _move.value = widget.index.toDouble();
   }
 
   @override
   void didUpdateWidget(covariant _SlidingNavBottom oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.index != oldWidget.index) {
-      // 中途改向：从当前视觉位置出发，避免跳变。
-      _from = _dragging ? _dragPos : _currentPosition;
-      _to = widget.index.toDouble();
-      _rebound.stop();
-      _move.forward(from: 0);
+    if (widget.index != oldWidget.index && !_dragging) {
+      // 切换：SpringSimulation 欠阻尼收敛（spring 0.62/420，轻微 overshoot
+      // 回正）从当前视觉位置[_move.value]飞到新 tab——BiliPai 语义。
+      _move.animateWith(
+        SpringSimulation(
+          const SpringDescription(
+              mass: 1, stiffness: 420, damping: 25.4 /* 0.62·2·√420 */),
+          _move.value,
+          widget.index.toDouble(),
+          0,
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
     _move.dispose();
-    _rebound.dispose();
+    _springTicker.dispose();
     _press.dispose();
     super.dispose();
   }
-
-  double get _currentPosition =>
-      _from + (_to - _from) * Curves.easeOutCubic.transform(_move.value);
 
   @override
   Widget build(BuildContext context) {
     final items = bottomNavItems;
     // 三个控制器任一走帧都要重绘（水滴飞行/落点回弹/按住放大）。
     return AnimatedBuilder(
-      animation: Listenable.merge([_move, _rebound, _press]),
+      // Ticker 每帧已 setState，AnimatedBuilder 只需跟位置弹簧 _move 与按住 _press。
+      animation: Listenable.merge([_move, _press]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
         // 玻璃外壳自组装（overlay 水滴）时高度自定 70（BiliPai dock 高）；
@@ -2553,7 +2606,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         // 图标+文字。按住再胀 ~30%——水滴画在玻璃外层（overlay），胀出
         // 底栏边缘也可见，不再被玻璃 clip 吃掉放大效果。
         final dropH = (maxH * 0.8).clamp(54.0, 60.0);
-        final pos = _dragging ? _dragPos : _currentPosition;
+        final pos = _dragging ? _dragPos : _move.value;
 
         // —— 透镜档案（BiliPai resolveLiquidLensProfile DEFAULT 配方）——
         // 静止 shouldRefract=false（官方测试锁定：idle 折射量=0，纯 passthrough）；
@@ -2572,35 +2625,26 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final pressG = Curves.easeOut.transform(_press.value);
         final mf = math.max(pressG, dragMf);
 
-        // —— 圆形态变（用户定案：水滴始终是正圆，不做椭圆/胶囊拉伸）——
-        // 统一缩放系数 k：拖动速度 + 按压缩放，各向同性保持圆形；按住放大、
-        // 落点回弹（阻尼正弦）也按统一系数整体缩放，始终是一个圆的放大/缩小，
-        // BiliPai 清水滴观感。
+        // —— 圆形态变（BiliPai 架构：独立 scaleX/scaleY 由 Ticker 每帧 spring 驱动）——
+        // 拉伸状态 _sxPos/_syPos 由 [_springTicker] 在帧回调 [_onSpringTick] 里做
+        // 二阶欠阻尼振荡（拖拽速度驱动 + spring 阻尼回弹），build 只消费结果；
+        // 拖动即启动 ticker，它每帧推进并在松手后继续振荡回弹直至收敛停掉。
+        if (_dragging && !_springTicker.isActive) _ensureTicker();
+
         double k = 1 + dragMf * 0.22 + pressG * 0.55;
         if (!overlayDroplet) {
           // 嵌入玻璃内部时按住胀大被玻璃裁剪，上限钳到栏高防硬切边。
           k = math.min(k, maxH / dropH);
         }
-        if (!_dragging && _move.isCompleted) {
-          // —— 落点回弹（仅在到站后播放）——
-          final rp = _rebound.value;
-          if (rp < 1) {
-            double r;
-            if (rp <= 0.20) {
-              final e = Curves.easeOut.transform(rp / 0.20);
-              r = 1 - 0.05 * e;
-            } else {
-              final rel = (rp - 0.20) / 0.80;
-              final damping = (1 - rel) * math.exp(-3.2 * rel);
-              final wave = damping * math.sin(math.pi * rel);
-              r = 1 + 0.09 * wave;
-            }
-            k *= r;
-          }
-        }
-        // 各向同性：横向/纵向缩放一致，水滴恒为正圆。
-        final sx = k;
-        final sy = k;
+        // 独立 scaleX/scaleY（BiliPai）：只有【真正拖动】时才允许非等比 —— 沿水平
+        // 轻微拉长(sx>1)而垂直略压扁(sy<1)，模拟左右拉伸；【按下/静止】
+        // （非 _dragging）强制 stretch=0，保持正圆，不会一按就成椭圆。
+        // 不再做独立的落点回弹放大——位置弹簧本身欠阻尼收敛自带轻微 overshoot
+        // 回正（BiliPai spring 语义），无需再叠一个 _rebound 波形。
+        final stretchX = _dragging ? _sxPos : 0.0;
+        final stretchY = _dragging ? _syPos : 0.0;
+        final sx = k * (1 + stretchX);
+        final sy = k * (1 + stretchY); // _syPos 为负 → 压扁，轻微不对称
 
         // 真液态：圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
         //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移）。
@@ -2623,61 +2667,57 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
           final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          // BiliPai 水滴带一圈极淡勾边作为边缘定义线（0x08 白/黑≈3%）。之前
-          // 提到 0.10~0.12 导致按住时深色底栏上一圈白色亮环（用户反馈「亮色」），
-          // 现按 BiliPai 原值回落到极淡，只留可辨的边缘、不发亮。
-          indicator = DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                // 亮色系水滴的分辩关键=一圈看得见的深色勾边（BiliPai 亮底就是靠
-                // 细环凸显圆形边界）；暗色下深环不可见、白环会发亮成「亮环」
-                //（当初教训），故暗色保持发暗的极淡白。
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.black.withValues(alpha: 0.14),
-                width: 1,
-              ),
-            ),
-            // 水滴改用 LiveLiquidSurface（标准 BackdropFilter，播放条同款可靠
-            // 路径）：BiliPaiGlass 的 RenderLiquidBacking 走自定义 pushLayer 抓
-            // 背板，水滴平移时背板不重抓、折射不跟随滑动（当初播放条同根因）。
-            // LiveLiquidSurface 每帧实测自身几何写 uGlassOrigin + 标准
-            // BackdropFilter 重新 push，拖动/滑动时背板实时重抓、折射跟随手指。
-            child: LiveLiquidSurface(
-              // overlay 模式尺寸含 sx/sy 形变，半径取缩放后短边的一半。
-              radius: scaledIndicator ? d * sy / 2 : d / 2,
-              refract: amount,
-              chroma: widget.dropletChroma,
-              blurSigma: 0,
-              // 水滴可见性交给「实色圆座」而非折射透镜（BiliPai 纯色样式的做法）：
-// 浅色=白底上一格浅灰圆座，暗色=深灰底上一格更深的黑圆座——圆座实色
-// 让选中态一眼可辨，透镜只留一点轻量水滴点缀，不靠高倍放大硬凑。
-// 注意：圆座是平面等同系淡色调（非带阴影凸起的按钮，那是 White 底翻车处）。
-backgroundColor: isDark
-    ? Colors.black.withValues(alpha: 0.18)
-    : Colors.black.withValues(alpha: 0.05),
-specular: 0.12,
-edgeAmount: band,
-saturation: 1.4,
-// 深度放大退回轻档辅助（BiliPai 纯色样式基本是平的）：「圆座实色」已承载
-// 可见性，放大只留一丝水滴感，避免重演亮斑/像圆镜的过曝。
-depthEffect: 1.2,
-              child: const SizedBox.expand(),
+          // 对齐 RwaS-Music「液态水滴」的肉体与边缘三层：
+          //  · 纯色 body 始终与底栏反色相向——亮底黑10% / 暗底白10%（水滴在
+          //    任何底色上都有反色反差，保证纯色可靠见）。之前暗底用黑色填充，
+          //    深底上比底栏还暗→纯色可见性差，是其「状态栏可见性差」的根因。
+          //  · Edge：Highlight 顶部高光 + InnerShadow 内阴影环界定内边界 +
+          //    Shadow 底部投影托起水滴，刻意撑起「水滴边缘」，否则透明折射在
+          //    纯色底上无从辨认。
+          final press = pressG.clamp(0.0, 1.0);
+          // 水滴本体：透明折射透镜 + 无 blur 的清晰边缘（顶缘高光弧 +
+          // 细内阴影环界定圆形边界）。不用弥漫 blur/外投影，避免水滴糊成雾团。
+          indicator = ClipOval(
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 折射透镜面（标准 BackdropFilter，播放条同款可靠路径，拖动时
+                // 背板实时重抓）。按住放大成水滴时底座纯透明，无实色底色，
+                // 存在感全靠折射 + specular 扫光 + 图标缩放体现。
+                LiveLiquidSurface(
+                  radius: scaledIndicator ? d * sy / 2 : d / 2,
+                  refract: amount,
+                  chroma: widget.dropletChroma,
+                  blurSigma: 0,
+                  backgroundColor: Colors.transparent,
+                  specular: 0.12,
+                  edgeAmount: band,
+                  saturation: 1.4,
+                  depthEffect: 1.2,
+                  child: const SizedBox.expand(),
+                ),
+                // 顶缘高光弧 + 细内阴影环（清晰界定水滴圆形边界，无 blur）。
+                CustomPaint(
+                  painter: _DropletEdgePainter(press, isDark),
+                ),
+              ],
             ),
           );
         } else {
-          // 静止指示器：
-          //  - 液态模式：BiliPai NavigationIndicator 官方静态胶囊
-          //    （0x10 黑 / 0x15 白，极淡的透明胶囊）
-          //  - 非液态：主题色淡红大胶囊（铺满整格）
+          // 静止指示器（对齐 RwaS-Music 的 LiquidBottomTabs）：
+          // 水滴本体不在「静止=近透明、按住才反色」两段切换，而是常驻反色填充：
+          // 亮底黑 10% / 暗底白 10%（RwaS `Color.Black/White.copy(alpha=0.10f)`）。
+          // 这样纯色底栏下静止时也有稳定反差，可读性不再靠折射/描边兜底。
+          //  - 液态模式：反色 10% 常驻 body（按住/拖动才在此之上叠 lens+边缘）
+          //  - 非液态：主题色淡红大胶囊（铺满整格，本应用自有样式）
           final isDark = Theme.of(context).brightness == Brightness.dark;
           indicator = DecoratedBox(
             decoration: BoxDecoration(
               color: widget.lens
                   ? (isDark
-                      ? const Color(0x15FFFFFF)
-                      : const Color(0x10000000))
+                      ? Colors.white.withValues(alpha: 0.10)
+                      : Colors.black.withValues(alpha: 0.10))
                   : Theme.of(context)
                       .colorScheme
                       .primary
@@ -2698,6 +2738,7 @@ depthEffect: 1.2,
             // 时 Expanded 分到 maxW/n，会错位）。
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < items.length; i++)
                   Expanded(
@@ -2752,7 +2793,10 @@ depthEffect: 1.2,
                     child: IgnorePointer(
                       child: Transform(
                         alignment: Alignment.center,
-                        transform: Matrix4.diagonal3Values(sx, sy, 1),
+                        // 非等比 sxsy + 按速度方向的 shear：左右拖动形态不同，
+                        // 水滴向拖拽方向「倾倒」（右边拖右倾、左边拖左倾）。
+                        transform: Matrix4.diagonal3Values(sx, sy, 1)
+                          ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
                         child: indicator,
                       ),
                     ),
@@ -2778,7 +2822,15 @@ depthEffect: 1.2,
                 top: maxH / 2 - h / 2,
                 width: w,
                 height: h,
-                child: IgnorePointer(child: indicator),
+                child: IgnorePointer(
+                // 按速度方向 shear：水滴随拖动向拖拽侧「倾倒」，左右形态不同。
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.12),
+                  child: indicator,
+                ),
+              ),
               ),
             ],
           );
@@ -2799,18 +2851,12 @@ depthEffect: 1.2,
     }
   }
 
-  /// 按住预览：水滴滑向手指位置并胀大（飞行中不打断，点按仍走原有
-  /// 飞行动画衔接）。松手未拖动时由 onTap 选中，水滴已在目标 tab。
+  /// 按住预览：仅在原地胀大（不滑向手指、不走 _move 飞行动画）。切到别的
+  /// tab 的完整飞行由 onTap→goBranch→didUpdateWidget 驱动，若这里也 forward
+  /// 会和正式切换飞行互相抢跑：动画被二次 reset 打断成「半程」，且停留点当前
+  /// tab 时会从上次残留位置滑一小段（用户感知的「半程乱飞」）。
   void _onPointerDown(PointerDownEvent e, double tabW, int count) {
     _setPressed(true);
-    if (_dragging || _move.isAnimating) return;
-    final target =
-        ((e.localPosition.dx - 10) / tabW - 0.5).clamp(0.0, count - 1.0);
-    if ((target - _currentPosition).abs() > 0.02) {
-      _from = _currentPosition;
-      _to = target;
-      _move.forward(from: 0);
-    }
   }
 
   /// 指针被系统取消（未触发 onTap 也未走拖动结算）：立即终止飞行并归位到
@@ -2821,21 +2867,20 @@ depthEffect: 1.2,
     if (_dragging) return;
     _press.reverse();
     _move.stop();
-    _from = _to = widget.index.toDouble();
-    setState(() {});
+    _move.value = widget.index.toDouble();
   }
 
   void _onDragStart(DragStartDetails d, double tabW, int count) {
     _dragging = true;
     _dragVel = 0;
     _lastDragTime = d.sourceTimeStamp;
-    // 水滴中心跟随手指：pos = (x − 10 − tabW/2) / tabW。
+    // 水滴中心跟随手指：pos = (x − 10 − tabW/2) / tabW（DIRECT 直跟）。
     _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
         .clamp(0.0, count - 1.0);
     _move.stop();
-    _from = _to = _currentPosition;
-    _rebound.stop();
+    _move.value = _dragPos;
     _press.forward(from: 0);
+    _ensureTicker();
     setState(() {});
   }
 
@@ -2843,6 +2888,9 @@ depthEffect: 1.2,
     final prev = _dragPos;
     _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
         .clamp(0.0, count - 1.0);
+    // DIRECT 跟手：位置直接等于手指（BiliPai snapTo 语义），速度另测。
+    _move.stop();
+    _move.value = _dragPos;
     final ts = d.sourceTimeStamp;
     final prevTs = _lastDragTime;
     _lastDragTime = ts;
@@ -2868,9 +2916,16 @@ depthEffect: 1.2,
   void _commitDragTarget(double target) {
     _dragging = false;
     _press.reverse();
-    _from = _dragPos;
-    _to = target;
-    _move.forward(from: 0);
+    // 从当前手指位置[_move.value]弹簧收敛到目标 tab（欠阻尼 overshoot 回正）。
+    _move.animateWith(
+      SpringSimulation(
+        const SpringDescription(
+            mass: 1, stiffness: 420, damping: 25.4 /* 0.62·2·√420 */),
+        _move.value,
+        target,
+        _dragVel,
+      ),
+    );
     final idx = target.round();
     if (idx != widget.index) {
       widget.onSelect(idx);
@@ -2906,10 +2961,12 @@ class _NavTab extends StatelessWidget {
         ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     final tab = Container(
+      // 撑满整格（Row stretch 已决定全高）：让点击/触摸区域等于整个 tab 格，
+      // 而不是只有中央图标+文字一小条（否则上下大片留白不可点）。
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Transform.scale(
             scale: iconScale,
@@ -2930,7 +2987,13 @@ class _NavTab extends StatelessWidget {
     // 液态模式彻底不用 InkWell（水滴即按压反馈）：InkWell 的 highlight/splash
     // 会在按住时给整格叠一层「长指示器」式的底色高亮，且 highlight 在按住期间
     // 持续显示。改 GestureDetector 从根上杜绝任何 Material 点击高亮。
-    if (suppressSplash) return GestureDetector(onTap: onTap, child: tab);
+    if (suppressSplash) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: tab,
+      );
+    }
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
@@ -3433,5 +3496,48 @@ class _SideNavTab extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 水滴「边缘处理」的清晰版：仅一道极淡的内阴影环界定圆形边界，
+/// 无 blur、无顶部高光弧（白弧在暗色下形似加载进度条，已移除）。
+/// 随按压(progress)渐显。
+class _DropletEdgePainter extends CustomPainter {
+  const _DropletEdgePainter(this.progress, this.isDark);
+
+  final double progress;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = progress.clamp(0.0, 1.0);
+    if (p <= 0) return;
+    final center = (Offset.zero & size).center;
+    final rx = size.width / 2;
+    final ry = size.height / 2;
+    if (rx <= 0 || ry <= 0) return;
+
+    // 描边对齐 bilipai indicator 的 innerShadow / BloomStroke 高光：紧贴水滴
+    // 外缘的 crisp 白边。bilipai 玻璃边缘的高光始终是白色（不分深/浅色），
+    // 浅色模式下也是白边而非黑边。用【椭圆】(rx/ry) 而非正圆，让描边严格
+    // 贴合 sx/sy 拉伸后的水滴轮廓（拖动时水滴变椭圆，描边随之变椭圆）。
+    // 半径取 0.96（≈clip 边缘，留微隙防 anticircular 裁断）。刻意【不用
+    // blur】——blur 会把细描边羽化成一圈宽灰雾。浅色黑/白色统一为白边。
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(rx, ry) * 0.03
+      ..color = Colors.white.withValues(alpha: 0.14 * p);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center,
+        width: size.width * 0.96,
+        height: size.height * 0.96,
+      ),
+      edge,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DropletEdgePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
 

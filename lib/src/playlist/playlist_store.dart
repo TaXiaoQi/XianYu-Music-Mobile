@@ -11,12 +11,15 @@ class ImportedPlaylist {
   final String name;
   final List<ImportedSong> songs;
   final int importedAt;
+  /// 云端歌单 ID（三端统一为字符串稳定 ID，同步绑定）。
+  final String? cloudId;
 
   ImportedPlaylist({
     required this.id,
     required this.name,
     required this.songs,
     required this.importedAt,
+    this.cloudId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +27,7 @@ class ImportedPlaylist {
         'name': name,
         'songs': songs.map((s) => s.toJson()).toList(),
         'importedAt': importedAt,
+        if (cloudId != null) 'cloudId': cloudId,
       };
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
@@ -34,6 +38,7 @@ class ImportedPlaylist {
             .map((e) => ImportedSong.fromJson(e.cast<String, dynamic>()))
             .toList(),
         importedAt: (j['importedAt'] as num?)?.toInt() ?? 0,
+        cloudId: j['cloudId'] as String?,
       );
 }
 
@@ -85,6 +90,7 @@ class PlaylistStore {
           name: existing.name,
           songs: merged.values.toList(),
           importedAt: existing.importedAt,
+          cloudId: existing.cloudId ?? pl.cloudId,
         );
       } else {
         result.add(ImportedPlaylist(
@@ -92,6 +98,7 @@ class PlaylistStore {
           name: pl.name,
           songs: pl.songs,
           importedAt: DateTime.now().millisecondsSinceEpoch,
+          cloudId: pl.cloudId,
         ));
       }
     }
@@ -102,6 +109,25 @@ class PlaylistStore {
   Future<List<ImportedPlaylist>> removePlaylist(String id) async {
     final all = await loadAll();
     final result = all.where((p) => p.id != id).toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 绑定/清除歌单的云端 ID（同步上传写回）。
+  Future<List<ImportedPlaylist>> setCloudId(String id, String? cloudId) async {
+    final all = await loadAll();
+    final next = cloudId == null || cloudId.isEmpty ? null : cloudId;
+    final result = all
+        .map((p) => p.id == id && p.cloudId != next
+            ? ImportedPlaylist(
+                id: p.id,
+                name: p.name,
+                songs: p.songs,
+                importedAt: p.importedAt,
+                cloudId: next,
+              )
+            : p)
+        .toList();
     await saveAll(result);
     return result;
   }
@@ -133,6 +159,7 @@ class PlaylistStore {
                 name: name,
                 songs: p.songs,
                 importedAt: p.importedAt,
+                cloudId: p.cloudId,
               )
             : p)
         .toList();
@@ -159,6 +186,7 @@ class PlaylistStore {
         name: p.name,
         songs: merged.values.toList(),
         importedAt: p.importedAt,
+        cloudId: p.cloudId,
       );
     }).toList();
     await saveAll(result);
@@ -201,6 +229,7 @@ class PlaylistStore {
         name: p.name,
         songs: next,
         importedAt: p.importedAt,
+        cloudId: p.cloudId,
       );
     }).toList();
     await saveAll(result);

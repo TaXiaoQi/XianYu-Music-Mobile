@@ -39,6 +39,9 @@ class AccountApi {
   String? get _ciyuanxiId =>
       _auth.currentState.user?.ciyuanxiId ?? _auth.currentState.user?.id;
 
+  /// 当前账号弦予号（供插件同步用户变量派生 AES 密钥）
+  String? get ciyuanxiId => _ciyuanxiId;
+
   // ─── 公告 ───────────────────────────────────────────────
 
   Future<Announcement?> fetchAnnouncement() async {
@@ -332,7 +335,12 @@ class AccountApi {
   // ─── 收藏同步 ───────────────────────────────────────────
 
   /// 上传收藏歌曲到云端。
-  Future<int> uploadFavorites(List<Map<String, dynamic>> favorites) async {
+  /// [deletePaths] 非空时走服务端合并（merge: true）：逐条按 path upsert +
+  /// 删除 delete_paths，保留云端其他收藏（跨设备按键合并且可传播本机删除）。
+  Future<int> uploadFavorites(
+    List<Map<String, dynamic>> favorites, {
+    List<String> deletePaths = const [],
+  }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步收藏'));
@@ -340,6 +348,8 @@ class AccountApi {
     final data = await _action('favorites_sync_upload', {
       'user_id': ciyuanxiId,
       'favorites': favorites,
+      if (deletePaths.isNotEmpty) 'delete_paths': deletePaths,
+      'merge': true,
     }, fetchTimeoutMs: 15000);
     return (data['song_count'] as num?)?.toInt() ?? 0;
   }
@@ -432,21 +442,21 @@ class AccountApi {
 
   // ─── 歌单同步 ───────────────────────────────────────────
 
-  /// 删除云端歌单。
-  Future<void> deleteCloudPlaylist(int playlistId) async {
+  /// 删除云端歌单（按云端字符串 cloudId 从文件存储快照删除）。
+  Future<void> deleteCloudPlaylist(String playlistId) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步歌单'));
     }
-    await _action('delete_playlist', {
+    await _action('file_sync_delete_playlist', {
       'user_id': ciyuanxiId,
-      'playlist_id': playlistId,
+      'cloud_ids': [playlistId],
     }, fetchTimeoutMs: 15000);
   }
 
   /// 歌单分片上传（start → chunk×N → finish）。
-  Future<({int playlistCount, int songTotal})> fileSyncUpload(
-      List<Map<String, dynamic>> playlists) async {
+  Future<({int playlistCount, int songTotal, List<Map<String, dynamic>> idMap})>
+      fileSyncUpload(List<Map<String, dynamic>> playlists) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步歌单'));
@@ -478,10 +488,16 @@ class AccountApi {
     }
     final finish = await _action('file_sync_upload_finish', {
       'user_id': ciyuanxiId,
+      'merge': true,
     }, fetchTimeoutMs: 50000);
+    final idMap = (finish['id_map'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
     return (
       playlistCount: (finish['playlist_count'] as num?)?.toInt() ?? 0,
       songTotal: (finish['song_total'] as num?)?.toInt() ?? 0,
+      idMap: idMap,
     );
   }
 

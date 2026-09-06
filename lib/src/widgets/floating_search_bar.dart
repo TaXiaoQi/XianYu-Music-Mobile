@@ -115,7 +115,7 @@ class FloatingGlassSurface extends ConsumerWidget {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      return BiliPaiGlass(
+      final glass = BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
@@ -133,6 +133,8 @@ class FloatingGlassSurface extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: child,
       );
+      // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
+      return liquidGlassShell(context, child: glass, radius: radius);
     }
     // 液态玻璃关闭：毛玻璃/纯色回退，复用伪液态表面口径（透明底 + 淡模糊）。
     // 搜索胶囊是毛玻璃表面，模糊强度跟随毛玻璃档位（frostedBlurScale）。
@@ -201,7 +203,7 @@ class BiliPaiPill extends ConsumerWidget {
       // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       final isDark = Theme.of(context).brightness == Brightness.dark;
-      return BiliPaiGlass(
+      final glass = BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
@@ -219,6 +221,8 @@ class BiliPaiPill extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: content,
       );
+      // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
+      return liquidGlassShell(context, child: glass, radius: radius);
     }
     return pseudoLiquidSurface(
       context: context,

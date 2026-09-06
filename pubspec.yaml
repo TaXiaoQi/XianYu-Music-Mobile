@@ -63,6 +63,8 @@ dependencies:
   url_launcher: ^6.3.0
   # 同步歌曲 song_hash / 上报签名等 MD5 计算
   crypto: ^3.0.0
+  # 插件同步：用户变量（API key / Cookie）AES-256-CBC 加密（对齐桌面端）
+  encrypt: ^5.0.3
 
   # 文件夹选择与存储权限（本地音乐扫描）
   # file_picker 12.x 与 share_plus 13.x 均依赖 win32 ^6，版本协调；
