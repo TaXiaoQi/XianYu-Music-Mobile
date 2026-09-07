@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,10 +81,10 @@ class FavoriteEntry {
       );
 }
 
-/// 收藏的歌单/专辑/榜单（收藏集，非单曲）。
+/// 收藏的歌单/专辑（收藏集，非单曲；榜单不参与收藏）。
 class FavoriteCollection {
   final String key;
-  final String kind; // playlist | album | toplist
+  final String kind; // playlist | album（榜单不参与收藏）
   final String pluginId;
   final String title;
   final String subtitle;
@@ -216,7 +216,12 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
 
   Future<void> refresh() async {
     final entries = await _store.loadAll();
-    final collections = await _collectionStore.loadAll();
+    final loaded = await _collectionStore.loadAll();
+    // 榜单不参与收藏（对齐桌面端）：清理历史遗留的榜单收藏，避免僵尸数据。
+    final collections = loaded.where((c) => c.kind != 'toplist').toList();
+    if (collections.length != loaded.length) {
+      await _collectionStore.saveAll(collections);
+    }
     state = FavoritesState(
       entries: entries,
       collections: collections,
@@ -293,9 +298,9 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     );
   }
 
-  /// 收藏/取消收藏整张歌单、专辑或榜单。
+  /// 收藏/取消收藏整张歌单或专辑。
   Future<void> toggleCollection({
-    required String kind, // playlist | album | toplist
+    required String kind, // playlist | album
     required String pluginId,
     required String title,
     String subtitle = '',

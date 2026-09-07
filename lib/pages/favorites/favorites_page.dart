@@ -759,9 +759,7 @@ class _CollectionsTab extends ConsumerWidget {
         final c = items[i];
         final type = c.kind == 'album'
             ? OnlineDetailType.album
-            : (c.kind == 'toplist'
-                ? OnlineDetailType.toplist
-                : OnlineDetailType.playlist);
+            : OnlineDetailType.playlist;
         return CoverRow(
           cover: OnlineCover(
             url: c.coverUrl,

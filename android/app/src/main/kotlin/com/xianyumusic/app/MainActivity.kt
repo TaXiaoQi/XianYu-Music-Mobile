@@ -280,7 +280,13 @@ class MainActivity : AudioServiceActivity() {
                         put("manufacturer", Build.MANUFACTURER)
                         put("model", Build.MODEL)
                         put("market_name", marketName())
-                        put("os_version", Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
+                        // 系统版本带国产 ROM 名（如 MagicOS 10），后台一眼识别设备
+                        val rom = romVersion()
+                        put(
+                            "os_version",
+                            "Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")" +
+                                if (rom.isEmpty()) "" else " · " + rom
+                        )
                     }.toString())
                     // 安装来源（installer 包名，侧载/未知为 null）：自更新逻辑据此
                     // 判定商店渠道（F-Droid/Play），商店政策禁止绕过商店自更新
@@ -531,6 +537,53 @@ class MainActivity : AudioServiceActivity() {
         } ?: ""
     } catch (_: Exception) {
         ""
+    }
+
+    /** 反射读取单个系统属性，读不到返回空串。 */
+    private fun sysProp(key: String): String = try {
+        val sp = Class.forName("android.os.SystemProperties")
+        val get = sp.getMethod("get", String::class.java)
+        (get.invoke(null, key) as? String)?.trim() ?: ""
+    } catch (_: Exception) {
+        ""
+    }
+
+    /** 国产 ROM 版本名（如 MagicOS 10 / HyperOS 2.0.1.0 / ColorOS 15.0.1），未知返回空串。
+     *  逐厂商探测属性键，取第一个命中；值自带名称则原样使用，否则补平台名前缀。
+     *  属性键在各厂商固件上不统一，多键兜底，全部未命中则不显示 ROM 名。 */
+    private fun romVersion(): String {
+        // vivo/iQOO：name（OriginOS/Funtouch OS）与 version 分开上报，组合展示
+        run {
+            val ver = sysProp("ro.vivo.os.version")
+            val name = sysProp("ro.vivo.os.name")
+            if (ver.isNotEmpty()) {
+                return if (name.isNotEmpty() && !ver.startsWith(name, ignoreCase = true)) "$name $ver" else ver
+            }
+            if (name.isNotEmpty()) return name
+        }
+        data class Rom(val key: String, val name: String, val strip: Regex? = null)
+        val roms = listOf(
+            Rom("ro.mi.os.version.name", "HyperOS"),                             // 小米澎湃OS
+            Rom("ro.miui.ui.version.name", "MIUI", Regex("^V")),                 // 小米MIUI（旧，值如V14）
+            Rom("ro.build.version.magic", "MagicOS"),                            // 荣耀（值如MagicOS 7.1）
+            Rom("ro.magic.os.version", "MagicOS"),                               // 荣耀（部分固件键名不同）
+            Rom("hw_sc.build.platform.version", "HarmonyOS"),                    // 华为鸿蒙（APK形态2~4）
+            Rom("ro.build.version.emui", "EMUI", Regex("(?i)^EmotionUI_")),      // 华为EMUI（旧）
+            Rom("ro.build.version.opporom", "ColorOS", Regex("^V")),             // OPPO/一加
+            Rom("ro.build.version.realmerom", "realme UI", Regex("^V")),         // realme
+            Rom("ro.flyme.os.version", "Flyme"),                                 // 魅族（部分机型）
+            Rom("ro.build.nubia.rom", "MyOS"),                                   // 努比亚/中兴
+            Rom("ro.zui.version", "ZUI"),                                        // 联想/摩托罗拉
+        )
+        for (rom in roms) {
+            val raw = sysProp(rom.key)
+            if (raw.isEmpty()) continue
+            val value = rom.strip?.replaceFirst(raw, "") ?: raw
+            return if (value.startsWith(rom.name, ignoreCase = true)) value else "${rom.name} $value"
+        }
+        // 魅族兜底：Build.DISPLAY 以 Flyme/FlymeAIOS 开头（如 FlymeAIOS 15.x）
+        if (Build.DISPLAY.startsWith("Flyme")) return Build.DISPLAY.substringBefore(' ')
+        return ""
     }
 
     /** 枚举全部输出音频设备，返回 JSON 数组 JSON。id 与 AAudio setDeviceId 一致。 */

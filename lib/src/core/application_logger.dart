@@ -196,7 +196,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       // 同样不因 `!mounted` 跳过恢复：启动期 bootstrap 时通常尚无 UI 订阅，
       // 否则上次会话的日志永远加载不回来（恢复只填充 state，无副作用）。
       state = _retain(entries);
-    } catch (_) {
+    } catch (e) {
       // 恢复失败静默：日志只是辅助信息，不影响应用运行。
     }
   }
@@ -208,7 +208,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
         jsonEncode(state.map((e) => e.toJson()).toList()),
         flush: true,
       );
-    } catch (_) {
+    } catch (e) {
       // 写盘失败静默，日志不应影响主流程。
     }
   }

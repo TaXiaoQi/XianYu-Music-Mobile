@@ -239,6 +239,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       _router = GoRouter.of(context);
       _router!.routerDelegate.addListener(_onRouteChanged);
     }
+    // 首次挂载：读取共享停靠位继承（一级页/其他二级页拖动落定后进入本页，
+    // 播放条直接出现在该位），夹进当前页面几何避免越界或压住批量栏。
+    if (widget.onPanUpdate == null && _lastLandscape == null) {
+      final shared = MiniBarPositionStore.shared;
+      if (shared != null) {
+        // 首帧 build 前赋值即可，无需 setState。
+        _pos = _clampToPageGeometry(shared);
+      }
+    }
     // 方向变化：清空本地与共享停靠位回默认（shell 侧形态变化同样清共享存储，
     // 两处幂等）。继承的共享位与本地拖拽位都按新方向作废。
     final landscape = _isLandscape;
@@ -247,6 +256,24 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       MiniBarPositionStore.shared = null;
     }
     _lastLandscape = landscape;
+  }
+
+  /// 把共享停靠位夹进当前页面几何（与 [_defaultPanUpdate] 同一可拖范围）。
+  Offset _clampToPageGeometry(Offset p) {
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final barW = _barWidth;
+    const barH = 58.0;
+    const minLeft = 6.0;
+    final maxLeft = size.width - barW - 6.0;
+    final minTop = padding.top + 6.0;
+    const bottomInset = 12.0;
+    final batchLift = ref.read(batchBarLiftProvider);
+    final maxTop = size.height - padding.bottom - barH - bottomInset - batchLift;
+    return Offset(
+      p.dx.clamp(minLeft, maxLeft > minLeft ? maxLeft : minLeft),
+      p.dy.clamp(minTop, maxTop > minTop ? maxTop : minTop),
+    );
   }
 
   void _onRouteChanged() {

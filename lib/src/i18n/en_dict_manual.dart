@@ -762,7 +762,9 @@ const Map<String, String> enDictManual = {
   '修改弦予号提示': 'XianYu ID change notice',
   '虚拟环绕': 'Virtual surround',
   '虚拟距离': 'Virtual distance',
-  '需安装支持酷狗音源的插件后播放': 'Install a Kugou source plugin to play this',
+  '播放优先匹配本地曲库，在线按可用音源解析':
+      'Playback prefers your local library; online resolves via available sources',
+  '已匹配本地歌曲': 'Matched a local song',
   '需同时开启「同时下载歌词」': 'Requires "Download lyrics too" to be enabled',
   '需要麦克风权限，请在系统设置中授权': 'Microphone permission required; grant it in system settings',
   '悬浮导航 shader 折射光影，关闭时默认透明磨砂': 'Floating navigation shader refraction; translucent frost when off',

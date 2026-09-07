@@ -343,14 +343,15 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                   onPlayAll: _songs.isNotEmpty ? _playAll : null,
                   favoriteLabel: switch (a.type) {
                     OnlineDetailType.album => tr('收藏整张专辑'),
-                    OnlineDetailType.toplist => tr('收藏榜单'),
                     _ => tr('收藏整张歌单'),
                   },
                   isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
                       '${a.type.name}:${a.pluginId}:${a.title}'),
-                  onToggleFavorite: isArtist
-                      ? null
-                      : () => _toggleCollectionFavorite(),
+                  // 榜单不参与收藏（对齐桌面端：榜单详情隐藏收藏按钮）。
+                  onToggleFavorite:
+                      isArtist || a.type == OnlineDetailType.toplist
+                          ? null
+                          : () => _toggleCollectionFavorite(),
                 ),
                 // 歌手 tab 位于头像下方（参考桌面端 ArtistDetailHeader）。
                 if (artistTab != null) ...[

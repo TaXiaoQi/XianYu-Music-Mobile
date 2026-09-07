@@ -803,6 +803,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   void _onPlayerPanStart(DragStartDetails details) {
     setState(() {
       _isPlayerDragging = true;
+      // 拖拽起点接续当前显示位：静止位以共享存储为唯一事实（显示处
+      // `_playerLeft ?? shared?.dx ?? defaultLeft`）。若不从共享位初始化本地
+      // 字段，首次拖动 update 会按默认停靠位起算——从二级页继承回来的位置
+      // 一交互就弹回底部。
+      _playerLeft ??= MiniBarPositionStore.shared?.dx;
+      _playerTop ??= MiniBarPositionStore.shared?.dy;
     });
     // 通知玻璃表面退回实时背板：拖动把播放条平移到新内容上，静止冻结的
     // 快照还是旧位置抓的背景，不退实时会「液态效果不跟随、还在原地」。
