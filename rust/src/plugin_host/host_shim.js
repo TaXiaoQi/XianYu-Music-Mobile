@@ -1604,6 +1604,18 @@
         });
         return function () { /* cancel noop */ };
       },
+      // httpFetch：洛雪官方插件的 Promise 风格 HTTP API（httpFetch(url, options)
+      // => Promise<{ body, statusCode, headers }>，body 自动 JSON 解析；网络
+      // 失败时 reject——插件常以 Promise.any 做多源竞速，依赖 reject 语义）。
+      // 复用 request 的完整桥接与响应解析，零重复实现。
+      httpFetch: function (url, options) {
+        return new Promise(function (resolve, reject) {
+          lxApi.request(url, options || {}, function (err, resp) {
+            if (err) reject(err);
+            else resolve(resp);
+          });
+        });
+      },
       send: function (eventName, data) {
         return new Promise(function (resolve, reject) {
           if (eventNames.indexOf(eventName) < 0) {
@@ -1717,6 +1729,8 @@
 
     // 设置 globalThis.lx 与 Node 全局模拟
     G.lx = lxApi;
+    // 星海等插件把 httpFetch 当裸全局调用（未从 lx 解构），需同步挂到沙箱全局。
+    G.httpFetch = lxApi.httpFetch;
     G.process = lxProcess;
     G.require = lxRequire;
     if (!G.Buffer) G.Buffer = getBuffer();

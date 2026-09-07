@@ -6,8 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/db_path.dart';
+import '../../src/library/library_provider.dart';
+import '../../src/online/online_search_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
+import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
@@ -137,13 +141,107 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
   }
 
   Future<void> _play(RecognizeMatch m) async {
-    await ref
-        .read(playerProvider.notifier)
-        .playQueue([_toQueueItem(m)]);
+    final notifier = ref.read(playerProvider.notifier);
+    // 1) 本地曲库优先：识别结果命中本地文件时直接播放，无需任何在线解析。
+    final local = await _findLocalMatch(m);
+    if (local != null) {
+      await ref.read(libraryProvider.notifier).playList([local], 0);
+      if (mounted) {
+        showXianYuToast(context, tr('已匹配本地歌曲'),
+            duration: const Duration(seconds: 1));
+      }
+      return;
+    }
+    // 2) 在线兜底：落雪音源逐源搜索同名曲目，命中即走与在线搜索页一致的
+    //    直链解析链路播放（不依赖识别音源 = 酷狗的插件）。
+    final online = await _findOnlineMatch(m);
+    if (online != null) {
+      await notifier.playQueue([online]);
+    } else {
+      // 3) 最终兜底：原酷狗识别项（需安装支持酷狗音源的插件）。
+      await notifier.playQueue([_toQueueItem(m)]);
+    }
     if (mounted) {
       showXianYuToast(context, tr('正在解析播放链接…'),
           duration: const Duration(seconds: 1));
     }
+  }
+
+  /// 标题归一化（与播放器 _matchOnlineTitle 同口径）：去空格/标点/大小写。
+  static String _normTitle(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s\-_（）()【】\[\].、，,·/\\+&]'), '');
+
+  /// 判断识别标题与候选标题是否匹配（归一化相等；长度≥3 允许互相包含）。
+  static bool _titleMatches(String a, String b) {
+    final na = _normTitle(a);
+    final nb = _normTitle(b);
+    if (na.isEmpty || nb.isEmpty) return false;
+    if (na == nb) return true;
+    if (na.length >= 3 && nb.length >= 3) {
+      return na.contains(nb) || nb.contains(na);
+    }
+    return false;
+  }
+
+  /// 歌手归一化匹配：任一方向包含即命中（识别歌手名常含「/」多歌手）。
+  static bool _artistMatches(String a, String b) {
+    final na = _normTitle(a);
+    final nb = _normTitle(b);
+    if (na.isEmpty || nb.isEmpty) return false;
+    return na.contains(nb) || nb.contains(na);
+  }
+
+  /// 在本地曲库中查找与识别结果同名的歌曲（歌手匹配者优先）。
+  Future<Song?> _findLocalMatch(RecognizeMatch m) async {
+    try {
+      final dbPath = await ref.read(dbPathProvider.future);
+      final json = await searchLibrarySongs(
+          dbPath: dbPath, query: m.name, limit: BigInt.from(50));
+      final list = (jsonDecode(json) as List)
+          .map((e) => Song.fromJson(e as Map<String, dynamic>))
+          .toList();
+      Song? titleOnly;
+      for (final s in list) {
+        if (!_titleMatches(m.name, s.title)) continue;
+        if (_artistMatches(m.singer, s.artist)) return s;
+        titleOnly ??= s;
+      }
+      return titleOnly;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 在落雪在线音源（酷我/网易云/酷狗/QQ/咪咕）中搜索识别结果，
+  /// 返回首个标题命中（歌手匹配者优先）的可播队列项；全源失败返回 null。
+  Future<QueueItem?> _findOnlineMatch(RecognizeMatch m) async {
+    final keyword = m.singer.trim().isEmpty
+        ? m.name.trim()
+        : '${m.name.trim()} ${m.singer.trim()}';
+    if (keyword.isEmpty) return null;
+    for (final src in kOnlineSources) {
+      try {
+        final res = await lxSearch(source: src.id, keyword: keyword, limit: 10);
+        final list = (jsonDecode(res) as List).cast<Map<String, dynamic>>();
+        Map<String, dynamic>? withArtist;
+        Map<String, dynamic>? titleOnly;
+        for (final raw in list) {
+          final track = OnlineTrack.fromJson(raw);
+          if (!_titleMatches(m.name, track.title)) continue;
+          if (_artistMatches(m.singer, track.artist)) {
+            withArtist ??= raw;
+            break;
+          }
+          titleOnly ??= raw;
+        }
+        final hit = withArtist ?? titleOnly;
+        if (hit != null) return OnlineTrack.fromJson(hit).toQueueItem();
+      } catch (_) {
+        // 该源搜索失败（超时/无结果），继续下一源。
+      }
+    }
+    return null;
   }
 
   void _toggleFavorite(RecognizeMatch m) {
@@ -175,7 +273,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     final success = _phase == _Phase.done && _matches.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // 底色与其他二级页统一：常规模式实色（覆盖/平滑转场不透底、离屏快照
+      // 玻璃背板有内容可采样，不闪黑帧）；壁纸模式返回透明，由 AppPageBackground
+      // 在页内烘焙壁纸底色（不透明卡片），行为与原先一致。
+      backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(
@@ -362,7 +463,7 @@ class _MicView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            active ? tr('点击停止') : tr('需安装支持酷狗音源的插件后播放'),
+            active ? tr('点击停止') : tr('播放优先匹配本地曲库，在线按可用音源解析'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: scheme.outline),
           ),

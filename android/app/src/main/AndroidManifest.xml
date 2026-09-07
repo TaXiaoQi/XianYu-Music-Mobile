@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <!-- 自定义下载目录直写：MediaStore 兼容回退只能落 Music/Download 集合，
+         用户自选任意目录（如根目录/自建文件夹）必须持有「所有文件访问」才能
+         直写成功，缺失时下载会静默回落 Music/弦予（download_provider 回退链） -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"/>
     <!-- 在线音乐与后台/控制中心播放服务 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>

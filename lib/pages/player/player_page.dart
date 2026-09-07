@@ -2967,6 +2967,9 @@ class _BlurredCoverBackground extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // 深色兜底：封面图加载/渐进解码未就绪或失败时保证背景不透明——
+          // 传统模式 Scaffold 是透明的，缺这层会直接透出底层页面。
+          Container(color: Color.lerp(scheme.surface, Colors.black, 0.6)),
           _AnimatedPlayerCover(
             current: current,
             role: 'bg',
