@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
@@ -9,6 +10,10 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/online/online_search_provider.dart';
+import '../../src/plugin/plugin_backup_import.dart';
+import '../../src/plugin/plugin_engine.dart';
+import '../../src/plugin/plugin_models.dart';
+import '../../src/plugin/plugin_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
 import '../../src/rust/api.dart';
@@ -71,6 +76,9 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         },
       );
       if (!mounted) return;
+      if (matches.isNotEmpty) {
+        HapticFeedback.mediumImpact();
+      }
       setState(() {
         _matches = matches;
         _phase = _Phase.done;
@@ -152,14 +160,36 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       }
       return;
     }
-    // 2) 在线兜底：落雪音源逐源搜索同名曲目，命中即走与在线搜索页一致的
-    //    直链解析链路播放（不依赖识别音源 = 酷狗的插件）。
+    // 2) 在线兜底：落雪音源逐源搜索同名曲目，命中且直链可解析才播放。
+    if (mounted) {
+      showXianYuToast(context, tr('正在搜索可播放音源…'),
+          duration: const Duration(seconds: 2));
+    }
     final online = await _findOnlineMatch(m);
-    if (online != null) {
-      await notifier.playQueue([online]);
-    } else {
-      // 3) 最终兜底：原酷狗识别项（需安装支持酷狗音源的插件）。
-      await notifier.playQueue([_toQueueItem(m)]);
+    QueueItem? toPlay = online;
+    // 3) 最终兜底：原酷狗识别项，绑定酷狗插件后验证可播。
+    toPlay ??= await _buildKgFallbackItem(m);
+    if (toPlay == null) {
+      if (mounted) {
+        showXianYuToast(
+          context,
+          tr('无法播放：请安装支持该音源（酷狗等）的插件'),
+          duration: const Duration(seconds: 2),
+        );
+      }
+      return;
+    }
+    try {
+      await notifier.playQueue([toPlay]);
+    } catch (e) {
+      if (mounted) {
+        showXianYuToast(
+          context,
+          tr('播放失败：{e}', {'e': e.toString()}),
+          duration: const Duration(seconds: 2),
+        );
+      }
+      return;
     }
     if (mounted) {
       showXianYuToast(context, tr('正在解析播放链接…'),
@@ -213,36 +243,172 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     }
   }
 
+  /// 酷狗识别项兜底：找一个酷狗插件，绑定 pluginId 后验证可播。
+  Future<QueueItem?> _buildKgFallbackItem(RecognizeMatch m) async {
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final plugins = await engine.store.loadSources();
+      final enabled = plugins.where((p) => p.enabled).toList();
+      final plugin = findPluginForPlatform(
+        platformLabel: 'kg',
+        installedPlugins: enabled,
+        format: PluginFormat.lx,
+        allowCrossFormat: true,
+      );
+      if (plugin == null) return null;
+      final musicInfo = <String, dynamic>{
+        'name': m.name,
+        'singer': m.singer,
+        'albumName': m.albumName,
+        'songmid': m.songmid,
+        'source': 'kg',
+        'interval': m.interval,
+        'img': m.img,
+        'hash': m.hash,
+        '_types': m.types,
+      };
+      final isMusicFree = plugin.format == PluginFormat.musicfree;
+      final songJson = <String, dynamic>{
+        'pluginId': plugin.id,
+        'format': isMusicFree ? 'musicfree' : 'lx',
+        if (!isMusicFree) 'source': 'kg',
+        'musicInfo': musicInfo,
+      };
+      for (final q in ['320k', '128k', 'flac']) {
+        try {
+          if (isMusicFree) {
+            final r = await engine.getMusicFreeUrl(
+              plugin, musicInfo, preferred: q, fallback: 'pause',
+            ).timeout(const Duration(seconds: 4));
+            if (r != null) {
+              return _toQueueItem(m).copyWithOnlineSource(
+                onlineSongJson: jsonEncode(songJson), source: 'kg',
+              );
+            }
+          } else {
+            final r = await engine.getMusicUrl(
+              plugin, 'kg', musicInfo, q,
+            ).timeout(const Duration(seconds: 4));
+            if (r != null && r['url'] != null) {
+              return _toQueueItem(m).copyWithOnlineSource(
+                onlineSongJson: jsonEncode(songJson), source: 'kg',
+              );
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// 在落雪在线音源（酷我/网易云/酷狗/QQ/咪咕）中搜索识别结果，
-  /// 返回首个标题命中（歌手匹配者优先）的可播队列项；全源失败返回 null。
+  /// 返回首个标题命中（歌手匹配者优先）且**直链可解析**的队列项；全源失败返回 null。
+  ///
+  /// 直链解析完全依赖已安装插件。返回的队列项绑定具体 pluginId，走播放器的
+  /// [_resolvePluginUrl] 路径，绕过 Rust 侧按音源 key 精确匹配（插件 sources
+  /// 可能用「酷狗」「kugou」等别名）。
   Future<QueueItem?> _findOnlineMatch(RecognizeMatch m) async {
     final keyword = m.singer.trim().isEmpty
         ? m.name.trim()
         : '${m.name.trim()} ${m.singer.trim()}';
     if (keyword.isEmpty) return null;
+
+    final engine = await ref.read(pluginEngineProvider.future);
+    final plugins = await engine.store.loadSources();
+    final enabled = plugins.where((p) => p.enabled).toList();
+    if (enabled.isEmpty) return null;
+
     for (final src in kOnlineSources) {
+      // 找一个能服务该音源的已启用插件（别名归一化匹配）。
+      final plugin = findPluginForPlatform(
+        platformLabel: src.id,
+        installedPlugins: enabled,
+        format: PluginFormat.lx,
+        allowCrossFormat: true,
+      );
+      if (plugin == null) continue;
       try {
         final res = await lxSearch(source: src.id, keyword: keyword, limit: 10);
         final list = (jsonDecode(res) as List).cast<Map<String, dynamic>>();
-        Map<String, dynamic>? withArtist;
-        Map<String, dynamic>? titleOnly;
+        final matches = <Map<String, dynamic>>[];
         for (final raw in list) {
           final track = OnlineTrack.fromJson(raw);
           if (!_titleMatches(m.name, track.title)) continue;
           if (_artistMatches(m.singer, track.artist)) {
-            withArtist ??= raw;
-            break;
+            matches.insert(0, raw);
+          } else {
+            matches.add(raw);
           }
-          titleOnly ??= raw;
         }
-        final hit = withArtist ?? titleOnly;
-        if (hit != null) return OnlineTrack.fromJson(hit).toQueueItem();
+        // 每源最多验证前 3 个候选。
+        for (final hit in matches.take(3)) {
+          final item = await _buildPlayableItem(
+            engine, plugin, src.id, hit,
+          );
+          if (item != null) return item;
+        }
       } catch (_) {
-        // 该源搜索失败（超时/无结果），继续下一源。
+        // 该源搜索失败，继续下一源。
       }
     }
     return null;
   }
+
+  /// 用插件引擎验证候选可播，成功则返回绑定 pluginId 的队列项。
+  Future<QueueItem?> _buildPlayableItem(
+    PluginEngine engine,
+    PluginSource plugin,
+    String sourceKey,
+    Map<String, dynamic> raw,
+  ) async {
+    final track = OnlineTrack.fromJson(raw);
+    final isMusicFree = plugin.format == PluginFormat.musicfree;
+    final songJson = <String, dynamic>{
+      'pluginId': plugin.id,
+      'format': isMusicFree ? 'musicfree' : 'lx',
+      if (!isMusicFree) 'source': sourceKey,
+      'musicInfo': raw,
+    };
+    final qualities = ['320k', '128k', 'flac'];
+    for (final q in qualities) {
+      try {
+        if (isMusicFree) {
+          final r = await engine.getMusicFreeUrl(
+            plugin, raw, preferred: q, fallback: 'pause',
+          ).timeout(const Duration(seconds: 4));
+          if (r != null) {
+            return _queueItemFromTrack(track, songJson, sourceKey);
+          }
+        } else {
+          final r = await engine.getMusicUrl(
+            plugin, sourceKey, raw, q,
+          ).timeout(const Duration(seconds: 4));
+          if (r != null && r['url'] != null) {
+            return _queueItemFromTrack(track, songJson, sourceKey);
+          }
+        }
+      } catch (_) {
+        // 该档失败，继续下一档。
+      }
+    }
+    return null;
+  }
+
+  QueueItem _queueItemFromTrack(
+    OnlineTrack track,
+    Map<String, dynamic> songJson,
+    String sourceKey,
+  ) => QueueItem(
+        path: 'lx://$sourceKey/${track.songmid}',
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        durationMs: track.durationSeconds * 1000,
+        coverUrl: track.coverUrl,
+        source: sourceKey,
+        onlineSongJson: jsonEncode(songJson),
+        onlineQuality: '320k',
+      );
 
   void _toggleFavorite(RecognizeMatch m) {
     ref.read(favoritesProvider.notifier).toggle(_toQueueItem(m));
@@ -284,15 +450,18 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
             child: Stack(
               children: [
                 if (success)
-                  _MatchListView(
-                    matches: _matches,
-                    onPlay: _play,
-                    onFavorite: _toggleFavorite,
-                    isFavorite: (m) =>
-                        ref.read(favoritesProvider).contains(_toQueueItem(m).path),
-                    onAddToPlaylist: _addToPlaylist,
-                    onRestart: () => setState(() => _phase = _Phase.idle),
-                    onStart: _start,
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 70),
+                    child: _MatchListView(
+                      matches: _matches,
+                      onPlay: _play,
+                      onFavorite: _toggleFavorite,
+                      isFavorite: (m) =>
+                          ref.read(favoritesProvider).contains(_toQueueItem(m).path),
+                      onAddToPlaylist: _addToPlaylist,
+                      onRestart: () => setState(() => _phase = _Phase.idle),
+                      onStart: _start,
+                    ),
                   )
                 else
                   _MicView(
@@ -304,7 +473,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
                     onTap: _active ? _cancel : _start,
                     onRestart: () => setState(() => _phase = _Phase.idle),
                   ),
-                const BottomPlayBarSlot(),
+                const Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: BottomPlayBarSlot(),
+                ),
               ],
             ),
           ),
