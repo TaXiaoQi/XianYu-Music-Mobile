@@ -52,10 +52,15 @@ class SafChannel {
     return await _channel.invokeMethod<int>('getSdkInt') ?? 0;
   }
 
-  /// 让用户选择目录树，返回持久化的 `content://…/tree/…` URI（取消返回 null）。
-  static Future<String?> chooseFolderTree() async {
+  /// 让用户选择目录树，返回 `content://…/tree/…` URI（取消返回 null）。
+  ///
+  /// [persist] 为 false 时不持久化授权（一次性导出等场景）：活动结果的
+  /// 临时授权足以支撑当次写入，避免反复挑选不同目录耗尽系统持久化名额。
+  static Future<String?> chooseFolderTree({bool persist = true}) async {
     if (!isSupported) return null;
-    final raw = await _channel.invokeMethod<String>('chooseFolderTree');
+    final raw = await _channel.invokeMethod<String>('chooseFolderTree', {
+      'persist': persist,
+    });
     return (raw == null || raw.isEmpty) ? null : raw;
   }
 
@@ -132,6 +137,22 @@ class SafChannel {
     return await _channel
             .invokeMethod<int>('openFd', {'uri': treeUri, 'docId': docId}) ??
         -1;
+  }
+
+  /// 在 tree 目录下创建文本文件并写入内容（需当次会话对该 tree 持有写授权）。
+  /// 返回创建后的文档 docId（同名文件由系统文档提供器自动追加 "(1)" 后缀）。
+  static Future<String> createTreeFile(
+    String treeUri,
+    String fileName,
+    String content,
+  ) async {
+    if (!isSupported) return '';
+    return await _channel.invokeMethod<String>('createTreeFile', {
+          'uri': treeUri,
+          'fileName': fileName,
+          'content': content,
+        }) ??
+        '';
   }
 
   static Future<void> closeFd(int fd) async {

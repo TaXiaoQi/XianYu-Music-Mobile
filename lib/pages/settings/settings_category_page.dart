@@ -26,6 +26,7 @@ import '../../src/audio/audio_devices.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/i18n/i18n.dart';
+import '../../src/library/saf_channel.dart';
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
@@ -3097,13 +3098,14 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
         _action(
           context,
           icon: Icons.description_outlined,
-          title: logs.isEmpty ? tr('导出全部日志') : '导出全部日志（${logs.length} 条）',
+          // 数字常显（含 0）：一眼观察日志系统是否在写入。
+          title: tr('导出全部日志（{n} 条）', {'n': logs.length}),
           onTap: _busy ? () {} : () => _export(onlyErrors: false),
         ),
         _action(
           context,
           icon: Icons.error_outline,
-          title: errorCount == 0 ? tr('导出错误日志') : '导出错误日志（$errorCount 条）',
+          title: tr('导出错误日志（{n} 条）', {'n': errorCount}),
           // 无错误日志时置灰不可点。
           onTap: errorCount == 0 || _busy
               ? null
@@ -3135,13 +3137,42 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  /// 导出完整应用备份并调起系统分享。
+  /// 导出应用备份：先选导出内容，再选目标文件夹写入。
   Future<void> _exportBackup() async {
     if (_busy) return;
+    // 1. 选择导出内容（对齐桌面端 ExportBackupDialog，默认全选）。
+    final selection = await _pickExportSelection();
+    if (selection == null || !mounted) return;
+
     setState(() => _busy = true);
     try {
       final service = ref.read(appBackupProvider);
-      final json = await service.exportJson();
+      final json = await service.exportJson(
+        includePlaylists: selection.$1,
+        includeFavorites: selection.$2,
+        includePlugins: selection.$3,
+        includeSettings: selection.$4,
+      );
+
+      // 2. Android 每次经 SAF 指定导出文件夹；其他平台回退系统分享。
+      if (SafChannel.isSupported) {
+        final treeUri = await SafChannel.chooseFolderTree(persist: false);
+        if (treeUri == null || !mounted) return;
+        final docId = await SafChannel.createTreeFile(
+          treeUri,
+          backupFileName(),
+          json,
+        );
+        if (!mounted) return;
+        if (docId.isEmpty) {
+          _toast(tr('导出失败：无法写入所选文件夹'));
+          return;
+        }
+        final folder = await SafChannel.friendlyTreeName(treeUri);
+        if (mounted) _toast(tr('备份已导出到 {folder}', {'folder': folder}));
+        return;
+      }
+
       final docs = await getApplicationDocumentsDirectory();
       final path = await writeBackupFile(docs.path, json);
       if (!mounted) return;
@@ -3155,6 +3186,52 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 导出内容选择弹窗，返回 null 表示取消。
+  Future<(bool, bool, bool, bool)?> _pickExportSelection() {
+    var playlists = true;
+    var favorites = true;
+    var plugins = true;
+    var settings = true;
+    return showPredictiveDialog<(bool, bool, bool, bool)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: Text(tr('导出应用备份')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tr('选择要导出到备份文件的内容，可单独开关每一项。'),
+                style: const TextStyle(fontSize: 12.5),
+              ),
+              const SizedBox(height: 8),
+              _backupCheck(
+                  tr('歌单'), playlists, true, (v) => setDialog(() => playlists = v ?? false)),
+              _backupCheck(
+                  tr('收藏'), favorites, true, (v) => setDialog(() => favorites = v ?? false)),
+              _backupCheck(
+                  tr('插件'), plugins, true, (v) => setDialog(() => plugins = v ?? false)),
+              _backupCheck(
+                  tr('设置'), settings, true, (v) => setDialog(() => settings = v ?? false)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('取消')),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
+              child: Text(tr('导出')),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 选择备份文件 → 预览摘要 → 选择导入内容 → 执行。
@@ -3324,7 +3401,7 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
         ListTile(
           leading: const Icon(Icons.archive_outlined),
           title:   Text(tr('导出应用备份')),
-          subtitle:   Text(tr('歌单、收藏、插件、设置备份为 JSON 并分享')),
+          subtitle:   Text(tr('选择导出内容，每次指定文件夹保存')),
           trailing: trailing,
           onTap: _busy ? null : _exportBackup,
         ),

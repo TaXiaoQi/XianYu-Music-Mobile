@@ -67,27 +67,41 @@ class AppBackupService {
 
   // ==================== 导出 ====================
 
-  /// 生成完整备份 JSON 字符串。
-  Future<String> exportJson() async {
-    final playlistStore = PlaylistStore();
-    final playlists = await playlistStore.loadAll();
+  /// 生成备份 JSON 字符串（对齐桌面端 ExportBackupDialog 的内容选择）。
+  Future<String> exportJson({
+    bool includePlaylists = true,
+    bool includeFavorites = true,
+    bool includePlugins = true,
+    bool includeSettings = true,
+  }) async {
+    final playlists = includePlaylists
+        ? (await PlaylistStore().loadAll()).map((p) => p.toJson()).toList()
+        : null;
 
-    final favoritesStore = FavoritesStore();
-    final favorites = await favoritesStore.loadAll();
-    final collectionStore = FavoritesCollectionStore();
-    final collections = await collectionStore.loadAll();
-
-    final engine = await _ref.read(pluginEngineProvider.future);
-    final sources = await engine.store.loadSources();
-    final plugins = <Map<String, dynamic>>[];
-    for (final source in sources) {
-      if (source.isBuiltin) continue;
-      final script = await engine.store.readScript(source.id);
-      if (script == null || script.isEmpty) continue;
-      plugins.add({'source': source.toJson(), 'script': script});
+    final favorites = <Map<String, dynamic>>[];
+    final collections = <Map<String, dynamic>>[];
+    if (includeFavorites) {
+      favorites.addAll(
+          (await FavoritesStore().loadAll()).map((e) => e.toJson()));
+      collections.addAll((await FavoritesCollectionStore().loadAll())
+          .map((c) => c.toJson()));
     }
 
-    final settings = _ref.read(settingsProvider).valueOrNull;
+    final plugins = <Map<String, dynamic>>[];
+    if (includePlugins) {
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final sources = await engine.store.loadSources();
+      for (final source in sources) {
+        if (source.isBuiltin) continue;
+        final script = await engine.store.readScript(source.id);
+        if (script == null || script.isEmpty) continue;
+        plugins.add({'source': source.toJson(), 'script': script});
+      }
+    }
+
+    final settings = includeSettings
+        ? _ref.read(settingsProvider).valueOrNull
+        : null;
 
     final backup = {
       'schema': _kBackupSchema,
@@ -95,11 +109,15 @@ class AppBackupService {
       'createdAt': DateTime.now().toIso8601String(),
       'platform': 'mobile',
       'data': {
-        'playlists': playlists.map((p) => p.toJson()).toList(),
-        'favorites': favorites.map((e) => e.toJson()).toList(),
-        'favoriteCollections': collections.map((c) => c.toJson()).toList(),
-        'plugins': plugins,
-        'settings': settings == null ? null : _settingsToJson(settings),
+        // 未选歌单时 playlists 为 null，键整体省略（与桌面端口径一致）。
+        'playlists': ?playlists,
+        if (includeFavorites) ...{
+          'favorites': favorites,
+          'favoriteCollections': collections,
+        },
+        if (includePlugins) 'plugins': plugins,
+        if (includeSettings && settings != null)
+          'settings': _settingsToJson(settings),
       },
     };
     return const JsonEncoder.withIndent('  ').convert(backup);
@@ -407,6 +425,14 @@ class AppBackupService {
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
   }
+}
+
+/// 备份导出文件名（对齐桌面端：xianyu-backup-YYYY-MM-DD.json）。
+String backupFileName() {
+  final now = DateTime.now();
+  final m = now.month.toString().padLeft(2, '0');
+  final d = now.day.toString().padLeft(2, '0');
+  return 'xianyu-backup-${now.year}-$m-$d.json';
 }
 
 /// 将备份 JSON 写入文件（应用文档目录），返回文件路径。

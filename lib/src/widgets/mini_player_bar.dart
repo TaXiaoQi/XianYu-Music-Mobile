@@ -115,6 +115,19 @@ Widget playbarGlassSurface(
   );
 }
 
+/// 播放条拖动位置的会话级共享存储。
+///
+/// shell 播放条与各页面内嵌播放条共用一份最近拖动落定的位置，
+/// 使页面切换（一级 ⇄ 二级本地/收藏等）时播放条继承用户拖动后的位置，
+/// 而不是各自回到默认停靠位。方向/底栏形态变化时由持有方清空回默认。
+class MiniBarPositionStore {
+  MiniBarPositionStore._();
+
+  /// 最近一次拖动落定的绝对位置（left/top，全屏 Stack 坐标系）；
+  /// null = 从未拖动或已按新形态重置。
+  static Offset? shared;
+}
+
 /// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
 ///
 /// 拖拽为内建默认行为：未传 [onPanUpdate] 等回调时自动启用「全图拖动 + 磁吸
@@ -215,6 +228,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return size.height - padding.bottom - 58.0 - 12.0 - batchLift;
   }
 
+  /// 上一次所在方向（横/竖）：方向切换时绝对坐标失效，需清空本地与共享停靠位。
+  bool? _lastLandscape;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -223,6 +239,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       _router = GoRouter.of(context);
       _router!.routerDelegate.addListener(_onRouteChanged);
     }
+    // 方向变化：清空本地与共享停靠位回默认（shell 侧形态变化同样清共享存储，
+    // 两处幂等）。继承的共享位与本地拖拽位都按新方向作废。
+    final landscape = _isLandscape;
+    if (_lastLandscape != null && _lastLandscape != landscape) {
+      _pos = null;
+      MiniBarPositionStore.shared = null;
+    }
+    _lastLandscape = landscape;
   }
 
   void _onRouteChanged() {
@@ -367,6 +391,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     if ((current - defaultPos).distance < 60.0) {
       setState(() => _pos = null);
     }
+    // 拖动落定后写入共享存储：其他页面（一级 shell 条/其他二级页）的
+    // 播放条据此继承当前位置，保证跨页面位置连贯。
+    MiniBarPositionStore.shared = _pos;
   }
 
   void _handlePanStart(DragStartDetails d) {
@@ -773,6 +800,14 @@ class _RingPainter extends CustomPainter {
 /// 常转，每帧先写 uniform 再 setState 重建——每帧全新 build 让框架按标准
 /// 流程重新 push BackdropFilterLayer，拖动平移/页面滚动时背板都实时重抓，
 /// 不依赖任何缓存命中策略。内容 child 为同一实例传入，不被每帧重建波及。
+///
+/// 例外——转场冻结（2026-09-07）：路由转场窗口内（[globalIsTransitioning]）
+/// 停掉每帧时钟并把双层 BackdropFilter 整体替换为静态磨砂面。BackdropFilter
+/// 是 layer 级、每帧合成都会对最新背板重新采样，转场平移时背板每帧都在变，
+/// shell 条 + 页内条双实例 = 每帧四次 SaveLayer，是转场掉帧主因；静态替换后
+/// 转场窗口内该子树零重建零采样。覆盖模式旧页静止（shell 条背板不变）、页内
+/// 条随页平移（玻璃与背板相对静止），替换完全无感；平滑模式整页本就走
+/// RouteStaticSnapshot 快照，口径一致。拖拽/滚动场景不受影响，维持实时背板。
 class LiveLiquidSurface extends StatefulWidget {
   const LiveLiquidSurface({
     super.key,
@@ -821,6 +856,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   ui.FragmentShader? _shader;
   final GlobalKey _surfaceKey = GlobalKey();
 
+  /// 转场冻结开关（true = 转场窗口内，静态磨砂面替代实时双层 BackdropFilter）。
+  /// 页内条可能在转场中挂载（二级页推入），initState 需同步一次初始状态。
+  bool _frozen = false;
+
   /// 玻璃表面屏幕物理几何（每帧从 RenderObject 实测，拖动中随位置更新）。
   double _glassDx = 0;
   double _glassDy = 0;
@@ -836,13 +875,32 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       if (mounted) setState(() => _shader = p.fragmentShader());
     });
     _tick.addListener(_onTick);
+    // 挂载即处于转场窗口（二级页推入时页内条正是如此）：直接冻结，
+    // 从第一帧起就零采样，不经历「实时渲染 → 冻结」的浪费窗口。
+    _frozen = globalIsTransitioning.value;
+    if (_frozen) _tick.stop();
+    globalIsTransitioning.addListener(_onTransitionChanged);
   }
 
   @override
   void dispose() {
+    globalIsTransitioning.removeListener(_onTransitionChanged);
     _tick.removeListener(_onTick);
     _tick.dispose();
     super.dispose();
+  }
+
+  /// 转场窗口边沿：进入即冻结（停时钟 + 静态磨砂面），结束恢复实时。
+  void _onTransitionChanged() {
+    if (!mounted) return;
+    final active = globalIsTransitioning.value;
+    if (active == _frozen) return;
+    setState(() => _frozen = active);
+    if (active) {
+      _tick.stop();
+    } else {
+      _tick.repeat();
+    }
   }
 
   /// 每帧：先实测几何并写 uniform，再 setState 让 BackdropFilter 以最新
@@ -900,8 +958,9 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   Widget build(BuildContext context) {
     final shader = _shader;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      // shader 未就绪/不支持：纯色占位（与 BiliPaiGlass 回退口径一致）。
+    if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
+      // 转场冻结 / shader 未就绪/不支持：静态磨砂面（回退口径一致）。
+      // 同步切换零闪变，转场窗口内该子树零重建零采样。
       return Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),

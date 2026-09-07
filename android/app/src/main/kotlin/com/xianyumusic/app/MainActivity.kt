@@ -336,6 +336,8 @@ class MainActivity : AudioServiceActivity() {
                     "getSdkInt" -> result.success(Build.VERSION.SDK_INT)
                     "chooseFolderTree" -> {
                         SafEngine.pendingTreeResult = result
+                        SafEngine.pendingTreePersist =
+                            call.argument<Boolean>("persist") ?: true
                         startActivityForResult(
                             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_CHOOSE_TREE)
                     }
@@ -382,6 +384,12 @@ class MainActivity : AudioServiceActivity() {
                             saf.closeFd(fd)
                             null
                         }
+                    }
+                    "createTreeFile" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        val fileName = call.argument<String>("fileName") ?: ""
+                        val content = call.argument<String>("content") ?: ""
+                        safAsync(result) { saf.createTreeFile(uri, fileName, content) }
                     }
                     "copyTreeDocToInternal" -> {
                         val uri = call.argument<String>("uri") ?: ""

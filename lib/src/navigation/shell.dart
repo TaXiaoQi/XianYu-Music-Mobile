@@ -736,6 +736,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   double? _playerTop;
   double? _playerLeft;
 
+  /// 上一次见到的共享停靠位：用于识别「外部位写入」（页内条在二级页拖动落定），
+  /// 该情况下 shell 条位置变化应瞬间生效，避免返回根页时从旧位 320ms 滑过去。
+  Offset? _lastSeenShared;
+
   // 记录上一次底栏形态，用于检测「浮/固定/侧栏」切换：用户手动停靠的播放条
   // 位置是按旧底栏几何锁定的，切到新底栏后可能压在底栏上（如贴住固定底栏后
   // 切悬浮，条会被卡进悬浮底栏），形态变化时应回落默认停靠位重新贴合。
@@ -865,6 +869,17 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     // 完全自由停放：松手后播放条停留在拖到的位置，不再被 60px 磁吸拉回
     // 靠近底栏的停靠位（原先「靠近底栏就会吸过去」即由此造成）。
+
+    // 落定位置写入共享存储：二级页内嵌播放条 initState 据此继承，保证
+    // 一级 ⇄ 二级页面切换时位置连贯。本地字段随后清空——静止位置以共享
+    // 存储为唯一事实，避免本页旧值掩盖其他页面写入的新位（详见显示处）。
+    final l = _playerLeft;
+    final t = _playerTop;
+    if (l != null && t != null) {
+      MiniBarPositionStore.shared = Offset(l, t);
+      _playerLeft = null;
+      _playerTop = null;
+    }
   }
 
   void _onPlayerPanCancel() {
@@ -1183,26 +1198,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final batchLift = ref.watch(batchBarLiftProvider);
     final liftedDefaultTop = defaultTop - batchLift;
 
-    final actualLeft = _playerLeft ?? defaultLeft;
-    // 显示位置按顶栏底部夹紧：历史停靠位（上界收紧前拖到顶部）不残留压栏。
-    final actualTop = (_playerTop ?? liftedDefaultTop)
-        .clamp(_playerMinTop(padding.top, landscape), double.infinity)
-        .toDouble();
-
-    // 根页停靠位顶部：预测返回回拨的落点（页面条在二级页位于低位 -18，shell 条
-    // 回到根页停在 -82/-70/-12，直接取隐藏位产生的飞行只有几像素不可见）。用
-    // 根页停靠顶计算目标，才能复现「页面条封面飞回根页 shell 条」的可见飞行。
-    // 根页停靠不随 miniBarLow 下沉，恒为根页停靠位（批量模式下随批量栏托起）。
-    final rootBarTop = (isSide
-            ? (screenSize.height - safeBottom - 58.0 - 12.0)
-            : (floating
-                ? (screenSize.height - 18.0 - 70.0 - 58.0)
-                : (screenSize.height - safeBottom - 58.0 - 64.0))) -
-        batchLift;
-
     // 播放条拖拽下限：与 defaultTop 停靠位一致，按底栏几何分支。
     // 原来只按悬浮底栏参数(18 间隙+70 高)算，常规(固定式)底部栏下因缺计算
     // safeBottom+64 导致播放条拖到底也与底栏贴近不了，这里按类型精确避让。
+    // （计算前移到显示位之前：共享停靠位回读同样要按它夹紧。）
     final dragMaxTop = () {
       final barH = 58.0;
       if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
@@ -1215,6 +1214,47 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           ? (screenSize.height - padding.bottom - barH - 12.0)
           : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
     }();
+
+    // 停靠位继承：静止位置以共享存储为唯一事实（shell 条/页内条拖动落定都
+    // 写入），本地字段仅在拖拽进行中有效。横竖屏/底栏形态变化时共享位已被
+    // didChangeDependencies 清空，这里自然回落默认停靠位。
+    final shared = MiniBarPositionStore.shared;
+    // 夹进壳层可停放范围：页内条无底栏可拖得更低、横移边界更宽，回根页后按
+    // 当前底栏几何夹回，避免压住底栏或越出边界。
+    final shellMinLeft = landscape ? landscapeLeftBound : 6.0;
+    final shellMaxLeft = landscape
+        ? landscapeRightBound
+        : (screenSize.width - (screenSize.width - 24.0) - 6.0);
+    final actualLeft = (_playerLeft ?? shared?.dx ?? defaultLeft)
+        .clamp(shellMinLeft,
+            shellMaxLeft > shellMinLeft ? shellMaxLeft : shellMinLeft)
+        .toDouble();
+    // 显示位置按顶栏底部夹紧：历史停靠位（上界收紧前拖到顶部）不残留压栏；
+    // 下限同步夹到当前底栏几何，页内条在二级页拖低的位回根页不压底栏。
+    final minTopClamped = _playerMinTop(padding.top, landscape);
+    final actualTop = (_playerTop ?? shared?.dy ?? liftedDefaultTop)
+        .clamp(
+            minTopClamped, math.max(minTopClamped, dragMaxTop.toDouble()))
+        .toDouble();
+
+    // 外部位继承检测：共享位被其他页面（页内条）改写且非拖拽中 → 位置变化
+    // 瞬间生效（AnimatedPositioned 时长归零），返回根页时播放条直接出现在
+    // 继承位，不从旧位滑动。共享位为 null（回默认/形态重置）时保留 320ms
+    // 过渡，维持既有的「回落默认停靠位」平滑感。
+    final adoptedExternal =
+        shared != null && shared != _lastSeenShared && !_isPlayerDragging;
+    _lastSeenShared = shared;
+
+    // 根页停靠位顶部：预测返回回拨的落点（页面条在二级页位于低位 -18，shell 条
+    // 回到根页停在 -82/-70/-12，直接取隐藏位产生的飞行只有几像素不可见）。用
+    // 根页停靠顶计算目标，才能复现「页面条封面飞回根页 shell 条」的可见飞行。
+    // 根页停靠不随 miniBarLow 下沉，恒为根页停靠位（批量模式下随批量栏托起）。
+    final rootBarTop = (isSide
+            ? (screenSize.height - safeBottom - 58.0 - 12.0)
+            : (floating
+                ? (screenSize.height - 18.0 - 70.0 - 58.0)
+                : (screenSize.height - safeBottom - 58.0 - 64.0))) -
+        batchLift;
 
     // resizeToAvoidBottomInset: false — 不让键盘顶起整个壳层内容。
     // 弹窗在 root Navigator 上，DialogKeyboardLift 已负责弹窗自身的键盘避让；
@@ -1406,7 +1446,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           // 返回有飞行」；播放页为不透明路由会盖住迷你条，留在树中无副作用。
           if (!hideShellMiniBar)
             AnimatedPositioned(
-                duration: _isPlayerDragging
+                duration: (_isPlayerDragging || adoptedExternal)
                     ? Duration.zero
                     : const Duration(milliseconds: 320),
                 curve: Curves.easeOutCubic,

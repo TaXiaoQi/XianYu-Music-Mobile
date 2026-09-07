@@ -32,12 +32,17 @@ class SafEngine(private val context: Context) {
          * 导致 Dart 侧 Future 永久挂起。engine 同进程存活时静态引用依然有效。
          */
         var pendingTreeResult: MethodChannel.Result? = null
+
+        /** 本次目录树选择是否持久化授权（一次性导出等场景传 false）。 */
+        var pendingTreePersist: Boolean = true
     }
 
     fun onTreeResult(uri: Uri?) {
         val result = pendingTreeResult
         pendingTreeResult = null
-        if (uri != null) {
+        val persist = pendingTreePersist
+        pendingTreePersist = true
+        if (uri != null && persist) {
             try {
                 resolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -220,6 +225,28 @@ class SafEngine(private val context: Context) {
         val pfd = openFds.get(fd)
         openFds.delete(fd)
         pfd?.close()
+    }
+
+    /**
+     * 在 tree 根目录创建文本文件并写入 UTF-8 内容，返回创建后的 docId。
+     *
+     * 供应用备份等一次性导出使用：依赖 ACTION_OPEN_DOCUMENT_TREE 活动结果
+     * 授予的临时读写授权（无需持久化），同名文件由文档提供器自动追加 "(1)"。
+     */
+    fun createTreeFile(treeUriStr: String, fileName: String, content: String): String {
+        val treeUri = Uri.parse(treeUriStr)
+        val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+        val docUri = DocumentsContract.createDocument(
+            resolver, parentDocUri, "application/json", fileName)
+            ?: throw IllegalStateException("无法在所选目录创建文件")
+        val out = try {
+            resolver.openOutputStream(docUri)
+        } catch (_: Exception) {
+            null
+        } ?: throw IllegalStateException("无法写入所选目录")
+        out.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+        return DocumentsContract.getDocumentId(docUri)
     }
 
     /**

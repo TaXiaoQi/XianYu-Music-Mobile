@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 
 import 'comment_sheet.dart';
@@ -974,6 +975,49 @@ class _TraditionalPlayerLayoutState
   /// 歌词视图实例 key：本实例内横竖屏翻转 reparent（同 _PlayerPageState）。
   final GlobalKey _lyricsKey = GlobalKey();
 
+  // ── 封面页外观偏好（「更多」弹层调节，本地持久化）──
+
+  /// 封面页 mini 歌词对齐：left（默认）/ center / right。
+  String _coverLyricAlign = 'left';
+
+  /// 封面大小档：large（默认/最大）/ medium / small。
+  String _coverSizeTier = 'large';
+
+  /// 读取封面页外观偏好（缺失/异常回退默认值）。
+  Future<void> _loadCoverAppearancePrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _coverLyricAlign =
+            prefs.getString('player_cover_lyric_align') ?? 'left';
+        _coverSizeTier = prefs.getString('player_cover_size') ?? 'large';
+      });
+    } catch (_) {
+      // 读取失败保持默认值。
+    }
+  }
+
+  /// 更新 mini 歌词对齐并持久化。
+  Future<void> _setCoverLyricAlign(String v) async {
+    if (_coverLyricAlign == v) return;
+    setState(() => _coverLyricAlign = v);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('player_cover_lyric_align', v);
+    } catch (_) {}
+  }
+
+  /// 更新封面大小档并持久化。
+  Future<void> _setCoverSizeTier(String v) async {
+    if (_coverSizeTier == v) return;
+    setState(() => _coverSizeTier = v);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('player_cover_size', v);
+    } catch (_) {}
+  }
+
   /// 封面/歌词左右滑动翻页控制器。
   late final PageController _pageController;
 
@@ -985,6 +1029,7 @@ class _TraditionalPlayerLayoutState
   @override
   void initState() {
     super.initState();
+    _loadCoverAppearancePrefs();
     _eq = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -1451,13 +1496,17 @@ class _TraditionalPlayerLayoutState
               const SizedBox(height: 30),
               _buildCaption(context, inset: hInset),
             ],
-            // 中部剩余空间：3 行歌词预览，左对齐歌名/封面左边
-            // （歌词与歌名/作者分离，位于底部控件与顶部歌名之间的位置）
+            // 中部剩余空间：3 行歌词预览，对齐方式跟随「更多」弹层的设置
+            // （左对齐与封面左缘对齐 / 居中 / 右对齐与封面右缘对齐）。
             Expanded(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: hInset),
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: switch (_coverLyricAlign) {
+                    'center' => Alignment.center,
+                    'right' => Alignment.centerRight,
+                    _ => Alignment.centerLeft,
+                  },
                   // 横屏(showLyricPreview=false)时封面下方只显示封面、不带滚动歌词预览。
                   child: showLyricPreview
                       ? _LyricPreview(current: widget.current)
@@ -1780,6 +1829,42 @@ class _TraditionalPlayerLayoutState
                   _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
                 },
               ),
+              // ── 封面页外观调节：mini 歌词对齐 + 封面大小 ──
+              StatefulBuilder(
+                builder: (ctx, setSheetState) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _sheetSegmentRow(
+                      ctx,
+                      label: tr('迷你歌词对齐'),
+                      current: _coverLyricAlign,
+                      options: [
+                        (value: 'left', label: tr('左对齐')),
+                        (value: 'center', label: tr('居中')),
+                        (value: 'right', label: tr('右对齐')),
+                      ],
+                      onSelected: (v) {
+                        setSheetState(() {});
+                        _setCoverLyricAlign(v);
+                      },
+                    ),
+                    _sheetSegmentRow(
+                      ctx,
+                      label: tr('封面大小'),
+                      current: _coverSizeTier,
+                      options: [
+                        (value: 'large', label: tr('大')),
+                        (value: 'medium', label: tr('中')),
+                        (value: 'small', label: tr('小')),
+                      ],
+                      onSelected: (v) {
+                        setSheetState(() {});
+                        _setCoverSizeTier(v);
+                      },
+                    ),
+                  ],
+                ),
+              ),
               ListTile(
                 leading:
                     Icon(Icons.playlist_add, color: scheme.primary, size: 22),
@@ -1794,6 +1879,43 @@ class _TraditionalPlayerLayoutState
           ),
         );
       },
+    );
+  }
+
+  /// 弹层内的分段选择行：小标题 + 一组互斥选项（选中项主题色高亮）。
+  Widget _sheetSegmentRow(
+    BuildContext ctx, {
+    required String label,
+    required String current,
+    required List<({String value, String label})> options,
+    required ValueChanged<String> onSelected,
+  }) {
+    final scheme = Theme.of(ctx).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style:
+                  TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (var i = 0; i < options.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _SheetSegmentButton(
+                    label: options[i].label,
+                    selected: current == options[i].value,
+                    onTap: () => onSelected(options[i].value),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -6685,6 +6807,49 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
           maxHeight: MediaQuery.of(context).size.height * 0.7,
         ),
         child: content,
+      ),
+    );
+  }
+}
+
+/// 「更多」弹层的分段选择按钮：选中主题色底 + 主色文字，未选中次级底色。
+class _SheetSegmentButton extends StatelessWidget {
+  const _SheetSegmentButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? scheme.primary.withValues(alpha: 0.14)
+          : scheme.onSurface.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          height: 34,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

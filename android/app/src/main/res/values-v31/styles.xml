@@ -13,6 +13,10 @@
              安卓 16 会忽略非自适应 icon 与 windowSplashScreenIconBackgroundColor，
              只有 adaptive icon 能被真正采用，昼夜尺寸才一致。 -->
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <!-- 同 values/styles.xml：主题层显式透明状态栏，鸿蒙 4（Android 12
+             兼容层）及以下不依赖 Flutter 运行时的 edge-to-edge 接管。 -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>
 
