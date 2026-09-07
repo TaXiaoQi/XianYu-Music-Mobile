@@ -851,9 +851,8 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
     final sel = _selected(songs);
     if (sel.isEmpty) return;
     final fav = ref.read(favoritesProvider.notifier);
-    for (final s in sel) {
-      fav.add(_queueItemFromImported(s));
-    }
+    await fav.addAll(sel.map(_queueItemFromImported).toList());
+    if (!mounted) return;
     showXianYuToast(context, tr('已收藏 {n} 首歌曲', {'n': sel.length}));
     widget.batch.exit();
   }

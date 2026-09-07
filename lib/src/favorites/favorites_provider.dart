@@ -268,6 +268,46 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     ));
   }
 
+  /// 批量添加到收藏。相比循环调用 [add]，此方法一次性读取/写回，
+  /// 避免多次 async [add] 并发读取同一 state 导致后写覆盖前写（只剩最后一首）。
+  Future<void> addAll(List<QueueItem> items) async {
+    if (items.isEmpty) return;
+    final existing = state.entries;
+    final existingPaths = existing.map((e) => e.path).toSet();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final newEntries = <FavoriteEntry>[];
+    final signalSongs = <({String songName, String singer})>[];
+    for (final item in items) {
+      if (existingPaths.contains(item.path)) continue;
+      newEntries.add(FavoriteEntry(
+        path: item.path,
+        title: item.title,
+        artist: item.artist,
+        album: item.album,
+        durationMs: item.durationMs,
+        onlineSongJson: item.onlineSongJson,
+        onlineQuality: item.onlineQuality,
+        coverUrl: item.coverUrl,
+        source: item.source,
+        onlineInfoJson: item.onlineInfoJson,
+        addedAt: now,
+      ));
+      signalSongs.add((songName: item.title, singer: item.artist));
+    }
+    if (newEntries.isEmpty) return;
+    final entries = [...newEntries, ...existing];
+    await _store.saveAll(entries);
+    state = FavoritesState(entries: entries, loading: false);
+    if (signalSongs.isNotEmpty) {
+      unawaited(reportDailyLikeSignals(
+        _ref.read(authProvider.notifier),
+        _ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
+        signalType: 'favorite',
+        songs: signalSongs,
+      ));
+    }
+  }
+
   Future<void> remove(String path) async {
     final entries = state.entries.where((e) => e.path != path).toList();
     await _store.saveAll(entries);

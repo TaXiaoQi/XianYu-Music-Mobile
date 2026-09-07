@@ -729,9 +729,8 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         songs.where((s) => widget.batch.selected.contains(s.path)).toList();
     if (sel.isEmpty) return;
     final fav = ref.read(favoritesProvider.notifier);
-    for (final s in sel) {
-      fav.add(s.toQueueItem());
-    }
+    await fav.addAll(sel.map((s) => s.toQueueItem()).toList());
+    if (!mounted) return;
     showXianYuToast(context, tr('已收藏 {n} 首歌曲', {'n': sel.length}));
     widget.batch.exit();
   }
