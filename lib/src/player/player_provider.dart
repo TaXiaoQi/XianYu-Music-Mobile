@@ -25,6 +25,7 @@ import '../online/online_meta_store.dart';
 import '../online/online_search_provider.dart';
 import '../online/cover_proxy.dart';
 import '../plugin/plugin_backup_import.dart';
+import '../plugin/plugin_catalog.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
@@ -317,6 +318,28 @@ class QueueItem {
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
       );
+
+  /// 复制并更新在线音源信息（跨格式换源后回写 pluginId/source/musicInfo，
+  /// 使歌词加载等下游也能拿到新插件信息）。
+  QueueItem copyWithOnlineSource({
+    String? onlineSongJson,
+    String? source,
+    String? onlineInfoJson,
+    String? onlineQuality,
+  }) => QueueItem(
+        path: path,
+        title: title,
+        artist: artist,
+        album: album,
+        durationMs: durationMs,
+        onlineSongJson: onlineSongJson ?? this.onlineSongJson,
+        onlineQuality: onlineQuality ?? this.onlineQuality,
+        coverUrl: coverUrl,
+        coverPath: coverPath,
+        source: source ?? this.source,
+        onlineInfoJson: onlineInfoJson ?? this.onlineInfoJson,
+        fromDailyRecommend: fromDailyRecommend,
+      );
 }
 
 class PlaybackState {
@@ -448,6 +471,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
+  // 跨格式换源缓存：悬空 pluginId 同格式无匹配时，跨格式（LX↔MusicFree/Baka）
+  // 重搜得到的新 songJson，按原 pluginId+标题 缓存，避免逐档音质重复搜索。
+  final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
   // 分享链接深链触发的播放：失败行为按「分享链接播放失败行为」设置决定（replace 才允许插件换源重播）。
   bool _shareLinkPlayback = false;
   /// 会话级临时音质覆盖（音质菜单显式选择时写入，对齐桌面端 sessionQualityOverride）。
@@ -2570,9 +2596,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       {String itemPath = ''}) async {
     try {
       final pluginId = songJson['pluginId'] as String?;
-      final sourceKey = songJson['source'] as String? ?? '';
-      final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
-      final format = songJson['format'] as String? ?? 'lx';
+      var sourceKey = songJson['source'] as String? ?? '';
+      var musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
+      var format = songJson['format'] as String? ?? 'lx';
       if (pluginId == null || pluginId.isEmpty) return null;
 
       final engine = await _ref.read(pluginEngineProvider.future);
@@ -2585,17 +2611,58 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final healed =
             _findHealedPlugin(sources, format, sourceKey, musicInfo);
         if (healed == null) {
-          debugPrint('[playPlugin] store 中无插件 $pluginId'
-              '（source=$sourceKey）且无可重匹配插件');
-          return null;
-        }
-        debugPrint('[playPlugin] pluginId 悬空已重匹配: '
-            '${healed.id.substring(0, 8)}… (${healed.name})');
-        source = [healed];
-        if (itemPath.isNotEmpty) {
-          unawaited(_ref
-              .read(playlistManagerProvider.notifier)
-              .healSongPlugin(itemPath, healed.id));
+          // 同格式无匹配：跨格式（LX ↔ MusicFree/Baka）兜底，按同一平台
+          // （网易云/QQ/酷我…）在已装任意格式插件中重搜歌曲，获得兼容格式的
+          // musicInfo 后播放——歌单里的歌只要根源平台一致就能播。
+          final healedCross =
+              await _crossFormatHeal(pluginId, format, sourceKey, musicInfo, sources, engine);
+          if (healedCross == null) {
+            debugPrint('[playPlugin] store 中无插件 $pluginId'
+                '（source=$sourceKey）且无可重匹配插件');
+            return null;
+          }
+          source = [healedCross.$1];
+          // 跨格式命中后，format/sourceKey/musicInfo 切换为新插件对应的值。
+          final newFormat = healedCross.$2['format'] as String? ?? format;
+          final newSource = healedCross.$2['source'] as String? ?? sourceKey;
+          final newMusicInfo = healedCross.$2['musicInfo'] as Map<String, dynamic>? ?? musicInfo;
+          format = newFormat;
+          sourceKey = newSource;
+          musicInfo = newMusicInfo;
+          // 把新插件信息回写到当前播放项，使歌词加载（读 onlineSongJson 的
+          // pluginId/source/musicInfo）也能命中新插件，否则歌词拿到悬空 pluginId
+          // 会静默返回空。
+          final newOnlineSongJson = jsonEncode(healedCross.$2);
+          final newOnlineInfoJson = jsonEncode(newMusicInfo);
+          _applyCrossFormatHealToState(
+            itemPath: itemPath,
+            pluginId: healedCross.$1.id,
+            newOnlineSongJson: newOnlineSongJson,
+            newSource: newSource,
+            newOnlineInfoJson: newOnlineInfoJson,
+          );
+          if (itemPath.isNotEmpty) {
+            // 跨格式必须完整回写 pluginId+format+source+musicInfo，
+            // 否则下次播放命中新 pluginId 但仍用旧格式 musicInfo 会失败。
+            unawaited(_ref
+                .read(playlistManagerProvider.notifier)
+                .healSongPluginFull(
+                  itemPath,
+                  pluginId: healedCross.$1.id,
+                  source: newSource,
+                  format: newFormat,
+                  musicInfo: newMusicInfo,
+                ));
+          }
+        } else {
+          debugPrint('[playPlugin] pluginId 悬空已重匹配: '
+              '${healed.id.substring(0, 8)}… (${healed.name})');
+          source = [healed];
+          if (itemPath.isNotEmpty) {
+            unawaited(_ref
+                .read(playlistManagerProvider.notifier)
+                .healSongPlugin(itemPath, healed.id));
+          }
         }
       }
 
@@ -2665,6 +2732,150 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       installedPlugins: sources,
       format: pluginFormat,
     );
+  }
+
+  /// 跨格式换源：悬空 pluginId 同格式无匹配时，按同一平台（网易云/QQ/酷我…）
+  /// 在已装任意格式插件（LX ↔ MusicFree/Baka）中重搜歌曲，返回 (新插件, 新 songJson)。
+  ///
+  /// 不同格式的 musicInfo 结构不互通，因此必须在目标插件上重新搜索以获得兼容
+  /// 的 musicInfo。结果按原 pluginId+标题缓存，避免逐档音质重复搜索。
+  Future<(PluginSource, Map<String, dynamic>)?> _crossFormatHeal(
+    String pluginId,
+    String format,
+    String sourceKey,
+    Map<String, dynamic> musicInfo,
+    List<PluginSource> sources,
+    PluginEngine engine,
+  ) async {
+    final pluginFormat = PluginFormat.fromValue(format);
+    final platformLabel = pluginFormat == PluginFormat.lx
+        ? sourceKey
+        : (musicInfo['platform']?.toString() ?? sourceKey);
+    if (platformLabel.trim().isEmpty) return null;
+
+    // 标题/歌手用于跨插件搜索（兼容 LX 的 name/singer 与 MF 的 title/artist）。
+    final title = (musicInfo['name'] ?? musicInfo['title'] ?? '').toString().trim();
+    final artist = (musicInfo['singer'] ?? musicInfo['artist'] ?? '').toString().trim();
+    if (title.isEmpty) return null;
+
+    // 缓存命中：同一首歌逐档音质复用已重搜的 songJson。
+    final cacheKey = '$pluginId|$title|$artist';
+    final cached = _crossFormatHealCache[cacheKey];
+    if (cached != null) {
+      final cachedSource = sources.where((s) => s.id == cached['pluginId']).toList();
+      if (cachedSource.isNotEmpty) return (cachedSource.first, cached);
+      _crossFormatHealCache.remove(cacheKey);
+    }
+
+    final cross = findPluginForPlatform(
+      platformLabel: platformLabel,
+      installedPlugins: sources,
+      format: pluginFormat,
+      allowCrossFormat: true,
+    );
+    if (cross == null) return null;
+    // 跨格式才需要重搜；若命中的恰好是同格式插件，直接返回（同格式 healing
+    // 在上层已试过不会走到这，但防御一下）。
+    if (cross.format == pluginFormat) return null;
+
+    final keyword = artist.isEmpty ? title : '$title $artist';
+    try {
+      final PluginSearchResult? match;
+      if (cross.format == PluginFormat.musicfree) {
+        final catalog = PluginCatalogService(engine, sources);
+        final results = await catalog.searchMusic(cross, keyword, limit: 10);
+        match = _pickBestSearchMatch(results, title, artist);
+      } else {
+        // LX 插件：按平台对应的 sourceKey 搜索（如 wy/tx/kw/kg/mg）。
+        final lxKey = _lxSourceKeyForPlatform(platformLabel, cross);
+        final results = await engine.searchInPlugin(cross, lxKey, keyword, limit: 10);
+        match = _pickBestSearchMatch(results, title, artist);
+      }
+      if (match == null) return null;
+
+      final newSongJson = cross.format == PluginFormat.musicfree
+          ? {
+              'pluginId': cross.id,
+              'format': 'musicfree',
+              'musicInfo': match.toJson(),
+            }
+          : {
+              'pluginId': cross.id,
+              'format': 'lx',
+              'source': match.source,
+              'musicInfo': match.toJson(),
+            };
+      _crossFormatHealCache[cacheKey] = newSongJson;
+      // 缓存上限防止长尾占用。
+      if (_crossFormatHealCache.length > 64) {
+        _crossFormatHealCache.remove(_crossFormatHealCache.keys.first);
+      }
+      debugPrint('[playPlugin] 跨格式换源命中: '
+          '${cross.name}(${cross.format.value}) <- $format song "$title"');
+      return (cross, newSongJson);
+    } catch (e) {
+      debugPrint('[playPlugin] 跨格式换源异常: $e');
+      return null;
+    }
+  }
+
+  /// 把跨格式换源后的新插件信息回写到当前播放项与队列中对应项，
+  /// 使歌词加载（读 onlineSongJson 的 pluginId/source/musicInfo）也能命中新插件。
+  void _applyCrossFormatHealToState({
+    required String itemPath,
+    required String pluginId,
+    required String newOnlineSongJson,
+    required String newSource,
+    required String newOnlineInfoJson,
+  }) {
+    final cur = state.current;
+    // 当前项已是新 pluginId 则跳过（避免重复写）。
+    if (cur != null && cur.path == itemPath) {
+      final curOnline = cur.onlineSongJson;
+      if (curOnline != null && curOnline.contains('"pluginId":"$pluginId"')) {
+        return;
+      }
+    }
+    final updated = cur?.path == itemPath
+        ? cur!.copyWithOnlineSource(
+            onlineSongJson: newOnlineSongJson,
+            source: newSource,
+            onlineInfoJson: newOnlineInfoJson,
+          )
+        : cur;
+    final queue = state.queue.map((q) {
+      if (q.path != itemPath) return q;
+      return q.copyWithOnlineSource(
+        onlineSongJson: newOnlineSongJson,
+        source: newSource,
+        onlineInfoJson: newOnlineInfoJson,
+      );
+    }).toList();
+    state = state.copyWith(current: updated, queue: queue);
+  }
+
+  /// 在跨插件搜索结果中挑出与目标歌曲最匹配的一条（标题归一化匹配优先）。
+  PluginSearchResult? _pickBestSearchMatch(
+    List<PluginSearchResult> results,
+    String title,
+    String artist,
+  ) {
+    if (results.isEmpty) return null;
+    for (final r in results) {
+      if (_matchOnlineTitle(title, r.name)) return r;
+    }
+    // 无标题精确匹配时退化为第一条（搜索词已含标题+歌手，通常第一条即可）。
+    return results.first;
+  }
+
+  /// 根据平台标签解析出 LX 插件的 sourceKey（wy/tx/kw/kg/mg）。
+  /// 优先用插件自身声明的 sources 中匹配平台的那个，否则用平台别名表的 lxSource。
+  String _lxSourceKeyForPlatform(String platformLabel, PluginSource plugin) {
+    final lxKey = lxSourceKeyForPlatform(platformLabel);
+    for (final s in plugin.sources) {
+      if (s == lxKey) return s;
+    }
+    return lxKey.isNotEmpty ? lxKey : (plugin.sources.isNotEmpty ? plugin.sources.first : 'default');
   }
 
   /// 播放行为上报（fire-and-forget，失败静默）。

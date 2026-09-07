@@ -66,14 +66,18 @@ android {
     }
 
     buildTypes {
-        // debug / profile / release 统一使用同一包名 com.xianyumusic.app：
-        // 去掉原 .debug 后缀后，debug/profile 与 release 包名一致，但签名仍不同
-        // （debug.keystore vs 正式密钥），因此 debug 与 release 不可共存安装，
-        // 切换安装需先卸载旧包。FileProvider authorities、QQ 回调等随
-        // ${applicationId} 自动跟随统一包名，无需额外改动。
+        // debug / profile / release 统一使用同一包名 com.xianyumusic.app，
+        // 且统一使用 release 签名（当 key.properties 存在时），使各构建类型
+        // 产物签名一致，可互相覆盖安装。FileProvider authorities、QQ 回调等
+        // 随 ${applicationId} 自动跟随统一包名，无需额外改动。
         debug {
             // debug 应用显示名加「·测试」后缀，与 release 正式版在一屏内可区分
             manifestPlaceholders["appLabel"] = "弦予音乐·测试"
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         release {
             manifestPlaceholders["appLabel"] = "弦予音乐"

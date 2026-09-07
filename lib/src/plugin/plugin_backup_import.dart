@@ -75,7 +75,12 @@ class ImportedSong {
       );
 
   /// 悬空 pluginId 修复回写：仅替换插件绑定，其余元数据原样保留。
-  ImportedSong copyWith({String? pluginId}) => ImportedSong(
+  ImportedSong copyWith({
+    String? pluginId,
+    String? source,
+    String? format,
+    Map<String, dynamic>? musicInfo,
+  }) => ImportedSong(
         title: title,
         artist: artist,
         album: album,
@@ -84,9 +89,9 @@ class ImportedSong {
         coverThumbPath: coverThumbPath,
         localPath: localPath,
         pluginId: pluginId ?? this.pluginId,
-        source: source,
-        format: format,
-        musicInfo: musicInfo,
+        source: source ?? this.source,
+        format: format ?? this.format,
+        musicInfo: musicInfo ?? this.musicInfo,
         path: path,
       );
 }
@@ -341,20 +346,48 @@ PluginSource? _findMatchingPlugin(
 /// 插件 id 是插件文件内容的 sha256——插件更新/重装后 id 必变，已导入歌曲
 /// 记录的 pluginId 随即悬空导致播放失败。此函数按存储格式与平台（如
 /// 'wy' → 网易云）在当前已装插件中重新匹配同格式插件。
+///
+/// [allowCrossFormat] 为 true 时，同格式无匹配则放宽到任意格式（LX ↔
+/// MusicFree/Baka 互通），命中的插件需由调用方重新搜索歌曲以获得兼容的
+/// musicInfo（不同格式的 musicInfo 结构不互通，不能直接复用）。
 PluginSource? findPluginForPlatform({
   required String platformLabel,
   required List<PluginSource> installedPlugins,
   required PluginFormat format,
+  bool allowCrossFormat = false,
 }) {
   final descriptor = _describePlatform(platformLabel);
   if (descriptor.normalized.isEmpty) return null;
-  final sameFormat =
-      installedPlugins.where((p) => p.format == format).toList();
+  final candidates = allowCrossFormat
+      ? installedPlugins
+      : installedPlugins.where((p) => p.format == format).toList();
   return _findMatchingPlugin(
     descriptor,
-    sameFormat,
+    candidates,
     format == PluginFormat.lx ? 'lxmusic' : 'bakamusic',
   );
+}
+
+/// 跨格式按平台匹配插件：在所有已装插件（不限 LX/MusicFree）中找能服务
+/// [platformLabel] 的插件。用于悬空 pluginId 同格式无匹配时的兜底。
+PluginSource? findPluginForPlatformCrossFormat({
+  required String platformLabel,
+  required List<PluginSource> installedPlugins,
+  required PluginFormat originalFormat,
+}) {
+  return findPluginForPlatform(
+    platformLabel: platformLabel,
+    installedPlugins: installedPlugins,
+    format: originalFormat,
+    allowCrossFormat: true,
+  );
+}
+
+/// 把平台标签（wy/网易云/qq音乐/...）归一化为 LX 音源 key（wy/tx/kw/kg/mg）。
+/// 无法识别时返回空串。供跨格式换源时确定 LX 插件的搜索 sourceKey。
+String lxSourceKeyForPlatform(String platformLabel) {
+  final desc = _describePlatform(platformLabel);
+  return desc.lxSource ?? '';
 }
 
 int _parseDurationSeconds(Object? value) {

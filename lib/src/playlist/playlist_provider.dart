@@ -100,6 +100,25 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  /// 跨格式换源完整修复：更新 pluginId/source/format/musicInfo，
+  /// 使跨格式（LX↔MusicFree/Baka）重搜后的歌曲下次播放直接命中新插件。
+  Future<void> healSongPluginFull(
+    String path, {
+    required String pluginId,
+    String? source,
+    String? format,
+    Map<String, dynamic>? musicInfo,
+  }) async {
+    final playlists = await _store.healSongPluginFull(
+      path,
+      pluginId: pluginId,
+      source: source,
+      format: format,
+      musicInfo: musicInfo,
+    );
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
   /// 重排歌单内歌曲顺序（按 path）。
   Future<void> reorderSongs(String id, List<String> orderedPaths) async {
     final playlists = await _store.reorderSongs(id, orderedPaths);

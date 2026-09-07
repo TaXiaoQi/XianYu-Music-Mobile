@@ -5092,7 +5092,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   @override
   void didUpdateWidget(_LyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.current?.path != widget.current?.path) {
+    // 换歌（path 变化）或同一首歌跨格式换源后 onlineSongJson 变化（pluginId
+    // 从悬空变为新插件），都需要重新拉取歌词。
+    final pathChanged = oldWidget.current?.path != widget.current?.path;
+    final onlineJsonChanged = oldWidget.current?.onlineSongJson !=
+        widget.current?.onlineSongJson;
+    if (pathChanged || onlineJsonChanged) {
       // 换歌：重置插值时钟并重新拉取歌词
       final p = ref.read(playerProvider).position;
       _anchorPos = p;

@@ -254,6 +254,46 @@ class PlaylistStore {
     return result;
   }
 
+  /// 跨格式换源完整修复：把引用 [path] 的在线歌曲的 pluginId/source/format/musicInfo
+  /// 全部更新为跨格式重搜后的新值（同格式 healing 只需更新 pluginId，见
+  /// [healSongPluginId]）。
+  Future<List<ImportedPlaylist>> healSongPluginFull(
+    String path, {
+    required String pluginId,
+    String? source,
+    String? format,
+    Map<String, dynamic>? musicInfo,
+  }) async {
+    if (path.isEmpty || pluginId.isEmpty) return loadAll();
+    final all = await loadAll();
+    var changed = false;
+    final result = all.map((p) {
+      var touched = false;
+      final songs = p.songs.map((s) {
+        if (s.path != path || s.isLocal || s.pluginId == pluginId) return s;
+        touched = true;
+        return s.copyWith(
+          pluginId: pluginId,
+          source: source,
+          format: format,
+          musicInfo: musicInfo,
+        );
+      }).toList();
+      if (!touched) return p;
+      changed = true;
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: songs,
+        importedAt: p.importedAt,
+        cloudId: p.cloudId,
+        isCloud: p.isCloud,
+      );
+    }).toList();
+    if (changed) await saveAll(result);
+    return result;
+  }
+
   /// 按指定 path 顺序重排歌单内歌曲（未列出的歌曲保持在队尾）。
   Future<List<ImportedPlaylist>> reorderSongs(
       String id, List<String> orderedPaths) async {
