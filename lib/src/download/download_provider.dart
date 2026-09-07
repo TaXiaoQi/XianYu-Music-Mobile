@@ -11,6 +11,7 @@ import 'download_notification_service.dart';
 import 'media_store_writer.dart';
 import '../widgets/app_toast.dart';
 import '../core/db_path.dart';
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../player/media_url.dart';
@@ -214,7 +215,14 @@ class DownloadManager extends StateNotifier<DownloadState> {
       return false;
     }
     if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
+      var status = await Permission.manageExternalStorage.status;
+      // 未授予时主动拉起系统「所有文件访问」授权页：MediaStore 兼容回退只能
+      // 落 Music/Download 集合，用户自选任意目录必须授权才能直写成功。
+      // 之前只 toast 不申请，而 Manifest 又未声明该权限（已补），导致自选
+      // 目录永远直写失败、静默回落 Music/弦予。
+      if (!status.isGranted && !status.isPermanentlyDenied) {
+        status = await Permission.manageExternalStorage.request();
+      }
       // await 期间调用方面板可能已被关闭（可拖拽的底部面板），此时用
       // 失效 context 查 Overlay 会触发 framework ancestor 断言崩溃。
       if (!context.mounted) return false;
@@ -407,6 +415,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
           msg.contains('写入文件失败') ||
           msg.contains('创建下载目录失败');
       if (!directWriteFailure) rethrow;
+      ApplicationLogManager.instance.warn(
+          '下载', '直写 $destPath 失败，回退 MediaStore 兼容模式：$msg');
       final fallback = await _mediaStoreFallback(
         url: url,
         dir: dir,
@@ -415,7 +425,13 @@ class DownloadManager extends StateNotifier<DownloadState> {
         parsed: parsed,
         settings: settings,
       );
-      if (fallback == null) rethrow;
+      if (fallback == null) {
+        ApplicationLogManager.instance
+            .error('下载', 'MediaStore 回退也失败：$msg');
+        rethrow;
+      }
+      ApplicationLogManager.instance
+          .warn('下载', '已回退写入：$fallback（目标目录 ${p.basename(dir)}）');
       finalPath = fallback;
     }
 

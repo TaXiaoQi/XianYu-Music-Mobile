@@ -24,8 +24,11 @@ import '../library/saf_channel.dart';
 import '../online/online_meta_store.dart';
 import '../online/online_search_provider.dart';
 import '../online/cover_proxy.dart';
+import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_engine.dart';
+import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import '../playlist/playlist_provider.dart';
 import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
@@ -1591,7 +1594,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final hasPlugin = songJson.containsKey('pluginId');
     return (String q) async {
       if (hasPlugin) {
-        final u = await _resolvePluginUrl(songJson, q);
+        final u = await _resolvePluginUrl(songJson, q, itemPath: item.path);
         if (u != null && _isPlayableUrl(u.url)) return u;
         final musicInfo =
             songJson['musicInfo'] as Map<String, dynamic>? ?? {};
@@ -2563,7 +2566,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 通过插件引擎解析播放直链。
   Future<ResolvedMediaUrl?> _resolvePluginUrl(
-      Map<String, dynamic> songJson, String quality) async {
+      Map<String, dynamic> songJson, String quality,
+      {String itemPath = ''}) async {
     try {
       final pluginId = songJson['pluginId'] as String?;
       final sourceKey = songJson['source'] as String? ?? '';
@@ -2573,10 +2577,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
-      final source = sources.where((s) => s.id == pluginId).toList();
+      var source = sources.where((s) => s.id == pluginId).toList();
       if (source.isEmpty) {
-        debugPrint('[playPlugin] store 中无插件 $pluginId（source=$sourceKey）');
-        return null;
+        // 悬空 pluginId（插件 id = 文件内容 sha256，插件更新/重装后旧记录全部
+        // 失配）：按平台在已装插件中重新匹配同格式插件，命中则回写歌单记录，
+        // 避免「插件一更新，备份导入的歌单全失效，只能删除重导」。
+        final healed =
+            _findHealedPlugin(sources, format, sourceKey, musicInfo);
+        if (healed == null) {
+          debugPrint('[playPlugin] store 中无插件 $pluginId'
+              '（source=$sourceKey）且无可重匹配插件');
+          return null;
+        }
+        debugPrint('[playPlugin] pluginId 悬空已重匹配: '
+            '${healed.id.substring(0, 8)}… (${healed.name})');
+        source = [healed];
+        if (itemPath.isNotEmpty) {
+          unawaited(_ref
+              .read(playlistManagerProvider.notifier)
+              .healSongPlugin(itemPath, healed.id));
+        }
       }
 
       if (format == 'musicfree') {
@@ -2624,6 +2644,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       debugPrint('[playPlugin] 解析异常($quality): $e');
       return null;
     }
+  }
+
+  /// 悬空 pluginId 重匹配：LX 歌按 source code（wy/tx/...），
+  /// MusicFree 歌按平台名（musicInfo.platform 优先，其次 source），
+  /// 在已装同格式插件中找能服务该平台的插件。
+  PluginSource? _findHealedPlugin(
+    List<PluginSource> sources,
+    String format,
+    String sourceKey,
+    Map<String, dynamic> musicInfo,
+  ) {
+    final pluginFormat = PluginFormat.fromValue(format);
+    final platform = pluginFormat == PluginFormat.lx
+        ? sourceKey
+        : (musicInfo['platform']?.toString() ?? sourceKey);
+    if (platform.trim().isEmpty) return null;
+    return findPluginForPlatform(
+      platformLabel: platform,
+      installedPlugins: sources,
+      format: pluginFormat,
+    );
   }
 
   /// 播放行为上报（fire-and-forget，失败静默）。

@@ -73,6 +73,22 @@ class ImportedSong {
             : null,
         path: j['path'] as String? ?? '',
       );
+
+  /// 悬空 pluginId 修复回写：仅替换插件绑定，其余元数据原样保留。
+  ImportedSong copyWith({String? pluginId}) => ImportedSong(
+        title: title,
+        artist: artist,
+        album: album,
+        duration: duration,
+        coverUrl: coverUrl,
+        coverThumbPath: coverThumbPath,
+        localPath: localPath,
+        pluginId: pluginId ?? this.pluginId,
+        source: source,
+        format: format,
+        musicInfo: musicInfo,
+        path: path,
+      );
 }
 
 /// 导入后的歌单。
@@ -320,6 +336,27 @@ PluginSource? _findMatchingPlugin(
   return scored.isEmpty ? null : scored.first.$1;
 }
 
+/// 按平台标签为歌曲重新匹配可用插件（悬空 pluginId 运行时修复用）。
+///
+/// 插件 id 是插件文件内容的 sha256——插件更新/重装后 id 必变，已导入歌曲
+/// 记录的 pluginId 随即悬空导致播放失败。此函数按存储格式与平台（如
+/// 'wy' → 网易云）在当前已装插件中重新匹配同格式插件。
+PluginSource? findPluginForPlatform({
+  required String platformLabel,
+  required List<PluginSource> installedPlugins,
+  required PluginFormat format,
+}) {
+  final descriptor = _describePlatform(platformLabel);
+  if (descriptor.normalized.isEmpty) return null;
+  final sameFormat =
+      installedPlugins.where((p) => p.format == format).toList();
+  return _findMatchingPlugin(
+    descriptor,
+    sameFormat,
+    format == PluginFormat.lx ? 'lxmusic' : 'bakamusic',
+  );
+}
+
 int _parseDurationSeconds(Object? value) {
   if (value is String && value.contains(':')) {
     final parts = value.split(':').map((p) => int.tryParse(p) ?? 0).toList();
@@ -501,6 +538,14 @@ ImportedSong _createMusicFreeSong(
     'album': album,
     'platform': rawSong['platform'] ?? platform.displayName,
   };
+  // 剥离来源 App 写入的临时代理直链（如 BakaMusic 备份的 share.*.cn/url/...）：
+  // 该类链接会过期/被限流，且 BakaMusic 自身播放从不复用 musicItem.url，
+  // 而是每次经插件 getMediaSource 按歌曲 id 重新解析。保留它会让个别插件
+  // 直接回传陈旧链接导致「导入能播、过段时间失效」，必须剥离强制重新解析。
+  final staleUrl = musicItem['url'];
+  if (staleUrl is String && staleUrl.startsWith('http')) {
+    musicItem.remove('url');
+  }
   final path = 'plugin://${Uri.encodeComponent(platform.displayName)}/${Uri.encodeComponent(id)}';
   return ImportedSong(
     title: title,

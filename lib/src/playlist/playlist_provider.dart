@@ -93,6 +93,13 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  /// 悬空 pluginId 运行时修复（播放解析回写）：持久化并刷新内存态，
+  /// 使后续播放直接命中新插件而无需重复重匹配。
+  Future<void> healSongPlugin(String path, String pluginId) async {
+    final playlists = await _store.healSongPluginId(path, pluginId);
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
   /// 重排歌单内歌曲顺序（按 path）。
   Future<void> reorderSongs(String id, List<String> orderedPaths) async {
     final playlists = await _store.reorderSongs(id, orderedPaths);

@@ -222,6 +222,38 @@ class PlaylistStore {
     return result;
   }
 
+  /// 悬空 pluginId 修复：把所有引用 [path] 的在线歌曲重绑到 [pluginId]。
+  ///
+  /// 插件 id = 插件文件内容 sha256，插件更新/重装后已导入歌曲记录里的
+  /// pluginId 全部悬空（播放报「store 中无插件」）。播放解析发现悬空并按
+  /// 平台重新匹配成功后，调用此方法把新插件 id 回写，避免每次播放都重匹配。
+  Future<List<ImportedPlaylist>> healSongPluginId(
+      String path, String pluginId) async {
+    if (path.isEmpty || pluginId.isEmpty) return loadAll();
+    final all = await loadAll();
+    var changed = false;
+    final result = all.map((p) {
+      var touched = false;
+      final songs = p.songs.map((s) {
+        if (s.path != path || s.isLocal || s.pluginId == pluginId) return s;
+        touched = true;
+        return s.copyWith(pluginId: pluginId);
+      }).toList();
+      if (!touched) return p;
+      changed = true;
+      return ImportedPlaylist(
+        id: p.id,
+        name: p.name,
+        songs: songs,
+        importedAt: p.importedAt,
+        cloudId: p.cloudId,
+        isCloud: p.isCloud,
+      );
+    }).toList();
+    if (changed) await saveAll(result);
+    return result;
+  }
+
   /// 按指定 path 顺序重排歌单内歌曲（未列出的歌曲保持在队尾）。
   Future<List<ImportedPlaylist>> reorderSongs(
       String id, List<String> orderedPaths) async {
