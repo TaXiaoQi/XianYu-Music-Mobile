@@ -210,6 +210,181 @@ void submitLandscapeSearch(WidgetRef ref, String raw) {
   ref.read(landscapeSearchResultsProvider.notifier).state = true;
 }
 
+// ==================== 实时搜索联想视图 ====================
+
+/// 搜索输入时实时显示本地+在线搜索结果的联想列表。
+class _SuggestionView extends ConsumerWidget {
+  const _SuggestionView({
+    required this.query,
+    required this.loading,
+    required this.suggestions,
+    required this.topPadding,
+    required this.onPlay,
+    required this.onSubmit,
+  });
+
+  final String query;
+  final bool loading;
+  final List<_TrackEntry> suggestions;
+  final double topPadding;
+  final void Function(int index) onPlay;
+  final void Function(String) onSubmit;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
+    final showReal =
+        ref.watch(settingsProvider.select((s) => s.valueOrNull?.showRealSourceName ?? false));
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomInset),
+      children: [
+        // 标题行
+        Row(
+          children: [
+            Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              tr('搜索结果'),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            if (loading)
+              const SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (!loading && suggestions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              tr('暂无结果'),
+              style: TextStyle(fontSize: 13, color: scheme.outline),
+            ),
+          )
+        else
+          for (var i = 0; i < suggestions.length; i++)
+            _SuggestionTile(
+              entry: suggestions[i],
+              query: query,
+              showReal: showReal,
+              onTap: () => onPlay(i),
+            ),
+        // 底部「查看全部结果」入口
+        if (suggestions.isNotEmpty || loading)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: InkWell(
+              onTap: () => onSubmit(query),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      tr('查看全部结果'),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward, size: 16, color: scheme.primary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SuggestionTile extends ConsumerWidget {
+  const _SuggestionTile({
+    required this.entry,
+    required this.query,
+    required this.showReal,
+    required this.onTap,
+  });
+
+  final _TrackEntry entry;
+  final String query;
+  final bool showReal;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final m = ListMetrics.ofRef(ref);
+
+    String title;
+    String subtitle;
+    String? coverUrl;
+
+    if (entry.isLocal) {
+      final s = entry.localSong!;
+      title = s.title;
+      subtitle = [s.artist, s.album, tr('本地')]
+          .where((x) => x.isNotEmpty)
+          .join(' · ');
+      coverUrl = s.coverThumbPath;
+    } else {
+      final r = entry.pluginResult!;
+      final pluginName = entry.pluginSource!.name;
+      final display = showReal ? resolveRealSourceName(pluginName) : pluginName;
+      title = r.name;
+      subtitle = [r.singer, r.albumName, display]
+          .where((x) => x.isNotEmpty)
+          .join(' · ');
+      coverUrl = r.img;
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(m.songRadius),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: m.vPad),
+        child: CoverRow(
+          cover: entry.isLocal
+              ? SongCover(song: entry.localSong!, size: m.songCover)
+              : OnlineCover(
+                  url: coverUrl,
+                  size: m.songCover,
+                  radius: m.songRadius,
+                ),
+          title: highlightedText(title, query, scheme.primary,
+              maxLines: 1,
+              style: TextStyle(
+                  fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+          ),
+          verticalPadding: m.vPad,
+        ),
+      ),
+    );
+  }
+}
+
 // ==================== 搜索页 ====================
 
 /// 搜索页：顶部搜索输入框 + 搜索历史/热搜。提交后跳到结果页（/search/result）。
@@ -230,9 +405,16 @@ class _SearchPageState extends ConsumerState<SearchPage>
   int _lastQueryLength = 0;
   Timer? _inputFlushTimer;
 
+  // —— 实时搜索联想 ——
+  Timer? _debounce;
+  String _suggestionQuery = '';
+  List<_TrackEntry> _suggestions = const [];
+  bool _suggestionLoading = false;
+
   @override
   void dispose() {
     _inputFlushTimer?.cancel();
+    _debounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -255,6 +437,64 @@ class _SearchPageState extends ConsumerState<SearchPage>
         }
       });
     }
+
+    // 实时搜索联想：300ms 防抖，2 字以上触发。
+    _debounce?.cancel();
+    final q = keyword.trim();
+    if (q.length < 2) {
+      setState(() {
+        _suggestionQuery = '';
+        _suggestions = const [];
+        _suggestionLoading = false;
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _runSuggestionSearch(q);
+    });
+  }
+
+  /// 实时搜索联想：同时搜本地曲库和所有已启用在线插件，取前 N 条合并展示。
+  Future<void> _runSuggestionSearch(String q) async {
+    setState(() {
+      _suggestionQuery = q;
+      _suggestionLoading = true;
+    });
+
+    final out = <_TrackEntry>[];
+
+    // 本地搜索
+    try {
+      final dbPath = await ref.read(dbPathProvider.future);
+      final json = await searchLibrarySongs(
+          dbPath: dbPath, query: q, limit: BigInt.from(10));
+      final list = (jsonDecode(json) as List)
+          .map((e) => Song.fromJson(e as Map<String, dynamic>))
+          .toList();
+      out.addAll(list.map((s) => _TrackEntry(isLocal: true, localSong: s)));
+    } catch (_) {}
+
+    // 在线搜索：所有已启用插件，各取前 5 条
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final plugins = ref.read(pluginManagerProvider).sources;
+      final enabled = plugins.where((p) => p.enabled).toList();
+      final service = PluginSearchService(engine, enabled);
+      final results = await service.searchAll(q, limit: 5);
+      for (final (plugin, items) in results) {
+        out.addAll(items.take(5).map((r) => _TrackEntry(
+              isLocal: false,
+              pluginSource: plugin,
+              pluginResult: r,
+            )));
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _suggestions = out;
+      _suggestionLoading = false;
+    });
   }
 
   /// 提交搜索：记录历史与会话，跳到结果页（/search/result）。
@@ -274,6 +514,21 @@ class _SearchPageState extends ConsumerState<SearchPage>
     setState(() {});
   }
 
+  /// 点击联想结果直接播放（不跳结果页）。
+  Future<void> _playSuggestion(int index) async {
+    final e = _suggestions[index];
+    FocusScope.of(context).unfocus();
+    if (e.isLocal) {
+      ref.read(libraryProvider.notifier).playList([e.localSong!], 0);
+    } else {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final plugins = ref.read(pluginManagerProvider).sources;
+      final service = PluginSearchService(engine, plugins);
+      final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
+      await ref.read(playerProvider.notifier).playQueue([item]);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -288,13 +543,23 @@ class _SearchPageState extends ConsumerState<SearchPage>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 内容铺满全屏，避让量走 SearchIdleView.topPadding（列表滚动 padding）：
-          // 滚动时内容从顶栏下方穿过（与首页/本地音乐页一致的悬浮穿透观感）。
-          SearchIdleView(
-            onSearch: _submitSearch,
-            topPadding:
-                floating ? statusBar + 66 : GlassTopBar.height(context),
-          ),
+          // 输入 2 字以上时显示实时联想结果，否则显示搜索历史/热搜。
+          if (_suggestionQuery.isNotEmpty && _suggestions.isNotEmpty || _suggestionLoading)
+            _SuggestionView(
+              query: _suggestionQuery,
+              loading: _suggestionLoading,
+              suggestions: _suggestions,
+              topPadding:
+                  floating ? statusBar + 66 : GlassTopBar.height(context),
+              onPlay: _playSuggestion,
+              onSubmit: _submitSearch,
+            )
+          else
+            SearchIdleView(
+              onSearch: _submitSearch,
+              topPadding:
+                  floating ? statusBar + 66 : GlassTopBar.height(context),
+            ),
           if (floating)
             Positioned(
               top: statusBar + 8,
