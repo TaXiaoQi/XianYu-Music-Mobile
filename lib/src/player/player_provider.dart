@@ -2603,6 +2603,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
+      // 旧导入记录的 musicInfo 可能仍携带来源 App 的临时代理直链（如
+      // BakaMusic 备份的 share.*.cn/url/...）：解析前剥离，强制插件按歌曲
+      // id 重新解析，存量导入无需删除重导（对齐 BakaMusic 播放语义）。
+      final staleUrl = musicInfo['url'];
+      if (staleUrl is String && staleUrl.startsWith('http')) {
+        musicInfo.remove('url');
+      }
       var source = sources.where((s) => s.id == pluginId).toList();
       if (source.isEmpty) {
         // 悬空 pluginId（插件 id = 文件内容 sha256，插件更新/重装后旧记录全部
