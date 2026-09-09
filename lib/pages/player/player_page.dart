@@ -3819,7 +3819,7 @@ class _DownloadQualitySheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 高亮当前播放音质；无播放音质时回退设置中的下载音质。
+    // 下载弹窗优先高亮设置中的下载音质，无匹配时回退当前播放音质。
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
     final settingsQ = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.downloadQuality),
@@ -3870,6 +3870,11 @@ class _DownloadQualitySheetState
                     final options = shown.isNotEmpty
                         ? shown
                         : const <String>[''];
+                    // 下载弹窗优先高亮设置中的下载音质；若该档不在可用
+                    // 列表内则回退当前播放音质，避免无默认选中。
+                    final preferredSel = options.contains(settingsQ)
+                        ? settingsQ
+                        : cur;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Column(
@@ -3896,8 +3901,7 @@ class _DownloadQualitySheetState
                               ),
                               isSelected: shown.isEmpty
                                   ? true
-                                  : q == cur ||
-                                      (cur == null && q == settingsQ),
+                                  : q == preferredSel,
                               onTap: () async {
                                 // OverlayState 先于 await 捕获：OverlayState
                                 // 不随弹窗销毁而失效，await 后仍可安全用。
