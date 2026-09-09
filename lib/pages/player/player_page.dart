@@ -3628,6 +3628,27 @@ String _qualitySizeSuffix(String q, Map<String, QualitySizeInfo> sizes) {
   return ' · ${_compactSize(info.bytes)}';
 }
 
+/// 期望档位不在可用列表时，按设置的回退方向选最近可用档（对齐桌面端
+/// DownloadDialog.ensureSelectedQualityAvailable）：higher 向上找最近档、
+/// lower 向下找最近档，越界落到边界档。
+String _nearestAvailable(
+    String preferred, List<String> available, String behavior) {
+  if (available.isEmpty || available.contains(preferred)) return preferred;
+  int rank(String q) {
+    final i = kQualityLadder.indexOf(q);
+    return i < 0 ? kQualityLadder.length : i;
+  }
+
+  final prefRank = rank(preferred);
+  final sorted = [...available]..sort((a, b) => rank(a).compareTo(rank(b)));
+  if (behavior == 'higher') {
+    return sorted
+        .firstWhere((q) => rank(q) > prefRank, orElse: () => sorted.last);
+  }
+  return sorted.reversed
+      .firstWhere((q) => rank(q) < prefRank, orElse: () => sorted.first);
+}
+
 /// 音质档位弹窗共享状态：档位探测 future + 实测体积轮询。
 /// 播放音质（[_QualitySheet]）与下载音质（[_DownloadQualitySheet]）共用。
 mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
@@ -3819,11 +3840,26 @@ class _DownloadQualitySheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 高亮当前播放音质；无播放音质时回退设置中的下载音质。
+    // 默认档位对齐桌面端 getInitialDownloadQuality：下载的歌曲就是当前播放
+    // 歌曲时优先实际播放音质，否则优先下载设置中的音质；期望档位不在可用
+    // 列表时按设置的回退方向取最近可用档（ensureSelectedQualityAvailable）。
+    final playingPath =
+        ref.watch(playerProvider.select((s) => s.current?.path));
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
-    final settingsQ = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.downloadQuality),
-    );
+    final settings = ref.watch(settingsProvider.select((s) => s.valueOrNull));
+    final isPlayingSong = widget.song.path.isNotEmpty &&
+        widget.song.path == playingPath &&
+        cur != null &&
+        cur.isNotEmpty;
+    final String initial;
+    if (isPlayingSong) {
+      // isPlayingSong 已含 cur 非空校验，流分析在此处已将 cur 提升为非空。
+      initial = cur;
+    } else {
+      initial = settings?.downloadQuality ?? '320k';
+    }
+    final fallbackBehavior =
+        settings?.downloadQualityFallbackBehavior ?? 'lower';
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.7,
@@ -3865,6 +3901,8 @@ class _DownloadQualitySheetState
                 );
                 final shown = opts.isNotEmpty ? opts : fallbackOpts;
                 final sizes = _sizes;
+                final defaultQ =
+                    _nearestAvailable(initial, shown, fallbackBehavior);
                     // 仍无档位（非插件在线源探测全失败）：给一个「默认音质」
                     // 兜底项，下载器会回退用户设置的下载音质，避免死胡同空态。
                     final options = shown.isNotEmpty
@@ -3890,14 +3928,12 @@ class _DownloadQualitySheetState
                             ModernOptionTile<String>(
                               option: ModernChoiceOption(
                                 label: shown.isEmpty
-                                    ? '${_qualityLabel(cur ?? settingsQ)} · ${tr('默认')}'
+                                    ? '${_qualityLabel(initial)} · ${tr('默认')}'
                                     : '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
                                 value: shown.isEmpty ? '' : q,
                               ),
-                              isSelected: shown.isEmpty
-                                  ? true
-                                  : q == cur ||
-                                      (cur == null && q == settingsQ),
+                              isSelected:
+                                  shown.isEmpty ? true : q == defaultQ,
                               onTap: () async {
                                 // OverlayState 先于 await 捕获：OverlayState
                                 // 不随弹窗销毁而失效，await 后仍可安全用。

@@ -1477,10 +1477,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           key, _buildResolveCallback(songJson, item));
       _activeProbeKey = key;
 
-      // 探测整体限时：多档串行超时（每档 8-30s）会拖垮加载态，超时即放弃。
+      // 仅保留兜底安全网（45s）：单档失败由各自的 8s 超时收敛，候选链并行
+      // + 串行推进。旧版 12s 总限时会在首选档卡满 8s 后只剩 4s 给其余候选，
+      // 回退链未走完即报失败——失败率显著高于桌面端（桌面端整轮探测无总限时）。
       final start = await probe
           .startBest(preferred, candidates)
-          .timeout(const Duration(seconds: 12), onTimeout: () => null);
+          .timeout(const Duration(seconds: 45), onTimeout: () => null);
       AppLog.info('play',
           '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
           'available=${probe.availableQualities} probing=${probe.probing}');
@@ -2317,7 +2319,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
-    final h = normalizeMediaRequestHeaders(clean, headers);
+    final h = await withBilibiliStreamCookie(
+      clean,
+      normalizeMediaRequestHeaders(clean, headers),
+      dataDir: _ref.read(appDataDirProvider.future),
+    );
     // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
@@ -2360,7 +2366,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final dataDir = await _ref.read(appDataDirProvider.future);
     try {
       return await _tryLxResolveInner(songInfoJson, candidates, dataDir)
-          .timeout(const Duration(seconds: 12));
+          .timeout(const Duration(seconds: 45));
     } catch (_) {
       return null;
     }
@@ -3603,14 +3609,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _activeProbeKey = key;
         final start = await probe
             .startBest(preferred, candidates)
-            .timeout(const Duration(seconds: 12), onTimeout: () => null);
+            .timeout(const Duration(seconds: 45), onTimeout: () => null);
         if (start == null) return null;
         final clean = sanitizeMediaUrl(start.url);
         if (clean.isEmpty) return null;
         return CastMediaResolution(
           url: clean,
-          headers:
-              normalizeMediaRequestHeaders(clean, start.headers) ?? const {},
+          headers: await withBilibiliStreamCookie(
+                clean,
+                normalizeMediaRequestHeaders(clean, start.headers),
+                dataDir: _ref.read(appDataDirProvider.future),
+              ) ??
+              const {},
           isRemote: true,
         );
       }
@@ -3620,8 +3630,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (clean.isEmpty) return null;
       return CastMediaResolution(
         url: clean,
-        headers:
-            normalizeMediaRequestHeaders(clean, url.headers) ?? const {},
+        headers: await withBilibiliStreamCookie(
+              clean,
+              normalizeMediaRequestHeaders(clean, url.headers),
+              dataDir: _ref.read(appDataDirProvider.future),
+            ) ??
+            const {},
         isRemote: true,
       );
     }

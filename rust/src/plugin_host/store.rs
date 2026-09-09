@@ -198,6 +198,23 @@ impl PluginStore {
         }
     }
 
+    /// 覆盖式写入 Cookie（用户变量显式同步场景，对齐桌面端
+    /// storePluginCookie 的 localStorage 覆写语义：新值必须生效）。
+    pub fn upsert_cookies(&self, cookies: HashMap<String, CookieEntry>) {
+        let mut changed = false;
+        let mut data = self.data.lock().unwrap();
+        for (name, entry) in cookies {
+            if name.is_empty() || entry.value.is_empty() {
+                continue;
+            }
+            data.cookies.insert(name, entry);
+            changed = true;
+        }
+        if changed {
+            self.persist(&data);
+        }
+    }
+
     pub fn cookie_snapshot(&self) -> HashMap<String, CookieEntry> {
         self.data.lock().unwrap().cookies.clone()
     }
@@ -239,6 +256,46 @@ mod tests {
         let bili = store.cookie_header_for_domain("bilibili");
         assert!(bili.contains("SESSDATA=abc123"));
         assert!(!bili.contains("kg_token"));
+    }
+
+    #[test]
+    fn upsert_cookies_overwrites_existing_value() {
+        let store = PluginStore::load(None);
+        assert!(store.set_cookie(
+            "https://www.bilibili.com/x",
+            "SESSDATA",
+            "old_value",
+            None
+        ));
+        // import_local 补缺：同名字段不覆盖
+        let mut m = HashMap::new();
+        m.insert(
+            "SESSDATA".to_string(),
+            CookieEntry {
+                value: "new_value".to_string(),
+                domain: "bilibili.com".to_string(),
+            },
+        );
+        store.import_local(m.clone(), HashMap::new());
+        assert!(store.cookie_header_for_domain("bilibili").contains("old_value"));
+        // upsert_cookies 覆盖：新值必须生效（用户变量显式同步语义）
+        store.upsert_cookies(m);
+        let header = store.cookie_header_for_domain("bilibili");
+        assert!(header.contains("SESSDATA=new_value"));
+        assert!(!header.contains("old_value"));
+        // 空值不写入
+        let mut empty = HashMap::new();
+        empty.insert(
+            "buvid3".to_string(),
+            CookieEntry {
+                value: String::new(),
+                domain: "bilibili.com".to_string(),
+            },
+        );
+        store.upsert_cookies(empty);
+        assert!(!store
+            .cookie_header_for_domain("bilibili")
+            .contains("buvid3"));
     }
 
     #[test]

@@ -15,6 +15,20 @@ import 'plugin_subscriptions.dart';
 import 'plugin_user_vars.dart';
 import '../i18n/i18n.dart';
 
+/// B站取流 Cookie 关键字段（对齐桌面端 pluginEngineUserVars.BILIBILI_COOKIE_KEYS）。
+const _bilibiliCookieKeys = {
+  'SESSDATA',
+  'buvid3',
+  'buvid4',
+  'bili_jct',
+  'DedeUserID',
+  'DedeUserID__ckMd5',
+  'b_nut',
+  '_uuid',
+  'PVID',
+  'sid',
+};
+
 /// 插件引擎实例（懒加载，dataDir 就绪后创建）。
 final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
   final dataDir = await ref.watch(appDataDirProvider.future);
@@ -408,11 +422,65 @@ class PluginManager extends StateNotifier<PluginListState> {
   Future<void> saveUserVars(String pluginId, Map<String, String> values) async {
     final engine = await _getEngine();
     await _ref.read(pluginUserVarValuesProvider.notifier).save(pluginId, values);
+    await syncBilibiliCookiesFromVars(pluginId, values);
     await engine.destroy(pluginId);
     final source = state.sources.where((s) => s.id == pluginId).toList();
     if (source.isNotEmpty && source.first.enabled) {
       await engine.ensureLoaded(source.first);
     }
+  }
+
+  /// B站取流 Cookie 同步（对齐桌面端 pluginEngineUserVars.syncBilibiliCookiesFromVars）：
+  /// 保存用户变量后，把可识别的 B站 Cookie 覆盖写入插件引擎 Cookie 仓库
+  /// （取流/下载链路 withBilibiliStreamCookie 从该仓库读取）。非 B 站插件忽略。
+  Future<void> syncBilibiliCookiesFromVars(
+      String pluginId, Map<String, String> values) async {
+    final isBili = state.sources.any((s) =>
+        s.id == pluginId &&
+        (s.name == 'bilibili' || s.id.contains('bilibili')));
+    if (!isBili) return;
+    final cookies = <String, Map<String, String>>{};
+    void put(String name, String value) {
+      final v = value.trim();
+      if (name.isEmpty || v.isEmpty) return;
+      cookies[name] = {'value': v, 'domain': 'bilibili.com'};
+    }
+
+    // 形态一：直接键名（SESSDATA / buvid3 等关键 Cookie 字段）
+    for (final e in values.entries) {
+      if (_bilibiliCookieKeys.contains(e.key)) put(e.key, e.value);
+    }
+    // 形态二：值为 JSON 数组 [{name,value}] 或对象 {name:value} 的整串 Cookie
+    for (final raw in values.values) {
+      final t = raw.trim();
+      if (!(t.startsWith('[') || t.startsWith('{'))) continue;
+      try {
+        final parsed = jsonDecode(t);
+        final items = parsed is List
+            ? parsed
+            : parsed is Map
+                ? parsed.entries.toList()
+                : const [];
+        for (final it in items) {
+          if (it is Map) {
+            final name = it['name']?.toString() ?? '';
+            final value = it['value'];
+            if (name.isNotEmpty && value != null) put(name, value.toString());
+          }
+        }
+      } catch (_) {/* 非 JSON 内容忽略 */}
+    }
+    if (cookies.isEmpty) return;
+    try {
+      await frb.pluginEngineStoreImport(
+        dataDir: await _ref.read(appDataDirProvider.future),
+        payloadJson: jsonEncode({
+          'cookies': cookies,
+          'storage': <String, String>{},
+          'overwriteCookies': true,
+        }),
+      );
+    } catch (_) {/* Cookie 同步失败不影响变量保存本身 */}
   }
 
   List<String> _extractSources(bool isLx, Map<String, dynamic>? metadata) {

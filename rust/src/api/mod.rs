@@ -2038,7 +2038,8 @@ pub fn stats_clear_listen_stats(db_path: String) -> Result<(), String> {
 // store_snapshot）
 // =========================================================================
 
-/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+/// 导入插件引擎店铺会话（cookie + storage）。默认仅补缺不覆盖；payload 可选
+/// `overwriteCookies: true` 时改为覆盖式写入 cookie（用户变量显式同步场景）。
 pub async fn plugin_engine_store_import(
     data_dir: String,
     payload_json: String,
@@ -2048,13 +2049,22 @@ pub async fn plugin_engine_store_import(
     struct StoreImportPayload {
         cookies: std::collections::HashMap<String, crate::plugin_host::CookieEntry>,
         storage: std::collections::HashMap<String, String>,
+        #[serde(default)]
+        overwrite_cookies: bool,
     }
     let payload: StoreImportPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
     let engine = crate::plugin_host::global_engine(&data_dir);
-    engine
-        .store()
-        .import_local(payload.cookies, payload.storage);
+    if payload.overwrite_cookies {
+        engine.store().upsert_cookies(payload.cookies);
+        engine
+            .store()
+            .import_local(std::collections::HashMap::new(), payload.storage);
+    } else {
+        engine
+            .store()
+            .import_local(payload.cookies, payload.storage);
+    }
     Ok(())
 }
 

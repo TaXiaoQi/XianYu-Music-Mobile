@@ -1142,6 +1142,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
                 await _ref
                     .read(pluginUserVarValuesProvider.notifier)
                     .save(source.id, values);
+                // B站插件：Cookie 变量同步进引擎 Cookie 仓库（取流/下载用）
+                await pluginManager.syncBilibiliCookiesFromVars(
+                    source.id, values);
               } else {
                 errors.add(tr('插件 "{name}" 用户变量解密失败', {'name': name}));
               }

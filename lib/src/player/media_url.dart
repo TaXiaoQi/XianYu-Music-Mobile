@@ -4,6 +4,8 @@
 // 且酷狗/网易云等 CDN 防盗链要求 Referer/Origin，缺失时返回错误页或空响应，
 // 最终表现为 ExoPlayer「加载但不播放」（UnrecognizedInputFormatException）。
 
+import '../rust/api.dart';
+
 /// 从尾部逐字符剥离非 URL 字符（引号/逗号/分号/空白等）。
 bool _isTrailingDirtyChar(int code) {
   return code == 0x2c || // ,
@@ -143,6 +145,38 @@ Map<String, String>? normalizeMediaRequestHeaders(
     }
   }
   return headers.isNotEmpty ? headers : null;
+}
+
+/// B站取流会话 Cookie 合并（对齐桌面端 withBilibiliStreamCookie）。
+///
+/// B站插件调 API（api.bilibili.com / www.bilibili.com）时 Cookie 存在后端
+/// PluginStore，但取流 CDN（bilivideo.com）与 API 域名不同，URL 域匹配不会
+/// 命中。按 domain 关键字过滤拼接 Cookie 头补上，避免 CDN 匿名分流只返回
+/// 几秒预览流。已带 Cookie 或非 B 站域时原样返回；查询失败静默降级。
+Future<Map<String, String>?> withBilibiliStreamCookie(
+  String url,
+  Map<String, String>? headers, {
+  required Future<String> dataDir,
+}) async {
+  final hasCookie =
+      headers?.keys.any((k) => k.toLowerCase() == 'cookie') ?? false;
+  if (hasCookie) return headers;
+  final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+  if (!host.contains('bilivideo') &&
+      !host.contains('hdslb') &&
+      !host.contains('bilibili')) {
+    return headers;
+  }
+  try {
+    final cookie = await pluginEngineCookieHeaderForDomain(
+      dataDir: await dataDir,
+      domain: 'bilibili',
+    );
+    if (cookie.isEmpty) return headers;
+    return {...?headers, 'Cookie': cookie};
+  } catch (_) {
+    return headers;
+  }
 }
 
 /// 解析得到的播放源：直链 + 可选请求头 + 实际命中的音质档位（LX 多档回退时可知实际档）。

@@ -370,6 +370,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     //    避免下载出「标着无损却是 320k/mp3」的假音质文件。
     var usedQuality = task.quality;
     String? url;
+    Map<String, String>? urlHeaders;
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
       final tried = parsed.containsKey('pluginId')
@@ -385,10 +386,21 @@ class DownloadManager extends StateNotifier<DownloadState> {
         continue;
       }
       url = u;
+      urlHeaders = tried.headers;
       usedQuality = effective;
       break;
     }
     if (url == null) throw StateError(tr('直链解析失败'));
+
+    // 下载请求头（对齐播放链路）：插件自带头 + 按域补齐防盗链头
+    // （Referer/Origin/Accept）+ B站取流会话 Cookie。此前 headersJson 恒为
+    // '{}'，B站 m4s 直链缺 Referer/Cookie 只能下到几秒预览片段或直接失败。
+    final dlHeaders = await withBilibiliStreamCookie(
+      url,
+      normalizeMediaRequestHeaders(url, urlHeaders),
+      dataDir: _ref.read(appDataDirProvider.future),
+    );
+    final headersJson = jsonEncode(dlHeaders ?? <String, String>{});
 
     _updateTask(task.songPath, progressPercent: 40);
 
@@ -419,7 +431,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: destPath,
         ekey: null,
-        headersJson: '{}',
+        headersJson: headersJson,
       );
     } catch (e) {
       final msg = e.toString();
@@ -436,6 +448,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         item: item,
         parsed: parsed,
         settings: settings,
+        headersJson: headersJson,
       );
       if (fallback == null) {
         ApplicationLogManager.instance
@@ -475,6 +488,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     required QueueItem item,
     required Map<String, dynamic> parsed,
     AppSettings? settings,
+    required String headersJson,
   }) async {
     if (!Platform.isAndroid) return null;
     if (!await MediaStoreWriter.available) return null;
@@ -487,7 +501,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: tempPath,
         ekey: null,
-        headersJson: '{}',
+        headersJson: headersJson,
       );
 
       // 收尾在临时文件上做：sidecar 与 tag 嵌入都写缓存，一定可写。
