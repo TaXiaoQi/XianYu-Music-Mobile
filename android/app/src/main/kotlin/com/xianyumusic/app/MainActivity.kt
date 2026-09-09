@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.view.Surface
 import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -291,6 +292,9 @@ class MainActivity : AudioServiceActivity() {
                     // 安装来源（installer 包名，侧载/未知为 null）：自更新逻辑据此
                     // 判定商店渠道（F-Droid/Play），商店政策禁止绕过商店自更新
                     "getInstallerSource" -> result.success(installerSource())
+                    // 平台级稳定设备 ID：Widevine DRM 设备 ID（硬件派生，恢复出厂
+                    // 一般不变）优先，退回 ANDROID_ID（免权限，重装不变）
+                    "getStableDeviceId" -> result.success(stableDeviceId())
                     else -> result.notImplemented()
                 }
             }
@@ -522,6 +526,38 @@ class MainActivity : AudioServiceActivity() {
     } catch (_: Exception) {
         null
     }
+
+    /** 硬件级稳定设备 ID（SHA-256 归一化）：
+     *  1. Widevine DRM 设备唯一 ID：由 TEE/硬件密钥派生，免权限，卸载重装不变，
+     *     恢复出厂通常也不变（跟着硬件走）——最强用户态标识；
+     *  2. 退回 ANDROID_ID：以「应用签名+用户」为作用域，重装不变，恢复出厂会变。
+     *  查询全程 try 兜底，模拟器/异常设备返回空串，上层回退本地随机 ID。 */
+    private fun stableDeviceId(): String {
+        widevineDeviceId()?.let { return sha256Hex("wv|$it") }
+        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        return if (!androidId.isNullOrEmpty()) sha256Hex("aid|$androidId") else ""
+    }
+
+    /** Widevine 设备唯一 ID（hex 编码），不可用返回 null。 */
+    private fun widevineDeviceId(): String? = try {
+        // Widevine UUID（EC3A-DC 系列标准值，全平台固定）
+        val widevine = java.util.UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L)
+        val drm = android.media.MediaDrm(widevine)
+        try {
+            drm.getPropertyByteArray(android.media.MediaDrm.PROPERTY_DEVICE_UNIQUE_ID)
+                ?.joinToString("") { "%02x".format(it) }
+                ?.takeIf { it.isNotEmpty() }
+        } finally {
+            drm.release()
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun sha256Hex(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     /** 设备市场名（如「小米16」）：反射读 ro.product.marketname（小米/OPPO/vivo/荣耀等
      *  国产 ROM 均有）；读不到返回空串，上层回退用 Build.MODEL。 */

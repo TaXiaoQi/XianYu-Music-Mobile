@@ -56,6 +56,7 @@ class SceneDelegate: FlutterSceneDelegate {
 
   /// 建立与 Dart 的深链通道；注册 handler 后投递暂存 URL。幂等。
   private func ensureChannel() {
+    ensureDeviceInfoChannel()
     guard channel == nil, let vc = flutterViewController() else { return }
     let ch = FlutterMethodChannel(name: "xianyu/deeplink", binaryMessenger: vc.binaryMessenger)
     ch.setMethodCallHandler { [weak self] call, result in
@@ -81,5 +82,77 @@ class SceneDelegate: FlutterSceneDelegate {
     }
     return (scene as? UIWindowScene)?.keyWindow?.rootViewController
         as? FlutterViewController
+  }
+
+  /// 注册 xianyu/device_info 通道（与 Android 端同名通道协议一致），
+  /// 提供 Keychain 持久化的设备稳定 ID 与设备信息：卸载重装不变（仅抹机才清除）。
+  private func ensureDeviceInfoChannel() {
+    guard !deviceInfoChannelRegistered, let vc = flutterViewController() else { return }
+    deviceInfoChannelRegistered = true
+    let ch = FlutterMethodChannel(name: "xianyu/device_info", binaryMessenger: vc.binaryMessenger)
+    ch.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getStableDeviceId":
+        result(Self.keychainStableDeviceId())
+      // 设备信息（JSON 字符串，字段与 Android 端 getDeviceInfo 一致）：
+      // brand/manufacturer 固定 Apple，model 取 utsname machine（如 iPhone16,2），
+      // os_version 如 "iOS 18.1"，market_name iOS 无对应概念留空
+      case "getDeviceInfo":
+        result(Self.deviceInfoJson())
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  /// 采集 iOS 设备信息，序列化为 JSON 字符串。
+  private static func deviceInfoJson() -> String {
+    var sys = utsname()
+    uname(&sys)
+    let machine = withUnsafeBytes(of: &sys.machine) { buf -> String in
+      let chars = buf.prefix(while: { $0 != 0 }).compactMap { UnicodeScalar($0) }
+      return String(String.UnicodeScalarView(chars))
+    }
+    let json: [String: String] = [
+      "brand": "Apple",
+      "manufacturer": "Apple",
+      "model": machine.isEmpty ? UIDevice.current.model : machine,
+      "market_name": "",
+      "os_version": "iOS " + UIDevice.current.systemVersion,
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: json) else { return "" }
+    return String(data: data, encoding: .utf8) ?? ""
+  }
+
+  /// Keychain 稳定设备 ID：首次生成 UUID 写入 Keychain（ThisDeviceOnly，
+  /// 不随备份迁移到其他设备），此后所有读取直接命中，卸载重装不丢。
+  private static func keychainStableDeviceId() -> String {
+    let service = "com.xianyumusic.app.deviceid"
+    let account = "stable_id"
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+      kSecReturnData as String: true,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    if status == errSecSuccess,
+       let data = item as? Data,
+       let existing = String(data: data, encoding: .utf8),
+       !existing.isEmpty {
+      return existing
+    }
+    guard status == errSecItemNotFound else { return "" }
+    let id = UUID().uuidString.lowercased()
+    let add: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+      kSecValueData as String: id.data(using: .utf8) as Any,
+      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+    ]
+    let addStatus = SecItemAdd(add as CFDictionary, nil)
+    return addStatus == errSecSuccess ? id : ""
   }
 }
