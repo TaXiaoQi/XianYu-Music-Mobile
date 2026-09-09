@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show ValueNotifier;
+
 import 's2t_table.dart';
 import 'en_dict_gen.dart';
 import 'en_dict_manual.dart';
@@ -17,6 +19,10 @@ class I18n {
 
   static I18nMode mode = I18nMode.zhCn;
 
+  /// 语言模式版本号：setMode 时自增。常驻服务（悬浮歌词/状态栏歌词）
+  /// 监听它在语言切换后重新拉取动态文本（歌词），无需依赖 Widget 重建。
+  static final ValueNotifier<int> modeVersion = ValueNotifier(0);
+
   /// 运行期简繁转换缓存（短 UI 文案重复出现，命中率高）。
   static final Map<String, String> _convCache = {};
   static const _maxCacheEntries = 4096;
@@ -25,6 +31,7 @@ class I18n {
     if (m == mode) return;
     mode = m;
     _convCache.clear();
+    modeVersion.value++;
   }
 }
 
@@ -72,6 +79,12 @@ String fmtCompact(num n) {
 }
 
 String _trimZero(String s) => s.endsWith('.0') ? s.substring(0, s.length - 2) : s;
+
+/// 繁体模式动态文本（歌词行等）转换：zhTw 返回简转繁结果，其他语言原样返回。
+/// 纯函数直转、不进 UI 词条缓存，避免整首歌词文本冲刷短语缓存命中率；
+/// 拉丁字母（罗马音/英文）经转换原样保留。
+String localizeLyricText(String text) =>
+    I18n.mode == I18nMode.zhTw ? _convertS2t(text) : text;
 
 bool _containsHan(String s) => _hanRe.hasMatch(s);
 

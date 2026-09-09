@@ -314,6 +314,29 @@ class PluginManager extends StateNotifier<PluginListState> {
     engine.bakaManager.clearCache(id);
   }
 
+  /// 全部启用/全部禁用（对齐桌面端 handleToggleAllPlugins）。
+  ///
+  /// 与逐个 [toggleEnabled] 的区别：整表单次持久化，禁用时逐个销毁沙箱实例；
+  /// 已处于目标状态的插件跳过（[changed] 为空直接返回，不写盘）。
+  Future<void> toggleAll(bool enabled) async {
+    final changed =
+        state.sources.where((s) => s.enabled != enabled).toList();
+    if (changed.isEmpty) return;
+    final engine = await _getEngine();
+    final list =
+        state.sources.map((s) => s.copyWith(enabled: enabled)).toList();
+    await engine.store.saveSources(list);
+    state = PluginListState(sources: list);
+    for (final s in changed) {
+      if (!enabled) {
+        // 禁用时销毁沙箱实例；启用无需预创建（首次调用懒加载）。
+        await engine.destroy(s.id);
+      }
+      // 启停改变插件加载状态：Baka 判定缓存与媒体缓存失效。
+      engine.bakaManager.clearCache(s.id);
+    }
+  }
+
   /// 卸载插件。
   Future<void> remove(String id) async {
     final engine = await _getEngine();

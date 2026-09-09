@@ -72,22 +72,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         children: [
           // 内容列表：顶部预留顶栏（含搜索框）高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
           // 底部避让：二级页底栏隐藏，仅迷你播放条悬浮在距底 18px 处（高 58）。
-          // 包 RepaintBoundary 隔离内部重绘，避免列表重排波及背景层。
-          RepaintBoundary(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                GlassTopBar.height(context, bottom: searchBox) + 12,
-                16,
-                92 + MediaQuery.of(context).padding.bottom,
-              ),
-              children: [
-                if (_query.trim().isEmpty)
-                  ..._buildCategorySections(context, groups)
-                else
-                  ..._buildSearchResults(context),
-              ],
+          // 不要用 RepaintBoundary 包住列表：会隔离毛玻璃与壁纸的采样，壁纸模式下
+          // 划到顶/底时毛玻璃卸载成纯色块露壁纸底（对齐 settings_category_page.dart 的修复）。
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              GlassTopBar.height(context, bottom: searchBox) + 12,
+              16,
+              92 + MediaQuery.of(context).padding.bottom,
             ),
+            children: [
+              if (_query.trim().isEmpty)
+                ..._buildCategorySections(context, groups)
+              else
+                ..._buildSearchResults(context),
+            ],
           ),
           // 顶栏高斯模糊毛玻璃（二级页带返回按钮），底部内嵌搜索框。
           Positioned(

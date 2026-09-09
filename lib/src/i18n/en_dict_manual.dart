@@ -1456,4 +1456,27 @@ const Map<String, String> enDictManual = {
       'When enabled, this device appears as a DLNA device on the LAN. Other apps can cast songs to it.',
   '投送端看到的名字': 'Name seen by casting devices',
   '弦予音乐': 'XianYu Music',
+  // 云端同步删除范围三选一弹窗（歌单/收藏/歌单内单曲共用，对齐桌面端 SyncDeleteScopeModal）。
+  '该歌单已同步到云端': 'This playlist is synced to the cloud',
+  '歌单已同步到云端': 'Playlist is synced to the cloud',
+  '收藏已同步到云端': 'Favorites are synced to the cloud',
+  '请选择删除范围': 'Choose what to delete',
+  '请选择删除范围（共 {n} 首）': 'Choose what to delete ({n} songs in total)',
+  '删除本地（云端保留）': 'Delete local (keep cloud)',
+  '仅删除本机，云端与其他设备保留':
+      'Remove from this device only; cloud and other devices are unaffected',
+  '删除全部': 'Delete everywhere',
+  '本机、云端、其他设备一起删除':
+      'Delete from this device, the cloud, and all other devices',
+  '仅保留本地': 'Keep local only',
+  '云端与其他设备删除，本机保留':
+      'Delete from cloud and other devices; keep on this device',
+  '云端删除失败，请稍后重试': 'Cloud deletion failed. Try again later.',
+  // 插件管理页：一键全部启用/禁用（对齐桌面端 SettingsPlugins）。
+  '全部启用': 'Enable all',
+  '全部禁用': 'Disable all',
+  '已启用 {n} 个插件': 'Enabled {n} plugins',
+  '已禁用 {n} 个插件': 'Disabled {n} plugins',
+  '处理中...': 'Working...',
+  '操作失败：{e}': 'Operation failed: {e}',
 };

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
@@ -12,12 +13,14 @@ import 'lyric_model.dart';
 
 /// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
 /// 避免重复网络请求与主线程 JSON 解析。上限防止长期播放后无界增长。
-final Map<String, List<LyricLine>> _lyricsCache = {};
+/// 条目记录获取时的界面语言：语言切换（简↔繁）后旧缓存失效重新解析，
+/// 使歌词文本跟随语言转换（对齐桌面端繁体模式歌词转换行为）。
+final Map<String, (I18nMode, List<LyricLine>)> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
 void _cacheLyrics(String path, List<LyricLine> lines) {
   if (path.isEmpty || lines.isEmpty) return;
-  _lyricsCache[path] = lines;
+  _lyricsCache[path] = (I18n.mode, lines);
   if (_lyricsCache.length > _lyricsCacheMax) {
     _lyricsCache.remove(_lyricsCache.keys.first);
   }
@@ -32,17 +35,22 @@ class LyricsRepository {
 
   /// 获取并解析指定曲目的歌词；无歌词返回空列表。
   Future<List<LyricLine>> fetchLyrics(QueueItem item) async {
-    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
+    // 命中缓存：语言未变直接复用，跳过网络请求与解析；
+    // 语言已切换（简↔繁）则丢弃旧语言缓存，重新解析并按新语言转换。
     final cached = _lyricsCache[item.path];
-    if (cached != null && cached.isNotEmpty) return cached;
+    if (cached != null && cached.$2.isNotEmpty) {
+      if (cached.$1 == I18n.mode) return cached.$2;
+      _lyricsCache.remove(item.path);
+    }
     try {
       final jsonStr = await _fetchLyricsJson(item);
       if (jsonStr.isEmpty || jsonStr == 'null') return const [];
       // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
       final parsed = await compute(_parseLyricsJson, jsonStr);
       final lines = await compute(_normalizeBoundaries, parsed);
-      if (lines.isNotEmpty) _cacheLyrics(item.path, lines);
-      return lines;
+      final localized = localizeLyricLines(lines);
+      if (localized.isNotEmpty) _cacheLyrics(item.path, localized);
+      return localized;
     } catch (_) {
       return const [];
     }
@@ -317,3 +325,29 @@ List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
 final lyricsRepositoryProvider = Provider<LyricsRepository>(
   (ref) => LyricsRepository(ref),
 );
+
+/// 繁体模式下把歌词行文本（主词/翻译/次要行/逐字）转换为繁体，
+/// 对齐桌面端 localizeLyricLine（romaji 为拉丁字母，转换无副作用）。
+/// 非繁体语言原样返回同一列表，避免不必要的重建开销。
+/// 在主 isolate 出口执行：s2t 转换为纯函数，单首歌词毫秒级。
+List<LyricLine> localizeLyricLines(List<LyricLine> lines) {
+  if (I18n.mode != I18nMode.zhTw) return lines;
+  return [
+    for (final l in lines)
+      l.copyWith(
+        text: localizeLyricText(l.text),
+        translation:
+            l.translation == null ? null : localizeLyricText(l.translation!),
+        secondary: [for (final s in l.secondary) localizeLyricText(s)],
+        words: [
+          for (final w in l.words)
+            LyricWord(
+              text: localizeLyricText(w.text),
+              start: w.start,
+              end: w.end,
+              romaji: w.romaji,
+            ),
+        ],
+      ),
+  ];
+}

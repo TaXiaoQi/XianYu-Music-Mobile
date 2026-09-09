@@ -40,6 +40,7 @@ class PluginPage extends ConsumerStatefulWidget {
 class _PluginPageState extends ConsumerState<PluginPage> {
   bool _installing = false;
   bool _checkingUpdates = false;
+  bool _togglingAll = false;
   bool _savingAutoUpdate = false;
 
   final _searchCtrl = TextEditingController();
@@ -188,12 +189,50 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 fontSize: 14, fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
-                            style: TextStyle(
-                                fontSize: 12, color: scheme.outline),
+                          // 统计为次要信息：窄屏放不下两个操作按钮时让位省略。
+                          Flexible(
+                            child: Text(
+                              tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
+                              style: TextStyle(
+                                  fontSize: 12, color: scheme.outline),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           const Spacer(),
+                          // 全部启用/禁用（对齐桌面端 SettingsPlugins 单按钮切换）：
+                          // 全部已启用时显示「全部禁用」，否则显示「全部启用」。
+                          FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10),
+                              textStyle: const TextStyle(fontSize: 12.5),
+                            ),
+                            onPressed: (_togglingAll || sources.isEmpty)
+                                ? null
+                                : () => _toggleAllPlugins(!sources
+                                    .every((s) => s.enabled)),
+                            icon: _togglingAll
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : Icon(
+                                    sources.every((s) => s.enabled)
+                                        ? Icons.toggle_off_outlined
+                                        : Icons.toggle_on_outlined,
+                                    size: 16,
+                                  ),
+                            label: Text(_togglingAll
+                                ? tr('处理中...')
+                                : tr(sources.every((s) => s.enabled)
+                                    ? '全部禁用'
+                                    : '全部启用')),
+                          ),
+                          const SizedBox(width: 6),
                           FilledButton.tonalIcon(
                             style: FilledButton.styleFrom(
                               visualDensity: VisualDensity.compact,
@@ -578,6 +617,28 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       showXianYuToast(context, tr('检查更新失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
+
+  /// 全部启用/全部禁用（对齐桌面端 handleToggleAllPlugins）。
+  Future<void> _toggleAllPlugins(bool targetEnabled) async {
+    setState(() => _togglingAll = true);
+    try {
+      await ref.read(pluginManagerProvider.notifier).toggleAll(targetEnabled);
+      if (!mounted) return;
+      final count = ref.read(pluginManagerProvider).sources.length;
+      showXianYuToast(
+        context,
+        tr(
+          targetEnabled ? '已启用 {n} 个插件' : '已禁用 {n} 个插件',
+          {'n': count},
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showXianYuToast(context, tr('操作失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _togglingAll = false);
     }
   }
 }

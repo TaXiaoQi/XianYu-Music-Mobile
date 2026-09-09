@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
@@ -46,6 +47,8 @@ class FloatingLyricsController {
   /// 挂载事件监听并开始跟随设置与播放状态。
   void init() {
     _events.setMethodCallHandler(_onEvent);
+    // 语言切换（简↔繁）后重新拉取当前歌曲歌词，悬浮窗文本跟随界面语言。
+    I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
       final s = next.valueOrNull;
       if (s == null) return;
@@ -58,8 +61,16 @@ class FloatingLyricsController {
 
   void dispose() {
     _events.setMethodCallHandler(null);
+    I18n.modeVersion.removeListener(_onLanguageChanged);
     _settingsSub?.close();
     _playerSub?.close();
+  }
+
+  /// 界面语言变化：清空歌词行并重新拉取（repository 按新语言转换）。
+  void _onLanguageChanged() {
+    if (!_enabled) return;
+    _lyrics = const [];
+    _fetchLyrics(_container.read(playerProvider).current);
   }
 
   // ---- 设置变化 ----

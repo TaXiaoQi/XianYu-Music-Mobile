@@ -37,6 +37,8 @@ class StatusBarLyricsController {
   String? _lastPushedMeta;
 
   void init() {
+    // 语言切换（简↔繁）后重新拉取当前歌曲歌词，通知栏文本跟随界面语言。
+    I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
       final s = next.valueOrNull;
       if (s == null) return;
@@ -48,9 +50,19 @@ class StatusBarLyricsController {
   }
 
   void dispose() {
+    I18n.modeVersion.removeListener(_onLanguageChanged);
     _settingsSub?.close();
     _playerSub?.close();
     _cancel();
+  }
+
+  /// 界面语言变化：清空歌词行并重新拉取（repository 按新语言转换）。
+  void _onLanguageChanged() {
+    if (!_enabled) return;
+    _lyrics = const [];
+    _lastPushedLine = null;
+    _lastPushedMeta = null;
+    _fetchLyrics(_container.read(playerProvider).current);
   }
 
   // ---- 设置变化 ----
