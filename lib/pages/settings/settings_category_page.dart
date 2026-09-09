@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../src/backup/app_backup.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
+import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/player/cast_provider.dart';
@@ -208,19 +209,22 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      _sectionHeader(context, tr('检测更新')),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.system_update_alt_outlined,
-            title: tr('检测更新模式'),
-            subtitle: tr('启动时自动检查 App 更新'),
-            trailing: Text(_updateModeLabel(s?.updateCheckMode ?? 'startup')),
-            onTap: () => _pickUpdateCheckMode(context, ref, s),
-          ),
-        ],
-      ),
+      // 检测更新为 Android 自更新专属（iOS 由 App Store 托管，自动检查已跳过）。
+      if (PlatformCaps.supportsInAppUpdate) ...[
+        _sectionHeader(context, tr('检测更新')),
+        _CardGroup(
+          children: [
+            _tile(
+              context,
+              icon: Icons.system_update_alt_outlined,
+              title: tr('检测更新模式'),
+              subtitle: tr('启动时自动检查 App 更新'),
+              trailing: Text(_updateModeLabel(s?.updateCheckMode ?? 'startup')),
+              onTap: () => _pickUpdateCheckMode(context, ref, s),
+            ),
+          ],
+        ),
+      ],
       _sectionHeader(context, tr('列表显示')),
       _CardGroup(
         children: [
@@ -497,6 +501,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      // 悬浮歌词窗依赖 Android 悬浮窗 overlay（iOS 无全局悬浮窗 API）：
+      // 不支持的平台整段隐藏（入口与下方全部子设置项）。
+      if (PlatformCaps.supportsFloatingLyrics) ...[
       _sectionHeader(context, tr('悬浮歌词')),
       _CardGroup(
         children: [
@@ -627,6 +634,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      ],
+      // 状态栏歌词依赖 Android 通知栏自定义文本（iOS 无等价能力，
+      // 二期可评估 Live Activity 锁屏歌词）：不支持的平台整段隐藏。
+      if (PlatformCaps.supportsStatusBarLyrics) ...[
       _sectionHeader(context, tr('状态栏歌词')),
       _CardGroup(
         children: [
@@ -640,6 +651,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      ],
     ];
   }
 
@@ -878,15 +890,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, tr('下载')),
       _CardGroup(
         children: [
-          _tile(
-            context,
-            icon: Icons.folder_outlined,
-            title: tr('下载路径'),
-            trailing: Text(
-              s?.downloadPath == null || s!.downloadPath.isEmpty ? tr('默认') : tr('自定义'),
+          // 下载路径：Android 专属（iOS 固定下载到应用 Documents/Downloads，
+          // 经「文件」App 访问，无自定义目录概念）。
+          if (PlatformCaps.supportsCustomDownloadDir)
+            _tile(
+              context,
+              icon: Icons.folder_outlined,
+              title: tr('下载路径'),
+              trailing: Text(
+                s?.downloadPath == null || s!.downloadPath.isEmpty ? tr('默认') : tr('自定义'),
+              ),
+              onTap: () => _pickDownloadPath(context, ref, s),
             ),
-            onTap: () => _pickDownloadPath(context, ref, s),
-          ),
           _tile(
             context,
             icon: Icons.download_outlined,

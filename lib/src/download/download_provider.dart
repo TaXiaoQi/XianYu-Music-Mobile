@@ -185,7 +185,15 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   /// 下载目录：优先用户设置，否则系统下载目录，最后回退应用文档目录。
+  /// iOS 沙盒无系统下载目录，固定应用文档目录下的 Downloads（Info.plist 已
+  /// 开启文件共享，用户可从「文件」App 访问）。
   Future<String> _downloadDir() async {
+    if (Platform.isIOS) {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'Downloads'));
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      return dir.path;
+    }
     final settings = _ref.read(settingsProvider).valueOrNull;
     final custom = settings?.downloadPath ?? '';
     if (custom.isNotEmpty) return custom;
@@ -201,7 +209,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   /// 是否已设置自定义下载目录（「下载设置 → 下载目录」里选过路径）。
   /// 未设置时禁止下载，避免歌曲落到无法预期的系统/应用目录。
+  /// iOS 无自定义目录概念：固定下载到应用 Documents/Downloads，视为已设置。
   bool get hasCustomDownloadDir =>
+      (!Platform.isAndroid && !Platform.isIOS) ||
       (_ref.read(settingsProvider).valueOrNull?.downloadPath ?? '').isNotEmpty;
 
   /// 下载前校验：①未设置自定义下载目录时提示；②Android 未授予
@@ -209,7 +219,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
   /// 直写受限时下载会自动走 MediaStore 兼容模式（API 29+ 自有媒体条目
   /// 免存储权限），不应因未授权直接中止。返回 false 时调用方中止下载
   /// （仅目录未设置的情况）。供各下载入口复用。
+  /// iOS：目录固定可用，无存储权限概念，直接放行。
   Future<bool> requireDownloadDir(BuildContext context) async {
+    if (Platform.isIOS) return true;
     if (!hasCustomDownloadDir) {
       showXianYuToast(context, tr('请先前往设置下载目录'));
       return false;

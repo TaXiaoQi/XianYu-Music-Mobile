@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -221,15 +222,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final scheme = Theme.of(context).colorScheme;
     final inBatch = _batch.batchMode;
     // 让按钮在有 TabBar 时仍显紧凑：仅保留图标按钮。
+    // 文件夹扫描依赖 Android SAF/MediaStore，iOS 沙盒不可行：隐藏入口。
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          tooltip: tr('文件夹'),
-          onPressed: () => context.push('/library/folders'),
-          icon: const Icon(Icons.add, size: 22),
-        ),
-        const SizedBox(width: 2),
+        if (PlatformCaps.supportsFolderScan) ...[
+          IconButton(
+            tooltip: tr('文件夹'),
+            onPressed: () => context.push('/library/folders'),
+            icon: const Icon(Icons.add, size: 22),
+          ),
+          const SizedBox(width: 2),
+        ],
         Tooltip(
           message: _hideDuplicates ? tr('已隐藏重复歌曲') : tr('隐藏重复歌曲'),
           child: IconButton(
@@ -455,11 +459,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           onClear: _clearSearch,
           hint: tr('搜索歌曲、歌手、专辑'),
         ),
-        action: BiliPaiIconButton(
-          icon: Icons.add,
-          tooltip: tr('文件夹'),
-          onTap: () => context.push('/library/folders'),
-        ),
+        // 文件夹扫描依赖 Android SAF/MediaStore：iOS 隐藏入口。
+        action: PlatformCaps.supportsFolderScan
+            ? BiliPaiIconButton(
+                icon: Icons.add,
+                tooltip: tr('文件夹'),
+                onTap: () => context.push('/library/folders'),
+              )
+            : const SizedBox.shrink(),
         tabPill: FloatingTabPill(child: tabBar),
       );
     } else {
@@ -470,11 +477,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         title: _buildSearchField(context),
         actions: [
           // 文件夹页入口（已从 Tab 独立为二级页）。
-          IconButton(
-            tooltip: tr('文件夹'),
-            onPressed: () => context.push('/library/folders'),
-            icon: const Icon(Icons.add, size: 24),
-          ),
+          // 依赖 Android SAF/MediaStore：iOS 沙盒不可行，隐藏入口。
+          if (PlatformCaps.supportsFolderScan)
+            IconButton(
+              tooltip: tr('文件夹'),
+              onPressed: () => context.push('/library/folders'),
+              icon: const Icon(Icons.add, size: 24),
+            ),
         ],
         bottom: tabBar,
       );

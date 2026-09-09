@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/core/platform_caps.dart';
 import '../../src/navigation/shell.dart'
     show landscapeSettingsCategoryProvider;
 import '../../src/widgets/glass_appbar.dart';
@@ -213,6 +214,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     final scored = <(int, _SearchItem)>[];
     for (final item in _settingsSearchItems) {
+      if (!_searchItemVisible(item)) continue;
       final hay =
           '${tr(item.label)} ${tr(item.section)} ${tr(item.categoryName)} ${item.keywords}'
               .toLowerCase();
@@ -240,6 +242,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       return tr(a.$2.label).compareTo(tr(b.$2.label));
     });
     return scored.map((e) => e.$2).take(30).toList();
+  }
+
+  /// 平台可见性过滤：Android 专属功能在不支持平台（iOS）的搜索结果中隐藏，
+  /// 与设置分类页的入口隐藏逻辑（PlatformCaps）保持一致。
+  bool _searchItemVisible(_SearchItem item) {
+    // 悬浮歌词段：依赖 Android 悬浮窗 overlay。
+    if (!PlatformCaps.supportsFloatingLyrics && item.section == '悬浮歌词') {
+      return false;
+    }
+    // 状态栏歌词段（车机歌词为同功能别名，靠读通知文本实现）：Android 专属。
+    if (!PlatformCaps.supportsStatusBarLyrics &&
+        (item.section == '状态栏歌词' || item.section == '车机歌词')) {
+      return false;
+    }
+    // 下载路径：依赖自定义目录直写（iOS 固定应用目录）。
+    if (!PlatformCaps.supportsCustomDownloadDir && item.label == '下载路径') {
+      return false;
+    }
+    // 检测更新模式：Android 自更新专属（iOS 由 App Store 托管）。
+    if (!PlatformCaps.supportsInAppUpdate && item.label == '检测更新模式') {
+      return false;
+    }
+    return true;
   }
 
   /// 横屏 master-detail：左侧分类导航（含选中态），右侧直嵌当前分类详情。

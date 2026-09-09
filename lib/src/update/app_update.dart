@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
@@ -158,11 +159,18 @@ String absoluteDownloadUrl(String url) {
 
 /// 手动检查更新（如「关于」页按钮）：
 /// [silent] 为 true 时静默，不弹任何提示；否则出错/无新版本时用 toast 提示。
+/// iOS 由 App Store 托管更新，不做应用内自更新（入口已隐藏，此处兜底）。
 Future<void> checkAppUpdate(
   BuildContext context,
   WidgetRef ref, {
   bool silent = false,
 }) async {
+  if (Platform.isIOS) {
+    if (!silent && context.mounted) {
+      _toast(context, tr('iOS 版请在 App Store 内更新'));
+    }
+    return;
+  }
   // 商店安装版不提供应用内自更新，明示用户走商店渠道
   if (await _isStoreInstall()) {
     if (!silent && context.mounted) {
@@ -196,7 +204,9 @@ Future<void> checkAppUpdate(
 
 /// 启动自动检查：静默。仅当设置开启「启动检测」且当日未弹过时，弹出升级窗。
 /// 商店托管安装（F-Droid/Play）时直接跳过，不请求、不弹窗。
+/// iOS 由 App Store 托管更新，直接跳过。
 Future<void> maybePromptStartupUpdate(WidgetRef ref) async {
+  if (Platform.isIOS) return;
   if (await _isStoreInstall()) return;
   final mode = ref.read(settingsProvider).valueOrNull?.updateCheckMode;
   if (mode == 'never') return;

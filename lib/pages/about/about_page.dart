@@ -7,6 +7,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/update/app_update.dart';
 import '../../src/widgets/app_toast.dart';
@@ -242,8 +243,8 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           ),
           const SizedBox(height: 20),
-          // 检查更新
-          if (_config.updateEnabled)
+          // 检查更新：Android 自更新专属（iOS 由 App Store 托管更新）。
+          if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
             FilledButton.icon(
               onPressed: _checkingUpdate ? null : _checkUpdate,
               icon: _checkingUpdate

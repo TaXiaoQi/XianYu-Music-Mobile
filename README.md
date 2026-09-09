@@ -103,6 +103,42 @@
 >
 > 版本号同步仅在 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
 
+### iOS 构建运行（macOS）
+
+iOS 构建钩子为 bash 脚本（`scripts/ios-rust-hook.sh`），**仅支持在 macOS（需 Xcode）上执行**；Windows/Linux 上该脚本自动放行，不影响 Android 构建。
+
+1. 环境准备（Rust 增加 iOS 目标三元组）：
+
+   ```bash
+   rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+   ```
+
+2. 安装依赖并准备 iOS 签名（真机调试需在 Xcode 中选择开发团队，Bundle ID 为 `cc.xymusic.mobile`）：
+
+   ```bash
+   flutter pub get
+   cd ios && pod install && cd ..
+   ```
+
+   `pod install` 过程会注册 `xianyu_core` 本地 pod（编译前自动重编 Rust 动态框架，与 Android 的 gradle rustHook 机制对齐）。
+
+3. 运行 / 构建：
+
+   ```bash
+   # 调试运行（模拟器或真机）
+   flutter run
+
+   # Release 包（未签名校验构建，归档/签名走 Xcode）
+   flutter build ios --release --no-codesign
+   ```
+
+   Rust 产物 `ios/Frameworks/xianyu_core.framework`（动态框架）会按当前 SDK（真机/模拟器）自动编译并更新，`XIANMU_SKIP_RUST=1` 同样可跳过。
+
+4. iOS 平台差异说明（Android 专属功能在 iOS 上隐藏入口）：
+   - 下载固定保存到应用 Documents/Downloads（「文件」App → 弦予音乐 可访问），无自定义下载目录
+   - 悬浮歌词窗、状态栏歌词（车机歌词）、桌面小组件、本地文件夹扫描、QQ 直分享、应用内更新为 Android 专属
+   - 分享走系统分享面板；`xianyu://` 分享深链已支持（Safari/扫码等场景拉起 App）
+
 ---
 
 *更新日期：2026-09-6*

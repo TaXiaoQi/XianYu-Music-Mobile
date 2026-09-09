@@ -16,6 +16,7 @@ import 'package:tencent_kit/tencent_kit.dart';
 
 import '../online/cover_proxy.dart';
 import '../core/db_path.dart';
+import '../core/platform_caps.dart';
 import '../library/saf_channel.dart';
 import '../rust/api.dart';
 import '../player/player_provider.dart';
@@ -53,23 +54,27 @@ Future<void> showSongShareSheet(
           ),
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 6),
-          ListTile(
-            leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),
-            title:   Text(tr('分享到 QQ 好友')),
-            onTap: () {
-              Navigator.pop(ctx);
-              _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QQ);
-            },
-          ),
-          ListTile(
-            leading: _qqBadge('assets/icon/share_qzone.jpg'),
-            title:   Text(tr('分享到 QQ 空间')),
-            subtitle:   Text(tr('QQ 空间支持网页分享，不支持音乐卡片')),
-            onTap: () {
-              Navigator.pop(ctx);
-              _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QZone);
-            },
-          ),
+          // QQ 互联直分享为 Android 已配置能力：iOS 需 Universal Link 域名
+          // 关联（二期），当前隐藏、走「分享到更多应用」系统面板。
+          if (PlatformCaps.supportsQQShare) ...[
+            ListTile(
+              leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),
+              title:   Text(tr('分享到 QQ 好友')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QQ);
+              },
+            ),
+            ListTile(
+              leading: _qqBadge('assets/icon/share_qzone.jpg'),
+              title:   Text(tr('分享到 QQ 空间')),
+              subtitle:   Text(tr('QQ 空间支持网页分享，不支持音乐卡片')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QZone);
+              },
+            ),
+          ],
           ListTile(
             // 与桌面端底栏分享控件（lucide Share2）同款图形：三节点分享网络图标
             leading: _customBadge(

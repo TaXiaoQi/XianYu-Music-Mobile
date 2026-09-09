@@ -9,6 +9,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'app.dart';
 import 'src/core/app_logger.dart';
 import 'src/core/application_logger.dart';
+import 'src/core/platform_caps.dart';
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/player/cast_provider.dart';
@@ -59,13 +60,22 @@ Future<void> main() async {
   XianYuDeepLink.init(container, appRouter);
 
   // 挂载悬浮歌词窗控制器：跟随设置与播放状态，向原生悬浮窗推送歌词/进度。
-  container.read(floatingLyricsControllerProvider).init();
+  // Android 专属（WindowManager overlay）：iOS 无全局悬浮窗 API，不初始化。
+  if (PlatformCaps.supportsFloatingLyrics) {
+    container.read(floatingLyricsControllerProvider).init();
+  }
 
   // 挂载状态栏/通知栏歌词控制器：把当前歌词行推送成系统通知（蓝牙/锁屏展示）。
-  container.read(statusBarLyricsControllerProvider).init();
+  // Android 专属（自定义通知文本）：iOS 无等价能力，不初始化。
+  if (PlatformCaps.supportsStatusBarLyrics) {
+    container.read(statusBarLyricsControllerProvider).init();
+  }
 
   // 挂载桌面播放小组件桥：跟随播放状态写入组件数据，响应小组件按钮控制。
-  container.read(playerWidgetControllerProvider).init();
+  // Android 专属（AppWidget）：iOS 需 WidgetKit 原生扩展（二期），不初始化。
+  if (PlatformCaps.supportsHomeWidgets) {
+    container.read(playerWidgetControllerProvider).init();
+  }
 
   // 总体首帧计时（从 main 开始）
   final t0 = Stopwatch()..start();

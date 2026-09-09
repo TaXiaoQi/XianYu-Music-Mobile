@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
@@ -83,7 +84,13 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   }
 
   /// 添加扫描目录：应用内文件夹选择页（MediaStore），无权限时回退系统 SAF。
+  /// iOS 沙盒限制：目录选择后无持久访问权（安全作用域），扫描不可行，
+  /// 入口已隐藏，此处兜底拦截。
   Future<void> _addFolder() async {
+    if (!PlatformCaps.supportsFolderScan) {
+      _toast(tr('当前平台不支持扫描本地文件夹'));
+      return;
+    }
     setState(() => _adding = true);
     try {
       if (Platform.isAndroid) {

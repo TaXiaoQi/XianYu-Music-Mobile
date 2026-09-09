@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 /// 负责发送并实时更新系统通知栏的下载进度弹窗
+/// Android 专属通道（'xianyu/download_notification' 原生端仅在 Android 注册）。
+/// iOS 应用内已有下载进度 UI，暂不推送系统通知（二期可评估本地通知补齐）。
 class DownloadNotificationService {
   static const _channel = MethodChannel('xianyu/download_notification');
 
@@ -15,7 +17,7 @@ class DownloadNotificationService {
     bool isFinished = false,
     bool isFailed = false,
   }) async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (!Platform.isAndroid) return;
     try {
       await _channel.invokeMethod('updateDownloadProgress', {
         'currentTitle': currentTitle,
@@ -31,7 +33,7 @@ class DownloadNotificationService {
 
   /// 消除下载通知
   static Future<void> dismiss() async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (!Platform.isAndroid) return;
     try {
       await _channel.invokeMethod('dismissDownloadNotification');
     } catch (_) {}
