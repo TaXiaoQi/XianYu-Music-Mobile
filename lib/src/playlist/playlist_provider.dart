@@ -156,6 +156,10 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
       coverUrl: song.coverUrl,
       onlineSongJson: jsonEncodeSafe(songJson),
       onlineQuality: '320k',
+      source: song.source,
+      // 补全 onlineInfoJson：插件 getLyric 失败时，歌词仓库能走 Rust 内置
+      // fetchLyricFromSource 兜底（与在线搜索结果的 QueueItem 对齐）。
+      onlineInfoJson: jsonEncodeSafe(song.musicInfo ?? <String, dynamic>{}),
     );
   }
 }
