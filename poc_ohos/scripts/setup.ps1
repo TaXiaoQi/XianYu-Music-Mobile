@@ -1,4 +1,4 @@
-﻿# setup.ps1 - 装配鸿蒙 PoC 壳工程
+# setup.ps1 - 装配鸿蒙 PoC 壳工程
 #
 # 前置：已安装 Flutter-OH（flutter --version 含 ohos 字样）
 # 步骤：
@@ -63,9 +63,12 @@ if ($mod -notmatch 'ohos\.permission\.INTERNET') {
     if ($mod -match '"requestPermissions"') {
         Write-Warning 'module.json5 已有 requestPermissions 但缺 INTERNET，请手工补充：{ "name": "ohos.permission.INTERNET" }'
     } elseif ($mod -match '"module"\s*:\s*\{') {
-        $mod = [regex]::Replace($mod, '"module"\s*:\s*\{', "`$0`n    `"requestPermissions`": [`n      { `"name`": `"ohos.permission.INTERNET`" }`n    ],", 1)
-        Write-Host '已添加 ohos.permission.INTERNET'
+        $mod = [regex]::Replace($mod, '"module"\s*:\s*\{', "`$0`n    `"requestPermissions`": [`n      { `"name`": `"ohos.permission.INTERNET`" },`n      { `"name`": `"ohos.permission.KEEP_BACKGROUND_RUNNING`" }`n    ],", 1)
+        Write-Host '已添加 ohos.permission.INTERNET + KEEP_BACKGROUND_RUNNING'
     }
+} elseif ($mod -notmatch 'KEEP_BACKGROUND_RUNNING') {
+    $mod = [regex]::Replace($mod, '("ohos\.permission\.INTERNET"\s*\})', "`$1,`n      { `"name`": `"ohos.permission.KEEP_BACKGROUND_RUNNING`" }", 1)
+    Write-Host '已补充 ohos.permission.KEEP_BACKGROUND_RUNNING（长时任务必需）'
 }
 if ($mod -notmatch 'backgroundModes') {
     $mod2 = [regex]::Replace($mod, '("abilities"\s*:\s*\[\s*\{)', "`$1`n      `"backgroundModes`": [`"audioPlayback`"],", 1)
