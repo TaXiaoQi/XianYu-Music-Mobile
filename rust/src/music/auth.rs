@@ -26,8 +26,11 @@ const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
 /// token 文件名
 const TOKEN_FILE: &str = "auth-token.txt";
 
-/// 默认 fetch 超时（与原前端 FETCH_TIMEOUT_MS 一致）
-const DEFAULT_FETCH_TIMEOUT_MS: u64 = 25_000;
+/// 默认 fetch 超时（跨境链路丢包重传较多，25s 偏紧）
+const DEFAULT_FETCH_TIMEOUT_MS: u64 = 40_000;
+
+/// 服务器时间偏移文件（秒，服务器时间 - 本地时间），用于校准签名 timestamp
+const TIME_OFFSET_FILE: &str = "time_offset.txt";
 
 /// 全局 HTTP 客户端单例：复用连接池 / TLS 会话，避免每次请求重建 Client。
 /// 超时通过 per-request `timeout()` 覆盖，不放在全局默认上。
@@ -55,22 +58,65 @@ fn generate_nonce() -> String {
     uuid::Uuid::new_v4().as_simple().to_string()
 }
 
-/// 计算签名并返回带签名的请求头信息
-fn build_signed_headers(body: &str, api_secret: &str) -> SignedHeaders {
-    let timestamp = (std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs())
-    .to_string();
+/// 计算签名并返回带签名的请求头信息（timestamp 由调用方传入，可含时间偏移校准）
+fn build_signed_headers(body: &str, api_secret: &str, timestamp: i64) -> SignedHeaders {
     let nonce = generate_nonce();
     let sign_input = format!("{}{}{}{}", timestamp, nonce, body, api_secret);
     let digest = md5::compute(sign_input.as_bytes());
     let sign = format!("{:x}", digest);
     SignedHeaders {
-        timestamp,
+        timestamp: timestamp.to_string(),
         nonce,
         sign,
     }
+}
+
+/// 本地时钟（秒）
+fn local_now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+/// 解析 HTTP Date 头（RFC 7231 IMF-fixdate，如 `Wed, 10 Sep 2026 06:34:48 GMT`）为 epoch 秒
+fn parse_http_date(s: &str) -> Option<i64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let b = s.as_bytes();
+    if b.len() < 29 {
+        return None;
+    }
+    let day: i64 = s.get(5..7)?.trim().parse().ok()?;
+    let month_part = s.get(8..11)?;
+    let mon = MONTHS
+        .iter()
+        .position(|m| month_part.eq_ignore_ascii_case(m))? as i64;
+    let year: i64 = s.get(12..16)?.parse().ok()?;
+    let mut t = s.get(17..25)?.split(':');
+    let hour: i64 = t.next()?.parse().ok()?;
+    let min: i64 = t.next()?.parse().ok()?;
+    let sec: i64 = t.next()?.parse().ok()?;
+    if !(1..=31).contains(&day)
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&min)
+        || !(0..=60).contains(&sec)
+    {
+        return None;
+    }
+    Some(days_from_civil(year, mon + 1, day) * 86400 + hour * 3600 + min * 60 + sec)
+}
+
+/// Howard Hinnant 民用日期算法：公历日期 → 自 1970-01-01 起的天数
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
 }
 
 // ─── 凭证存储（文件） ──────────────────────────────────
@@ -162,6 +208,28 @@ fn read_token(data_dir: &Path) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// 时间偏移文件路径
+fn time_offset_file_path(data_dir: &Path) -> Result<PathBuf, String> {
+    Ok(auth_data_dir(data_dir)?.join(TIME_OFFSET_FILE))
+}
+
+/// 读取时间偏移（秒，服务器 - 本地）。文件缺失/损坏按 0（未校准）。
+fn read_time_offset(data_dir: &Path) -> i64 {
+    time_offset_file_path(data_dir)
+        .ok()
+        .filter(|path| path.exists())
+        .and_then(|path| fs::read_to_string(&path).ok())
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(0)
+}
+
+/// 保存时间偏移（秒）。写入失败静默（校准是尽力而为的优化）。
+fn save_time_offset(data_dir: &Path, offset: i64) {
+    if let Ok(path) = time_offset_file_path(data_dir) {
+        let _ = fs::write(&path, offset.to_string());
+    }
+}
+
 /// 将 token 写入文件
 fn save_token(data_dir: &Path, token: &str) -> Result<(), String> {
     let path = token_file_path(data_dir)?;
@@ -203,7 +271,7 @@ pub async fn authed_request(
     let url = format!("{}/?action={}", base_url, action);
     let api_secret = read_api_secret(data_dir);
 
-    do_signed_post(&url, &action, body, fetch_timeout_ms, &api_secret).await
+    do_signed_post(data_dir, &url, &action, body, fetch_timeout_ms, &api_secret).await
 }
 
 /// 向任意 URL 发起带签名的 POST 请求（壁纸等非账号 API 端点）。
@@ -217,11 +285,19 @@ pub async fn signed_post_json(
     fetch_timeout_ms: Option<u64>,
 ) -> Result<Value, String> {
     let api_secret = read_api_secret(data_dir);
-    do_signed_post(&url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
+    do_signed_post(data_dir, &url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
 }
 
-/// 内部：执行带签名的 POST 请求
+/// 内部：执行带签名的 POST 请求。
+///
+/// - 签名 timestamp = 本地时钟 + 持久化的服务器时间偏移。部分网络（运营商热点/
+///   企业网/校园网）拦 NTP 导致设备时钟漂移，漂移超过服务端 tolerance 即被拒签
+///   ——这是「部分网络登录提示签名验证失败」的主因，偏移校准可根治。
+/// - 每次收到响应都从 Date 头重校偏移（变化 ≥3s 才写盘，滤掉亚秒级噪声）。
+/// - 网络错误/超时自动重试一次（换 nonce）；服务端 403「签名验证失败」时已用
+///   本响应 Date 重校偏移，立即重试一次。
 async fn do_signed_post(
+    data_dir: &Path,
     url: &str,
     action: &str,
     body: Value,
@@ -229,60 +305,88 @@ async fn do_signed_post(
     api_secret: &str,
 ) -> Result<Value, String> {
     let body_str = serde_json::to_string(&body).unwrap_or_default();
-    let headers = build_signed_headers(&body_str, api_secret);
     let timeout_ms = fetch_timeout_ms.unwrap_or(DEFAULT_FETCH_TIMEOUT_MS);
-
     let client = http_client().as_ref().map_err(|e| e.clone())?;
-    let start = std::time::Instant::now();
+    let mut offset = read_time_offset(data_dir);
 
-    let response = client
-        .post(url)
-        .timeout(Duration::from_millis(timeout_ms))
-        .header("Content-Type", "application/json")
-        .header("X-Timestamp", &headers.timestamp)
-        .header("X-Nonce", &headers.nonce)
-        .header("X-Sign", &headers.sign)
-        .body(body_str)
-        .send()
-        .await
-        .map_err(|e| {
-            let elapsed = start.elapsed().as_millis();
-            let msg = e.to_string();
-            let is_timeout = msg.contains("timeout") || msg.contains("elapsed");
-            if is_timeout {
-                format!("请求超时（{}s），action={}", timeout_ms / 1000, action)
+    for attempt in 0..2 {
+        let headers = build_signed_headers(&body_str, api_secret, local_now_secs() + offset);
+        let start = std::time::Instant::now();
+
+        let response = match client
+            .post(url)
+            .timeout(Duration::from_millis(timeout_ms))
+            .header("Content-Type", "application/json")
+            .header("X-Timestamp", &headers.timestamp)
+            .header("X-Nonce", &headers.nonce)
+            .header("X-Sign", &headers.sign)
+            .body(body_str.clone())
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                if attempt == 0 {
+                    continue; // 网络错误/超时：换 nonce 重试一次
+                }
+                let elapsed = start.elapsed().as_millis();
+                let msg = e.to_string();
+                let is_timeout = msg.contains("timeout") || msg.contains("elapsed");
+                return Err(if is_timeout {
+                    format!("请求超时（{}s），action={}", timeout_ms / 1000, action)
+                } else {
+                    format!("网络请求失败（action={}, {}ms）: {}", action, elapsed, msg)
+                });
+            }
+        };
+
+        let status = response.status();
+        let date_header = response
+            .headers()
+            .get(reqwest::header::DATE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let text = response
+            .text()
+            .await
+            .map_err(|e| format!("响应体读取失败（action={}）: {}", action, e))?;
+
+        // 从 Date 头校准服务器时间偏移并持久化（±3s 内视为噪声不更新）
+        if let Some(server_secs) = date_header.as_deref().and_then(parse_http_date) {
+            let new_offset = server_secs - local_now_secs();
+            if (new_offset - offset).abs() >= 3 {
+                offset = new_offset;
+                save_time_offset(data_dir, offset);
+            }
+        }
+
+        // 403 签名验证失败：偏移已按本响应 Date 重校，立即重试一次
+        if attempt == 0 && status.as_u16() == 403 && text.contains("签名验证失败") {
+            continue;
+        }
+
+        // 检测宝塔 WAF / nginx 错误页面
+        if text.contains("宝塔WAF") || text.contains("缓冲区溢出") {
+            return Err(format!(
+                "服务器WAF拦截（action={}, HTTP {}）: 请求体过大，触发Nginx缓冲区溢出",
+                action, status
+            ));
+        }
+
+        // 解析 JSON
+        let payload: Value = serde_json::from_str(&text).map_err(|e| {
+            if !status.is_success() {
+                format!(
+                    "HTTP {}（action={}）: 服务器返回非 JSON 响应",
+                    status, action
+                )
             } else {
-                format!("网络请求失败（action={}, {}ms）: {}", action, elapsed, msg)
+                format!("响应解析失败（action={}, HTTP {}）: {}", action, status, e)
             }
         })?;
-
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|e| format!("响应体读取失败（action={}）: {}", action, e))?;
-
-    // 检测宝塔 WAF / nginx 错误页面
-    if text.contains("宝塔WAF") || text.contains("缓冲区溢出") {
-        return Err(format!(
-            "服务器WAF拦截（action={}, HTTP {}）: 请求体过大，触发Nginx缓冲区溢出",
-            action, status
-        ));
+        return Ok(payload);
     }
-
-    // 解析 JSON
-    let payload: Value = serde_json::from_str(&text).map_err(|e| {
-        if !status.is_success() {
-            format!(
-                "HTTP {}（action={}）: 服务器返回非 JSON 响应",
-                status, action
-            )
-        } else {
-            format!("响应解析失败（action={}, HTTP {}）: {}", action, status, e)
-        }
-    })?;
-
-    Ok(payload)
+    unreachable!("重试循环两次尝试内必然返回")
 }
 
 /// 保存认证凭证：token 与 user JSON 均写入 auth 目录文件。
@@ -364,4 +468,51 @@ pub fn set_auth_api_secret(data_dir: &Path, api_secret: String) -> Result<(), St
 /// 获取当前 API 签名密钥。
 pub fn get_auth_api_secret(data_dir: &Path) -> Result<String, String> {
     Ok(read_api_secret(data_dir))
+}
+
+#[cfg(test)]
+mod time_calibrate_tests {
+    use super::*;
+
+    #[test]
+    fn parse_http_date_standard() {
+        // hyper 响应 Date 头标准格式
+        let secs = parse_http_date("Thu, 10 Sep 2026 06:34:48 GMT").expect("应解析成功");
+        let local = local_now_secs();
+        // 服务器时间应在「当前 ±1 天」内（2026-09-10 前后），排除日期表/算法低级错误
+        assert!(
+            (secs - local).abs() < 86_400,
+            "解析结果 {} 与本地时间 {} 偏差超过一天",
+            secs,
+            local
+        );
+        // 精确值：2026-09-10 06:34:48 UTC = 1789022088
+        assert_eq!(secs, 1789022088);
+    }
+
+    #[test]
+    fn parse_http_date_invalid() {
+        assert!(parse_http_date("").is_none());
+        assert!(parse_http_date("short").is_none());
+        assert!(parse_http_date("Thu, Foo Sep 2026 06:34:48 GMT").is_none());
+        assert!(parse_http_date("Thu, 10 Sep 2026 06:34:48").is_none());
+        // 越界日期
+        assert!(parse_http_date("Thu, 32 Sep 2026 06:34:48 GMT").is_none());
+    }
+
+    #[test]
+    fn days_from_civil_epoch() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(2000, 3, 1), 11017);
+        assert_eq!(days_from_civil(2026, 9, 10), 20706);
+    }
+
+    #[test]
+    fn offset_sign_semantics() {
+        // 服务器快 10 分钟 → 偏移 +600，签名 timestamp = 本地 + 600
+        let local = local_now_secs();
+        let server = local + 600;
+        let offset = server - local;
+        assert_eq!(local + offset, server);
+    }
 }
