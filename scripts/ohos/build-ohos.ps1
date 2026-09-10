@@ -1,0 +1,266 @@
+#requires -version 5.1
+<#
+.SYNOPSIS
+  HarmonyOS build entry: mirror -> toolchain -> ohos HAP, all automated.
+
+.DESCRIPTION
+  The main project lives under a space-containing path which ohpm/hvigor
+  reject. This script mirrors the project to a space-free directory, builds
+  there, and keeps the main project's ohos/ template in sync (source only).
+
+  Rust (cargo) and FRB codegen run in the MAIN project (space-safe); Dart /
+  hvigor / ohpm run in the MIRROR.
+
+  Usage:
+    .\scripts\ohos\build-ohos.ps1                    # build debug HAP
+    .\scripts\ohos\build-ohos.ps1 -Run               # flutter run (foreground)
+    .\scripts\ohos\build-ohos.ps1 -Run -d 127.0.0.1:5555
+    .\scripts\ohos\build-ohos.ps1 -SkipRust          # reuse existing .so
+    .\scripts\ohos\build-ohos.ps1 -Codegen           # force FRB regeneration
+#>
+param(
+    [switch]$Run,
+    [switch]$SkipRust,
+    [switch]$SkipMirror,
+    [switch]$Codegen,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$FlutterArgs
+)
+
+$ErrorActionPreference = 'Continue' # native tool stderr must not abort; explicit LASTEXITCODE checks below
+$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path            # scripts\ohos
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)         # main project
+$MirrorDir   = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
+
+# ---- 1. session -> Flutter-OH toolchain ----
+. (Join-Path $ScriptDir 'env-ohos.ps1')
+
+# ---- 2. version sync (version.ts -> pubspec / account_api) ----
+# official flutter's dart first (bin\dart.bat), Flutter-OH cache dart.exe fallback
+$DartOfficial = 'C:\flutter\sdk_tmp\flutter\bin\dart.bat'
+$DartOhos     = Join-Path $FlutterOhos 'bin\cache\dart-sdk\bin\dart.exe'
+$DartBin = if (Test-Path $DartOfficial) { $DartOfficial }
+           elseif (Test-Path $DartOhos) { $DartOhos }
+           else { 'dart.bat' }
+Write-Host "[ohos] sync version (version.ts -> pubspec/account_api) ..." -ForegroundColor Cyan
+Push-Location $ProjectRoot
+try { & $DartBin run tool/sync_version.dart; if ($LASTEXITCODE -ne 0) { throw "sync_version failed ($LASTEXITCODE)" } }
+finally { Pop-Location }
+
+# ---- 3. FRB codegen (optional, main project, space-safe via \\?\ prefix) ----
+if ($Codegen) {
+    Write-Host "[ohos] FRB codegen ..." -ForegroundColor Cyan
+    $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+    if (Test-Path $cargoBin) { $env:PATH = "$cargoBin;$env:PATH" }
+    $codegenExe = Join-Path $cargoBin 'flutter_rust_bridge_codegen.exe'
+    if (-not (Test-Path $codegenExe)) { $codegenExe = 'flutter_rust_bridge_codegen' }
+    $unc = [string][char]92 + [char]92 + [char]63 + [char]92
+    $rustRoot = $unc + (Join-Path $ProjectRoot 'rust')
+    $rustOut  = $unc + (Join-Path $ProjectRoot 'rust\src\frb_generated.rs')
+    # libclang for rquickjs-sys bindgen: SDK llvm first, local LLVM fallback
+    $llvmCandidates = @(
+        (Join-Path $env:DEVECO_SDK_HOME 'native\llvm\bin'),
+        'C:\Program Files\LLVM\bin'
+    )
+    foreach ($l in $llvmCandidates) {
+        if (Test-Path (Join-Path $l 'libclang.dll')) { $env:LIBCLANG_PATH = $l; break }
+    }
+    Push-Location $ProjectRoot
+    try {
+        & $codegenExe generate --rust-root "$rustRoot" --rust-output "$rustOut"
+        if ($LASTEXITCODE -ne 0) { throw "FRB codegen failed ($LASTEXITCODE)" }
+    } finally { Pop-Location }
+}
+
+# ---- 4. mirror sync (main -> mirror, source only) ----
+# /XD names match at any depth. Kept out of the mirror on purpose: VCS,
+# other-platform builds, rust (built in-place), generated caches. `libs` and
+# `oh_modules` preserve mirror-only artifacts (the .so copies, ohpm install)
+# from being wiped by /MIR. build-profile.json5 excluded via /XF so the
+# user's local signing config in the mirror is never overwritten.
+if (-not $SkipMirror) {
+    Write-Host "[ohos] mirroring project -> $MirrorDir" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $MirrorDir | Out-Null
+    & robocopy $ProjectRoot $MirrorDir /MIR /NFL /NDL /NJH /NJS /NP `
+        /XD .git .dart_tool .idea build .gradle releases poc_ohos android ios docs test tool oh_modules node_modules .hvigor "$MirrorDir\rust" "$MirrorDir\ohos\entry\libs" `
+        /XF "$MirrorDir\pubspec_overrides.yaml" "$MirrorDir\ohos\build-profile.json5" "$MirrorDir\ohos\local.properties" *.hap *.so
+    if ($LASTEXITCODE -ge 8) { throw "robocopy mirror failed (exit=$LASTEXITCODE)" }
+    # robocopy success codes 0-7; normalize for the rest of the script
+    $global:LASTEXITCODE = 0
+}
+
+# ---- 5. in-mirror: overrides template -> ohos platform -> pub get ----
+Push-Location $MirrorDir
+try {
+    $overridesDst = Join-Path $MirrorDir 'pubspec_overrides.yaml'
+    if (-not (Test-Path $overridesDst)) {
+        Copy-Item (Join-Path $ScriptDir 'pubspec-ohos-overrides.yaml') $overridesDst
+        Write-Host '[ohos] pubspec_overrides.yaml written (mirror only)'
+    }
+
+    # create/repair the ohos template: trigger on the entry module profile
+    # (a bare `ohos/` existence check is not enough - partial trees from an
+    # interrupted bootstrap would skip create and leave the template broken)
+    if (-not (Test-Path (Join-Path $MirrorDir 'ohos\entry\build-profile.json5'))) {
+        Write-Host '[ohos] flutter create --platforms ohos (first run) ...' -ForegroundColor Cyan
+        & flutter create --platforms ohos --project-name xianyu_music_mobile .
+        if ($LASTEXITCODE -ne 0) { throw "flutter create failed ($LASTEXITCODE)" }
+    }
+
+    # bundle name: P0 uses the PoC debug profile (bound to
+    # cn.xianyumusic.xianyu_ohos_poc - profile/HAP mismatch would fail signing).
+    # P4 real-device phase: switch to cn.xianyumusic.xianyu + its own profile.
+    $appJson5 = Join-Path $MirrorDir 'ohos\AppScope\app.json5'
+    if (Test-Path $appJson5) {
+        $txt = [System.IO.File]::ReadAllText($appJson5, [System.Text.UTF8Encoding]::new($false))
+        if ($txt -notmatch '"bundleName"\s*:\s*"cn\.xianyumusic\.xianyu_ohos_poc"') {
+            $txt = [regex]::Replace($txt, '"bundleName"\s*:\s*"[^"]*"', '"bundleName": "cn.xianyumusic.xianyu_ohos_poc"')
+            [System.IO.File]::WriteAllText($appJson5, $txt, [System.Text.UTF8Encoding]::new($false))
+            Write-Host '[ohos] bundleName -> cn.xianyumusic.xianyu_ohos_poc (PoC debug profile)'
+        }
+    }
+
+    # useNormalizedOHMUrl: tencent_kit's @tencent/qq-open-sdk is a BYTECODE har
+    # and hvigor refuses it without normalized OHM urls (00306046). DevEco 6 /
+    # hvigor schema requires buildOption INSIDE the product object (root-level
+    # buildOption is rejected: allowed root keys are app/modules only).
+    # The file is REWRITTEN canonically every run (signingConfigs preserved) -
+    # immune to stale-buffer writebacks and mirror recreation.
+    $bpJson5 = Join-Path $MirrorDir 'ohos\build-profile.json5'
+    if (Test-Path $bpJson5) {
+        $existing = [System.IO.File]::ReadAllText($bpJson5, [System.Text.UTF8Encoding]::new($false))
+        $sign = if ($existing -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') { $Matches[1].Trim() } else { '[]' }
+        # P0: no signing config yet -> reuse the PoC auto-generated debug
+        # material (machine-wide in ~\.ohos\config). The profile is bound to
+        # the PoC bundle name, so the app.json5 step below must match it.
+        # P4 real-device phase replaces this with a cn.xianyumusic.xianyu profile.
+        if ($sign -eq '[]') {
+            $pocBp = 'D:\xianyu-poc\ohos\build-profile.json5'
+            if (Test-Path $pocBp) {
+                $poc = [System.IO.File]::ReadAllText($pocBp, [System.Text.UTF8Encoding]::new($false))
+                if ($poc -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') {
+                    $sign = $Matches[1].Trim()
+                    Write-Host '[ohos] signingConfigs imported from PoC debug profile'
+                }
+            }
+        }
+        $canonical = @'
+
+{
+  "app": {
+    "signingConfigs": SIGNING,
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.1.0(18)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "profile"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
+'@.Replace('SIGNING', $sign)
+        if ($existing.Trim() -ne $canonical.Trim()) {
+            [System.IO.File]::WriteAllText($bpJson5, $canonical, [System.Text.UTF8Encoding]::new($false))
+            Write-Host "[ohos] build-profile.json5 canonicalized (signingConfigs: $($sign.Substring(0, [Math]::Min(40, $sign.Length)))...)"
+        }
+    }
+
+    Write-Host '[ohos] flutter pub get (mirror) ...' -ForegroundColor Cyan
+    & flutter pub get
+    if ($LASTEXITCODE -ne 0) { throw "pub get failed ($LASTEXITCODE)" }
+
+    # materialize oh_modules BEFORE patching: hvigor's own ohpm install runs
+    # later and would otherwise overwrite patched embedding files when the
+    # installed variant changes (e.g. target-platform switch)
+    Write-Host '[ohos] ohpm install (pre-patch) ...' -ForegroundColor Cyan
+    Push-Location (Join-Path $MirrorDir 'ohos')
+    try {
+        & ohpm install
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'ohpm install failed - hvigor will retry' }
+    } finally { Pop-Location }
+
+    & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
+    & (Join-Path $ScriptDir 'manifest-ohos.ps1') -ProjectRoot $MirrorDir
+
+    # ---- 6. keep main project's ohos/ template in sync (source only) ----
+    $srcOhos = Join-Path $MirrorDir 'ohos'
+    $dstOhos = Join-Path $ProjectRoot 'ohos'
+    if (Test-Path $srcOhos) {
+        New-Item -ItemType Directory -Force -Path $dstOhos | Out-Null
+        & robocopy $srcOhos $dstOhos /E /NFL /NDL /NJH /NJS /NP `
+            /XD build oh_modules libs node_modules .hvigor .clangd `
+            /XF "$dstOhos\build-profile.json5" "$dstOhos\local.properties" *.hap *.so
+        if ($LASTEXITCODE -ge 8) { throw "ohos/ back-sync failed (exit=$LASTEXITCODE)" }
+        $global:LASTEXITCODE = 0
+    }
+} finally { Pop-Location }
+
+# ---- 7. rust .so (main project build, artifact -> mirror) ----
+if (-not $SkipRust) {
+    & (Join-Path $ScriptDir 'build-rust-ohos.ps1')
+    if ($LASTEXITCODE -ge 8) { throw "rust build failed" }
+}
+
+# ---- 8. build / run ----
+Push-Location $MirrorDir
+try {
+    if ($Run) {
+        $runArgs = @('run')
+        if ($Device) { $runArgs += @('-d', $Device) }
+        if ($FlutterArgs) { $runArgs += $FlutterArgs }
+        Write-Host "[ohos] flutter $($runArgs -join ' ')" -ForegroundColor Cyan
+        & flutter @runArgs
+    } else {
+        $buildArgs = @('build', 'hap', '--debug')
+        if ($FlutterArgs) { $buildArgs += $FlutterArgs }
+        Write-Host "[ohos] flutter $($buildArgs -join ' ') ..." -ForegroundColor Cyan
+        & flutter @buildArgs
+        if ($LASTEXITCODE -ne 0) {
+            # First build on a fresh mirror fails by design: the embedding HAR
+            # and plugin deps are only materialized DURING the build (ohpm
+            # install runs inside hvigor, after the FlutterTask writes entry's
+            # oh-package.json5), so the pre-build patch had no package to hit.
+            # oh_modules is materialized now - patch and retry once. Steady-state
+            # runs (oh_modules kept) already pass attempt 1.
+            Write-Host '[ohos] attempt 1 failed - patch embedding (now materialized) and retry ...' -ForegroundColor Yellow
+            & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
+            & flutter @buildArgs
+            if ($LASTEXITCODE -ne 0) { throw "build hap failed ($LASTEXITCODE)" }
+        }
+        $haps = Get-ChildItem (Join-Path $MirrorDir 'build') -Recurse -Filter *.hap -ErrorAction SilentlyContinue
+        foreach ($h in $haps) { Write-Host ("  HAP: {0}  ({1:N1} MB)" -f $h.FullName, ($h.Length / 1MB)) -ForegroundColor Green }
+    }
+} finally { Pop-Location }
+
+Write-Host ''
+Write-Host '== ohos build done ==' -ForegroundColor Green

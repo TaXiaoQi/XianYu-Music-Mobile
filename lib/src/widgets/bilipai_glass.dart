@@ -449,21 +449,35 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 ///   槽 18   uDepthEffect     —— 径向深度效应（水滴类小圆面开启）
 ///   采样器0 uImage           —— 引擎绑定的实时背景
 class RenderLiquidBacking extends RenderBox {
+  // 经典初始化列表写法：Dart 3.13 的 private-named-parameters（`this._x` 命名
+  // 参数）在 Flutter-OH 的 Dart 3.12.2 上不可用，为双工具链兼容统一用显式形参。
   RenderLiquidBacking({
-    required this._shader,
-    required this._radius,
-    required this._refract,
-    required this._chroma,
-    required this._blurSigma,
-    required this._backgroundColor,
-    required this._specular,
-    required this._edgeAmount,
-    required this._saturation,
-    required this._depthEffect,
-    required this._frozen,
-    required this._fadeBlend,
+    required ui.FragmentShader shader,
+    required double radius,
+    required double refract,
+    required double chroma,
+    required double blurSigma,
+    required Color backgroundColor,
+    required double specular,
+    required double edgeAmount,
+    required double saturation,
+    required double depthEffect,
+    required ui.Image? frozen,
+    required double fadeBlend,
     required double dpr,
-  }) : _devicePixelRatio = dpr;
+  }) : _shader = shader,
+       _radius = radius,
+       _refract = refract,
+       _chroma = chroma,
+       _blurSigma = blurSigma,
+       _backgroundColor = backgroundColor,
+       _specular = specular,
+       _edgeAmount = edgeAmount,
+       _saturation = saturation,
+       _depthEffect = depthEffect,
+       _frozen = frozen,
+       _fadeBlend = fadeBlend,
+       _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
   ui.FragmentShader get shader => _shader;

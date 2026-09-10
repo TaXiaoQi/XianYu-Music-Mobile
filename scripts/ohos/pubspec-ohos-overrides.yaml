@@ -1,0 +1,43 @@
+# pubspec-ohos-overrides.yaml (TEMPLATE)
+# Copied to <mirror>/pubspec_overrides.yaml by build-ohos.ps1; NEVER commit a
+# copy at the main project root - its presence would hijack Android/iOS
+# `pub get` too (the file REPLACES pubspec's dependency_overrides entirely).
+#
+# Base (PoC-verified) set lives here; P2 appends the remaining plugins.
+# NOTE: tencent_kit path override must stay - the file replaces, not merges,
+# the pubspec dependency_overrides block.
+
+dependency_overrides:
+  # ---- vendor: QQ OpenSDK plugin (shared with Android/iOS) ----
+  tencent_kit:
+    path: third_party/tencent_kit
+
+  # ---- ohos forks (PoC verified) ----
+  path_provider:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/path_provider/path_provider
+  audio_session:
+    git:
+      url: https://gitcode.com/CPF-Flutter/flutter_audio_session.git
+      ref: br_v0.2.2_ohos
+  just_audio:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_just_audio.git
+      path: just_audio
+  audio_service:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_audio_service.git
+      path: audio_service
+
+  # ---- sqflite (transitive via cached_network_image; CN pub mirror 424s
+  # sqflite_darwin, and this fork has ohos built in - no sqflite_darwin) ----
+  sqflite:
+    git:
+      url: https://gitcode.com/CPF-Flutter/flutter_sqflite.git
+      path: sqflite
+
+  # ---- SDK-constraint downgrades (Dart 3.11 / Flutter-OH 3.41) ----
+  # record 7.x requires Dart >=3.12; 6.2.1 has the same AudioRecorder API
+  # (startStream/RecordConfig/hasPermission) used by recognize_service.dart
+  record: ^6.2.1

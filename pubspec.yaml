@@ -19,7 +19,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.2-beta1+1000201
 
 environment:
-  sdk: ^3.12.2
+  # 下限放宽到 3.11：Flutter-OH 3.41.10-ohos 对应 Dart 3.11（鸿蒙构建用），
+  # 官方 Flutter（Android/iOS 桌面）用 Dart 3.12.x 仍满足
+  sdk: ">=3.11.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
