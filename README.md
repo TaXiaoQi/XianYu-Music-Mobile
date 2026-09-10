@@ -60,81 +60,67 @@
 
 | 依赖项 | 推荐版本 / 要求 |
 | --- | --- |
-| **Flutter** | `3.47.0+`（Dart `3.13.0`） |
-| **Android SDK + NDK** | API 36 编译，NDK r27+ |
+| **Flutter** | `3.47.0+`（Dart `3.13.0`，三平台通用） |
 | **Rust** | Stable 稳定版 + `cargo ndk`（构建钩子自动调用） |
-| **操作系统** | Windows 10 / 11（构建钩子为 PowerShell 脚本） |
 
-### 运行与构建步骤
+各平台额外要求：
 
-1. 克隆本仓库：
+| 平台 | 操作系统 | 平台依赖 |
+| --- | --- | --- |
+| **Android** | Windows 10 / 11（构建钩子为 PowerShell 脚本） | Android SDK + NDK（API 36 编译，NDK r27+）；真机开启 USB 调试，`flutter devices` 确认识别 |
+| **iOS** | macOS（需 Xcode） | Rust `aarch64-apple-ios` / `aarch64-apple-ios-sim` 工具链、CocoaPods；真机调试需在 Xcode 选择开发团队 |
+
+### 运行与调试
+
+1. 克隆本仓库并安装依赖：
 
   ```bash
   git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
   cd XianYu-Music-Mobile
-  ```
-
-2. 安装依赖并连接设备（真机开启 USB 调试，`flutter devices` 确认识别）：
-
-  ```bash
   flutter pub get
   ```
 
-3. 开发调试运行（热重载 `r` / 热重启 `R`）：
+2. Android 开发调试（热重载 `r` / 热重启 `R`）：
 
-  ```bash
+  ```powershell
+  .\scripts\dev.ps1   # 包装脚本：先同步版本号并编译 Rust，再 flutter run
+  # 或直接：
   flutter run
   ```
 
   > **改完代码怎么传递一句话记住**：`run` 进程还在就只在 run 终端按 `r`（热重载）或 `R`（热重启）直接传新构建，**不用每次全量 `flutter build`**；只有当 `run` 终端被关 / 进程退了才需要重新 `flutter run`。改的都是 Dart 业务代码（含新增 import、State、Ticker 等）时 `r`/`R` 都能覆盖，无需整包重装。改了 Rust 代码则不走热重载，重编后需 `R` 热重启或重新 Run。
 
-4. 构建 Release 正式安装包：
-
-   ```bash
-   flutter build apk --release
-   ```
-
-   一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
-   - **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
-   - 产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）
-   - 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
-
-> **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
+> **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so` / `.framework`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
 >
-> 版本号同步仅在 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
+> 版本号同步（`version.ts` → `pubspec.yaml` / `account_api.dart`）仅在 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
 
-### iOS 构建运行（macOS）
+### 构建各平台安装包
 
-iOS 构建钩子为 bash 脚本（`scripts/ios-rust-hook.sh`），**仅支持在 macOS（需 Xcode）上执行**；Windows/Linux 上该脚本自动放行，不影响 Android 构建。
+> Flutter 无法跨平台出包：Android 包建议在 Windows 上构建（Rust 构建钩子为 PowerShell 脚本），iOS 包需在 macOS 上构建（Rust 构建钩子为 bash 脚本 `scripts/ios-rust-hook.sh`，Windows/Linux 上自动放行，不影响 Android 构建）。
 
-1. 环境准备（Rust 增加 iOS 目标三元组）：
+#### Android（.apk）
 
-   ```bash
-   rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-   ```
+```bash
+flutter build apk --release
+```
 
-2. 安装依赖并准备 iOS 签名（真机调试需在 Xcode 中选择开发团队，Bundle ID 为 `cc.xymusic.mobile`）：
+一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
 
-   ```bash
-   flutter pub get
-   cd ios && pod install && cd ..
-   ```
+- **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
+- 产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）
+- 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
 
-   `pod install` 过程会注册 `xianyu_core` 本地 pod（编译前自动重编 Rust 动态框架，与 Android 的 gradle rustHook 机制对齐）。
+#### iOS（Xcode 归档 / .ipa）
 
-3. 运行 / 构建：
+前置：`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`，然后 `cd ios && pod install && cd ..`（pod 注册 `xianyu_core` 本地 pod，编译前自动重编 Rust 动态框架，与 Android 的 gradle rustHook 机制对齐）。
 
-   ```bash
-   # 调试运行（模拟器或真机）
-   flutter run
+```bash
+flutter build ios --release --no-codesign
+```
 
-   # Release 包（未签名校验构建，归档/签名走 Xcode）
-   flutter build ios --release --no-codesign
-   ```
+未签名校验构建，归档 / 签名走 Xcode；Rust 产物 `ios/Frameworks/xianyu_core.framework`（动态框架）会按当前 SDK（真机/模拟器）自动编译并更新，`XIANMU_SKIP_RUST=1` 同样可跳过。真机构建需在 Xcode 中为 **Runner** 与 **XianYuWidget** 两个 target 选择开发团队（Bundle ID 分别为 `cc.xymusic.mobile` / `cc.xymusic.mobile.XianYuWidget`）。
 
-   Rust 产物 `ios/Frameworks/xianyu_core.framework`（动态框架）会按当前 SDK（真机/模拟器）自动编译并更新，`XIANMU_SKIP_RUST=1` 同样可跳过。
-
-4. iOS 平台差异说明（Android 专属功能在 iOS 上隐藏入口）：
+**iOS 平台差异说明**（Android 专属功能在 iOS 上隐藏入口）：
    - 下载固定保存到应用 Documents/Downloads（「文件」App → 弦予音乐 可访问），无自定义下载目录
    - 悬浮歌词窗、状态栏歌词（车机歌词）、本地文件夹扫描、应用内更新为 Android 专属
    - 分享走系统分享面板；`xianyu://` 分享深链已支持（Safari/扫码等场景拉起 App）
@@ -147,9 +133,7 @@ iOS 构建钩子为 bash 脚本（`scripts/ios-rust-hook.sh`），**仅支持在
    - 桌面小组件（WidgetKit）+ 锁屏/灵动岛歌词（Live Activity）已支持：需 iOS 16.1+，
      小组件/锁屏交互按钮需 iOS 17+（低版本自动回落 `xianyu://play/*` 深链）；
      数据经 App Group（`group.cc.xymusic.mobile`）共享，真机签名时 Xcode 自动管理即可
-   - 真机构建需在 Xcode 中为 Runner 与 XianYuWidget 两个 target 选择开发团队
-     （XianYuWidget Bundle ID 为 `cc.xymusic.mobile.XianYuWidget`）
 
 ---
 
-*更新日期：2026-09-10*
+*更新日期：2026-09-11*
