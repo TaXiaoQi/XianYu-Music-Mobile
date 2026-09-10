@@ -490,6 +490,13 @@ pub fn get_or_create_full_cover(path: &Path, cache_dir: &Path) -> Option<String>
         return Some(existing);
     }
 
+    // 无图负缓存：TTL 内提取失败过的路径直接回落默认图，不再重读文件（与桌面端一致）
+    let now = cover_now_unix_secs();
+    let path_key = normalize_path(&path.to_string_lossy());
+    if is_no_cover_cached(&path_key, now) {
+        return None;
+    }
+
     if let Ok(tagged_file) = read_tagged_file_from_path(path) {
         if let Some(pic) = find_embedded_picture(&tagged_file) {
             let shared_hash = generate_content_hash(pic.data());

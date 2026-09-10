@@ -74,10 +74,15 @@ impl HttpSeekableReader {
     /// 打开 URL：发首个 `Range: bytes=0-` 请求探测总长并保留该响应作为初始流。
     pub fn open(url: &str) -> Result<Self, String> {
         let client = reqwest::Client::builder()
-            // 仅访问本地回环代理，禁用系统代理避免干扰。
+            // 仅访问直链 CDN，禁用系统代理避免干扰。
             .no_proxy()
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(READ_TIMEOUT)
+            // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+            //（对齐桌面端 RemoteRangeReader）。
+            .redirect(crate::security::ssrf::ip_literal_redirect_policy())
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .map_err(|e| format!("HTTP client 构建失败: {e}"))?;
 

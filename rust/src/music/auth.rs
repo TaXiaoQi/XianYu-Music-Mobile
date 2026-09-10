@@ -39,7 +39,10 @@ static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 fn http_client() -> &'static Result<reqwest::Client, String> {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::limited(10))
+            // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+            .redirect(crate::security::ssrf::ip_literal_redirect_policy())
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))
     })

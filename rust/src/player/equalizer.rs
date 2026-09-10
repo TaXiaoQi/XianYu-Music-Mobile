@@ -5,7 +5,7 @@
 //! 便于被 Flutter 播放引擎直接调用。交错 PCM 输入输出。
 
 use serde::Deserialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 // 精确的 10 段中心频率表 (Hz)
@@ -405,5 +405,187 @@ impl Equalizer {
         if self.current_channel >= self.channels {
             self.current_channel = 0;
         }
+    }
+}
+
+// =========================================================================
+// Custom UserVolumeSource (自定义主音量控制源) —— 缓冲级移植
+// =========================================================================
+
+/// 用户主音量控制（缓冲级）：语义对齐桌面端 `UserVolumeSource` ——
+/// 目标音量变化时以 50ms 渐变逼近，消除音量跳变的 zipper noise / click。
+/// 每帧开头采样共享音量快照（`Arc<AtomicU32>` 存 f32 bits，与桌面端一致）。
+pub struct UserVolumeSource {
+    current_volume: f32,
+    target_volume: f32,
+    ramp_frames: usize,
+    current_frame: usize,
+    is_ramping: bool,
+    sample_rate: u32,
+}
+
+#[inline]
+fn volume_ramp_frames(sample_rate: u32) -> usize {
+    ((0.05 * sample_rate as f64).round() as usize).max(1)
+}
+
+impl UserVolumeSource {
+    pub fn new(initial_volume: f32, sample_rate: u32) -> Self {
+        let vol = initial_volume.clamp(0.0, 1.0);
+        Self {
+            current_volume: vol,
+            target_volume: vol,
+            ramp_frames: volume_ramp_frames(sample_rate),
+            current_frame: 0,
+            is_ramping: false,
+            sample_rate,
+        }
+    }
+
+    /// 处理一块交错 PCM（原地应用音量渐变）。
+    /// 输入样本数应为 channels 的整数倍（与输出流的帧分组一致）。
+    pub fn process_block(&mut self, input: &mut [f32], channels: u16, volume: &AtomicU32) {
+        let channels = channels.max(1) as usize;
+        for frame in input.chunks_mut(channels) {
+            // 每帧开头（对齐桌面端 channel == 0 时机）采样目标音量并推进渐变
+            let next_target = f32::from_bits(volume.load(Ordering::Relaxed)).clamp(0.0, 1.0);
+            if (next_target - self.target_volume).abs() > 0.00001 {
+                self.target_volume = next_target;
+                self.ramp_frames = volume_ramp_frames(self.sample_rate);
+                self.current_frame = 0;
+                self.is_ramping = true;
+            }
+
+            if self.is_ramping {
+                self.current_frame += 1;
+                let progress = self.current_frame as f32 / self.ramp_frames as f32;
+                if progress >= 1.0 {
+                    self.current_volume = self.target_volume;
+                    self.is_ramping = false;
+                } else {
+                    self.current_volume =
+                        self.current_volume + (self.target_volume - self.current_volume) * progress;
+                }
+            }
+
+            for sample in frame.iter_mut() {
+                *sample *= self.current_volume;
+            }
+        }
+    }
+}
+
+// =========================================================================
+// Custom ClipGuardSource (自定义最终安全防削波限幅源) —— 缓冲级移植
+// =========================================================================
+
+/// 最终安全防削波限幅（缓冲级）：语义对齐桌面端 `ClipGuardSource` ——
+/// ±1.0 以内完全透传（零失真），超出时硬限幅保护 DAC；统计削波计数供诊断。
+#[derive(Default)]
+pub struct ClipGuardSource {
+    clip_count: u64,
+    total_count: u64,
+    max_seen: f32,
+}
+
+impl ClipGuardSource {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 处理一块交错 PCM（原地限幅）。
+    pub fn process_block(&mut self, input: &mut [f32]) {
+        for sample in input.iter_mut() {
+            self.total_count += 1;
+            let ax = sample.abs();
+            if ax > self.max_seen {
+                self.max_seen = ax;
+            }
+            if ax > 1.0 {
+                self.clip_count += 1;
+            }
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+    }
+
+    /// 累计被限幅的样本数（诊断用）。
+    pub fn clip_count(&self) -> u64 {
+        self.clip_count
+    }
+
+    /// 累计处理样本数（诊断用）。
+    pub fn total_count(&self) -> u64 {
+        self.total_count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clip_guard_limits_out_of_range_samples() {
+        let mut samples = vec![2.5, -3.0, 1.2, -0.99, 0.98, 0.0, 0.5, 1.0, -1.0];
+        let mut clip_guard = ClipGuardSource::new();
+        clip_guard.process_block(&mut samples);
+
+        // ±1.0 以内完全透传，超出时 clamp 到 ±1.0（对齐桌面端 test_clip_guard_limit）
+        assert_eq!(samples[0], 1.0); // 2.5 → clamp 到 1.0
+        assert_eq!(samples[1], -1.0); // -3.0 → clamp 到 -1.0
+        assert_eq!(samples[2], 1.0); // 1.2 → clamp 到 1.0
+        assert_eq!(samples[3], -0.99); // -0.99 透传
+        assert_eq!(samples[4], 0.98); // 0.98 透传
+        assert_eq!(samples[5], 0.0); // 0.0 透传
+        assert_eq!(samples[6], 0.5); // 0.5 透传
+        assert_eq!(samples[7], 1.0); // 1.0 透传（边界值）
+        assert_eq!(samples[8], -1.0); // -1.0 透传（边界值）
+        assert_eq!(clip_guard.clip_count(), 3);
+        assert_eq!(clip_guard.total_count(), 9);
+    }
+
+    #[test]
+    fn user_volume_ramps_to_target_without_jump() {
+        let volume = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+        let mut src = UserVolumeSource::new(1.0, 44100);
+        let mut samples = vec![1.0; 4410]; // 100ms @ 44.1kHz，单声道
+        src.process_block(&mut samples, 1, &volume);
+
+        // 音量未变化 → 全程原样透传
+        assert!(samples.iter().all(|&s| (s - 1.0).abs() < 1e-6));
+
+        // 目标音量降到 0.5 → 50ms 内渐变收敛，无瞬时跳变
+        volume.store(0.5f32.to_bits(), Ordering::Relaxed);
+        let mut first = f32::MAX;
+        let mut converged = 0usize;
+        for chunk in samples.chunks_mut(441) {
+            src.process_block(chunk, 1, &volume);
+            let last = *chunk.last().unwrap();
+            if first == f32::MAX {
+                // 渐变的第一帧不应直接跳到目标值（对齐桌面端无 zipper noise 语义）
+                assert!(last > 0.5 + 0.01, "首帧即跳变到目标音量: {last}");
+                first = last;
+            }
+            if (last - 0.5).abs() < 0.001 {
+                converged += 1;
+            }
+        }
+        assert!(converged >= 1, "音量渐变未收敛到目标值");
+        // 收敛后所有样本应精确等于目标音量
+        assert!((samples[samples.len() - 1] - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn user_volume_change_does_not_distort_first_frame_audibly() {
+        // 音量从 1.0 → 0.0 的静音渐变应平滑（逐帧递减，不突变）
+        let volume = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+        let mut src = UserVolumeSource::new(1.0, 44100);
+        let mut samples = vec![1.0; 4410];
+        volume.store(0.0f32.to_bits(), Ordering::Relaxed);
+        src.process_block(&mut samples, 1, &volume);
+        // 单调不增（渐变下行），且最终收敛到 0
+        for w in samples.windows(2) {
+            assert!(w[1] <= w[0] + 1e-6, "音量渐变出现上行跳变");
+        }
+        assert_eq!(*samples.last().unwrap(), 0.0);
     }
 }
