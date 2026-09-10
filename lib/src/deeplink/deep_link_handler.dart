@@ -70,6 +70,21 @@ class XianYuDeepLink {
     GoRouter router,
     String raw,
   ) async {
+    // 播放控制深链最优先：不受 _busy 分享链拦截（小组件/锁屏按钮命令不能丢）。
+    final playUri = Uri.tryParse(raw);
+    if (playUri != null && playUri.host == 'play') {
+      final action = playUri.path.replaceFirst('/', '');
+      final notifier = container.read(playerProvider.notifier);
+      switch (action) {
+        case 'toggle':
+          notifier.toggle();
+        case 'previous':
+          notifier.previous();
+        case 'next':
+          notifier.next();
+      }
+      return;
+    }
     if (_busy) {
       AppLogger.instance.log('deeplink', '忽略重复的分享深链: $raw');
       return;

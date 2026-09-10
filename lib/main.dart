@@ -15,6 +15,7 @@ import 'src/core/settings.dart';
 import 'src/player/cast_provider.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/auth/account_api.dart';
+import 'src/player/ios_widget_bridge.dart';
 import 'src/player/player_provider.dart';
 import 'src/player/player_widget_bridge.dart';
 import 'src/deeplink/deep_link_handler.dart';
@@ -72,9 +73,15 @@ Future<void> main() async {
   }
 
   // 挂载桌面播放小组件桥：跟随播放状态写入组件数据，响应小组件按钮控制。
-  // Android 专属（AppWidget）：iOS 需 WidgetKit 原生扩展（二期），不初始化。
+  // Android 专属（AppWidget）；iOS 由下方 WidgetKit 桥接管。
   if (PlatformCaps.supportsHomeWidgets) {
     container.read(playerWidgetControllerProvider).init();
+  }
+
+  // 挂载 iOS 小组件桥：WidgetKit 桌面小组件 + Live Activity（锁屏/灵动岛歌词），
+  // 兼管小组件/锁屏按钮的播放控制回调。
+  if (PlatformCaps.supportsLiveActivity) {
+    container.read(iosWidgetControllerProvider).init();
   }
 
   // 总体首帧计时（从 main 开始）

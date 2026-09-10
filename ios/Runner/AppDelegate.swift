@@ -17,5 +17,7 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // iOS 桌面小组件（WidgetKit）+ Live Activity（锁屏/灵动岛歌词）桥。
+    IosWidgetPlugin.register(with: engineBridge.pluginRegistry)
   }
 }

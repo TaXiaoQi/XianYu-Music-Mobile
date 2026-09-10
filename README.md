@@ -136,9 +136,14 @@ iOS 构建钩子为 bash 脚本（`scripts/ios-rust-hook.sh`），**仅支持在
 
 4. iOS 平台差异说明（Android 专属功能在 iOS 上隐藏入口）：
    - 下载固定保存到应用 Documents/Downloads（「文件」App → 弦予音乐 可访问），无自定义下载目录
-   - 悬浮歌词窗、状态栏歌词（车机歌词）、桌面小组件、本地文件夹扫描、QQ 直分享、应用内更新为 Android 专属
+   - 悬浮歌词窗、状态栏歌词（车机歌词）、本地文件夹扫描、QQ 直分享、应用内更新为 Android 专属
    - 分享走系统分享面板；`xianyu://` 分享深链已支持（Safari/扫码等场景拉起 App）
+   - 桌面小组件（WidgetKit）+ 锁屏/灵动岛歌词（Live Activity）已支持：需 iOS 16.1+，
+     小组件/锁屏交互按钮需 iOS 17+（低版本自动回落 `xianyu://play/*` 深链）；
+     数据经 App Group（`group.cc.xymusic.mobile`）共享，真机签名时 Xcode 自动管理即可
+   - 真机构建需在 Xcode 中为 Runner 与 XianYuWidget 两个 target 选择开发团队
+     （XianYuWidget Bundle ID 为 `cc.xymusic.mobile.XianYuWidget`）
 
 ---
 
-*更新日期：2026-09-6*
+*更新日期：2026-09-10*

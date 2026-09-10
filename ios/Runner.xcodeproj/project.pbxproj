@@ -16,6 +16,17 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		XYW000000000000000000011 /* XianYuWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000002 /* XianYuWidgetBundle.swift */; };
+		XYW000000000000000000012 /* PlaybackAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000003 /* PlaybackAttributes.swift */; };
+		XYW000000000000000000013 /* PlaybackStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000004 /* PlaybackStateStore.swift */; };
+		XYW000000000000000000014 /* XianYuPlayerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000005 /* XianYuPlayerWidget.swift */; };
+		XYW000000000000000000015 /* PlaybackLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000006 /* PlaybackLiveActivity.swift */; };
+		XYW000000000000000000016 /* PlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000007 /* PlaybackIntents.swift */; };
+		XYW000000000000000000017 /* PlaybackAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000003 /* PlaybackAttributes.swift */; };
+		XYW00000000000000000001B /* PlaybackStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000004 /* PlaybackStateStore.swift */; };
+		XYW00000000000000000001A /* PlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000007 /* PlaybackIntents.swift */; };
+		XYW000000000000000000018 /* IosWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW00000000000000000000B /* IosWidgetPlugin.swift */; };
+		XYW000000000000000000019 /* XianYuWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000001 /* XianYuWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +36,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		XYW000000000000000000041 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = XYW000000000000000000051;
+			remoteInfo = XianYuWidget;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -37,6 +55,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XYW000000000000000000034 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				XYW000000000000000000019 /* XianYuWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -59,6 +88,17 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		XYW000000000000000000001 /* XianYuWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = XianYuWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		XYW000000000000000000002 /* XianYuWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XianYuWidgetBundle.swift; sourceTree = "<group>"; };
+		XYW000000000000000000003 /* PlaybackAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackAttributes.swift; sourceTree = "<group>"; };
+		XYW000000000000000000004 /* PlaybackStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackStateStore.swift; sourceTree = "<group>"; };
+		XYW000000000000000000005 /* XianYuPlayerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XianYuPlayerWidget.swift; sourceTree = "<group>"; };
+		XYW000000000000000000006 /* PlaybackLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLiveActivity.swift; sourceTree = "<group>"; };
+		XYW000000000000000000007 /* PlaybackIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackIntents.swift; sourceTree = "<group>"; };
+		XYW000000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		XYW000000000000000000009 /* XianYuWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XianYuWidget.entitlements; sourceTree = "<group>"; };
+		XYW00000000000000000000A /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
+		XYW00000000000000000000B /* IosWidgetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosWidgetPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +107,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XYW000000000000000000032 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -100,6 +147,7 @@
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
+				XYW000000000000000000021 /* XianYuWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -108,6 +156,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				XYW000000000000000000001 /* XianYuWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -123,9 +172,26 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
+				XYW00000000000000000000B /* IosWidgetPlugin.swift */,
+				XYW00000000000000000000A /* Runner.entitlements */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		XYW000000000000000000021 /* XianYuWidget */ = {
+			isa = PBXGroup;
+			children = (
+				XYW000000000000000000002 /* XianYuWidgetBundle.swift */,
+				XYW000000000000000000003 /* PlaybackAttributes.swift */,
+				XYW000000000000000000004 /* PlaybackStateStore.swift */,
+				XYW000000000000000000005 /* XianYuPlayerWidget.swift */,
+				XYW000000000000000000006 /* PlaybackLiveActivity.swift */,
+				XYW000000000000000000007 /* PlaybackIntents.swift */,
+				XYW000000000000000000008 /* Info.plist */,
+				XYW000000000000000000009 /* XianYuWidget.entitlements */,
+			);
+			path = XianYuWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -157,11 +223,13 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				XYW000000000000000000034 /* Embed App Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				XYW000000000000000000042 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -170,6 +238,23 @@
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		XYW000000000000000000051 /* XianYuWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = XYW000000000000000000071 /* Build configuration list for PBXNativeTarget "XianYuWidget" */;
+			buildPhases = (
+				XYW000000000000000000031 /* Sources */,
+				XYW000000000000000000032 /* Frameworks */,
+				XYW000000000000000000033 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = XianYuWidget;
+			productName = XianYuWidget;
+			productReference = XYW000000000000000000001 /* XianYuWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -188,6 +273,9 @@
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
+					};
+					XYW000000000000000000051 = {
+						CreatedOnToolsVersion = 15.0;
 					};
 				};
 			};
@@ -209,6 +297,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				XYW000000000000000000051 /* XianYuWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -229,6 +318,13 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XYW000000000000000000033 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -284,6 +380,23 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				XYW000000000000000000017 /* PlaybackAttributes.swift in Sources */,
+				XYW00000000000000000001B /* PlaybackStateStore.swift in Sources */,
+				XYW00000000000000000001A /* PlaybackIntents.swift in Sources */,
+				XYW000000000000000000018 /* IosWidgetPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XYW000000000000000000031 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				XYW000000000000000000011 /* XianYuWidgetBundle.swift in Sources */,
+				XYW000000000000000000012 /* PlaybackAttributes.swift in Sources */,
+				XYW000000000000000000013 /* PlaybackStateStore.swift in Sources */,
+				XYW000000000000000000014 /* XianYuPlayerWidget.swift in Sources */,
+				XYW000000000000000000015 /* PlaybackLiveActivity.swift in Sources */,
+				XYW000000000000000000016 /* PlaybackIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,6 +407,11 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		XYW000000000000000000042 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = XYW000000000000000000051 /* XianYuWidget */;
+			targetProxy = XYW000000000000000000041 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -376,6 +494,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -557,6 +676,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -579,6 +699,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -593,6 +714,81 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		XYW000000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = XianYuWidget/XianYuWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = XianYuWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cc.xymusic.mobile.XianYuWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG EXTENSION";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		XYW000000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = XianYuWidget/XianYuWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = XianYuWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cc.xymusic.mobile.XianYuWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = EXTENSION;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		XYW000000000000000000063 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = XianYuWidget/XianYuWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = XianYuWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cc.xymusic.mobile.XianYuWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = EXTENSION;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
 		};
 /* End XCBuildConfiguration section */
 
@@ -623,6 +819,16 @@
 				97C147061CF9000F007C117D /* Debug */,
 				97C147071CF9000F007C117D /* Release */,
 				249021D4217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		XYW000000000000000000071 /* Build configuration list for PBXNativeTarget "XianYuWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XYW000000000000000000061 /* Debug */,
+				XYW000000000000000000062 /* Release */,
+				XYW000000000000000000063 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

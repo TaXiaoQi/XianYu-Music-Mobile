@@ -18,12 +18,17 @@ abstract final class PlatformCaps {
   /// 悬浮歌词窗（Android WindowManager overlay，iOS 无全局悬浮窗 API）。
   static bool get supportsFloatingLyrics => isAndroid;
 
-  /// 状态栏/通知栏歌词（Android 自定义通知文本，iOS 无等价能力；二期可评估
-  /// Live Activity 锁屏歌词）。
+  /// 状态栏/通知栏歌词（Android 自定义通知文本；iOS 等价物为 Live Activity
+  /// 锁屏/灵动岛歌词，见 [supportsLiveActivity]）。
   static bool get supportsStatusBarLyrics => isAndroid;
 
-  /// 桌面播放小组件（Android AppWidget，iOS 需 WidgetKit 原生扩展，二期）。
+  /// 桌面播放小组件（Android AppWidget；iOS 由 WidgetKit 承接，
+  /// 见 [supportsLiveActivity]）。
   static bool get supportsHomeWidgets => isAndroid;
+
+  /// iOS：WidgetKit 桌面小组件 + Live Activity 锁屏/灵动岛歌词
+  /// （ActivityKit 需 iOS 16.1+，由原生侧静默门控，低版本 init 无副作用）。
+  static bool get supportsLiveActivity => isIOS;
 
   /// 扫描任意本地文件夹（Android SAF/MediaStore；iOS 沙盒限制不可行，
   /// 本地库仅限应用内文件——下载与「文件」App 导入）。
