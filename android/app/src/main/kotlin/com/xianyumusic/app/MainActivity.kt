@@ -13,6 +13,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.Surface
+import android.view.View
 import android.view.WindowManager
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -90,6 +91,7 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
+        applyLegacyEdgeToEdgeLayout()
         // 开启挖孔(cutout)窗口模式：允许 UI/背景绘制进摄像头区域。
         // 全程沉浸全屏（含横屏）时若不开此模式，Flutter 渲染会被限制在
         // 摄像头清除安全区之外，挖孔那条只能留黑/被截断，表现为「摄像头位置不可显示 UI」。
@@ -112,6 +114,34 @@ class MainActivity : AudioServiceActivity() {
         // 派发，消息会被引擎丢弃且 pendingDeepLink 已被清空，深链彻底丢失。
         // 只暂存链接，交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
         processDeepLink(intent, dispatch = false)
+    }
+
+    /**
+     * 鸿蒙 4（Android 12 兼容层，API ≤ 31）及以前：Flutter 引擎的 edge-to-edge
+     * 布局接管在 HMS 兼容层上不生效，主题层虽已声明透明状态栏，但内容窗口未做
+     * 全屏布局，状态栏位置被窗口背景填充成一条实色（表现为「状态栏还在渲染」）。
+     * 这里在窗口层显式补齐 LAYOUT_STABLE | LAYOUT_FULLSCREEN：仅布局维度
+     * （内容满铺到状态栏背后），不影响系统栏显隐（Dart 侧 immersiveSticky /
+     * manual 模式照常控制）；真机 Android 12+ 引擎本就持有该 flag，重复设置
+     * 无副作用，故仅低版本分支设置。
+     */
+    private fun applyLegacyEdgeToEdgeLayout() {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) return
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+            (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+    }
+
+    /**
+     * 窗口聚焦时重申布局 flag：部分 ROM（含鸿蒙兼容层）在键盘弹出/收回、
+     * 焦点切换等时机会重置 systemUiVisibility，丢失后实色状态栏条复现。
+     * flag 幂等，且只影响布局不影响系统栏显隐，重复设置安全。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyLegacyEdgeToEdgeLayout()
+        }
     }
 
     /** singleTop 复用已启动 Activity 时的深链回调。 */
