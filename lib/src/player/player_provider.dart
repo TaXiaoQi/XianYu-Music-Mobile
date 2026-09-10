@@ -34,6 +34,7 @@ import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/cover_image.dart';
 import '../navigation/routes.dart';
 import 'audio_head_cache.dart';
 import 'audio_proxy_server.dart';
@@ -1270,6 +1271,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       error: null,
     );
     _syncToSystemMediaSession();
+    _precacheNextCover();
     try {
         // [DLNA 投屏] 投屏中：解析当前曲并投到电视，本地引擎保持静默，
         // 队列/历史/统计等尾部逻辑与普通播放共用。
@@ -2192,6 +2194,50 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     await _player.setVolume(_effectiveVolume());
     await _player.play();
+  }
+
+  /// 下一首封面预取：起播即后台预取队列后续最多 3 首的封面（本地高清
+  /// 路径 / 在线封面字节或磁盘缓存）写入 CoverImage 静态缓存，切歌时
+  /// 播放页大封面同步命中，不闪默认音符占位。定位与 [_maybePrecacheNextRemote]
+  /// 同款：顺序/列表循环自 index+1 起向前 3 首；随机模式仅在已压入
+  /// _shuffleFuture 时可预知（自栈顶向前 3 项）；单曲循环无下一首。
+  void _precacheNextCover() {
+    final n = state.queue.length;
+    if (n == 0 || state.playMode == 1) return;
+    final curIdx = state.queueIndex;
+    final List<int> targets;
+    if (state.playMode == 2) {
+      if (_shuffleFuture.isEmpty) return;
+      targets = <int>[];
+      for (var k = 1; k <= 3 && k <= _shuffleFuture.length; k++) {
+        final i = state.queue
+            .indexWhere((q) => q.path == _shuffleFuture[_shuffleFuture.length - k]);
+        if (i >= 0 && i != curIdx) targets.add(i);
+      }
+    } else {
+      final start = curIdx < 0 ? 0 : curIdx;
+      targets = <int>[
+        for (var k = 1; k <= 3; k++)
+          if ((start + k) % n != curIdx) (start + k) % n,
+      ];
+    }
+    if (targets.isEmpty) return;
+    // 快照队列条目：await 期间队列可能被改动，避免索引错位。
+    final items = [for (final i in targets) state.queue[i]];
+    unawaited(Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+        for (final item in items) {
+          await CoverImage.prewarm(
+            songPath: item.path,
+            networkUrl: item.coverUrl,
+            dbPath: dbPath,
+            cacheRoot: cacheRoot,
+          );
+        }
+      } catch (_) {}
+    }));
   }
 
   /// WebDAV 下一首预缓存（对齐桌面端）：当前远程歌曲进度过 60% 时，
