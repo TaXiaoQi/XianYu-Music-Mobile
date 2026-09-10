@@ -1532,7 +1532,8 @@ Future<String> statsImportListenSnapshotAdd({
 Future<void> statsClearListenStats({required String dbPath}) =>
     RustLib.instance.api.crateApiStatsClearListenStats(dbPath: dbPath);
 
-/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+/// 导入插件引擎店铺会话（cookie + storage）。默认仅补缺不覆盖；payload 可选
+/// `overwriteCookies: true` 时改为覆盖式写入 cookie（用户变量显式同步场景）。
 Future<void> pluginEngineStoreImport({
   required String dataDir,
   required String payloadJson,
