@@ -48,13 +48,14 @@ Future<void> initRust() async {
   );
 }
 
-/// 最小 audio_service handler：只响应 play/pause，验证 AVSession 链路。
+/// 最小 audio_service handler：响应 play/pause 并维护播控按钮，验证 AVSession 链路。
 class PocAudioHandler extends BaseAudioHandler {
   @override
   Future<void> play() async {
     playbackState.add(playbackState.value.copyWith(
       playing: true,
       processingState: AudioProcessingState.ready,
+      controls: [MediaControl.pause],
     ));
   }
 
@@ -63,6 +64,7 @@ class PocAudioHandler extends BaseAudioHandler {
     playbackState.add(playbackState.value.copyWith(
       playing: false,
       processingState: AudioProcessingState.ready,
+      controls: [MediaControl.play],
     ));
   }
 }
@@ -126,9 +128,15 @@ class _PocPageState extends State<PocPage> {
         final json = await rust.parseLyrics(rawLyrics: lrc);
         return '解析成功：${json.length} 字节，displayLines=${json.contains('displayLines')}';
       }),
-      _PocCase('3. 网络栈 reqwest+rustls', '走真实 HTTPS 请求，验证 DNS/TLS 在鸿蒙 musl 上可用', () async {
-        final r = await rust.fetchAnnouncement();
-        return r.isEmpty ? '请求成功但内容为空' : '请求成功，返回 ${r.length} 字节';
+      _PocCase('3. 网络栈 reqwest+rustls', '真实 HTTPS + Range 探测，验证 DNS/TLS 在鸿蒙 musl 上可用', () async {
+        // 原公告接口 xy.zh2026.cn/.../app.php 服务端 PHP fatal（本机 curl 亦 500），
+        // 与端上网络栈无关；改用稳定直链验证 reqwest+rustls 全链路。
+        const url = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+        final json = await rust.probeUrlSize(url: url);
+        final m = RegExp('"size":(\\d+)').firstMatch(json);
+        final size = m == null ? 0 : int.parse(m.group(1)!);
+        if (size <= 0) return '探测失败：$json';
+        return '请求成功，直链可达，总大小 ${(size / 1024 / 1024).toStringAsFixed(1)} MB';
       }),
       _PocCase('4. QuickJS 插件引擎', '加载最小 MusicFree 格式脚本（引擎内带 CommonJS wrapper 试运行）', () async {
         final dir = await getApplicationSupportDirectory();
@@ -177,7 +185,18 @@ class _PocPageState extends State<PocPage> {
             androidNotificationOngoing: true,
           ),
         );
-        await handler.prepare();
+        // 适配层依赖 mediaItem 流推送 AVSession 元数据：不设置 MediaItem
+        // 播控中心/通知栏不会出现卡片。artUri 必填（可为网络 URL）——
+        // 适配层直接赋给 AVMetadata.mediaImage，null 会触发 AVSession
+        // NAPI 类型校验失败（code 401）导致整个 metadata 设置失败。
+        handler.mediaItem.add(MediaItem(
+          id: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+          title: 'SoundHelix Song 1',
+          artist: '弦予 鸿蒙 PoC',
+          duration: Duration(minutes: 6, seconds: 12),
+          artUri: Uri.parse('https://www.soundhelix.com/favicon.ico'),
+        ));
+        await handler.play();
         return 'AudioService 初始化成功，检查通知栏/播控中心是否出现卡片';
       }),
     ];
