@@ -462,8 +462,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
     // 横屏自动隐藏：进入横屏后开始计时；转回竖屏立即恢复常显并停表。
+    // 设置关闭自动隐藏时恒常显（竖屏本就常显，一并走恢复分支）。
+    final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
     final landscapeNow = ref.watch(isLandscapeProvider);
-    if (!landscapeNow) {
+    if (!landscapeNow || !autoHideChrome) {
       _chromeHideTimer?.cancel();
       _chromeHideTimer = null;
       if (!_chromeVisible) {
@@ -492,6 +494,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ? _TraditionalPlayerLayout(
                   notifier: notifier,
                   current: current,
+                  chromeVisible: _chromeVisible,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -951,9 +954,14 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   const _TraditionalPlayerLayout({
     required this.notifier,
     required this.current,
+    this.chromeVisible = true,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
+
+  /// 横屏顶栏/底栏是否可见：由外层播放页的自动隐藏计时驱动，
+  /// 触摸唤回同样由外层 Listener 完成后经重建下传。竖屏恒 true。
+  final bool chromeVisible;
 
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
@@ -1225,8 +1233,13 @@ class _TraditionalPlayerLayoutState
       current: current,
       backgroundColor: Colors.transparent,
       isLandscape: true,
+      // 顶栏随外层自动隐藏计时收起（触摸唤回由外层 Listener 负责）。
       top: [
-        _buildTopBar(context, landscape: true),
+        AutoHideChrome(
+          visible: widget.chromeVisible,
+          alignment: Alignment.topCenter,
+          child: _buildTopBar(context, landscape: true),
+        ),
       ],
       // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词），
       // 固定横向对半布局，不提供可拖动中线。
@@ -1267,29 +1280,39 @@ class _TraditionalPlayerLayoutState
         ],
       ),
       // 横屏播放控件：进度条 + 三区控制行（时长/下载/收藏｜播放顺序/三大键/歌词｜音质/音效/队列）。
+      // 底部控制带整体随外层自动隐藏计时收起。
       bottom: [
-        RepaintBoundary(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: _ProgressBar(
-              notifier: widget.notifier,
-              // 时长已移到控制行左下角，进度条这里不再重复显示。
-              showTime: false,
-            ),
+        AutoHideChrome(
+          visible: widget.chromeVisible,
+          alignment: Alignment.bottomCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RepaintBoundary(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  child: _ProgressBar(
+                    notifier: widget.notifier,
+                    // 时长已移到控制行左下角，进度条这里不再重复显示。
+                    showTime: false,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              _LandscapeControlsRow(
+                notifier: widget.notifier,
+                current: current,
+                // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
+                onLyricAdjust: () => _showLyricAdjustMenu(
+                  context,
+                  ref,
+                  hasRomaji: _lyricsViewHasRomaji,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        _LandscapeControlsRow(
-          notifier: widget.notifier,
-          current: current,
-          // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
-          onLyricAdjust: () => _showLyricAdjustMenu(
-            context,
-            ref,
-            hasRomaji: _lyricsViewHasRomaji,
-          ),
-        ),
-        const SizedBox(height: 16),
       ],
       // 横屏歌词调节已并入底栏最右组件，右上是音乐卡片，不再叠加浮动 rail。
       overlay: null,
@@ -2786,6 +2809,7 @@ class _TraditionalCover extends StatelessWidget {
               CoverImage(
                 songPath: cur.path,
                 networkUrl: cur.coverUrl,
+                thumbPath: cur.coverPath,
                 width: size,
                 height: size,
                 radius: 23,
@@ -3175,6 +3199,7 @@ class _BigCover extends StatelessWidget {
                 : CoverImage(
                     songPath: cur.path,
                     networkUrl: cur.coverUrl,
+                    thumbPath: cur.coverPath,
                     width: coverSize,
                     height: coverSize,
                     radius: 31,

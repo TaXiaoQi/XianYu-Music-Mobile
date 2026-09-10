@@ -254,6 +254,8 @@ class AppSettings {
     this.sharePlaybackFailureBehavior = 'pause',
     // 播放页样式：traditional 传统模式（默认）/ advanced 高级模式。
     this.playerStyle = PlayerStyle.traditional,
+    // 横屏播放页顶栏/底栏无操作自动隐藏（对齐桌面版），默认开启。
+    this.landscapeAutoHideChrome = true,
     // 悬浮歌词窗（移植自 RawS-Music 外部歌词体系）。
     this.floatingLyricsEnabled = false,
     this.floatingLyricsLocked = false,
@@ -451,6 +453,9 @@ class AppSettings {
   /// 播放页样式：advanced 高级模式（现代毛玻璃）/ traditional 传统模式（经典布局）。
   final PlayerStyle playerStyle;
 
+  /// 横屏播放页顶栏/底栏无操作（3.5s）自动隐藏，触摸唤回。关闭后横屏常显。
+  final bool landscapeAutoHideChrome;
+
   /// 悬浮歌词窗总开关。
   final bool floatingLyricsEnabled;
 
@@ -584,6 +589,7 @@ class AppSettings {
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
+    bool? landscapeAutoHideChrome,
     bool? floatingLyricsEnabled,
     bool? floatingLyricsLocked,
     int? floatingLyricsTextColor,
@@ -692,6 +698,8 @@ class AppSettings {
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
+      landscapeAutoHideChrome:
+          landscapeAutoHideChrome ?? this.landscapeAutoHideChrome,
       floatingLyricsEnabled:
           floatingLyricsEnabled ?? this.floatingLyricsEnabled,
       floatingLyricsLocked: floatingLyricsLocked ?? this.floatingLyricsLocked,
@@ -839,6 +847,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',
       playerStyle: _playerStyleFromString(
           prefs.getString('playerStyle') ?? 'traditional'),
+      landscapeAutoHideChrome:
+          prefs.getBool('landscapeAutoHideChrome') ?? true,
       floatingLyricsEnabled:
           prefs.getBool('floatingLyricsEnabled') ?? false,
       floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
@@ -1015,6 +1025,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
       prefs.setString('playerStyle', next.playerStyle.name),
+      prefs.setBool('landscapeAutoHideChrome', next.landscapeAutoHideChrome),
       prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
       prefs.setBool('floatingLyricsLocked', next.floatingLyricsLocked),
       prefs.setInt('floatingLyricsTextColor', next.floatingLyricsTextColor),
@@ -1162,6 +1173,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
+
+  /// 横屏播放页顶栏/底栏自动隐藏开关。
+  Future<void> setLandscapeAutoHideChrome(bool v) =>
+      _save((state.valueOrNull ?? const AppSettings())
+          .copyWith(landscapeAutoHideChrome: v));
   Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
 
   /// 状态栏/通知栏歌词开关（独立于悬浮歌词窗）。

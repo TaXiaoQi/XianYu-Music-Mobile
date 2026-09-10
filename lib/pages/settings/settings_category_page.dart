@@ -426,6 +426,15 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             }),
             onTap: () => _pickPlayerStyle(context, ref, s),
           ),
+          // 横屏自动隐藏：无操作收起横屏播放页顶栏/底栏，触摸唤回；关闭后恒常显。
+          _switchTile(
+            context,
+            icon: Icons.flip_outlined,
+            title: tr('横屏自动隐藏顶栏/底栏'),
+            subtitle: tr('横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回'),
+            value: s?.landscapeAutoHideChrome ?? true,
+            onChanged: (v) => n.setLandscapeAutoHideChrome(v),
+          ),
           // 播放页液态玻璃：仅高级模式（玻璃材质卡片）下可用。
           if ((s?.playerStyle ?? PlayerStyle.advanced) == PlayerStyle.advanced)
             _switchTile(

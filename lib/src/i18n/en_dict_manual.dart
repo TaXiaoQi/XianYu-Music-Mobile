@@ -348,6 +348,8 @@ const Map<String, String> enDictManual = {
   '核心初始化失败': 'Core initialization failed',
   '黑胶': 'Vinyl',
   '黑胶音色 · 无损': 'Vinyl tone · lossless',
+  '横屏自动隐藏顶栏/底栏': 'Auto-hide top/bottom bars in landscape',
+  '横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回': 'Landscape player hides bars after 3.5s idle, touch to bring back',
   '横屏时隐藏': 'Hide in landscape',
   '后端连接配置保存失败，请重试': 'Failed to save backend connection settings; please retry',
   '后端连接配置已更新': 'Backend connection settings updated',
