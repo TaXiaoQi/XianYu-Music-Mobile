@@ -18,22 +18,6 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<String> parseLyrics({required String rawLyrics}) =>
     RustLib.instance.api.crateApiParseLyrics(rawLyrics: rawLyrics);
 
-/// 解析 LX 音源播放直链。
-///
-/// - `song_info_json`：[`LxUrlSongInfo`] 的 JSON（camelCase）
-/// - `quality`：音质（如 "128k"、"320k"、"flac" 等）
-///
-/// 返回 [`ResolvedUrl`] 的 JSON；解析失败返回 `"null"`。
-Future<String> lxResolveUrl({
-  required String songInfoJson,
-  required String quality,
-  String? dataDir,
-}) => RustLib.instance.api.crateApiLxResolveUrl(
-  songInfoJson: songInfoJson,
-  quality: quality,
-  dataDir: dataDir,
-);
-
 /// 搜索音乐源。`source` ∈ `kw`/`kg`/`tx`/`wy`/`mg`。
 /// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
 Future<String> lxSearch({
@@ -102,54 +86,6 @@ Future<String> lxPlaylistTracks({
   page: page,
   limit: limit,
 );
-
-/// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
-Future<String> pluginList({required String dataDir}) =>
-    RustLib.instance.api.crateApiPluginList(dataDir: dataDir);
-
-/// 从脚本文本安装音源插件。
-///
-/// 安装前会在 QuickJS 引擎中试运行，脚本无效时直接返回错误。
-/// 返回安装后的 `PluginInfo` JSON。
-Future<String> pluginInstallScript({
-  required String dataDir,
-  required String script,
-  required String origin,
-}) => RustLib.instance.api.crateApiPluginInstallScript(
-  dataDir: dataDir,
-  script: script,
-  origin: origin,
-);
-
-/// 从本地文件安装音源插件（限 `.js`）。
-Future<String> pluginInstallFile({
-  required String dataDir,
-  required String path,
-}) => RustLib.instance.api.crateApiPluginInstallFile(
-  dataDir: dataDir,
-  path: path,
-);
-
-/// 从订阅 URL 安装音源插件。
-Future<String> pluginInstallUrl({
-  required String dataDir,
-  required String url,
-}) => RustLib.instance.api.crateApiPluginInstallUrl(dataDir: dataDir, url: url);
-
-/// 启用或停用插件。
-Future<void> pluginSetEnabled({
-  required String dataDir,
-  required String id,
-  required bool enabled,
-}) => RustLib.instance.api.crateApiPluginSetEnabled(
-  dataDir: dataDir,
-  id: id,
-  enabled: enabled,
-);
-
-/// 卸载插件。
-Future<void> pluginRemove({required String dataDir, required String id}) =>
-    RustLib.instance.api.crateApiPluginRemove(dataDir: dataDir, id: id);
 
 /// 从指定音源抓取歌词（kg/kw/tx/wy）。
 ///
@@ -1204,29 +1140,22 @@ Future<void> clearLxUrlCache() =>
 Future<void> clearLxAllCache() =>
     RustLib.instance.api.crateApiClearLxAllCache();
 
-/// 换源：在其他落雪平台搜索同名同歌手歌曲。
-/// 返回 [`AlternativeSourceResult`] JSON 或 "null"。
+/// 查找替代落雪音源（换源匹配，双端通用，对齐桌面端 find_alternative_lx_source）。
+///
+/// - `failed_sources_json`：已失败音源数组 JSON（如 `["kw","tx"]`）。
+///
+/// 返回 [`crate::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
+/// 无匹配时返回 `"null"`。URL 解析由 Dart 插件编排层完成。
 Future<String> findAlternativeLxSource({
   required String songName,
   required String songArtist,
   required double songDuration,
-  required List<String> failedSources,
-  required List<String> qualities,
+  required String failedSourcesJson,
 }) => RustLib.instance.api.crateApiFindAlternativeLxSource(
   songName: songName,
   songArtist: songArtist,
   songDuration: songDuration,
-  failedSources: failedSources,
-  qualities: qualities,
-);
-
-/// 按音质顺序回退解析播放直链（返回 [`ResolvedUrl`] JSON 或 "null"）。
-Future<String> resolveLxWithQualityFallback({
-  required String songInfoJson,
-  required List<String> qualities,
-}) => RustLib.instance.api.crateApiResolveLxWithQualityFallback(
-  songInfoJson: songInfoJson,
-  qualities: qualities,
+  failedSourcesJson: failedSourcesJson,
 );
 
 /// 测试远程源连通性。`source_json` 为 [`RemoteSourceInput`] 的 camelCase JSON。
@@ -1532,7 +1461,8 @@ Future<String> statsImportListenSnapshotAdd({
 Future<void> statsClearListenStats({required String dbPath}) =>
     RustLib.instance.api.crateApiStatsClearListenStats(dbPath: dbPath);
 
-/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+/// 导入插件引擎店铺会话（cookie + storage）。默认仅补缺不覆盖；payload 可选
+/// `overwriteCookies: true` 时改为覆盖式写入 cookie（用户变量显式同步场景）。
 Future<void> pluginEngineStoreImport({
   required String dataDir,
   required String payloadJson,
