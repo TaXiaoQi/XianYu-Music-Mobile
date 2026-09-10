@@ -29,7 +29,10 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     // 冷启动带 URL 打开：UIScene 生命周期下 URL 在 connectionOptions 里。
-    if let url = connectionOptions.urlContexts.first?.url {
+    // 仅接自有 xianyu:// 深链，其余 scheme（如 QQ 回调 tencent{appid}://）
+    // 由 super 转发给插件生命周期代理，不进分享链解析。
+    if let url = connectionOptions.urlContexts.first?.url,
+       url.scheme == "xianyu" {
       SceneDelegate.pendingURL = url.absoluteString
     }
     ensureChannel()
@@ -41,10 +44,14 @@ class SceneDelegate: FlutterSceneDelegate {
     ensureChannel()
   }
 
-  // 运行期深链。仅经自有通道转发（当前 iOS 插件均无需 URL 回调，
-  // 故不调 super 以规避 FlutterSceneDelegate 未实现该转发导致的编译不确定）。
+  // 运行期深链/URL 回调。super.scene(_:openURLContexts:)（Flutter 3.47+
+  // FlutterSceneDelegate 已实现）会把全部 URL 扇出给插件生命周期代理
+  // （FlutterPluginSceneLifeCycleDelegate），tencent_kit 据此接收 QQ 分享回调
+  // （tencent{appid}:// scheme 与 /qq_conn/ Universal Link）。
+  // 自有通道只接 xianyu://，避免 QQ 回调误入分享深链解析。
   override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-    guard let url = URLContexts.first?.url else { return }
+    super.scene(scene, openURLContexts: URLContexts)
+    guard let url = URLContexts.first?.url, url.scheme == "xianyu" else { return }
     ensureChannel()
     let raw = url.absoluteString
     if let ch = channel {
@@ -52,6 +59,12 @@ class SceneDelegate: FlutterSceneDelegate {
     } else {
       SceneDelegate.pendingURL = raw
     }
+  }
+
+  /// Universal Link（QQ 分享回调 /qq_conn/ 路径）：转发插件生命周期代理。
+  /// 冷启动经 UL 拉起时 connectionOptions.userActivities 由 super 自行处理。
+  override func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    super.scene(scene, continue: userActivity)
   }
 
   /// 建立与 Dart 的深链通道；注册 handler 后投递暂存 URL。幂等。

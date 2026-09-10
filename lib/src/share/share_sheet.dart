@@ -54,8 +54,9 @@ Future<void> showSongShareSheet(
           ),
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 6),
-          // QQ 互联直分享为 Android 已配置能力：iOS 需 Universal Link 域名
-          // 关联（二期），当前隐藏、走「分享到更多应用」系统面板。
+          // QQ 互联直分享（Android 与 iOS 同一入口）。iOS 需 Universal Link
+          // 域名关联（api.xianyumusic.cn/qq_conn/，见 platform_caps 注释），
+          // 未关联时 SDK 拉起 QQ 可能失败，调用方有复制链接兜底。
           if (PlatformCaps.supportsQQShare) ...[
             ListTile(
               leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),

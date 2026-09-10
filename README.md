@@ -136,8 +136,14 @@ iOS 构建钩子为 bash 脚本（`scripts/ios-rust-hook.sh`），**仅支持在
 
 4. iOS 平台差异说明（Android 专属功能在 iOS 上隐藏入口）：
    - 下载固定保存到应用 Documents/Downloads（「文件」App → 弦予音乐 可访问），无自定义下载目录
-   - 悬浮歌词窗、状态栏歌词（车机歌词）、本地文件夹扫描、QQ 直分享、应用内更新为 Android 专属
+   - 悬浮歌词窗、状态栏歌词（车机歌词）、本地文件夹扫描、应用内更新为 Android 专属
    - 分享走系统分享面板；`xianyu://` 分享深链已支持（Safari/扫码等场景拉起 App）
+   - QQ 直分享（QQ 好友音乐卡片 + QQ 空间网页卡片）已支持，与 Android 同一入口：
+     Universal Link 关联域 `api.xianyumusic.cn/qq_conn/{app_id}/`，三处必须一致
+     （`qq_share_service.universalLink`、`pubspec.yaml tencent_kit.universal_link`、
+     QQ 互联后台登记值）；AASA 文件由服务端 `/.well-known/apple-app-site-association`
+     路由托管；关联域签名需付费开发者账号，pod install 时 tencent_setup.rb 自动
+     注入 URL Scheme/查询白名单/ATS/entitlements
    - 桌面小组件（WidgetKit）+ 锁屏/灵动岛歌词（Live Activity）已支持：需 iOS 16.1+，
      小组件/锁屏交互按钮需 iOS 17+（低版本自动回落 `xianyu://play/*` 深链）；
      数据经 App Group（`group.cc.xymusic.mobile`）共享，真机签名时 Xcode 自动管理即可

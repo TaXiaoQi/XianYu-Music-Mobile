@@ -38,9 +38,11 @@ abstract final class PlatformCaps {
   /// 经「文件」App 访问）。
   static bool get supportsCustomDownloadDir => isAndroid;
 
-  /// QQ 互联直分享（tencent_kit Android 端已配置；iOS 需 Universal Link
-  /// 域名关联，二期补齐，当前走系统分享面板）。
-  static bool get supportsQQShare => isAndroid;
+  /// QQ 互联直分享（tencent_kit）：QQ 好友音乐卡片 + QQ 空间网页卡片，
+  /// Android 与 iOS 同一入口、同一落地域（api.xianyumusic.cn）。iOS 额外依赖
+  /// Universal Link 域名关联（api.xianyumusic.cn/qq_conn/{app_id}/，
+  /// 关联域签名需付费开发者账号）。
+  static bool get supportsQQShare => isAndroid || isIOS;
 
   /// 应用内检查更新（Android apk 自更新；iOS 由 App Store 托管）。
   static bool get supportsInAppUpdate => isAndroid;

@@ -9,7 +9,8 @@ import UIKit
   ) -> Bool {
     // 冷启动深链兜底：UIScene 生命周期下 URL 主通道是 SceneDelegate 的
     // connectionOptions.urlContexts，部分系统版本仍会写入 launch options。
-    if let url = launchOptions?[.url] as? URL {
+    // 仅接自有 xianyu:// 深链，其余 scheme 由插件生命周期代理处理。
+    if let url = launchOptions?[.url] as? URL, url.scheme == "xianyu" {
       SceneDelegate.pendingURL = url.absoluteString
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

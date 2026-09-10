@@ -183,9 +183,11 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# QQ 互联配置（tencent_kit 插件 Android 侧读取，注入 AndroidManifest 的
-# meta-data com.tencent.oauth 注册）。必须与 lib/src/share/qq_share_service.dart
-# 里的 appId 保持一致。
+# QQ 互联配置（tencent_kit 插件读取）：Android 注入 AndroidManifest 的
+# meta-data com.tencent.oauth 注册；iOS 在 pod install 时由 tencent_setup.rb
+# 注入 URL Scheme（tencent{app_id}）、LSApplicationQueriesSchemes、ATS 放开，
+# 并把 universal_link 的 host 写入 Runner.entitlements 的 applinks 关联域。
+# 必须与 lib/src/share/qq_share_service.dart 里的 appId/universalLink 保持一致。
 tencent_kit:
   app_id: '1905495962'
-  # universal_link: # 仅 iOS 需要，可略
+  universal_link: https://api.xianyumusic.cn/qq_conn/1905495962/
