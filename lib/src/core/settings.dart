@@ -242,7 +242,9 @@ class AppSettings {
     this.volumeBalancePreventClipping = true,
     this.onlineFailureBehavior = 'pause',
     this.onlineQualityFallbackBehavior = 'lower',
-    this.autoSwitchSourceOnFailure = false,
+    // 默认开启：播放失败自动换源是音源插件场景的基础预期（单插件直链
+    // 失效/付费墙很常见），关闭只会让失败停在报错，用户需手动逐个换源。
+    this.autoSwitchSourceOnFailure = true,
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
     this.enablePredictiveBack = false,
@@ -835,7 +837,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       autoSwitchSourceOnFailure:
-          prefs.getBool('autoSwitchSourceOnFailure') ?? false,
+          prefs.getBool('autoSwitchSourceOnFailure') ?? true,
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,

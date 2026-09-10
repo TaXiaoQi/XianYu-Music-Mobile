@@ -20,6 +20,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+// path_provider 仅能以 dependency_overrides 形式走鸿蒙源（见 pubspec.yaml，
+// 直接放 dependencies 会触发双源冲突），此处 ignore 静态检查。
+// ignore: depend_on_referenced_packages
 import 'package:path_provider/path_provider.dart';
 
 import 'src/rust/api.dart' as rust;

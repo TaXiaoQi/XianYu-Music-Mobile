@@ -675,14 +675,11 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   Future<ResolvedMediaUrl?> _resolveLxUrl(String songJson, String quality) async {
-    final resolved = await lxResolveUrl(
-      songInfoJson: songJson,
-      quality: quality,
-      dataDir: await _ref.read(appDataDirProvider.future),
-    );
-    if (resolved == 'null' || resolved.isEmpty) return null;
-    final url = (jsonDecode(resolved)['url'] as String?) ?? '';
-    return url.isEmpty ? null : ResolvedMediaUrl(url: url);
+    final engine = await _ref.read(pluginEngineProvider.future);
+    final resolved = await engine
+        .resolveLxUrl((jsonDecode(songJson) as Map).cast<String, dynamic>(), quality);
+    final url = resolved?['url'] as String?;
+    return (url == null || url.isEmpty) ? null : ResolvedMediaUrl(url: url);
   }
 
   Future<ResolvedMediaUrl?> _resolvePluginUrl(

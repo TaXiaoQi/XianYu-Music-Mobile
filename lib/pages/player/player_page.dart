@@ -1733,7 +1733,7 @@ class _TraditionalPlayerLayoutState
     } catch (_) {
       // 上报失败不阻断跳过体验。
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     showXianYuToast(context, tr('已减少此类推荐'));
     await ref.read(playerProvider.notifier).next();
   }

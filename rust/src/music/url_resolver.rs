@@ -1,7 +1,7 @@
-// url_resolver.rs - LX 音源 URL 解析与封面获取
+// url_resolver.rs - LX 音源封面获取与 URL 缓存
 //
-// 将前端 lxMusicSdk.ts 中的 lxGetMusicUrl / lxGetPic 迁移到 Rust。
-// 播放直链经已导入的 LX 音源插件解析（原公共 API 代理已失效，2026-09-04 移除）。
+// 播放直链解析由 Dart 编排层直接驱动插件引擎（对齐桌面端 lxUrlResolver 架构），
+// 本模块不再承担 URL 解析（原公共 API 代理已失效，2026-09-04 移除）。
 //
 // 支持的音源：kw / kg / tx / wy / mg
 
@@ -44,18 +44,11 @@ pub struct LxTypeEntry {
     pub hash: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct ResolvedUrl {
-    pub url: String,
-    pub quality: String,
-}
-
 // ==================== URL Cache ====================
 
 /// URL 缓存条目：存储解析后的 URL 和过期时间
 struct CacheEntry {
     url: String,
-    quality: String,
     expires_at: Instant,
     last_access: Instant,
 }
@@ -70,49 +63,6 @@ fn url_cache() -> &'static Arc<RwLock<HashMap<String, CacheEntry>>> {
 const URL_CACHE_TTL_SECS: u64 = 600; // 10 分钟
 /// 缓存硬上限：过期清理后仍超容量时，按 LRU（最久未访问）淘汰
 const URL_CACHE_MAX_ENTRIES: usize = 500;
-
-fn make_cache_key(source: &str, id: &str, quality: &str) -> String {
-    format!("{}/{}/{}", source, id, quality)
-}
-
-/// 查询 URL 缓存
-///
-/// 命中且未过期时返回拷贝并刷新 `last_access`（LRU）；过期则惰性删除该条目，
-/// 避免过期项长期占内存。使用写锁以更新访问时间，缓存操作极轻量可接受。
-async fn get_cached_url(source: &str, id: &str, quality: &str) -> Option<ResolvedUrl> {
-    let key = make_cache_key(source, id, quality);
-    let mut cache = url_cache().write().await;
-    let now = Instant::now();
-    let entry = cache.get_mut(&key)?;
-    if entry.expires_at <= now {
-        cache.remove(&key);
-        return None;
-    }
-    entry.last_access = now;
-    Some(ResolvedUrl {
-        url: entry.url.clone(),
-        quality: entry.quality.clone(),
-    })
-}
-
-/// 写入 URL 缓存
-async fn set_cached_url(source: &str, id: &str, quality: &str, url: String) {
-    let mut cache = url_cache().write().await;
-    let key = make_cache_key(source, id, quality);
-    let now = Instant::now();
-    cache.insert(
-        key,
-        CacheEntry {
-            url,
-            quality: quality.to_string(),
-            expires_at: now + Duration::from_secs(URL_CACHE_TTL_SECS),
-            last_access: now,
-        },
-    );
-
-    // 先清过期项；若仍超容量，按 last_access 最早淘汰（LRU）
-    evict_url_cache(&mut cache, now);
-}
 
 /// 淘汰过期与超容量条目：先 `retain` 未过期项，再按 `last_access` 升序移除最旧条目直至不超上限
 fn evict_url_cache(cache: &mut HashMap<String, CacheEntry>, now: Instant) {
@@ -140,117 +90,6 @@ fn http_client() -> &'static reqwest::Client {
             .build()
             .expect("failed to build url_resolver reqwest client")
     })
-}
-
-// ==================== URL Resolution ====================
-
-/// 根据音源和歌曲信息解析出实际播放 URL
-///
-/// 各音源使用不同的标识符（与 lx-music-desktop api-test.js 一致）：
-/// - kw/tx/wy: songmid
-/// - kg: hash（从 _types[quality].hash 获取）
-/// - mg: copyrightId
-fn resolve_song_id(song_info: &LxUrlSongInfo, quality: &str) -> Result<String, String> {
-    match song_info.source.as_str() {
-        "kw" | "tx" | "wy" => Ok(song_info.songmid.clone()),
-        "kg" => {
-            // KG 优先使用 _types[quality].hash，其次 hash 字段，最后 songmid
-            if let Some(types) = &song_info.types {
-                if let Some(entry) = types.get(quality) {
-                    if let Some(hash) = &entry.hash {
-                        return Ok(hash.clone());
-                    }
-                }
-            }
-            Ok(song_info
-                .hash
-                .clone()
-                .unwrap_or_else(|| song_info.songmid.clone()))
-        }
-        "mg" => Ok(song_info
-            .copyright_id
-            .clone()
-            .unwrap_or_else(|| song_info.songmid.clone())),
-        _ => Err(format!("Unsupported source: {}", song_info.source)),
-    }
-}
-
-/// 通过公共 API 代理解析音频 URL（内部函数，供命令和换源共用）
-///
-/// 优先查询缓存，缓存未命中时通过公共 API 代理解析。
-/// 解析成功后自动写入缓存。
-pub async fn resolve_lx_music_url_inner(
-    song_info: &LxUrlSongInfo,
-    quality: &str,
-) -> Option<ResolvedUrl> {
-    resolve_lx_music_url_with_plugins(song_info, quality, None).await
-}
-
-/// 解析播放直链，可指定插件目录。
-///
-/// - `data_dir` 为 `Some` 时优先使用用户导入的音源插件；
-/// - 为 `None` 或插件不可用时回退到公共 API。
-pub async fn resolve_lx_music_url_with_plugins(
-    song_info: &LxUrlSongInfo,
-    quality: &str,
-    data_dir: Option<&str>,
-) -> Option<ResolvedUrl> {
-    let source = song_info.source.clone();
-
-    let id = match resolve_song_id(song_info, quality) {
-        Ok(id) => id,
-        Err(_) => {
-            return None;
-        }
-    };
-
-    // 查询缓存
-    if let Some(cached) = get_cached_url(&source, &id, quality).await {
-        return Some(cached);
-    }
-
-    // 优先用已导入的插件解析。
-    if let Some(dir) = data_dir {
-        if let Some(url) = resolve_via_plugins(dir, song_info, &source, quality).await {
-            set_cached_url(&source, &id, quality, url.clone()).await;
-            return Some(ResolvedUrl {
-                url,
-                quality: quality.to_string(),
-            });
-        }
-    }
-
-    // 无插件可用或插件解析失败：快速失败（原公共 API 代理已 403/503 失效，移除）。
-    None
-}
-
-/// 调用插件解析直链。
-///
-/// 脚本在 QuickJS 引擎（[`crate::plugin_host`]）中执行，全程异步。
-async fn resolve_via_plugins(
-    data_dir: &str,
-    song_info: &LxUrlSongInfo,
-    source: &str,
-    quality: &str,
-) -> Option<String> {
-    if !crate::plugins::manager::has_enabled_plugin_for(data_dir, source) {
-        return None;
-    }
-
-    // 传给脚本的歌曲信息：字段名与 LX 插件约定一致。
-    let info_json = serde_json::json!({
-        "songmid": song_info.songmid,
-        "hash": song_info.hash,
-        "albumId": song_info.album_id,
-        "albumMid": song_info.album_mid,
-        "copyrightId": song_info.copyright_id,
-        "_types": song_info.types,
-    })
-    .to_string();
-
-    crate::plugins::manager::resolve_url_with_plugins(data_dir, source, &info_json, quality)
-        .await
-        .ok()
 }
 
 // ==================== Cover URL Resolution ====================
@@ -339,7 +178,6 @@ async fn set_cached_wy_album_cover(album_id: &str, cover: String) {
         key,
         CacheEntry {
             url: cover,
-            quality: String::new(),
             expires_at: now + Duration::from_secs(URL_CACHE_TTL_SECS),
             last_access: now,
         },
@@ -555,37 +393,25 @@ pub async fn get_lx_cover_url(song_info: &LxUrlSongInfo) -> Option<String> {
     }
 }
 
-// ==================== Tauri Commands ====================
+// ==================== FRB 包装层调用的辅助命令 ====================
 
-/// 解析 LX 音源播放 URL
-///
-/// 优先查询缓存，缓存未命中时通过公共 API 代理解析。
-/// 解析成功后自动写入缓存。
-#[allow(dead_code)] // 桌面端 Tauri command，移动端核心以下层函数复用
-pub async fn resolve_lx_music_url(
-    song_info: LxUrlSongInfo,
-    quality: String,
-) -> Result<Option<ResolvedUrl>, String> {
-    Ok(resolve_lx_music_url_inner(&song_info, &quality).await)
-}
-
-/// 获取 LX 音源封面 URL
-#[allow(dead_code)] // 桌面端 Tauri command，移动端核心以下层函数复用
+/// 获取 LX 音源封面 URL（由 api 层包装后暴露给 Dart）
+#[allow(dead_code)]
 pub async fn get_lx_cover(song_info: LxUrlSongInfo) -> Result<Option<String>, String> {
     Ok(get_lx_cover_url(&song_info).await)
 }
 
-/// 清除 URL 缓存
-#[allow(dead_code)] // 桌面端 Tauri command，移动端核心以下层函数复用
+/// 清除 URL 缓存（由 api 层包装后暴露给 Dart）
+#[allow(dead_code)]
 pub async fn clear_lx_url_cache() -> Result<(), String> {
     let mut cache = url_cache().write().await;
     cache.clear();
     Ok(())
 }
 
-// ==================== Source Fallback ====================
+// ==================== Source Fallback（对齐桌面端换源命令） ====================
 
-/// 换源结果：包含匹配到的歌曲信息和已解析的播放 URL
+/// 换源结果：匹配到的歌曲信息（URL 由 Dart 插件编排层解析）
 #[derive(Serialize, Clone, Debug)]
 pub struct AlternativeSourceResult {
     pub source: String,
@@ -602,9 +428,6 @@ pub struct AlternativeSourceResult {
     pub str_media_mid: Option<String>,
     pub song_id: Option<serde_json::Value>,
     pub lx_types: Option<HashMap<String, LxTypeEntry>>,
-    /// 已解析的播放 URL（若 qualities 非空则尝试解析）
-    pub resolved_url: Option<String>,
-    pub resolved_quality: Option<String>,
 }
 
 /// 平台尝试优先级（kw 优先，与落雪默认顺序一致）
@@ -613,20 +436,17 @@ const SOURCE_PRIORITY: &[&str] = &["kw", "tx", "wy", "kg", "mg"];
 /// 时长匹配容差（秒）
 const DURATION_TOLERANCE_SEC: f64 = 5.0;
 
-/// 归一化歌名：trim + toLowerCase + 去除首尾标点/空白
+/// 归一化歌名：trim + toLowerCase + 移除全部空白/标点
 fn normalize_name(name: &str) -> String {
-    let trimmed = name.trim().to_lowercase();
-    // 去除首尾标点和空白（Unicode 标点）
-    let chars: Vec<char> = trimmed.chars().collect();
-    let mut start = 0;
-    let mut end = chars.len();
-    while start < end && (chars[start].is_whitespace() || chars[start].is_ascii_punctuation()) {
-        start += 1;
-    }
-    while end > start && (chars[end - 1].is_whitespace() || chars[end - 1].is_ascii_punctuation()) {
-        end -= 1;
-    }
-    chars[start..end].iter().collect()
+    name.trim()
+        .to_lowercase()
+        .chars()
+        .filter(|c| {
+            !c.is_whitespace()
+                && !c.is_ascii_punctuation()
+                && !matches!(c, '（' | '）' | '【' | '】' | '、' | '，' | '·')
+        })
+        .collect()
 }
 
 /// 拆分歌手名：支持 、,/& 等分隔符，返回小写数组
@@ -669,13 +489,22 @@ fn parse_interval_to_seconds(interval: &str) -> f64 {
 }
 
 /// 判断搜索结果是否匹配原歌曲
+///
+/// 标题：归一化相等，或双方长度 ≥3 时互相包含（feat./混音版等带后缀场景）；
+/// 歌手：有交集（避免同名异唱误命中）；
+/// 时长：±5s 辅助校验（未知则跳过）。
 fn is_match(
     item: &crate::music::lx_search::LxSearchItem,
     target_name: &str,
     target_artists: &[String],
     target_duration: f64,
 ) -> bool {
-    if normalize_name(&item.name) != target_name {
+    let item_name = normalize_name(&item.name);
+    let title_matched = item_name == target_name
+        || (item_name.chars().count() >= 3
+            && target_name.chars().count() >= 3
+            && (item_name.contains(target_name) || target_name.contains(&item_name)));
+    if !title_matched {
         return false;
     }
     // 原曲歌手已知时要求交集；未知时仅靠歌名+时长
@@ -695,38 +524,37 @@ fn is_match(
     true
 }
 
-/// 将 LxSearchItem 转换为 LxUrlSongInfo（用于 URL 解析）
-fn search_item_to_url_info(item: &crate::music::lx_search::LxSearchItem) -> LxUrlSongInfo {
-    LxUrlSongInfo {
-        songmid: item.songmid.clone(),
-        source: item.source.clone(),
-        hash: item.hash.clone(),
-        name: Some(item.name.clone()),
-        singer: Some(item.singer.clone()),
-        album_name: Some(item.album_name.clone()),
-        album_id: Some(item.album_id.clone()),
-        album_mid: item.album_mid.clone(),
-        copyright_id: item.copyright_id.clone(),
-        str_media_mid: item.str_media_mid.clone(),
-        song_id: item.song_id.clone(),
-        types: item.lx_types.clone(),
+/// 从歌手字段提取首个有效歌手名
+fn extract_primary_artist(artist: &str) -> String {
+    if artist.is_empty() || artist == "未知歌手" {
+        return String::new();
     }
+    // 取第一个歌手
+    let first = artist
+        .split(|c| matches!(c, '、' | ',' | '/' | '&'))
+        .next()
+        .unwrap_or("");
+    let trimmed = first.trim();
+    if trimmed.is_empty() || trimmed == "未知歌手" {
+        return String::new();
+    }
+    trimmed.to_string()
 }
 
-/// [项4 源回退集中] 查找替代落雪音源
+/// [项4 源回退集中 · 双端通用] 查找替代落雪音源
 ///
 /// 当 lx:// 歌曲在某个音源起播失败时，在其余落雪平台搜索同名同歌手的歌曲。
-/// 匹配规则：歌名归一化相等 + 歌手有交集 + 时长接近（±5s 辅助）
-/// 搜索策略：串行（按平台优先级 kw > tx > wy > kg > mg），找到即返回
+/// 匹配规则：标题归一化相等/互相包含 + 歌手有交集 + 时长接近（±5s 辅助）。
+/// 搜索策略：串行（按平台优先级 kw > tx > wy > kg > mg），每平台取前 10 条
+/// 逐一匹配，找到即返回。
 ///
-/// 若 qualities 非空，同时尝试解析播放 URL（带缓存），减少前端 IPC 调用次数。
-#[allow(dead_code)] // 桌面端 Tauri command，移动端核心以下层函数复用
+/// 直链解析不在本函数内完成：URL 由 Dart 插件编排层（plugin_engine.dart）
+/// 按其缓存与回退策略解析。
 pub async fn find_alternative_lx_source(
     song_name: String,
     song_artist: String,
     song_duration: f64,
     failed_sources: Vec<String>,
-    qualities: Vec<String>,
 ) -> Result<Option<AlternativeSourceResult>, String> {
     let target_name = normalize_name(&song_name);
     if target_name.is_empty() {
@@ -751,37 +579,20 @@ pub async fn find_alternative_lx_source(
             continue;
         }
 
-        let items = match crate::music::lx_search::lx_search(source, &keyword, 1).await {
+        let items = match crate::music::lx_search::lx_search(source, &keyword, 10).await {
             Ok(items) => items,
             Err(_) => {
                 continue; // 单个平台失败不中断整体流程
             }
         };
 
-        // 在搜索结果中查找匹配项
+        // 在搜索结果中查找首个匹配项
         for item in &items {
             if item.source != source {
                 continue;
             }
             if !is_match(item, &target_name, &target_artists, song_duration) {
                 continue;
-            }
-
-            // 找到匹配项，尝试解析 URL（若 qualities 非空）
-            let mut resolved_url = None;
-            let mut resolved_quality = None;
-
-            if !qualities.is_empty() {
-                let url_info = search_item_to_url_info(item);
-                for quality in &qualities {
-                    if let Some(result) = resolve_lx_music_url_inner(&url_info, quality).await {
-                        if !result.url.is_empty() {
-                            resolved_url = Some(result.url);
-                            resolved_quality = Some(result.quality);
-                            break;
-                        }
-                    }
-                }
             }
 
             return Ok(Some(AlternativeSourceResult {
@@ -799,47 +610,9 @@ pub async fn find_alternative_lx_source(
                 str_media_mid: item.str_media_mid.clone(),
                 song_id: item.song_id.clone(),
                 lx_types: item.lx_types.clone(),
-                resolved_url,
-                resolved_quality,
             }));
         }
     }
 
     Ok(None)
-}
-
-/// [项4 音质回退集中] 批量音质解析（带缓存）
-///
-/// 按传入的音质顺序依次尝试解析播放 URL，返回第一个成功的结果。
-/// 前端只需一次 IPC 调用即可完成多音质回退，避免循环调用。
-#[allow(dead_code)] // 桌面端 Tauri command，移动端核心以下层函数复用
-pub async fn resolve_lx_with_quality_fallback(
-    song_info: LxUrlSongInfo,
-    qualities: Vec<String>,
-) -> Result<Option<ResolvedUrl>, String> {
-    for quality in &qualities {
-        if let Some(result) = resolve_lx_music_url_inner(&song_info, quality).await {
-            if !result.url.is_empty() {
-                return Ok(Some(result));
-            }
-        }
-    }
-    Ok(None)
-}
-
-/// 从歌手字段提取首个有效歌手名
-fn extract_primary_artist(artist: &str) -> String {
-    if artist.is_empty() || artist == "未知歌手" {
-        return String::new();
-    }
-    // 取第一个歌手
-    let first = artist
-        .split(|c| matches!(c, '、' | ',' | '/' | '&'))
-        .next()
-        .unwrap_or("");
-    let trimmed = first.trim();
-    if trimmed.is_empty() || trimmed == "未知歌手" {
-        return String::new();
-    }
-    trimmed.to_string()
 }

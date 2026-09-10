@@ -450,32 +450,20 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 ///   采样器0 uImage           —— 引擎绑定的实时背景
 class RenderLiquidBacking extends RenderBox {
   RenderLiquidBacking({
-    required ui.FragmentShader shader,
-    required double radius,
-    required double refract,
-    required double chroma,
-    required double blurSigma,
-    required Color backgroundColor,
-    required double specular,
-    required double edgeAmount,
-    required double saturation,
-    required double depthEffect,
-    required ui.Image? frozen,
-    required double fadeBlend,
+    required this._shader,
+    required this._radius,
+    required this._refract,
+    required this._chroma,
+    required this._blurSigma,
+    required this._backgroundColor,
+    required this._specular,
+    required this._edgeAmount,
+    required this._saturation,
+    required this._depthEffect,
+    required this._frozen,
+    required this._fadeBlend,
     required double dpr,
-  })  : _shader = shader,
-        _radius = radius,
-        _refract = refract,
-        _chroma = chroma,
-        _blurSigma = blurSigma,
-        _backgroundColor = backgroundColor,
-        _specular = specular,
-        _edgeAmount = edgeAmount,
-        _saturation = saturation,
-        _depthEffect = depthEffect,
-        _frozen = frozen,
-        _fadeBlend = fadeBlend,
-        _devicePixelRatio = dpr;
+  }) : _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
   ui.FragmentShader get shader => _shader;

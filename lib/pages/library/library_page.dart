@@ -500,7 +500,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             : GlassTopBar.height(context, bottom: tabBar));
 
     return HideShellChrome(
-      child: Scaffold(
+      child: PopScope(
+        // 批量模式下返回先退出批量（复位播放条/选择态），再次返回才离开页面，
+        // 避免误入批量后一键 pop 整页。
+        canPop: !_batch.batchMode,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _batch.exit();
+        },
+        child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         resizeToAvoidBottomInset: false,
         body: RepaintBoundary(child: Stack(
@@ -548,6 +555,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             if (!inMusicPane && lib.songs.isNotEmpty)
               const MiniPlayerBar(),
           ],
+        ),
         ),
         ),
       ),

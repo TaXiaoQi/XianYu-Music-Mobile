@@ -36,6 +36,14 @@ class PluginEngine {
   /// 插件 ID 别名（旧存储 ID → 实际 hash ID）。
   final Map<String, String> _aliases = {};
 
+  /// LX 直链缓存（对齐原 Rust URL_CACHE：TTL 10 分钟）。
+  static const Duration _lxUrlCacheTtl = Duration(minutes: 10);
+  final Map<String, ({String url, String type, Map<String, String>? headers, DateTime expiresAt})>
+      _lxUrlCache = {};
+
+  /// 同 (音源, 歌曲, 音质) 并发解析去重：多路请求共享同一个 Future。
+  final Map<String, Future<Map<String, dynamic>?>> _lxUrlInflight = {};
+
   static const int _requestTimeout = 30000;
   static const int _lyricTimeout = 8000;
   static const int _maxPluginSize = 2 * 1024 * 1024;
@@ -694,6 +702,105 @@ class PluginEngine {
       'url': url,
       'headers': ?headers,
     };
+  }
+
+  // ==================== LX 直链解析编排 ====================
+
+  /// 解析歌曲缓存键 ID（对齐原 Rust resolve_song_id）：
+  /// kw/tx/wy → songmid；kg → _types[lxQuality].hash → hash → songmid；
+  /// mg → copyrightId → songmid。
+  String _lxCacheSongId(Map<String, dynamic> songInfo, String quality) {
+    final songmid = songInfo['songmid']?.toString() ?? '';
+    switch (songInfo['source']?.toString() ?? '') {
+      case 'kg':
+        final types = songInfo['_types'];
+        if (types is Map) {
+          final entry = types[lxQualityKeyFor(quality)];
+          final hash = entry is Map ? entry['hash'] : null;
+          if (hash is String && hash.isNotEmpty) return hash;
+        }
+        final hash = songInfo['hash'];
+        return hash is String && hash.isNotEmpty ? hash : songmid;
+      case 'mg':
+        final cid = songInfo['copyrightId'];
+        return cid is String && cid.isNotEmpty ? cid : songmid;
+      default:
+        return songmid;
+    }
+  }
+
+  /// LX 直链解析统一入口（对齐桌面端 lxUrlResolver：编排层驱动插件引擎）。
+  ///
+  /// 从 PluginStore 定位启用且声明支持该音源的 LX 插件（无匹配时回退第一个
+  /// 启用的 LX 插件），单音质解析。命中缓存（10 分钟）直接返回；同歌同档位
+  /// 的并发请求共享同一次解析。歌曲级错误（无版权/下架）向上抛出由调用方决策。
+  Future<Map<String, dynamic>?> resolveLxUrl(
+    Map<String, dynamic> songInfo,
+    String quality,
+  ) async {
+    final source = songInfo['source']?.toString() ?? '';
+    final songId = _lxCacheSongId(songInfo, quality);
+    if (source.isEmpty || songId.isEmpty) return null;
+    final cacheKey = '$source/$songId/$quality';
+
+    final cached = _lxUrlCache[cacheKey];
+    if (cached != null) {
+      if (cached.expiresAt.isAfter(DateTime.now())) {
+        return {'type': cached.type, 'url': cached.url, 'headers': cached.headers};
+      }
+      _lxUrlCache.remove(cacheKey);
+    }
+
+    final inflight = _lxUrlInflight[cacheKey];
+    if (inflight != null) return inflight;
+
+    final task = _resolveLxUrlInner(songInfo, source, quality, cacheKey);
+    _lxUrlInflight[cacheKey] = task;
+    try {
+      return await task;
+    } finally {
+      if (identical(_lxUrlInflight[cacheKey], task)) {
+        _lxUrlInflight.remove(cacheKey);
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>?> _resolveLxUrlInner(
+    Map<String, dynamic> songInfo,
+    String source,
+    String quality,
+    String cacheKey,
+  ) async {
+    // 插件定位：优先 sources 包含该音源的启用插件，回退第一个启用的 LX 插件
+    // （与桌面端 findLxPluginForSource 一致）。
+    final sources = await store.loadSources();
+    final lxPlugins = sources
+        .where((p) => p.enabled && p.format == PluginFormat.lx)
+        .toList();
+    if (lxPlugins.isEmpty) return null;
+    final plugin = lxPlugins.firstWhere(
+      (p) => p.sources.contains(source),
+      orElse: () => lxPlugins.first,
+    );
+    final result = await getMusicUrl(plugin, source, songInfo, quality);
+    final url = result?['url'] as String?;
+    if (result == null || url == null || url.isEmpty) return null;
+    // 容量上限（对齐原 Rust URL_CACHE_MAX_ENTRIES=500）：先清过期项，
+    // 仍超限时按插入顺序淘汰（Dart LinkedHashMap 保序）。
+    if (_lxUrlCache.length >= 500) {
+      final now = DateTime.now();
+      _lxUrlCache.removeWhere((_, e) => e.expiresAt.isBefore(now));
+      while (_lxUrlCache.length >= 500) {
+        _lxUrlCache.remove(_lxUrlCache.keys.first);
+      }
+    }
+    _lxUrlCache[cacheKey] = (
+      url: url,
+      type: (result['type'] as String?) ?? quality,
+      headers: result['headers'] as Map<String, String>?,
+      expiresAt: DateTime.now().add(_lxUrlCacheTtl),
+    );
+    return result;
   }
 
   /// 获取歌词（返回原始字段，由调用方解析）。

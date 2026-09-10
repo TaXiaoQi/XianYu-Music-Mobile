@@ -2468,7 +2468,7 @@ class _ColorDot extends StatelessWidget {
 /// 预设点击即选中关闭；自定义区支持 SV 二维取色板、色相条与 Hex 输入。
 /// 主题色与悬浮歌词颜色共用，通过 [title]/[presets] 区分。
 class _AccentColorSheet extends StatefulWidget {
-  _AccentColorSheet({
+  const _AccentColorSheet({
     required this.current,
     this.title = '主题色',
     this.presets,

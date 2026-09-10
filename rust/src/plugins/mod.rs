@@ -1,9 +1,8 @@
-//! 插件管理：HTTP 请求、文件读写、图片代理、音频临时下载。
+//! 插件宿主配套能力：HTTP 请求、文件读写、图片代理、音频临时下载。
 //!
-//! 音源脚本的执行（QuickJS）复用 [`crate::plugin_host`]，
-//! 管理逻辑（安装/启停/卸载/直链解析调度）见 [`manager`]。
-
-pub mod manager;
+//! 音源脚本的执行（QuickJS）在 [`crate::plugin_host`]；插件列表/索引由
+//! Dart 侧 PluginStore（SharedPreferences，与桌面端同 key 同 schema）管理，
+//! LX 直链解析由 Dart 编排层直接驱动插件引擎（对齐桌面端架构）。
 
 use crate::security::path_validator;
 use image::{GenericImageView, ImageEncoder};

@@ -27,6 +27,11 @@ dependencies:
       url: https://gitcode.com/openharmony-sig/fluttertpc_audio_service.git
       path: audio_service
 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
 # audio_session 双源冲突：audio_service 要求 HEAD、just_audio 要求 br_v0.2.2_ohos，
 # 统一钉住到 ohos 分支（override 对两者同时生效）
 dependency_overrides:
