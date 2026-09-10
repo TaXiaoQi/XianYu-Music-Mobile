@@ -789,6 +789,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           SystemUiMode.manual,
           overlays: SystemUiOverlay.values,
         );
+        // 引擎 edge-to-edge 迁移（targetSdk 35+，API < 30）会在模式切换时
+        // 重涂半透明黑 scrim（0x40000000），这里重申透明状态栏。
+        // 仅声明 statusBarColor 字段，不影响引擎侧图标亮度等其余字段。
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
+        );
       }
     } catch (_) {
       // 忽略：部分 ROM/仿真器可能不支持指定 UI 模式。

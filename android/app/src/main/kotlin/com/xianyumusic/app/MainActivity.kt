@@ -12,6 +12,7 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.graphics.Color
 import android.view.Surface
 import android.view.View
 import android.view.WindowManager
@@ -117,19 +118,31 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
-     * 鸿蒙 4（Android 12 兼容层，API ≤ 31）及以前：Flutter 引擎的 edge-to-edge
-     * 布局接管在 HMS 兼容层上不生效，主题层虽已声明透明状态栏，但内容窗口未做
-     * 全屏布局，状态栏位置被窗口背景填充成一条实色（表现为「状态栏还在渲染」）。
-     * 这里在窗口层显式补齐 LAYOUT_STABLE | LAYOUT_FULLSCREEN：仅布局维度
-     * （内容满铺到状态栏背后），不影响系统栏显隐（Dart 侧 immersiveSticky /
-     * manual 模式照常控制）；真机 Android 12+ 引擎本就持有该 flag，重复设置
-     * 无副作用，故仅低版本分支设置。
+     * 鸿蒙 4（Android 12 兼容层，API ≤ 31）及以前的透明状态栏兜底。
+     *
+     * 实测（NOH-AN00 / API 29）：Flutter 引擎的 edge-to-edge 迁移
+     * （targetSdk 35+ 强制启用）会在首帧前后把窗口改写为——
+     *  1. statusBarColor = 0x40000000（引擎认为旧系统不支持全透明，涂半透明
+     *     黑 scrim，覆盖主题的透明声明）→「状态栏颜色一直在」；
+     *  2. systemUiVisibility 整体重置（丢掉 LAYOUT_STABLE | LAYOUT_FULLSCREEN，
+     *     内容退回状态栏下方布局）。
+     *
+     * 这里在窗口层重申：仅状态栏维度的满铺布局 flag + 全透明状态栏色，
+     * 并清掉官方 API 附带的 LAYOUT_HIDE_NAVIGATION（避免三键导航下内容被
+     * 不透明导航条遮挡）。真机 Android 12+ 引擎本就透明，无影响。
      */
     private fun applyLegacyEdgeToEdgeLayout() {
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
         @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+        val decor = window.decorView
+        @Suppress("DEPRECATION")
+        decor.systemUiVisibility = (decor.systemUiVisibility and
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION.inv()) or
             (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        window.setStatusBarColor(Color.TRANSPARENT)
     }
 
     /**
@@ -142,6 +155,12 @@ class MainActivity : AudioServiceActivity() {
         if (hasFocus) {
             applyLegacyEdgeToEdgeLayout()
         }
+    }
+
+    /** 首帧渲染完成：引擎此刻已完成 edge-to-edge 迁移与 scrim 涂色，立即重申透明。 */
+    override fun onFlutterUiDisplayed() {
+        super.onFlutterUiDisplayed()
+        applyLegacyEdgeToEdgeLayout()
     }
 
     /** singleTop 复用已启动 Activity 时的深链回调。 */
