@@ -10,7 +10,7 @@
 #   6. flutter pub get
 param()
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue' # 原生工具 stderr 输出不应中断脚本，失败由显式 LASTEXITCODE 检查兜底
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PocDir    = Split-Path -Parent $ScriptDir
 $MobileDir = Split-Path -Parent $PocDir
@@ -30,7 +30,7 @@ $flutter = Get-Command flutter -ErrorAction SilentlyContinue
 if (-not $flutter) { throw '未找到 flutter，请先安装并接入 PATH（需 Flutter-OH 分支）' }
 $verOutput = (& flutter --version) -join ' '
 Write-Host $verOutput
-if ($verOutput -notmatch 'ohos') {
+if (($verOutput -notmatch 'ohos') -and (((& flutter config --list) -join ' ') -notmatch 'enable-ohos')) {
     Write-Warning '当前 flutter 不是鸿蒙分支。请安装 Flutter-OH（openharmony-sig/flutter_flutter），'
     Write-Warning '或临时用环境变量切换：PATH 指向 ohos 版 flutter 后重跑本脚本。'
     throw '需要 Flutter-OH'
