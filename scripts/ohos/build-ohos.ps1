@@ -17,12 +17,16 @@
     .\scripts\ohos\build-ohos.ps1 -Run -d 127.0.0.1:5555
     .\scripts\ohos\build-ohos.ps1 -SkipRust          # reuse existing .so
     .\scripts\ohos\build-ohos.ps1 -Codegen           # force FRB regeneration
+    .\scripts\ohos\build-ohos.ps1 --release -AppPack # HAP + signed .app for AppGallery
 #>
 param(
     [switch]$Run,
     [switch]$SkipRust,
     [switch]$SkipMirror,
     [switch]$Codegen,
+    # Also pack the signed .app (App Pack) for AppGallery upload, after the HAP
+    # build succeeds. Ignored with -Run (no build artifacts).
+    [switch]$AppPack,
     [string]$Device = '',
     # Target CPU ABI for `flutter build hap` (default: auto-detect from the
     # connected device). flutter run picks the device ABI automatically, but
@@ -364,6 +368,32 @@ try {
         }
         $haps = Get-ChildItem (Join-Path $MirrorDir 'build') -Recurse -Filter *.hap -ErrorAction SilentlyContinue
         foreach ($h in $haps) { Write-Host ("  HAP: {0}  ({1:N1} MB)" -f $h.FullName, ($h.Length / 1MB)) -ForegroundColor Green }
+        if ($AppPack) {
+            # flutter build hap 只出 HAP（真机安装/调试）；上架 AppGallery 需要
+            # .app（App Pack，一个或多个 HAP + pack.info）。assembleApp 是工程级
+            # 任务（hvigor 根节点，勿带 --mode module 否则切到 entry 上下文找不到）。
+            $buildMode = 'debug'
+            foreach ($a in $FlutterArgs) {
+                if ($a -eq '--release') { $buildMode = 'release' }
+                elseif ($a -eq '--profile') { $buildMode = 'profile' }
+            }
+            Push-Location (Join-Path $MirrorDir 'ohos')
+            try {
+                Write-Host "[ohos] hvigorw assembleApp (buildMode=$buildMode) ..." -ForegroundColor Cyan
+                & hvigorw assembleApp -p product=default -p buildMode=$buildMode
+                if ($LASTEXITCODE -ne 0) {
+                    # hvigor 每次启动的 ohpm install 会重物化 @ohos/flutter_ohos 实例
+                    # （哈希变化）冲掉 patch-embedding 补丁，ArkTS 编译报 AutoFill/
+                    # CompetitionStrategy 缺失 - 与 hap 构建同款两段式：patch 后重试一次。
+                    Write-Host '[ohos] assembleApp attempt 1 failed - patch embedding and retry ...' -ForegroundColor Yellow
+                    & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
+                    & hvigorw assembleApp -p product=default -p buildMode=$buildMode
+                    if ($LASTEXITCODE -ne 0) { throw "assembleApp failed ($LASTEXITCODE)" }
+                }
+                $apps = Get-ChildItem (Join-Path $MirrorDir 'ohos\build\outputs') -Recurse -Filter '*signed.app' -ErrorAction SilentlyContinue
+                foreach ($a in $apps) { Write-Host ("  APP: {0}  ({1:N1} MB)" -f $a.FullName, ($a.Length / 1MB)) -ForegroundColor Green }
+            } finally { Pop-Location }
+        }
     }
 } finally { Pop-Location }
 
