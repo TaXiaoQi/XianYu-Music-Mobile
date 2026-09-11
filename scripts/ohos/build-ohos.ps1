@@ -351,6 +351,7 @@ try {
         foreach ($a in $FlutterArgs) { if ($a -in @('--release', '--profile', '--debug')) { $hasModeFlag = $true } }
         if (-not $hasModeFlag) { $buildArgs += '--debug' }
         if ($targetAbi -eq 'x64') { $buildArgs += @('--target-platform', 'ohos-x64') }
+        elseif ($targetAbi -eq 'arm64') { $buildArgs += @('--target-platform', 'ohos-arm64') }
         if ($FlutterArgs) { $buildArgs += $FlutterArgs }
         Write-Host "[ohos] flutter $($buildArgs -join ' ') ..." -ForegroundColor Cyan
         & flutter @buildArgs
