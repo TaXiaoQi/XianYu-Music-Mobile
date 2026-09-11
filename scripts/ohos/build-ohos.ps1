@@ -294,7 +294,13 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "flutter run failed ($LASTEXITCODE)" }
         }
     } else {
-        $buildArgs = @('build', 'hap', '--debug')
+        $buildArgs = @('build', 'hap')
+        # Mode flag: honor an explicit --release/--profile/--debug passed through
+        # in $FlutterArgs; default to --debug when none given (appending both
+        # --debug and --release makes flutter abort on conflicting flags).
+        $hasModeFlag = $false
+        foreach ($a in $FlutterArgs) { if ($a -in @('--release', '--profile', '--debug')) { $hasModeFlag = $true } }
+        if (-not $hasModeFlag) { $buildArgs += '--debug' }
         if ($targetAbi -eq 'x64') { $buildArgs += @('--target-platform', 'ohos-x64') }
         if ($FlutterArgs) { $buildArgs += $FlutterArgs }
         Write-Host "[ohos] flutter $($buildArgs -join ' ') ..." -ForegroundColor Cyan

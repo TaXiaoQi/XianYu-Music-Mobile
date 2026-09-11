@@ -557,9 +557,17 @@ class XianYuDeepLink {
       final source = await container
           .read(pluginManagerProvider.notifier)
           .installFromScript(script, fileName: fileName);
-      final ctx = await _waitNavigatorContext();
-      if (ctx != null) {
-        showXianYuToast(ctx, tr('插件已导入：{name}', {'name': source.name}));
+      // 等导航就绪后再提示（冷启动深链可能早于首帧路由挂载到达）。
+      // 不能把根 Navigator 的 context 传给 showXianYuToast：Overlay 在
+      // Navigator 内部、不在其祖先链上，Overlay.of 必抛「No Overlay widget
+      // found」——异常发生在 installFromScript 完成之后，会被下方 catch
+      // 误报成「插件导入失败」（插件实际已装好可用）。与 catch 路径一致，
+      // 经 NavigatorState 拿根 Overlay。
+      await _waitNavigatorContext();
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(
+            overlay, tr('插件已导入：{name}', {'name': source.name}));
       }
       if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
         router.push('/plugin');
@@ -568,8 +576,14 @@ class XianYuDeepLink {
       AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
-        // toast 带上具体原因（异常文案本身已中文化），远程反馈时一眼定位
-        showXianYuToastByOverlay(overlay, '${tr('插件导入失败')}: $e');
+        // toast 带上具体原因 + 堆栈首帧：「Null check operator」这类系统
+        // 异常的 toString() 不含位置信息，堆栈首帧是定位源文件的唯一线索。
+        final where = st
+            .toString()
+            .split('\n')
+            .take(2)
+            .join('  ');
+        showXianYuToastByOverlay(overlay, '${tr('插件导入失败')}: $e\n$where');
       }
     }
   }

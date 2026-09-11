@@ -88,3 +88,6 @@ app.*.map.json
 # 调试遗留（截图/空文件）
 /flutter_*.png
 /null
+
+# 软著登记材料（操作说明书/源代码 PDF 含完整源码，仅本地使用，不入库）
+/soft-copyright/

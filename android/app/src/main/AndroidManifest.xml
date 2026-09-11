@@ -27,6 +27,9 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- 悬浮歌词窗：在其他应用上层显示 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- 双实例保险丝：外部打开（QQ 传 .js 等）异常新建第二任务时，新实例移交
+         深链后自毁，并用 moveTaskToFront 把存活实例带回前台 -->
+    <uses-permission android:name="android.permission.REORDER_TASKS"/>
     <application
         android:label="${appLabel}"
         android:name="${applicationName}"
@@ -63,18 +66,20 @@
         <service android:name=".LyricsOverlayService"
             android:exported="false"/>
 
-        <!-- singleTask：外部 VIEW intent（文件管理器/QQ 打开音频与 .js 插件、
-             xianyu:// 深链）命中已运行实例时必须经 onNewIntent 复用，绝不新建。
-             旧值 singleTop + 空 taskAffinity 下，外部应用携 NEW_TASK 拉起时
-             匹配不到任何同亲和任务 → 新建任务 + 第二个 MainActivity 实例
-             （第二套 Flutter 引擎），表现为后台双弦予（其一白屏）、从 QQ 打开
-             文件后「应用变成 QQ」。singleTask 强制实例独占任务根，冷启动才建
-             新任务，热启动一律 onNewIntent 复用（onNewIntent 已实现深链派发）。 -->
+        <!-- singleTask + 默认包亲和：外部 VIEW intent（文件管理器/QQ 打开音频
+             与 .js 插件、xianyu:// 深链）命中已运行实例时必须经 onNewIntent
+             复用，绝不新建。曾用 singleTop + taskAffinity=""：外部应用携
+             NEW_TASK 拉起时按亲和匹配不到任何任务 → 新建任务 + 第二个
+             MainActivity 实例（第二套 Flutter 引擎），表现为后台双弦予
+             （其一白屏）。后改 singleTask 但保留空 taskAffinity，实测部分
+             ROM（Honor MagicOS）上空亲和同样参与不了任务复用匹配，双实例
+             依旧——空亲和必须一并去掉：默认包亲和下系统按亲和找到本应用
+             启动器任务，singleTask 把 intent 经 onNewIntent 路由给现存实例；
+             singleTask 自身已保证不驻留调用方任务栈，无需空亲和隔离。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"

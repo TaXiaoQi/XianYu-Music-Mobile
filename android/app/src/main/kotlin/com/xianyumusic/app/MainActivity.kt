@@ -1,5 +1,6 @@
 package com.xianyumusic.app
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -27,6 +28,24 @@ import java.util.concurrent.Executors
 import java.io.File
 
 class MainActivity : AudioServiceActivity() {
+    companion object {
+        // 双实例保险丝：singleTask + 默认包亲和下系统本不应再创建第二个
+        // MainActivity，但实测仍存在两条路径能造出来——① 覆盖安装前旧版本
+        // （曾用 taskAffinity=""）留下的陈旧任务记录，其亲和性与新版本不一致，
+        // 外部 VIEW intent 按亲和匹配不到任务 → 新建任务 + 第二实例；② 个别
+        // ROM 的任务匹配不按文档走。第二实例即第二套 Flutter 引擎：白屏任务
+        // 卡片 + 深链被冷引擎接走（插件导入在其上崩溃）。保险丝策略：新实例
+        // 把深链写入静态交接位、用 moveTaskToFront 把存活实例带回前台，然后
+        // finish 自毁——任务卡片随 finish 消失，后台永远只留一个弦予。
+        private var live: MainActivity? = null
+
+        /** 第二实例移交的深链，由存活实例 onResume 领取派发。 */
+        private var handoffLink: String? = null
+    }
+
+    /** 非空时表示本实例是「应自毁移交」的第二实例（onCreate 期确定，只读）。 */
+    private var handoffTo: MainActivity? = null
+
     private val CHANNEL = "xianyu/audio_devices"
     private val SAF_CHANNEL = "xianyu/saf"
     private val DEEP_LINK_CHANNEL = "xianyu/deeplink"
@@ -42,6 +61,13 @@ class MainActivity : AudioServiceActivity() {
     // xianyu:// 深链：分享落地页拉起后把 intent 交给 Flutter 解析播放。
     private var deepLinkChannel: MethodChannel? = null
     private var pendingDeepLink: String? = null
+
+    // Dart 侧 handler 就绪门：冷启动时 MethodChannel 的 handler 尚未注册，
+    // 若此刻就把深链消息 invokeMethod 发进引擎会被静默丢弃且 pending 已清空，
+    // 深链彻底丢失（小体积 .js 复制极快，dispatchIfReady 极易命中该窗口）。
+    // 只有 Dart 调过 setMethodCallHandler 之后才允许主动派发；此前一律留存
+    // pending，由 Dart 侧 init 时 getInitialDeepLink 取走。
+    private var dartReady: Boolean = false
 
     private lateinit var saf: SafEngine
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -111,10 +137,28 @@ class MainActivity : AudioServiceActivity() {
         }
         // Android 15+ 组件选择面板「生成的预览」（幂等 + 限速重试）。
         WidgetShared.ensurePreviewGen(this)
+        // 双实例保险丝：已有存活实例时本实例切换为移交模式（深链写交接位 +
+        // moveTaskToFront 唤活旧实例 + finish 自毁）；否则登记自己为存活实例。
+        // 注意移交实例不得覆盖 live：其 finish 销毁时不能清掉旧实例的登记。
+        run {
+            val other = live
+            if (other != null && other != this && !other.isFinishing) {
+                handoffTo = other
+            } else {
+                live = this
+            }
+        }
+        // 移交实例兜底自毁：若本次 intent 无深链内容或后台复制失败，1.5s 后
+        // 仍移交未遂则自行 finish，绝不留白屏第二任务卡片。
+        if (handoffTo != null) {
+            mainHandler.postDelayed({
+                if (!isFinishing) finish()
+            }, 1500)
+        }
         // 冷启动：Flutter 的 MethodChannel handler 尚未注册，若此时走 onDeepLink
         // 派发，消息会被引擎丢弃且 pendingDeepLink 已被清空，深链彻底丢失。
         // 只暂存链接，交由 Dart 侧 init 时调用 getInitialDeepLink 主动取走。
-        processDeepLink(intent, dispatch = false)
+        processDeepLink(intent)
     }
 
     /**
@@ -163,12 +207,27 @@ class MainActivity : AudioServiceActivity() {
         applyLegacyEdgeToEdgeLayout()
     }
 
-    /** singleTop 复用已启动 Activity 时的深链回调。 */
+    /** singleTask 复用已启动 Activity 时的深链回调（外部 VIEW intent 命中现存实例）。 */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         // 热启动：Flutter handler 已就绪，直接走 onDeepLink 事件派发。
-        processDeepLink(intent, dispatch = true)
+        processDeepLink(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 领取第二实例移交的深链（本次任务切前台可能正是移交触发的）。
+        handoffLink?.let { link ->
+            handoffLink = null
+            pendingDeepLink = link
+            dispatchIfReady()
+        }
+    }
+
+    override fun onDestroy() {
+        if (live === this) live = null
+        super.onDestroy()
     }
 
     /** 旋转一开始系统即回调：把当前屏幕方向推给 Dart 侧，实现旋转即切横竖屏布局。 */
@@ -188,15 +247,14 @@ class MainActivity : AudioServiceActivity() {
         mainHandler.post { runCatching { rotationEvents?.success(orientation) } }
     }
 
-    private fun processDeepLink(intent: Intent?, dispatch: Boolean) {
+    private fun processDeepLink(intent: Intent?) {
         val data = intent?.data
         // 诊断日志：确认深链 intent 是否到达、data 原文是什么（落地页 intent:// 拉起时
         // scheme 解析失败的唯一观测点）。
-        android.util.Log.i("XyDeepLink", "processDeepLink dispatch=$dispatch data=${data?.toString() ?: "null"}")
+        android.util.Log.i("XyDeepLink", "processDeepLink data=${data?.toString() ?: "null"}")
         if (data == null) return
         if (data.scheme == "xianyu") {
-            pendingDeepLink = data.toString()
-            if (dispatch) dispatchIfReady()
+            deliver(data.toString())
             return
         }
         // 系统文件管理器/分享面板打开本地音频：ACTION_VIEW 的 data 为 file:// 或
@@ -219,8 +277,7 @@ class MainActivity : AudioServiceActivity() {
                 if (localPath == null) return@execute
                 val link = "xianyu://open?target=plugin" +
                     "&name=${Uri.encode(rawName)}&file=${Uri.encode(localPath)}"
-                pendingDeepLink = link
-                mainHandler.post { dispatchIfReady() }
+                deliver(link)
             }
             return
         }
@@ -229,8 +286,34 @@ class MainActivity : AudioServiceActivity() {
             if (localPath == null) return@execute
             val link = "xianyu://open?target=file" +
                 "&name=${Uri.encode(rawName)}&file=${Uri.encode(localPath)}"
-            pendingDeepLink = link
-            mainHandler.post { dispatchIfReady() }
+            deliver(link)
+        }
+    }
+
+    /** 深链交付：移交模式的第二实例把链接写进静态交接位并自毁；正常实例暂存
+     *  pending 并尝试派发。全部状态变更收敛到主线程，避免与 getInitialDeepLink
+     *  的读取互踩。 */
+    private fun deliver(link: String) {
+        val other = handoffTo ?: run {
+            // 后台复制线程也会走到这里：写 pending 统一收敛主线程，
+            // 与 getInitialDeepLink 的主线程读取严格串行，杜绝互踩。
+            mainHandler.post {
+                pendingDeepLink = link
+                dispatchIfReady()
+            }
+            return
+        }
+        mainHandler.post {
+            handoffLink = link
+            // 把存活实例的任务带回前台，由它在 onResume 领取深链并派发；
+            // 带不回前台也无妨，用户下次进入弦予时同样领取。
+            try {
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                @Suppress("DEPRECATION")
+                am.moveTaskToFront(other.taskId, 0)
+            } catch (_: Exception) {
+            }
+            finish()
         }
     }
 
@@ -267,10 +350,16 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    /** 引擎就绪（warm start / onNewIntent）时走事件通道主动派发。 */
+    /** 引擎就绪（warm start / onNewIntent）时走事件通道主动派发。
+     *  deepLinkChannel 在 configureFlutterEngine（早于 Dart main）就已注册，
+     *  「channel 非 null」不等于「Dart 侧 handler 已挂」——小体积 .js 复制
+     *  毫秒级完成、先于 Dart 注册时，invokeMethod 发进无人监听的通道会被
+     *  静默丢弃且 pending 已清空，深链凭空丢失。以 Dart 首次调
+     *  getInitialDeepLink 作为就绪信号，未就绪一律留存 pending 等取走。 */
     private fun dispatchIfReady() {
         val link = pendingDeepLink ?: return
         val ch = deepLinkChannel ?: return
+        if (!dartReady) return
         pendingDeepLink = null
         mainHandler.post { runCatching { ch.invokeMethod("onDeepLink", link) } }
     }
@@ -293,7 +382,10 @@ class MainActivity : AudioServiceActivity() {
                 setMethodCallHandler { call, result ->
                     when (call.method) {
                         "getInitialDeepLink" -> {
-                            // 冷启动：返回 onCreate 阶段暂存的深链并清空
+                            // 冷启动：返回 onCreate 阶段暂存的深链并清空；
+                            // Dart 能调到本方法即其 handler 已注册，置就绪门，
+                            // 此后到达的深链可直接事件派发。
+                            dartReady = true
                             result.success(pendingDeepLink)
                             pendingDeepLink = null
                         }

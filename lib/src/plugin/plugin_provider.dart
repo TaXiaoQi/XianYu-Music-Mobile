@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../core/rust_init.dart';
 import '../rust/api.dart' as frb;
 import '../sync/plugin_sync_state.dart';
 import 'plugin_engine.dart';
@@ -29,8 +30,13 @@ const _bilibiliCookieKeys = {
   'sid',
 };
 
-/// 插件引擎实例（懒加载，dataDir 就绪后创建）。
+/// 插件引擎实例（懒加载，RustLib 就绪 + dataDir 就绪后创建）。
 final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
+  // 先等 RustLib.init 完成：冷启动被外部调用（QQ「用其他应用打开」.js）时，
+  // 深链导入可能先于 main 里并行触发的 rustInitProvider 完成，FRB 生成代码
+  // 里 RustLib.instance.api 的空断言会抛「Null check operator used on a null
+  // value」。挂上依赖后所有引擎消费方自动排队等 Rust 就绪。
+  await ref.watch(rustInitProvider.future);
   final dataDir = await ref.watch(appDataDirProvider.future);
   final store = PluginStore(dataDir);
   final engine = PluginEngine(dataDir, store);
