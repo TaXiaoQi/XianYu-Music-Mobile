@@ -56,6 +56,9 @@ socket2 = "0.6"
 # APE/WV 解码（与桌面端 vendor rodio 同源 crate），转码为 WAV 供 ExoPlayer 播放
 ape-decoder = "0.3"
 wavicle = { version = "0.1", default-features = false, features = ["decode"] }
+# 纯 Rust FLAC 编码（用于 audio_convert 无损格式互转，无需 FFmpeg）
+flacenc = "0.5"
+rusty_mp3 = "0.7"
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"

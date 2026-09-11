@@ -1025,6 +1025,35 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      _sectionHeader(context, tr('工具')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.autorenew,
+            title: tr('音频格式转换'),
+            subtitle: tr('批量转换 WAV / FLAC / MP3，纯 Rust 实现'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/audio-convert'),
+          ),
+          _tile(
+            context,
+            icon: Icons.lock_open_outlined,
+            title: tr('QMC 文件解密'),
+            subtitle: tr('解密 QQ 音乐加密文件 .qmcflac / .qmcmp3'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/qmc-decrypt'),
+          ),
+          _tile(
+            context,
+            icon: Icons.drive_file_rename_outline,
+            title: tr('批量重命名'),
+            subtitle: tr('按模板批量重命名文件'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/batch-rename'),
+          ),
+        ],
+      ),
     ];
   }
 

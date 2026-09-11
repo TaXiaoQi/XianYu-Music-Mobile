@@ -1595,6 +1595,27 @@ Future<void> dlnaDmrReportPlayback({
   muted: muted,
 );
 
+/// 批量音频格式转换入口。
+/// `options_json` 格式：`{"targetFormat":"wav"|"flac", "sampleRate": null|u32}`
+/// 返回 `ConvertResult[]` JSON，每项含 inputPath / outputPath / success / error / durationSecs。
+Future<String> convertAudioBatch({
+  required List<String> inputPaths,
+  required String outDir,
+  required String optionsJson,
+}) => RustLib.instance.api.crateApiConvertAudioBatch(
+  inputPaths: inputPaths,
+  outDir: outDir,
+  optionsJson: optionsJson,
+);
+
+/// 查询输入文件是否可被本模块解码。
+Future<List<String>> audioConvertSupportedInputs() =>
+    RustLib.instance.api.crateApiAudioConvertSupportedInputs();
+
+/// 本模块支持的目标输出格式。
+Future<List<String>> audioConvertSupportedOutputs() =>
+    RustLib.instance.api.crateApiAudioConvertSupportedOutputs();
+
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {
   final String? baseUrl;
