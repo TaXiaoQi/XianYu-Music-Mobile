@@ -114,6 +114,22 @@
                 <data android:pathPattern=".*\\.opus"/>
                 <data android:pathPattern=".*\\.aiff"/>
             </intent-filter>
+            <!-- 插件脚本（.js）直接打开导入：文件管理器/浏览器对下载的 .js 点「打开」
+                 时拉起本应用，经 xianyu/deeplink 派发 target=plugin 深链进导入流程。
+                 JS 的 MIME 声明混乱（text/javascript、application/javascript、
+                 application/x-javascript 均常见），只收录这三种主流 js mime——
+                 octet-stream/text/plain 太宽，会把所有未知文件都揽进「打开方式」面板；
+                 pathPattern 兜底不带 mime 的老式 file:// 打开（匹配路径以 .js 结尾）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:mimeType="text/javascript"/>
+                <data android:mimeType="application/javascript"/>
+                <data android:mimeType="application/x-javascript"/>
+                <data android:pathPattern=".*\\.js"/>
+            </intent-filter>
             <!-- 禁用 Flutter 引擎自带的深链处理：否则引擎会把 intent 的 data URI
                  （xianyu://song?...）当作 initial route / pushRouteInformation 传给
                  GoRouter，导致 "no routes for location: xianyu://..." 的 Page Not

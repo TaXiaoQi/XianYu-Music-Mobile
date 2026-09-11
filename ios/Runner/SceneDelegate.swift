@@ -29,11 +29,15 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     // 冷启动带 URL 打开：UIScene 生命周期下 URL 在 connectionOptions 里。
-    // 仅接自有 xianyu:// 深链，其余 scheme（如 QQ 回调 tencent{appid}://）
+    // 自有 xianyu:// 深链进分享链解析；「用其他 App 打开」的 .js 插件脚本
+    // 物化后并入同一派发链；其余 scheme（如 QQ 回调 tencent{appid}://）
     // 由 super 转发给插件生命周期代理，不进分享链解析。
-    if let url = connectionOptions.urlContexts.first?.url,
-       url.scheme == "xianyu" {
-      SceneDelegate.pendingURL = url.absoluteString
+    if let url = connectionOptions.urlContexts.first?.url {
+      if url.scheme == "xianyu" {
+        SceneDelegate.pendingURL = url.absoluteString
+      } else if let link = Self.deepLinkForOpenedPluginFile(url) {
+        SceneDelegate.pendingURL = link
+      }
     }
     ensureChannel()
   }
@@ -48,17 +52,51 @@ class SceneDelegate: FlutterSceneDelegate {
   // FlutterSceneDelegate 已实现）会把全部 URL 扇出给插件生命周期代理
   // （FlutterPluginSceneLifeCycleDelegate），tencent_kit 据此接收 QQ 分享回调
   // （tencent{appid}:// scheme 与 /qq_conn/ Universal Link）。
-  // 自有通道只接 xianyu://，避免 QQ 回调误入分享深链解析。
+  // 自有通道只接 xianyu:// 深链与「用其他 App 打开」的 .js 插件脚本，
+  // 避免 QQ 回调误入分享深链解析。
   override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     super.scene(scene, openURLContexts: URLContexts)
-    guard let url = URLContexts.first?.url, url.scheme == "xianyu" else { return }
+    guard let url = URLContexts.first?.url else { return }
     ensureChannel()
-    let raw = url.absoluteString
+    if let link = Self.deepLinkForOpenedPluginFile(url) {
+      dispatchDeepLink(link)
+      return
+    }
+    guard url.scheme == "xianyu" else { return }
+    dispatchDeepLink(url.absoluteString)
+  }
+
+  /// 统一深链投递：通道已注册直接推 onDeepLink，否则暂存待 ensureChannel 兜底。
+  private func dispatchDeepLink(_ raw: String) {
     if let ch = channel {
       ch.invokeMethod("onDeepLink", arguments: raw)
     } else {
       SceneDelegate.pendingURL = raw
     }
+  }
+
+  /// 系统把 .js 插件脚本交给本应用打开（文件 App「分享/用其他 App 打开」，经
+  /// Info.plist CFBundleDocumentTypes 声明 com.netscape.javascript-source）：
+  /// 物化到沙盒 tmp（沙盒外文件被移动/删除后副本仍可用），封装成与 Android 端
+  /// MainActivity 同构的 xianyu://open?target=plugin 深链，复用 Dart 导入管线。
+  /// 非 .js 文件返回 nil，交回原有 scheme 分流。
+  static func deepLinkForOpenedPluginFile(_ url: URL) -> String? {
+    guard url.isFileURL,
+          url.lastPathComponent.lowercased().hasSuffix(".js") else { return nil }
+    let name = url.lastPathComponent
+    let dest = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+    try? FileManager.default.removeItem(at: dest)
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    do {
+      try FileManager.default.copyItem(at: url, to: dest)
+    } catch {
+      return nil
+    }
+    func enc(_ s: String) -> String {
+      s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
+    }
+    return "xianyu://open?target=plugin&name=\(enc(name))&file=\(enc(dest.path))"
   }
 
   /// Universal Link（QQ 分享回调 /qq_conn/ 路径）：转发插件生命周期代理。

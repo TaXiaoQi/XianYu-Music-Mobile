@@ -1,5 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -127,6 +129,17 @@ class XianYuDeepLink {
           final name = openUri.queryParameters['name'] ?? '';
           if (file.isNotEmpty) {
             await _playOpenedFile(container, router, file, name);
+          }
+          return;
+        }
+        // 系统文件管理器/浏览器「打开」.js 插件脚本：原生侧已把 content/file URI
+        // 物化为真实路径并封装成 target=plugin，这里读取内容走现有安装管线
+        // （与插件页「选择本地脚本」导入同源）。
+        if (openUri.queryParameters['target'] == 'plugin') {
+          final file = openUri.queryParameters['file'] ?? '';
+          final name = openUri.queryParameters['name'] ?? '';
+          if (file.isNotEmpty) {
+            await _importOpenedPlugin(container, router, file, name);
           }
           return;
         }
@@ -520,6 +533,40 @@ class XianYuDeepLink {
       return;
     }
     router.push('/player');
+  }
+
+  /// 导入系统「打开」进来的 .js 插件脚本（文件路径由原生侧物化到缓存目录）。
+  /// 走与插件页本地导入一致的 [PluginManager.installFromScript] 管线
+  /// （自动识别 LX/MusicFree 格式并加载验证），成功后 toast 并跳转插件页。
+  static Future<void> _importOpenedPlugin(
+    ProviderContainer container,
+    GoRouter router,
+    String filePath,
+    String rawName,
+  ) async {
+    AppLogger.instance.log('deeplink', '系统打开插件脚本: $filePath');
+    try {
+      final script = await File(filePath).readAsString();
+      final fileName = rawName.trim().isNotEmpty
+          ? rawName.trim()
+          : filePath.replaceAll('\\', '/').split('/').last;
+      final source = await container
+          .read(pluginManagerProvider.notifier)
+          .installFromScript(script, fileName: fileName);
+      final ctx = await _waitNavigatorContext();
+      if (ctx != null) {
+        showXianYuToast(ctx, tr('插件已导入：{name}', {'name': source.name}));
+      }
+      if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
+        router.push('/plugin');
+      }
+    } catch (e, st) {
+      AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(overlay, tr('插件导入失败'));
+      }
+    }
   }
 
   /// 播放系统打开/分享进来的本地音频文件。文件路径由原生侧物化到缓存目录，

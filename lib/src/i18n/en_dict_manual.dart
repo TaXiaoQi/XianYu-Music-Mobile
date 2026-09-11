@@ -794,6 +794,8 @@ const Map<String, String> enDictManual = {
       'With "Auto detect", paste a share link from NetEase / QQ Music / Kuwo / Kugou. Or pick the source, enter the playlist ID and tap search to import everything.',
   '选择本地备份文件': 'Choose a local backup file',
   '选择本地的插件脚本（.js / .txt）': 'Choose a local plugin script (.js / .txt)',
+  '插件已导入：{name}': 'Plugin imported: {name}',
+  '插件导入失败': 'Plugin import failed',
   '选择导入内容：': 'Choose content to import:',
   '选择文件并解密': 'Choose a file and decrypt',
   '选择字体': 'Choose a font',

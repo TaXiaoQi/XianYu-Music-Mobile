@@ -30,6 +30,16 @@
             "actions": [
               "action.system.home"
             ]
+          },
+          {
+            // 文件管理器/浏览器「打开」.js 插件脚本 → 弦予音乐（进插件导入流程）。
+            // general.javascript 为系统 UTD（统一数据类型）；viewData 是标准查看动作。
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              { "type": "general.javascript" }
+            ]
           }
         ]
       }

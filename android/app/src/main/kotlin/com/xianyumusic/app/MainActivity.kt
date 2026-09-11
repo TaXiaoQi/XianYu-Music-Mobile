@@ -207,6 +207,23 @@ class MainActivity : AudioServiceActivity() {
         // 标题取内容提供者声明的 DisplayName（content:// 的 lastPathSegment 通常是
         // media 数字 ID，直接当歌名就会变成一串数字）。
         val rawName = queryDisplayName(data) ?: data.lastPathSegment ?: "song"
+        // 插件脚本（.js）：文件管理器/浏览器「打开」直接进导入流程——物化到缓存
+        // 后封装成 xianyu://open?target=plugin&file=<path>&name=<原名> 深链交给
+        // Flutter 走插件安装管线（与插件页本地导入同源）。MIME 拿不到扩展名时
+        // （部分 content provider），按 intent type 的 javascript 字样兜底判定。
+        val looksLikeJs = rawName.endsWith(".js", ignoreCase = true) ||
+            intent.type?.contains("javascript", ignoreCase = true) == true
+        if (looksLikeJs) {
+            safExecutor.execute {
+                val localPath = copyContentToCache(data, rawName)
+                if (localPath == null) return@execute
+                val link = "xianyu://open?target=plugin" +
+                    "&name=${Uri.encode(rawName)}&file=${Uri.encode(localPath)}"
+                pendingDeepLink = link
+                mainHandler.post { dispatchIfReady() }
+            }
+            return
+        }
         safExecutor.execute {
             val localPath = copyContentToCache(data, rawName)
             if (localPath == null) return@execute
