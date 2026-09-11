@@ -485,7 +485,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         colorScheme: bgScheme,
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
-      child: _DragDismissSheet(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 常驻底衬（不参与横竖屏转场淡出）：Scaffold 底色 + 模糊封面自
+          // _PlayerShell 上提至此。转场内容淡出到底/淡入初期时整条子树接近
+          // 全透明，若无此层托底会透出下层路由壁纸/主题底（「闪背景」）。
+          Positioned.fill(
+            child: ColoredBox(
+              color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
+            ),
+          ),
+          Positioned.fill(
+            // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
+            child: _BlurredCoverBackground(current: current),
+          ),
+          _DragDismissSheet(
         // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
           behavior: HitTestBehavior.translucent,
@@ -507,6 +522,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   hasRomaji: hasRomaji,
                 ),
         ),
+      ),
+        ],
       ),
     );
   }
@@ -538,7 +555,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     return LandscapeGate.sequential(
       portrait: _PlayerShell(
         current: current,
-        backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
         // 顶栏 + 封面：封面模式下封面（固定）放在顶栏之下、歌词预览之上。
         top: [
           Padding(
@@ -697,7 +713,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   }) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
       isLandscape: true,
       // 顶栏：返回 + 居中歌名/歌手（参照桌面版顶部，无「正在播放」占位标题）；
       // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
@@ -878,7 +893,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 class _PlayerShell extends StatelessWidget {
   const _PlayerShell({
     this.current,
-    this.backgroundColor,
     this.isLandscape = false,
     this.top = _noSlots,
     required this.flexible,
@@ -889,9 +903,6 @@ class _PlayerShell extends StatelessWidget {
   static const List<Widget> _noSlots = [];
 
   final QueueItem? current;
-
-  /// Scaffold 背景色；默认与高级模式一致（surface 压暗到 60% 黑）。
-  final Color? backgroundColor;
 
   /// 横屏时对 SafeArea 内层补偿挖孔安全区。
   final bool isLandscape;
@@ -910,25 +921,20 @@ class _PlayerShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    // 背景底色与模糊封面已上提为路由级常驻底衬（不参与横竖屏转场淡出）。
+    // 本 Scaffold 只保留 Material 祖先（IconButton/InkWell 依赖）与
+    // SafeArea 载体，背景透明——否则转场内容淡出时它会连同整条子树一起
+    // 变透明，透出下层路由壁纸（「闪背景」）。
     return Scaffold(
-      backgroundColor:
-          backgroundColor ?? Color.lerp(scheme.surface, Colors.black, 0.6),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
-          _BlurredCoverBackground(current: current),
-          SafeArea(
-            // 竖屏沿用系统四边安全区；横屏让播放页插进摄像头区域（左右不再避让挖孔），
-            // 与主内容用满摄像区保持一致，避免仅单侧避让挖孔造成左右不对称。
-            top: true,
-            bottom: true,
-            left: !isLandscape,
-            right: !isLandscape,
-            child: _body(),
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        // 竖屏沿用系统四边安全区；横屏让播放页插进摄像头区域（左右不再避让挖孔），
+        // 与主内容用满摄像区保持一致，避免仅单侧避让挖孔造成左右不对称。
+        top: true,
+        bottom: true,
+        left: !isLandscape,
+        right: !isLandscape,
+        child: _body(),
       ),
     );
   }
@@ -1200,7 +1206,6 @@ class _TraditionalPlayerLayoutState
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Colors.transparent,
       top: [
         _buildTopBar(context),
       ],
@@ -1259,7 +1264,6 @@ class _TraditionalPlayerLayoutState
   Widget _buildTraditionalLandscape(BuildContext context, QueueItem? current) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Colors.transparent,
       isLandscape: true,
       // 顶栏随外层自动隐藏计时收起（触摸唤回由外层 Listener 负责）。
       top: [
