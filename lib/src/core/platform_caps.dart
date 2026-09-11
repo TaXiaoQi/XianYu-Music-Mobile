@@ -15,6 +15,12 @@ abstract final class PlatformCaps {
   /// 当前是否 iOS。
   static bool get isIOS => !kIsWeb && Platform.isIOS;
 
+  /// 当前是否鸿蒙（HarmonyOS NEXT，Flutter-OH 引擎）。dart:io 没有
+  /// isOhos，且 Platform.isXxx 系列在 ohos 上全为 false，只能按
+  /// operatingSystem 字符串判定（与 Flutter-OH fork 的
+  /// TargetPlatform.ohos 映射同一依据）。
+  static bool get isOhos => !kIsWeb && Platform.operatingSystem == 'ohos';
+
   /// 悬浮歌词窗（Android WindowManager overlay，iOS 无全局悬浮窗 API）。
   static bool get supportsFloatingLyrics => isAndroid;
 

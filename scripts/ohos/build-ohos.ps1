@@ -23,6 +23,7 @@ param(
     [switch]$SkipRust,
     [switch]$SkipMirror,
     [switch]$Codegen,
+    [string]$Device = '',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$FlutterArgs
 )
 
@@ -80,9 +81,13 @@ if ($Codegen) {
 if (-not $SkipMirror) {
     Write-Host "[ohos] mirroring project -> $MirrorDir" -ForegroundColor Cyan
     New-Item -ItemType Directory -Force -Path $MirrorDir | Out-Null
+    # /XF matches SOURCE paths for copy and DEST paths for deletion: bare
+    # names exclude main->mirror copy of files the mirror must own.
+    # (pubspec.lock: mirror keeps its ohos-resolved lock - main's would churn
+    # pub get + ohpm prune every run, unmaterializing patches)
     & robocopy $ProjectRoot $MirrorDir /MIR /NFL /NDL /NJH /NJS /NP `
         /XD .git .dart_tool .idea build .gradle releases poc_ohos android ios docs test tool oh_modules node_modules .hvigor "$MirrorDir\rust" "$MirrorDir\ohos\entry\libs" `
-        /XF "$MirrorDir\pubspec_overrides.yaml" "$MirrorDir\ohos\build-profile.json5" "$MirrorDir\ohos\local.properties" *.hap *.so
+        /XF pubspec_overrides.yaml pubspec.lock "$MirrorDir\ohos\build-profile.json5" "$MirrorDir\ohos\local.properties" *.hap *.so
     if ($LASTEXITCODE -ge 8) { throw "robocopy mirror failed (exit=$LASTEXITCODE)" }
     # robocopy success codes 0-7; normalize for the rest of the script
     $global:LASTEXITCODE = 0
@@ -92,10 +97,11 @@ if (-not $SkipMirror) {
 Push-Location $MirrorDir
 try {
     $overridesDst = Join-Path $MirrorDir 'pubspec_overrides.yaml'
-    if (-not (Test-Path $overridesDst)) {
-        Copy-Item (Join-Path $ScriptDir 'pubspec-ohos-overrides.yaml') $overridesDst
-        Write-Host '[ohos] pubspec_overrides.yaml written (mirror only)'
-    }
+    # ALWAYS (re)write from the template: the template is the single source of
+    # truth (a conditional copy left a stale overrides file in place after the
+    # template gained new entries - deps silently stayed on the old forks).
+    Copy-Item (Join-Path $ScriptDir 'pubspec-ohos-overrides.yaml') $overridesDst -Force
+    Write-Host '[ohos] pubspec_overrides.yaml synced from template (mirror only)'
 
     # create/repair the ohos template: trigger on the entry module profile
     # (a bare `ohos/` existence check is not enough - partial trees from an
@@ -199,16 +205,12 @@ try {
     & flutter pub get
     if ($LASTEXITCODE -ne 0) { throw "pub get failed ($LASTEXITCODE)" }
 
-    # materialize oh_modules BEFORE patching: hvigor's own ohpm install runs
-    # later and would otherwise overwrite patched embedding files when the
-    # installed variant changes (e.g. target-platform switch)
-    Write-Host '[ohos] ohpm install (pre-patch) ...' -ForegroundColor Cyan
-    Push-Location (Join-Path $MirrorDir 'ohos')
-    try {
-        & ohpm install
-        if ($LASTEXITCODE -ne 0) { Write-Warning 'ohpm install failed - hvigor will retry' }
-    } finally { Pop-Location }
-
+    # NOTE: no manual `ohpm install` here - outside hvigor it only PRUNES the
+    # materialized oh_modules without reinstalling (which would discard the
+    # applied embedding patch and force a wasted first attempt every build).
+    # oh_modules is materialized by hvigor during `flutter build hap`; if the
+    # embedding package is (re)installed unpatched, attempt 1 fails and the
+    # retry below patches + rebuilds. Steady state passes attempt 1 directly.
     & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
     & (Join-Path $ScriptDir 'manifest-ohos.ps1') -ProjectRoot $MirrorDir
 
@@ -217,9 +219,12 @@ try {
     $dstOhos = Join-Path $ProjectRoot 'ohos'
     if (Test-Path $srcOhos) {
         New-Item -ItemType Directory -Force -Path $dstOhos | Out-Null
-        & robocopy $srcOhos $dstOhos /E /NFL /NDL /NJH /NJS /NP `
-            /XD build oh_modules libs node_modules .hvigor .clangd `
-            /XF "$dstOhos\build-profile.json5" "$dstOhos\local.properties" *.hap *.so
+    # /XF matches SOURCE paths for copy: exclude the mirror's build-profile
+    # (carries machine-local signing material) and local.properties from the
+    # back-sync; entry's template build-profile.json5 still syncs.
+    & robocopy $srcOhos $dstOhos /E /NFL /NDL /NJH /NJS /NP `
+        /XD build oh_modules libs node_modules .hvigor .clangd `
+        /XF "$srcOhos\build-profile.json5" local.properties *.hap *.so
         if ($LASTEXITCODE -ge 8) { throw "ohos/ back-sync failed (exit=$LASTEXITCODE)" }
         $global:LASTEXITCODE = 0
     }

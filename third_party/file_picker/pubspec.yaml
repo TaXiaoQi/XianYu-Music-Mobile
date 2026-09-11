@@ -1,0 +1,55 @@
+name: file_picker
+description: A package that allows you to use a native file explorer to pick single or multiple absolute file paths, with extension filtering support.
+homepage: https://github.com/miguelpruivo/plugins_flutter_file_picker
+repository: https://gitcode.com/CPF-Flutter/fluttertpc_file_picker
+issue_tracker: https://github.com/miguelpruivo/flutter_file_picker/issues
+version: 10.3.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+
+  flutter_plugin_android_lifecycle: ^2.0.22
+  plugin_platform_interface: ^2.1.8
+  path: ^1.9.0
+  # XY shim: ffi/win32 已随 windows FFI 实现一起停用（无条件 stub）——
+  # 移动端不跑 Windows，且旧实现按 win32 5.x API 编写，与 6.x 不兼容。
+  cross_file: ^0.3.3+4
+  web: ^1.1.0
+  dbus: ^0.7.11
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.mr.flutter.plugin.filepicker
+        pluginClass: FilePickerPlugin
+        dartPluginClass: FilePickerIO
+      ios:
+        pluginClass: FilePickerPlugin
+        dartPluginClass: FilePickerIO
+      web:
+        pluginClass: FilePickerWeb
+        fileName: _internal/file_picker_web.dart
+      macos:
+        pluginClass: FilePickerPlugin
+        dartPluginClass: FilePickerMacOS
+      linux:
+        dartPluginClass: FilePickerLinux
+      # XY shim: windows 平台声明已移除（移动工程不构建 Windows，且 stub 无
+      # registerWith）——保留会让 flutter 工具生成的 dart_plugin_registrant
+      # 引用不存在的 FilePickerWindows.registerWith，导致 ohos kernel 编译失败。
+      ohos:
+        package: com.file_picker
+        pluginClass: FilePickerPlugin

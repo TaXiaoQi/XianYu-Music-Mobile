@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart' show defaultAuthBaseUrl;
 import '../auth/server_models.dart';
+import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../device/device_info.dart';
 import '../navigation/routes.dart';
@@ -159,7 +160,8 @@ String absoluteDownloadUrl(String url) {
 
 /// 手动检查更新（如「关于」页按钮）：
 /// [silent] 为 true 时静默，不弹任何提示；否则出错/无新版本时用 toast 提示。
-/// iOS 由 App Store 托管更新，不做应用内自更新（入口已隐藏，此处兜底）。
+/// iOS 由 App Store 托管更新、ohos 首版无应用市场分发，均不做应用内自更新
+/// （入口已隐藏，此处兜底）。
 Future<void> checkAppUpdate(
   BuildContext context,
   WidgetRef ref, {
@@ -168,6 +170,12 @@ Future<void> checkAppUpdate(
   if (Platform.isIOS) {
     if (!silent && context.mounted) {
       _toast(context, tr('iOS 版请在 App Store 内更新'));
+    }
+    return;
+  }
+  if (PlatformCaps.isOhos) {
+    if (!silent && context.mounted) {
+      _toast(context, tr('鸿蒙版请通过官网获取新版本'));
     }
     return;
   }
@@ -204,9 +212,9 @@ Future<void> checkAppUpdate(
 
 /// 启动自动检查：静默。仅当设置开启「启动检测」且当日未弹过时，弹出升级窗。
 /// 商店托管安装（F-Droid/Play）时直接跳过，不请求、不弹窗。
-/// iOS 由 App Store 托管更新，直接跳过。
+/// iOS 由 App Store 托管更新、ohos 无自更新渠道，直接跳过。
 Future<void> maybePromptStartupUpdate(WidgetRef ref) async {
-  if (Platform.isIOS) return;
+  if (Platform.isIOS || PlatformCaps.isOhos) return;
   if (await _isStoreInstall()) return;
   final mode = ref.read(settingsProvider).valueOrNull?.updateCheckMode;
   if (mode == 'never') return;
