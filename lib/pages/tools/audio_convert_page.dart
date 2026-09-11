@@ -229,7 +229,12 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       if (mounted) setState(() {});
     }
 
-    if (mounted) setState(() => _busy = false);
+    if (mounted) {
+      setState(() => _busy = false);
+      final okCount = _results.where((r) => r.status == _Status.done).length;
+      final failCount = _results.length - okCount;
+      if (okCount > 0) _showBatchDoneDialog(context, okCount, failCount, _results);
+    }
   }
 
   Future<String?> _pickOutDir() async {
@@ -605,6 +610,70 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showBatchDoneDialog(
+      BuildContext ctx, int okCount, int failCount, List<_Item> results) async {
+    final scheme = Theme.of(ctx).colorScheme;
+    final ok = results.where((r) => r.status == _Status.done).toList();
+
+    await showDialog<void>(
+      context: ctx,
+      builder: (dctx) {
+        return AlertDialog(
+          icon: Icon(Icons.check_circle,
+              color: Colors.green.shade700, size: 32),
+          title: Text(tr('转换完成')),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: ok.length.clamp(0, 5),
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemBuilder: (_, i) {
+                final r = ok[i];
+                return Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(r.output ?? '',
+                          style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            if (ok.length > 1)
+              TextButton.icon(
+                onPressed: () async {
+                  await _share(ok.first);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                icon: const Icon(Icons.share_outlined, size: 17),
+                label: Text(tr('分享第一个')),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: Text(tr('完成')),
+            ),
+          ],
+        );
+      },
     );
   }
 }

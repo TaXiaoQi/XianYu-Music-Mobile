@@ -6,6 +6,7 @@ import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -36,6 +37,15 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   double _start = 0;
   double _end = 0;
 
+  // 试听
+  final AudioPlayer _player = AudioPlayer();
+  bool _isPlaying = false;
+  bool _isLoading = false;
+  double _playProgress = 0; // 当前播放位置
+  double _playBuffered = 0;
+  double _playStartOffset = 0; // 试听从哪里开始（_start）
+  bool _previewRange = true; // true = 试听 [_start, _end]，false = 全文件
+
   _OutMode _mode = _OutMode.original;
   String _recodeFmt = 'mp3'; // 与 audio_convert 保持一致的集合
   bool _keepCover = true;
@@ -51,9 +61,78 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   @override
   void dispose() {
+    _player.stop();
+    _player.dispose();
     _controllerStart.dispose();
     _controllerEnd.dispose();
     super.dispose();
+  }
+
+  // ===== 试听 =====
+
+  Future<void> _startPreview({bool fromStartPoint = true}) async {
+    if (_filePath == null || _duration <= 0) return;
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _playStartOffset = fromStartPoint ? _start : 0;
+    });
+
+    try {
+      await _player.setFilePath(_filePath!);
+      await _player.seek(Duration(milliseconds: (_playStartOffset * 1000).round()));
+      // 监听播放位置，到 _end 自动停
+      _player.positionStream.listen((pos) {
+        final cur = pos.inMilliseconds / 1000.0;
+        final max = _previewRange ? _end : _duration;
+        if (cur >= max) {
+          _player.stop();
+          return;
+        }
+        if (mounted) setState(() => _playProgress = cur);
+      });
+      _player.playingStream.listen((playing) {
+        if (mounted) setState(() => _isPlaying = playing);
+      });
+      await _player.play();
+    } catch (_) {
+      // ignore
+    }
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _togglePreview() async {
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      if (_player.sequence != null) {
+        // 已经加载过，直接从当前位置或 start 开始
+        final curMs = _player.position.inMilliseconds;
+        final startMs = (_playStartOffset * 1000).round();
+        final maxMs =
+            (_previewRange ? _end : _duration).round() * 1000;
+        if (curMs >= maxMs - 100) {
+          // 已经播完了，重头来
+          await _player.seek(Duration(milliseconds: startMs));
+        } else if (curMs < startMs - 50) {
+          await _player.seek(Duration(milliseconds: startMs));
+        }
+        await _player.play();
+      } else {
+        await _startPreview(fromStartPoint: _previewRange);
+      }
+    }
+  }
+
+  Future<void> _stopPreview() async {
+    await _player.stop();
+    if (mounted) setState(() => _playProgress = 0);
+  }
+
+  Future<void> _seekPreview(double secs) async {
+    await _player.seek(Duration(milliseconds: (secs * 1000).round()));
+    if (mounted) setState(() => _playProgress = secs);
   }
 
   // ===== 文件选择 + 时长探测 =====
@@ -224,6 +303,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
       final rc = await session.getReturnCode();
       if (ReturnCode.isSuccess(rc)) {
         setState(() => _outPath = outPath);
+        if (mounted) _showSuccessDialog(context, outPath);
       } else {
         final logs = await session.getLogs();
         final err = logs.isNotEmpty ? logs.last.getMessage() ?? '' : '';
@@ -331,6 +411,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
                 if (_filePath != null) ...[
                   const SizedBox(height: 12),
                   _buildRangeCard(scheme),
+                  const SizedBox(height: 12),
+                  _buildPreviewCard(scheme),
                   const SizedBox(height: 12),
                   _buildOutputCard(scheme),
                 ],
@@ -564,6 +646,103 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     );
   }
 
+  Widget _buildPreviewCard(ColorScheme scheme) {
+    final previewTotal = _previewRange ? (_end - _start) : _duration;
+    final previewPos = _previewRange
+        ? (_playProgress - _playStartOffset).clamp(0.0, previewTotal)
+        : _playProgress;
+    final running = _isPlaying || _isLoading;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: appCardColor(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.play_circle_outline, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(tr('试听'),
+                  style: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              SegmentedButton<bool>(
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: [
+                  ButtonSegment(
+                    value: true,
+                    label: Text(tr('选区'), style: const TextStyle(fontSize: 11)),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    label: Text(tr('全曲'), style: const TextStyle(fontSize: 11)),
+                  ),
+                ],
+                selected: {_previewRange},
+                onSelectionChanged: running
+                    ? null
+                    : (sel) {
+                        _stopPreview();
+                        setState(() => _previewRange = sel.first);
+                      },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              IconButton.filled(
+                onPressed: _togglePreview,
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 20),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  children: [
+                    Slider(
+                      value: previewPos.clamp(0.0, previewTotal),
+                      min: 0,
+                      max: previewTotal > 0 ? previewTotal : 1,
+                      onChanged: running
+                          ? _seekPreview
+                          : null,
+                    ),
+                    Row(
+                      children: [
+                        Text(_fmtSecs(_previewRange ? _playStartOffset + previewPos : previewPos),
+                            style: TextStyle(fontSize: 10.5, color: scheme.outline)),
+                        const Spacer(),
+                        Text('/ ${_fmtSecs(_previewRange ? _end : _duration)}',
+                            style: TextStyle(fontSize: 10.5, color: scheme.outline)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _stopPreview,
+                icon: Icon(Icons.stop, size: 18, color: scheme.outline),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOutputCard(ColorScheme scheme) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
@@ -709,6 +888,51 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showSuccessDialog(BuildContext ctx, String outPath) async {
+    await showDialog<void>(
+      context: ctx,
+      builder: (dctx) {
+        return AlertDialog(
+          icon: Icon(Icons.check_circle, color: Colors.green.shade700, size: 32),
+          title: Text(tr('导出成功')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr('文件已保存到：'),
+                  style: TextStyle(color: Theme.of(dctx).colorScheme.outline)),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(dctx).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  outPath,
+                  style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(dctx);
+                await _share();
+              },
+              child: Text(tr('分享')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: Text(tr('完成')),
+            ),
+          ],
+        );
+      },
     );
   }
 }
