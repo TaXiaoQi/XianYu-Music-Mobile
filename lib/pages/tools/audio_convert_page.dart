@@ -195,7 +195,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
     setState(() {
       _results
         ..clear()
-        ..addAll(_selected.map((e) => _Item(name: e.name, input: e.input)));
+        ..addAll(_selected.map((e) => _Item(name: e.name, input: e.input, originalDir: e.originalDir)));
       _busy = true;
     });
 
