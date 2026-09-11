@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -546,7 +547,10 @@ class XianYuDeepLink {
   ) async {
     AppLogger.instance.log('deeplink', '系统打开插件脚本: $filePath');
     try {
-      final script = await File(filePath).readAsString();
+      // 读字节再容忍解码（allowMalformed）：LX 插件脚本中文注释常用 GBK 保存，
+      // readAsString 的严格 UTF-8 会抛 FormatException（与插件页本地导入同源）。
+      final bytes = await File(filePath).readAsBytes();
+      final script = utf8.decode(bytes, allowMalformed: true);
       final fileName = rawName.trim().isNotEmpty
           ? rawName.trim()
           : filePath.replaceAll('\\', '/').split('/').last;
@@ -564,7 +568,8 @@ class XianYuDeepLink {
       AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
-        showXianYuToastByOverlay(overlay, tr('插件导入失败'));
+        // toast 带上具体原因（异常文案本身已中文化），远程反馈时一眼定位
+        showXianYuToastByOverlay(overlay, '${tr('插件导入失败')}: $e');
       }
     }
   }

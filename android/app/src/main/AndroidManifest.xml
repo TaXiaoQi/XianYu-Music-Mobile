@@ -63,10 +63,17 @@
         <service android:name=".LyricsOverlayService"
             android:exported="false"/>
 
+        <!-- singleTask：外部 VIEW intent（文件管理器/QQ 打开音频与 .js 插件、
+             xianyu:// 深链）命中已运行实例时必须经 onNewIntent 复用，绝不新建。
+             旧值 singleTop + 空 taskAffinity 下，外部应用携 NEW_TASK 拉起时
+             匹配不到任何同亲和任务 → 新建任务 + 第二个 MainActivity 实例
+             （第二套 Flutter 引擎），表现为后台双弦予（其一白屏）、从 QQ 打开
+             文件后「应用变成 QQ」。singleTask 强制实例独占任务根，冷启动才建
+             新任务，热启动一律 onNewIntent 复用（onNewIntent 已实现深链派发）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
