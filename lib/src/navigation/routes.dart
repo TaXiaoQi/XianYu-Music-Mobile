@@ -40,6 +40,7 @@ import '../../pages/settings/batch_rename_page.dart';
 import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/tools/audio_convert_page.dart';
+import '../../pages/tools/audio_trim_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
 import '../../pages/scan/scan_page.dart';
@@ -418,6 +419,15 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverPage(
         context,
         (_) => const AudioConvertPage(),
+        key: state.pageKey,
+      ),
+    ),
+    // 音频剪辑（从设置页进入）。
+    GoRoute(
+      path: '/audio-trim',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const AudioTrimPage(),
         key: state.pageKey,
       ),
     ),

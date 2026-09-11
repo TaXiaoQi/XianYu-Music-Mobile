@@ -1032,9 +1032,17 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.autorenew,
             title: tr('音频格式转换'),
-            subtitle: tr('批量转换 WAV / FLAC / MP3，纯 Rust 实现'),
+            subtitle: tr('批量转换 WAV / FLAC / MP3 / AAC / Opus 等'),
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/audio-convert'),
+          ),
+          _tile(
+            context,
+            icon: Icons.content_cut,
+            title: tr('音频剪辑'),
+            subtitle: tr('截取音频区间，支持无损剪切 / 重编码'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/audio-trim'),
           ),
           _tile(
             context,
