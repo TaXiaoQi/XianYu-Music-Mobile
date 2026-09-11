@@ -4,15 +4,16 @@
 //! - 仅允许 http/https
 //! - 拒绝带用户凭据的 URL
 //! - 端口收敛到常见 Web 端口
-//! - 拒绝回环 / 私有 / link-local / 云元数据(169.254.169.254) / CGNAT / 多播 / 保留 IP
-//!   等「不可信可伪造公网可达」的目标，防止借渲染进程/插件探测或访问内网与云元数据。
+//! - 拒绝 IP 字面量指向回环 / 私有 / link-local / 云元数据(169.254.169.254) / CGNAT /
+//!   多播 / 保留 IP 等不可信目标，防止借插件探测内网与云元数据。
 //!
-//! > 说明：插件音源、在线搜索等业务本就要求「任意公网域名」，因此这里用
-//! > IP 黑名单（仅公网可达）而非域名白名单；账号/更新等固定目标仍按各自配置收敛。
+//! > 说明：插件音源、在线搜索等业务本就要求「任意公网域名」，因此用 IP 字面量黑名单
+//! > 而非域名白名单；域名解析结果不做禁区拒绝（兼容 VPN/TUN fake-ip 与企业内网 DNS），
+//! > rebinding 由校验期钉住防御。
 
 use reqwest::dns::{Name, Resolve, Resolving};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Mutex, OnceLock};
 
 /// 已通过出站校验的 host → 钉住的公网解析结果（校验时刻解析）。
@@ -34,7 +35,12 @@ fn pinned_anchor(host: &str) -> Option<Vec<IpAddr>> {
     pinned_ips().lock().ok()?.get(&host.to_ascii_lowercase()).cloned()
 }
 
-/// 解析域名并拒绝任何命中禁区的 IP，返回合规的公网 IP 列表。
+/// 解析域名并返回全部解析结果（供校验期钉住与 resolver 兜底复用）。
+///
+/// 注意：不对「域名解析出的 IP」做内网/保留段拒绝——VPN/TUN（fake-ip 将所有域名
+/// 解析到 198.18.0.0/15）、企业/校园 VPN（10/8）与运营商内网 DNS 下，解析结果落在
+/// 私有段属正常链路形态，拒绝会直接杀死 VPN 用户的全部网络。域名的 SSRF/rebinding
+/// 风险由「校验期解析 + 钉住」（OutboundDnsResolver）与 IP 字面量黑名单防御。
 pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
     let mut addrs = tokio::net::lookup_host((host, port))
         .await
@@ -42,9 +48,6 @@ pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, S
     let mut out: Vec<IpAddr> = Vec::new();
     while let Some(sa) = addrs.next() {
         let ip = sa.ip();
-        if forbidden_ip(ip) {
-            return Err(format!("目标地址被禁止（内网/保留地址）: {ip}"));
-        }
         if !out.contains(&ip) {
             out.push(ip);
         }
@@ -58,7 +61,7 @@ pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, S
 /// reqwest 自定义 DNS resolver：连接时将域名解析为「已校验的公网 IP」。
 ///
 /// - 该 host 已通过出站校验（已钉住）→ 直接返回校验时刻的 IP，杜绝 rebinding；
-/// - 否则（如 reqwest 内部跟随的重定向目标）→ 即时解析并逐 IP 拒绝禁区，作为兜底防线。
+/// - 否则（如 reqwest 内部跟随的重定向目标）→ 即时解析兜底（不做禁区拒绝，见 resolve_allowed_ips）。
 #[derive(Clone, Debug, Default)]
 pub struct OutboundDnsResolver;
 
@@ -141,31 +144,17 @@ fn forbidden_ipv4(v4: Ipv4Addr) -> bool {
         || a >= 224 // 224.0.0.0/4 及以上（多播/保留）
 }
 
-/// 解析 host（域名或 IP 字面量）得到的全部地址中，任一命中不可信即拒绝。
-fn check_host(host: &str, port: u16) -> Result<(), String> {
-    // host 若本身是 IP 字面量，直接判定，避免依赖 DNS
+/// 校验 host：仅 IP 字面量命中禁区时拒绝（SSRF 核心防线，保留）。
+///
+/// 域名不做 DNS 结果黑名单校验（原因见 resolve_allowed_ips），
+/// 也不再同步阻塞 getaddrinfo —— rebinding 由校验期钉住机制防御。
+fn check_host(host: &str) -> Result<(), String> {
     if let Ok(ip) = host.parse::<IpAddr>() {
         return if forbidden_ip(ip) {
             Err(format!("目标地址被禁止（内网/保留地址）: {ip}"))
         } else {
             Ok(())
         };
-    }
-
-    // 域名：解析可能命中的全部地址，任一在禁区内都拒绝
-    let target = format!("{host}:{port}");
-    let addrs: Vec<IpAddr> = target
-        .to_socket_addrs()
-        .map_err(|e| format!("域名解析失败: {host} ({e})"))?
-        .map(|sa| sa.ip())
-        .collect();
-    if addrs.is_empty() {
-        return Err(format!("域名未解析到任何地址: {host}"));
-    }
-    for ip in addrs {
-        if forbidden_ip(ip) {
-            return Err(format!("目标地址被禁止（内网/保留地址）: {ip}"));
-        }
     }
     Ok(())
 }
@@ -225,13 +214,12 @@ pub fn validate_outbound_url_sync(url: &str) -> Result<reqwest::Url, String> {
         .trim_start_matches('[')
         .trim_end_matches(']')
         .to_string();
-    let default_port: u16 = if scheme == "https" { 443 } else { 80 };
     if let Some(p) = parsed.port() {
         if !port_allowed(p) {
             return Err(format!("端口不在允许范围（80/443/3000/8000/8080/8082/8443/8888）: {p}"));
         }
     }
-    check_host(&host, parsed.port().unwrap_or(default_port))?;
+    check_host(&host)?;
     Ok(parsed)
 }
 
