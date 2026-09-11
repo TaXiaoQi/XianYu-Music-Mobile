@@ -24,6 +24,13 @@ param(
     [switch]$SkipMirror,
     [switch]$Codegen,
     [string]$Device = '',
+    # Target CPU ABI for `flutter build hap` (default: auto-detect from the
+    # connected device). flutter run picks the device ABI automatically, but
+    # `flutter build hap` defaults to ohos-arm64 ONLY — installing that HAP on
+    # an x86_64 emulator crashes at startup with "Cannot read property
+    # nativeInit of undefined" (missing libs/x86_64/libflutter.so).
+    [ValidateSet('', 'x64', 'arm64')]
+    [string]$Abi = '',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$FlutterArgs
 )
 
@@ -250,6 +257,22 @@ if (-not $SkipRust) {
 }
 
 # ---- 8. build / run ----
+# Target ABI: explicit -Abi wins; otherwise probe the connected device's ABI
+# list (emulator = x86_64, phones = arm64). Falls back to arm64 when no device
+# is reachable — matching the historical default.
+$targetAbi = $Abi
+if ($targetAbi -eq '') {
+    $hdcExe = Join-Path $env:DEVECO_SDK_HOME 'default\openharmony\toolchains\hdc.exe'
+    $abilist = ''
+    if (Test-Path $hdcExe) {
+        $abilist = (& $hdcExe shell param get const.product.cpu.abilist 2>$null | Out-String)
+    }
+    if ($abilist -match 'x86_64') { $targetAbi = 'x64' } else { $targetAbi = 'arm64' }
+    Write-Host "[ohos] target ABI (auto-detected): $targetAbi" -ForegroundColor Cyan
+} else {
+    Write-Host "[ohos] target ABI (explicit): $targetAbi" -ForegroundColor Cyan
+}
+
 Push-Location $MirrorDir
 try {
     if ($Run) {
@@ -272,6 +295,7 @@ try {
         }
     } else {
         $buildArgs = @('build', 'hap', '--debug')
+        if ($targetAbi -eq 'x64') { $buildArgs += @('--target-platform', 'ohos-x64') }
         if ($FlutterArgs) { $buildArgs += $FlutterArgs }
         Write-Host "[ohos] flutter $($buildArgs -join ' ') ..." -ForegroundColor Cyan
         & flutter @buildArgs
