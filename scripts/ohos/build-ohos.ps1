@@ -87,7 +87,7 @@ if (-not $SkipMirror) {
     # pub get + ohpm prune every run, unmaterializing patches)
     & robocopy $ProjectRoot $MirrorDir /MIR /NFL /NDL /NJH /NJS /NP `
         /XD .git .dart_tool .idea build .gradle releases poc_ohos android ios docs test tool oh_modules node_modules .hvigor "$MirrorDir\rust" "$MirrorDir\ohos\entry\libs" `
-        /XF pubspec_overrides.yaml pubspec.lock "$MirrorDir\ohos\build-profile.json5" "$MirrorDir\ohos\local.properties" *.hap *.so
+        /XF pubspec_overrides.yaml pubspec.lock "$ProjectRoot\ohos\build-profile.json5" "$MirrorDir\ohos\build-profile.json5" local.properties *.hap *.so
     if ($LASTEXITCODE -ge 8) { throw "robocopy mirror failed (exit=$LASTEXITCODE)" }
     # robocopy success codes 0-7; normalize for the rest of the script
     $global:LASTEXITCODE = 0
@@ -112,18 +112,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "flutter create failed ($LASTEXITCODE)" }
     }
 
-    # bundle name: P0 uses the PoC debug profile (bound to
-    # cn.xianyumusic.xianyu_ohos_poc - profile/HAP mismatch would fail signing).
-    # P4 real-device phase: switch to cn.xianyumusic.xianyu + its own profile.
-    $appJson5 = Join-Path $MirrorDir 'ohos\AppScope\app.json5'
-    if (Test-Path $appJson5) {
-        $txt = [System.IO.File]::ReadAllText($appJson5, [System.Text.UTF8Encoding]::new($false))
-        if ($txt -notmatch '"bundleName"\s*:\s*"cn\.xianyumusic\.xianyu_ohos_poc"') {
-            $txt = [regex]::Replace($txt, '"bundleName"\s*:\s*"[^"]*"', '"bundleName": "cn.xianyumusic.xianyu_ohos_poc"')
-            [System.IO.File]::WriteAllText($appJson5, $txt, [System.Text.UTF8Encoding]::new($false))
-            Write-Host '[ohos] bundleName -> cn.xianyumusic.xianyu_ohos_poc (PoC debug profile)'
-        }
-    }
+    # bundle name: NO rewrite - the main project's ohos/AppScope/app.json5 is
+    # the single source of truth (com.xianyumusic.app since the AGC release
+    # alignment, commit 36704e1). Earlier revisions forced the PoC debug
+    # profile's bundle name here; that material is now obsolete and any
+    # rewrite would clobber the release-aligned name.
 
     # useNormalizedOHMUrl: tencent_kit's @tencent/qq-open-sdk is a BYTECODE har
     # and hvigor refuses it without normalized OHM urls (00306046). DevEco 6 /
@@ -132,23 +125,43 @@ try {
     # The file is REWRITTEN canonically every run (signingConfigs preserved) -
     # immune to stale-buffer writebacks and mirror recreation.
     $bpJson5 = Join-Path $MirrorDir 'ohos\build-profile.json5'
-    if (Test-Path $bpJson5) {
-        $existing = [System.IO.File]::ReadAllText($bpJson5, [System.Text.UTF8Encoding]::new($false))
-        $sign = if ($existing -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') { $Matches[1].Trim() } else { '[]' }
-        # P0: no signing config yet -> reuse the PoC auto-generated debug
-        # material (machine-wide in ~\.ohos\config). The profile is bound to
-        # the PoC bundle name, so the app.json5 step below must match it.
-        # P4 real-device phase replaces this with a cn.xianyumusic.xianyu profile.
-        if ($sign -eq '[]') {
-            $pocBp = 'D:\xianyu-poc\ohos\build-profile.json5'
-            if (Test-Path $pocBp) {
-                $poc = [System.IO.File]::ReadAllText($pocBp, [System.Text.UTF8Encoding]::new($false))
-                if ($poc -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') {
-                    $sign = $Matches[1].Trim()
-                    Write-Host '[ohos] signingConfigs imported from PoC debug profile'
-                }
+
+    # signingConfigs source, in order of preference:
+    # 1. main project ohos/build-profile.json5 (DevEco "Automatically generate
+    #    signature" run on the main project - the project the user actually
+    #    opens; material is machine-wide in ~\.ohos\config and bound to the
+    #    release bundle name com.xianyumusic.app). Main FIRST: fresh signing
+    #    immediately wins over stale mirror material.
+    # 2. the mirror's existing signingConfigs (auto-signing run on the mirror
+    #    project, or a prior canonical write).
+    # 3. PoC debug profile (D:\xianyu-poc) - LAST RESORT ONLY: bound to the
+    #    retired cn.xianyumusic.xianyu_ohos_poc name, cannot sign
+    #    com.xianyumusic.app (kept for a legacy-name rebuild only).
+    $sign = '[]'
+    foreach ($src in @(
+        @{ Label = 'MAIN project build-profile'; Path = (Join-Path $ProjectRoot 'ohos\build-profile.json5') },
+        @{ Label = 'mirror build-profile';       Path = $bpJson5 }
+    )) {
+        if ($sign -eq '[]' -and (Test-Path $src.Path)) {
+            $content = [System.IO.File]::ReadAllText($src.Path, [System.Text.UTF8Encoding]::new($false))
+            if ($content -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') {
+                $sign = $Matches[1].Trim()
+                Write-Host "[ohos] signingConfigs imported from $($src.Label)"
             }
         }
+    }
+    if ($sign -eq '[]') {
+        $pocBp = 'D:\xianyu-poc\ohos\build-profile.json5'
+        if (Test-Path $pocBp) {
+            $poc = [System.IO.File]::ReadAllText($pocBp, [System.Text.UTF8Encoding]::new($false))
+            if ($poc -match '"signingConfigs"\s*:\s*(\[[^\]]*\])') {
+                $sign = $Matches[1].Trim()
+                Write-Host '[ohos] signingConfigs imported from PoC debug profile (BOUND TO RETIRED BUNDLE NAME - signing will fail for com.xianyumusic.app)' -ForegroundColor Yellow
+            }
+        }
+    }
+    if (Test-Path $bpJson5) {
+        $existing = [System.IO.File]::ReadAllText($bpJson5, [System.Text.UTF8Encoding]::new($false))
         $canonical = @'
 
 {
@@ -245,6 +258,18 @@ try {
         if ($FlutterArgs) { $runArgs += $FlutterArgs }
         Write-Host "[ohos] flutter $($runArgs -join ' ')" -ForegroundColor Cyan
         & flutter @runArgs
+        if ($LASTEXITCODE -ne 0) {
+            # Same two-stage logic as build-hap below: DevEco opening the mirror
+            # project (or any ohpm re-materialization) swaps the embedding
+            # package to an unpatched instance, which fails attempt 1. Patch
+            # (now-materialized) oh_modules and retry once. A SUCCESSFUL run
+            # stays alive in this foreground session, so nonzero exit here
+            # means a build failure, not an app exit.
+            Write-Host '[ohos] flutter run attempt 1 failed - patch embedding and retry ...' -ForegroundColor Yellow
+            & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
+            & flutter @runArgs
+            if ($LASTEXITCODE -ne 0) { throw "flutter run failed ($LASTEXITCODE)" }
+        }
     } else {
         $buildArgs = @('build', 'hap', '--debug')
         if ($FlutterArgs) { $buildArgs += $FlutterArgs }
