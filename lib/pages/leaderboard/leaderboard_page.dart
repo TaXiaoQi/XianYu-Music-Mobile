@@ -189,7 +189,10 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
   int _requestId = 0;
 
   /// 逐条入场控制器（桌面端同款 stagger 节奏，见 _StaggerIn）。
-  late final AnimationController _enter = AnimationController(
+  /// 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  /// 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _enterC;
+  AnimationController get _enter => _enterC ??= AnimationController(
       vsync: this, duration: const Duration(milliseconds: _StaggerIn.totalMs));
 
   @override
@@ -200,7 +203,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
 
   @override
   void dispose() {
-    _enter.dispose();
+    _enterC?.dispose();
     super.dispose();
   }
 

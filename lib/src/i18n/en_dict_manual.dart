@@ -74,6 +74,7 @@ const Map<String, String> enDictManual = {
   '安装插件': 'Install plugin',
   '安装音源': 'Install music source',
   '安装音源插件后生成推荐': 'Recommendations are generated after a source plugin is installed',
+  '每日推荐获取失败，点击重试': 'Failed to load daily picks, tap to retry',
   '按标题': 'By title',
   '按歌手': 'By artist',
   '按专辑': 'By album',
@@ -188,9 +189,14 @@ const Map<String, String> enDictManual = {
   '导航栏与迷你播放条使用 shader 折射与动态光影':
       'Navigation bar and mini player use shader refraction and dynamic lighting',
   '导入外部歌单': 'Import external playlists',
+  '导入音频文件': 'Import audio files',
   '导入完成': 'Import complete',
   '导入为歌单': 'Import as playlist',
   '地区限制': 'Region restricted',
+  '未选择有效音频文件': 'No valid audio file selected',
+  '沙盒目录（下载/导入的音乐）会自动扫描；也可点击右上角「+」导入音频文件':
+      'Sandbox folders (downloaded/imported music) are scanned automatically; tap + to import audio files',
+  '{n} 个文件已导入，开始扫描': '{n} files imported, scanning started',
   '登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{defaultAuthBaseUrl}':
       'Root address and signing key for sign-in, registration and password recovery endpoints. For a self-hosted backend, copy the server API and signing key from the server dashboard. Default: {defaultAuthBaseUrl}',
   '登录后即可查看反馈': 'Sign in to view feedback',

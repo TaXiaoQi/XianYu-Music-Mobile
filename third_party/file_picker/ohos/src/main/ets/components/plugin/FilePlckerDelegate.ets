@@ -233,7 +233,9 @@ export class FilePickerDelegate {
         let documentSelectOptions = new picker.DocumentSelectOptions();
         let documentPicker = new picker.DocumentViewPicker(commonContext);
         documentSelectOptions.maxSelectNumber = this.isMultipleSelection ? 9 : 1;
-        documentSelectOptions.fileSuffixFilters = this.allowedExtensions;
+        // Dart 侧 allowedExtensions 无点号（如 "mp3"），OHOS fileSuffixFilters
+        // 要求带点（如 ".mp3"），这里归一化，否则过滤器不生效。
+        documentSelectOptions.fileSuffixFilters = this.allowedExtensions.map((s: string) => s.startsWith('.') ? s : '.' + s);
         documentPicker.select(documentSelectOptions).then(async (documentSelectResult: Array<string>) => {
           this.savaFilePath = documentSelectResult;
           let anySelectUris: Array<string> = documentSelectResult;
@@ -242,9 +244,13 @@ export class FilePickerDelegate {
           }
           //this.bytes = await this.readFileData(anySelectUris[0]);
           this.bytesList = [];
-          for (const uri of anySelectUris) {
-            const bytes = await this.readFileData(uri);
-            this.bytesList.push(bytes);
+          // 仅 withData 时读入内存：音频等大文件恒读会内存暴涨
+          //（openFileStream 恒拷贝到 cache 并返回路径，withData=false 走路径）。
+          if (this.loadDataToMemory) {
+            for (const uri of anySelectUris) {
+              const bytes = await this.readFileData(uri);
+              this.bytesList.push(bytes);
+            }
           }
           if (this.isMultipleSelection) {
             this.handlingMultipleResults(anySelectUris)

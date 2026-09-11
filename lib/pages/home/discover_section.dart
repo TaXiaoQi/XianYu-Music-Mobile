@@ -131,8 +131,13 @@ class _DailyCard extends ConsumerWidget {
     if (!async.isLoading &&
         (state == null || !state.loggedIn || state.items.isEmpty)) {
       final notLoggedIn = state != null && !state.loggedIn;
+      // provider error（服务器算法下发失败/瞬时网络等）：valueOrNull 为 null，
+      // 此前会误显示「安装音源插件后生成推荐」且无重试入口。单独成态：点击重试。
+      final hasError = async.hasError && state == null;
       return _CardContainer(
-        onTap: () => context.push(notLoggedIn ? '/account' : '/plugin'),
+        onTap: hasError
+            ? () => ref.invalidate(dailyRecommendProvider)
+            : () => context.push(notLoggedIn ? '/account' : '/plugin'),
         child: Row(
           children: [
             Icon(Icons.auto_awesome_outlined,
@@ -140,13 +145,20 @@ class _DailyCard extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                notLoggedIn ? tr('登录后解锁每日推荐') : tr('安装音源插件后生成推荐'),
+                hasError
+                    ? tr('每日推荐获取失败，点击重试')
+                    : notLoggedIn
+                        ? tr('登录后解锁每日推荐')
+                        : tr('安装音源插件后生成推荐'),
                 style: TextStyle(
                     fontSize: 13, color: scheme.onSurfaceVariant),
               ),
             ),
-            Icon(Icons.chevron_right,
-                size: 18, color: scheme.onSurfaceVariant),
+            Icon(
+              hasError ? Icons.refresh : Icons.chevron_right,
+              size: hasError ? 20 : 18,
+              color: scheme.onSurfaceVariant,
+            ),
           ],
         ),
       );

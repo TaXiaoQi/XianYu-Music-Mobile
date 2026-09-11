@@ -92,7 +92,10 @@ class _SequentialFadeGate extends StatefulWidget {
 
 class _SequentialFadeGateState extends State<_SequentialFadeGate>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
+  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _cC;
+  AnimationController get _c => _cC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 130),
   );
@@ -137,7 +140,7 @@ class _SequentialFadeGateState extends State<_SequentialFadeGate>
 
   @override
   void dispose() {
-    _c.dispose();
+    _cC?.dispose();
     super.dispose();
   }
 }

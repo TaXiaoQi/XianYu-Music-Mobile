@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/core/app_colors.dart';
@@ -54,6 +56,70 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         ref.read(libraryProvider.notifier).checkSafFolderAuthorization();
       }
     });
+    // OHOS：首访预置沙盒目录（Downloads/Music），下载与导入的音乐自动入库。
+    Future.microtask(_seedSandboxFolders);
+  }
+
+  /// OHOS 沙盒库：扫描目录为空时预置应用 Documents 下的 Downloads/Music。
+  /// HarmonyOS NEXT 无任意目录访问（同 iOS 沙盒），本地库仅覆盖沙盒内容。
+  Future<void> _seedSandboxFolders() async {
+    if (!PlatformCaps.supportsSandboxLibrary) return;
+    final existing = ref.read(scanFoldersProvider).valueOrNull;
+    if (existing == null || existing.isNotEmpty) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      for (final sub in const ['Downloads', 'Music']) {
+        final dir = Directory(p.join(docs.path, sub));
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        await ref.read(scanFoldersProvider.notifier).addFolder(dir.path);
+      }
+    } catch (_) {
+      // 预置失败不打扰用户，扫描目录仍可手动管理（移除后不再重复预置）。
+    }
+  }
+
+  /// OHOS 导入音频：系统文件选择器多选 → 拷入沙盒 Music → 自动扫描入库。
+  /// DocumentViewPicker 授予所选文件的读权限，拷贝进沙盒后即可长期访问。
+  static const _audioExts = [
+    'mp3', 'flac', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'ape', 'wma', 'aiff',
+  ];
+
+  Future<void> _importFiles() async {
+    setState(() => _adding = true);
+    try {
+      // allowMultiple：ohos vendored fork（10.x API）必需；pub 12.x 上弃用但仍生效。
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: _audioExts,
+        // ignore: deprecated_member_use
+        allowMultiple: true,
+      );
+      if (files.isEmpty) return;
+      if (!mounted) return;
+      final docs = await getApplicationDocumentsDirectory();
+      final destDir = Directory(p.join(docs.path, 'Music'));
+      if (!destDir.existsSync()) destDir.createSync(recursive: true);
+      var imported = 0;
+      for (final f in files) {
+        final src = f.path;
+        if (src == null) continue;
+        final srcFile = File(src);
+        if (!srcFile.existsSync()) continue;
+        await srcFile.copy(p.join(destDir.path, p.basename(src)));
+        imported++;
+      }
+      if (!mounted) return;
+      if (imported == 0) {
+        _toast(tr('未选择有效音频文件'));
+        return;
+      }
+      _toast(tr('{n} 个文件已导入，开始扫描', {'n': imported}));
+      await _startScan();
+    } catch (e) {
+      _toast('导入失败：$e');
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
   }
 
   void _toast(String msg) {
@@ -404,7 +470,12 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                           folders: folders,
                           lost: lost,
                           adding: _adding,
-                          onAdd: _adding ? null : _addFolder,
+                          importMode: PlatformCaps.supportsSandboxLibrary,
+                          onAdd: _adding
+                              ? null
+                              : (PlatformCaps.supportsSandboxLibrary
+                                  ? _importFiles
+                                  : _addFolder),
                           onRemove: _removeFolder,
                           onReauthorize: _reauthorize,
                         ),
@@ -599,6 +670,7 @@ class _ScanFoldersCard extends ConsumerWidget {
     required this.folders,
     required this.lost,
     required this.adding,
+    this.importMode = false,
     required this.onAdd,
     required this.onRemove,
     required this.onReauthorize,
@@ -607,6 +679,8 @@ class _ScanFoldersCard extends ConsumerWidget {
   final List<ScanFolder> folders;
   final List<String> lost;
   final bool adding;
+  /// OHOS 沙盒库模式：「+」为导入音频文件（无任意目录概念）。
+  final bool importMode;
   final VoidCallback? onAdd;
   final void Function(String path) onRemove;
   final void Function(String path) onReauthorize;
@@ -639,7 +713,7 @@ class _ScanFoldersCard extends ConsumerWidget {
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: tr('添加目录'),
+                  tooltip: importMode ? tr('导入音频文件') : tr('添加目录'),
                   onPressed: onAdd,
                   icon: adding
                       ? const SizedBox(
@@ -656,7 +730,9 @@ class _ScanFoldersCard extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
               child: Text(
-                tr('还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）'),
+                importMode
+                    ? tr('沙盒目录（下载/导入的音乐）会自动扫描；也可点击右上角「+」导入音频文件')
+                    : tr('还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）'),
                 style: TextStyle(
                     fontSize: 12, color: scheme.onSurfaceVariant),
               ),

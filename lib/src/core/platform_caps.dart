@@ -40,6 +40,13 @@ abstract final class PlatformCaps {
   /// 本地库仅限应用内文件——下载与「文件」App 导入）。
   static bool get supportsFolderScan => isAndroid;
 
+  /// OHOS 本地库：HarmonyOS NEXT 沙盒与 iOS 同级，任意目录扫描不可行；
+  /// 预置应用沙盒目录（Downloads/Music）扫描 + 系统选择器导入音频文件。
+  static bool get supportsSandboxLibrary => isOhos;
+
+  /// 本地页「+」入口（文件夹页）：Android 任意目录扫描，OHOS 沙盒库 + 导入。
+  static bool get showsLibraryAddEntry => supportsFolderScan || supportsSandboxLibrary;
+
   /// 自定义下载目录（Android 直写任意目录；iOS 固定应用 Documents/Downloads，
   /// 经「文件」App 访问）。
   static bool get supportsCustomDownloadDir => isAndroid;

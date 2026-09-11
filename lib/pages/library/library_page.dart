@@ -222,11 +222,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final scheme = Theme.of(context).colorScheme;
     final inBatch = _batch.batchMode;
     // 让按钮在有 TabBar 时仍显紧凑：仅保留图标按钮。
-    // 文件夹扫描依赖 Android SAF/MediaStore，iOS 沙盒不可行：隐藏入口。
+    // 文件夹扫描依赖 Android SAF/MediaStore；OHOS 走沙盒库+文件导入，
+    // iOS 沙盒不可行：隐藏入口。
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (PlatformCaps.supportsFolderScan) ...[
+        if (PlatformCaps.showsLibraryAddEntry) ...[
           IconButton(
             tooltip: tr('文件夹'),
             onPressed: () => context.push('/library/folders'),
@@ -459,8 +460,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           onClear: _clearSearch,
           hint: tr('搜索歌曲、歌手、专辑'),
         ),
-        // 文件夹扫描依赖 Android SAF/MediaStore：iOS 隐藏入口。
-        action: PlatformCaps.supportsFolderScan
+        // Android SAF 扫描 / OHOS 沙盒库+导入 / iOS 隐藏。
+        action: PlatformCaps.showsLibraryAddEntry
             ? BiliPaiIconButton(
                 icon: Icons.add,
                 tooltip: tr('文件夹'),
@@ -477,8 +478,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         title: _buildSearchField(context),
         actions: [
           // 文件夹页入口（已从 Tab 独立为二级页）。
-          // 依赖 Android SAF/MediaStore：iOS 沙盒不可行，隐藏入口。
-          if (PlatformCaps.supportsFolderScan)
+          // Android SAF 扫描 / OHOS 沙盒库+导入 / iOS 隐藏。
+          if (PlatformCaps.showsLibraryAddEntry)
             IconButton(
               tooltip: tr('文件夹'),
               onPressed: () => context.push('/library/folders'),
