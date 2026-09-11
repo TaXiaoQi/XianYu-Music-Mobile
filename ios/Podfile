@@ -44,5 +44,10 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # ffmpeg_kit_flutter_new 预编译 XCFramework 模拟器只有 arm64-simulator slice，
+    # 排除 arm64 以避免链接冲突（真机 arm64 不受影响）
+    installer.pods_project.build_configurations.each do |config|
+      config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
+    end
   end
 end
