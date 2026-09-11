@@ -940,31 +940,9 @@ class _PlayerShell extends StatelessWidget {
   }
 
   Widget _body() {
-    // 横屏：顶/底栏「浮层化」——盖在中区之上而非参与布局，显隐（淡入淡出+
-    // 滑出）永不改变中区高度，歌词/封面不再随栏的进退逐帧 reflow 抽搐；
-    // AutoHideChrome 自带朝所属边缘渐深的暗色渐变底保证压在内容上时可读。
-    if (isLandscape) {
-      return Stack(
-        children: [
-          Positioned.fill(child: flexible),
-          if (top.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: Column(children: top),
-            ),
-          if (bottom.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Column(children: bottom),
-            ),
-          ?overlay,
-        ],
-      );
-    }
+    // 顶/底栏参与布局（AutoHideChrome 的 AnimatedSize 收缩让位）：
+    // 进退栏时中区内容自动放大/缩小占满。曾改过「浮层化」（栏盖内容、
+    // 中区恒定），因栏压在歌词/封面上穿透显示观感差，还原为布局参与式。
     return Stack(
       children: [
         Column(
@@ -1210,9 +1188,13 @@ class _TraditionalPlayerLayoutState
         _buildTopBar(context),
       ],
       // 中间区域：竖屏为封面/歌词左右滑动切换。
+      // allowImplicitScrolling：挂载后空闲帧即预构建相邻歌词页（KeepAlive
+      // 留存），歌词解析/行布局/逐字模糊烘焙在用户滑动前完成——首次切换
+      // 封面⇄歌词不再带一次性建页卡顿。
       flexible: PageView.builder(
         controller: _pageController,
         itemCount: 2,
+        allowImplicitScrolling: true,
         onPageChanged: (i) {
           if (_showLyrics != (i == 1)) {
             setState(() => _showLyrics = i == 1);
@@ -2625,7 +2607,13 @@ _SwitchCoverRecord _switchCoverRecordOf(String role) =>
 
 class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
+  AnimationController? _ctrlC;
+
+  /// 惰性创建但不允许在 dispose 里创建：实例若在 build 抛错后未初始化即被
+  /// 卸载，late final 会在 dispose 首次访问时才执行初始化器——createTicker
+  /// 在已失活元素上查 TickerMode 直接抛异常，中断 finalizeTree 卸载流程，
+  /// 元素树记账损坏后引发连环 GlobalKey 断言（鸿蒙模拟器红屏根因，实测）。
+  AnimationController get _ctrl => _ctrlC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
   );
@@ -2762,7 +2750,7 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _ctrlC?.dispose();
     super.dispose();
   }
 }

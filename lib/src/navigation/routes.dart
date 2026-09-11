@@ -1028,12 +1028,20 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         // 与全局 FadeForwards 转场风格保持一致，避免纯平移显得生硬。
         // 淡入过程透出旧页与普通模式行为一致；壁纸模式下页面底色由
         // AppPageBackground 烘焙（旧页含壁纸，同为不透明卡片）。
+        // 页面本体套 RouteStaticSnapshot（与其他路由同一方案）：本路由为
+        // 非不透明覆盖（opaque=false），转场期间下层壳层保持可见实时绘制，
+        // 播放页再整页逐帧合成时全屏 saveLayer + 毛玻璃重采样叠满，是打开/
+        // 关闭掉帧根因。转场窗口内改为平移一张预渲染快照（毛玻璃满档
+        // 烘焙、不缩档），结束瞬间换回真实页面。
         final exit = SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(curved),
-          child: FadeTransition(opacity: curved, child: child),
+          child: FadeTransition(
+            opacity: curved,
+            child: RouteStaticSnapshot(animation: animation, child: child),
+          ),
         );
         if (phase == PredictiveBackPhase.idle) {
           return exit;
