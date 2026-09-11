@@ -16,10 +16,12 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.1-beta9+1000109
+version: 1.0.2-beta1+1000201
 
 environment:
-  sdk: ^3.12.2
+  # 下限放宽到 3.11：Flutter-OH 3.41.10-ohos 对应 Dart 3.11（鸿蒙构建用），
+  # 官方 Flutter（Android/iOS 桌面）用 Dart 3.12.x 仍满足
+  sdk: ">=3.11.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -183,9 +185,11 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# QQ 互联配置（tencent_kit 插件 Android 侧读取，注入 AndroidManifest 的
-# meta-data com.tencent.oauth 注册）。必须与 lib/src/share/qq_share_service.dart
-# 里的 appId 保持一致。
+# QQ 互联配置（tencent_kit 插件读取）：Android 注入 AndroidManifest 的
+# meta-data com.tencent.oauth 注册；iOS 在 pod install 时由 tencent_setup.rb
+# 注入 URL Scheme（tencent{app_id}）、LSApplicationQueriesSchemes、ATS 放开，
+# 并把 universal_link 的 host 写入 Runner.entitlements 的 applinks 关联域。
+# 必须与 lib/src/share/qq_share_service.dart 里的 appId/universalLink 保持一致。
 tencent_kit:
   app_id: '1905495962'
-  # universal_link: # 仅 iOS 需要，可略
+  universal_link: https://api.xianyumusic.cn/qq_conn/1905495962/

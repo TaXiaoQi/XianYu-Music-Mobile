@@ -19,6 +19,13 @@ class QqShareService {
   /// QQ 互联 APP_ID。必须与 pubspec.yaml 顶层 `tencent_kit.app_id` 保持一致。
   static const String appId = '1905495962';
 
+  /// QQ 互联 Universal Link（iOS SDK 初始化必填，Android 忽略该参数）。
+  /// 与分享落地页同域（api.xianyumusic.cn，服务端 SHARE_BASE_URL 未配置时
+  /// 分享链接即挂在请求 Host 下）。三处必须完全一致：本常量、pubspec.yaml
+  /// `tencent_kit.universal_link`、QQ 互联后台登记值。
+  static const String universalLink =
+      'https://api.xianyumusic.cn/qq_conn/1905495962/';
+
   bool _inited = false;
 
   /// 前后台监听：留在 QQ 分享后经任务切换返回 App 时，新版 QQ 客户端不回传
@@ -107,7 +114,9 @@ class QqShareService {
     try {
       // 3.1.0 之后必须先授予设备信息权限（隐私合规）。
       await TencentKitPlatform.instance.setIsPermissionGranted(granted: true);
-      await TencentKitPlatform.instance.registerApp(appId: appId);
+      // iOS 必须传 universalLink（SDK 以下列 UL 初始化，回调经关联域回来）。
+      await TencentKitPlatform.instance
+          .registerApp(appId: appId, universalLink: universalLink);
       TencentKitPlatform.instance.respStream().listen(_onResp);
       // 留在 QQ 分享后经任务切换返回 App 不会触发 onActivityResult，恢复
       // 前台即视为分享完成（新版 QQ 无回执，默认按成功）。

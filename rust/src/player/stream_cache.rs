@@ -83,9 +83,9 @@ fn decrypt_cenc_file(path: &std::path::Path, cek: &str) -> Result<(), String> {
 }
 
 /// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
-/// 512KB ≈ 32s @ 128kbps / 12.8s @ 320kbps，平衡起播速度和播放流畅度。
+/// 256KB ≈ 16s @ 128kbps / 6.4s @ 320kbps，加快起播、减少慢速 CDN 等待（对齐桌面端）。
 /// 配合 StreamingTempFileReader 的阻塞等待机制，即使播放追上下载进度也能平滑等待。
-pub const MIN_BUFFER_BYTES: u64 = 512 * 1024;
+pub const MIN_BUFFER_BYTES: u64 = 256 * 1024;
 
 /// 流式临时文件读取器：包装 File，实现 Read + Seek。
 /// 读取位置接近下载进度时阻塞等待，直到数据就绪。
@@ -1115,6 +1115,10 @@ async fn download_thread(
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
+        // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+        .redirect(crate::security::ssrf::ip_literal_redirect_policy())
+        // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
         .brotli(true)
         .deflate(true)

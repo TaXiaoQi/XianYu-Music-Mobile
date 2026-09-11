@@ -12,6 +12,7 @@ import 'media_store_writer.dart';
 import '../widgets/app_toast.dart';
 import '../core/db_path.dart';
 import '../core/application_logger.dart';
+import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../player/media_url.dart';
@@ -185,10 +186,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   /// 下载目录：优先用户设置，否则系统下载目录，最后回退应用文档目录。
-  /// iOS 沙盒无系统下载目录，固定应用文档目录下的 Downloads（Info.plist 已
-  /// 开启文件共享，用户可从「文件」App 访问）。
+  /// iOS/ohos 沙盒无系统下载目录，固定应用文档目录下的 Downloads（iOS
+  /// Info.plist 已开启文件共享，用户可从「文件」App 访问）。
   Future<String> _downloadDir() async {
-    if (Platform.isIOS) {
+    if (Platform.isIOS || PlatformCaps.isOhos) {
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'Downloads'));
       if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -219,9 +220,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
   /// 直写受限时下载会自动走 MediaStore 兼容模式（API 29+ 自有媒体条目
   /// 免存储权限），不应因未授权直接中止。返回 false 时调用方中止下载
   /// （仅目录未设置的情况）。供各下载入口复用。
-  /// iOS：目录固定可用，无存储权限概念，直接放行。
+  /// iOS/ohos：目录固定可用，无存储权限概念，直接放行。
   Future<bool> requireDownloadDir(BuildContext context) async {
-    if (Platform.isIOS) return true;
+    if (Platform.isIOS || PlatformCaps.isOhos) return true;
     if (!hasCustomDownloadDir) {
       showXianYuToast(context, tr('请先前往设置下载目录'));
       return false;
@@ -370,6 +371,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     //    避免下载出「标着无损却是 320k/mp3」的假音质文件。
     var usedQuality = task.quality;
     String? url;
+    Map<String, String>? urlHeaders;
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
       final tried = parsed.containsKey('pluginId')
@@ -385,10 +387,21 @@ class DownloadManager extends StateNotifier<DownloadState> {
         continue;
       }
       url = u;
+      urlHeaders = tried.headers;
       usedQuality = effective;
       break;
     }
     if (url == null) throw StateError(tr('直链解析失败'));
+
+    // 下载请求头（对齐播放链路）：插件自带头 + 按域补齐防盗链头
+    // （Referer/Origin/Accept）+ B站取流会话 Cookie。此前 headersJson 恒为
+    // '{}'，B站 m4s 直链缺 Referer/Cookie 只能下到几秒预览片段或直接失败。
+    final dlHeaders = await withBilibiliStreamCookie(
+      url,
+      normalizeMediaRequestHeaders(url, urlHeaders),
+      dataDir: _ref.read(appDataDirProvider.future),
+    );
+    final headersJson = jsonEncode(dlHeaders ?? <String, String>{});
 
     _updateTask(task.songPath, progressPercent: 40);
 
@@ -419,7 +432,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: destPath,
         ekey: null,
-        headersJson: '{}',
+        headersJson: headersJson,
       );
     } catch (e) {
       final msg = e.toString();
@@ -436,6 +449,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         item: item,
         parsed: parsed,
         settings: settings,
+        headersJson: headersJson,
       );
       if (fallback == null) {
         ApplicationLogManager.instance
@@ -475,6 +489,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     required QueueItem item,
     required Map<String, dynamic> parsed,
     AppSettings? settings,
+    required String headersJson,
   }) async {
     if (!Platform.isAndroid) return null;
     if (!await MediaStoreWriter.available) return null;
@@ -487,7 +502,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: tempPath,
         ekey: null,
-        headersJson: '{}',
+        headersJson: headersJson,
       );
 
       // 收尾在临时文件上做：sidecar 与 tag 嵌入都写缓存，一定可写。
@@ -661,14 +676,11 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   Future<ResolvedMediaUrl?> _resolveLxUrl(String songJson, String quality) async {
-    final resolved = await lxResolveUrl(
-      songInfoJson: songJson,
-      quality: quality,
-      dataDir: await _ref.read(appDataDirProvider.future),
-    );
-    if (resolved == 'null' || resolved.isEmpty) return null;
-    final url = (jsonDecode(resolved)['url'] as String?) ?? '';
-    return url.isEmpty ? null : ResolvedMediaUrl(url: url);
+    final engine = await _ref.read(pluginEngineProvider.future);
+    final resolved = await engine
+        .resolveLxUrl((jsonDecode(songJson) as Map).cast<String, dynamic>(), quality);
+    final url = resolved?['url'] as String?;
+    return (url == null || url.isEmpty) ? null : ResolvedMediaUrl(url: url);
   }
 
   Future<ResolvedMediaUrl?> _resolvePluginUrl(

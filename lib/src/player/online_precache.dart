@@ -18,6 +18,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/db_path.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../online/cover_proxy.dart';
 import 'audio_head_cache.dart';
@@ -191,8 +192,12 @@ class OnlinePrecache {
     }
 
     // 4) 15 秒片头：与播放同源请求头（normalizeMediaRequestHeaders 补齐
-    //    防盗链 Referer/Origin/UA），仅缓存支持 Range 的直链。
-    final headers = normalizeMediaRequestHeaders(resolved.url, resolved.headers);
+    //    防盗链 Referer/Origin/UA + B站会话 Cookie），仅缓存支持 Range 的直链。
+    final headers = await withBilibiliStreamCookie(
+      resolved.url,
+      normalizeMediaRequestHeaders(resolved.url, resolved.headers),
+      dataDir: ref.read(appDataDirProvider.future),
+    );
     await AudioHeadCache.instance.prefetch(
       url: resolved.url,
       headers: headers,

@@ -776,6 +776,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '侧边栏展开方向', section: '导航栏与底栏', path: '/settings/appearance', categoryName: '外观', keywords: '抽屉 方向'),
   _SearchItem(label: '播放页样式', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '正在播放 布局 风格'),
   _SearchItem(label: '播放页液态玻璃', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '控制卡 液态'),
+  _SearchItem(label: '横屏自动隐藏顶栏/底栏', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '横屏 自动隐藏 隐藏 唤回 常显'),
   _SearchItem(label: '列表大小', section: '列表', path: '/settings/appearance', categoryName: '外观', keywords: '歌曲 歌手 专辑 歌单 尺寸'),
 
   // 歌词

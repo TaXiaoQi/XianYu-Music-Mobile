@@ -17,6 +17,10 @@ pub(crate) fn shared_client() -> &'static Client {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(300))
             .pool_max_idle_per_host(4)
+            // SSRF 纵深：跳转目标做 IP 字面量校验，防 WebDAV 重定向到内网
+            .redirect(crate::security::ssrf::ip_literal_redirect_policy())
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .expect("build webdav http client")
     })

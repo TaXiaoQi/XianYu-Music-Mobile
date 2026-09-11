@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
@@ -13,6 +15,7 @@ import '../../src/plugin/plugin_host_fallback.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
+import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
@@ -143,6 +146,27 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final page = reset ? 1 : _page + 1;
     final raw = widget.args.raw;
     final List<PluginSearchResult> list;
+    if (_lxSource != null) {
+      // LX 引擎详情（歌手/专辑/歌单）：全部宿主代取（对齐桌面 loadLxData）。
+      list = await _loadLxSongs(raw, page: page, reset: reset);
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _songs = list;
+          _loading = false;
+        } else {
+          _songs = [..._songs, ...list];
+        }
+        // 歌手/专辑走宿主搜索无分页（一次拉满即到底）；歌单按页数判断。
+        if (widget.args.type != OnlineDetailType.playlist) _isEnd = true;
+        // 不足一页视为到底（多数接口一页 30~100）。
+        if (list.length < 30) _isEnd = true;
+        _page = page;
+        _loadingMore = false;
+      });
+      _backfillCovers();
+      return;
+    }
     switch (widget.args.type) {
       case OnlineDetailType.artist:
         list = await catalog.getArtistWorks(source, raw, page: page);
@@ -152,16 +176,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         list = await catalog.getTopListDetail(source, raw, page: page);
       case OnlineDetailType.playlist:
         final item = Map<String, dynamic>.from(raw);
-        if (_lxSource != null) {
-          // LX 歌单：宿主代取各源原生歌单曲目接口（kw/kg/tx/wy/mg）。
-          final playlistId = (item['_lxPlaylistId'] ?? '').toString();
-          list = await lxHostPlaylistTracksFallback(
-            source,
-            _lxSource!,
-            playlistId,
-            page: page,
-          );
-        } else if (item['_isAlbum'] == true) {
+        if (item['_isAlbum'] == true) {
           item.remove('_isAlbum');
           list = await catalog.getAlbumSongs(source, item, page: page);
         } else {
@@ -183,6 +198,122 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     });
     // 后台补齐缺失封面（不等接口，封面就绪即局部刷新）。
     _backfillCovers();
+  }
+
+  /// LX 引擎详情歌曲加载（对齐桌面端 loadLxData）：
+  /// - 歌手：用歌手名搜索（移动端 lxSearch 无分页，一次拉满）；
+  /// - 专辑：优先专辑 ID 直连原生接口（仅 tx 有 Rust 桥），空则回退
+  ///   专辑名搜索 + 按专辑名过滤（过滤后仍空则直接用搜索结果）；
+  /// - 歌单：宿主代取各源原生歌单曲目接口（kw/kg/tx/wy/mg）。
+  Future<List<PluginSearchResult>> _loadLxSongs(
+    Map<String, dynamic> raw, {
+    required int page,
+    required bool reset,
+  }) async {
+    final source = _source!;
+    final lxKey = _lxSource!;
+    switch (widget.args.type) {
+      case OnlineDetailType.artist:
+        return lxHostSearchFallback(source, lxKey, widget.args.title,
+            limit: 60);
+      case OnlineDetailType.album:
+        var results = <PluginSearchResult>[];
+        // 优先专辑 ID 直连原生专辑接口（kw/kg/tx/wy/mg，对齐桌面 lxGetAlbumSongs）。
+        // tx 取 albumMid（字母数字），其余源取 albumId（纯数字）。
+        final albumId =
+            (raw['albumMid'] ?? raw['albumId'] ?? '').toString();
+        if (albumId.isNotEmpty) {
+          try {
+            final json = await frb.lxAlbumSongs(
+              source: lxKey,
+              albumId: albumId,
+              page: page,
+              limit: 60,
+            );
+            final list = jsonDecode(json);
+            if (list is List) {
+              results = list
+                  .whereType<Map>()
+                  .map((e) => e.cast<String, dynamic>())
+                  .where((m) =>
+                      (m['songmid'] ?? m['song_id'] ?? '').toString().isNotEmpty)
+                  .map((m) => lxSearchItemToResult(lxKey, m))
+                  .toList();
+            }
+          } catch (e, st) {
+            AppLog.warn('plugin',
+                '[lxAlbumSongs] $lxKey album=$albumId EXCEPTION: $e\n$st');
+          }
+        }
+        // 回退：直连为空（ID 无效、接口失败或风控），专辑名搜索 + 按专辑名过滤。
+        if (results.isEmpty && reset) {
+          final searchResult = await lxHostSearchFallback(
+              source, lxKey, widget.args.title, limit: 60);
+          final nameNorm = widget.args.title.trim().toLowerCase();
+          results = searchResult.where((s) {
+            final albumNorm = s.albumName.trim().toLowerCase();
+            return albumNorm == nameNorm ||
+                albumNorm.contains(nameNorm) ||
+                nameNorm.contains(albumNorm);
+          }).toList();
+          // 精确过滤后仍为空，放宽直接用搜索结果（对齐桌面）。
+          if (results.isEmpty) results = searchResult;
+        }
+        return results;
+      case OnlineDetailType.playlist:
+        final playlistId = (raw['_lxPlaylistId'] ?? '').toString();
+        return lxHostPlaylistTracksFallback(source, lxKey, playlistId,
+            page: page);
+      case OnlineDetailType.toplist:
+        return const [];
+    }
+  }
+
+  /// LX 歌手专辑：搜索歌手名后从结果派生专辑（对齐桌面 deriveLxAlbumResults）。
+  Future<List<MfAlbumItem>> _deriveLxAlbums() async {
+    final source = _source!;
+    final songs = await lxHostSearchFallback(
+        source, _lxSource!, widget.args.title, limit: 60);
+    final map = <String, MfAlbumItem>{};
+    for (final s in songs) {
+      final name = s.albumName.trim();
+      if (name.isEmpty) continue;
+      final id = s.albumId ?? s.albumMid ?? name;
+      final key = '${s.source}:$id';
+      final existing = map[key];
+      if (existing != null) {
+        // 封面回退：已有条目缺封面时用本曲封面补齐。
+        if ((existing.coverUrl == null || existing.coverUrl!.isEmpty) &&
+            (s.img != null && s.img!.isNotEmpty)) {
+          map[key] = MfAlbumItem(
+            id: existing.id,
+            name: existing.name,
+            artist: existing.artist,
+            coverUrl: s.img,
+            platform: existing.platform,
+            pluginId: existing.pluginId,
+            raw: existing.raw,
+          );
+        }
+        continue;
+      }
+      map[key] = MfAlbumItem(
+        id: id,
+        name: name,
+        artist: s.singer,
+        coverUrl: s.img,
+        platform: s.source,
+        pluginId: source.id,
+        raw: <String, dynamic>{
+          '_lxSource': _lxSource!,
+          'id': id,
+          'name': name,
+          'albumId': s.albumId,
+          'albumMid': s.albumMid,
+        },
+      );
+    }
+    return map.values.toList();
   }
 
   /// 后台补齐缺失封面的歌曲（对齐桌面 fetchMissingLxCovers）：
@@ -225,7 +356,13 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final catalog = _catalog;
     final source = _source;
     if (catalog == null || source == null) return;
-    final albums = await catalog.getArtistAlbums(source, widget.args.raw);
+    final List<MfAlbumItem> albums;
+    if (_lxSource != null) {
+      // LX 歌手专辑：搜索歌手名后从结果派生（对齐桌面 lxCatalogSearch album 分支）。
+      albums = await _deriveLxAlbums();
+    } else {
+      albums = await catalog.getArtistAlbums(source, widget.args.raw);
+    }
     if (!mounted) return;
     setState(() => _albums = albums);
   }
@@ -234,6 +371,15 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final catalog = _catalog;
     final source = _source;
     if (catalog == null || source == null) return;
+    if (_lxSource != null) {
+      // LX 无歌手简介接口（对齐桌面），直接置空显示「暂无简介」。
+      if (!mounted) return;
+      setState(() {
+        _intro = '';
+        _introLoaded = true;
+      });
+      return;
+    }
     final intro = await catalog.getArtistInfo(source, widget.args.raw);
     if (!mounted) return;
     setState(() {

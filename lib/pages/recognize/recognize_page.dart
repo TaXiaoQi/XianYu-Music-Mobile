@@ -44,13 +44,17 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
   List<RecognizeMatch> _matches = const [];
   String? _error;
 
-  late final AnimationController _pulse =
+  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _pulseC;
+  AnimationController get _pulse =>
+      _pulseC ??=
       AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))
         ..repeat(reverse: true);
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _pulseC?.dispose();
     _service.dispose();
     super.dispose();
   }
@@ -665,13 +669,17 @@ class _Waveform extends StatefulWidget {
 
 class _WaveformState extends State<_Waveform>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
+  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _cC;
+  AnimationController get _c =>
+      _cC ??=
       AnimationController(vsync: this, duration: const Duration(milliseconds: 850))
         ..repeat();
 
   @override
   void dispose() {
-    _c.dispose();
+    _cC?.dispose();
     super.dispose();
   }
 

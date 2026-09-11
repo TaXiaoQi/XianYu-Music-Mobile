@@ -28,32 +28,6 @@ pub fn parse_lyrics(raw_lyrics: String) -> String {
 // 音乐源 URL 直链解析（第二批）
 // =========================================================================
 
-/// 解析 LX 音源播放直链。
-///
-/// - `song_info_json`：[`LxUrlSongInfo`] 的 JSON（camelCase）
-/// - `quality`：音质（如 "128k"、"320k"、"flac" 等）
-///
-/// 返回 [`ResolvedUrl`] 的 JSON；解析失败返回 `"null"`。
-pub async fn lx_resolve_url(
-    song_info_json: String,
-    quality: String,
-    data_dir: Option<String>,
-) -> Result<String, String> {
-    let song_info: LxUrlSongInfo =
-        serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    // 传入 data_dir 时优先用已导入的音源插件解析。
-    let resolved = crate::music::url_resolver::resolve_lx_music_url_with_plugins(
-        &song_info,
-        &quality,
-        data_dir.as_deref(),
-    )
-    .await;
-    match resolved {
-        Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
-        None => Ok("null".to_string()),
-    }
-}
-
 /// 搜索音乐源。`source` ∈ `kw`/`kg`/`tx`/`wy`/`mg`。
 /// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
 pub async fn lx_search(source: String, keyword: String, limit: u32) -> Result<String, String> {
@@ -109,64 +83,17 @@ pub async fn lx_playlist_tracks(
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
-// =========================================================================
-// 音源插件管理
-// =========================================================================
-
-/// 列出已安装的音源插件（返回 `PluginInfo[]` JSON）。
-pub fn plugin_list(data_dir: String) -> Result<String, String> {
-    let list = crate::plugins::manager::list_plugins(&data_dir);
-    serde_json::to_string(&list).map_err(|e| e.to_string())
-}
-
-/// 从脚本文本安装音源插件。
-///
-/// 安装前会在 QuickJS 引擎中试运行，脚本无效时直接返回错误。
-/// 返回安装后的 `PluginInfo` JSON。
-pub async fn plugin_install_script(
-    data_dir: String,
-    script: String,
-    origin: String,
+/// LX 专辑曲目（对齐桌面端 lxGetAlbumSongs，kw/kg/tx/wy/mg 原生专辑接口）。
+/// 返回 [`crate::music::lx_search::LxSearchItem`] 数组的 JSON。
+/// album_id 无效（可能是回退的专辑名）时返回空数组，由调用方走搜索回退。
+pub async fn lx_album_songs(
+    source: String,
+    album_id: String,
+    page: u32,
+    limit: u32,
 ) -> Result<String, String> {
-    let info = crate::plugins::manager::install_plugin(&data_dir, &script, &origin).await?;
-    serde_json::to_string(&info).map_err(|e| e.to_string())
-}
-
-/// 从本地文件安装音源插件（限 `.js`）。
-pub async fn plugin_install_file(data_dir: String, path: String) -> Result<String, String> {
-    let script = crate::plugins::read_plugin_file(path.clone())?;
-    plugin_install_script(data_dir, script, path).await
-}
-
-/// 从订阅 URL 安装音源插件。
-pub async fn plugin_install_url(data_dir: String, url: String) -> Result<String, String> {
-    // 先下载（异步），再在阻塞线程内试运行安装。
-    let resp = crate::plugins::plugin_http_request(
-        "GET".to_string(),
-        url.clone(),
-        Some(std::collections::HashMap::from([(
-            "User-Agent".to_string(),
-            "lx-music request".to_string(),
-        )])),
-        None,
-        Some(30),
-        Some(5),
-    )
-    .await?;
-    if resp.status != 200 {
-        return Err(format!("下载脚本失败: HTTP {}", resp.status));
-    }
-    plugin_install_script(data_dir, resp.body, url).await
-}
-
-/// 启用或停用插件。
-pub fn plugin_set_enabled(data_dir: String, id: String, enabled: bool) -> Result<(), String> {
-    crate::plugins::manager::set_plugin_enabled(&data_dir, &id, enabled)
-}
-
-/// 卸载插件。
-pub fn plugin_remove(data_dir: String, id: String) -> Result<(), String> {
-    crate::plugins::manager::remove_plugin(&data_dir, &id)
+    let items = crate::music::lx_catalog::lx_album_songs(&source, &album_id, page, limit).await?;
+    serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
 // =========================================================================
@@ -1583,7 +1510,7 @@ pub fn clear_cover_cache(cache_dir: String) -> Result<(), String> {
 }
 
 // =========================================================================
-// LX 音源解析辅助（对齐桌面端 get_lx_cover / 换源 / 音质回退 / 缓存清理）
+// LX 音源解析辅助（对齐桌面端 get_lx_cover / 换源 / 缓存清理）
 // =========================================================================
 
 /// 获取 LX 音乐源封面 URL。`song_info_json` 为 [`LxUrlSongInfo`] 的 camelCase JSON。
@@ -1610,36 +1537,28 @@ pub async fn clear_lx_all_cache() -> Result<(), String> {
     crate::music::lx_search::clear_lx_all_cache().await
 }
 
-/// 换源：在其他落雪平台搜索同名同歌手歌曲。
-/// 返回 [`AlternativeSourceResult`] JSON 或 "null"。
+/// 查找替代落雪音源（换源匹配，双端通用，对齐桌面端 find_alternative_lx_source）。
+///
+/// - `failed_sources_json`：已失败音源数组 JSON（如 `["kw","tx"]`）。
+///
+/// 返回 [`crate::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
+/// 无匹配时返回 `"null"`。URL 解析由 Dart 插件编排层完成。
 pub async fn find_alternative_lx_source(
     song_name: String,
     song_artist: String,
     song_duration: f64,
-    failed_sources: Vec<String>,
-    qualities: Vec<String>,
+    failed_sources_json: String,
 ) -> Result<String, String> {
-    let v = crate::music::url_resolver::find_alternative_lx_source(
+    let failed_sources: Vec<String> =
+        serde_json::from_str(&failed_sources_json).map_err(|e| e.to_string())?;
+    let result = crate::music::url_resolver::find_alternative_lx_source(
         song_name,
         song_artist,
         song_duration,
         failed_sources,
-        qualities,
     )
     .await?;
-    serde_json::to_string(&v).map_err(|e| e.to_string())
-}
-
-/// 按音质顺序回退解析播放直链（返回 [`ResolvedUrl`] JSON 或 "null"）。
-pub async fn resolve_lx_with_quality_fallback(
-    song_info_json: String,
-    qualities: Vec<String>,
-) -> Result<String, String> {
-    let song_info: LxUrlSongInfo =
-        serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let v =
-        crate::music::url_resolver::resolve_lx_with_quality_fallback(song_info, qualities).await?;
-    serde_json::to_string(&v).map_err(|e| e.to_string())
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 // =========================================================================
@@ -2038,7 +1957,8 @@ pub fn stats_clear_listen_stats(db_path: String) -> Result<(), String> {
 // store_snapshot）
 // =========================================================================
 
-/// 导入插件引擎店铺会话（cookie + storage），仅补缺不覆盖。
+/// 导入插件引擎店铺会话（cookie + storage）。默认仅补缺不覆盖；payload 可选
+/// `overwriteCookies: true` 时改为覆盖式写入 cookie（用户变量显式同步场景）。
 pub async fn plugin_engine_store_import(
     data_dir: String,
     payload_json: String,
@@ -2048,13 +1968,22 @@ pub async fn plugin_engine_store_import(
     struct StoreImportPayload {
         cookies: std::collections::HashMap<String, crate::plugin_host::CookieEntry>,
         storage: std::collections::HashMap<String, String>,
+        #[serde(default)]
+        overwrite_cookies: bool,
     }
     let payload: StoreImportPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
     let engine = crate::plugin_host::global_engine(&data_dir);
-    engine
-        .store()
-        .import_local(payload.cookies, payload.storage);
+    if payload.overwrite_cookies {
+        engine.store().upsert_cookies(payload.cookies);
+        engine
+            .store()
+            .import_local(std::collections::HashMap::new(), payload.storage);
+    } else {
+        engine
+            .store()
+            .import_local(payload.cookies, payload.storage);
+    }
     Ok(())
 }
 

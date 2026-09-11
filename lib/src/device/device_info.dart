@@ -30,11 +30,11 @@ const MobileDeviceInfo _fallback = MobileDeviceInfo(
 
 MobileDeviceInfo? _cached;
 
-/// 读取真实厂商/型号/系统版本。仅 Android 走原生 MethodChannel，
-/// 结果缓存，失败或非 Android 回退默认值。
+/// 读取真实厂商/型号/系统版本。Android/iOS 走原生 MethodChannel
+/// （iOS 在 SceneDelegate 注册同名通道），结果缓存，失败或其他平台回退默认值。
 Future<MobileDeviceInfo> fetchDeviceInfo() async {
   if (_cached != null) return _cached!;
-  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+  if (kIsWeb) {
     return _fallback;
   }
   try {
@@ -73,5 +73,28 @@ Future<String?> fetchInstallerSource() async {
     _cachedInstallerSource = '';
     return null;
   }
+}
+
+String? _cachedStableDeviceId;
+bool _stableDeviceIdFetched = false;
+
+/// 平台级稳定设备 ID（卸载重装不变，用于登录签名/设备封禁等）。
+/// Android 优先 Widevine DRM 设备 ID（硬件派生，恢复出厂通常也不变），
+/// 退回 ANDROID_ID；iOS 取 Keychain 持久化 UUID（卸载不清除，仅抹机才清除）。
+/// 获取失败（通道未就绪/平台不支持）返回 null，由调用方回退本地随机 ID。
+Future<String?> fetchStableDeviceId() async {
+  if (_stableDeviceIdFetched) return _cachedStableDeviceId;
+  if (kIsWeb) return null;
+  try {
+    const channel = MethodChannel('xianyu/device_info');
+    final id = await channel.invokeMethod<String>('getStableDeviceId');
+    _cachedStableDeviceId = (id == null || id.isEmpty) ? null : id;
+    // 仅成功取到才锁定缓存：iOS 通道晚于 Dart 首次调用注册时，
+    // null 不缓存，下次调用（登录/上报）重试仍可拿到稳定 ID
+    _stableDeviceIdFetched = _cachedStableDeviceId != null;
+  } catch (_) {
+    _cachedStableDeviceId = null;
+  }
+  return _cachedStableDeviceId;
 }
 

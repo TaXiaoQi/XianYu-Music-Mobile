@@ -12,6 +12,7 @@ use super::store::PluginStore;
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,47 +21,16 @@ const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REDIRECT_LIMIT: usize = 10;
 
-/// 校验插件 HTTP 请求 URL：仅允许 http/https，并阻止 SSRF 目标
-/// （环回 / 内网 / 链路本地 / 保留地址，以及 localhost 等内网域名）。
-/// 与桌面端 plugins.rs 的 validate_plugin_http_url 保持一致（纵深防御）。
-fn validate_plugin_http_url(url: &str) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 格式非法: {e}"))?;
-    let scheme = parsed.scheme();
-    if scheme != "http" && scheme != "https" {
-        return Err(format!("仅允许 http/https 协议，当前: {scheme}"));
+/// 把 reqwest 错误链展开成可读字符串，便于前端定位 timeout/dns/connection/proxy 等问题。
+fn format_request_error(err: reqwest::Error) -> String {
+    let mut parts = Vec::new();
+    parts.push(err.to_string());
+    let mut source = err.source();
+    while let Some(s) = source {
+        parts.push(s.to_string());
+        source = s.source();
     }
-    let host = parsed.host_str().unwrap_or("").to_lowercase();
-    if host.is_empty() {
-        return Err("URL 缺少主机名".to_string());
-    }
-    if host == "localhost"
-        || host.ends_with(".localhost")
-        || host.ends_with(".local")
-        || host.ends_with(".internal")
-    {
-        return Err(format!("禁止访问内网地址: {host}"));
-    }
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        let blocked = match ip {
-            std::net::IpAddr::V4(v4) => {
-                v4.is_loopback()
-                    || v4.is_private()
-                    || v4.is_link_local()
-                    || v4.is_unspecified()
-                    || v4.is_multicast()
-            }
-            std::net::IpAddr::V6(v6) => {
-                v6.is_loopback()
-                    || v6.is_unique_local()
-                    || v6.is_unspecified()
-                    || v6.is_multicast()
-            }
-        };
-        if blocked {
-            return Err(format!("禁止访问内网/保留地址: {host}"));
-        }
-    }
-    Ok(())
+    parts.join(" -> ")
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -116,10 +86,12 @@ impl HttpBridge {
         let policy = if redirect_limit == 0 {
             reqwest::redirect::Policy::none()
         } else {
-            reqwest::redirect::Policy::limited(redirect_limit)
+            // 跟随重定向，但每个跳转目标都需通过 SSRF 校验
+            crate::security::ssrf::ssrf_redirect_policy()
         };
         let client = reqwest::Client::builder()
             .redirect(policy)
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .gzip(true)
             .brotli(true)
             .deflate(true)
@@ -163,7 +135,6 @@ impl HttpBridge {
         follow: i64,
         want_binary: bool,
     ) -> Result<HttpBridgeResponse, String> {
-        validate_plugin_http_url(url)?;
         let method = reqwest::Method::from_bytes(method.trim().to_uppercase().as_bytes())
             .map_err(|e| e.to_string())?;
         let redirect_limit = if follow < 0 {
@@ -172,6 +143,11 @@ impl HttpBridge {
             follow as usize
         };
         let client = self.client_for(redirect_limit)?;
+
+        // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
+        crate::security::ssrf::validate_outbound_url(url)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut request = client.request(method, url);
         if timeout_ms > 0 {
@@ -229,7 +205,7 @@ impl HttpBridge {
                     buf.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(format_request_error(e)),
             }
         }
 

@@ -462,8 +462,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
     // 横屏自动隐藏：进入横屏后开始计时；转回竖屏立即恢复常显并停表。
+    // 设置关闭自动隐藏时恒常显（竖屏本就常显，一并走恢复分支）。
+    final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
     final landscapeNow = ref.watch(isLandscapeProvider);
-    if (!landscapeNow) {
+    if (!landscapeNow || !autoHideChrome) {
       _chromeHideTimer?.cancel();
       _chromeHideTimer = null;
       if (!_chromeVisible) {
@@ -483,7 +485,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         colorScheme: bgScheme,
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
-      child: _DragDismissSheet(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 常驻底衬（不参与横竖屏转场淡出）：Scaffold 底色 + 模糊封面自
+          // _PlayerShell 上提至此。转场内容淡出到底/淡入初期时整条子树接近
+          // 全透明，若无此层托底会透出下层路由壁纸/主题底（「闪背景」）。
+          Positioned.fill(
+            child: ColoredBox(
+              color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
+            ),
+          ),
+          Positioned.fill(
+            // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
+            child: _BlurredCoverBackground(current: current),
+          ),
+          _DragDismissSheet(
         // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
           behavior: HitTestBehavior.translucent,
@@ -492,6 +509,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ? _TraditionalPlayerLayout(
                   notifier: notifier,
                   current: current,
+                  chromeVisible: _chromeVisible,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -504,6 +522,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   hasRomaji: hasRomaji,
                 ),
         ),
+      ),
+        ],
       ),
     );
   }
@@ -530,10 +550,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       offsetMs: offsetMs,
       hasRomaji: hasRomaji,
     );
-    return LandscapeGate(
+    // 两套子树有同名 Hero（封面）与歌词视图 key，交叉转场共存瞬间会冲突，
+    // 与传统模式同样用顺序转场（见 LandscapeGate.sequential）。
+    return LandscapeGate.sequential(
       portrait: _PlayerShell(
         current: current,
-        backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
         // 顶栏 + 封面：封面模式下封面（固定）放在顶栏之下、歌词预览之上。
         top: [
           Padding(
@@ -692,7 +713,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   }) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
       isLandscape: true,
       // 顶栏：返回 + 居中歌名/歌手（参照桌面版顶部，无「正在播放」占位标题）；
       // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
@@ -873,7 +893,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 class _PlayerShell extends StatelessWidget {
   const _PlayerShell({
     this.current,
-    this.backgroundColor,
     this.isLandscape = false,
     this.top = _noSlots,
     required this.flexible,
@@ -884,9 +903,6 @@ class _PlayerShell extends StatelessWidget {
   static const List<Widget> _noSlots = [];
 
   final QueueItem? current;
-
-  /// Scaffold 背景色；默认与高级模式一致（surface 压暗到 60% 黑）。
-  final Color? backgroundColor;
 
   /// 横屏时对 SafeArea 内层补偿挖孔安全区。
   final bool isLandscape;
@@ -905,30 +921,28 @@ class _PlayerShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    // 背景底色与模糊封面已上提为路由级常驻底衬（不参与横竖屏转场淡出）。
+    // 本 Scaffold 只保留 Material 祖先（IconButton/InkWell 依赖）与
+    // SafeArea 载体，背景透明——否则转场内容淡出时它会连同整条子树一起
+    // 变透明，透出下层路由壁纸（「闪背景」）。
     return Scaffold(
-      backgroundColor:
-          backgroundColor ?? Color.lerp(scheme.surface, Colors.black, 0.6),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 背景：模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
-          _BlurredCoverBackground(current: current),
-          SafeArea(
-            // 竖屏沿用系统四边安全区；横屏让播放页插进摄像头区域（左右不再避让挖孔），
-            // 与主内容用满摄像区保持一致，避免仅单侧避让挖孔造成左右不对称。
-            top: true,
-            bottom: true,
-            left: !isLandscape,
-            right: !isLandscape,
-            child: _body(),
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        // 竖屏沿用系统四边安全区；横屏让播放页插进摄像头区域（左右不再避让挖孔），
+        // 与主内容用满摄像区保持一致，避免仅单侧避让挖孔造成左右不对称。
+        top: true,
+        bottom: true,
+        left: !isLandscape,
+        right: !isLandscape,
+        child: _body(),
       ),
     );
   }
 
   Widget _body() {
+    // 顶/底栏参与布局（AutoHideChrome 的 AnimatedSize 收缩让位）：
+    // 进退栏时中区内容自动放大/缩小占满。曾改过「浮层化」（栏盖内容、
+    // 中区恒定），因栏压在歌词/封面上穿透显示观感差，还原为布局参与式。
     return Stack(
       children: [
         Column(
@@ -951,9 +965,14 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   const _TraditionalPlayerLayout({
     required this.notifier,
     required this.current,
+    this.chromeVisible = true,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
+
+  /// 横屏顶栏/底栏是否可见：由外层播放页的自动隐藏计时驱动，
+  /// 触摸唤回同样由外层 Listener 完成后经重建下传。竖屏恒 true。
+  final bool chromeVisible;
 
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
@@ -1153,8 +1172,9 @@ class _TraditionalPlayerLayoutState
       _wasLandscape = isLandscape;
     }
     // 传统模式横屏：封面与歌词左右并排，取代封面/歌词上下翻页。
-    // 竖屏＝默认封面/歌词上下翻页；横屏＝独立一套横向 UI，两套完全分开（见 LandscapeGate）。
-    return LandscapeGate(
+    // 竖屏＝默认封面/歌词上下翻页；横屏＝独立一套横向 UI，两套完全分开。
+    // 两套子树有同名 Hero/GlobalKey（见 _buildAdvancedBody），用顺序转场。
+    return LandscapeGate.sequential(
       portrait: _buildTraditionalPortrait(context, current),
       landscape: _buildTraditionalLandscape(context, current),
     );
@@ -1164,14 +1184,17 @@ class _TraditionalPlayerLayoutState
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Colors.transparent,
       top: [
         _buildTopBar(context),
       ],
       // 中间区域：竖屏为封面/歌词左右滑动切换。
+      // allowImplicitScrolling：挂载后空闲帧即预构建相邻歌词页（KeepAlive
+      // 留存），歌词解析/行布局/逐字模糊烘焙在用户滑动前完成——首次切换
+      // 封面⇄歌词不再带一次性建页卡顿。
       flexible: PageView.builder(
         controller: _pageController,
         itemCount: 2,
+        allowImplicitScrolling: true,
         onPageChanged: (i) {
           if (_showLyrics != (i == 1)) {
             setState(() => _showLyrics = i == 1);
@@ -1223,10 +1246,14 @@ class _TraditionalPlayerLayoutState
   Widget _buildTraditionalLandscape(BuildContext context, QueueItem? current) {
     return _PlayerShell(
       current: current,
-      backgroundColor: Colors.transparent,
       isLandscape: true,
+      // 顶栏随外层自动隐藏计时收起（触摸唤回由外层 Listener 负责）。
       top: [
-        _buildTopBar(context, landscape: true),
+        AutoHideChrome(
+          visible: widget.chromeVisible,
+          alignment: Alignment.topCenter,
+          child: _buildTopBar(context, landscape: true),
+        ),
       ],
       // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词），
       // 固定横向对半布局，不提供可拖动中线。
@@ -1267,29 +1294,39 @@ class _TraditionalPlayerLayoutState
         ],
       ),
       // 横屏播放控件：进度条 + 三区控制行（时长/下载/收藏｜播放顺序/三大键/歌词｜音质/音效/队列）。
+      // 底部控制带整体随外层自动隐藏计时收起。
       bottom: [
-        RepaintBoundary(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: _ProgressBar(
-              notifier: widget.notifier,
-              // 时长已移到控制行左下角，进度条这里不再重复显示。
-              showTime: false,
-            ),
+        AutoHideChrome(
+          visible: widget.chromeVisible,
+          alignment: Alignment.bottomCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RepaintBoundary(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  child: _ProgressBar(
+                    notifier: widget.notifier,
+                    // 时长已移到控制行左下角，进度条这里不再重复显示。
+                    showTime: false,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              _LandscapeControlsRow(
+                notifier: widget.notifier,
+                current: current,
+                // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
+                onLyricAdjust: () => _showLyricAdjustMenu(
+                  context,
+                  ref,
+                  hasRomaji: _lyricsViewHasRomaji,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        _LandscapeControlsRow(
-          notifier: widget.notifier,
-          current: current,
-          // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
-          onLyricAdjust: () => _showLyricAdjustMenu(
-            context,
-            ref,
-            hasRomaji: _lyricsViewHasRomaji,
-          ),
-        ),
-        const SizedBox(height: 16),
       ],
       // 横屏歌词调节已并入底栏最右组件，右上是音乐卡片，不再叠加浮动 rail。
       overlay: null,
@@ -1523,8 +1560,12 @@ class _TraditionalPlayerLayoutState
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 封面略下移，与顶部切换 tab 留出呼吸间距
-            const SizedBox(height: 14),
+            // 竖屏：封面略下移，与顶部切换 tab 留出呼吸间距；
+            // 横屏（沉浸无顶栏）：封面上下均分弹性空间垂直居中，栏退出后
+            // 中区变高时封面居中于屏幕而非贴顶。
+            showLyricPreview
+                ? const SizedBox(height: 14)
+                : const Expanded(child: SizedBox.shrink()),
             Center(
               child: Hero(
                 tag: 'player-cover',
@@ -1710,7 +1751,7 @@ class _TraditionalPlayerLayoutState
     } catch (_) {
       // 上报失败不阻断跳过体验。
     }
-    if (!mounted) return;
+    if (!context.mounted) return;
     showXianYuToast(context, tr('已减少此类推荐'));
     await ref.read(playerProvider.notifier).next();
   }
@@ -2570,7 +2611,13 @@ _SwitchCoverRecord _switchCoverRecordOf(String role) =>
 
 class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
+  AnimationController? _ctrlC;
+
+  /// 惰性创建但不允许在 dispose 里创建：实例若在 build 抛错后未初始化即被
+  /// 卸载，late final 会在 dispose 首次访问时才执行初始化器——createTicker
+  /// 在已失活元素上查 TickerMode 直接抛异常，中断 finalizeTree 卸载流程，
+  /// 元素树记账损坏后引发连环 GlobalKey 断言（鸿蒙模拟器红屏根因，实测）。
+  AnimationController get _ctrl => _ctrlC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
   );
@@ -2707,7 +2754,7 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _ctrlC?.dispose();
     super.dispose();
   }
 }
@@ -2786,6 +2833,7 @@ class _TraditionalCover extends StatelessWidget {
               CoverImage(
                 songPath: cur.path,
                 networkUrl: cur.coverUrl,
+                thumbPath: cur.coverPath,
                 width: size,
                 height: size,
                 radius: 23,
@@ -3175,6 +3223,7 @@ class _BigCover extends StatelessWidget {
                 : CoverImage(
                     songPath: cur.path,
                     networkUrl: cur.coverUrl,
+                    thumbPath: cur.coverPath,
                     width: coverSize,
                     height: coverSize,
                     radius: 31,
@@ -3628,6 +3677,27 @@ String _qualitySizeSuffix(String q, Map<String, QualitySizeInfo> sizes) {
   return ' · ${_compactSize(info.bytes)}';
 }
 
+/// 期望档位不在可用列表时，按设置的回退方向选最近可用档（对齐桌面端
+/// DownloadDialog.ensureSelectedQualityAvailable）：higher 向上找最近档、
+/// lower 向下找最近档，越界落到边界档。
+String _nearestAvailable(
+    String preferred, List<String> available, String behavior) {
+  if (available.isEmpty || available.contains(preferred)) return preferred;
+  int rank(String q) {
+    final i = kQualityLadder.indexOf(q);
+    return i < 0 ? kQualityLadder.length : i;
+  }
+
+  final prefRank = rank(preferred);
+  final sorted = [...available]..sort((a, b) => rank(a).compareTo(rank(b)));
+  if (behavior == 'higher') {
+    return sorted
+        .firstWhere((q) => rank(q) > prefRank, orElse: () => sorted.last);
+  }
+  return sorted.reversed
+      .firstWhere((q) => rank(q) < prefRank, orElse: () => sorted.first);
+}
+
 /// 音质档位弹窗共享状态：档位探测 future + 实测体积轮询。
 /// 播放音质（[_QualitySheet]）与下载音质（[_DownloadQualitySheet]）共用。
 mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
@@ -3819,11 +3889,26 @@ class _DownloadQualitySheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 下载弹窗优先高亮设置中的下载音质，无匹配时回退当前播放音质。
+    // 默认档位对齐桌面端 getInitialDownloadQuality：下载的歌曲就是当前播放
+    // 歌曲时优先实际播放音质，否则优先下载设置中的音质；期望档位不在可用
+    // 列表时按设置的回退方向取最近可用档（ensureSelectedQualityAvailable）。
+    final playingPath =
+        ref.watch(playerProvider.select((s) => s.current?.path));
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
-    final settingsQ = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.downloadQuality),
-    );
+    final settings = ref.watch(settingsProvider.select((s) => s.valueOrNull));
+    final isPlayingSong = widget.song.path.isNotEmpty &&
+        widget.song.path == playingPath &&
+        cur != null &&
+        cur.isNotEmpty;
+    final String initial;
+    if (isPlayingSong) {
+      // isPlayingSong 已含 cur 非空校验，流分析在此处已将 cur 提升为非空。
+      initial = cur;
+    } else {
+      initial = settings?.downloadQuality ?? '320k';
+    }
+    final fallbackBehavior =
+        settings?.downloadQualityFallbackBehavior ?? 'lower';
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.7,
@@ -3865,16 +3950,13 @@ class _DownloadQualitySheetState
                 );
                 final shown = opts.isNotEmpty ? opts : fallbackOpts;
                 final sizes = _sizes;
+                final defaultQ =
+                    _nearestAvailable(initial, shown, fallbackBehavior);
                     // 仍无档位（非插件在线源探测全失败）：给一个「默认音质」
                     // 兜底项，下载器会回退用户设置的下载音质，避免死胡同空态。
                     final options = shown.isNotEmpty
                         ? shown
                         : const <String>[''];
-                    // 下载弹窗优先高亮设置中的下载音质；若该档不在可用
-                    // 列表内则回退当前播放音质，避免无默认选中。
-                    final preferredSel = options.contains(settingsQ)
-                        ? settingsQ
-                        : cur;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Column(
@@ -3895,13 +3977,12 @@ class _DownloadQualitySheetState
                             ModernOptionTile<String>(
                               option: ModernChoiceOption(
                                 label: shown.isEmpty
-                                    ? '${_qualityLabel(cur ?? settingsQ)} · ${tr('默认')}'
+                                    ? '${_qualityLabel(initial)} · ${tr('默认')}'
                                     : '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
                                 value: shown.isEmpty ? '' : q,
                               ),
-                              isSelected: shown.isEmpty
-                                  ? true
-                                  : q == preferredSel,
+                              isSelected:
+                                  shown.isEmpty ? true : q == defaultQ,
                               onTap: () async {
                                 // OverlayState 先于 await 捕获：OverlayState
                                 // 不随弹窗销毁而失效，await 后仍可安全用。
@@ -4913,6 +4994,16 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 上一次歌词视口高度：横竖屏/分屏切换检测用。
   double? _lastViewportHeight;
 
+  /// 上一次歌词视口宽度：与高度一起判定视口变化是否改变行布局（仅宽度变化
+  /// 才会让行高/换行全变；横屏栏进退只改高度、行布局不变）。
+  double? _lastViewportWidth;
+
+  /// 视口高度变化防抖：栏进退（AnimatedSize 300ms 逐帧收缩）与横竖屏切换都会
+  /// 连续改变视口高度。若每次变化立即清缓存+精确居中，动画期间活动行会被反复
+  /// 强制跳位（「正在播放这句会丢」）；改为高度稳定后一次性执行，动画期间交还
+  /// 常规跟随保持行位置连续。
+  Timer? _viewportChangeDebounce;
+
   // ==================== 模糊行静态烘焙缓存（稳态省逐帧高斯模糊） ====================
   // 稳态（换行/交互过渡结束）后，非活动行的"内容+模糊"几乎不变，却仍每帧
   // 重跑 ImageFiltered 高斯模糊。烘焙方案：稳态行把清晰内容捕获成位图，一次性
@@ -5242,6 +5333,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _recenterTimer?.cancel();
     _draggingIndexTimer?.cancel();
     _pendingCenterFallback?.cancel();
+    _viewportChangeDebounce?.cancel();
     _clearBlurSnapshots();
     _scrollCtrl.dispose();
     super.dispose();
@@ -5781,20 +5873,30 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       content = LayoutBuilder(
         builder: (context, constraints) {
           final viewport = constraints.maxHeight;
-          // 横竖屏/分屏切换：视口高度变化后滚动偏移不再居中、行高随宽度
-          // 换行变化，重新执行一次性精确居中（等新尺寸下实测布局后瞬时跳回）。
-          // 行布局缓存按内容坐标记录，但行高会因宽度变化而变，一并清掉重测。
+          // 视口高度变化（横竖屏切换/栏进退）：滚动偏移不再居中，需重新精确
+          // 居中。但栏动画期间高度每帧都在变，若每次变化立即清缓存+硬跳，
+          // 活动行会被反复强制跳位（「正在播放这句会丢」）；防抖到高度稳定后
+          // 一次性执行（350ms 覆盖 AnimatedSize 300ms），动画期间交还常规跟随。
+          // 仅宽度变化（横竖屏切换）才清行布局缓存（行高/换行全变）：只改高度
+          // 的栏进退行布局不变，直接沿用缓存精确居中——清缓存会退化为按比例
+          // 粗跳（估算偏差 → 歌词整体上推对不齐），且行在视口内不会重建、
+          // _MeasuredLine 实测回调不触发，粗跳位置永久残留。
           if (_lastViewportHeight != null &&
               (_lastViewportHeight! - viewport).abs() > 1) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
+            final widthChanged = _lastViewportWidth != null &&
+                (_lastViewportWidth! - constraints.maxWidth).abs() > 1;
+            _viewportChangeDebounce?.cancel();
+            _viewportChangeDebounce = Timer(
+                const Duration(milliseconds: 350), () {
               if (!mounted) return;
-              _lineLayouts.clear();
+              if (widthChanged) _lineLayouts.clear();
               _pendingCenterJump = true;
               _pendingCenterFallback?.cancel();
               _tryPendingCenterJump();
             });
           }
           _lastViewportHeight = viewport;
+          _lastViewportWidth = constraints.maxWidth;
           final blank = viewport / 2 - typicalH / 2;
           final topPad = blank < 20 ? 20.0 : blank;
           final bottomPad = blank < 40 ? 40.0 : blank;

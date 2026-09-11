@@ -46,8 +46,8 @@ Future<void> confirmRemovePlugin(
     return;
   }
 
-  final scheme = Theme.of(context).colorScheme;
   if (!context.mounted) return;
+  final scheme = Theme.of(context).colorScheme;
   final scope = await showSheetDialog<String>(
     context,
     (ctx) => SafeArea(
@@ -107,6 +107,7 @@ Future<void> confirmRemovePlugin(
     ),
   );
   if (scope == null) return;
+  if (!context.mounted) return;
   switch (scope) {
     case 'local':
       // 写入「仅删本地」墓碑，下载恢复时跳过，防止删除后被同步回流

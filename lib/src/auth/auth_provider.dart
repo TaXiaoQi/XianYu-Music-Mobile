@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/db_path.dart';
+import '../device/device_info.dart' show fetchStableDeviceId;
 import '../rust/api.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
@@ -213,8 +214,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
   /// 设备 ID（持久化，用于登录签名）。
+  /// 优先平台级稳定 ID（ANDROID_ID/Keychain UUID），卸载重装不变；
+  /// 仅当平台 ID 不可用时回退本地随机 hex（老版本行为）。
   Future<String> _deviceId() async {
     final prefs = await SharedPreferences.getInstance();
+    final stable = await fetchStableDeviceId();
+    if (stable != null && stable.isNotEmpty) {
+      if (prefs.getString('deviceId') != stable) {
+        await prefs.setString('deviceId', stable);
+      }
+      return stable;
+    }
     var id = prefs.getString('deviceId');
     if (id == null || id.isEmpty) {
       id = _randHex(16);

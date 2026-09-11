@@ -15,27 +15,47 @@ abstract final class PlatformCaps {
   /// 当前是否 iOS。
   static bool get isIOS => !kIsWeb && Platform.isIOS;
 
+  /// 当前是否鸿蒙（HarmonyOS NEXT，Flutter-OH 引擎）。dart:io 没有
+  /// isOhos，且 Platform.isXxx 系列在 ohos 上全为 false，只能按
+  /// operatingSystem 字符串判定（与 Flutter-OH fork 的
+  /// TargetPlatform.ohos 映射同一依据）。
+  static bool get isOhos => !kIsWeb && Platform.operatingSystem == 'ohos';
+
   /// 悬浮歌词窗（Android WindowManager overlay，iOS 无全局悬浮窗 API）。
   static bool get supportsFloatingLyrics => isAndroid;
 
-  /// 状态栏/通知栏歌词（Android 自定义通知文本，iOS 无等价能力；二期可评估
-  /// Live Activity 锁屏歌词）。
+  /// 状态栏/通知栏歌词（Android 自定义通知文本；iOS 等价物为 Live Activity
+  /// 锁屏/灵动岛歌词，见 [supportsLiveActivity]）。
   static bool get supportsStatusBarLyrics => isAndroid;
 
-  /// 桌面播放小组件（Android AppWidget，iOS 需 WidgetKit 原生扩展，二期）。
+  /// 桌面播放小组件（Android AppWidget；iOS 由 WidgetKit 承接，
+  /// 见 [supportsLiveActivity]）。
   static bool get supportsHomeWidgets => isAndroid;
+
+  /// iOS：WidgetKit 桌面小组件 + Live Activity 锁屏/灵动岛歌词
+  /// （ActivityKit 需 iOS 16.1+，由原生侧静默门控，低版本 init 无副作用）。
+  static bool get supportsLiveActivity => isIOS;
 
   /// 扫描任意本地文件夹（Android SAF/MediaStore；iOS 沙盒限制不可行，
   /// 本地库仅限应用内文件——下载与「文件」App 导入）。
   static bool get supportsFolderScan => isAndroid;
 
+  /// OHOS 本地库：HarmonyOS NEXT 沙盒与 iOS 同级，任意目录扫描不可行；
+  /// 预置应用沙盒目录（Downloads/Music）扫描 + 系统选择器导入音频文件。
+  static bool get supportsSandboxLibrary => isOhos;
+
+  /// 本地页「+」入口（文件夹页）：Android 任意目录扫描，OHOS 沙盒库 + 导入。
+  static bool get showsLibraryAddEntry => supportsFolderScan || supportsSandboxLibrary;
+
   /// 自定义下载目录（Android 直写任意目录；iOS 固定应用 Documents/Downloads，
   /// 经「文件」App 访问）。
   static bool get supportsCustomDownloadDir => isAndroid;
 
-  /// QQ 互联直分享（tencent_kit Android 端已配置；iOS 需 Universal Link
-  /// 域名关联，二期补齐，当前走系统分享面板）。
-  static bool get supportsQQShare => isAndroid;
+  /// QQ 互联直分享（tencent_kit）：QQ 好友音乐卡片 + QQ 空间网页卡片，
+  /// Android 与 iOS 同一入口、同一落地域（api.xianyumusic.cn）。iOS 额外依赖
+  /// Universal Link 域名关联（api.xianyumusic.cn/qq_conn/{app_id}/，
+  /// 关联域签名需付费开发者账号）。
+  static bool get supportsQQShare => isAndroid || isIOS;
 
   /// 应用内检查更新（Android apk 自更新；iOS 由 App Store 托管）。
   static bool get supportsInAppUpdate => isAndroid;

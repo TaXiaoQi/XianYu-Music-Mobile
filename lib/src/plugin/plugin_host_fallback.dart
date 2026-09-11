@@ -227,7 +227,8 @@ bool isQqTrialMediaUrl(String? url) =>
 
 /// 把 LX 搜索条目（Rust LxSearchItem JSON）映射为统一 PluginSearchResult。
 /// source 用音源 key，保证 `lx://{source}/{songmid}` 路径与播放一致。
-PluginSearchResult _lxSearchItemToResult(String sourceKey, Map<String, dynamic> m) {
+/// 公开供在线详情页（LX 专辑直连 txAlbumSongs 等）复用。
+PluginSearchResult lxSearchItemToResult(String sourceKey, Map<String, dynamic> m) {
   final raw = Map<String, dynamic>.from(m)
     ..['source'] = sourceKey
     ..['_hostLxFallback'] = true;
@@ -288,7 +289,7 @@ Future<List<PluginSearchResult>> lxHostSearchFallback(
         .whereType<Map>()
         .map((e) => e.cast<String, dynamic>())
         .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
-        .map((m) => _lxSearchItemToResult(sourceKey, m))
+        .map((m) => lxSearchItemToResult(sourceKey, m))
         .toList();
   } catch (e, st) {
     AppLog.warn('plugin', '[lxHostSearch] source=$sourceKey EXCEPTION: $e\n$st');
@@ -374,7 +375,7 @@ Future<List<PluginSearchResult>> lxHostPlaylistTracksFallback(
         .whereType<Map>()
         .map((e) => e.cast<String, dynamic>())
         .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
-        .map((m) => _lxSearchItemToResult(sourceKey, m))
+        .map((m) => lxSearchItemToResult(sourceKey, m))
         .toList();
   } catch (e, st) {
     AppLog.warn('plugin',

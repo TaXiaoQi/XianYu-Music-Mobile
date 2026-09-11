@@ -2059,13 +2059,33 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     }
     final engine = ref.read(pluginEngineProvider).valueOrNull;
     if (engine == null) return;
-    // LX 派生：直接播放其歌曲列表。
+    // LX 派生（歌手/专辑）：进入在线详情页，复用插件详情容器。
     if (item.isDirectPlay) {
-      final service = PluginSearchService(engine, _plugins());
-      final items = item.directSongs
-          .map((s) => service.toQueueItem(item.directSource!, s))
-          .toList();
-      ref.read(playerProvider.notifier).playQueue(items, startIndex: 0);
+      final source = item.directSource!;
+      final first = item.directSongs.first;
+      final isAlbum = item.kind == 'album';
+      // directSongs 由宿主代取（source = 插件声明音源 key，如 'kw'）。
+      final lxKey = first.source;
+      final raw = <String, dynamic>{
+        '_lxSource': lxKey,
+        'name': item.title,
+        if (isAlbum) ...{
+          'id': first.albumId ?? first.albumMid ?? item.title,
+          'albumId': first.albumId,
+          'albumMid': first.albumMid,
+        },
+      };
+      context.push(
+        '/online-detail',
+        extra: OnlineDetailArgs(
+          type: isAlbum ? OnlineDetailType.album : OnlineDetailType.artist,
+          pluginId: source.id,
+          title: item.title,
+          subtitle: item.subtitle,
+          coverUrl: item.coverUrl,
+          raw: raw,
+        ),
+      );
       return;
     }
     // musicfree 在线条目：进入在线详情页。

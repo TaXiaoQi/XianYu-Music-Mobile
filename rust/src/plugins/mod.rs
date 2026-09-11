@@ -1,79 +1,18 @@
-//! 插件管理：HTTP 请求、文件读写、图片代理、音频临时下载。
+//! 插件宿主配套能力：文件读取、图片代理、视频缓存下载。
 //!
-//! 音源脚本的执行（QuickJS）复用 [`crate::plugin_host`]，
-//! 管理逻辑（安装/启停/卸载/直链解析调度）见 [`manager`]。
-
-pub mod manager;
+//! 音源脚本的执行（QuickJS）与脚本 HTTP 桥在 [`crate::plugin_host`]；插件列表/索引由
+//! Dart 侧 PluginStore（SharedPreferences，与桌面端同 key 同 schema）管理，
+//! LX 直链解析由 Dart 编排层直接驱动插件引擎（对齐桌面端架构）。
 
 use crate::security::path_validator;
 use image::{GenericImageView, ImageEncoder};
-use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-#[derive(Serialize)]
-pub struct PluginHttpResponse {
-    pub status: u16,
-    pub url: String,
-    pub headers: HashMap<String, String>,
-    pub body: String,
-}
-
-#[derive(Serialize)]
-pub struct PluginHttpBinaryResponse {
-    pub status: u16,
-    pub url: String,
-    pub headers: HashMap<String, String>,
-    pub body_base64: String,
-}
-
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const MAX_BACKGROUND_VIDEO_BYTES: u64 = 512 * 1024 * 1024;
-
-/// 校验插件 HTTP 请求 URL：仅允许 http/https，并阻止 SSRF 目标
-/// （环回 / 内网 / 链路本地 / 保留地址，以及 localhost 等内网域名）。
-fn validate_plugin_http_url(url: &str) -> Result<(), String> {
-    use reqwest::Url;
-    let parsed = Url::parse(url).map_err(|e| format!("URL 格式非法: {e}"))?;
-    let scheme = parsed.scheme();
-    if scheme != "http" && scheme != "https" {
-        return Err(format!("仅允许 http/https 协议，当前: {scheme}"));
-    }
-    let host = parsed.host_str().unwrap_or("").to_lowercase();
-    if host.is_empty() {
-        return Err("URL 缺少主机名".to_string());
-    }
-    if host == "localhost"
-        || host.ends_with(".localhost")
-        || host.ends_with(".local")
-        || host.ends_with(".internal")
-    {
-        return Err(format!("禁止访问内网地址: {host}"));
-    }
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        let blocked = match ip {
-            std::net::IpAddr::V4(v4) => {
-                v4.is_loopback()
-                    || v4.is_private()
-                    || v4.is_link_local()
-                    || v4.is_unspecified()
-                    || v4.is_multicast()
-            }
-            std::net::IpAddr::V6(v6) => {
-                v6.is_loopback()
-                    || v6.is_unique_local()
-                    || v6.is_unspecified()
-                    || v6.is_multicast()
-            }
-        };
-        if blocked {
-            return Err(format!("禁止访问内网/保留地址: {host}"));
-        }
-    }
-    Ok(())
-}
 
 /// 等比缩小到指定最长边（不足或非图片尺寸则原样返回）。
 fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage {
@@ -87,156 +26,6 @@ fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage
     } else {
         img.resize((w * max_edge) / h, max_edge, image::imageops::FilterType::Lanczos3)
     }
-}
-
-/// 异步 HTTP 请求 —— 使用 reqwest 异步客户端，不阻塞调用线程。
-pub async fn plugin_http_request(
-    method: String,
-    url: String,
-    headers: Option<HashMap<String, String>>,
-    body: Option<String>,
-    timeout: Option<u64>,
-    follow: Option<u32>,
-) -> Result<PluginHttpResponse, String> {
-    validate_plugin_http_url(&url)?;
-    let method =
-        reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
-
-    let redirect_limit = follow.unwrap_or(10);
-    let timeout_secs = timeout.unwrap_or(30);
-    let client_builder = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
-        .gzip(true)
-        .brotli(true)
-        .deflate(true)
-        .user_agent(USER_AGENT);
-    let client = if timeout_secs == 0 {
-        client_builder.build()
-    } else {
-        client_builder
-            .timeout(Duration::from_secs(timeout_secs))
-            .build()
-    }
-    .map_err(|error| error.to_string())?;
-
-    let mut request = client.request(method, &url);
-    if let Some(headers) = headers {
-        for (key, value) in headers {
-            if key.trim().is_empty() || value.trim().is_empty() {
-                continue;
-            }
-            request = request.header(key, value);
-        }
-    }
-    if let Some(body) = body {
-        request = request.body(body);
-    }
-
-    let mut response = request.send().await.map_err(|error| error.to_string())?;
-    let status = response.status().as_u16();
-    let final_url = response.url().to_string();
-    let mut response_headers = HashMap::new();
-    for (key, value) in response.headers().iter() {
-        if let Ok(value) = value.to_str() {
-            response_headers.insert(key.as_str().to_string(), value.to_string());
-        }
-    }
-    const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
-    let body = {
-        let mut buf = Vec::with_capacity(4096);
-        loop {
-            match response.chunk().await {
-                Ok(Some(chunk)) => {
-                    if buf.len() + chunk.len() > MAX_BODY_SIZE {
-                        break;
-                    }
-                    buf.extend_from_slice(&chunk);
-                }
-                Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
-            }
-        }
-        String::from_utf8(buf).unwrap_or_else(|_| "[INVALID_UTF8]".to_string())
-    };
-
-    Ok(PluginHttpResponse {
-        status,
-        url: final_url,
-        headers: response_headers,
-        body,
-    })
-}
-
-/// 异步二进制 HTTP 请求 —— 返回 base64 编码的 body。
-pub async fn plugin_http_request_binary(
-    method: String,
-    url: String,
-    headers: Option<HashMap<String, String>>,
-    body: Option<String>,
-    timeout: Option<u64>,
-    follow: Option<u32>,
-) -> Result<PluginHttpBinaryResponse, String> {
-    use base64::{engine::general_purpose, Engine as _};
-
-    validate_plugin_http_url(&url)?;
-    let method =
-        reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
-
-    let redirect_limit = follow.unwrap_or(10);
-    let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
-        .timeout(request_timeout)
-        .user_agent(USER_AGENT)
-        .build()
-        .map_err(|error| error.to_string())?;
-
-    let mut request = client.request(method, &url);
-    if let Some(headers) = headers {
-        for (key, value) in headers {
-            if key.trim().is_empty() || value.trim().is_empty() {
-                continue;
-            }
-            request = request.header(key, value);
-        }
-    }
-    if let Some(body) = body {
-        request = request.body(body);
-    }
-
-    let mut response = request.send().await.map_err(|error| error.to_string())?;
-    let status = response.status().as_u16();
-    let final_url = response.url().to_string();
-    let mut response_headers = HashMap::new();
-    for (key, value) in response.headers().iter() {
-        if let Ok(value) = value.to_str() {
-            response_headers.insert(key.as_str().to_string(), value.to_string());
-        }
-    }
-    const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
-    let body_base64 = {
-        let mut buf = Vec::with_capacity(4096);
-        loop {
-            match response.chunk().await {
-                Ok(Some(chunk)) => {
-                    if buf.len() + chunk.len() > MAX_BODY_SIZE {
-                        break;
-                    }
-                    buf.extend_from_slice(&chunk);
-                }
-                Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
-            }
-        }
-        general_purpose::STANDARD.encode(&buf)
-    };
-
-    Ok(PluginHttpBinaryResponse {
-        status,
-        url: final_url,
-        headers: response_headers,
-        body_base64,
-    })
 }
 
 /// 读取本地插件/备份文件内容（.js / .json / .txt / .m3u / .m3u8）。
@@ -278,65 +67,18 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     fs::read_to_string(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))
 }
 
-/// 将插件脚本保存到 `{data_dir}/plugins/{id}.js`，返回保存后的完整路径。
-pub fn save_plugin_script(data_dir: &Path, id: String, script: String) -> Result<String, String> {
-    let sanitized_id = path_validator::sanitize_filename_component(&id)
-        .map_err(|e| format!("无效的插件 id: {}", e))?;
-    if script.len() > 2 * 1024 * 1024 {
-        return Err(format!(
-            "插件脚本过大: {} bytes (上限 2MB)",
-            script.len()
-        ));
-    }
-    let plugins_dir = data_dir.join("plugins");
-    fs::create_dir_all(&plugins_dir).map_err(|e| format!("创建插件目录失败: {e}"))?;
-    let file_path = plugins_dir.join(format!("{sanitized_id}.js"));
-    fs::write(&file_path, &script).map_err(|e| format!("写入插件脚本失败: {e}"))?;
-    Ok(file_path.to_string_lossy().to_string())
-}
-
-/// 读取本地文件的二进制内容（base64 编码返回，.json / .zip / .lxmc）。
-pub fn read_file_bytes(path: String) -> Result<String, String> {
-    use base64::{engine::general_purpose, Engine as _};
-
-    let validated = path_validator::validate_path(&path, None)
-        .map_err(|e| format!("路径校验失败: {} (路径: {})", e, path))?;
-    let path_obj = validated.as_path();
-    if !path_obj.is_file() {
-        return Err(format!("文件不存在: {}", path));
-    }
-
-    let ext = path_obj
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if !matches!(ext.as_str(), "json" | "zip" | "lxmc") {
-        return Err(format!(
-            "不支持的文件类型: .{} (仅支持 .json/.zip/.lxmc)",
-            ext
-        ));
-    }
-
-    let metadata =
-        fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
-    let max_size = 50 * 1024 * 1024;
-    if metadata.len() > max_size {
-        return Err(format!(
-            "文件过大: {} MB (上限 {} MB)",
-            metadata.len() / 1024 / 1024,
-            max_size / 1024 / 1024
-        ));
-    }
-
-    let bytes = fs::read(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))?;
-    Ok(general_purpose::STANDARD.encode(&bytes))
-}
-
 /// 代理图片请求 —— 自动添加 Referer 头，解决 CDN 403 问题，返回 data URL。
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
+    // SSRF 防护：图片代理仅允许公网 http/https 目标
+    crate::security::ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("图片链接校验失败: {e}"))?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(crate::security::ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent(USER_AGENT)
         .build()
         .map_err(|e| e.to_string())?;
@@ -435,89 +177,6 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
     Ok(format!("data:{};base64,{}", content_type, b64))
 }
 
-/// 异步下载音频到临时文件，返回本地文件路径。
-///
-/// 手动跟随 302 重定向：reqwest 默认在同一主机重定向时保留 Cookie 等敏感头，
-/// 但跨主机重定向会剥离 Cookie/Authorization 防泄露。B 站 CDN 常把取流地址 302
-/// 到镜像主机，一旦 Cookie/Referer 被剥离，CDN 就按匿名处理并返回 3-4 秒预览片段。
-/// 这里禁用自动重定向，每一跳都重新注入完整 headers。
-pub async fn download_audio_to_temp(
-    url: String,
-    headers: Option<HashMap<String, String>>,
-) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(60))
-        .gzip(true)
-        .brotli(true)
-        .deflate(true)
-        .user_agent(USER_AGENT)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let baseline_headers = headers.unwrap_or_default();
-    let mut current_url = url;
-
-    let mut body: Option<Vec<u8>> = None;
-
-    for _hop in 0..12 {
-        let mut req = client.get(&current_url);
-        for (key, value) in &baseline_headers {
-            if !key.trim().is_empty() && !value.trim().is_empty() {
-                req = req.header(key, value);
-            }
-        }
-        let response = req.send().await.map_err(|e| e.to_string())?;
-
-        if response.status().is_redirection() {
-            let location = response
-                .headers()
-                .get(reqwest::header::LOCATION)
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.to_string());
-            let Some(next_url) = location else {
-                return Err(format!("Redirect without Location: HTTP {}", response.status()));
-            };
-            if next_url.trim().is_empty() {
-                return Err(format!("Empty redirect Location from HTTP {}", response.status()));
-            }
-            current_url = if next_url.starts_with("http://") || next_url.starts_with("https://") {
-                next_url
-            } else {
-                reqwest::Url::parse(&current_url)
-                    .and_then(|base| base.join(&next_url))
-                    .map(|u| u.to_string())
-                    .unwrap_or(next_url)
-            };
-            continue;
-        }
-
-        if !response.status().is_success() {
-            return Err(format!("HTTP {}", response.status()));
-        }
-        body = Some(response.bytes().await.map_err(|e| e.to_string())?.to_vec());
-        break;
-    }
-
-    let bytes = body.ok_or_else(|| "No response body".to_string())?;
-    if bytes.is_empty() {
-        return Err("Empty response".to_string());
-    }
-
-    let temp_dir = std::env::temp_dir();
-    let file_name = format!(
-        "xy_music_{}.m4s",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    );
-    let temp_path = temp_dir.join(&file_name);
-    std::fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
-
-    Ok(temp_path.to_string_lossy().to_string())
-}
-
 /// 读取本地图片文件为 base64（分享本地歌曲封面上传用）。
 /// 返回 JSON `{"mime":..., "base64":...}`，mime 由图片字节内容判定，不依赖扩展名。
 pub fn read_image_base64(path: String) -> Result<String, String> {
@@ -571,8 +230,16 @@ pub async fn download_video_to_cache(
         return Err("Unsupported video URL".to_string());
     }
 
+    // SSRF 防护：视频源仅允许公网 http/https 目标
+    crate::security::ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|error| error.to_string())?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(crate::security::ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
         .brotli(true)
         .deflate(true)

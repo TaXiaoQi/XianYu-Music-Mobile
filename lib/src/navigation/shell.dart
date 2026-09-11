@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -436,10 +437,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _router.routerDelegate.addListener(_onRouteChanged);
     // 订阅原生旋转事件：旋转一开始（onConfigurationChanged）即推送屏幕方向，
     // 立刻切横竖屏布局，尽量第一帧出横屏，缩短系统旋转期间「拉伸竖屏」的停留。
-    // 尺寸判定（didChangeMetrics）保留作兜底。
-    _rotationSub = const EventChannel('xianyu/rotation/events')
-        .receiveBroadcastStream()
-        .listen(_onRotationEvent, onError: (_) {});
+    // 尺寸判定（didChangeMetrics）保留作兜底。通道仅 Android 原生侧注册，
+    // 其他平台（ohos 等）不订阅，避免 MissingPluginException 走全局错误上报。
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _rotationSub = const EventChannel('xianyu/rotation/events')
+          .receiveBroadcastStream()
+          .listen(_onRotationEvent, onError: (_) {});
+    }
   }
 
   /// 接收原生屏幕方向（1 竖 / 2 横），旋转一开始即切横竖屏布局。
@@ -788,6 +792,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         await SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.manual,
           overlays: SystemUiOverlay.values,
+        );
+        // 引擎 edge-to-edge 迁移（targetSdk 35+，API < 30）会在模式切换时
+        // 重涂半透明黑 scrim（0x40000000），这里重申透明状态栏。
+        // 仅声明 statusBarColor 字段，不影响引擎侧图标亮度等其余字段。
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
         );
       }
     } catch (_) {
@@ -1286,7 +1296,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           // 滚动检测由 app.dart 根层 ScrollOffsetCapture 统一捕获，波浪扭曲已内聚到
           // 迷你播放条/悬浮底栏的 BiliPaiGlass 自身负责液态玻璃渲染，
           // 无需再整页包裹 LiquidWave 离屏捕获。
-          Padding(
+          // 页面主体：形态切换转场期间监听 orientationContentFade 整体淡出/淡入
+          //（值由常驻最顶层的 OrientationTransitionOverlay 驱动）。淡出到底透出
+          // 上方两层壁纸/主题底色——不再用纯色盖板遮罩（全屏色闪观感差）。
+          ValueListenableBuilder<double>(
+            valueListenable: orientationContentFade,
+            builder: (context, fade, child) =>
+                Opacity(opacity: fade, child: child),
+            child: Padding(
             // 横屏：左缘固定侧栏占位，内容右移避让；开关开启时不再为右侧
             // 摄像头挖孔预留安全区（所有页面使用摄像头区域）。
             padding: EdgeInsets.only(
@@ -1423,6 +1440,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     ],
                   ),
                 ),
+          ),
 
           // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
           // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
@@ -1675,7 +1693,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
             ),
-          // 横竖屏形态切换转场蒙层：最顶层，旋转那 1~2 帧用摘要色盖住拉伸。
+          // 横竖屏形态切换转场驱动器：常驻最顶层，翻转时驱动壳层内容淡出→淡入。
           const OrientationTransitionOverlay(),
         ],
       ),
@@ -2535,7 +2553,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   // spring(dampingRatio=0.62, stiffness=420) 收敛到目标 tab，自带轻微
   // overshoot 后回正，替代旧「tween 匀速飞行 + _rebound 落点回弹」双段——
   // 那套是匀速到站再补一个独立回弹，物理感不如弹簧天然收敛。
-  late final AnimationController _press = AnimationController(
+  // 惰性字段不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _pressC;
+  AnimationController get _press => _pressC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 150),
   );
@@ -2544,12 +2565,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   // `SpringSimulation(spring(0.62, 420))` 欠阻尼收敛到目标 tab，自带轻微
   // overshoot 回正；拖动时 DIRECT 直跟手指（snapTo）。用 Flutter 内置
   // Simulation 而非手写欧拉积分，保证切换必然有逐帧动画。
-  late final AnimationController _move = AnimationController(vsync: this);
+  AnimationController? _moveC;
+  AnimationController get _move => _moveC ??= AnimationController(vsync: this);
 
   // 独立 scaleX/scaleY 弹簧的每帧驱动器（对齐 BiliPai DampedDragAnimation 的
   // 独立 Animatable + spring 回弹）。区别于把积分放在 build：这里由真实 Ticker
   // 每帧驱动二阶欠阻尼振荡，拖动连贯、松手后仍持续回弹直至自然收敛。
-  late final Ticker _springTicker = createTicker(_onSpringTick);
+  Ticker? _springTickerC;
+  Ticker get _springTicker => _springTickerC ??= createTicker(_onSpringTick);
   Duration _springLast = Duration.zero;
 
   void _ensureTicker() {
@@ -2625,9 +2648,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   void dispose() {
-    _move.dispose();
-    _springTicker.dispose();
-    _press.dispose();
+    _moveC?.dispose();
+    _springTickerC?.dispose();
+    _pressC?.dispose();
     super.dispose();
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -58,6 +59,19 @@ class CoverImage extends ConsumerStatefulWidget {
   /// 自定义占位（如全屏背景需要无图标占位）；null 时用默认渐变+图标。
   final Widget? placeholder;
 
+  /// 后台预取封面：委托 State 侧静态实现（封面路径/字节缓存挂在 State 上）。
+  static Future<void> prewarm({
+    required String songPath,
+    String? networkUrl,
+    required String dbPath,
+    required String cacheRoot,
+  }) =>
+      _CoverImageState._prewarm(
+          songPath: songPath,
+          networkUrl: networkUrl,
+          dbPath: dbPath,
+          cacheRoot: cacheRoot);
+
   @override
   ConsumerState<CoverImage> createState() => _CoverImageState();
 }
@@ -66,10 +80,22 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   // 按歌曲路径缓存缩略图路径，避免重复触发 Rust 提取。
   // 高清模式用独立 key，避免与缩略图缓存互相污染。
   static final Map<String, String> _cache = {};
+  // 已预取的封面 key（本地 full key / 在线代理 URL），防止重复提取。
+  static final Set<String> _prewarmed = {};
   String? _path;
 
   /// 经后端代理取回的在线封面字节。
   Uint8List? _proxied;
+
+  /// 缩略图过渡位（高清模式专用）：高清图提取/解码未就绪时先展示，
+  /// 避免播放页大封面切歌闪默认音符占位。
+  String? _thumbPath;
+
+  /// 已锁定的解码宽度（像素）：歌未变时保持首次计算值。播放页横屏顶/底栏
+  /// 进退（AutoHideChrome 的 AnimatedSize 收缩让位）会使封面显示尺寸逐帧
+  /// 变化，若 cacheWidth 跟着变会触发图片重新解码 + CoverFadeIn 重新淡入，
+  /// 表现为封面闪烁；锁定后仅做显示缩放、不重解码。
+  int? _loadedCacheWidth;
 
   @override
   void initState() {
@@ -87,6 +113,8 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         oldWidget.highQuality != widget.highQuality) {
       _path = null;
       _proxied = null;
+      _thumbPath = null;
+      _loadedCacheWidth = null;
       _load();
       _maybeProxy();
     }
@@ -128,6 +156,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     }
     final cacheKey =
         widget.highQuality ? '${widget.songPath}\u0000full' : widget.songPath;
+    // 高清大封面（播放页）：正式图走 800px 提取，较慢。先并行确保缩略图
+    // 过渡位，高清图就绪前先出缩略图，避免切歌闪默认音符占位。
+    if (widget.highQuality) unawaited(_ensureThumbPath());
     final cached = _cache[cacheKey];
     if (cached != null) {
       _setPath(cached.isEmpty ? null : cached);
@@ -165,6 +196,34 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       _cache[cacheKey] = '';
       _setPath(null);
     }
+  }
+
+  /// 解析缩略图过渡位（仅高清模式）：优先静态缓存与扫描期缩略图路径
+  /// （同步命中零开销），否则走一次 150px 快速提取；提取失败不写负缓存，
+  /// 交给正式加载链路自愈，避免污染列表渲染。
+  Future<void> _ensureThumbPath() async {
+    if (_thumbPath != null) return;
+    final cached = _cache[widget.songPath];
+    if (cached != null) {
+      if (cached.isNotEmpty && File(cached).existsSync()) {
+        if (mounted) setState(() => _thumbPath = cached);
+      }
+      return;
+    }
+    final direct = widget.thumbPath;
+    if (direct != null && direct.isNotEmpty && File(direct).existsSync()) {
+      if (mounted) setState(() => _thumbPath = direct);
+      return;
+    }
+    try {
+      final dbPath = await ref.read(dbPathProvider.future);
+      final cacheRoot = await ref.read(coverCacheRootProvider.future);
+      final p = await getSongCoverThumbnail(
+          dbPath: dbPath, cacheRoot: cacheRoot, path: widget.songPath);
+      if (p.isEmpty) return;
+      _cache[widget.songPath] = p;
+      if (mounted && File(p).existsSync()) setState(() => _thumbPath = p);
+    } catch (_) {}
   }
 
   /// 设定缩略图路径并更新 UI；解析成功后把渲染端同款 provider 送入 Flutter
@@ -243,14 +302,45 @@ class _CoverImageState extends ConsumerState<CoverImage> {
 
   Widget _localImage() {
     final path = _path;
-    if (path == null || !File(path).existsSync()) return _placeholder();
+    if (path == null || !File(path).existsSync()) {
+      // 正式图未就绪：已有缩略图先行展示（高清模式切歌过渡）。
+      final thumb = _thumbPath;
+      if (thumb != null && File(thumb).existsSync()) {
+        return Image.file(
+          File(thumb),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          frameBuilder: CoverFadeIn.frameBuilder(placeholder: _placeholder()),
+          errorBuilder: (_, _, _) => _placeholder(),
+        );
+      }
+      return _placeholder();
+    }
     return Image.file(
       File(path),
       fit: BoxFit.cover,
       cacheWidth: _cacheWidth,
-      frameBuilder: CoverFadeIn.frameBuilder(placeholder: _placeholder()),
+      gaplessPlayback: true,
+      frameBuilder: CoverFadeIn.frameBuilder(placeholder: _thumbOrPlaceholder()),
       errorBuilder: (_, _, _) => _placeholder(),
     );
+  }
+
+  /// 正式图解码期间的过渡占位：优先已就绪的缩略图（缩略图 → 高清图无缝
+  /// 衔接，不回退默认音符），其次默认渐变+音符占位。
+  Widget _thumbOrPlaceholder() {
+    final thumb = _thumbPath;
+    if (thumb != null && File(thumb).existsSync()) {
+      return Image.file(File(thumb), fit: BoxFit.cover, gaplessPlayback: true);
+    }
+    return _placeholder();
+  }
+
+  /// 生效的解码宽度：外部显式指定优先；否则取已锁定的首次计算值
+  /// （首次访问时按当时显示尺寸计算并锁定，歌不变则不随显示尺寸重算）。
+  int? get _cacheWidth {
+    if (widget.cacheWidth != null) return widget.cacheWidth;
+    return _loadedCacheWidth ??= _computeCacheWidth();
   }
 
   /// 按“显示尺寸 × 屏幕密度”解码，避免把整张高清封面解码后再缩放到小格子，
@@ -277,8 +367,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     256,
   ];
 
-  int? get _cacheWidth {
-    if (widget.cacheWidth != null) return widget.cacheWidth;
+  int? _computeCacheWidth() {
     final w = widget.width;
     if (!w.isFinite || w <= 0) return null;
     final px = w * MediaQuery.of(context).devicePixelRatio;
@@ -293,6 +382,79 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       }
     }
     return slot.clamp(1, 256);
+  }
+
+  /// 后台预取封面实现（无 UI 依赖）：本地歌解析高清封面路径写入静态
+  /// [_cache]，在线歌预拉封面字节（防盗链域）或磁盘缓存（直连域）。供
+  /// 播放引擎在起播后预取「下一首」封面，切歌时封面组件同步命中，
+  /// 不闪默认音符占位。
+  static Future<void> _prewarm({
+    required String songPath,
+    String? networkUrl,
+    required String dbPath,
+    required String cacheRoot,
+  }) async {
+    final url = networkUrl;
+    if (url != null && url.isNotEmpty) {
+      if (url.startsWith('data:')) return;
+      if (!_prewarmed.add('url\u0000$url')) return;
+      if (CoverProxy.needsProxy(url)) {
+        if (CoverProxy.cached(url) != null || CoverProxy.hasFailed(url)) return;
+        await CoverProxy.fetch(url);
+        return;
+      }
+      // 直连封面：触发一次下载写入 flutter_cache_manager 磁盘缓存（与渲染端
+      // CachedNetworkImage 共用），切歌时渲染端磁盘命中，免网络等待期占位。
+      await _warmNetworkImage(url);
+      return;
+    }
+    final fullKey = '$songPath\u0000full';
+    final hadFull = _cache[fullKey] != null;
+    if (!hadFull && !_prewarmed.add(fullKey)) return;
+    // 缩略图过渡位始终确保就绪：切歌瞬间高清图解码期间也要有真封面可看。
+    unawaited(_prewarmThumbPath(songPath, dbPath, cacheRoot));
+    if (hadFull) return;
+    try {
+      final p = await getSongCover(
+          dbPath: dbPath, cacheRoot: cacheRoot, path: songPath);
+      if (p.isNotEmpty) _cache[fullKey] = p;
+    } catch (_) {}
+  }
+
+  /// 预热直连网络封面：经 [CachedNetworkImageProvider] 触发一次下载，使
+  /// 字节进入 flutter_cache_manager 磁盘缓存（与渲染端共用），渲染端挂载
+  /// 时直接磁盘命中。
+  static Future<void> _warmNetworkImage(String url) async {
+    final c = Completer<void>();
+    final stream =
+        CachedNetworkImageProvider(url).resolve(const ImageConfiguration());
+    final listener = ImageStreamListener(
+      (_, _) {
+        if (!c.isCompleted) c.complete();
+      },
+      onError: (_, _) {
+        if (!c.isCompleted) c.complete();
+      },
+    );
+    stream.addListener(listener);
+    try {
+      await c.future.timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // 超时/失败：放弃本次预热，渲染端按原链路自理。
+    } finally {
+      stream.removeListener(listener);
+    }
+  }
+
+  /// 预取缩略图路径；仅成功结果入缓存（不写负缓存，避免影响列表自愈链路）。
+  static Future<void> _prewarmThumbPath(
+      String songPath, String dbPath, String cacheRoot) async {
+    if (_cache[songPath] != null) return;
+    try {
+      final p = await getSongCoverThumbnail(
+          dbPath: dbPath, cacheRoot: cacheRoot, path: songPath);
+      if (p.isNotEmpty) _cache[songPath] = p;
+    } catch (_) {}
   }
 
   Widget _placeholder() {

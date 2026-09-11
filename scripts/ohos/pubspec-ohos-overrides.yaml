@@ -1,0 +1,110 @@
+# pubspec-ohos-overrides.yaml (TEMPLATE)
+# Copied to <mirror>/pubspec_overrides.yaml by build-ohos.ps1; NEVER commit a
+# copy at the main project root - its presence would hijack Android/iOS
+# `pub get` too (the file REPLACES pubspec's dependency_overrides entirely).
+#
+# Base (PoC-verified) set lives here; P2 appends the remaining plugins.
+# NOTE: tencent_kit path override must stay - the file replaces, not merges,
+# the pubspec dependency_overrides block.
+
+dependency_overrides:
+  # ---- vendor: QQ OpenSDK plugin (shared with Android/iOS) ----
+  tencent_kit:
+    path: third_party/tencent_kit
+
+  # ---- ohos forks (PoC verified) ----
+  path_provider:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/path_provider/path_provider
+
+  # ---- shared_preferences (P2): without an ohos implementation every
+  # SharedPreferences.getInstance() throws MissingPluginException, and the
+  # global error reporter's reportError() itself reads prefs -> unbounded
+  # error->report->error hot loop (~600 channel calls/s on the emulator).
+  # Same ohos fork as path_provider.
+  shared_preferences:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/shared_preferences/shared_preferences
+  audio_session:
+    git:
+      url: https://gitcode.com/CPF-Flutter/flutter_audio_session.git
+      ref: br_v0.2.2_ohos
+  just_audio:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_just_audio.git
+      path: just_audio
+  audio_service:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_audio_service.git
+      path: audio_service
+
+  # ---- sqflite (transitive via cached_network_image; CN pub mirror 424s
+  # sqflite_darwin, and this fork has ohos built in - no sqflite_darwin) ----
+  sqflite:
+    git:
+      url: https://gitcode.com/CPF-Flutter/flutter_sqflite.git
+      path: sqflite
+
+  # ---- webview_flutter (P2: 登录人机验证 Turnstile/hCaptcha) ----
+  # TPC fork 4.6.0，自包含 webview_flutter_android/_ohos path 依赖。
+  webview_flutter:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/webview_flutter/webview_flutter
+
+  # ---- url_launcher (P2: 关于页/更新跳转外部链接) ----
+  # TPC fork 6.1.12（含 url_launcher_ohos path 依赖）；sdk 约束为
+  # ">=2.17.0 <3.0.0" 旧式上界，pub 对 Dart 3 有 legacy 特判可直接解析。
+  url_launcher:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/url_launcher/url_launcher
+
+  # ---- image_picker (P2: 头像/反馈附件/壁纸选择) ----
+  # TPC fork 1.0.2（含 image_picker_ohos path 依赖）；应用只用
+  # pickImage/pickMultiImage(maxWidth/maxHeight/imageQuality)，1.0.2 已覆盖。
+  image_picker:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/image_picker/image_picker
+
+  # ---- permission_handler (P2: 存储权限/文件夹扫描) ----
+  # SIG fork 11.3.1（应用约束 ^11.3.0 精确匹配），主包内嵌 ohos 子包
+  # git 自引用，pub 自动解析。
+  permission_handler:
+    git:
+      url: https://gitcode.com/openharmony-sig/flutter_permission_handler.git
+      path: permission_handler
+      ref: br_permission_handler_v11.3.1_ohos
+
+  # ---- mobile_scanner (P2: 扫码登录) ----
+  # SIG fork 7.1.4（应用约束 ^7.1.0 匹配），整包含 ohos 原生实现。
+  mobile_scanner:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
+      ref: br_v7.1.4_ohos
+
+  # ---- record (P2: 听歌识曲麦克风采集) ----
+  # SIG fork 6.1.2（record_ohos 以同级 path 依赖自动解析）；主工程 pubspec
+  # 原为 ^7.1.1，此前降级 ^6.2.1 保 Dart 3.11，现直接换成 ohos fork。
+  record:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_record.git
+      path: record
+      ref: br_v6.1.2_ohos
+
+  # record_ohos 依赖 uuid ^3.0.7，与 cached_network_image -> flutter_cache_manager
+  # 要求的 uuid ^4.4.2 冲突；uuid 3.x/4.x 的 Uuid().v4() API 兼容（record_ohos
+  # 仅用于随机临时文件名），统一钉到 ^4.6.0。
+  uuid: ^4.6.0
+
+  # ---- file_picker (P2: 插件导入/歌词字体/本地扫描/备份恢复) ----
+  # vendored: third_party/file_picker = SIG fluttertpc_file_picker
+  # br_v10.3.8_ohos 改名（file_picker_ohos -> file_picker）+ 12.x 静态门面
+  # shim。SIG 包名是 file_picker_ohos 无法直接 override，且 12.x 静态 API
+  # 与 10.x 实例 API 不兼容，故 vendor 适配（详见 lib/src/file_picker.dart
+  # 顶部 XY shim 注释）。win32 提到 ^6.0.1 对齐 share_plus 13.x。
+  file_picker:
+    path: third_party/file_picker

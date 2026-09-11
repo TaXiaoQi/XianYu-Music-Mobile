@@ -213,8 +213,21 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
   final Ref _ref;
   final FavoritesStore _store = FavoritesStore();
   final FavoritesCollectionStore _collectionStore = FavoritesCollectionStore();
+  /// 整表写入串行队列：先更新内存 state，再按调用顺序落盘。
+  /// 避免并发收藏/取消收藏时，后发起的调用基于旧快照整表写回，
+  /// 覆盖先前的收藏导致列表只剩一首（丢失更新）。
+  Future<void> _persistQueue = Future<void>.value();
+
+  Future<void> _persist(List<FavoriteEntry> entries) {
+    final task = _persistQueue.then((_) => _store.saveAll(entries));
+    // 单次写盘失败不中断队列，保证后续写入仍能执行。
+    _persistQueue = task.then<void>((_) {}, onError: (Object _) {});
+    return task;
+  }
 
   Future<void> refresh() async {
+    // 等待在途写盘完成后再读盘，避免读到旧快照把内存 state 回退。
+    await _persistQueue;
     final entries = await _store.loadAll();
     final loaded = await _collectionStore.loadAll();
     // 榜单不参与收藏（对齐桌面端）：清理历史遗留的榜单收藏，避免僵尸数据。
@@ -257,8 +270,10 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
     final entries = [entry, ...state.entries];
-    await _store.saveAll(entries);
+    // 先同步更新内存 state，再异步落盘：连续快速收藏时，
+    // 后续调用能读到包含本次收藏的最新列表，不会基于旧快照覆盖。
     state = FavoritesState(entries: entries, loading: false);
+    await _persist(entries);
     // 正反馈：收藏 = 「喜欢这类歌」，上报日推画像（失败静默，不阻塞收藏）。
     unawaited(reportDailyLikeSignals(
       _ref.read(authProvider.notifier),
@@ -296,8 +311,8 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     }
     if (newEntries.isEmpty) return;
     final entries = [...newEntries, ...existing];
-    await _store.saveAll(entries);
     state = FavoritesState(entries: entries, loading: false);
+    await _persist(entries);
     if (signalSongs.isNotEmpty) {
       unawaited(reportDailyLikeSignals(
         _ref.read(authProvider.notifier),
@@ -310,8 +325,8 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
 
   Future<void> remove(String path) async {
     final entries = state.entries.where((e) => e.path != path).toList();
-    await _store.saveAll(entries);
     state = FavoritesState(entries: entries, loading: false);
+    await _persist(entries);
   }
 
   /// 按指定 path 顺序重排收藏歌曲（未列出的歌曲保持在队尾）。
@@ -325,17 +340,17 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
       for (final e in current)
         if (!pathSet.contains(e.path)) e,
     ];
-    await _store.saveAll(entries);
     state = state.copyWith(entries: entries, loading: false);
+    await _persist(entries);
   }
 
   Future<void> clear() async {
-    await _store.saveAll(const []);
     state = FavoritesState(
       entries: const [],
       collections: state.collections,
       loading: false,
     );
+    await _persist(const []);
   }
 
   /// 收藏/取消收藏整张歌单或专辑。

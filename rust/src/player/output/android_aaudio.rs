@@ -13,7 +13,9 @@
 use crate::player::buffered_source::{BlockProducer, BufferedSource};
 use crate::player::output::ExclusivePlayRequest;
 use crate::player::dsd_dop::{parse_dsd_info, DopStreamSource};
-use crate::player::equalizer::{Equalizer, EqualizerHandle, EqualizerSettings};
+use crate::player::equalizer::{
+    ClipGuardSource, Equalizer, EqualizerHandle, EqualizerSettings, UserVolumeSource,
+};
 use crate::player::loudness::VolumeNormalizer;
 use crate::player::sound_effect::{SoundEffectBlockProcessor, SoundEffectSettings};
 use crate::player::types::global_visualizer;
@@ -512,6 +514,12 @@ pub fn start_exclusive_playback(
     if request.shared_mode {
         request.bit_perfect = false;
     }
+    // SSRF 纵深：HTTP 直链为 IP 字面量且命中内网/回环/保留地址时拒绝
+    //（对齐桌面端 play_audio 入口校验）。
+    if request.path.starts_with("http://") || request.path.starts_with("https://") {
+        crate::security::ssrf::validate_url_ip_literal(&request.path)
+            .map_err(|e| format!("播放链接校验失败: {e}"))?;
+    }
     // 先停止已有实例
     stop_exclusive_playback();
 
@@ -845,6 +853,10 @@ fn run_exclusive_playback(
         }
     }
 
+    // 用户主音量（50ms 渐变消除 zipper noise）+ 最终安全限幅（对齐桌面端链路）。
+    let mut user_volume_source = UserVolumeSource::new(request.volume, source_sample_rate);
+    let mut clip_guard = ClipGuardSource::new();
+
     let user_volume = Arc::new(AtomicU32::new(request.volume.to_bits()));
     let is_paused = Arc::new(AtomicBool::new(!request.is_playing));
 
@@ -1015,9 +1027,9 @@ fn run_exclusive_playback(
             }
         };
 
-        // DSP 链处理。Bit-perfect 直出：绕过响度/EQ/音效，仅安全限幅（不放大）。
+        // DSP 链处理。Bit-perfect 直出：绕过响度/EQ/音效/主音量，仅保留安全限幅（对齐桌面端）。
         let do_bypass = bit_perfect.load(Ordering::Relaxed);
-        let effected = if do_bypass {
+        let mut effected = if do_bypass {
             block
         } else {
             let normalized = normalizer.process_block(&block);
@@ -1025,22 +1037,22 @@ fn run_exclusive_playback(
             sound_effect.process_block(eq_applied)
         };
 
-        // 应用用户音量 + clip guard + 格式转换（直出时音量恒为 1.0）
-        let vol = if do_bypass {
-            1.0
-        } else {
-            f32::from_bits(user_volume.load(Ordering::Relaxed))
-        };
+        // 用户音量渐变（直出时旁通，对齐桌面端 bit-perfect 分支）+ 最终安全限幅。
+        if !do_bypass {
+            user_volume_source.process_block(&mut effected, source_channels, &user_volume);
+        }
+        clip_guard.process_block(&mut effected);
+
+        // 格式转换（音量/限幅已在缓冲级应用）
         let mut byte_buf: Vec<u8> = Vec::with_capacity(effected.len() * bytes_per_sample);
 
         let mut chan_sum = 0.0f32;
         let mut chan_count = 0u32;
 
         for &sample in &effected {
-            let amplified = sample * vol;
-            push_sample_bytes(&mut byte_buf, amplified, device_format);
+            push_sample_bytes(&mut byte_buf, sample, device_format);
 
-            chan_sum += amplified;
+            chan_sum += sample;
             chan_count += 1;
             if chan_count >= stream_channels as u32 {
                 visualizer.push_sample(chan_sum / chan_count as f32);

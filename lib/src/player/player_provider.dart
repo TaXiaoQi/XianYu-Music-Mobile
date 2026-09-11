@@ -34,6 +34,7 @@ import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/cover_image.dart';
 import '../navigation/routes.dart';
 import 'audio_head_cache.dart';
 import 'audio_proxy_server.dart';
@@ -254,7 +255,7 @@ class QueueItem {
   final String artist;
   final String album;
   final int durationMs;
-  /// 在线歌曲信息 JSON（lxResolveUrl 直链解析用）；本地歌曲为空。
+  /// 在线歌曲信息 JSON（LX 直链解析用）；本地歌曲为空。
   final String? onlineSongJson;
   /// 在线歌曲音质（如 320k / flac）。
   final String? onlineQuality;
@@ -471,6 +472,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
+  // 同曲防抖：错误事件与 stall 兜底可能几乎同时触发换源，短窗口内只放行一次。
+  DateTime? _lastAutoSwitchAt;
+  String? _lastAutoSwitchPath;
   // 跨格式换源缓存：悬空 pluginId 同格式无匹配时，跨格式（LX↔MusicFree/Baka）
   // 重搜得到的新 songJson，按原 pluginId+标题 缓存，避免逐档音质重复搜索。
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
@@ -1270,6 +1274,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       error: null,
     );
     _syncToSystemMediaSession();
+    _precacheNextCover();
     try {
         // [DLNA 投屏] 投屏中：解析当前曲并投到电视，本地引擎保持静默，
         // 队列/历史/统计等尾部逻辑与普通播放共用。
@@ -1477,10 +1482,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           key, _buildResolveCallback(songJson, item));
       _activeProbeKey = key;
 
-      // 探测整体限时：多档串行超时（每档 8-30s）会拖垮加载态，超时即放弃。
+      // 仅保留兜底安全网（45s）：单档失败由各自的 8s 超时收敛，候选链并行
+      // + 串行推进。旧版 12s 总限时会在首选档卡满 8s 后只剩 4s 给其余候选，
+      // 回退链未走完即报失败——失败率显著高于桌面端（桌面端整轮探测无总限时）。
       final start = await probe
           .startBest(preferred, candidates)
-          .timeout(const Duration(seconds: 12), onTimeout: () => null);
+          .timeout(const Duration(seconds: 45), onTimeout: () => null);
       AppLog.info('play',
           '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
           'available=${probe.availableQualities} probing=${probe.probing}');
@@ -1495,7 +1502,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       throw StateError(tr('直链解析失败'));
     }
-    // onlineInfoJson：走 lxResolveUrl（在线搜索音源）。
+    // onlineInfoJson：走 LX 直链解析（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError(tr('无法获取播放链接'));
     state = state.copyWith(
@@ -1637,30 +1644,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     };
   }
 
-  /// 单档 LX 直链解析（已导入插件优先 → 公共 API）。单档限时 8s。
+  /// 单档 LX 直链解析（插件引擎编排，含缓存/并发去重）。单档限时 8s。
   Future<ResolvedMediaUrl?> _lxResolveQuality(
       String songInfoJson, String quality) async {
     try {
-      final dataDir = await _ref.read(appDataDirProvider.future);
-      final resolved = await lxResolveUrl(
-        songInfoJson: songInfoJson,
-        quality: quality,
-        dataDir: dataDir,
-      ).timeout(const Duration(seconds: 8));
-      if (resolved == 'null' || resolved.isEmpty) {
-        AppLog.warn('lx', '[lxResolve] 公共API $quality 无结果: $resolved');
-        return null;
-      }
-      final url =
-          (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final songInfo = jsonDecode(songInfoJson) as Map<String, dynamic>;
+      final resolved = await engine
+          .resolveLxUrl(songInfo, quality)
+          .timeout(const Duration(seconds: 8));
+      final url = resolved?['url'] as String?;
       if (!_isPlayableUrl(url)) {
-        AppLog.warn('lx', '[lxResolve] 公共API $quality 非法直链: $url');
+        AppLog.warn('lx', '[lxResolve] 插件 $quality 无结果/非法直链: $url');
         return null;
       }
-      AppLog.info('lx', '[lxResolve] 公共API $quality 命中');
-      return ResolvedMediaUrl(url: url!);
+      AppLog.info('lx', '[lxResolve] 插件 $quality 命中');
+      return ResolvedMediaUrl(
+        url: url!,
+        headers: resolved?['headers'] as Map<String, String>?,
+      );
     } catch (e) {
-      AppLog.error('lx', '[lxResolve] 公共API $quality 异常: $e');
+      AppLog.error('lx', '[lxResolve] 插件 $quality 异常: $e');
       return null;
     }
   }
@@ -2192,6 +2196,50 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
   }
 
+  /// 下一首封面预取：起播即后台预取队列后续最多 3 首的封面（本地高清
+  /// 路径 / 在线封面字节或磁盘缓存）写入 CoverImage 静态缓存，切歌时
+  /// 播放页大封面同步命中，不闪默认音符占位。定位与 [_maybePrecacheNextRemote]
+  /// 同款：顺序/列表循环自 index+1 起向前 3 首；随机模式仅在已压入
+  /// _shuffleFuture 时可预知（自栈顶向前 3 项）；单曲循环无下一首。
+  void _precacheNextCover() {
+    final n = state.queue.length;
+    if (n == 0 || state.playMode == 1) return;
+    final curIdx = state.queueIndex;
+    final List<int> targets;
+    if (state.playMode == 2) {
+      if (_shuffleFuture.isEmpty) return;
+      targets = <int>[];
+      for (var k = 1; k <= 3 && k <= _shuffleFuture.length; k++) {
+        final i = state.queue
+            .indexWhere((q) => q.path == _shuffleFuture[_shuffleFuture.length - k]);
+        if (i >= 0 && i != curIdx) targets.add(i);
+      }
+    } else {
+      final start = curIdx < 0 ? 0 : curIdx;
+      targets = <int>[
+        for (var k = 1; k <= 3; k++)
+          if ((start + k) % n != curIdx) (start + k) % n,
+      ];
+    }
+    if (targets.isEmpty) return;
+    // 快照队列条目：await 期间队列可能被改动，避免索引错位。
+    final items = [for (final i in targets) state.queue[i]];
+    unawaited(Future(() async {
+      try {
+        final dbPath = await _ref.read(dbPathProvider.future);
+        final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+        for (final item in items) {
+          await CoverImage.prewarm(
+            songPath: item.path,
+            networkUrl: item.coverUrl,
+            dbPath: dbPath,
+            cacheRoot: cacheRoot,
+          );
+        }
+      } catch (_) {}
+    }));
+  }
+
   /// WebDAV 下一首预缓存（对齐桌面端）：当前远程歌曲进度过 60% 时，
   /// 预下载队列下一首的远程文件。顺序/列表循环取 index+1；随机模式仅在
   /// 已压入 _shuffleFuture 时可预知；单曲循环无下一首。
@@ -2317,7 +2365,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
-    final h = normalizeMediaRequestHeaders(clean, headers);
+    final h = await withBilibiliStreamCookie(
+      clean,
+      normalizeMediaRequestHeaders(clean, headers),
+      dataDir: _ref.read(appDataDirProvider.future),
+    );
     // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
@@ -2353,33 +2405,33 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _triggerOnlinePrecache(item);
   }
 
-  /// 按候选音质依次调用 lxResolveUrl（已导入插件 → 公共 API），
-  /// 返回首个合法 http(s) 直链。整体限时 12s，避免多档串行超时拖垮加载态。
+  /// 按候选音质依次调用插件引擎解析 LX 直链（含缓存/并发去重），
+  /// 返回首个合法 http(s) 直链。整体限时 45s，避免多档串行超时拖垮加载态。
   Future<ResolvedMediaUrl?> _tryLxResolve(
       String songInfoJson, List<String> candidates) async {
-    final dataDir = await _ref.read(appDataDirProvider.future);
     try {
-      return await _tryLxResolveInner(songInfoJson, candidates, dataDir)
-          .timeout(const Duration(seconds: 12));
+      return await _tryLxResolveInner(songInfoJson, candidates)
+          .timeout(const Duration(seconds: 45));
     } catch (_) {
       return null;
     }
   }
 
   Future<ResolvedMediaUrl?> _tryLxResolveInner(
-      String songInfoJson, List<String> candidates, String dataDir) async {
+      String songInfoJson, List<String> candidates) async {
+    final engine = await _ref.read(pluginEngineProvider.future);
+    final songInfo = jsonDecode(songInfoJson) as Map<String, dynamic>;
     for (final quality in candidates) {
       try {
-        final resolved = await lxResolveUrl(
-          songInfoJson: songInfoJson,
-          quality: quality,
-          dataDir: dataDir,
-        );
-        if (resolved == 'null' || resolved.isEmpty) continue;
-        final url =
-            (jsonDecode(resolved) as Map<String, dynamic>)['url'] as String?;
+        final resolved = await engine.resolveLxUrl(songInfo, quality);
+        if (resolved == null) continue;
+        final url = resolved['url'] as String?;
         if (_isPlayableUrl(url)) {
-          return ResolvedMediaUrl(url: url!, quality: quality);
+          return ResolvedMediaUrl(
+            url: url!,
+            quality: quality,
+            headers: resolved['headers'] as Map<String, String>?,
+          );
         }
       } catch (_) {}
     }
@@ -2475,6 +2527,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 通过公共音源搜索同名曲目并解析直链播放；返回 true 表示已换源成功。
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {
     final settings = _ref.read(settingsProvider).valueOrNull;
+    debugPrint('[autoSwitch] 进入换源 title="${item.title}" '
+        'autoSwitchOn=${settings?.autoSwitchSourceOnFailure} force=$force '
+        'settingsLoaded=${settings != null}');
+    // 同曲防抖：错误事件与 stall 兜底可能 37ms 内先后到达，双路重复换源
+    // 会让候选插件被串行白跑两轮（日志曾见同一首歌进入重试两次）。
+    final now = DateTime.now();
+    if (_lastAutoSwitchAt != null &&
+        _lastAutoSwitchPath == item.path &&
+        now.difference(_lastAutoSwitchAt!) < const Duration(milliseconds: 800)) {
+      debugPrint('[autoSwitch] 防抖拦截(800ms 内同曲重复触发) "${item.title}"');
+      return false;
+    }
+    _lastAutoSwitchAt = now;
+    _lastAutoSwitchPath = item.path;
     // 分享链接「替换播放」走插件索引换源时允许绕过通用开关（force=true）。
     if (!(settings?.autoSwitchSourceOnFailure ?? false) && !force) return false;
 
@@ -2486,8 +2552,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {
       return false;
     }
-    final curSource = (info['source'] as String?) ?? item.source;
-    if (curSource == null || curSource.isEmpty) return false;
 
     // 换源上下文按歌曲（标题+歌手）隔离，避免残留到下一首。
     final key = '${item.title}|${item.artist}';
@@ -2495,26 +2559,82 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _switchCtxKey = key;
       _failedSources.clear();
     }
-    _failedSources.add(curSource);
     if (item.title.trim().isEmpty) return false;
+
+    // —— 阶段一：同平台插件重试（先于跨平台搜索）。
+    // 已解析出的直链可能本身就是死链（第三方代理 403/过期），此时同平台的
+    // 其他启用插件重新解析同一首歌命中率最高、成本最低。MusicFree 图源歌曲
+    // 常缺 source 字段，旧逻辑在此直接 return，导致自动换源整体失效——
+    // 该场景由本阶段兜住，不再依赖 curSource。
+    if (await _switchViaSiblingPlatform(item)) return true;
+
+    final curSource = (info['source'] as String?) ?? item.source;
+    var curKey = (curSource == null || curSource.isEmpty) ? '' : curSource;
+    if (curKey.isEmpty) {
+      // MusicFree 图源歌曲常缺顶层 source：从 musicInfo 的平台字段归一化为
+      // LX key（如「网易云音乐」→ wy），跨平台搜索循环需要它做失败隔离。
+      final mj = info['musicInfo'];
+      var label = mj is Map<String, dynamic>
+          ? (mj['platform'] ?? mj['source'])?.toString() ?? ''
+          : '';
+      if (label.isEmpty) {
+        try {
+          final sj = jsonDecode(item.onlineSongJson ?? '') as Map<String, dynamic>?;
+          final sm = sj?['musicInfo'];
+          if (sm is Map<String, dynamic>) {
+            label = (sm['platform'] ?? sm['source'])?.toString() ?? '';
+          }
+        } catch (_) {}
+      }
+      curKey = lxSourceKeyForPlatform(label);
+    }
+    if (curKey.isEmpty) return false;
+    _failedSources.add(curKey);
 
     final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
     final preferred = settings?.onlineDefaultQuality ?? '320k';
+    final sourceLabels = {for (final s in kOnlineSources) s.id: s.label};
 
-    for (final src in kOnlineSources) {
-      if (_failedSources.contains(src.id)) continue;
-      final raw = await _searchAlternative(item, src.id);
-      if (raw == null) {
-        _failedSources.add(src.id);
-        continue;
+    // —— 阶段二：跨平台换源（Rust 统一搜索匹配，与桌面端 find_alternative_lx_source
+    // 同一套逻辑：按优先级串行搜索 kw > tx > wy > kg > mg，标题归一化相等/互相包含
+    // + 歌手交集 + 时长 ±5s 辅助匹配，并排除已失败音源）。候选音源解析失败时
+    // 加入失败集合并重新查询，直到无平台可用。
+    while (true) {
+      final String rawJson;
+      try {
+        rawJson = await findAlternativeLxSource(
+          songName: item.title,
+          songArtist: item.artist,
+          songDuration: item.durationMs / 1000.0,
+          failedSourcesJson: jsonEncode(_failedSources.toList()),
+        );
+      } catch (_) {
+        break;
+      }
+      if (rawJson.isEmpty || rawJson == 'null') break;
+      final Map<String, dynamic> raw;
+      try {
+        raw = jsonDecode(rawJson) as Map<String, dynamic>;
+      } catch (_) {
+        break;
       }
       final newItem = OnlineTrack.fromJson(raw).toQueueItem();
+      final srcId = newItem.source;
+      final infoJson = newItem.onlineInfoJson;
+      if (srcId == null ||
+          srcId.isEmpty ||
+          _failedSources.contains(srcId) ||
+          infoJson == null ||
+          infoJson.isEmpty) {
+        break;
+      }
+      // 直链解析走归一化的 onlineInfoJson（含 KG 分档 hash 等），与正常起播一致。
       final url = await _tryLxResolve(
-        jsonEncode(raw),
+        infoJson,
         _qualityCandidates(preferred, fb),
       );
       if (url == null) {
-        _failedSources.add(src.id);
+        _failedSources.add(srcId);
         continue;
       }
       // 更新当前队列项为该音源，再播放。
@@ -2536,7 +2656,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(resolving: false);
         await _startOnlineUrl(url.url, headers: url.headers, item: newItem);
       } catch (_) {
-        _failedSources.add(src.id);
+        _failedSources.add(srcId);
         continue;
       }
       _skipDepth = 0;
@@ -2550,30 +2670,126 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _reportBehavior(newItem, 'play', 0);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
-      _showPlaybackToast(tr('已自动切换到 {source} 音源', {'source': src.label}));
+      _showPlaybackToast(
+          tr('已自动切换到 {source} 音源', {'source': sourceLabels[srcId] ?? srcId}));
       return true;
     }
     return false;
   }
 
-  /// 在指定音源搜索与当前歌曲同名的曲目，返回第一个匹配的原始搜索项；无匹配返回 null。
-  Future<Map<String, dynamic>?> _searchAlternative(
-    QueueItem item,
-    String source,
-  ) async {
+  /// 播放失败后的同平台插件重试：按当前歌的 pluginId/format 在同平台其他
+  /// 启用插件上重新解析直链。先试同格式兄弟插件（musicInfo 结构互通），
+  /// 再试跨格式（LX ↔ MusicFree，需在目标插件上重搜获取兼容 musicInfo）。
+  ///
+  /// 歌曲「身份」不变（不换音源平台、不改搜索匹配），仅更换解析插件，
+  /// 因此直接以原队列项起播；跨格式命中时回写 pluginId/musicInfo 使歌词
+  /// 等后续加载跟随新插件。返回 true 表示已切换并起播。
+  Future<bool> _switchViaSiblingPlatform(QueueItem item) async {
+    ResolvedMediaUrl? hit;
+    Map<String, dynamic>? healedJson;
     try {
-      final q = item.artist.trim().isEmpty
-          ? item.title.trim()
-          : '${item.title.trim()} ${item.artist.trim()}';
-      final res = await lxSearch(source: source, keyword: q, limit: 10);
-      final list = (jsonDecode(res) as List).cast<Map<String, dynamic>>();
-      for (final raw in list) {
-        if (_matchOnlineTitle(item.title, OnlineTrack.fromJson(raw).title)) {
-          return raw;
+      final json = item.onlineSongJson;
+      if (json == null || json.isEmpty) return false;
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final pluginId = songJson['pluginId'] as String?;
+      final format = songJson['format'] as String? ?? 'lx';
+      final sourceKey = songJson['source'] as String? ?? '';
+      final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
+      debugPrint('[switchViaSibling] 进入重试 pluginId=$pluginId '
+          'format=$format sourceKey="$sourceKey" title="${item.title}"');
+      if (pluginId == null || pluginId.isEmpty) return false;
+      // 失效错误可能来自已切走后的旧歌，仅对仍在前台的当前项做重试。
+      if (state.current?.path != item.path) return false;
+
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final preferred =
+          _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ??
+              '320k';
+
+      // 1) 同格式兄弟插件。
+      hit = await _resolveViaSiblingPlugin(
+        failedId: pluginId,
+        format: format,
+        sourceKey: sourceKey,
+        musicInfo: musicInfo,
+        quality: preferred,
+        itemPath: item.path,
+        engine: engine,
+      );
+      debugPrint('[switchViaSibling] 同格式回退结果: '
+          '${hit == null ? "未命中" : hit.url}');
+
+      // 2) 跨格式同平台（LX ↔ MusicFree）。
+      if (hit == null) {
+        final sources = await engine.store.loadSources();
+        final healed = await _crossFormatHeal(
+            pluginId, format, sourceKey, musicInfo, sources, engine);
+        if (healed != null) {
+          final (plugin, newJson) = healed;
+          final newFormat = newJson['format'] as String? ?? format;
+          final newSourceKey = newJson['source'] as String? ?? sourceKey;
+          final newMusicInfo =
+              newJson['musicInfo'] as Map<String, dynamic>? ?? musicInfo;
+          if (newFormat == 'musicfree') {
+            hit = await engine.getMusicFreeUrl(
+              plugin,
+              newMusicInfo,
+              preferred: preferred,
+              fallback: 'pause',
+            );
+          } else {
+            final r = await engine.getMusicUrl(
+                plugin, newSourceKey, newMusicInfo, preferred);
+            final url = r?['url'] as String?;
+            hit = (r != null && _isPlayableUrl(url))
+                ? ResolvedMediaUrl(
+                    url: url!,
+                    headers: r['headers'] is Map
+                        ? (r['headers'] as Map).cast<String, String>()
+                        : null,
+                    quality: preferred,
+                  )
+                : null;
+          }
+          if (hit != null) healedJson = newJson;
         }
       }
-    } catch (_) {}
-    return null;
+      if (hit == null) return false;
+
+      // 跨格式命中：回写新插件信息到当前项与队列，歌词/后续播放跟随新插件。
+      if (healedJson != null) {
+        _applyCrossFormatHealToState(
+          itemPath: item.path,
+          pluginId: healedJson['pluginId'] as String? ?? pluginId,
+          newOnlineSongJson: jsonEncode(healedJson),
+          newSource: healedJson['source'] as String? ?? sourceKey,
+          newOnlineInfoJson:
+              jsonEncode(healedJson['musicInfo'] ?? musicInfo),
+        );
+      }
+
+      state = state.copyWith(
+        isPlaying: false,
+        resolving: false,
+        position: 0,
+        error: null,
+      );
+      _skipDepth = 0;
+      await _startOnlineUrl(hit.url, headers: hit.headers, item: item);
+      state = state.copyWith(resolving: false, error: null);
+      // 换源成功等同一次全新起播（对齐跨平台换源分支的记账逻辑）。
+      _currentPlayCountRecorded = false;
+      _accumulatedTime = 0;
+      _recordRecentPlay(item);
+      _recordHistory(item);
+      _reportBehavior(item, 'play', 0);
+      _trackStartTime = DateTime.now();
+      _syncToSystemMediaSession();
+      _showPlaybackToast(tr('播放失败，已自动切换音源重播'));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 标题归一化匹配（去空格/标点/大小写后比较；长度≥3 允许互相包含）。
@@ -2673,49 +2889,153 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
 
+      ResolvedMediaUrl? resolved;
       if (format == 'musicfree') {
         // MusicFree 插件：单档只调一次 getMediaSource（对齐桌面 tryPairs 语义），
         // 音质降级由外层候选链逐档负责。单档内部级联会把一次探测放大成
         // 4-8 次串行插件请求，极易击穿起播总超时导致「直链解析失败」。
-        return await engine.getMusicFreeUrl(
+        resolved = await engine.getMusicFreeUrl(
           source.first,
           musicInfo,
           preferred: quality,
           fallback: 'pause',
         );
+      } else {
+        final result = await engine.getMusicUrl(
+            source.first, sourceKey, musicInfo, quality);
+        final url = result?['url'] as String?;
+        if (result != null && _isPlayableUrl(url)) {
+          final h = result['headers'];
+          // 采用插件实际返回的 type（可能被静默降级）作为报告音质，对齐桌面端
+          // `reportedQuality = musicInfo?.actualQuality ?? q`：请求 flac 但插件仅
+          // 解锁到 320k 时，用它避免 UI 虚高显示无损（音质与体积对不上的「假音质」）。
+          final reportedRaw = result['type'];
+          final reportedQuality = reportedRaw is String
+              ? PluginEngine.normalizeQualityKey(reportedRaw)
+              : null;
+          debugPrint('[playPlugin] ${source.first.name} '
+              'musicUrl($sourceKey/$quality) 命中 type=${result['type']} '
+              'reported=${reportedQuality ?? quality}');
+          resolved = ResolvedMediaUrl(
+            url: url!,
+            headers: h is Map ? h.cast<String, String>() : null,
+            quality: reportedQuality ?? quality,
+          );
+        } else {
+          debugPrint('[playPlugin] ${source.first.name} '
+              'musicUrl($sourceKey/$quality) 未命中: $url');
+        }
       }
-
-      final result =
-          await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
-      if (result == null) {
-        debugPrint('[playPlugin] ${source.first.name} '
-            'musicUrl($sourceKey/$quality) 返回空');
-        return null;
-      }
-      final url = result['url'] as String?;
-      if (!_isPlayableUrl(url)) {
-        debugPrint('[playPlugin] ${source.first.name} '
-            'musicUrl($sourceKey/$quality) 非法直链: $url');
-        return null;
-      }
-      final h = result['headers'];
-      // 采用插件实际返回的 type（可能被静默降级）作为报告音质，对齐桌面端
-      // `reportedQuality = musicInfo?.actualQuality ?? q`：请求 flac 但插件仅
-      // 解锁到 320k 时，用它避免 UI 虚高显示无损（音质与体积对不上的「假音质」）。
-      final reportedRaw = result['type'];
-      final reportedQuality = reportedRaw is String
-          ? PluginEngine.normalizeQualityKey(reportedRaw)
-          : null;
-      debugPrint('[playPlugin] ${source.first.name} '
-          'musicUrl($sourceKey/$quality) 命中 type=${result['type']} '
-          'reported=${reportedQuality ?? quality}');
-      return ResolvedMediaUrl(
-        url: url!,
-        headers: h is Map ? h.cast<String, String>() : null,
-        quality: reportedQuality ?? quality,
+      if (resolved != null) return resolved;
+      // 同平台音源回退（自动换源 · 插件级）：所属插件解析失败（接口失效/
+      // 付费墙/死链）时，依次尝试其他启用插件，命中即回写歌单记录
+      // （与悬空 pluginId heal 同语义），避免整条播放链卡死在单个失效音源。
+      return await _resolveViaSiblingPlugin(
+        failedId: source.first.id,
+        format: format,
+        sourceKey: sourceKey,
+        musicInfo: musicInfo,
+        quality: quality,
+        itemPath: itemPath,
+        engine: engine,
       );
     } catch (e) {
       debugPrint('[playPlugin] 解析异常($quality): $e');
+      return null;
+    }
+  }
+
+  /// 从歌曲 songJson 推导平台标签。
+  ///
+  /// LX 歌用 source code（wy/tx/...）；MusicFree 歌的 musicInfo 平台字段
+  /// 有两个来源：引擎调用时注入的 `platform`（插件名，如「网易云音乐」）与
+  /// PluginSearchResult.toJson 写入的 `source`（榜单/搜索导入的歌只有它）。
+  /// 旧逻辑只认 `platform`，榜单导入的歌平台被推断为空，同平台回退 0 候选。
+  String _songPlatformLabel(
+    String format,
+    String sourceKey,
+    Map<String, dynamic> musicInfo,
+  ) {
+    if (format == 'lx') return sourceKey;
+    final v = musicInfo['platform'] ?? musicInfo['source'] ?? sourceKey;
+    return v?.toString() ?? '';
+  }
+
+  /// 同平台换源回退：按平台匹配度依次尝试其他启用插件（同格式）。
+  ///
+  /// 跨格式（LX ↔ MusicFree）不在此处处理——`_buildResolveCallback` 的
+  /// LX 兜底链（_lxResolveQuality → Rust url_resolver，读插件索引）已覆盖。
+  /// 单档最多尝试 3 个候选插件，避免全失效时串行超时拖垮起播总预算。
+  Future<ResolvedMediaUrl?> _resolveViaSiblingPlugin({
+    required String failedId,
+    required String format,
+    required String sourceKey,
+    required Map<String, dynamic> musicInfo,
+    required String quality,
+    required String itemPath,
+    required PluginEngine engine,
+  }) async {
+    try {
+      final pluginFormat = PluginFormat.fromValue(format);
+      final platformLabel =
+          _songPlatformLabel(format, sourceKey, musicInfo);
+      final sources = await engine.store.loadSources();
+      final candidates = listEnabledPluginsForPlatform(
+        platformLabel: platformLabel,
+        installedPlugins: sources,
+        format: pluginFormat,
+        excludeId: failedId,
+      ).take(3);
+      for (final plugin in candidates) {
+        final ResolvedMediaUrl? hit;
+        if (plugin.format == PluginFormat.musicfree) {
+          hit = await engine.getMusicFreeUrl(
+            plugin,
+            musicInfo,
+            preferred: quality,
+            fallback: 'pause',
+          );
+        } else {
+          // LX 候选：MusicFree 歌的 sourceKey 常为空/异格式 key，直接复用
+          // 会以 source= 空调用插件（必然 403/参数错误）。改由平台标签推导
+          // LX source code（如 QQ音乐 → tx）；推导不出则跳过该候选
+          //（严格版：不用 _lxSourceKeyForPlatform 的兜底盲猜，避免错源浪费调用）。
+          final lxKey = lxSourceKeyForPlatform(platformLabel);
+          final lxSupported =
+              plugin.sources.isEmpty || plugin.sources.contains(lxKey);
+          if (lxKey.isEmpty || !lxSupported) {
+            debugPrint('[playPlugin] 音源回退跳过(LX 平台不可知): '
+                '${plugin.name} platform="$platformLabel" lxKey="$lxKey"');
+            continue;
+          }
+          final result =
+              await engine.getMusicUrl(plugin, lxKey, musicInfo, quality);
+          final url = result?['url'] as String?;
+          hit = (result != null && _isPlayableUrl(url))
+              ? ResolvedMediaUrl(
+                  url: url!,
+                  headers: result['headers'] is Map
+                      ? (result['headers'] as Map).cast<String, String>()
+                      : null,
+                  quality: quality,
+                )
+              : null;
+        }
+        if (hit == null) {
+          debugPrint('[playPlugin] 音源回退未命中: ${plugin.name} ($quality)');
+          continue;
+        }
+        debugPrint('[playPlugin] 音源回退命中: ${plugin.name} ($quality)');
+        if (itemPath.isNotEmpty) {
+          unawaited(_ref
+              .read(playlistManagerProvider.notifier)
+              .healSongPlugin(itemPath, plugin.id));
+        }
+        return hit;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[playPlugin] 同平台回退异常($quality): $e');
       return null;
     }
   }
@@ -2730,9 +3050,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     Map<String, dynamic> musicInfo,
   ) {
     final pluginFormat = PluginFormat.fromValue(format);
-    final platform = pluginFormat == PluginFormat.lx
-        ? sourceKey
-        : (musicInfo['platform']?.toString() ?? sourceKey);
+    final platform = _songPlatformLabel(format, sourceKey, musicInfo);
     if (platform.trim().isEmpty) return null;
     return findPluginForPlatform(
       platformLabel: platform,
@@ -2755,9 +3073,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     PluginEngine engine,
   ) async {
     final pluginFormat = PluginFormat.fromValue(format);
-    final platformLabel = pluginFormat == PluginFormat.lx
-        ? sourceKey
-        : (musicInfo['platform']?.toString() ?? sourceKey);
+    final platformLabel = _songPlatformLabel(format, sourceKey, musicInfo);
     if (platformLabel.trim().isEmpty) return null;
 
     // 标题/歌手用于跨插件搜索（兼容 LX 的 name/singer 与 MF 的 title/artist）。
@@ -3603,14 +3919,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _activeProbeKey = key;
         final start = await probe
             .startBest(preferred, candidates)
-            .timeout(const Duration(seconds: 12), onTimeout: () => null);
+            .timeout(const Duration(seconds: 45), onTimeout: () => null);
         if (start == null) return null;
         final clean = sanitizeMediaUrl(start.url);
         if (clean.isEmpty) return null;
         return CastMediaResolution(
           url: clean,
-          headers:
-              normalizeMediaRequestHeaders(clean, start.headers) ?? const {},
+          headers: await withBilibiliStreamCookie(
+                clean,
+                normalizeMediaRequestHeaders(clean, start.headers),
+                dataDir: _ref.read(appDataDirProvider.future),
+              ) ??
+              const {},
           isRemote: true,
         );
       }
@@ -3620,8 +3940,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (clean.isEmpty) return null;
       return CastMediaResolution(
         url: clean,
-        headers:
-            normalizeMediaRequestHeaders(clean, url.headers) ?? const {},
+        headers: await withBilibiliStreamCookie(
+              clean,
+              normalizeMediaRequestHeaders(clean, url.headers),
+              dataDir: _ref.read(appDataDirProvider.future),
+            ) ??
+            const {},
         isRemote: true,
       );
     }

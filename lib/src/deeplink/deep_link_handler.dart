@@ -1,5 +1,8 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +73,21 @@ class XianYuDeepLink {
     GoRouter router,
     String raw,
   ) async {
+    // 播放控制深链最优先：不受 _busy 分享链拦截（小组件/锁屏按钮命令不能丢）。
+    final playUri = Uri.tryParse(raw);
+    if (playUri != null && playUri.host == 'play') {
+      final action = playUri.path.replaceFirst('/', '');
+      final notifier = container.read(playerProvider.notifier);
+      switch (action) {
+        case 'toggle':
+          notifier.toggle();
+        case 'previous':
+          notifier.previous();
+        case 'next':
+          notifier.next();
+      }
+      return;
+    }
     if (_busy) {
       AppLogger.instance.log('deeplink', '忽略重复的分享深链: $raw');
       return;
@@ -112,6 +130,17 @@ class XianYuDeepLink {
           final name = openUri.queryParameters['name'] ?? '';
           if (file.isNotEmpty) {
             await _playOpenedFile(container, router, file, name);
+          }
+          return;
+        }
+        // 系统文件管理器/浏览器「打开」.js 插件脚本：原生侧已把 content/file URI
+        // 物化为真实路径并封装成 target=plugin，这里读取内容走现有安装管线
+        // （与插件页「选择本地脚本」导入同源）。
+        if (openUri.queryParameters['target'] == 'plugin') {
+          final file = openUri.queryParameters['file'] ?? '';
+          final name = openUri.queryParameters['name'] ?? '';
+          if (file.isNotEmpty) {
+            await _importOpenedPlugin(container, router, file, name);
           }
           return;
         }
@@ -505,6 +534,58 @@ class XianYuDeepLink {
       return;
     }
     router.push('/player');
+  }
+
+  /// 导入系统「打开」进来的 .js 插件脚本（文件路径由原生侧物化到缓存目录）。
+  /// 走与插件页本地导入一致的 [PluginManager.installFromScript] 管线
+  /// （自动识别 LX/MusicFree 格式并加载验证），成功后 toast 并跳转插件页。
+  static Future<void> _importOpenedPlugin(
+    ProviderContainer container,
+    GoRouter router,
+    String filePath,
+    String rawName,
+  ) async {
+    AppLogger.instance.log('deeplink', '系统打开插件脚本: $filePath');
+    try {
+      // 读字节再容忍解码（allowMalformed）：LX 插件脚本中文注释常用 GBK 保存，
+      // readAsString 的严格 UTF-8 会抛 FormatException（与插件页本地导入同源）。
+      final bytes = await File(filePath).readAsBytes();
+      final script = utf8.decode(bytes, allowMalformed: true);
+      final fileName = rawName.trim().isNotEmpty
+          ? rawName.trim()
+          : filePath.replaceAll('\\', '/').split('/').last;
+      final source = await container
+          .read(pluginManagerProvider.notifier)
+          .installFromScript(script, fileName: fileName);
+      // 等导航就绪后再提示（冷启动深链可能早于首帧路由挂载到达）。
+      // 不能把根 Navigator 的 context 传给 showXianYuToast：Overlay 在
+      // Navigator 内部、不在其祖先链上，Overlay.of 必抛「No Overlay widget
+      // found」——异常发生在 installFromScript 完成之后，会被下方 catch
+      // 误报成「插件导入失败」（插件实际已装好可用）。与 catch 路径一致，
+      // 经 NavigatorState 拿根 Overlay。
+      await _waitNavigatorContext();
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(
+            overlay, tr('插件已导入：{name}', {'name': source.name}));
+      }
+      if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
+        router.push('/plugin');
+      }
+    } catch (e, st) {
+      AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        // toast 带上具体原因 + 堆栈首帧：「Null check operator」这类系统
+        // 异常的 toString() 不含位置信息，堆栈首帧是定位源文件的唯一线索。
+        final where = st
+            .toString()
+            .split('\n')
+            .take(2)
+            .join('  ');
+        showXianYuToastByOverlay(overlay, '${tr('插件导入失败')}: $e\n$where');
+      }
+    }
   }
 
   /// 播放系统打开/分享进来的本地音频文件。文件路径由原生侧物化到缓存目录，

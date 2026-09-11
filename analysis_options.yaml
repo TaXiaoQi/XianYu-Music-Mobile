@@ -21,6 +21,13 @@ analyzer:
     - lib/src/rust/player/**
     - lib/src/rust/security/**
     - lib/src/rust/error.dart
+    # vendored 鸿蒙适配 fork（镜像内构建，pubspec_overrides 仅注入镜像）：
+    # 主工程 analyze 会把 third_party 里的 package:file_picker 导入解析到
+    # pub 12.x，产生大量交叉误报；fork 自身质量由镜像构建把关。
+    - third_party/**
+    - ohos/**
+    # PoC 验证用的临时壳工程，保留作参考（计划 P4 后可删），不参与主工程 analyze
+    - poc_ohos/**
     - test/**
 include: package:flutter_lints/flutter.yaml
 

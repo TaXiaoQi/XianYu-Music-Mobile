@@ -874,11 +874,15 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   /// FragmentProgram 进程级缓存（与 BiliPai 共享同一 asset，加载一次）。
   static Future<ui.FragmentProgram>? _programFuture;
 
-  late final AnimationController _tick = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 8),
-    value: 3.0,
-  )..repeat();
+  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
+  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
+  AnimationController? _tickC;
+  AnimationController get _tick =>
+      _tickC ??= AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 8),
+        value: 3.0,
+      )..repeat();
 
   ui.FragmentShader? _shader;
   final GlobalKey _surfaceKey = GlobalKey();
@@ -912,8 +916,7 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   @override
   void dispose() {
     globalIsTransitioning.removeListener(_onTransitionChanged);
-    _tick.removeListener(_onTick);
-    _tick.dispose();
+    _tickC?..removeListener(_onTick)..dispose();
     super.dispose();
   }
 

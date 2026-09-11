@@ -383,6 +383,33 @@ PluginSource? findPluginForPlatformCrossFormat({
   );
 }
 
+/// 按平台列出所有能服务该平台的启用插件（匹配度降序，用户排序兜底）。
+///
+/// 与 [findPluginForPlatform] 共用同一套平台归一化/打分逻辑，但返回完整
+/// 候选列表：播放直链解析失败时依次尝试其他启用插件（音源自动切换的
+/// 插件级兜底），而不是卡死在歌曲所属的单个失效音源上。
+List<PluginSource> listEnabledPluginsForPlatform({
+  required String platformLabel,
+  required List<PluginSource> installedPlugins,
+  required PluginFormat format,
+  String? excludeId,
+}) {
+  final descriptor = _describePlatform(platformLabel);
+  if (descriptor.normalized.isEmpty) return const [];
+  final formatTag = format == PluginFormat.lx ? 'lxmusic' : 'bakamusic';
+  final scored = <(PluginSource, int)>[];
+  for (final plugin in installedPlugins) {
+    if (!plugin.enabled || plugin.id == excludeId) continue;
+    final score = _pluginMatchScore(plugin, descriptor, formatTag);
+    if (score > 0) scored.add((plugin, score));
+  }
+  scored.sort((a, b) {
+    if (a.$2 != b.$2) return b.$2 - a.$2;
+    return (a.$1.sortOrder ?? 0).compareTo(b.$1.sortOrder ?? 0);
+  });
+  return scored.map((e) => e.$1).toList();
+}
+
 /// 把平台标签（wy/网易云/qq音乐/...）归一化为 LX 音源 key（wy/tx/kw/kg/mg）。
 /// 无法识别时返回空串。供跨格式换源时确定 LX 插件的搜索 sourceKey。
 String lxSourceKeyForPlatform(String platformLabel) {

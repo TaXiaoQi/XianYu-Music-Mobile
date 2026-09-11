@@ -413,7 +413,7 @@ pub async fn get_song_lyrics(
     }
 }
 
-fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
+pub(crate) fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
     if bytes.starts_with(&[0xff, 0xfe]) {
         let (decoded, _, _) = UTF_16LE.decode(&bytes[2..]);
         return decoded.trim_start_matches('\u{feff}').to_string();
