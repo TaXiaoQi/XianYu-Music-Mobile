@@ -1292,7 +1292,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           // 滚动检测由 app.dart 根层 ScrollOffsetCapture 统一捕获，波浪扭曲已内聚到
           // 迷你播放条/悬浮底栏的 BiliPaiGlass 自身负责液态玻璃渲染，
           // 无需再整页包裹 LiquidWave 离屏捕获。
-          Padding(
+          // 页面主体：形态切换转场期间监听 orientationContentFade 整体淡出/淡入
+          //（值由常驻最顶层的 OrientationTransitionOverlay 驱动）。淡出到底透出
+          // 上方两层壁纸/主题底色——不再用纯色盖板遮罩（全屏色闪观感差）。
+          ValueListenableBuilder<double>(
+            valueListenable: orientationContentFade,
+            builder: (context, fade, child) =>
+                Opacity(opacity: fade, child: child),
+            child: Padding(
             // 横屏：左缘固定侧栏占位，内容右移避让；开关开启时不再为右侧
             // 摄像头挖孔预留安全区（所有页面使用摄像头区域）。
             padding: EdgeInsets.only(
@@ -1429,6 +1436,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     ],
                   ),
                 ),
+          ),
 
           // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
           // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
@@ -1681,7 +1689,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
             ),
-          // 横竖屏形态切换转场蒙层：最顶层，旋转那 1~2 帧用摘要色盖住拉伸。
+          // 横竖屏形态切换转场驱动器：常驻最顶层，翻转时驱动壳层内容淡出→淡入。
           const OrientationTransitionOverlay(),
         ],
       ),

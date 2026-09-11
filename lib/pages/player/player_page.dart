@@ -533,7 +533,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       offsetMs: offsetMs,
       hasRomaji: hasRomaji,
     );
-    return LandscapeGate(
+    // 两套子树有同名 Hero（封面）与歌词视图 key，交叉转场共存瞬间会冲突，
+    // 与传统模式同样用顺序转场（见 LandscapeGate.sequential）。
+    return LandscapeGate.sequential(
       portrait: _PlayerShell(
         current: current,
         backgroundColor: Color.lerp(scheme.surface, Colors.black, 0.6),
@@ -932,6 +934,31 @@ class _PlayerShell extends StatelessWidget {
   }
 
   Widget _body() {
+    // 横屏：顶/底栏「浮层化」——盖在中区之上而非参与布局，显隐（淡入淡出+
+    // 滑出）永不改变中区高度，歌词/封面不再随栏的进退逐帧 reflow 抽搐；
+    // AutoHideChrome 自带朝所属边缘渐深的暗色渐变底保证压在内容上时可读。
+    if (isLandscape) {
+      return Stack(
+        children: [
+          Positioned.fill(child: flexible),
+          if (top.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: Column(children: top),
+            ),
+          if (bottom.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Column(children: bottom),
+            ),
+          ?overlay,
+        ],
+      );
+    }
     return Stack(
       children: [
         Column(
@@ -1161,8 +1188,9 @@ class _TraditionalPlayerLayoutState
       _wasLandscape = isLandscape;
     }
     // 传统模式横屏：封面与歌词左右并排，取代封面/歌词上下翻页。
-    // 竖屏＝默认封面/歌词上下翻页；横屏＝独立一套横向 UI，两套完全分开（见 LandscapeGate）。
-    return LandscapeGate(
+    // 竖屏＝默认封面/歌词上下翻页；横屏＝独立一套横向 UI，两套完全分开。
+    // 两套子树有同名 Hero/GlobalKey（见 _buildAdvancedBody），用顺序转场。
+    return LandscapeGate.sequential(
       portrait: _buildTraditionalPortrait(context, current),
       landscape: _buildTraditionalLandscape(context, current),
     );
