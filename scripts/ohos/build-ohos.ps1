@@ -39,6 +39,47 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path            # scri
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)         # main project
 $MirrorDir   = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
 
+# ---- signing password auto-encryption ----
+# hvigor ALWAYS reads storePassword/keyPassword as an ENCRYPTED hex blob
+# (DecipherUtil.decryptPwd): an even, >=32-char plain-text password passes the
+# length checks but then fails with 00304032 "Signing materials <dir> is an
+# empty directory" because it looks for the material key tree. This helper
+# re-encodes a PLAIN password to the DevEco encrypted hex using the machine-wide
+# material tree at <storeFile parent>\material before the canonical write.
+function Invoke-EncryptSignPassword {
+    param([string]$StoreFile, [string]$Password)
+    if (-not $Password) { return '' }
+    # already-encrypted blobs are long & pure hex -> leave untouched
+    if ($Password -match '^[0-9a-fA-F]+$' -and $Password.Length -ge 64 -and ($Password.Length % 2) -eq 0) {
+        return $Password
+    }
+    $nodeJs = Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    if (-not $nodeJs) { throw 'node not found - required to encrypt the signing password' }
+    $helper  = Join-Path $ScriptDir 'ohos-sign-password.mjs'
+    $materialDir = Split-Path $StoreFile -Parent
+    $out = & $nodeJs $helper $materialDir $Password 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $out -notmatch 'encryptedHex:\s*([0-9a-fA-F]+)') {
+        throw "signing password encryption failed (storeFile=$StoreFile): $($out.Trim())"
+    }
+    return $Matches[1].Trim()
+}
+
+function Update-SigningPasswords {
+    param([string]$SignJson)
+    if (-not $SignJson -or $SignJson -eq '[]') { return $SignJson }
+    try { $arr = $SignJson | ConvertFrom-Json } catch { return $SignJson }
+    foreach ($cfg in $arr) {
+        $m = $cfg.material
+        if (-not $m -or -not $m.storeFile) { continue }
+        foreach ($f in @('storePassword','keyPassword')) {
+            if ($m.PSObject.Properties.Name -contains $f) {
+                $m.$f = Invoke-EncryptSignPassword -StoreFile $m.storeFile -Password $m.$f
+            }
+        }
+    }
+    return (ConvertTo-Json -InputObject $arr.PSObject.BaseObject -Depth 8 -Compress)
+}
+
 # ---- 1. session -> Flutter-OH toolchain ----
 . (Join-Path $ScriptDir 'env-ohos.ps1')
 
@@ -166,6 +207,10 @@ try {
                 Write-Host '[ohos] signingConfigs imported from PoC debug profile (BOUND TO RETIRED BUNDLE NAME - signing will fail for com.xianyumusic.app)' -ForegroundColor Yellow
             }
         }
+    }
+    # auto-encrypt PLAIN signing passwords -> DevEco encrypted hex (mirror build only)
+    if ($sign -ne '[]') {
+        $sign = Update-SigningPasswords -SignJson $sign
     }
     if (Test-Path $bpJson5) {
         $existing = [System.IO.File]::ReadAllText($bpJson5, [System.Text.UTF8Encoding]::new($false))

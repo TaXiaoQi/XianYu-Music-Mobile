@@ -1,7 +1,21 @@
 
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\小奇\\Downloads\\弦予音乐.cer",
+          "keyAlias": "xianyu",
+          "keyPassword": "00000036a651fcaa87c29c0635e2d756257e764cf7deaf50a792e94c7896607a7522ad235ceee35c1521b1d3a72a22ccbc5fe86a2bf568e6f3289d52f366df6dcb7d54a9fd17661f0e4a",
+          "profile": "C:\\Users\\小奇\\Downloads\\xianyu_releaseRelease.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\小奇\\.ohos\\config\\xianyu_release.p12",
+          "storePassword": "00000036a651fcaa87c29c0635e2d756257e764cf7deaf50a792e94c7896607a7522ad235ceee35c1521b1d3a72a22ccbc5fe86a2bf568e6f3289d52f366df6dcb7d54a9fd17661f0e4a"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",

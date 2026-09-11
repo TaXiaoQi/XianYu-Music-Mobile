@@ -87,6 +87,21 @@ Future<String> lxPlaylistTracks({
   limit: limit,
 );
 
+/// LX 专辑曲目（对齐桌面端 lxGetAlbumSongs，kw/kg/tx/wy/mg 原生专辑接口）。
+/// 返回 [`crate::music::lx_search::LxSearchItem`] 数组的 JSON。
+/// album_id 无效（可能是回退的专辑名）时返回空数组，由调用方走搜索回退。
+Future<String> lxAlbumSongs({
+  required String source,
+  required String albumId,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiLxAlbumSongs(
+  source: source,
+  albumId: albumId,
+  page: page,
+  limit: limit,
+);
+
 /// 从指定音源抓取歌词（kg/kw/tx/wy）。
 ///
 /// - `song_info_json`：[

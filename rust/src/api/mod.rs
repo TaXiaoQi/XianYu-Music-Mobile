@@ -83,6 +83,19 @@ pub async fn lx_playlist_tracks(
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
+/// LX 专辑曲目（对齐桌面端 lxGetAlbumSongs，kw/kg/tx/wy/mg 原生专辑接口）。
+/// 返回 [`crate::music::lx_search::LxSearchItem`] 数组的 JSON。
+/// album_id 无效（可能是回退的专辑名）时返回空数组，由调用方走搜索回退。
+pub async fn lx_album_songs(
+    source: String,
+    album_id: String,
+    page: u32,
+    limit: u32,
+) -> Result<String, String> {
+    let items = crate::music::lx_catalog::lx_album_songs(&source, &album_id, page, limit).await?;
+    serde_json::to_string(&items).map_err(|e| e.to_string())
+}
+
 // =========================================================================
 // 歌词在线抓取（第三批）
 // =========================================================================

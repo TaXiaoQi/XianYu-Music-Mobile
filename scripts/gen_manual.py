@@ -72,7 +72,7 @@ def add_page_header_footer(canvas, doc):
     canvas.line(0.8 * inch, height - 0.62 * inch, width - 0.8 * inch, height - 0.62 * inch)
     # 页脚：版权与共几页
     canvas.setFont("CJK", 8.5)
-    footer_text = f"© 2026 {COPYRIGHT_HOLDER} · 第 {doc.page} 页 / 共 {PAGE_TOTAL} 页"
+    footer_text = f"© 2026 {COPYRIGHT_HOLDER} · 第 {doc.page} 页 / 共 {PAGE_TOTAL['v']} 页"
     canvas.drawCentredString(width / 2, 0.45 * inch, footer_text)
     canvas.setStrokeColorRGB(0.9, 0.9, 0.9)
     canvas.line(0.8 * inch, 0.6 * inch, width - 0.8 * inch, 0.6 * inch)

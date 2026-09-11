@@ -1560,8 +1560,12 @@ class _TraditionalPlayerLayoutState
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 封面略下移，与顶部切换 tab 留出呼吸间距
-            const SizedBox(height: 14),
+            // 竖屏：封面略下移，与顶部切换 tab 留出呼吸间距；
+            // 横屏（沉浸无顶栏）：封面上下均分弹性空间垂直居中，栏退出后
+            // 中区变高时封面居中于屏幕而非贴顶。
+            showLyricPreview
+                ? const SizedBox(height: 14)
+                : const Expanded(child: SizedBox.shrink()),
             Center(
               child: Hero(
                 tag: 'player-cover',
@@ -4990,6 +4994,16 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   /// 上一次歌词视口高度：横竖屏/分屏切换检测用。
   double? _lastViewportHeight;
 
+  /// 上一次歌词视口宽度：与高度一起判定视口变化是否改变行布局（仅宽度变化
+  /// 才会让行高/换行全变；横屏栏进退只改高度、行布局不变）。
+  double? _lastViewportWidth;
+
+  /// 视口高度变化防抖：栏进退（AnimatedSize 300ms 逐帧收缩）与横竖屏切换都会
+  /// 连续改变视口高度。若每次变化立即清缓存+精确居中，动画期间活动行会被反复
+  /// 强制跳位（「正在播放这句会丢」）；改为高度稳定后一次性执行，动画期间交还
+  /// 常规跟随保持行位置连续。
+  Timer? _viewportChangeDebounce;
+
   // ==================== 模糊行静态烘焙缓存（稳态省逐帧高斯模糊） ====================
   // 稳态（换行/交互过渡结束）后，非活动行的"内容+模糊"几乎不变，却仍每帧
   // 重跑 ImageFiltered 高斯模糊。烘焙方案：稳态行把清晰内容捕获成位图，一次性
@@ -5319,6 +5333,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _recenterTimer?.cancel();
     _draggingIndexTimer?.cancel();
     _pendingCenterFallback?.cancel();
+    _viewportChangeDebounce?.cancel();
     _clearBlurSnapshots();
     _scrollCtrl.dispose();
     super.dispose();
@@ -5858,20 +5873,30 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       content = LayoutBuilder(
         builder: (context, constraints) {
           final viewport = constraints.maxHeight;
-          // 横竖屏/分屏切换：视口高度变化后滚动偏移不再居中、行高随宽度
-          // 换行变化，重新执行一次性精确居中（等新尺寸下实测布局后瞬时跳回）。
-          // 行布局缓存按内容坐标记录，但行高会因宽度变化而变，一并清掉重测。
+          // 视口高度变化（横竖屏切换/栏进退）：滚动偏移不再居中，需重新精确
+          // 居中。但栏动画期间高度每帧都在变，若每次变化立即清缓存+硬跳，
+          // 活动行会被反复强制跳位（「正在播放这句会丢」）；防抖到高度稳定后
+          // 一次性执行（350ms 覆盖 AnimatedSize 300ms），动画期间交还常规跟随。
+          // 仅宽度变化（横竖屏切换）才清行布局缓存（行高/换行全变）：只改高度
+          // 的栏进退行布局不变，直接沿用缓存精确居中——清缓存会退化为按比例
+          // 粗跳（估算偏差 → 歌词整体上推对不齐），且行在视口内不会重建、
+          // _MeasuredLine 实测回调不触发，粗跳位置永久残留。
           if (_lastViewportHeight != null &&
               (_lastViewportHeight! - viewport).abs() > 1) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
+            final widthChanged = _lastViewportWidth != null &&
+                (_lastViewportWidth! - constraints.maxWidth).abs() > 1;
+            _viewportChangeDebounce?.cancel();
+            _viewportChangeDebounce = Timer(
+                const Duration(milliseconds: 350), () {
               if (!mounted) return;
-              _lineLayouts.clear();
+              if (widthChanged) _lineLayouts.clear();
               _pendingCenterJump = true;
               _pendingCenterFallback?.cancel();
               _tryPendingCenterJump();
             });
           }
           _lastViewportHeight = viewport;
+          _lastViewportWidth = constraints.maxWidth;
           final blank = viewport / 2 - typicalH / 2;
           final topPad = blank < 20 ? 20.0 : blank;
           final bottomPad = blank < 40 ? 40.0 : blank;

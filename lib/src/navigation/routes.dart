@@ -1187,8 +1187,11 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
           reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
         );
         final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+        // 竖屏整页滑动：静态化本页为一张预渲染快照再平移，切页期间零逐帧
+        // 全屏高斯（见 RouteStaticSnapshot），毛玻璃满档效果原样烘焙，不缩档。
+        // 与 _CoverRoute 覆盖分支同款，搜索结果页/在线详情页转场不再掉帧。
         final page = isPortrait
-            ? child
+            ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
                 opacity: CurvedAnimation(
                   parent: animation,

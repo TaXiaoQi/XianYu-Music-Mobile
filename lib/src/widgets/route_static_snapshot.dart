@@ -56,8 +56,11 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   @override
   void initState() {
     super.initState();
-    _enabled =
-        ref.read(settingsProvider).valueOrNull?.frostedGlass ?? false;
+    // 毛玻璃或液态玻璃任一开启即启用静态化：两者都含逐帧全屏
+    // SaveLayer/高斯/实时合成，切页平移时是掉帧主源；快照把观感原样
+    // 烘焙（满档 sigma，不缩档），朴素页面不引入抓屏开销。
+    final s = ref.read(settingsProvider).valueOrNull;
+    _enabled = (s?.frostedGlass ?? false) || (s?.liquidGlass ?? false);
     widget.animation.addStatusListener(_onStatus);
     // 首帧布局后尽早抓一次，避免首个转场冷启动时无快照。
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());

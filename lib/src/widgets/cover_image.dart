@@ -91,6 +91,12 @@ class _CoverImageState extends ConsumerState<CoverImage> {
   /// 避免播放页大封面切歌闪默认音符占位。
   String? _thumbPath;
 
+  /// 已锁定的解码宽度（像素）：歌未变时保持首次计算值。播放页横屏顶/底栏
+  /// 进退（AutoHideChrome 的 AnimatedSize 收缩让位）会使封面显示尺寸逐帧
+  /// 变化，若 cacheWidth 跟着变会触发图片重新解码 + CoverFadeIn 重新淡入，
+  /// 表现为封面闪烁；锁定后仅做显示缩放、不重解码。
+  int? _loadedCacheWidth;
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +114,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       _path = null;
       _proxied = null;
       _thumbPath = null;
+      _loadedCacheWidth = null;
       _load();
       _maybeProxy();
     }
@@ -329,6 +336,13 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     return _placeholder();
   }
 
+  /// 生效的解码宽度：外部显式指定优先；否则取已锁定的首次计算值
+  /// （首次访问时按当时显示尺寸计算并锁定，歌不变则不随显示尺寸重算）。
+  int? get _cacheWidth {
+    if (widget.cacheWidth != null) return widget.cacheWidth;
+    return _loadedCacheWidth ??= _computeCacheWidth();
+  }
+
   /// 按“显示尺寸 × 屏幕密度”解码，避免把整张高清封面解码后再缩放到小格子，
   /// 大幅降低列表滚动的内存与 GPU 上采样开销（RWAS 同款“按显示尺寸解码”）。
   ///
@@ -353,8 +367,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     256,
   ];
 
-  int? get _cacheWidth {
-    if (widget.cacheWidth != null) return widget.cacheWidth;
+  int? _computeCacheWidth() {
     final w = widget.width;
     if (!w.isFinite || w <= 0) return null;
     final px = w * MediaQuery.of(context).devicePixelRatio;

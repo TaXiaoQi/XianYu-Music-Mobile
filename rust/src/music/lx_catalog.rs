@@ -867,3 +867,237 @@ fn urlencode(s: &str) -> String {
     }
     out
 }
+
+// ==================== 专辑曲目 ====================
+
+/// 检测 albumId 是否为有效专辑 ID（而非回退的专辑名）。
+/// derive 专辑时 albumId/albumMid 均空会回退到专辑名，此时直连 API 必失败，
+/// 由调用方走搜索回退（对齐桌面 isValidAlbumId）。
+fn is_valid_album_id(source: &str, album_id: &str) -> bool {
+    if album_id.is_empty() {
+        return false;
+    }
+    if source == "tx" {
+        // TX albumMid：字母数字组合，通常以 "00" 开头
+        album_id.len() >= 6 && album_id.chars().all(|c| c.is_ascii_alphanumeric())
+    } else {
+        // kw/kg/wy/mg：纯数字 ID
+        album_id.chars().all(|c| c.is_ascii_digit())
+    }
+}
+
+/// LX 专辑曲目（对齐桌面 lxGetAlbumSongs）：kw/kg/tx/wy/mg 原生专辑接口。
+/// tx 复用 lx_search.rs 的签名 AlbumSongList；其余源走公开 Web 接口，
+/// 结果映射回 LxSearchItem（types 留空，播放时由 url_resolver 统一解析）。
+/// album_id 无效（可能是回退的专辑名）或接口失败时返回空数组，由调用方走搜索回退。
+pub async fn lx_album_songs(
+    source: &str,
+    album_id: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
+    if !is_valid_album_id(source, album_id) {
+        return Ok(Vec::new());
+    }
+    match source {
+        "tx" => crate::music::lx_search::tx_album_songs(album_id, page, limit).await,
+        "kw" => {
+            let url = format!(
+                "http://www.kuwo.cn/api/www/album/albumInfo?albumid={}&pn={}&rn={}",
+                urlencode(album_id),
+                page,
+                limit
+            );
+            let data = http_get_json(
+                &url,
+                &[
+                    ("csrf", "ABCDEF"),
+                    ("Cookie", "kw_token=ABCDEF"),
+                    ("Referer", "http://www.kuwo.cn/"),
+                ],
+            )
+            .await?;
+            let music_list = data
+                .pointer("/data/musicList")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let list: Vec<LxSearchItem> = music_list
+                .iter()
+                .map(|m| {
+                    let rid = match m.get("rid").or_else(|| m.get("id")) {
+                        Some(Value::Number(n)) => n.to_string(),
+                        Some(Value::String(s)) => s.clone(),
+                        _ => String::new(),
+                    };
+                    let duration = m
+                        .get("duration")
+                        .and_then(|v| {
+                            v.as_f64()
+                                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+                        })
+                        .unwrap_or(0.0);
+                    simple_item(
+                        "kw",
+                        rid,
+                        m.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        m.get("artist").and_then(|v| v.as_str()).unwrap_or(""),
+                        m.get("album")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        m.get("albumid")
+                            .cloned()
+                            .unwrap_or(Value::String(album_id.to_string())),
+                        format_play_time(duration),
+                        m.get("pic")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        None,
+                    )
+                })
+                .collect();
+            Ok(list)
+        }
+        "kg" => {
+            let url = format!(
+                "http://mobilecdn.kugou.com/api/v3/album/song?albumid={}&page={}&pagesize={}",
+                urlencode(album_id),
+                page,
+                limit
+            );
+            let data = http_get_json(&url, &[]).await?;
+            let info_list = data
+                .pointer("/data/info")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let list: Vec<LxSearchItem> = info_list.iter().map(kg_filter_data).collect();
+            Ok(list)
+        }
+        "wy" => {
+            let url = format!(
+                "https://music.163.com/api/album/{}",
+                urlencode(album_id)
+            );
+            let data = http_get_json(
+                &url,
+                &[
+                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                    ("Referer", "https://music.163.com"),
+                    ("Cookie", "MUSIC_A=1"),
+                ],
+            )
+            .await?;
+            let songs = data
+                .get("songs")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let list: Vec<LxSearchItem> = songs
+                .iter()
+                .map(|song| {
+                    let al = song.get("album").or_else(|| song.get("al"));
+                    let ar = song
+                        .get("artists")
+                        .or_else(|| song.get("ar"))
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let singer = ar
+                        .iter()
+                        .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
+                        .collect::<Vec<&str>>()
+                        .join("、");
+                    let duration = song
+                        .get("duration")
+                        .or_else(|| song.get("dt"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0)
+                        / 1000.0;
+                    let img = al
+                        .and_then(|a| a.get("picUrl"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.replace("http://", "https://"));
+                    simple_item(
+                        "wy",
+                        song.get("id").map(|v| v.to_string()).unwrap_or_default(),
+                        song.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        &singer,
+                        al.and_then(|a| a.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        al.and_then(|a| a.get("id"))
+                            .cloned()
+                            .unwrap_or(Value::String(album_id.to_string())),
+                        format_play_time(duration),
+                        img,
+                        None,
+                    )
+                })
+                .collect();
+            Ok(list)
+        }
+        "mg" => {
+            let url = format!(
+                "https://m.music.migu.cn/migu/remoting/cms_album_song_list_tag?albumId={}&pageNo={}&pageSize={}",
+                urlencode(album_id),
+                page,
+                limit
+            );
+            let data = http_get_json(&url, &[]).await?;
+            let raw_list = data
+                .get("resultList")
+                .or_else(|| data.get("list"))
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let list: Vec<LxSearchItem> = raw_list
+                .iter()
+                .map(|item| {
+                    let singers = item
+                        .get("singerList")
+                        .or_else(|| item.get("singers"))
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    let singer = format_singer_name(&singers, "name");
+                    let img = item
+                        .get("img3")
+                        .or_else(|| item.get("img2"))
+                        .or_else(|| item.get("img1"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let duration = item
+                        .get("duration")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    simple_item(
+                        "mg",
+                        item.get("songId")
+                            .or_else(|| item.get("id"))
+                            .map(|v| v.to_string())
+                            .unwrap_or_default(),
+                        item.get("name")
+                            .or_else(|| item.get("songName"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        &singer,
+                        item.get("album")
+                            .or_else(|| item.get("albumName"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        item.get("albumId")
+                            .cloned()
+                            .unwrap_or(Value::String(album_id.to_string())),
+                        format_play_time(duration),
+                        img,
+                        item.get("copyrightId")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                    )
+                })
+                .collect();
+            Ok(list)
+        }
+        _ => Err(format!("Unknown lx source: {}", source)),
+    }
+}
