@@ -37,6 +37,7 @@ impl OutputFormat {
 }
 
 #[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConvertResult {
     pub input_path: String,
     pub output_path: String,
