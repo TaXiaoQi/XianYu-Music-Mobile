@@ -46,6 +46,7 @@ pub struct ConvertResult {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConvertOptions {
     pub target_format: String,
     pub sample_rate: Option<u32>,
