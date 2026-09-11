@@ -115,6 +115,18 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   String _format = 'mp3';
   bool _keepCover = true;
   bool _keepLyrics = true;
+  int _sampleRate = 0; // 0 = 保留原采样率
+
+  // 与桌面端 SettingsAudioConvert.vue 对齐
+  static const _SAMPLE_RATES = [
+    (0, '保留原采样率'),
+    (22050, '22050 Hz'),
+    (32000, '32000 Hz'),
+    (44100, '44100 Hz'),
+    (48000, '48000 Hz'),
+    (96000, '96000 Hz'),
+    (192000, '192000 Hz'),
+  ];
 
   _Format get _fmt =>
       _FORMATS.firstWhere((f) => f.value == _format, orElse: () => _FORMATS.first);
@@ -184,6 +196,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       final buf = StringBuffer('-y -i "${item.input}"');
       buf.write(' -c:a ${fmt.encoderArg}');
       if (fmt.extraArgs.isNotEmpty) buf.write(' ${fmt.extraArgs}');
+      if (_sampleRate > 0) buf.write(' -ar $_sampleRate');
       if (_keepCover) buf.write(' -map 0:v? -c copy');
       if (_keepLyrics) buf.write(' -map_metadata 0 -map_chapters 0');
       buf.write(' "${outPath}"');
@@ -281,6 +294,8 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
                 _buildBanner(scheme),
                 const SizedBox(height: 16),
                 _buildFormatPicker(scheme),
+                const SizedBox(height: 8),
+                _buildSampleRatePicker(scheme),
                 const SizedBox(height: 12),
                 _buildMetadataOptions(scheme),
                 const SizedBox(height: 16),
@@ -394,6 +409,29 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
               label: Text('${f.label}${f.lossless ? ' ⭐' : ''}'),
               selected: selected,
               onSelected: (_) => setState(() => _format = f.value),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSampleRatePicker(ColorScheme scheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(tr('采样率'),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: _SAMPLE_RATES.map((s) {
+            final selected = _sampleRate == s.$1;
+            return ChoiceChip(
+              label: Text(s.$2),
+              selected: selected,
+              onSelected: _busy ? null : (_) => setState(() => _sampleRate = s.$1),
             );
           }).toList(),
         ),
