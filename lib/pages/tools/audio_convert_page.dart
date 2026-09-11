@@ -95,11 +95,12 @@ enum _Status { pending, running, done, failed }
 class _Item {
   final String name;
   final String input;
+  final String originalDir; // 选文件时真正的原目录（可能与 input.parent 不同）
   _Status status = _Status.pending;
   String? output;
   String? error;
   double secs = 0;
-  _Item({required this.name, required this.input});
+  _Item({required this.name, required this.input, required this.originalDir});
 }
 
 class AudioConvertPage extends ConsumerStatefulWidget {
@@ -138,23 +139,43 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       allowMultiple: true,
     );
     if (files.isEmpty) return;
-    final dir = await getTemporaryDirectory();
+
+    // Android 10+ 分区存储：从真实路径推断原目录，推断失败回退常用音乐目录
+    final tmpDir = await getTemporaryDirectory();
+    String? fallbackDir;
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) {
+        // /storage/emulated/0/Android/data/xxx/files → /storage/emulated/0/Music
+        final m = RegExp(r'(/storage/emulated/\d+)').firstMatch(ext.path);
+        if (m != null) fallbackDir = '${m.group(1)}/Music';
+      }
+    } catch (_) {}
+    fallbackDir ??= tmpDir.path;
+
     final items = <_Item>[];
     for (final f in files) {
       String? path = f.path;
-      if (path == null || path.isEmpty || !File(path).existsSync()) {
+      String originalDir;
+      if (path != null && path.isNotEmpty && File(path).existsSync()) {
+        originalDir = Directory(path).parent.path;
+      } else {
+        // 无效路径（content:// URI 等），先读 bytes 存 temp
         final bytes = await f.readAsBytes();
         if (bytes.isEmpty) continue;
         final safe = f.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-        final tmp = File('${dir.path}/$safe');
+        final tmp = File('${tmpDir.path}/$safe');
         await tmp.writeAsBytes(bytes);
         path = tmp.path;
+        // content URI 拿不到真实路径，用 fallback
+        originalDir = fallbackDir!;
       }
       items.add(_Item(
         name: f.name.isNotEmpty
             ? f.name
             : path.split(RegExp(r'[\\/]')).last,
         input: path,
+        originalDir: originalDir,
       ));
     }
     if (items.isEmpty) return;
@@ -240,7 +261,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   Future<String?> _pickOutDir() async {
     if (!mounted) return null;
     final defaultDir = _selected.isNotEmpty
-        ? Directory(_selected.first.input).parent.path
+        ? _selected.first.originalDir
         : (await getTemporaryDirectory()).path;
 
     String? choice;

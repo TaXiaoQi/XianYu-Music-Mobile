@@ -29,6 +29,7 @@ class AudioTrimPage extends ConsumerStatefulWidget {
 
 class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   String? _filePath;
+  String? _originalDir; // 选文件时真正的原目录
   String _fileName = '';
   double _duration = 0; // 秒
   bool _probing = false;
@@ -145,18 +146,34 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     );
     if (files.isEmpty) return;
     final f = files.single;
+
+    final tmpDir = await getTemporaryDirectory();
+    String? fallbackDir;
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) {
+        final m = RegExp(r'(/storage/emulated/\d+)').firstMatch(ext.path);
+        if (m != null) fallbackDir = '${m.group(1)}/Music';
+      }
+    } catch (_) {}
+    fallbackDir ??= tmpDir.path;
+
     String? path = f.path;
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
+    String originalDir;
+    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      originalDir = Directory(path).parent.path;
+    } else {
       final bytes = await f.readAsBytes();
       if (bytes.isEmpty) return;
-      final dir = await getTemporaryDirectory();
       final safe = f.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final tmp = File('${dir.path}/$safe');
+      final tmp = File('${tmpDir.path}/$safe');
       await tmp.writeAsBytes(bytes);
       path = tmp.path;
+      originalDir = fallbackDir;
     }
     setState(() {
       _filePath = path;
+      _originalDir = originalDir;
       _fileName = f.name.isNotEmpty
           ? f.name
           : path!.split(RegExp(r'[\\/]')).last;
@@ -322,8 +339,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   Future<String?> _pickOutDir() async {
     if (!mounted) return null;
-    final defaultDir = _filePath != null
-        ? Directory(_filePath!).parent.path
+    final defaultDir = _originalDir != null
+        ? _originalDir!
         : (await getTemporaryDirectory()).path;
 
     String? choice;
