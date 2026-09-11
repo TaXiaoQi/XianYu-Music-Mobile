@@ -113,6 +113,8 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   final List<_Item> _results = [];
   bool _busy = false;
   String _format = 'mp3';
+  bool _keepCover = true;
+  bool _keepLyrics = true;
 
   _Format get _fmt =>
       _FORMATS.firstWhere((f) => f.value == _format, orElse: () => _FORMATS.first);
@@ -179,8 +181,13 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       final outPath = '$outDir${Platform.pathSeparator}$safeBase.${fmt.ext}';
       item.output = outPath;
 
-      final cmd = '-y -i "${item.input}" -c:a ${fmt.encoderArg} ${fmt.extraArgs} "${outPath}"'
-          .trim();
+      final buf = StringBuffer('-y -i "${item.input}"');
+      buf.write(' -c:a ${fmt.encoderArg}');
+      if (fmt.extraArgs.isNotEmpty) buf.write(' ${fmt.extraArgs}');
+      if (_keepCover) buf.write(' -map 0:v? -c copy');
+      if (_keepLyrics) buf.write(' -map_metadata 0 -map_chapters 0');
+      buf.write(' "${outPath}"');
+      final cmd = buf.toString();
 
       final sw = Stopwatch()..start();
       FFmpegSession? session;
@@ -274,6 +281,8 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
                 _buildBanner(scheme),
                 const SizedBox(height: 16),
                 _buildFormatPicker(scheme),
+                const SizedBox(height: 12),
+                _buildMetadataOptions(scheme),
                 const SizedBox(height: 16),
                 _buildPickRow(),
                 const SizedBox(height: 12),
@@ -389,6 +398,51 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           }).toList(),
         ),
       ],
+    );
+  }
+
+  Widget _buildMetadataOptions(ColorScheme scheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: appCardColor(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            secondary: Icon(Icons.image_outlined,
+                size: 20, color: scheme.primary),
+            title: Text(tr('保留内置封面'),
+                style: const TextStyle(fontSize: 13.5)),
+            subtitle: Text(tr('复制专辑封面到输出文件'),
+                style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+            value: _keepCover,
+            onChanged: _busy
+                ? null
+                : (v) => setState(() => _keepCover = v),
+          ),
+          const Divider(height: 1, indent: 52),
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            secondary: Icon(Icons.subtitles_outlined,
+                size: 20, color: scheme.primary),
+            title: Text(tr('保留内置歌词'),
+                style: const TextStyle(fontSize: 13.5)),
+            subtitle: Text(tr('复制内嵌歌词和元数据'),
+                style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+            value: _keepLyrics,
+            onChanged: _busy
+                ? null
+                : (v) => setState(() => _keepLyrics = v),
+          ),
+        ],
+      ),
     );
   }
 
