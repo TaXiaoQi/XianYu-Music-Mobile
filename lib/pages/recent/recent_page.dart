@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show compute;
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -13,17 +17,164 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 最近播放页：展示播放历史，支持点播/移除/清空。
-class RecentPage extends ConsumerWidget {
+/// 最近播放页：展示播放历史，支持点播/移除/清空、竖屏搜索与排序。
+class RecentPage extends ConsumerStatefulWidget {
   const RecentPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecentPage> createState() => _RecentPageState();
+}
+
+class _RecentPageState extends ConsumerState<RecentPage> {
+  /// 竖屏页内搜索（非面板）：标题栏输入，过滤播放记录。
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  /// 最近一次离线程「过滤+排序」结果；null 表示无过滤/排序，用原始顺序。
+  List<RecentEntry>? _result;
+  Timer? _debounce;
+  int _req = 0;
+  _RecentSort _sort = _RecentSort.none;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// 查询/排序任一生效即视为过滤态。
+  bool get _filtering => _query.isNotEmpty || _sort != _RecentSort.none;
+
+  void _onSearchChanged(String v) {
+    setState(() => _query = v.trim().toLowerCase());
+    _onCriteriaChanged();
+  }
+
+  /// 查询/排序任一变化后立即刷新界面并防抖调度离线程重算。
+  void _onCriteriaChanged() {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 160), _runFilter);
+  }
+
+  Future<void> _runFilter() async {
+    final gen = ++_req;
+    final entries = ref.read(recentProvider).entries;
+    final rows = [
+      for (final e in entries)
+        (
+          title: _recentTitle(e),
+          artist: _recentArtist(e),
+          playedAt: e.playedAt,
+        )
+    ];
+    final out = await compute(
+      _filterSortRecent,
+      (rows, _query, _sort.index),
+    );
+    if (!mounted || gen != _req) return;
+    setState(() {
+      _result = [for (final i in out) entries[i]];
+    });
+  }
+
+  void _clearSearch() {
+    _searchCtrl.clear();
+    setState(() => _query = '');
+    _debounce?.cancel();
+    // 清空搜索：排序可能选中，保留排序结果；无条件重跑一次对齐。
+    _runFilter();
+  }
+
+  Widget _buildSearchField(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: 40,
+      child: TextField(
+        controller: _searchCtrl,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        style: TextStyle(fontSize: 14.5, color: scheme.onSurface),
+        decoration: InputDecoration(
+          hintText: tr('搜索歌曲、歌手、专辑'),
+          hintStyle:
+              TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
+          prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 40),
+          suffixIcon: _query.isNotEmpty
+              ? InkWell(
+                  onTap: _clearSearch,
+                  child: Icon(Icons.close,
+                      size: 18, color: scheme.onSurfaceVariant),
+                )
+              : null,
+          suffixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 40),
+          isDense: true,
+          filled: true,
+          fillColor: isDark
+              ? const Color(0x14FFFFFF)
+              : const Color(0x14000000),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 打开排序选择弹窗（统一弹窗风格）。
+  Future<void> _openSortMenu(BuildContext context) async {
+    final v = await showSheetDialog<_RecentSort>(
+      context,
+      (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Text(
+                tr('排序方式'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            for (final s in _RecentSort.values)
+              _SortItem(
+                label: _recentSortLabel(s),
+                selected: s == _sort,
+                onTap: () => Navigator.pop(ctx, s),
+              ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+      maxWidth: 240,
+    );
+    if (v != null) {
+      _sort = v;
+      _onCriteriaChanged();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final recent = ref.watch(recentProvider);
     // 面板模式下隐藏本页顶部 GlassTopBar（由外层横屏胶囊顶栏占位）。
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
@@ -47,6 +198,12 @@ class RecentPage extends ConsumerWidget {
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
 
+    // 页内搜索/排序结果列表；null 表示无过滤/排序，用原始顺序（含面板全局过滤）。
+    // 面板模式沿用全局顶栏搜索，页内搜索/排序让位。
+    final items = (!inMusicPane && _filtering) ? _result : null;
+    // 竖屏非面板模式显示排序工具栏（对齐本地页）。
+    final showControls = !inMusicPane;
+
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
@@ -63,6 +220,10 @@ class RecentPage extends ConsumerWidget {
                   notifier: notifier,
                   filter: filter,
                   contentTop: GlassTopBar.height(context) + 6,
+                  items: items,
+                  showSortBar: showControls,
+                  sort: _sort,
+                  onOpenSort: () => _openSortMenu(context),
                 ),
               )
             else
@@ -99,6 +260,10 @@ class RecentPage extends ConsumerWidget {
                             recent: recent,
                             notifier: notifier,
                             filter: filter,
+                            items: items,
+                            showSortBar: showControls,
+                            sort: _sort,
+                            onOpenSort: () => _openSortMenu(context),
                           ),
               ),
             // 内容头：面板模式仅保留右侧「清空」；非面板模式完整 GlassTopBar。
@@ -125,7 +290,8 @@ class RecentPage extends ConsumerWidget {
                 right: 0,
                 child: GlassTopBar(
                   leading: const BackButton(),
-                  title:   Text(tr('最近播放')),
+                  // 竖屏/非面板模式下标题栏内联搜索框（过滤播放记录，对齐本地页）。
+                  title: _buildSearchField(context),
                   actions: [
                     if (recent.entries.isNotEmpty)
                       IconButton(
@@ -176,6 +342,10 @@ class _RecentList extends ConsumerStatefulWidget {
     required this.notifier,
     this.filter = '',
     this.contentTop,
+    this.items,
+    this.showSortBar = false,
+    this.sort = _RecentSort.none,
+    required this.onOpenSort,
   });
 
   final RecentState recent;
@@ -187,6 +357,17 @@ class _RecentList extends ConsumerStatefulWidget {
 
   /// 横屏音乐库 pane 的本地过滤关键词（已小写）；空=不过滤。
   final String filter;
+
+  /// 竖屏页内「过滤+排序」结果列表；null 表示无过滤/排序，用原始顺序。
+  final List<RecentEntry>? items;
+
+  /// 竖屏非面板模式显示排序工具栏（对齐本地页）。
+  final bool showSortBar;
+
+  /// 当前排序，用于工具栏标签。
+  final _RecentSort sort;
+
+  final VoidCallback onOpenSort;
 
   @override
   ConsumerState<_RecentList> createState() => _RecentListState();
@@ -227,10 +408,16 @@ class _RecentListState extends ConsumerState<_RecentList> {
     final bottomPad =
         (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
 
+    final topExtent = widget.contentTop ?? 0;
+    // 竖屏非面板排序工具栏（对齐本地页），高度供列表顶部避让。
+    final sortPad = widget.showSortBar ? 54.0 : 0.0;
+
     final all = widget.recent.entries;
     final filter = widget.filter;
+    // 页内搜索/排序生效时用离线程结果；否则走原始顺序 + 面板全局过滤。
+    final items = widget.items;
     final visible =
-        filter.isEmpty ? all : all.where((e) => _match(e, filter)).toList();
+        items ?? (filter.isEmpty ? all : all.where((e) => _match(e, filter)).toList());
 
     if (visible.isEmpty) {
       final scheme = Theme.of(context).colorScheme;
@@ -242,7 +429,9 @@ class _RecentListState extends ConsumerState<_RecentList> {
                 size: 40, color: scheme.onSurface.withValues(alpha: 0.25)),
             const SizedBox(height: 12),
             Text(
-              filter.isNotEmpty ? tr('没有找到相关歌曲') : tr('暂无播放记录'),
+              items != null || filter.isNotEmpty
+                  ? tr('没有找到相关歌曲')
+                  : tr('暂无播放记录'),
               style:
                   TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
             ),
@@ -255,7 +444,8 @@ class _RecentListState extends ConsumerState<_RecentList> {
       children: [
         ListView.builder(
           controller: _controller,
-          padding: EdgeInsets.only(top: widget.contentTop ?? 0, bottom: bottomPad),
+          padding: EdgeInsets.only(
+              top: topExtent + sortPad, bottom: bottomPad),
           itemExtent: rowExtent,
           // 提前半屏预缓存，避免新行进场时突然解码封面掉帧（对齐 SongsListView）。
           scrollCacheExtent: ScrollCacheExtent.pixels(500),
@@ -275,12 +465,59 @@ class _RecentListState extends ConsumerState<_RecentList> {
         SongListScrollFabs(
           controller: _controller,
           paths: visible.map((e) => e.songPath).toList(),
-          rowTopOf: (i) => i * rowExtent,
+          rowTopOf: (i) => topExtent + sortPad + i * rowExtent,
           itemExtent: rowExtent,
           bottom: bottomPad + 8,
           right: 12,
         ),
+        // 竖屏非面板排序工具栏：默认(时间)排序即原始顺序。
+        if (widget.showSortBar)
+          Positioned(
+            top: topExtent,
+            left: 0,
+            right: 0,
+            child: _buildSortBar(context),
+          ),
       ],
+    );
+  }
+
+  /// 排序工具栏（对齐本地页竖屏二级页，仅含排序选择）。
+  Widget _buildSortBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: InkWell(
+            onTap: widget.onOpenSort,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.sort, size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      _recentSortLabel(widget.sort),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  Icon(Icons.arrow_drop_down,
+                      size: 18, color: scheme.onSurfaceVariant),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -402,5 +639,99 @@ class _RecentTile extends ConsumerWidget {
     if (diff == 1) return tr('昨天 {hm}', {'hm': hm});
     if (diff < 7) return tr('{m}月{d}日 {hm}', {'m': dt.month, 'd': dt.day, 'hm': hm});
     return tr('{y}年{m}月{d}日', {'y': dt.year, 'm': dt.month, 'd': dt.day});
+  }
+}
+
+/// 播放记录的排序选项：none=播放时间（原始顺序）。
+enum _RecentSort { none, title, artist, time }
+
+String _recentSortLabel(_RecentSort s) => switch (s) {
+      _RecentSort.none => tr('默认排序'),
+      _RecentSort.time => tr('按播放时间'),
+      _RecentSort.title => tr('按标题'),
+      _RecentSort.artist => tr('按歌手'),
+    };
+
+/// 离线程取标题/歌手（compute 回调无法跨 isolate 携带 Song/QueueItem，
+/// 故由调用方在 UI 线程先把纯文本记录摊平后传入）。
+String _recentTitle(RecentEntry e) {
+  final item = e.toQueueItem();
+  final t = item?.title;
+  if (t != null && t.isNotEmpty) return t;
+  final name = e.songPath.split(RegExp(r'[\\/]')).last;
+  final dot = name.lastIndexOf('.');
+  return dot > 0 ? name.substring(0, dot) : name;
+}
+
+String _recentArtist(RecentEntry e) => e.toQueueItem()?.artist ?? '';
+
+/// 离线程执行的「过滤 + 排序」（compute 回调，须为顶层函数）。
+/// 返回原始下标（进入原始 entries 的索引）。
+List<int> _filterSortRecent(
+    (List<({String title, String artist, int playedAt})>, String, int) args) {
+  final (rows, query, sortIdx) = args;
+  final indices = List<int>.generate(rows.length, (i) => i);
+  List<int> result = indices;
+  if (query.isNotEmpty) {
+    result = indices.where((i) {
+      final r = rows[i];
+      return r.title.toLowerCase().contains(query) ||
+          r.artist.toLowerCase().contains(query);
+    }).toList();
+  }
+  result.sort((a, b) {
+    final A = rows[a];
+    final B = rows[b];
+    switch (_RecentSort.values[sortIdx]) {
+      case _RecentSort.title:
+        return A.title.compareTo(B.title);
+      case _RecentSort.artist:
+        final c = A.artist.compareTo(B.artist);
+        return c != 0 ? c : A.title.compareTo(B.title);
+      case _RecentSort.time:
+      case _RecentSort.none:
+        final c = B.playedAt.compareTo(A.playedAt);
+        return c != 0 ? c : A.title.compareTo(B.title);
+    }
+  });
+  return result;
+}
+
+/// 排序弹窗里的单选项：选中项左侧主色勾选标记（轻量选中态）。
+class _SortItem extends StatelessWidget {
+  const _SortItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: selected ? scheme.primary : scheme.onSurface,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check, size: 18, color: scheme.primary),
+          ],
+        ),
+      ),
+    );
   }
 }

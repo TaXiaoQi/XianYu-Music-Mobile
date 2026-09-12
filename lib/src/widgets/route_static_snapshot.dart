@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../core/application_logger.dart';
 
 /// 整页转场静态化包装（「不牺牲效果、换一条低成本渲染路线」）。
 ///
@@ -70,7 +71,20 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
     // 只在「开始运动（进入切页窗口）」这个边沿抓一次屏。
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
       _capture();
+      return;
     }
+    // 转场结束边沿（completed/dismissed）：本组件全程靠「父级每帧重建」把
+    // moving 翻回 false、从而换回真实页面；个别设备/驱动返回阶段的最后
+    // 一帧若不重建，真实页面会一直定格在 Offstage 隐藏态、整页只剩灰白
+    // 底色（表现「点批量→返回后一直灰屏」）。这里转场结束时强制重建一把，
+    // 无论父级是否重建都能把页面换回。
+    final wasMoving = _moving;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !wasMoving) setState(() {});
+    });
+    AppLog.debug('route-snapshot',
+        'end status=$status wasMoving=$wasMoving img=${_image != null} '
+        'size=${_size != null}');
   }
 
   @override
@@ -102,8 +116,9 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       img = await box.toImage(
         pixelRatio: dpr / _downscale,
       );
-    } catch (_) {
+    } catch (e) {
       img = null;
+      AppLog.warn('route-snapshot', 'capture toImage failed: $e');
     }
     _capturing = false;
     if (!mounted || token != _token) {

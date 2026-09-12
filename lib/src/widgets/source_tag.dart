@@ -71,8 +71,13 @@ String songSourceLabel(
     }
   }
 
-  // 2. 识别短 key（LX 常用音源 / 平台）
-  final raw = source?.trim();
+  // 2. 识别短 key（LX 常用音源 / 平台）。
+  //    收藏/榜单导入等场景来源 key 常只写在 onlineSongJson 里、顶层 source
+  //    为空，从 json 兜底读取，避免来源落成「在线」。
+  final src = (source != null && source.trim().isNotEmpty)
+      ? source
+      : _jsonSource(onlineSongJson);
+  final raw = src?.trim();
   if (raw != null && raw.isNotEmpty) {
     final lower = raw.toLowerCase();
     final short = _shortSourceName(lower, showReal: showReal);
@@ -122,6 +127,18 @@ String? _shortSourceName(String lower, {bool showReal = false}) {
       return tr('喜马拉雅');
     default:
       return null;
+  }
+}
+
+/// 从 onlineSongJson 读取来源 key（QueueItem/收藏常把 source 只写在 json 里）。
+String? _jsonSource(String? onlineSongJson) {
+  if (onlineSongJson == null || onlineSongJson.isEmpty) return null;
+  try {
+    final json = jsonDecode(onlineSongJson) as Map<String, dynamic>;
+    final s = json['source'];
+    return s is String && s.isNotEmpty ? s : null;
+  } catch (_) {
+    return null;
   }
 }
 
