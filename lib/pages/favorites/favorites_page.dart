@@ -273,10 +273,10 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     final portraitFloating = !inMusicPane &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
-    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
-    // + Tab 气泡原高）+ 6 呼吸；固定模式 0。
+    // 悬浮模式内容避让量：整数级对齐本地页悬浮顶栏——状态栏 + 8 顶距 + 44
+    // 搜索胶囊行 + 10 间距 + Tab 气泡原高 + 14 呼吸；固定模式 0。
     final topInset = portraitFloating
-        ? statusBar + 66 + tabBar.preferredSize.height + 6
+        ? statusBar + 8 + 44 + 10 + tabBar.preferredSize.height + 14
         : 0.0;
 
     return HideShellChrome(
@@ -322,30 +322,68 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                     ),
             ),
             // 内容头：面板模式只保留 TabBar（悬浮气泡 / 固定细分条）；非面板模式
-            // 渲染完整 GlassTopBar（返回 + 标题 + 清空 + TabBar）。
+            // 渲染完整顶栏——竖屏悬浮态用全宽搜索胶囊 [FloatingSearchTopBar]（对齐
+            // 本地页），固定态用 GlassTopBar（返回 + 标题搜索 + 清空 + TabBar）。
             Positioned(
-              top: paneTop,
-              left: (inMusicPane && floating) ? 12 : 0,
-              right: (inMusicPane && floating) ? 12 : 0,
+              top: inMusicPane
+                  ? paneTop
+                  : (portraitFloating ? statusBar + 8 : 0),
+              left: (inMusicPane || portraitFloating) ? 12 : 0,
+              right: (inMusicPane || portraitFloating) ? 12 : 0,
               child: inMusicPane
                   ? (floating
                       ? FloatingTabPill(child: paneTabBar)
                       : _tabBarStrip(context, paneTabBar))
-                  : GlassTopBar(
-                      leading: const BackButton(),
-                      // 竖屏/非面板模式下标题栏内联搜索框（过滤单曲收藏，对齐本地页）。
-                      title: _buildSearchField(context),
-                      actions: [
-                        if (showBatch) _batchToggle(context),
-                        if (showBatch && !_batch.batchMode)
-                          IconButton(
-                            icon: const Icon(Icons.delete_sweep_outlined),
-                            tooltip: tr('清空'),
-                            onPressed: () => _confirmClear(context, notifier),
+                  : (portraitFloating
+                      ? FloatingSearchTopBar(
+                          onBack: () => context.pop(),
+                          field: FloatingGlassSearchField(
+                            controller: _searchCtrl,
+                            onChanged: (v) {
+                              _query = v.trim().toLowerCase();
+                              _onCriteriaChanged();
+                            },
+                            showClear: _query.isNotEmpty,
+                            onClear: _clearSearch,
+                            hint: tr('搜索歌曲、歌手、专辑'),
                           ),
-                      ],
-                      bottom: tabBar,
-                    ),
+                          action: showBatch
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _batchToggle(context, floating: true),
+                                    if (!_batch.batchMode) ...[
+                                      const SizedBox(width: 10),
+                                      BiliPaiIconButton(
+                                        icon:
+                                            Icons.delete_sweep_outlined,
+                                        tooltip: tr('清空'),
+                                        onTap: () => _confirmClear(
+                                            context, notifier),
+                                      ),
+                                    ],
+                                  ],
+                                )
+                              : null,
+                          tabPill: FloatingTabPill(child: tabBar),
+                        )
+                      : GlassTopBar(
+                          leading: const BackButton(),
+                          // 竖屏/非面板模式下标题栏内联搜索框（过滤单曲收藏，对齐本地页）。
+                          title: _buildSearchField(context),
+                          actions: [
+                            if (showBatch) _batchToggle(context),
+                            if (showBatch && !_batch.batchMode)
+                              IconButton(
+                                icon:
+                                    const Icon(Icons.delete_sweep_outlined),
+                                tooltip: tr('清空'),
+                                onPressed: () =>
+                                    _confirmClear(context, notifier),
+                              ),
+                          ],
+                          bottom: tabBar,
+                        )),
             ),
             // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
             if (!inMusicPane) const BottomPlayBarSlot(),

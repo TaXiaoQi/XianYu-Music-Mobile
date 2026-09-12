@@ -6,6 +6,7 @@ import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../src/navigation/shell.dart';
 import '../../src/core/app_colors.dart';
@@ -14,6 +15,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
@@ -219,7 +221,9 @@ class _RecentPageState extends ConsumerState<RecentPage> {
                   recent: recent,
                   notifier: notifier,
                   filter: filter,
-                  contentTop: GlassTopBar.height(context) + 6,
+                  // 对齐本地页悬浮顶栏：状态栏 + 8 顶距 + 44 搜索胶囊行 + 14 呼吸；
+                  // 最近播放无 Tab，浮悬头仅为单行搜索胶囊。
+                  contentTop: statusBar + 8 + 44 + 14,
                   items: items,
                   showSortBar: showControls,
                   sort: _sort,
@@ -285,22 +289,44 @@ class _RecentPageState extends ConsumerState<RecentPage> {
               ),
             if (!inMusicPane)
               Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: GlassTopBar(
-                  leading: const BackButton(),
-                  // 竖屏/非面板模式下标题栏内联搜索框（过滤播放记录，对齐本地页）。
-                  title: _buildSearchField(context),
-                  actions: [
-                    if (recent.entries.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.delete_sweep_outlined),
-                        tooltip: tr('清空'),
-                        onPressed: () => _confirmClear(context, notifier),
+                // 竖屏悬浮态顶到状态栏下方 8，固定态贴顶（GlassTopBar 自含状态栏）。
+                top: portraitFloating ? statusBar + 8 : 0,
+                left: portraitFloating ? 12 : 0,
+                right: portraitFloating ? 12 : 0,
+                child: portraitFloating
+                    ? FloatingSearchTopBar(
+                        onBack: () => context.pop(),
+                        field: FloatingGlassSearchField(
+                          controller: _searchCtrl,
+                          onChanged: _onSearchChanged,
+                          showClear: _query.isNotEmpty,
+                          onClear: _clearSearch,
+                          hint: tr('搜索歌曲、歌手、专辑'),
+                        ),
+                        action: recent.entries.isNotEmpty
+                            ? BiliPaiIconButton(
+                                icon: Icons.delete_sweep_outlined,
+                                tooltip: tr('清空'),
+                                onTap: () =>
+                                    _confirmClear(context, notifier),
+                              )
+                            : null,
+                      )
+                    : GlassTopBar(
+                        leading: const BackButton(),
+                        // 竖屏/非面板模式下标题栏内联搜索框（过滤播放记录，对齐本地页）。
+                        title: _buildSearchField(context),
+                        actions: [
+                          if (recent.entries.isNotEmpty)
+                            IconButton(
+                              icon:
+                                  const Icon(Icons.delete_sweep_outlined),
+                              tooltip: tr('清空'),
+                              onPressed: () =>
+                                  _confirmClear(context, notifier),
+                            ),
+                        ],
                       ),
-                  ],
-                ),
               ),
             // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
             if (!inMusicPane) const BottomPlayBarSlot(),
