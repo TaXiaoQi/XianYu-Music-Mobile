@@ -8,6 +8,7 @@ import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_preferences.dart';
 import 'plugin_provider.dart';
+import 'plugin_subscriptions.dart';
 import '../i18n/i18n.dart';
 
 /// 插件更新检查结果。
@@ -80,8 +81,134 @@ String? _extractMusicFreeSrcUrl(String script) {
 class PluginUpdateService {
   final PluginEngine engine;
   final PluginManager manager;
+  /// 读取已保存的订阅清单列表（对齐桌面端 getSubscriptions）。传入后更新检查
+  /// 优先按订阅清单声明的 version 比对（订阅才是权威更新依据）。
+  final List<PluginSubscription> Function()? subscriptionsReader;
 
-  PluginUpdateService(this.engine, this.manager);
+  PluginUpdateService(this.engine, this.manager,
+      {this.subscriptionsReader});
+
+  /// 订阅清单按 URL 缓存（TTL 5 分钟），避免批量检查时对同一订阅重复请求。
+  final Map<String, ({int at, List<({String url, String? version, String? name})> items})>
+      _subCache = {};
+  final Map<String, Future<({int at, List<({String url, String? version, String? name})> items})>>
+      _subFetchInFlight = {};
+  static const int _subCacheTtlMs = 5 * 60 * 1000;
+
+  /// 解析订阅清单内容，提取插件条目（对齐桌面端 parseSubscriptionItems）。
+  List<({String url, String? version, String? name})> _parseSubscriptionItems(
+      String content) {
+    try {
+      final json = jsonDecode(content);
+      final list = json is List
+          ? json
+          : (json is Map
+              ? (json['plugins'] ?? json['plugin'] ?? json['sources'])
+              : null);
+      if (list is! List) return <({String url, String? version, String? name})>[];
+      return [
+        for (final it in list)
+          if (it is Map &&
+              it['url'] is String &&
+              (it['url'] as String).trim().isNotEmpty)
+            (
+              url: (it['url'] as String).trim(),
+              version: it['version'] is String
+                  ? (it['version'] as String).trim()
+                  : null,
+              name: it['name'] is String ? it['name'] as String : null,
+            ),
+      ];
+    } catch (_) {
+      return <({String url, String? version, String? name})>[];
+    }
+  }
+
+  Future<List<({String url, String? version, String? name})>> _getSubscriptionItems(
+      String subUrl) async {
+    final cached = _subCache[subUrl];
+    if (cached != null &&
+        DateTime.now().millisecondsSinceEpoch - cached.at <= _subCacheTtlMs) {
+      return cached.items;
+    }
+    Future<({int at, List<({String url, String? version, String? name})> items})>?
+        inFlight = _subFetchInFlight[subUrl];
+    if (inFlight == null) {
+      inFlight = (() async {
+        final content = await _fetchScript(subUrl);
+        return (
+          at: DateTime.now().millisecondsSinceEpoch,
+          items: content == null
+              ? <({String url, String? version, String? name})>[]
+              : _parseSubscriptionItems(content),
+        );
+      })();
+      _subFetchInFlight[subUrl] = inFlight;
+    }
+    try {
+      final entry = await inFlight;
+      _subCache[subUrl] = entry;
+      return entry.items;
+    } finally {
+      _subFetchInFlight.remove(subUrl);
+    }
+  }
+
+  /// 去掉 query 后的 URL（origin + pathname），用于宽松匹配带缓存指纹的清单条目。
+  String _stripUrlQuery(String u) {
+    try {
+      final uri = Uri.parse(u);
+      return '${uri.scheme}://${uri.authority}${uri.path}';
+    } catch (_) {
+      return u;
+    }
+  }
+
+  /// 判断插件是否命中订阅清单条目：URL 精确 / 去 query 宽松 / 名称匹配。
+  bool _matchSubscriptionItem(
+    ({String url, String? version, String? name}) item,
+    String filePath,
+    String pluginName,
+  ) {
+    if (item.url == filePath) return true;
+    final itemStrip = _stripUrlQuery(item.url);
+    final fileStrip = _stripUrlQuery(filePath);
+    if (itemStrip.isNotEmpty &&
+        fileStrip.isNotEmpty &&
+        itemStrip == fileStrip) {
+      return true;
+    }
+    final itemName = item.name;
+    if (pluginName.isNotEmpty &&
+        itemName != null &&
+        itemName.trim() == pluginName.trim()) {
+      return true;
+    }
+    return false;
+  }
+
+  /// 在已保存的订阅清单中按 sourceUrl/name 匹配插件（对齐桌面端 findSubscriptionPlugin）。
+  /// 命中即返回订阅声明的 version —— 这才是订阅型插件真正的更新依据。
+  Future<({String url, String? version, String? name, String subscriptionUrl})?>
+      _findSubscriptionPlugin(String filePath, String pluginName) async {
+    final subs = subscriptionsReader?.call() ?? const [];
+    if (filePath.isEmpty || !filePath.startsWith('http')) return null;
+    for (final sub in subs) {
+      if (sub.url.isEmpty) continue;
+      final items = await _getSubscriptionItems(sub.url);
+      for (final item in items) {
+        if (_matchSubscriptionItem(item, filePath, pluginName)) {
+          return (
+            url: item.url,
+            version: item.version,
+            name: item.name,
+            subscriptionUrl: sub.url,
+          );
+        }
+      }
+    }
+    return null;
+  }
 
   /// 检查单个插件是否有可用更新。
   Future<PluginUpdateCheckResult?> checkPluginUpdate(
@@ -90,26 +217,59 @@ class PluginUpdateService {
     if (await PluginPreferences.getSkipUpdateCheck(source.id)) {
       return null;
     }
+
+    // [修复] 订阅型插件优先走订阅清单：无论 musicfree 还是 lx 格式，只要它来自
+    // 订阅，清单里声明的 version 才是真正的更新依据。参考桌面端/BakaMusic。
+    final subPlugin = await _findSubscriptionPlugin(
+        source.sourceUrl, source.name);
+    if (subPlugin != null && subPlugin.version != null) {
+      final hasUpdate = compareVersions(subPlugin.version!, source.version) > 0;
+      if (!hasUpdate) {
+        return PluginUpdateCheckResult(
+          hasUpdate: false,
+          currentVersion: source.version,
+          newVersion: subPlugin.version!,
+          updateUrl: subPlugin.url,
+        );
+      }
+      final newScript = await _fetchScript(subPlugin.url);
+      if (newScript != null && newScript.isNotEmpty) {
+        return PluginUpdateCheckResult(
+          hasUpdate: true,
+          currentVersion: source.version,
+          newVersion: subPlugin.version!,
+          newScript: newScript,
+          updateUrl: subPlugin.url,
+        );
+      }
+    }
+
     String? updateUrl;
 
     if (source.format == PluginFormat.musicfree) {
+      // MusicFree：脚本内 srcUrl 优先（自更新指向），来源 URL 兜底。
       final script = await engine.store.readScript(source.id);
       if (script != null) {
         updateUrl = _extractMusicFreeSrcUrl(script);
       }
-      if (updateUrl == null && source.filePath.startsWith('http')) {
-        updateUrl = source.filePath;
+      if (updateUrl == null &&
+          source.sourceUrl.startsWith('http')) {
+        updateUrl = source.sourceUrl;
       }
     } else {
-      final script = await engine.store.readScript(source.id);
-      if (script != null) {
-        final info = engine.parseLxScriptInfo(script);
-        if (info['homepage'] != null && info['homepage']!.isNotEmpty) {
-          updateUrl = info['homepage'];
+      // [修复] LX 插件：优先用来源 URL（脚本自身托管地址）重取比对，@homepage 常
+      // 指向 GitHub 仓库/项目页（HTML），抓取解析不到版本号导致"检查无结果"。
+      // 与桌面端保持一致；本地导入（无来源 URL）才回退解析脚本里的 @homepage。
+      if (source.sourceUrl.startsWith('http')) {
+        updateUrl = source.sourceUrl;
+      } else {
+        final script = await engine.store.readScript(source.id);
+        if (script != null) {
+          final info = engine.parseLxScriptInfo(script);
+          if (info['homepage'] != null && info['homepage']!.isNotEmpty) {
+            updateUrl = info['homepage'];
+          }
         }
-      }
-      if (updateUrl == null && source.filePath.startsWith('http')) {
-        updateUrl = source.filePath;
       }
     }
 
@@ -161,6 +321,7 @@ class PluginUpdateService {
       final newSource = await manager.installFromScript(
         checkResult.newScript!,
         fileName: checkResult.updateUrl,
+        sourceUrl: checkResult.updateUrl,
       );
       // 脚本哈希变化 → 新 ID，替换旧插件；哈希一致时 installFromScript 直接返回现有条目
       if (newSource.id != source.id) {
@@ -239,6 +400,8 @@ Future<void> runPluginAutoUpdateOnStartup(
     final service = PluginUpdateService(
       engine,
       container.read(pluginManagerProvider.notifier),
+      subscriptionsReader: () =>
+          container.read(pluginSubscriptionsProvider),
     );
     final installed = await service.checkAndInstallAll();
     if (installed > 0 && log != null) {

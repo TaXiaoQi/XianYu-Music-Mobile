@@ -118,11 +118,13 @@ class PluginManager extends StateNotifier<PluginListState> {
 
   /// 安装插件（脚本内容），自动检测格式并加载验证。
   /// 返回安装后的 PluginSource；失败抛出 [PluginEngineException]。
+  /// [sourceUrl] 为来源 URL（URL/订阅安装时传入），持久化供更新检查使用。
   Future<PluginSource> installFromScript(
     String script, {
     String? fileName,
     String? nameOverride,
     String? versionOverride,
+    String? sourceUrl,
   }) async {
     final engine = await _getEngine();
     final trimmed = script.trim();
@@ -184,6 +186,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       author: mAuthor,
       description: mDesc,
       filePath: path,
+      sourceUrl: sourceUrl ?? '',
       importedAt: DateTime.now().millisecondsSinceEpoch,
       enabled: true,
       sources: sources,
@@ -218,7 +221,8 @@ class PluginManager extends StateNotifier<PluginListState> {
       return result;
     }
 
-    final source = await installFromScript(script, fileName: url);
+    final source = await installFromScript(script,
+        fileName: url, sourceUrl: url);
     await _recordSubscription(url, name: source.name);
     return PluginInstallResult(names: [source.name]);
   }
@@ -280,6 +284,7 @@ class PluginManager extends StateNotifier<PluginListState> {
           fileName: url,
           nameOverride: item['name']?.toString(),
           versionOverride: item['version']?.toString(),
+          sourceUrl: url,
         );
         names.add(source.name);
       } on PluginEngineException catch (e) {
@@ -403,6 +408,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     final newSource = await installFromScript(
       newScript,
       nameOverride: oldSource.first.name,
+      sourceUrl: oldSource.first.sourceUrl,
     );
     if (newSource.id == oldId) return; // 内容未变化，无需替换
     // 卸载旧插件并移除旧条目

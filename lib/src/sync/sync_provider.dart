@@ -1019,6 +1019,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             'enabled': p.enabled,
             'sources': p.sources,
             'filePath': scriptPath,
+            'sourceUrl': p.sourceUrl,
             'script': _encodeRevBase64(script),
             'scriptEncoded': true,
           };
@@ -1126,6 +1127,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
             script,
             nameOverride: cloudName.isEmpty ? null : cloudName,
             versionOverride: version.isEmpty ? null : version,
+            sourceUrl: (item['sourceUrl'] as String?)?.trim() ?? '',
           );
           // 云端标记停用的插件同步后保持停用
           if (item['enabled'] == false && source.enabled) {

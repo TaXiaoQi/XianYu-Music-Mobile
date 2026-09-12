@@ -595,7 +595,11 @@ class _PluginPageState extends ConsumerState<PluginPage> {
 
   Future<PluginUpdateService> _updateService() async {
     final engine = await ref.read(pluginEngineProvider.future);
-    return PluginUpdateService(engine, ref.read(pluginManagerProvider.notifier));
+    return PluginUpdateService(
+      engine,
+      ref.read(pluginManagerProvider.notifier),
+      subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
+    );
   }
 
   Future<void> _checkAllUpdates() async {
@@ -1076,8 +1080,11 @@ class _PluginCard extends ConsumerWidget {
 
   Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
     final engine = await ref.read(pluginEngineProvider.future);
-    final service =
-        PluginUpdateService(engine, ref.read(pluginManagerProvider.notifier));
+    final service = PluginUpdateService(
+      engine,
+      ref.read(pluginManagerProvider.notifier),
+      subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
+    );
     final result = await service.checkPluginUpdate(source);
     if (!context.mounted) return;
     if (result == null) {

@@ -22,6 +22,8 @@ class PluginSource {
   final String author;
   final String description;
   final String filePath;
+  /// 来源 URL（URL/订阅安装时记录，用于更新检查对齐桌面端 filePath=URL 语义）。
+  final String sourceUrl;
   final int importedAt;
   bool enabled;
   final List<String> sources;
@@ -37,6 +39,7 @@ class PluginSource {
     this.author = '',
     this.description = '',
     this.filePath = '',
+    this.sourceUrl = '',
     required this.importedAt,
     this.enabled = true,
     this.sources = const [],
@@ -59,6 +62,7 @@ class PluginSource {
       author: author,
       description: description,
       filePath: filePath,
+      sourceUrl: sourceUrl,
       importedAt: importedAt,
       enabled: enabled ?? this.enabled,
       sources: sources ?? this.sources,
@@ -75,6 +79,7 @@ class PluginSource {
         'author': author,
         'description': description,
         'filePath': filePath,
+        'sourceUrl': sourceUrl,
         'importedAt': importedAt,
         'enabled': enabled,
         'sources': sources,
@@ -90,6 +95,7 @@ class PluginSource {
         author: json['author'] as String? ?? '',
         description: json['description'] as String? ?? '',
         filePath: json['filePath'] as String? ?? '',
+        sourceUrl: json['sourceUrl'] as String? ?? '',
         importedAt: (json['importedAt'] as num?)?.toInt() ?? 0,
         enabled: json['enabled'] as bool? ?? true,
         sources: (json['sources'] as List?)?.cast<String>() ?? const [],
