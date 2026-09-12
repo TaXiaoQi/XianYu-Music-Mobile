@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -479,6 +482,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   /// 批量选择控制器（顶栏入口 + 列表 + 底部批量操作栏共用）。
   final SongBatchController _batch = SongBatchController();
 
+  /// 顶部搜索：标题栏内联搜索框（对齐本地页/收藏页），过滤歌单内歌曲。
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
@@ -503,7 +511,45 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   void dispose() {
     _batch.removeListener(_onBatchChanged);
     _batch.dispose();
+    _debounce?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// 顶部搜索框输入：更新关键词并由 _PlaylistSongs 按原下标过滤歌曲；
+  /// 160ms 防抖合并快速输入，避免逐键重建列表。
+  void _onQueryChanged(String v) {
+    setState(() => _query = v.trim());
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 160), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// 标题栏内联搜索框（固定 GlassTopBar 形态），过滤歌单内歌曲。
+  Widget _buildSearchField(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: TextField(
+        controller: _searchCtrl,
+        textInputAction: TextInputAction.search,
+        onChanged: _onQueryChanged,
+        decoration: InputDecoration(
+          hintText: tr('搜索歌曲、歌手、专辑'),
+          border: InputBorder.none,
+          isDense: true,
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    _onQueryChanged('');
+                  },
+                ),
+        ),
+      ),
+    );
   }
 
   /// 批量模式切换按钮：未进入时显示「批量」，进入后变为「完成」。
@@ -604,6 +650,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     final showBatch = playlist.songs.isNotEmpty;
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final statusBar = MediaQuery.paddingOf(context).top;
+    // 竖屏全屏路由且开启悬浮顶栏：顶栏改用全宽搜索胶囊 FloatingSearchTopBar（对齐本地页）。
+    final portraitFloating = !widget.embedded &&
+        MediaQuery.of(context).orientation == Orientation.portrait &&
+        floating;
 
     return HideShellChrome(
       child: Scaffold(
@@ -611,7 +662,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
         body: Stack(
           children: [
             Padding(
-              padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+              // 悬浮态内容按「状态栏 + 8 顶距 + 44 搜索胶囊行 + 14 呼吸」避让；固定态沿 GlassTopBar 高度。
+              padding: EdgeInsets.only(
+                  top: portraitFloating
+                      ? statusBar + 8 + 44 + 14
+                      : GlassTopBar.height(context)),
               child: Column(
                 children: [
                   _AlbumHeader(
@@ -648,6 +703,8 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
                             playlist: playlist,
                             manager: manager,
                             batch: _batch,
+                            // 搜索关键词：非空时歌单列表只显示匹配项并禁用拖拽排序。
+                            filter: _query,
                             // 移除单曲：已同步歌单先弹删除范围三选一，
                             // 未同步直接本地移除。
                             onRemove: (index) => removePlaylistSongsWithScope(
@@ -659,25 +716,60 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
             ),
             if (!widget.embedded)
               Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: GlassTopBar(
-                  leading: const BackButton(),
-                  title: Text(playlist.name),
-                  actions: [
-                    if (showBatch) _batchToggle(context),
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      tooltip: tr('重命名'),
-                      onPressed: () async {
-                        final name = await _promptName(context, tr('重命名歌单'));
-                        if (name == null || name.trim().isEmpty) return;
-                        await manager.rename(playlist.id, name.trim());
-                      },
-                    ),
-                  ],
-                ),
+                top: portraitFloating ? statusBar + 8 : 0,
+                left: portraitFloating ? 12 : 0,
+                right: portraitFloating ? 12 : 0,
+                child: portraitFloating
+                    ? FloatingSearchTopBar(
+                        onBack: () => context.pop(),
+                        field: FloatingGlassSearchField(
+                          controller: _searchCtrl,
+                          onChanged: _onQueryChanged,
+                          showClear: _query.isNotEmpty,
+                          onClear: () {
+                            _searchCtrl.clear();
+                            _onQueryChanged('');
+                          },
+                          hint: tr('搜索歌曲、歌手、专辑'),
+                        ),
+                        action: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (showBatch)
+                              _batchToggle(context, floating: true),
+                            const SizedBox(width: 10),
+                            BiliPaiIconButton(
+                              icon: Icons.edit_outlined,
+                              tooltip: tr('重命名'),
+                              onTap: () async {
+                                final name =
+                                    await _promptName(context, tr('重命名歌单'));
+                                if (name == null || name.trim().isEmpty) return;
+                                await manager
+                                    .rename(playlist.id, name.trim());
+                              },
+                            ),
+                          ],
+                        ),
+                      )
+                    : GlassTopBar(
+                        leading: const BackButton(),
+                        title: _buildSearchField(context),
+                        actions: [
+                          if (showBatch) _batchToggle(context),
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 20),
+                            tooltip: tr('重命名'),
+                            onPressed: () async {
+                              final name =
+                                  await _promptName(context, tr('重命名歌单'));
+                              if (name == null || name.trim().isEmpty) return;
+                              await manager
+                                  .rename(playlist.id, name.trim());
+                            },
+                          ),
+                        ],
+                      ),
               ),
             if (!widget.embedded) const BottomPlayBarSlot(),
           ],
@@ -809,12 +901,15 @@ class _PlaylistSongs extends ConsumerStatefulWidget {
     required this.manager,
     required this.onRemove,
     required this.batch,
+    this.filter = '',
   });
 
   final ImportedPlaylist playlist;
   final PlaylistManager manager;
   final void Function(int index) onRemove;
   final SongBatchController batch;
+  /// 顶部搜索关键词：非空时只显示匹配标题/歌手的歌曲，并禁用拖拽排序。
+  final String filter;
 
   @override
   ConsumerState<_PlaylistSongs> createState() => _PlaylistSongsState();
@@ -956,6 +1051,20 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
         final inBatch = widget.batch.batchMode;
         final batch = widget.batch;
 
+        // 搜索过滤视图：维护「原歌单下标」列表，移除/批量按原下标操作避免错位。
+        final q = widget.filter.trim().toLowerCase();
+        final filtered = q.isEmpty
+            ? null
+            : <int>[
+                for (var i = 0; i < songs.length; i++)
+                  if (songs[i].title.toLowerCase().contains(q) ||
+                      songs[i].artist.toLowerCase().contains(q))
+                    i
+              ];
+        final indices = filtered ??
+            List<int>.generate(songs.length, (i) => i);
+        final visSongs = indices.map((i) => songs[i]).toList();
+
         void onReorder(int oldIndex, int newIndex) {
           if (newIndex < 0 ||
               newIndex >= songs.length ||
@@ -975,8 +1084,8 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
             (inBatch ? 140 : 0);
 
         // 批量模式行：整行点按切换选中，行首由 wrapBatchRow 挂勾选。
-        Widget batchRow(int index) {
-          final song = songs[index];
+        Widget batchRow(int display) {
+          final song = songs[indices[display]];
           final row = CoverRow(
             cover: CoverImage(
               songPath: song.path,
@@ -1019,6 +1128,109 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
           );
         }
 
+        // 歌曲行：显示下标 [display] 经 [indices] 映射回原歌单下标 [orig]，
+        // 保证搜索过滤视图下移除/播放仍作用于原歌单而不错位。
+        Widget songRow(int display) {
+          final orig = indices[display];
+          final song = songs[orig];
+          // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
+          // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
+          // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
+          return RepaintBoundary(
+            key: ValueKey('${song.path}_$orig'),
+            child: Builder(
+              builder: (rowContext) {
+                // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
+                BuildContext? coverCtx;
+                final g = songRowPlay(ref, onPlay: () async {
+                  // 等封面落地后再播放：播放条封面随落地同步更新，
+                  // 避免飞行过程中播放条封面提前切换。
+                  final ok = await launchFlyCover(
+                    rowContext,
+                    coverContext: coverCtx,
+                    coverSize: m.songCover,
+                    vPad: m.vPad,
+                    songPath: song.path,
+                    networkUrl: song.coverUrl,
+                    thumbPath: song.coverThumbPath,
+                    radius: m.songRadius,
+                  );
+                  if (ok) widget.manager.play(widget.playlist, orig);
+                });
+                final row = g.wrap(
+                  CoverRow(
+                    cover: Builder(
+                      builder: (c) {
+                        coverCtx = c;
+                        return CoverImage(
+                          songPath: song.path,
+                          networkUrl: song.coverUrl,
+                          thumbPath: song.coverThumbPath,
+                          width: m.songCover,
+                          height: m.songCover,
+                          radius: m.songRadius,
+                        );
+                      },
+                    ),
+                    onTap: g.onTap,
+                    verticalPadding: m.vPad,
+                    horizontalPadding: 0,
+                    title: Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: m.titleSize,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${song.artist} · ${song.album}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: m.subtitleSize,
+                          color: scheme.onSurfaceVariant),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SourceTag(
+                          path: song.path,
+                          isOnline: !song.isLocal,
+                          source: song.source,
+                          pluginId: song.pluginId,
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: Icon(Icons.close,
+                              size: 18, color: scheme.outline),
+                          tooltip: tr('从歌单移除'),
+                          onPressed: () => widget.onRemove(orig),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+                return Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 44),
+                      child: row,
+                    ),
+                    Positioned(
+                      left: 8,
+                      top: 0,
+                      bottom: 0,
+                      width: 36,
+                      child: Center(child: DragHandle(index: orig)),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        }
+
         return Stack(
           children: [
             // 批量模式禁用拖动排序（行首把手被勾选槽替代），统一走扁平列表，
@@ -1029,16 +1241,28 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                 padding: EdgeInsets.only(bottom: bottomPad),
                 itemExtent: rowExtent,
                 addAutomaticKeepAlives: false,
-                itemCount: songs.length,
-                itemBuilder: (context, index) => RepaintBoundary(
-                  key: ValueKey('batch_${songs[index].path}_$index'),
-                  child: batchRow(index),
+                itemCount: indices.length,
+                itemBuilder: (context, display) => RepaintBoundary(
+                  key: ValueKey(
+                      'batch_${songs[indices[display]].path}_${indices[display]}'),
+                  child: batchRow(display),
                 ),
               )
+            // 搜索过滤中：visible 行是原歌单的子视图，行下标与原歌单不一致，
+            // 禁用拖拽排序（ReorderableList 无法操作子视图下标），走扁平列表。
+            else if (filtered != null)
+              ListView.builder(
+                controller: _controller,
+                padding: EdgeInsets.only(bottom: bottomPad),
+                itemExtent: rowExtent,
+                addAutomaticKeepAlives: false,
+                itemCount: indices.length,
+                itemBuilder: (context, index) => songRow(index),
+              )
             else
+              // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
               ReorderableListView.builder(
                 scrollController: _controller,
-                // 顶级列表：拖到边缘时自动滚动，跨越整个歌单长列表也能连续排序。
                 padding: EdgeInsets.only(bottom: bottomPad),
                 buildDefaultDragHandles: false,
                 // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
@@ -1048,106 +1272,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                     Material(type: MaterialType.transparency, child: child),
                 itemCount: songs.length,
                 onReorderItem: onReorder,
-                itemBuilder: (context, index) {
-                  final song = songs[index];
-                  // ReorderableListView 要求 itemBuilder 最外层携带 key 才能拖拽，同时用
-                  // RepaintBoundary 隔离合成层，避免多行时可见行每帧整体重绘抽帧。
-                  // 用「路径 + 下标」复合 Key：同一首歌可重复加入歌单，若仅用 path 作 key
-                  // 会在相邻重复项间拖拽时触发重复 Key 断言报错。
-                  return RepaintBoundary(
-                    key: ValueKey('${song.path}_$index'),
-                    child: Builder(
-                      builder: (rowContext) {
-                        // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
-                        BuildContext? coverCtx;
-                        final g = songRowPlay(ref, onPlay: () async {
-                          // 等封面落地后再播放：播放条封面随落地同步更新，
-                          // 避免飞行过程中播放条封面提前切换。
-                          final ok = await launchFlyCover(
-                            rowContext,
-                            coverContext: coverCtx,
-                            coverSize: m.songCover,
-                            vPad: m.vPad,
-                            songPath: song.path,
-                            networkUrl: song.coverUrl,
-                            thumbPath: song.coverThumbPath,
-                            radius: m.songRadius,
-                          );
-                          if (ok) widget.manager.play(widget.playlist, index);
-                        });
-                        final row = g.wrap(
-                          CoverRow(
-                            cover: Builder(
-                              builder: (c) {
-                                coverCtx = c;
-                                return CoverImage(
-                                  songPath: song.path,
-                                  networkUrl: song.coverUrl,
-                                  thumbPath: song.coverThumbPath,
-                                  width: m.songCover,
-                                  height: m.songCover,
-                                  radius: m.songRadius,
-                                );
-                              },
-                            ),
-                            onTap: g.onTap,
-                            verticalPadding: m.vPad,
-                            horizontalPadding: 0,
-                            title: Text(
-                              song.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: m.titleSize,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                            subtitle: Text(
-                              '${song.artist} · ${song.album}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: m.subtitleSize,
-                                  color: scheme.onSurfaceVariant),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SourceTag(
-                                  path: song.path,
-                                  isOnline: !song.isLocal,
-                                  source: song.source,
-                                  pluginId: song.pluginId,
-                                ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  icon: Icon(Icons.close,
-                                      size: 18, color: scheme.outline),
-                                  tooltip: tr('从歌单移除'),
-                                  onPressed: () => widget.onRemove(index),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                        return Stack(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 44),
-                              child: row,
-                            ),
-                            Positioned(
-                              left: 8,
-                              top: 0,
-                              bottom: 0,
-                              width: 36,
-                              child: Center(child: DragHandle(index: index)),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  );
-                },
+                itemBuilder: (context, index) => songRow(index),
               ),
             // 批量操作栏：悬浮在内容底部（避开播放条/安全区）。
             if (inBatch)
@@ -1157,23 +1282,24 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                 bottom: 0,
                 child: BatchActionBar(
                   selectedCount: batch.selectedCount,
-                  totalCount: songs.length,
+                  totalCount: indices.length,
                   showPlay: true,
                   showFavorite: true,
                   showPlaylist: true,
                   showDownload: true,
                   showRemove: true,
-                  onSelectAll: () => batch.toggleSelectAll(
-                      {for (final s in songs) s.path}),
-                  onPlay: () => _batchPlay(songs),
-                  onFavorite: () => _batchAddToFavorites(songs),
-                  onPlaylist: () => _batchAddToPlaylist(songs),
-                  onDownload: () => _batchDownload(songs),
-                  onRemove: () => _confirmBatchRemove(songs),
+                  onSelectAll: () =>
+                      batch.toggleSelectAll({for (final s in visSongs) s.path}),
+                  onPlay: () => _batchPlay(visSongs),
+                  onFavorite: () => _batchAddToFavorites(visSongs),
+                  onPlaylist: () => _batchAddToPlaylist(visSongs),
+                  onDownload: () => _batchDownload(visSongs),
+                  onRemove: () => _confirmBatchRemove(visSongs),
                   onDone: batch.exit,
                 ),
               ),
-            if (!inBatch)
+            // 搜索过滤时行下标与原歌单不一致，FAB 的「定位当前播放」跳转会错位，隐藏。
+            if (!inBatch && filtered == null)
               SongListScrollFabs(
                 controller: _controller,
                 paths: songs.map((s) => s.path).toList(),

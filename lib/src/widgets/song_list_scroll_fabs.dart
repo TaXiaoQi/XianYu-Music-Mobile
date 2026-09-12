@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../player/player_provider.dart';
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
+import 'bilipai_glass.dart';
 import 'glass_settings.dart';
 
 /// 歌曲列表悬浮按钮层：右下角「回到顶部」+「定位当前播放歌曲」两个圆形 FAB，
@@ -156,7 +157,7 @@ class _Slot extends StatelessWidget {
 /// 壁纸模式下与迷你播放条/悬浮底栏同口径：底用 [wallpaperNavGlassFill] 半透明
 /// 磨砂、模糊用固定最深 [kNavSurfaceBlurSigma]，并去掉投影（避免半透明胶囊上
 /// 投影透成黑色块），仅靠描边 + 模糊维持浮层层次。
-class _ScrollFab extends StatelessWidget {
+class _ScrollFab extends ConsumerWidget {
   const _ScrollFab({
     required this.wallpaper,
     required this.icon,
@@ -172,53 +173,94 @@ class _ScrollFab extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: tooltip,
-      child: ClipOval(
+
+    final Widget iconWidget =
+        Icon(icon, size: 20, color: scheme.onSurfaceVariant);
+
+    // 液态玻璃开启（且非低性能）→ 与迷你播放条/悬浮底栏同口径，用 BiliPai
+    // 液态 shader；否则维持现有圆形毛玻璃/实色圆钮，避免打扰常规观感。
+    final lowPerf = ref.watch(
+        settingsProvider.select((s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+    final liquid = (ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.liquidGlass)) ??
+        true) &&
+        !lowPerf;
+
+    // 内层按钮单位：透明底（玻璃/磨砂底色由外层承载），仅保留触点与点击反馈。
+    Widget button(Widget child) => Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: child,
+          ),
+        );
+
+    Widget surface;
+    if (liquid) {
+      final quality = liquidGlassQualitySetting(ref);
+      surface = BiliPaiGlass(
+        radius: 20,
+        refract: bilipaiRefractOf(quality),
+        chroma: bilipaiChromaOf(quality),
+        blurSigma: bilipaiBackdropBlurOf(quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+        specular: bilipaiSpecularOf(quality),
+        edgeAmount: bilipaiEdgeOf(quality),
+        saturation: bilipaiSaturationOf(quality),
+        child: button(
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            child: iconWidget,
+          ),
+        ),
+      );
+      // BiliPai 液态外壳勾边（与迷你播放条/悬浮底栏同款）。
+      surface = liquidGlassShell(context, child: surface, radius: 20);
+    } else {
+      surface = ClipOval(
         child: BackdropFilter(
           filter: ImageFilter.blur(
             sigmaX: wallpaper ? kNavSurfaceBlurSigma : 10,
             sigmaY: wallpaper ? kNavSurfaceBlurSigma : 10,
           ),
-          child: Material(
-            color: Colors.transparent,
-            shape: const CircleBorder(),
-            child: InkWell(
-              onTap: onTap,
-              customBorder: const CircleBorder(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: wallpaper
-                      ? wallpaperNavGlassFill(context)
-                      : (isDark
-                          ? const Color(0x99000000)
-                          : const Color(0xE6FFFFFF)),
-                  border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.35),
-                  ),
-                  boxShadow: wallpaper
-                      ? const []
-                      : [
-                          BoxShadow(
-                            color: Colors.black
-                                .withValues(alpha: isDark ? 0.30 : 0.10),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
+          child: button(
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: wallpaper
+                    ? wallpaperNavGlassFill(context)
+                    : (isDark
+                        ? const Color(0x99000000)
+                        : const Color(0xE6FFFFFF)),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.35),
                 ),
-                child: Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+                boxShadow: wallpaper
+                    ? const []
+                    : [
+                        BoxShadow(
+                          color: Colors.black
+                              .withValues(alpha: isDark ? 0.30 : 0.10),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
               ),
+              child: iconWidget,
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
+    return Tooltip(message: tooltip, child: surface);
   }
 }

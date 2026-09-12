@@ -132,7 +132,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
     // 用户打开日志页看到的就是「没有日志」。真正的防递归靠 microtask 延后
     // 换 state + onError 的 reportingError 抑制，与是否有监听者无关。
     if (_pending.isEmpty) return;
-    final entries = _pending;
+    // 必须拷贝：_pending.clear() 会清空同一 List 对象，若直接持引用，
+    // 清空后 entries 也跟着变空，日志永远进不了 state。
+    final entries = List<AppLogEntry>.of(_pending);
     _pending.clear();
     state = _retain([...state, ...entries]);
     _schedulePersist();
