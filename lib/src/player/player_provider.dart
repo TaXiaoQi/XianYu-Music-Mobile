@@ -94,15 +94,29 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   /// https 远程封面 URI（华为系统服务不做网络请求），加载失败会导致播控
   /// 卡片无封面甚至表现异常；故已落盘的在线封面一律用本地 file:// URI，
   /// 未落盘前先用 https 兜底，落盘完成后补推本地封面。
+  ///
+  /// 本地路径一律 existsSync 校验：库表 cover_thumb_path / 在线封面落盘缓存
+  /// 都可能因系统清缓存、重装等失效成死路径，系统加载失败只会静默黑封面
+  /// （应用内播放页高清提取不走此路径，重新提取即正常，表现为「应用内有
+  /// 封面、通知栏没有」）；死路径在这里拦下，交由 _resolveNotificationCover
+  /// 兜底链重新提取自愈。
   Uri? _artUriFor(QueueItem item) {
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty) {
       final cached = _artFileCache[url];
-      if (cached != null) return Uri.file(cached);
+      if (cached != null) {
+        if (File(cached).existsSync()) return Uri.file(cached);
+        _artFileCache.remove(url);
+      }
       return Uri.tryParse(url);
     }
     final local = item.coverPath;
-    if (local != null && local.isNotEmpty) return Uri.file(local);
+    if (local != null &&
+        local.isNotEmpty &&
+        !local.startsWith('http') &&
+        File(local).existsSync()) {
+      return Uri.file(local);
+    }
     return null;
   }
 
@@ -127,7 +141,13 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     if (!Platform.isAndroid) return;
     final url = item.coverUrl;
     if (url == null || url.isEmpty) return;
-    if (_artFileCache.containsKey(url)) return;
+    final cached = _artFileCache[url];
+    if (cached != null) {
+      // 落盘文件可能被系统清缓存清掉：失效则移除记录重新落盘，
+      // 否则补推的 file:// 是死路径，兼容层播控卡片拿不到封面。
+      if (File(cached).existsSync()) return;
+      _artFileCache.remove(url);
+    }
     if (!_artMaterializing.add(url)) return;
     try {
       final bytes = await CoverProxy.fetch(url);
@@ -926,14 +946,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   void _syncToSystemMediaSession() {
     final cur = state.current;
     if (cur != null) {
-      // 本地歌曲未携带封面字段时，用已解析的通知栏封面缓存兜底。
+      // 本地歌曲无可用封面字段（coverUrl 为空、coverPath 为空或死路径）时，
+      // 用已解析的通知栏封面缓存兜底。
       var item = cur;
-      if (!cur.isOnline &&
-          (cur.coverUrl == null || cur.coverUrl!.isEmpty) &&
-          (cur.coverPath == null || cur.coverPath!.isEmpty)) {
-        final cached = _notifCoverCache[cur.path];
-        if (cached != null && cached.isNotEmpty) {
-          item = cur.copyWith(coverPath: cached);
+      if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
+        final cp = cur.coverPath;
+        final coverPathLive = cp != null &&
+            cp.isNotEmpty &&
+            !cp.startsWith('http') &&
+            File(cp).existsSync();
+        if (!coverPathLive) {
+          final cached = _notifCoverCache[cur.path];
+          if (cached != null && cached.isNotEmpty) {
+            item = cur.copyWith(coverPath: cached);
+          }
         }
       }
       audioHandler?.syncMediaItem(item, state.duration);
@@ -951,8 +977,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 结果缓存（空串 = 无封面，同样缓存防重复查询）。
   Future<void> _resolveNotificationCover(QueueItem item) async {
     if (item.isOnline) return;
+    // coverUrl/coverPath 齐备且真实存在时无需兜底；coverPath 为死路径
+    // （缓存被清等）时继续走下方缩略图提取，让通知封面自愈。
     if (item.coverUrl?.isNotEmpty == true) return;
-    if (item.coverPath?.isNotEmpty == true) return;
+    final cp = item.coverPath;
+    if (cp != null && cp.isNotEmpty && !cp.startsWith('http')) {
+      if (File(cp).existsSync()) return;
+      AppLog.info('media_cover', 'coverPath 失效，走缩略图兜底: $cp');
+    }
     if (_notifCoverCache.containsKey(item.path)) return;
     _notifCoverCache[item.path] = '';
     try {
@@ -978,8 +1010,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _notifCoverCache[item.path] = p;
       if (p.isNotEmpty && state.current?.path == item.path) {
         _syncToSystemMediaSession();
+      } else if (p.isEmpty) {
+        AppLog.info('media_cover', '缩略图兜底为空: ${item.path}');
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.info('media_cover', '缩略图兜底异常: $e');
+    }
   }
 
   /// 预加载播放队列封面（后台异步，不阻塞起播）。
