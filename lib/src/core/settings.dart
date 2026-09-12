@@ -208,6 +208,10 @@ class AppSettings {
     this.embedDownloadCover = true,
     this.downloadBehavior = 'default',
     this.downloadQualityFallbackBehavior = 'lower',
+    this.onlineDefaultMvQuality = '720p',
+    this.onlineMvQualityFallbackBehavior = 'lower',
+    this.downloadMvQuality = '720p',
+    this.downloadMvQualityFallbackBehavior = 'lower',
     this.keepSourceFilename = false,
     this.downloadLyricsFormat = 'lrc',
     this.downloadLyricsStyle = 'word-by-word',
@@ -339,6 +343,18 @@ class AppSettings {
 
   /// 下载音质缺失行为：lower = 向下降级（默认）；higher = 向上升级。
   final String downloadQualityFallbackBehavior;
+
+  /// MV 默认画质：1080p / 720p / 480p 等，播放 MV 背景时优先用这个档位。
+  final String onlineDefaultMvQuality;
+
+  /// MV 默认画质缺失行为（同 downloadQualityFallbackBehavior）。
+  final String onlineMvQualityFallbackBehavior;
+
+  /// MV 下载画质。
+  final String downloadMvQuality;
+
+  /// MV 下载画质缺失行为。
+  final String downloadMvQualityFallbackBehavior;
 
   /// 是否保留音源原始文件名（否则按文件名样式重新命名）。
   final bool keepSourceFilename;
@@ -551,6 +567,10 @@ class AppSettings {
     bool? embedDownloadCover,
     String? downloadBehavior,
     String? downloadQualityFallbackBehavior,
+    String? onlineDefaultMvQuality,
+    String? onlineMvQualityFallbackBehavior,
+    String? downloadMvQuality,
+    String? downloadMvQualityFallbackBehavior,
     bool? keepSourceFilename,
     String? downloadLyricsFormat,
     String? downloadLyricsStyle,
@@ -648,6 +668,12 @@ class AppSettings {
       downloadQualityFallbackBehavior:
           downloadQualityFallbackBehavior ??
           this.downloadQualityFallbackBehavior,
+      onlineDefaultMvQuality: onlineDefaultMvQuality ?? this.onlineDefaultMvQuality,
+      onlineMvQualityFallbackBehavior:
+          onlineMvQualityFallbackBehavior ?? this.onlineMvQualityFallbackBehavior,
+      downloadMvQuality: downloadMvQuality ?? this.downloadMvQuality,
+      downloadMvQualityFallbackBehavior:
+          downloadMvQualityFallbackBehavior ?? this.downloadMvQualityFallbackBehavior,
       keepSourceFilename: keepSourceFilename ?? this.keepSourceFilename,
       downloadLyricsFormat: downloadLyricsFormat ?? this.downloadLyricsFormat,
       downloadLyricsStyle: downloadLyricsStyle ?? this.downloadLyricsStyle,
@@ -786,6 +812,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       downloadBehavior: prefs.getString('downloadBehavior') ?? 'default',
       downloadQualityFallbackBehavior:
           prefs.getString('downloadQualityFallbackBehavior') ?? 'lower',
+      onlineDefaultMvQuality: prefs.getString('onlineDefaultMvQuality') ?? '720p',
+      onlineMvQualityFallbackBehavior:
+          prefs.getString('onlineMvQualityFallbackBehavior') ?? 'lower',
+      downloadMvQuality: prefs.getString('downloadMvQuality') ?? '720p',
+      downloadMvQualityFallbackBehavior:
+          prefs.getString('downloadMvQualityFallbackBehavior') ?? 'lower',
       keepSourceFilename: prefs.getBool('keepSourceFilename') ?? false,
       downloadLyricsFormat: prefs.getString('downloadLyricsFormat') ?? 'lrc',
       downloadLyricsStyle: prefs.getString('downloadLyricsStyle') ?? 'word-by-word',
@@ -983,6 +1015,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString(
           'downloadQualityFallbackBehavior',
           next.downloadQualityFallbackBehavior),
+      prefs.setString('onlineDefaultMvQuality', next.onlineDefaultMvQuality),
+      prefs.setString(
+          'onlineMvQualityFallbackBehavior',
+          next.onlineMvQualityFallbackBehavior),
+      prefs.setString('downloadMvQuality', next.downloadMvQuality),
+      prefs.setString(
+          'downloadMvQualityFallbackBehavior',
+          next.downloadMvQualityFallbackBehavior),
       prefs.setBool('keepSourceFilename', next.keepSourceFilename),
       prefs.setString('downloadLyricsFormat', next.downloadLyricsFormat),
       prefs.setString('downloadLyricsStyle', next.downloadLyricsStyle),
@@ -1100,6 +1140,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setEmbedDownloadCover(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(embedDownloadCover: v));
   Future<void> setDownloadBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadBehavior: v));
   Future<void> setDownloadQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadQualityFallbackBehavior: v));
+  Future<void> setOnlineDefaultMvQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineDefaultMvQuality: q));
+  Future<void> setOnlineMvQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineMvQualityFallbackBehavior: v));
+  Future<void> setDownloadMvQuality(String q) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadMvQuality: q));
+  Future<void> setDownloadMvQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadMvQualityFallbackBehavior: v));
   Future<void> setKeepSourceFilename(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(keepSourceFilename: v));
   Future<void> setDownloadLyricsFormat(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyricsFormat: v));
   Future<void> setDownloadLyricsStyle(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(downloadLyricsStyle: v));
