@@ -82,8 +82,11 @@ dependencies:
   record: ^7.1.1
   # FFmpeg（音频格式转换 / 剪辑）— 纯原生二进制，Android/iOS 同一份 Dart API
   ffmpeg_kit_flutter_new_audio: ^2.5.0
-  # 扫码登录：首页右上角扫码入口（桌面端二维码）
-  mobile_scanner: ^7.1.0
+  # 扫码登录（2026-09-12 起替代 mobile_scanner/MLKit，APK 约减 2~3MB）：
+  # camera（CameraX 预览 + YUV 帧流）+ zxing2（纯 Dart ZXing 移植，无原生库）。
+  # 版本钉 ^0.11.0 以匹配鸿蒙 openharmony-sig camera fork（适配版 0.11.0+2）。
+  camera: ^0.11.0
+  zxing2: ^0.2.4
   # QQ 互联分享（歌曲分享到 QQ 好友 / QQ 空间），Android 配置见下方顶层 tencent_kit 块
   tencent_kit: ^6.2.0
   # 登录/注册人机验证：渲染服务端下发的 Turnstile / hCaptcha 组件

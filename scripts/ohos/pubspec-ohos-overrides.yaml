@@ -79,12 +79,13 @@ dependency_overrides:
       path: permission_handler
       ref: br_permission_handler_v11.3.1_ohos
 
-  # ---- mobile_scanner (P2: 扫码登录) ----
-  # SIG fork 7.1.4（应用约束 ^7.1.0 匹配），整包含 ohos 原生实现。
-  mobile_scanner:
+  # ---- camera (P2: 扫码登录，2026-09-12 起替代 mobile_scanner/MLKit 减包) ----
+  # openharmony-sig fork（适配版 0.11.0+2），应用约束 ^0.11.0 精确匹配，
+  # 主包内嵌 ohos 原生实现；需在 ohos/module.json5 声明 ohos.permission.CAMERA。
+  camera:
     git:
-      url: https://gitcode.com/openharmony-sig/fluttertpc_mobile_scanner.git
-      ref: br_v7.1.4_ohos
+      url: https://gitcode.com/openharmony-sig/flutter_packages.git
+      path: packages/camera/camera
 
   # ---- record (P2: 听歌识曲麦克风采集) ----
   # SIG fork 6.1.2（record_ohos 以同级 path 依赖自动解析）；主工程 pubspec

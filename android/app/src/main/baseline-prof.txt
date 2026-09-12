@@ -38,5 +38,4 @@ Lcom/github/dart_lang/jni_flutter/**
 Lcom/baseflow/permissionhandler/**
 Lcom/llfbandit/record/**
 Lio/github/v7lin/tencent_kit/**
-Ldev/steenbakker/mobile_scanner/**
 Ldev/fluttercommunity/plus/share/**

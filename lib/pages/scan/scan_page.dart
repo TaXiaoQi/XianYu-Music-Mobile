@@ -1,8 +1,11 @@
+import 'dart:typed_data';
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:zxing2/qrcode.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/i18n/i18n.dart';
@@ -12,6 +15,9 @@ import '../../src/widgets/predictive_dialog_route.dart';
 ///
 /// 扫描到二维码后暂停相机，走「标记已扫描 → 弹窗确认 → 服务端签发凭证」流程；
 /// 未登录时引导先登录账号。
+///
+/// 相机链路使用 camera（CameraX）+ zxing2（纯 Dart ZXing 移植）替代 MLKit，
+/// 去掉 mobile_scanner 的 barhopper 原生库与条码模型，APK 约减 2~3MB。
 class ScanPage extends ConsumerStatefulWidget {
   const ScanPage({super.key});
 
@@ -20,25 +26,83 @@ class ScanPage extends ConsumerStatefulWidget {
 }
 
 class _ScanPageState extends ConsumerState<ScanPage> {
-  MobileScannerController? _controller;
+  CameraController? _controller;
   bool _permissionDenied = false;
+  bool _initFailed = false;
+  bool _initializing = false;
   bool _handling = false;
   bool _torchOn = false;
   String? _lastCode;
+  DateTime? _lastDecodeAt;
 
   @override
   void initState() {
     super.initState();
-    _controller = MobileScannerController(
-      formats: const [BarcodeFormat.qrCode],
-      detectionSpeed: DetectionSpeed.noDuplicates,
-    );
+    // 已登录才初始化相机；登录态变化时跟随启停（未登录不触发相机权限弹窗）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(authProvider).user != null) _initCamera();
+    });
+    ref.listen(authProvider, (prev, next) {
+      final wasIn = prev?.user != null;
+      final nowIn = next.user != null;
+      if (nowIn && !wasIn) _initCamera();
+      if (!nowIn && wasIn) _disposeCamera();
+    });
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _disposeCamera();
     super.dispose();
+  }
+
+  Future<void> _initCamera() async {
+    if (_initializing || _controller != null) return;
+    _initializing = true;
+    if (mounted) setState(() {});
+    try {
+      final status = await Permission.camera.request();
+      if (status.isDenied || status.isPermanentlyDenied) {
+        if (mounted) setState(() => _permissionDenied = true);
+        return;
+      }
+      if (!mounted) return;
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _initFailed = true);
+        return;
+      }
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(
+        back,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+      _controller = controller;
+      await controller.initialize();
+      await controller.startImageStream(_onImageStream);
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _initFailed = true);
+    } finally {
+      _initializing = false;
+    }
+  }
+
+  Future<void> _disposeCamera() async {
+    final c = _controller;
+    _controller = null;
+    if (c == null) return;
+    try {
+      if (c.value.isStreamingImages) await c.stopImageStream();
+    } catch (_) {}
+    try {
+      await c.dispose();
+    } catch (_) {}
   }
 
   /// 从扫码结果中解析登录 code（桌面端二维码内容）。
@@ -52,26 +116,46 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     return source.toLowerCase();
   }
 
-  void _onDetect(BarcodeCapture capture) {
-    if (_handling) return;
-    for (final barcode in capture.barcodes) {
-      final code = _extractCode(barcode.rawValue);
-      if (code == null) continue;
-      if (code == _lastCode) return;
-      _lastCode = code;
-      _handleCode(code);
+  void _onImageStream(CameraImage image) {
+    if (_handling || image.planes.isEmpty) return;
+    final now = DateTime.now();
+    final last = _lastDecodeAt;
+    if (last != null && now.difference(last) < const Duration(milliseconds: 250)) {
       return;
     }
+    _lastDecodeAt = now;
+    try {
+      final plane = image.planes.first; // Y 平面即亮度
+      final source = _YPlaneLuminanceSource(
+        plane.bytes,
+        image.width,
+        image.height,
+        plane.bytesPerRow,
+      );
+      final result = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source)));
+      final code = _extractCode(result.text);
+      if (code == null || code == _lastCode) return;
+      _lastCode = code;
+      _handleCode(code);
+    } on ReaderException {
+      // 非二维码 / 校验失败帧，忽略继续扫。
+    } catch (_) {}
   }
 
   Future<void> _resume() async {
     final c = _controller;
-    if (c == null || !mounted) return;
-    try {
-      await c.start();
-    } catch (_) {}
+    if (c != null && c.value.isInitialized) {
+      try {
+        if (!c.value.isStreamingImages) await c.startImageStream(_onImageStream);
+      } catch (_) {}
+    } else {
+      await _initCamera();
+    }
     if (mounted) {
-      setState(() => _permissionDenied = false);
+      setState(() {
+        _permissionDenied = false;
+        _initFailed = false;
+      });
       _lastCode = null;
     }
   }
@@ -108,7 +192,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     final c = _controller;
     if (c != null) {
       try {
-        await c.stop();
+        if (c.value.isStreamingImages) await c.stopImageStream();
       } catch (_) {}
     }
     if (!mounted) {
@@ -218,11 +302,11 @@ class _ScanPageState extends ConsumerState<ScanPage> {
 
   void _toggleTorch() async {
     final c = _controller;
-    if (c == null) return;
+    if (c == null || !c.value.isInitialized) return;
     try {
       final next = !_torchOn;
-      await c.toggleTorch();
-      setState(() => _torchOn = next);
+      await c.setFlashMode(next ? FlashMode.torch : FlashMode.off);
+      if (mounted) setState(() => _torchOn = next);
     } catch (_) {}
   }
 
@@ -240,23 +324,9 @@ class _ScanPageState extends ConsumerState<ScanPage> {
                 ? _loginRequiredView(context)
                 : _permissionDenied
                     ? _permissionView(context)
-                    : MobileScanner(
-                        controller: _controller,
-                        onDetect: _onDetect,
-                        errorBuilder: (context, error) {
-                          // 相机权限被拒时切换到授权引导视图。
-                          if (error.errorCode ==
-                              MobileScannerErrorCode.permissionDenied) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted && !_permissionDenied) {
-                                setState(() => _permissionDenied = true);
-                              }
-                            });
-                            return _permissionView(context);
-                          }
-                          return _genericErrorView(context);
-                        },
-                      ),
+                    : _initFailed
+                        ? _genericErrorView(context)
+                        : _cameraPreview(context),
           ),
           // 顶部栏
           Positioned(
@@ -328,6 +398,28 @@ class _ScanPageState extends ConsumerState<ScanPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 全屏相机预览：按 CameraPreview 内部的宽高比先撑出预览盒，再 cover 铺满屏幕。
+  Widget _cameraPreview(BuildContext context) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) {
+      return const ColoredBox(color: Colors.black);
+    }
+    final portrait = MediaQuery.orientationOf(context) == Orientation.portrait;
+    final ar = c.value.aspectRatio;
+    final boxAspect = portrait ? (ar == 0 ? 1 : 1 / ar) : ar;
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: 1000,
+          height: boxAspect == 0 ? 1000 : 1000 / boxAspect,
+          child: CameraPreview(c),
+        ),
       ),
     );
   }
@@ -434,7 +526,10 @@ class _ScanPageState extends ConsumerState<ScanPage> {
             style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
             onPressed: () async {
               if (mounted) {
-                setState(() => _permissionDenied = false);
+                setState(() {
+                  _permissionDenied = false;
+                  _initFailed = false;
+                });
                 await _resume();
               }
             },
@@ -443,6 +538,42 @@ class _ScanPageState extends ConsumerState<ScanPage> {
         ],
       ),
     );
+  }
+}
+
+/// YUV Y 平面亮度源：直接把 camera 帧的 Y 平面字节按行步长映射为亮度，
+/// 免去 YUV→RGB 转换，供 zxing2 二值化与解码。
+class _YPlaneLuminanceSource extends LuminanceSource {
+  final Int8List _data;
+  final int _rowStride;
+
+  _YPlaneLuminanceSource(Uint8List data, super.width, super.height, this._rowStride)
+      : _data = Int8List.fromList(data);
+
+  @override
+  Int8List getRow(int y, Int8List? row) {
+    final w = width;
+    final result = (row != null && row.length >= w) ? row : Int8List(w);
+    final start = y * _rowStride;
+    for (var x = 0; x < w; x++) {
+      result[x] = _data[start + x];
+    }
+    return result;
+  }
+
+  @override
+  Int8List getMatrix() {
+    final w = width;
+    final h = height;
+    final result = Int8List(w * h);
+    for (var y = 0; y < h; y++) {
+      final src = y * _rowStride;
+      final dst = y * w;
+      for (var x = 0; x < w; x++) {
+        result[dst + x] = _data[src + x];
+      }
+    }
+    return result;
   }
 }
 
