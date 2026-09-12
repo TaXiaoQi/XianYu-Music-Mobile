@@ -120,14 +120,23 @@ class LyricsRepository {
       final sources = await engine.store.loadSources();
       final matches = sources.where((s) => s.id == pluginId).toList();
       if (matches.isEmpty) return '';
-      final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
-      if (lyric == null) return '';
-      return (lyric['lxlyric'] ??
-              lyric['yrc'] ??
-              lyric['qrc'] ??
-              lyric['eslrc'] ??
-              lyric['lyric']) as String? ??
+      final res = await engine.getLyric(matches.first, sourceKey, musicInfo);
+      if (res == null) return '';
+      final mainText = (res['lxlyric'] ??
+              res['yrc'] ??
+              res['qrc'] ??
+              res['eslrc'] ??
+              res['lyric']) as String? ??
           '';
+      if (mainText.trim().isEmpty) return '';
+      // 插件可能额外返回翻译（tlyric / translation / translateLyric）。与内置音源
+      // 路径同口径：把翻译追加到主歌词后，由 Rust parseLyrics 按时间戳聚类为译文
+      // 行；否则插件翻译会在这里被丢弃、译文行永远为空。
+      final tlyric = (res['tlyric'] as String?)?.trim() ?? '';
+      if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
+        return '$mainText\n$tlyric';
+      }
+      return mainText;
     } catch (_) {
       return '';
     }
