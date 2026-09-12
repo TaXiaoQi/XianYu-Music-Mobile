@@ -69,3 +69,37 @@ flutter build apk --release
 ## 一句话总结
 
 IDEA 里 **直接 Run 就行，Rust 全自动**；Release 直接 `flutter build apk --release`，发版动作全自动。
+
+## FFmpeg 裁剪库（体积优化）
+
+AAR 自带的完整 FFmpeg 7 个库约 18MB（未压缩），本工程改用**裁剪版**（`scripts/ffmpeg-trim/dist/arm64-v8a/`，约 4MB），已拷入
+`android/app/src/main/jniLibs/arm64-v8a/`（jniLibs 优先级高于 AAR，同名即覆盖），**正常构建即可生效**，无需额外步骤。
+
+裁剪保留能力（与两个工具页对齐）：
+
+- 输入：mp3 / aac / m4a / flac / ogg / opus / wav / ape / wv / wma / aiff / mka
+- 输出：mp3（lame）/ aac / m4a / flac / ogg（vorbis）/ opus / wma / wav
+- 滤镜：`atrim/trim/asetpts/aresample/volume/atempo` 等（裁剪/变速/音量）
+- 网络协议、音轨复制（`-c copy`）、封面/元数据保留
+
+### 重建裁剪库（需 WSL）
+
+仅当需要调整裁剪清单（增删编解码器/滤镜）时：
+
+```powershell
+# 前置（一次性）：
+#  1. junction：NDK 与构建树路径必须全 ASCII（中文路径在 pkg-config→clang 链路会编码损坏）
+#     New-Item -ItemType Junction -Path C:\ndk27 -Target <NDK 27.1.12297006 路径>
+#     New-Item -ItemType Junction -Path C:\ffbuild -Target <构建树目标>
+#  2. 源码包放 C:\ffbuild\src-dl\（ffmpeg-8.0.3 / lame-3.100 / opus-1.5.2 / libogg-1.3.5 / libvorbis-1.3.7）
+wsl -e bash "/mnt/d/Program Files/XianYu-Music/XianYu-Music-Mobile/scripts/ffmpeg-trim/build-android.sh"
+# 产物 → scripts/ffmpeg-trim/dist/arm64-v8a/*.so，拷入 jniLibs 覆盖
+```
+
+符号覆盖校验（新库须满足 libffmpegkit.so 的全部 FFmpeg 引用，否则运行时 dlopen 失败）：
+
+```bash
+bash scripts/ffmpeg-trim/check-symbols.sh <libffmpegkit.so路径> scripts/ffmpeg-trim/dist/arm64-v8a
+```
+
+> 已知坑：WSL 无外网时先在 Windows 下载源码包；FFmpeg configure 的 `TMPDIR` 必须指到 `/mnt/c`（默认 `/tmp` Windows clang 读不了）；依赖库链接需 `--extra-libs="-lm -logg -lvorbis"`；shim 的路径转换必须匹配带 `-I/-L` 前缀的参数。
