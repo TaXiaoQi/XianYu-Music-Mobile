@@ -15,6 +15,8 @@ import 'package:go_router/go_router.dart';
 import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
+import '../../src/player/mv_source.dart';
+import 'package:video_player/video_player.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/effects/sound_effect_provider.dart';
 import '../../src/auth/auth_provider.dart';
@@ -25,6 +27,7 @@ import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/plugin/plugin_models.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/navigation/shell.dart' show isLandscapeProvider;
 import '../../src/share/share_service.dart';
@@ -395,6 +398,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _chromeVisible = true;
   Timer? _chromeHideTimer;
 
+  // ── MV 背景 ──
+
+  /// 是否开启 MV 背景视频（详情页底栏按钮切换）。
+  bool _mvEnabled = false;
+
+  /// 当前 MV 视频控制器（视频存在才非 null）。
+  VideoPlayerController? _mvController;
+
+  /// 缓存的 MV 源（null = 未探测；url 为空 = 这首歌没有 MV）。
+  MvSource? _mvSourceCache;
+
+  /// 当前 MV 探测/初始化中（去重 + 按钮 loading）。
+  bool _mvBusy = false;
+
   /// 任意触摸唤回顶栏/底栏并重新计时（竖屏下为 no-op）。
   void _wakeChrome() {
     _chromeHideTimer?.cancel();
@@ -428,6 +445,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     // 栈顶时退出；若队列弹窗盖在本页上，由弹窗的统一关闭逻辑连带退出，
     // 避免双重 pop 把弹窗下面的页面也关掉。
     ref.listen(playerProvider.select((s) => s.current), (prev, next) {
+      // 切歌 → 清除上一首 MV 状态（下一首歌的 MV 要重新探测）。
+      if (prev != next) resetMvState();
       if (prev != null && next == null && mounted) {
         if (ModalRoute.of(context)?.isCurrent == true) {
           final nav = Navigator.of(context);
@@ -496,10 +515,84 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
+          // MV 背景视频层（插在底色和模糊封面之间，保证前景文字可读时 MV 仍是最底视频源）。
+          if (_mvEnabled && _mvController != null) ...[
+            Positioned.fill(child: VideoPlayer(_mvController!)),
+            Positioned.fill(
+              child: Container(color: const Color(0x66000000)),
+            ),
+          ],
+          // MV 悬浮按钮（两种布局共用）—— 右下角圆形按钮，放在模糊封面之上。
           Positioned.fill(
             // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
             child: _BlurredCoverBackground(current: current),
           ),
+          if (current?.source != null)
+            Positioned(
+              right: 14,
+              bottom: 200,
+              child: Semantics(
+                label: _mvEnabled ? '关闭 MV' : '开启 MV',
+                child: Material(
+                  color: Colors.black45,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () async {
+                      final c = current;
+                      if (c == null) return;
+                      Map<String, dynamic> song;
+                      final js = c.onlineSongJson;
+                      if (js != null && js.isNotEmpty) {
+                        try {
+                          final raw = jsonDecode(js) as Map<String, dynamic>;
+                          // MusicFree 包装格式：{format:musicfree, musicInfo:{...实际歌曲...}}
+                          if (raw['format'] == 'musicfree' && raw['musicInfo'] is Map) {
+                            song = Map<String, dynamic>.from(
+                              raw['musicInfo'] as Map,
+                            );
+                            // 外层可能有 plugin 描述，拷贝到内层方便后续匹配
+                            final plugin = raw['plugin'];
+                            if (plugin != null) {
+                              song['plugin'] = plugin;
+                            }
+                          } else {
+                            song = raw;
+                          }
+                        } catch (_) {
+                          song = {
+                            'source': c.source,
+                            'path': c.path,
+                            'title': c.title,
+                            'artist': c.artist,
+                          };
+                        }
+                      } else {
+                        song = {
+                          'source': c.source,
+                          'path': c.path,
+                          'title': c.title,
+                          'artist': c.artist,
+                        };
+                      }
+                      await toggleMv(song: song);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(
+                        _mvEnabled
+                            ? Icons.movie
+                            : Icons.movie_creation_outlined,
+                        color: _mvEnabled
+                            ? const Color(0xFF6ADB6F)
+                            : Colors.white70,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           _DragDismissSheet(
         // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
@@ -510,6 +603,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   notifier: notifier,
                   current: current,
                   chromeVisible: _chromeVisible,
+                  mvEnabled: _mvEnabled,
+                  mvSupported: current?.source != null,
+                  onToggleMv: current != null
+                      ? () async {
+                          Map<String, dynamic> song;
+                          if (current.onlineSongJson != null) {
+                            song = jsonDecode(current.onlineSongJson!)
+                                as Map<String, dynamic>;
+                            debugPrint('[MV] onlineSongJson keys: ${song.keys.toList()}');
+                            debugPrint('[MV] onlineSongJson raw: ${current.onlineSongJson}');
+                          } else {
+                            song = {
+                              'source': current.source,
+                              'path': current.path,
+                              'title': current.title,
+                              'artist': current.artist,
+                            };
+                          }
+                          await toggleMv(song: song);
+                        }
+                      : null,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -876,6 +990,197 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       overlay: null,
     );
   }
+
+  // ── MV 背景生命周期 ──
+
+  @override
+  void dispose() {
+    _mvController?.dispose();
+    super.dispose();
+  }
+
+  void _disposeMvController() {
+    _mvController?.dispose();
+    _mvController = null;
+  }
+
+  /// LX 格式插件的 source 短代码 → 可能的 MusicFree 插件 name/id 关键字。
+  /// MusicFree 插件（如 music.cwo.cc.cd 上的 kg/kw/qq/wy/mg）每个都是独立插件，
+  /// 需要从已安装列表里按关键字匹配到对应 pluginId，再调它的 getMvSource。
+  static const _kSourceToMfKeywords = <String, List<String>>{
+    'kg':       ['酷狗', 'kugou'],
+    'kugou':    ['酷狗', 'kugou'],
+    'kw':       ['酷我', 'kuwo'],
+    'kuwo':     ['酷我', 'kuwo'],
+    'qq':       ['QQ音乐', 'qq', 'tencent'],
+    'tencent':  ['QQ音乐', 'qq', 'tencent'],
+    'wy':       ['网易云', 'netease', '163'],
+    'netease':  ['网易云', 'netease', '163'],
+    '163':      ['网易云', 'netease', '163'],
+    'migu':     ['咪咕', 'migu', 'mg'],
+    'mg':       ['咪咕', 'migu', 'mg'],
+    'bili':     ['bilibili', 'bili', 'B站'],
+    'bilibili': ['bilibili', 'bili', 'B站'],
+    'qishui':   ['汽水', 'qishui'],
+    'qishu':    ['汽水', 'qishui'],
+  };
+
+  /// 从已启用的 MusicFree 插件里匹配 LX source 短代码。
+  List<(String pluginId, String name)> _matchMfPlugins(String sourceId) {
+    final keywords = _kSourceToMfKeywords[sourceId.toLowerCase()] ?? const [];
+    if (keywords.isEmpty) return const [];
+    final store = ref.read(pluginManagerProvider);
+    final sources = store.sources.where((s) =>
+        s.format == PluginFormat.musicfree);
+    final matched = <(String, String)>[];
+    for (final s in sources) {
+      final lowerName = s.name.toLowerCase();
+      final lowerId = s.id.toLowerCase();
+      for (final kw in keywords) {
+        if (lowerName.contains(kw.toLowerCase()) || lowerId.contains(kw.toLowerCase())) {
+          matched.add((s.id, s.name));
+          break;
+        }
+      }
+    }
+    return matched;
+  }
+
+  Future<bool> _ensureMvReady({required Map<String, dynamic> song}) async {
+    if (_mvSourceCache != null &&
+        _mvSourceCache!.url.isNotEmpty &&
+        !_mvSourceCache!.isExpired) {
+      return true;
+    }
+    if (_mvBusy) return false;
+    _mvBusy = true;
+    try {
+      // 从多种可能的字段里提取 plugin/source 标识
+      String? sourceId = song['source']?.toString();
+      if (sourceId == null || sourceId.isEmpty) {
+        // 尝试从 plugin 对象/字符串里取
+        final plugin = song['plugin'];
+        if (plugin is Map) {
+          sourceId = plugin['id']?.toString() ?? plugin['name']?.toString();
+        } else if (plugin != null) {
+          sourceId = plugin.toString();
+        }
+      }
+      if (sourceId == null || sourceId.isEmpty) {
+        _mvSourceCache = emptyMvSource;
+        return false;
+      }
+      final quality = ref.read(settingsProvider).valueOrNull?.onlineDefaultMvQuality;
+      final engine = await ref.read(pluginEngineProvider.future);
+
+      debugPrint('[MV] resolved sourceId=$sourceId keys=${song.keys.toList()}');
+
+      // 先用 sourceId 直接当 pluginId 调一次
+      final directArgs = <dynamic>[song, if (quality != null && quality.isNotEmpty) quality];
+      try {
+        final raw = await engine.call(sourceId, 'getMvSource', directArgs);
+        if (raw is Map<String, dynamic> && raw.isNotEmpty) {
+          _mvSourceCache = MvSource.fromJson(raw);
+          if (_mvSourceCache!.url.isNotEmpty) {
+            debugPrint('[MV] direct MF hit: $sourceId');
+            return true;
+          }
+        }
+      } catch (e) {
+        debugPrint('[MV] direct call $sourceId no getMvSource: $e');
+      }
+
+      // 关键词匹配：把 sourceId 当关键词匹配已安装的 MF 插件
+      final candidates = _matchMfPlugins(sourceId);
+      // 如果没匹配到，也把 plugin 对象里的 name 当关键词再试一次
+      if (candidates.isEmpty) {
+        final plugin = song['plugin'];
+        String? extraKw;
+        if (plugin is Map) {
+          extraKw = plugin['name']?.toString();
+        }
+        if (extraKw != null && extraKw.isNotEmpty) {
+          candidates.addAll(_matchMfPlugins(extraKw));
+        }
+      }
+      debugPrint('[MV] source=$sourceId matched MF plugins=$candidates');
+      for (final (pluginId, name) in candidates) {
+        try {
+          final raw = await engine.call(pluginId, 'getMvSource', directArgs);
+          if (raw is Map<String, dynamic> && raw.isNotEmpty) {
+            _mvSourceCache = MvSource.fromJson(raw);
+            if (_mvSourceCache!.url.isNotEmpty) {
+              debugPrint('[MV] MF hit via $name($pluginId)');
+              return true;
+            }
+          }
+        } catch (e) {
+          debugPrint('[MV] call $name($pluginId) getMvSource failed: $e');
+        }
+      }
+
+      debugPrint('[MV] no MV for $sourceId (no MF plugin matched or all miss)');
+      _mvSourceCache = emptyMvSource;
+      return false;
+    } catch (e, st) {
+      debugPrint('[MV] _ensureMvReady error: $e\n$st');
+      _mvSourceCache = emptyMvSource;
+      return false;
+    } finally {
+      _mvBusy = false;
+    }
+  }
+
+  Future<void> _loadMvController() async {
+    final src = _mvSourceCache;
+    if (src == null || src.url.isEmpty) return;
+    _disposeMvController();
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(src.url),
+      httpHeaders: src.headers,
+    );
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.play();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _mvController = controller;
+        _mvEnabled = true;
+      });
+    } catch (_) {
+      controller.dispose();
+      _disposeMvController();
+    }
+  }
+
+  Future<void> toggleMv({required Map<String, dynamic> song}) async {
+    if (_mvEnabled) {
+      _disposeMvController();
+      if (mounted) setState(() => _mvEnabled = false);
+      return;
+    }
+    final ok = await _ensureMvReady(song: song);
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr('此歌曲无 MV 或画质不支持'))),
+        );
+      }
+      return;
+    }
+    await _loadMvController();
+  }
+
+  /// 切歌时外部调用，清除上一首的 MV 状态。
+  void resetMvState() {
+    _disposeMvController();
+    _mvEnabled = false;
+    _mvSourceCache = null;
+  }
 }
 
 /// 播放页统一「底壳」。
@@ -966,6 +1271,9 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     required this.notifier,
     required this.current,
     this.chromeVisible = true,
+    this.mvEnabled = false,
+    this.mvSupported = false,
+    this.onToggleMv,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
@@ -973,6 +1281,10 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   /// 横屏顶栏/底栏是否可见：由外层播放页的自动隐藏计时驱动，
   /// 触摸唤回同样由外层 Listener 完成后经重建下传。竖屏恒 true。
   final bool chromeVisible;
+
+  final bool mvEnabled;
+  final bool mvSupported;
+  final VoidCallback? onToggleMv;
 
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
@@ -1233,7 +1545,12 @@ class _TraditionalPlayerLayoutState
             child: _ProgressBar(notifier: widget.notifier),
           ),
         ),
-        _Controls(notifier: widget.notifier),
+        _Controls(
+          notifier: widget.notifier,
+          mvEnabled: widget.mvEnabled,
+          mvSupported: widget.mvSupported,
+          onToggleMv: widget.onToggleMv,
+        ),
         const SizedBox(height: 32),
       ],
       // 歌词调节入口已并入封面歌词双态「词」控件（进度条上方动作行），
@@ -4098,8 +4415,16 @@ class _ProgressBar extends ConsumerWidget {
 }
 
 class _Controls extends ConsumerWidget {
-  const _Controls({required this.notifier});
+  const _Controls({
+    required this.notifier,
+    this.mvEnabled = false,
+    this.mvSupported = false,
+    this.onToggleMv,
+  });
   final PlayerNotifier notifier;
+  final bool mvEnabled;
+  final bool mvSupported;
+  final VoidCallback? onToggleMv;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4160,6 +4485,21 @@ class _Controls extends ConsumerWidget {
           ))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
+          if (mvSupported)
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  iconSize: 28,
+                  icon: Icon(
+                    mvEnabled ? Icons.movie : Icons.movie_creation_outlined,
+                    color: mvEnabled
+                        ? const Color(0xFF6ADB6F)
+                        : scheme.onSurfaceVariant,
+                  ),
+                  onPressed: onToggleMv,
+                ),
+              ),
+            ),
         ],
       ),
     );

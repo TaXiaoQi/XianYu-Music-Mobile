@@ -918,6 +918,21 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: Text(s?.downloadQuality ?? '320k'),
             onTap: () => _pickQuality(context, ref, s, isOnline: false),
           ),
+          // ── MV 画质 ──
+          _tile(
+            context,
+            icon: Icons.movie_outlined,
+            title: tr('MV 默认画质'),
+            trailing: Text(s?.onlineDefaultMvQuality ?? '720p'),
+            onTap: () => _pickMvQuality(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.movie_creation_outlined,
+            title: tr('MV 下载画质'),
+            trailing: Text(s?.downloadMvQuality ?? '720p'),
+            onTap: () => _pickDownloadMvQuality(context, ref, s),
+          ),
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
@@ -1961,6 +1976,66 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
     if (choice != null) {
       await ref.read(settingsProvider.notifier).setAccentColor(choice);
+    }
+  }
+
+  Future<void> _pickMvQuality(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    const options = ['480p', '720p', '1080p', 'uhd'];
+    final cur = s?.onlineDefaultMvQuality ?? '720p';
+    final pick = await showSheetDialog<String>(
+      context,
+      (d) => SimpleDialog(
+        title: Text(tr('MV 默认画质')),
+        children: options
+            .map((q) => ListTile(
+                  title: Text(q),
+                  trailing: q == cur
+                      ? Icon(Icons.check,
+                          color: Theme.of(d).colorScheme.primary)
+                      : null,
+                  onTap: () => Navigator.pop(d, q),
+                ))
+            .toList(),
+      ),
+    );
+    if (pick != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setOnlineDefaultMvQuality(pick);
+    }
+  }
+
+  Future<void> _pickDownloadMvQuality(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    const options = ['480p', '720p', '1080p', 'uhd'];
+    final cur = s?.downloadMvQuality ?? '720p';
+    final pick = await showSheetDialog<String>(
+      context,
+      (d) => SimpleDialog(
+        title: Text(tr('MV 下载画质')),
+        children: options
+            .map((q) => ListTile(
+                  title: Text(q),
+                  trailing: q == cur
+                      ? Icon(Icons.check,
+                          color: Theme.of(d).colorScheme.primary)
+                      : null,
+                  onTap: () => Navigator.pop(d, q),
+                ))
+            .toList(),
+      ),
+    );
+    if (pick != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setDownloadMvQuality(pick);
     }
   }
 
