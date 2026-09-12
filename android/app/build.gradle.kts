@@ -66,11 +66,14 @@ android {
     }
 
     buildTypes {
-        // debug / profile / release 统一使用同一包名 com.xianyumusic.app，
-        // 且统一使用 release 签名（当 key.properties 存在时），使各构建类型
-        // 产物签名一致，可互相覆盖安装。FileProvider authorities、QQ 回调等
-        // 随 ${applicationId} 自动跟随统一包名，无需额外改动。
+        // debug 使用独立包名 com.xianyumusic.app.debug，与正式版共存互不覆盖：
+        // run 调试不再顶掉设备上已装的正式版，且调试版拥有独立沙箱数据互不污染。
+        // FileProvider authorities 等清单内 ${applicationId} 自动跟随后缀，
+        // 代码侧（SystemShare 等）动态取 packageName，无需改动。
+        // 注意：QQ 互联按包名+签名校验 appid，调试版包名不同 → QQ 分享/登录不可用；
+        // xianyu:// 深链与文件打开会同时命中两包，系统弹「打开方式」选择框属预期。
         debug {
+            applicationIdSuffix = ".debug"
             // debug 应用显示名加「·测试」后缀，与 release 正式版在一屏内可区分
             manifestPlaceholders["appLabel"] = "弦予音乐·测试"
             signingConfig = if (keystorePropertiesFile.exists()) {
