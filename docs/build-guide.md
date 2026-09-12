@@ -72,8 +72,9 @@ IDEA 里 **直接 Run 就行，Rust 全自动**；Release 直接 `flutter build 
 
 ## FFmpeg 裁剪库（体积优化）
 
-AAR 自带的完整 FFmpeg 7 个库约 18MB（未压缩），本工程改用**裁剪版**（`scripts/ffmpeg-trim/dist/arm64-v8a/`，约 4MB），已拷入
+AAR 自带的完整 FFmpeg 7 个库约 18MB（未压缩），本工程改用**裁剪版**（约 4MB），入库生效源为
 `android/app/src/main/jniLibs/arm64-v8a/`（jniLibs 优先级高于 AAR，同名即覆盖），**正常构建即可生效**，无需额外步骤。
+重建产物目录 `scripts/ffmpeg-trim/dist/` 仅本机留存（已 gitignore），勿作为分发来源。
 
 裁剪保留能力（与两个工具页对齐）：
 

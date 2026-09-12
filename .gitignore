@@ -72,10 +72,11 @@ app.*.map.json
 # Flutter Rust Bridge generated cache
 *.g.dart.tmp
 
-# Native prebuilt libraries (built by cargo, regenerated every build — never commit)
-# 注意：ffmpeg 裁剪版 .so（scripts/ffmpeg-trim 产物，手工构建、不会自动再生）
-# 也放在 jniLibs 下覆盖 AAR 完整版同名库，必须入库——整目录忽略会让换机/CI
-# 构建静默回退到 pub 完整版（APK 无声膨胀 7MB），故改 /* + 例外规则。
+# Native prebuilt libraries：
+# - libxianyu_core.so：cargo 每次构建再生，绝不入库（下方整目录忽略已覆盖）
+# - ffmpeg 裁剪版 .so：scripts/ffmpeg-trim 手工构建、不会自动再生，拷入
+#   jniLibs 覆盖 AAR 完整版同名库，必须入库——整目录忽略会让换机/CI
+#   构建静默回退到 pub 完整版（APK 无声膨胀 7MB），故用 /* + 例外规则。
 /android/app/src/main/jniLibs/*
 !/android/app/src/main/jniLibs/arm64-v8a/
 /android/app/src/main/jniLibs/arm64-v8a/*
@@ -86,6 +87,9 @@ app.*.map.json
 !/android/app/src/main/jniLibs/arm64-v8a/libavutil.so
 !/android/app/src/main/jniLibs/arm64-v8a/libswresample.so
 !/android/app/src/main/jniLibs/arm64-v8a/libswscale.so
+
+# ffmpeg-trim 重建产物（与 jniLibs 入库副本同源），仅本机留存防仓库冗余
+/scripts/ffmpeg-trim/dist/
 
 # Flutter-generated ephemeral build metadata (machine-specific paths)
 **/Flutter/ephemeral/
