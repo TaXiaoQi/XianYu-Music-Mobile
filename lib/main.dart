@@ -22,6 +22,7 @@ import 'src/deeplink/deep_link_handler.dart';
 import 'src/lyrics/floating_lyrics.dart';
 import 'src/lyrics/status_bar_lyrics.dart';
 import 'src/navigation/routes.dart';
+import 'src/watch_link/watch_link_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,6 +83,13 @@ Future<void> main() async {
   // 兼管小组件/锁屏按钮的播放控制回调。
   if (PlatformCaps.supportsLiveActivity) {
     container.read(iosWidgetControllerProvider).init();
+  }
+
+  // 挂载腕上端联动桥：手表经蓝牙 RFCOMM 接收播放状态推送并反向控制播放
+  //（播放暂停/上下首/喜欢/播放顺序/seek）。Android 专属（RFCOMM SPP），
+  // iOS 无开放蓝牙串口能力，不初始化。
+  if (PlatformCaps.isAndroid) {
+    container.read(watchLinkControllerProvider).init();
   }
 
   // 总体首帧计时（从 main 开始）

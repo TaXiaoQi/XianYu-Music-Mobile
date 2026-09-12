@@ -11,6 +11,12 @@
         tools:ignore="ScopedStorage"/>
     <!-- 在线音乐与后台/控制中心播放服务 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 手表联动：RFCOMM 服务端。Android 12+ 需运行时权限 BLUETOOTH_CONNECT；
+         旧版（≤11）清单声明即授予。SCAN 仅作配对设备枚举兜底，neverForLocation。 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- DLNA：SSDP 发现/广播需要接收 239.255.255.250 组播（运行时另持 MulticastLock） -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>

@@ -371,9 +371,20 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        com.xianyumusic.app.watch.WatchLink.onPermissionResult(requestCode, grantResults)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         FlutterMessengerHolder.messenger = flutterEngine.dartExecutor.binaryMessenger
+        // 手表联动 RFCOMM 传输层（Kotlin 仅字节管道，协议在 Dart 侧）
+        com.xianyumusic.app.watch.WatchLink.register(flutterEngine.dartExecutor.binaryMessenger, this)
         // 系统分享：原生 ACTION_SEND + 普通 startActivity，国产 ROM 才会弹自家分享面板
         SystemShare.register(flutterEngine.dartExecutor.binaryMessenger, this)
         deepLinkChannel = MethodChannel(
