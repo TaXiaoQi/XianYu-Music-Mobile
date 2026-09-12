@@ -168,7 +168,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         await tmp.writeAsBytes(bytes);
         path = tmp.path;
         // content URI 拿不到真实路径，用 fallback
-        originalDir = fallbackDir!;
+        originalDir = fallbackDir;
       }
       items.add(_Item(
         name: f.name.isNotEmpty
@@ -235,7 +235,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         } else {
           item.status = _Status.failed;
           final logs = await session.getLogs();
-          final err = logs.isNotEmpty ? logs.last.getMessage() ?? '' : '';
+          final err = logs.isNotEmpty ? logs.last.getMessage() : '';
           item.error = err.isEmpty ? 'ffmpeg 返回码 ${rc?.getValue()}' : err;
           failed.add(item.name);
         }

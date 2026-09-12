@@ -323,7 +323,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
         if (mounted) _showSuccessDialog(context, outPath);
       } else {
         final logs = await session.getLogs();
-        final err = logs.isNotEmpty ? logs.last.getMessage() ?? '' : '';
+        final err = logs.isNotEmpty ? logs.last.getMessage() : '';
         setState(() {
           _error = err.isEmpty ? 'ffmpeg 返回码 ${rc?.getValue()}' : err;
         });
