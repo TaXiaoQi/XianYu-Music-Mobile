@@ -3900,12 +3900,16 @@ class _DownloadQualitySheetState
         widget.song.path == playingPath &&
         cur != null &&
         cur.isNotEmpty;
+    // 下载音质默认优先用设置页选择的 downloadQuality；若未配置则回退到
+    // 当前正在播放的实际音质（与桌面端 getInitialDownloadQuality 对齐）。
     final String initial;
-    if (isPlayingSong) {
-      // isPlayingSong 已含 cur 非空校验，流分析在此处已将 cur 提升为非空。
+    final settingQuality = settings?.downloadQuality;
+    if (settingQuality != null && settingQuality.isNotEmpty) {
+      initial = settingQuality;
+    } else if (isPlayingSong) {
       initial = cur;
     } else {
-      initial = settings?.downloadQuality ?? '320k';
+      initial = '320k';
     }
     final fallbackBehavior =
         settings?.downloadQualityFallbackBehavior ?? 'lower';
