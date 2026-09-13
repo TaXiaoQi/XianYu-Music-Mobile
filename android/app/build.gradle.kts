@@ -170,9 +170,10 @@ tasks.matching { it.name == "preBuild" }.configureEach {
 }
 
 // 正式包自动归档：assembleRelease 完成后把 universal release APK（abiFilters 已限定
-// arm64）复制到 releases/弦予音乐_<版本>_arm64.apk，并把 gen_snapshot 的混淆符号
-// (--save-debugging-info=app.symbols，落于项目根) 归档到 releases/symbols/<版本>/，
-// 让裸 `flutter build apk --release` 完整等价旧 build-release.ps1。
+// arm64）复制到 releases/android/弦予音乐_<版本>_android-release.apk，
+// 并把 gen_snapshot 的混淆符号 (--save-debugging-info=app.symbols，落于项目根)
+// 归档到 releases/symbols/<版本>/，让裸 `flutter build apk --release` 完整等价旧
+// build-release.ps1。命名沿用历史中文名「弦予音乐」，平台目录细分到 releases/android。
 // 符号用于 `flutter symbolize -d app.symbols` 还原线上混淆堆栈。
 tasks.register("archiveReleaseApk") {
     group = "build"
@@ -181,15 +182,15 @@ tasks.register("archiveReleaseApk") {
         if (!apk.exists()) return@doLast
         val version = runCatching { flutter.versionName }.getOrDefault("0.0.0")
         val projectRoot = rootProject.projectDir.parentFile
-        val releasesDir = File(projectRoot, "releases")
-        releasesDir.mkdirs()
-        val dest = File(releasesDir, "弦予音乐_${version}_arm64.apk")
+        val releasesAndroidDir = File(File(projectRoot, "releases"), "android")
+        releasesAndroidDir.mkdirs()
+        val dest = File(releasesAndroidDir, "弦予音乐_${version}_android-release.apk")
         apk.copyTo(dest, overwrite = true)
         logger.lifecycle("已归档正式安装包: ${dest.absolutePath} (${"%.1f".format(dest.length() / 1024.0 / 1024.0)} MB)")
         // 混淆符号归档（abiFilters 已限定 arm64 单架构，符号有效）
         val sym = File(projectRoot, "app.symbols")
         if (sym.exists()) {
-            val symDir = File(releasesDir, "symbols/$version")
+            val symDir = File(File(projectRoot, "releases"), "symbols/$version")
             symDir.mkdirs()
             sym.copyTo(File(symDir, "app.symbols"), overwrite = true)
             sym.delete()
