@@ -26,6 +26,8 @@ class PluginSource {
   final String sourceUrl;
   final int importedAt;
   bool enabled;
+  /// 检测到有可用更新（桌面端 updateAvailable：为 true 时列表项标红「可更新」）。
+  bool updateAvailable;
   final List<String> sources;
   final bool isBuiltin;
   /// 用户自定义排序权重（数值越小越靠前），对齐桌面端 sortOrder。
@@ -42,6 +44,7 @@ class PluginSource {
     this.sourceUrl = '',
     required this.importedAt,
     this.enabled = true,
+    this.updateAvailable = false,
     this.sources = const [],
     this.isBuiltin = false,
     this.sortOrder,
@@ -49,6 +52,7 @@ class PluginSource {
 
   PluginSource copyWith({
     bool? enabled,
+    bool? updateAvailable,
     String? version,
     List<String>? sources,
     int? sortOrder,
@@ -65,6 +69,7 @@ class PluginSource {
       sourceUrl: sourceUrl,
       importedAt: importedAt,
       enabled: enabled ?? this.enabled,
+      updateAvailable: updateAvailable ?? this.updateAvailable,
       sources: sources ?? this.sources,
       isBuiltin: isBuiltin,
       sortOrder: clearSortOrder ? null : (sortOrder ?? this.sortOrder),
@@ -82,6 +87,7 @@ class PluginSource {
         'sourceUrl': sourceUrl,
         'importedAt': importedAt,
         'enabled': enabled,
+        'updateAvailable': updateAvailable,
         'sources': sources,
         'isBuiltin': isBuiltin,
         'sortOrder': sortOrder,
@@ -98,6 +104,7 @@ class PluginSource {
         sourceUrl: json['sourceUrl'] as String? ?? '',
         importedAt: (json['importedAt'] as num?)?.toInt() ?? 0,
         enabled: json['enabled'] as bool? ?? true,
+        updateAvailable: json['updateAvailable'] as bool? ?? false,
         sources: (json['sources'] as List?)?.cast<String>() ?? const [],
         isBuiltin: json['isBuiltin'] as bool? ?? false,
         sortOrder: (json['sortOrder'] as num?)?.toInt(),

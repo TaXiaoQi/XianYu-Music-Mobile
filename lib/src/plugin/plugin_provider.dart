@@ -339,6 +339,20 @@ class PluginManager extends StateNotifier<PluginListState> {
     engine.bakaManager.clearCache(id);
   }
 
+  /// 更新单个插件的「有可用更新」标记（对齐桌面端 updatePluginSource({updateAvailable})）。
+  /// 值未变化时跳过，不写盘。
+  Future<void> setUpdateAvailable(String id, bool value) async {
+    final changed =
+        state.sources.where((s) => s.id == id && s.updateAvailable != value).toList();
+    if (changed.isEmpty) return;
+    final engine = await _getEngine();
+    final list = state.sources
+        .map((s) => s.id == id ? s.copyWith(updateAvailable: value) : s)
+        .toList();
+    await engine.store.saveSources(list);
+    state = PluginListState(sources: list);
+  }
+
   /// 全部启用/全部禁用（对齐桌面端 handleToggleAllPlugins）。
   ///
   /// 与逐个 [toggleEnabled] 的区别：整表单次持久化，禁用时逐个销毁沙箱实例；

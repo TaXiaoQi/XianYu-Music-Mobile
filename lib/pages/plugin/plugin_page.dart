@@ -606,10 +606,18 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     setState(() => _checkingUpdates = true);
     try {
       final service = await _updateService();
+      final manager = ref.read(pluginManagerProvider.notifier);
+      final sources = ref.read(pluginManagerProvider).sources;
       final results = await service.checkAll();
       if (!mounted) return;
-      final updateCount =
-          results.values.where((r) => r.hasUpdate).length;
+      // 把「有更新」标记回写持久化（对齐桌面端 updatePluginSource），列表据此标红。
+      // 凡能拿到检测结果的都写入，无更新源的清空旧标记，避免残留误导。
+      for (final s in sources) {
+        final r = results[s.id];
+        await manager.setUpdateAvailable(s.id, r?.hasUpdate ?? false);
+      }
+      final updateCount = results.values.where((r) => r.hasUpdate).length;
+      if (!mounted) return;
       showXianYuToast(
         context,
         updateCount > 0
@@ -962,6 +970,25 @@ class _PluginCard extends ConsumerWidget {
                                   fontWeight: FontWeight.w600),
                             ),
                           ),
+                          // 有可用更新：格式标签后追加红色「可更新」标签（对齐桌面端）
+                          if (source.updateAvailable) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: scheme.error.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                tr('可更新'),
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: scheme.error,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                           // 有用户变量时，在标签后显示变量入口图标
                           if (hasVars) ...[
                             const SizedBox(width: 6),
@@ -1007,6 +1034,8 @@ class _PluginCard extends ConsumerWidget {
                   Icons.system_update_alt_outlined,
                   tr('更新'),
                   () => _checkUpdate(context, ref),
+                  // 有可用更新时更新按钮标红，一眼可辨（对齐桌面端 update-available）
+                  color: source.updateAvailable ? scheme.error : null,
                 ),
                 const SizedBox(width: 4),
                 _action(
@@ -1048,9 +1077,11 @@ class _PluginCard extends ConsumerWidget {
     BuildContext context,
     IconData icon,
     String label,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    Color? color,
+  }) {
     final scheme = Theme.of(context).colorScheme;
+    final c = color ?? scheme.outline;
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: onTap,
@@ -1059,11 +1090,11 @@ class _PluginCard extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: scheme.outline),
+            Icon(icon, size: 17, color: c),
             const SizedBox(width: 5),
             Text(
               label,
-              style: TextStyle(fontSize: 13, color: scheme.outline),
+              style: TextStyle(fontSize: 13, color: c),
             ),
           ],
         ),
@@ -1086,6 +1117,9 @@ class _PluginCard extends ConsumerWidget {
       subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
     );
     final result = await service.checkPluginUpdate(source);
+    // 回写「有更新」标记，单插件检测也参与列表标红（对齐桌面端）。
+    await ref.read(pluginManagerProvider.notifier)
+        .setUpdateAvailable(source.id, result?.hasUpdate ?? false);
     if (!context.mounted) return;
     if (result == null) {
       showXianYuToast(context, tr('无可用更新源'));
