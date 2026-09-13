@@ -107,3 +107,8 @@ app.*.map.json
 
 # 软著登记材料（操作说明书/源代码 PDF 含完整源码，仅本地使用，不入库）
 /soft-copyright/
+
+# Signing credentials — never commit
+/android/key.properties
+/android/app/*.keystore
+/android/app/*.jks
