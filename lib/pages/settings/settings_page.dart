@@ -793,6 +793,8 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '语言', section: '语言', path: '/settings/general', categoryName: '常规', keywords: '简体中文 繁體中文 English 跟随系统'),
   _SearchItem(label: '触觉反馈力度', section: '反馈', path: '/settings/general', categoryName: '常规', keywords: '震动 力度 手感'),
   _SearchItem(label: '检测更新模式', section: '检测更新', path: '/settings/general', categoryName: '常规', keywords: '启动 检查 版本 更新'),
+  _SearchItem(label: '腕上联动', section: '腕上联动', path: '/settings/general', categoryName: '常规', keywords: '手表 蓝牙 遥控 播放 连接'),
+  _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/general', categoryName: '常规', keywords: '手表 传递 询问 记住 默认 自动'),
   _SearchItem(label: '存储设置', section: '存储空间', path: '/settings/general', categoryName: '常规', keywords: '缓存 空间 清理'),
 
   // 外观

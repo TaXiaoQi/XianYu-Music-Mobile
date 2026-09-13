@@ -282,6 +282,9 @@ class AppSettings {
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
+    // 传递给腕上设备：ask=每次播放询问；remember=记住选择（配合下方 AutoTransfer）。
+    this.watchLinkTransferMode = 'ask',
+    this.watchLinkAutoTransfer = false,
     // DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。
     this.dlnaRendererEnabled = false,
     // DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
@@ -529,6 +532,12 @@ class AppSettings {
   /// 手表联动总开关：开启后在登录且连接手表时上报播放信息并执行手表控制命令。
   final bool watchLinkageEnabled;
 
+  /// 传递给腕上设备的确认模式：`ask`=每次播放询问；`remember`=记住上次选择。
+  final String watchLinkTransferMode;
+
+  /// 记住选择的结果：true=自动传递；false=不传递（仅 `remember` 模式生效）。
+  final bool watchLinkAutoTransfer;
+
   /// DLNA 渲染器（接收端）：开启后本机作为 DLNA 设备出现在局域网，
   /// 其它 App（如 QQ 音乐、网易云音乐）可直接投歌到本端播放。
   final bool dlnaRendererEnabled;
@@ -630,6 +639,8 @@ class AppSettings {
     int? floatingLyricsX,
     int? floatingLyricsY,
     bool? watchLinkageEnabled,
+    String? watchLinkTransferMode,
+    bool? watchLinkAutoTransfer,
     bool? dlnaRendererEnabled,
     String? dlnaRendererName,
     bool? showRealSourceName,
@@ -760,6 +771,10 @@ class AppSettings {
       floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
       floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
       watchLinkageEnabled: watchLinkageEnabled ?? this.watchLinkageEnabled,
+      watchLinkTransferMode:
+          watchLinkTransferMode ?? this.watchLinkTransferMode,
+      watchLinkAutoTransfer:
+          watchLinkAutoTransfer ?? this.watchLinkAutoTransfer,
       dlnaRendererEnabled: dlnaRendererEnabled ?? this.dlnaRendererEnabled,
       dlnaRendererName: dlnaRendererName ?? this.dlnaRendererName,
       showRealSourceName: showRealSourceName ?? this.showRealSourceName,
@@ -913,6 +928,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
       watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,
+      watchLinkTransferMode:
+          prefs.getString('watchLinkTransferMode') ?? 'ask',
+      watchLinkAutoTransfer:
+          prefs.getBool('watchLinkAutoTransfer') ?? false,
       dlnaRendererEnabled: prefs.getBool('dlnaRendererEnabled') ?? false,
       dlnaRendererName: prefs.getString('dlnaRendererName') ?? '',
       showRealSourceName: prefs.getBool('showRealSourceName') ?? false,
@@ -1092,6 +1111,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
+      prefs.setString('watchLinkTransferMode', next.watchLinkTransferMode),
+      prefs.setBool('watchLinkAutoTransfer', next.watchLinkAutoTransfer),
       prefs.setBool('dlnaRendererEnabled', next.dlnaRendererEnabled),
       prefs.setString('dlnaRendererName', next.dlnaRendererName),
       prefs.setBool('showRealSourceName', next.showRealSourceName),
@@ -1113,6 +1134,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setPlayMode(int m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playMode: m));
   Future<void> setLastTab(int t) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lastTab: t));
   Future<void> setWatchLinkageEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkageEnabled: v));
+  Future<void> setWatchLinkTransferMode(String m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: m));
+  /// 弹窗勾选「默认传递」后落库：切到记住选择并写入记住的行为。
+  Future<void> setWatchLinkTransferRemembered({required bool autoTransfer}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'remember', watchLinkAutoTransfer: autoTransfer));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
   Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
   Future<void> setShowRealSourceName(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showRealSourceName: v));

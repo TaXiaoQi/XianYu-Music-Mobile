@@ -28,6 +28,7 @@ import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/i18n/i18n.dart';
 import '../../src/library/saf_channel.dart';
+import '../../src/watch_link/watch_link_provider.dart';
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
@@ -225,6 +226,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ],
         ),
       ],
+      _sectionHeader(context, tr('腕上联动')),
+      _CardGroup(
+        children: [
+          _watchLinkageTile(context, ref, s, n),
+          _watchTransferTile(context, ref, s),
+        ],
+      ),
       _sectionHeader(context, tr('列表显示')),
       _CardGroup(
         children: [
@@ -241,6 +249,96 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, tr('存储空间')),
       const _StorageSettingsGroup(),
     ];
+  }
+
+  /// 腕上联动开关：副标题实时展示已连接手表名（未连接/关闭时给说明文案）。
+  Widget _watchLinkageTile(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final enabled = s?.watchLinkageEnabled ?? true;
+    final watchName = ref.watch(watchLinkConnectedNameProvider);
+    final subtitle = !enabled
+        ? tr('关闭后手表将无法遥控播放')
+        : watchName.isNotEmpty
+            ? tr('已连接：{name}', {'name': watchName})
+            : tr('连接手机时可用手表遥控播放');
+    return _switchTile(
+      context,
+      icon: Icons.watch_outlined,
+      title: tr('腕上联动'),
+      subtitle: subtitle,
+      value: enabled,
+      onChanged: (v) => n.setWatchLinkageEnabled(v),
+    );
+  }
+
+  /// 传递给腕上设备的确认策略入口（每次询问 / 自动传递 / 不传递）。
+  Widget _watchTransferTile(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) {
+    return _tile(
+      context,
+      icon: Icons.send_outlined,
+      title: tr('传递给腕上设备'),
+      subtitle: _watchTransferLabel(s),
+      trailing: const SizedBox.shrink(),
+      onTap: () => _pickWatchTransfer(context, ref, s),
+    );
+  }
+
+  String _watchTransferLabel(AppSettings? s) {
+    final mode = s?.watchLinkTransferMode ?? 'ask';
+    if (mode == 'remember') {
+      return s?.watchLinkAutoTransfer == true ? tr('自动传递') : tr('不传递');
+    }
+    return tr('每次询问');
+  }
+
+  Future<void> _pickWatchTransfer(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final mode = s?.watchLinkTransferMode ?? 'ask';
+    final auto = s?.watchLinkAutoTransfer ?? false;
+    final cur = mode == 'remember' ? (auto ? 'auto' : 'none') : 'ask';
+    final choice = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('传递给腕上设备'),
+      options: [
+        ModernChoiceOption(
+          label: tr('每次询问'),
+          value: 'ask',
+          subtitle: tr('每次开始播放时询问是否传递'),
+        ),
+        ModernChoiceOption(
+          label: tr('自动传递'),
+          value: 'auto',
+          subtitle: tr('记住选择：直接传递给腕上设备'),
+        ),
+        ModernChoiceOption(
+          label: tr('不传递'),
+          value: 'none',
+          subtitle: tr('记住选择：不传递到腕上设备'),
+        ),
+      ],
+      currentValue: cur,
+    );
+    if (choice == null) return;
+    final notifier = ref.read(settingsProvider.notifier);
+    switch (choice) {
+      case 'ask':
+        await notifier.setWatchLinkTransferMode('ask');
+      case 'auto':
+        await notifier.setWatchLinkTransferRemembered(autoTransfer: true);
+      case 'none':
+        await notifier.setWatchLinkTransferRemembered(autoTransfer: false);
+    }
   }
 
   // ---- 外观 ----
