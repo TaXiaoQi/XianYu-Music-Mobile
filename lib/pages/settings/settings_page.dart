@@ -36,6 +36,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   String _query = '';
   final _searchCtrl = TextEditingController();
 
+  /// 横屏左下 nav 选中项用于 scroll 定位（GlobalKey 定位选中分类项居中）。
+  final Map<String, GlobalKey> _tileKeys = {};
+  /// 最近一次横屏居中滚动过的分类；用于换分类/回横屏时触发重新定位。
+  String? _lastCenteredSel;
+
   /// 横屏 master-detail 左侧分类导航宽度（默认 260，可拖动分割线调整）。
   double _navWidth = 260;
 
@@ -43,6 +48,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// 让左侧导航滚到选中分类居中（进入横屏或切换分类时触发一次）。
+  /// alignment 0.5 = 该项在视口垂直居中，一眼看到当前所在分类。
+  void _scheduleCenterSelected(String sel) {
+    if (_lastCenteredSel == sel) return;
+    _lastCenteredSel = sel;
+    final key = _tileKeys[sel];
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = key.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
@@ -274,6 +299,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final sel = ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
     final selTitle = _titleOf(groups, sel) ?? tr('设置');
+    // 进入横屏/切换分类时让左侧导航滚到当前分类居中。
+    _scheduleCenterSelected(sel);
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -333,17 +360,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               _CardGroup(
                                 children: [
                                   for (var i = 0; i < entries.length; i++)
-                                    _CategoryTile(
-                                      entry: entries[i],
-                                      compact: true,
-                                      selected: _isEmbeddable(entries[i].path) &&
-                                          sel == entries[i].path,
-                                      onTapOverride: _isEmbeddable(entries[i].path)
-                                          ? () => ref
-                                              .read(landscapeSettingsCategoryProvider
-                                                  .notifier)
-                                              .state = entries[i].path
-                                          : null,
+                                    KeyedSubtree(
+                                      key: _tileKeys.putIfAbsent(
+                                          entries[i].path, GlobalKey.new),
+                                      child: _CategoryTile(
+                                        entry: entries[i],
+                                        compact: true,
+                                        selected:
+                                            _isEmbeddable(entries[i].path) &&
+                                                sel == entries[i].path,
+                                        onTapOverride:
+                                            _isEmbeddable(entries[i].path)
+                                                ? () => ref
+                                                    .read(landscapeSettingsCategoryProvider
+                                                        .notifier)
+                                                    .state = entries[i].path
+                                                : null,
+                                      ),
                                     ),
                                 ],
                               ),

@@ -157,6 +157,7 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/download',
   '/settings/advanced',
   '/about',
+  '/plugin',
 };
 
 /// 分支根页面需要的底部避让高度。
