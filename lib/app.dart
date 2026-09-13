@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -354,7 +355,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     // 增量路由 reconfigure，从而彻底规避该竞态。语言切换重挂载一次开销可接受。
     return init.hasError
         ? MaterialApp(
-            title: tr('弦予音乐'),
+            // 多任务标题：debug 带「·测试」后缀，与正式版一眼区分。
+            title: '${tr('弦予音乐')}${kDebugMode ? '·测试' : ''}',
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,
@@ -371,7 +373,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             // key 随「解析后的界面语言」变化（覆盖系统模式下的系统语言切换），
             // 强制整体重挂载刷新全部 tr() 文案。
             key: ValueKey('app-${I18n.mode.name}'),
-            title: tr('弦予音乐'),
+            title: '${tr('弦予音乐')}${kDebugMode ? '·测试' : ''}',
             debugShowCheckedModeBanner: false,
             theme: theme,
             darkTheme: darkTheme,

@@ -397,9 +397,13 @@ Future<void> runPluginAutoUpdateOnStartup(
   try {
     if (!await PluginPreferences.getAutoUpdateOnStartup()) return;
     final engine = await container.read(pluginEngineProvider.future);
+    final manager = container.read(pluginManagerProvider.notifier);
+    // pluginManagerProvider 懒加载，此处触发其创建后 sources 往往还没被异步
+    // refresh 填充；空列表会让批量检查静默跳过全部插件且无重试。先确保加载。
+    if (manager.sources.isEmpty) await manager.refresh();
     final service = PluginUpdateService(
       engine,
-      container.read(pluginManagerProvider.notifier),
+      manager,
       subscriptionsReader: () =>
           container.read(pluginSubscriptionsProvider),
     );

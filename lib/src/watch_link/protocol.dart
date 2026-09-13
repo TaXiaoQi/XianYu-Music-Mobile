@@ -13,7 +13,7 @@
 ///
 /// 消息方向约定：
 /// - 双向：hello / bye / ping / pong
-/// - 手机→手表：state / now_playing / position
+/// - 手机→手表：state / now_playing / position / lyric
 /// - 手表→手机：cmd
 ///
 /// 扩展预留：type 0x40–0x7F 为云端兜底通道（payload 以 `cloud_` 前缀），
@@ -51,11 +51,19 @@ class LinkMsgType {
   static const int nowPlaying = 0x11;
   static const int position = 0x12;
 
+  /// 手机→手表：当前歌歌词（payload `{"lyric":{"id":"<歌id>","payload":"<结构化payload JSON>"}}`）。
+  /// payload 为 parseLyrics 归一化产物（displayLines 格式），超限自动分片。
+  static const int lyric = 0x13;
+
   /// 手表→手机。
   static const int cmd = 0x20;
 
   /// 分片（任何方向）。
   static const int chunk = 0x30;
+
+  /// 手机→手表：云端兜底绑定信息（payload `{"cloud_bind":{"key":"<64hex>","url":"wss://.."}}`），
+  /// 经蓝牙链路下发；手表持久化后可在蓝牙不可达时改走云端中继。
+  static const int cloudBind = 0x41;
 
   static bool known(int t) =>
       t == hello ||
@@ -65,8 +73,10 @@ class LinkMsgType {
       t == state ||
       t == nowPlaying ||
       t == position ||
+      t == lyric ||
       t == cmd ||
-      t == chunk;
+      t == chunk ||
+      t == cloudBind;
 }
 
 /// 播放模式（与移动端 PlayMode 语义对齐，JSON 传输用字符串）。
@@ -162,8 +172,25 @@ class LinkMessage {
   static LinkMessage position({required double pos, required double duration}) =>
       LinkMessage(LinkMsgType.position, {'pos': pos, 'duration': duration});
 
+  /// 手机→手表：当前歌歌词（payload 为结构化 payload JSON 字符串）。
+  static LinkMessage lyric({required String id, required String payload}) =>
+      LinkMessage(LinkMsgType.lyric, {
+        'lyric': {
+          'id': id,
+          'payload': payload,
+        },
+      });
+
   static LinkMessage cmd(String action, [Map<String, dynamic>? arg]) =>
       LinkMessage(LinkMsgType.cmd, {'action': action, 'arg': ?arg});
+
+  static LinkMessage cloudBind({required String key, String? url}) =>
+      LinkMessage(LinkMsgType.cloudBind, {
+        'cloud_bind': {
+          'key': key,
+          'url': ?url,
+        },
+      });
 
   Map<String, dynamic> toJson() => {'type': type, 'payload': payload};
 
@@ -211,23 +238,42 @@ List<Uint8List> encodeFrames(LinkMessage msg, {required int Function() nextSeq})
     return [_encodeOne(msg.type, nextSeq(), jsonBytes)];
   }
 
-  // 分片：按 UTF-8 安全边界切块（避免截断多字节字符）。
-  final chunks = _splitUtf8Safe(jsonBytes, kMaxPayloadBytes - 512);
+  // 分片：按 UTF-8 安全边界切块（避免截断多字节字符）。chunk 帧的 data
+  // 会经 jsonEncode 再转义（引号/反斜杠/控制字符可膨胀数倍），从保守块
+  // 大小起步，编码后仍超限则对半收缩块大小重切。
+  var chunkSize = kMaxPayloadBytes - 512;
+  var chunks = _splitUtf8Safe(jsonBytes, chunkSize);
+  while (_chunkFramesOverflow(chunks)) {
+    chunkSize = chunkSize ~/ 2;
+    chunks = _splitUtf8Safe(jsonBytes, chunkSize);
+  }
   final cid = DateTime.now().microsecondsSinceEpoch & 0xFFFFFFFF;
   final frames = <Uint8List>[];
   final seqBase = nextSeq();
   for (var i = 0; i < chunks.length; i++) {
-    final payload = jsonEncode({
-      'cid': cid,
-      'total': chunks.length,
-      'idx': i,
-      'type': msg.type,
-      'data': utf8.decode(chunks[i], allowMalformed: false),
-    });
-    frames.add(_encodeOne(LinkMsgType.chunk, (seqBase + i) & 0xFFFF, utf8.encode(payload)));
+    frames.add(_encodeOne(
+      LinkMsgType.chunk,
+      (seqBase + i) & 0xFFFF,
+      utf8.encode(_chunkPayloadJson(chunks[i], cid, chunks.length, i, msg.type)),
+    ));
   }
   return frames;
 }
+
+/// 构造 chunk 帧 payload JSON。
+String _chunkPayloadJson(Uint8List chunk, int cid, int total, int idx, int type) =>
+    jsonEncode({
+      'cid': cid,
+      'total': total,
+      'idx': idx,
+      'type': type,
+      'data': utf8.decode(chunk, allowMalformed: false),
+    });
+
+/// 任一分片编码成完整帧后是否超限（用占位 cid/idx 估长，误差仅个位字节）。
+bool _chunkFramesOverflow(List<Uint8List> chunks) => chunks.any((c) =>
+    utf8.encode(_chunkPayloadJson(c, 0, chunks.length, 0, 0)).length >
+    kMaxPayloadBytes);
 
 Uint8List _encodeOne(int type, int seq, List<int> jsonBytes) {
   if (jsonBytes.length > kMaxPayloadBytes) {

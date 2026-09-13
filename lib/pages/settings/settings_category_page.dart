@@ -230,6 +230,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _CardGroup(
         children: [
           _watchLinkageTile(context, ref, s, n),
+          _watchCloudTile(context, s, n),
           _watchTransferTile(context, ref, s),
         ],
       ),
@@ -272,6 +273,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       subtitle: subtitle,
       value: enabled,
       onChanged: (v) => n.setWatchLinkageEnabled(v),
+    );
+  }
+
+  /// 云端兜底通道开关：蓝牙不可用时经服务器中继保持手表连接。
+  Widget _watchCloudTile(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final enabled = s?.watchLinkCloudEnabled ?? true;
+    final subtitle = !enabled
+        ? tr('关闭后手表仅在蓝牙连接时可用')
+        : tr('蓝牙不可用时经服务器中继保持连接');
+    return _switchTile(
+      context,
+      icon: Icons.cloud_sync_outlined,
+      title: tr('云端兜底通道'),
+      subtitle: subtitle,
+      value: enabled,
+      onChanged: (v) => n.setWatchLinkCloudEnabled(v),
     );
   }
 

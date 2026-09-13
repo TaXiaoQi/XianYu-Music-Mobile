@@ -285,6 +285,9 @@ class AppSettings {
     // 传递给腕上设备：ask=每次播放询问；remember=记住选择（配合下方 AutoTransfer）。
     this.watchLinkTransferMode = 'ask',
     this.watchLinkAutoTransfer = false,
+    // 云端兜底：蓝牙不可达时经服务器 WS 中继控制消息（P4）。
+    this.watchLinkCloudEnabled = true,
+    this.watchLinkCloudKey = '',
     // DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。
     this.dlnaRendererEnabled = false,
     // DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
@@ -538,6 +541,12 @@ class AppSettings {
   /// 记住选择的结果：true=自动传递；false=不传递（仅 `remember` 模式生效）。
   final bool watchLinkAutoTransfer;
 
+  /// 云端兜底通道开关：开启后蓝牙不可达时经服务器 WS 中继与手表通信。
+  final bool watchLinkCloudEnabled;
+
+  /// 云端中继配对凭据（64 位 hex 随机数；空 = 尚未生成，首次启用时懒生成）。
+  final String watchLinkCloudKey;
+
   /// DLNA 渲染器（接收端）：开启后本机作为 DLNA 设备出现在局域网，
   /// 其它 App（如 QQ 音乐、网易云音乐）可直接投歌到本端播放。
   final bool dlnaRendererEnabled;
@@ -641,6 +650,8 @@ class AppSettings {
     bool? watchLinkageEnabled,
     String? watchLinkTransferMode,
     bool? watchLinkAutoTransfer,
+    bool? watchLinkCloudEnabled,
+    String? watchLinkCloudKey,
     bool? dlnaRendererEnabled,
     String? dlnaRendererName,
     bool? showRealSourceName,
@@ -775,6 +786,9 @@ class AppSettings {
           watchLinkTransferMode ?? this.watchLinkTransferMode,
       watchLinkAutoTransfer:
           watchLinkAutoTransfer ?? this.watchLinkAutoTransfer,
+      watchLinkCloudEnabled:
+          watchLinkCloudEnabled ?? this.watchLinkCloudEnabled,
+      watchLinkCloudKey: watchLinkCloudKey ?? this.watchLinkCloudKey,
       dlnaRendererEnabled: dlnaRendererEnabled ?? this.dlnaRendererEnabled,
       dlnaRendererName: dlnaRendererName ?? this.dlnaRendererName,
       showRealSourceName: showRealSourceName ?? this.showRealSourceName,
@@ -932,6 +946,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('watchLinkTransferMode') ?? 'ask',
       watchLinkAutoTransfer:
           prefs.getBool('watchLinkAutoTransfer') ?? false,
+      watchLinkCloudEnabled:
+          prefs.getBool('watchLinkCloudEnabled') ?? true,
+      watchLinkCloudKey: prefs.getString('watchLinkCloudKey') ?? '',
       dlnaRendererEnabled: prefs.getBool('dlnaRendererEnabled') ?? false,
       dlnaRendererName: prefs.getString('dlnaRendererName') ?? '',
       showRealSourceName: prefs.getBool('showRealSourceName') ?? false,
@@ -1113,6 +1130,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
       prefs.setString('watchLinkTransferMode', next.watchLinkTransferMode),
       prefs.setBool('watchLinkAutoTransfer', next.watchLinkAutoTransfer),
+      prefs.setBool('watchLinkCloudEnabled', next.watchLinkCloudEnabled),
+      prefs.setString('watchLinkCloudKey', next.watchLinkCloudKey),
       prefs.setBool('dlnaRendererEnabled', next.dlnaRendererEnabled),
       prefs.setString('dlnaRendererName', next.dlnaRendererName),
       prefs.setBool('showRealSourceName', next.showRealSourceName),
@@ -1135,6 +1154,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLastTab(int t) => _save((state.valueOrNull ?? const AppSettings()).copyWith(lastTab: t));
   Future<void> setWatchLinkageEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkageEnabled: v));
   Future<void> setWatchLinkTransferMode(String m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: m));
+  Future<void> setWatchLinkCloudEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkCloudEnabled: v));
+  Future<void> setWatchLinkCloudKey(String k) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkCloudKey: k));
   /// 弹窗勾选「默认传递」后落库：切到记住选择并写入记住的行为。
   Future<void> setWatchLinkTransferRemembered({required bool autoTransfer}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'remember', watchLinkAutoTransfer: autoTransfer));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));

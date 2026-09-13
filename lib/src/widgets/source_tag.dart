@@ -63,7 +63,9 @@ String songSourceLabel(
   //    歌单 ImportedSong 直接给插件 id。
   final pid = pluginId ?? _pluginIdFromJson(onlineSongJson);
   if (pid != null && pid.isNotEmpty) {
-    final pluginState = ref.read(pluginManagerProvider);
+    // watch 而非 read：冷启动时插件列表尚未异步加载完成会误落「在线」兜底，
+    // watch 让列表就绪后标签自动刷新为真实插件名（与日推时序修复同思路）。
+    final pluginState = ref.watch(pluginManagerProvider);
     for (final p in pluginState.sources) {
       if (p.id == pid) {
         return showReal ? resolveRealSourceName(p.name) : p.name;

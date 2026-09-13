@@ -604,21 +604,34 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       );
     }
 
+    // watch 插件列表：插件冷启动加载完成 / 登录同步装回插件 / 启停插件
+    // 都会自动重建本 provider 重算日推（修复登录后日推先于插件同步执行
+    // 导致「没有插件无法日推」且永不自愈的时序问题）。
+    final pluginSources = ref.watch(pluginManagerProvider).sources;
+    // 尚无已启用插件：直接空态，不请求算法接口（无插件也执行不了搜索，
+    // 避免登录瞬间反复请求触发服务端限流；插件同步完成后上方 watch 自动重算）。
+    if (!pluginSources.any((s) => s.enabled)) {
+      return const DailyRecommendState(items: []);
+    }
+
     // 算法本体由服务器下发，本机执行（插件优先，无插件退回 LX → 过滤打分 → 种子洗牌）
     final data = await ref
         .read(authProvider.notifier)
         .requestAction('get_daily_recommend', {'ciyuanxi_id': ciyuanxiId});
     final algorithm = DailyRecommendAlgorithm.fromJson(data);
     final engine = await ref.read(pluginEngineProvider.future);
-    final pluginSources = await engine.store.loadSources();
     final candidates = await _executeAlgorithm(algorithm, engine, pluginSources);
-    await _saveCache(_DailyCache(
-      ciyuanxiId: ciyuanxiId,
-      date: today,
-      batch: 0,
-      algorithm: algorithm,
-      candidates: candidates,
-    ));
+    // 空候选不写缓存：空缓存会被 fromJson 拒绝而永久失效，导致之后每次
+    // 重建都重复请求算法接口（易触发限流）；保持无缓存让下次重建自然重试。
+    if (candidates.isNotEmpty) {
+      await _saveCache(_DailyCache(
+        ciyuanxiId: ciyuanxiId,
+        date: today,
+        batch: 0,
+        algorithm: algorithm,
+        candidates: candidates,
+      ));
+    }
     final items = _pickBatch(candidates, algorithm, 0);
     unawaited(_backfillWyCovers(items));
     return DailyRecommendState(

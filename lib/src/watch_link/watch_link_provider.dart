@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,12 +9,17 @@ import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
 import '../i18n/i18n.dart';
+import '../lyrics/lyrics_repository.dart';
 import '../navigation/routes.dart';
 import '../player/player_provider.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
+import 'cloud_channel.dart';
 import 'protocol.dart';
 import 'watch_link_channel.dart';
+
+/// 云端中继默认地址（服务端 `/watch-relay`，与手表端默认一致）。
+const String kWatchCloudRelayUrl = 'wss://api.xianyumusic.cn/watch-relay';
 
 /// 手表联动编排层（手机端）。
 ///
@@ -31,7 +37,11 @@ class WatchLinkController {
 
   final ProviderContainer _container;
   final WatchLinkChannel _channel = WatchLinkChannel();
+  final WatchCloudChannel _cloud = WatchCloudChannel();
   FrameDecoder _decoder = FrameDecoder();
+
+  /// 云通道独立解码器（与蓝牙字节流隔离，防半包串流）。
+  final FrameDecoder _cloudDecoder = FrameDecoder();
   final int Function() _nextSeq = makeSeqGenerator();
 
   final List<StreamSubscription<dynamic>> _subs = [];
@@ -42,6 +52,20 @@ class WatchLinkController {
   bool _connected = false;
   String _connectedName = '';
 
+  // ---- 云端兜底通道状态 ----
+
+  /// 云通道应保持运行（联动开 + 云兜底开）。
+  bool _cloudRunning = false;
+
+  /// 手表当前是否经云端在线。
+  bool _cloudWatchOnline = false;
+
+  /// 手表经 hello 上报的名字（控制命令来源展示用）。
+  String _cloudWatchName = '';
+
+  Timer? _cloudReconnect;
+  Duration _cloudBackoff = const Duration(seconds: 5);
+
   /// 当前播放会话是否已获准推送（起播经确认/记住选择后置 true，暂停或停止后清空）。
   bool _transferActive = false;
 
@@ -50,6 +74,9 @@ class WatchLinkController {
 
   /// 当前已推送歌曲 key（切歌检测）。
   String? _songKey;
+
+  /// 已推送歌词的歌曲 id（同曲只发一次；快照推送时置空强制重发）。
+  String? _lyricSentSongId;
   bool _lastPlaying = false;
   LinkPlayMode _lastMode = LinkPlayMode.order;
   bool _lastLiked = false;
@@ -62,13 +89,15 @@ class WatchLinkController {
     _subs.add(_channel.onRaw.listen(_onRaw));
     _subs.add(_channel.onConnection.listen(_onConnection));
     _subs.add(_channel.onPermission.listen(_onPermission));
+    _subs.add(_cloud.onRaw.listen(_onCloudRaw));
+    _subs.add(_cloud.onEvent.listen(_onCloudEvent));
 
     // 设置开关驱动启停；首次读取按当前值应用。
     _providerSubs.add(_container.listen<AsyncValue<AppSettings>>(
       settingsProvider,
       (prev, next) {
         final s = next.valueOrNull;
-        if (s != null) _applyEnabled(s.watchLinkageEnabled);
+        if (s != null) _applyLinkSettings(s);
       },
       fireImmediately: true,
     ));
@@ -101,10 +130,22 @@ class WatchLinkController {
     for (final s in _providerSubs) {
       s.close();
     }
+    _cloudReconnect?.cancel();
+    _cloud.close();
     _channel.stop();
   }
 
   // ---- 开关与权限 ----
+
+  /// 按设置应用联动启停（蓝牙服务 + 云端兜底通道）。
+  void _applyLinkSettings(AppSettings s) {
+    _applyEnabled(s.watchLinkageEnabled);
+    _applyCloud(
+      PlatformCaps.isAndroid &&
+          s.watchLinkageEnabled &&
+          s.watchLinkCloudEnabled,
+    );
+  }
 
   Future<void> _applyEnabled(bool enabled) async {
     if (!enabled) {
@@ -130,6 +171,73 @@ class WatchLinkController {
     _channel.start().then((_) => _running = true);
   }
 
+  // ---- 云端兜底通道（P4） ----
+
+  /// 按设置启停云通道（幂等）：断线 5s→60s 指数退避重连。
+  Future<void> _applyCloud(bool desired) async {
+    if (!desired) {
+      _cloudRunning = false;
+      _cloudWatchOnline = false;
+      _cloudReconnect?.cancel();
+      await _cloud.close();
+      return;
+    }
+    if (_cloudRunning) return;
+    _cloudRunning = true;
+    final key = await _ensureCloudKey();
+    if (_cloudRunning && key.isNotEmpty) _connectCloud();
+  }
+
+  /// 读取云端凭据，空则懒生成 32 字节随机 hex（仅生成一次并落库）。
+  Future<String> _ensureCloudKey() async {
+    final s = _container.read(settingsProvider).valueOrNull;
+    final existing = s?.watchLinkCloudKey ?? '';
+    if (existing.isNotEmpty) return existing;
+    final rnd = Random.secure();
+    final key = List.generate(32, (_) => rnd.nextInt(256))
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await _container.read(settingsProvider.notifier).setWatchLinkCloudKey(key);
+    return key;
+  }
+
+  void _connectCloud() {
+    _cloudReconnect?.cancel();
+    _cloud.connect(url: kWatchCloudRelayUrl, key: _cloudKeyOf());
+  }
+
+  String _cloudKeyOf() =>
+      _container.read(settingsProvider).valueOrNull?.watchLinkCloudKey ?? '';
+
+  void _onCloudRaw(Uint8List bytes) {
+    for (final msg in _cloudDecoder.feed(bytes)) {
+      _onMessage(msg, fromCloud: true);
+    }
+  }
+
+  void _onCloudEvent(CloudLinkEvent evt) {
+    switch (evt.kind) {
+      case CloudLinkEvent.ready:
+        _cloudWatchOnline = true;
+        _cloudBackoff = const Duration(seconds: 5);
+      case CloudLinkEvent.peerLost:
+        _cloudWatchOnline = false;
+      case CloudLinkEvent.replaced:
+      case CloudLinkEvent.closed:
+        _cloudWatchOnline = false;
+        if (_cloudRunning) {
+          // 断线退避重连（ready 时复位）。
+          _cloudReconnect?.cancel();
+          _cloudReconnect = Timer(_cloudBackoff, () {
+            _cloudBackoff = _cloudBackoff * 2 > const Duration(seconds: 60)
+                ? const Duration(seconds: 60)
+                : _cloudBackoff * 2;
+            _connectCloud();
+          });
+        }
+    }
+  }
+
   // ---- 连接事件 ----
 
   void _onConnection(WatchLinkConnection evt) {
@@ -149,20 +257,32 @@ class WatchLinkController {
     }
   }
 
-  void _onMessage(LinkMessage msg) {
+  void _onMessage(LinkMessage msg, {bool fromCloud = false}) {
     switch (msg.type) {
       case LinkMsgType.hello:
-        // 互换握手：回 hello + 立即推快照。
-        _send(LinkMessage.hello(
-          ver: kLinkProtocolVersion,
-          role: 'phone',
-          name: '弦予音乐',
-        ));
-        _pushSnapshot();
+        if (fromCloud) {
+          // 云端握手：手表经中继上线，回 hello + 快照（同通道回帧）。
+          _cloudWatchName = (msg.payload['name'] as String?) ?? '';
+          _send(LinkMessage.hello(
+            ver: kLinkProtocolVersion,
+            role: 'phone',
+            name: '弦予音乐',
+          ), cloud: true);
+          _pushSnapshot(cloud: true);
+        } else {
+          // 蓝牙握手：回 hello + 立即推快照，并下发云端兜底绑定凭据。
+          _send(LinkMessage.hello(
+            ver: kLinkProtocolVersion,
+            role: 'phone',
+            name: '弦予音乐',
+          ));
+          _pushSnapshot();
+          _maybePushCloudBind();
+        }
       case LinkMsgType.ping:
         _send(LinkMessage(LinkMsgType.pong, {
           't': msg.payload['t'],
-        }));
+        }), cloud: fromCloud);
       case LinkMsgType.bye:
         // 手表主动告别，等 Kotlin 上报断连。
         break;
@@ -171,6 +291,15 @@ class WatchLinkController {
       default:
         break;
     }
+  }
+
+  /// 蓝牙握手后向手表下发云端兜底凭据（联动开 + 云兜底开 + 凭据已生成）。
+  void _maybePushCloudBind() {
+    final s = _container.read(settingsProvider).valueOrNull;
+    if (s?.watchLinkCloudEnabled != true) return;
+    final key = s?.watchLinkCloudKey ?? '';
+    if (key.isEmpty) return;
+    _send(LinkMessage.cloudBind(key: key, url: kWatchCloudRelayUrl));
   }
 
   Future<void> _onCmd(LinkMessage msg) async {
@@ -212,7 +341,7 @@ class WatchLinkController {
   /// 是否获准推送——`ask` 模式弹窗询问，`remember` 模式按记住的选择
   /// 直接放行或拒绝；未获准的会话不推任何帧（含切歌/进度/状态）。
   void _onPlayback(PlaybackState st) {
-    if (!_connected) return;
+    if (!_connected && !_cloudWatchOnline) return;
     final item = st.current;
     final key = item == null
         ? null
@@ -257,6 +386,7 @@ class WatchLinkController {
       ));
       _lastPosPush = DateTime.now();
       _send(LinkMessage.position(pos: st.position, duration: st.duration));
+      _maybePushLyric();
       return;
     }
     final mode = linkPlayModeFromInt(st.playMode);
@@ -300,7 +430,9 @@ class WatchLinkController {
     final result = await showPredictiveDialog<(bool, bool)>(
       context: context,
       barrierDismissible: true,
-      builder: (_) => _TransferConfirmDialog(watchName: _connectedName),
+      builder: (_) => _TransferConfirmDialog(
+        watchName: _connectedName.isNotEmpty ? _connectedName : _cloudWatchName,
+      ),
     );
     if (result == null) return; // 点外部/系统返回关闭：本次不传、不记。
     final (send, remember) = result;
@@ -318,7 +450,7 @@ class WatchLinkController {
 
   /// 独立 state 推送（收藏变化等触发）。未获准的播放会话不推。
   void _pushState() {
-    if (!_connected || !_transferActive) return;
+    if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
     final st = _container.read(playerProvider);
     final item = st.current;
     _lastPlaying = st.isPlaying;
@@ -334,8 +466,8 @@ class WatchLinkController {
 
   /// 全量快照（握手后立即同步当前播放现场）。
   /// 记住「不传递」时整个链路不推任何帧（含握手快照），保持语义一致。
-  void _pushSnapshot() {
-    if (!_connected) return;
+  void _pushSnapshot({bool cloud = false}) {
+    if (!_connected && !_cloudWatchOnline) return;
     final s = _container.read(settingsProvider).valueOrNull;
     if (s?.watchLinkTransferMode == 'remember' &&
         s?.watchLinkAutoTransfer != true) {
@@ -356,15 +488,38 @@ class WatchLinkController {
       album: item?.album ?? '',
       cover: _coverOf(item),
       duration: st.duration,
-    ));
+    ), cloud: cloud);
     _send(LinkMessage.state(
       isPlaying: st.isPlaying,
       playMode: _lastMode,
       liked: _lastLiked,
       volume: _volumeOf(),
-    ));
+    ), cloud: cloud);
     _lastPosPush = DateTime.now();
-    _send(LinkMessage.position(pos: st.position, duration: st.duration));
+    _send(LinkMessage.position(pos: st.position, duration: st.duration),
+        cloud: cloud);
+    // 握手快照强制重发歌词（手表可能在切歌瞬间掉线错过上一条）。
+    _lyricSentSongId = null;
+    _maybePushLyric(cloud: cloud);
+  }
+
+  /// 异步推送当前歌歌词（结构化 payload JSON，帧层自动分片）。
+  ///
+  /// 同曲只发一次（快照时由调用方置空强制重发）；歌词获取失败静默跳过，
+  /// 手表端显示「暂无歌词」。发送前复检链路与会话授权，防止异步窗口内状态失效。
+  Future<void> _maybePushLyric({bool cloud = false}) async {
+    if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
+    final item = _container.read(playerProvider).current;
+    final id = item?.path ?? '';
+    if (item == null || id.isEmpty || id == _lyricSentSongId) return;
+    _lyricSentSongId = id;
+    try {
+      final payload =
+          await _container.read(lyricsRepositoryProvider).fetchPayloadJson(item);
+      if (payload.isEmpty || payload == 'null') return;
+      if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
+      _send(LinkMessage.lyric(id: id, payload: payload), cloud: cloud);
+    } catch (_) {}
   }
 
   bool _likedOf(QueueItem? item) {
@@ -394,10 +549,16 @@ class WatchLinkController {
     return null;
   }
 
-  void _send(LinkMessage msg) {
+  /// 发送消息：显式 [cloud]=true 走云端；否则蓝牙优先、蓝牙未连且手表云在线时走云。
+  void _send(LinkMessage msg, {bool cloud = false}) {
+    final useCloud = cloud || (!_connected && _cloudWatchOnline);
     try {
       for (final frame in encodeFrames(msg, nextSeq: _nextSeq)) {
-        _channel.send(frame);
+        if (useCloud) {
+          _cloud.send(frame);
+        } else {
+          _channel.send(frame);
+        }
       }
     } catch (_) {
       // 发送失败静默：断连由读线程统一上报。

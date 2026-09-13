@@ -18,6 +18,9 @@ import 'lyric_model.dart';
 final Map<String, (I18nMode, List<LyricLine>)> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
+/// 歌词 payload JSON 缓存（腕上链路推送用，path → payload）。
+final Map<String, String> _payloadCache = {};
+
 void _cacheLyrics(String path, List<LyricLine> lines) {
   if (path.isEmpty || lines.isEmpty) return;
   _lyricsCache[path] = (I18n.mode, lines);
@@ -43,7 +46,7 @@ class LyricsRepository {
       _lyricsCache.remove(item.path);
     }
     try {
-      final jsonStr = await _fetchLyricsJson(item);
+      final jsonStr = await fetchPayloadJson(item);
       if (jsonStr.isEmpty || jsonStr == 'null') return const [];
       // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
       final parsed = await compute(_parseLyricsJson, jsonStr);
@@ -54,6 +57,23 @@ class LyricsRepository {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// 获取歌词结构化 payload JSON（parseLyrics 归一化产物 / 本地库原样返回）。
+  ///
+  /// 除解析消费外，还作为腕上联动链路的歌词推送格式（手表端同款解析）。
+  /// 带 path 级小缓存：同曲不重复走插件网络请求。
+  Future<String> fetchPayloadJson(QueueItem item) async {
+    final cached = _payloadCache[item.path];
+    if (cached != null) return cached;
+    final payload = await _fetchLyricsJson(item);
+    if (payload.isNotEmpty && payload != 'null') {
+      _payloadCache[item.path] = payload;
+      if (_payloadCache.length > _lyricsCacheMax) {
+        _payloadCache.remove(_payloadCache.keys.first);
+      }
+    }
+    return payload;
   }
 
   /// 按优先级获取歌词原始 JSON（插件 → 内置 LX 音源 → 本地数据库）。
