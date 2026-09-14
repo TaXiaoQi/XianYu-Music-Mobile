@@ -1524,14 +1524,21 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final localJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
       final localStats = jsonDecode(localJson) as Map<String, dynamic>;
       final cloud = await _api.downloadListenStats();
-      if (cloud == null) return;
+      if (cloud == null) {
+        AppLogger.instance.log('sync', '[听歌统计] 未登录/无弦予号，跳过');
+        return;
+      }
       final cloudMerged = (cloud['merged'] as bool?) ?? false;
       final resetAt = (cloud['resetAt'] as int?) ?? 0;
       final cloudStats = cloud['listenStats'] as Map<String, dynamic>?;
+      AppLogger.instance.log('sync', '[听歌统计] 本地=${_summarizeStats(localStats)} '
+          '云端=${cloudStats == null ? '无快照' : _summarizeStats(cloudStats)} '
+          'merged=$cloudMerged resetAt=$resetAt');
 
       // 规则4：服务器后台清零（仅当云端清零时间点更新于本机已应用的）。
       final lastResetAt = await _getLastListenResetAt();
       if (resetAt > lastResetAt) {
+        AppLogger.instance.log('sync', '[听歌统计] 规则4：云端清零下发（resetAt=$resetAt > 本机已应用=$lastResetAt），本地清零');
         await rust.statsClearListenStats(dbPath: dbPath);
         await _setLastListenResetAt(resetAt);
         await _storePendingListenResetNotice(resetAt, cloud['reason'] as String? ?? '');
@@ -1547,6 +1554,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // 规则1：服务器无快照 → 上传本地（初次注册）。
       if (cloudStats == null) {
+        AppLogger.instance.log('sync', '[听歌统计] 规则1：云端无快照，上传本地');
         await _api.uploadListenStats(localStats, resetAt: resetAt);
         _finishListenStatsSync();
         return;
@@ -1557,6 +1565,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // 规则3：服务器有、本地无 → 下发（MAX 合并，本地为空即采用云端值）。
       if (cloudNonZero && !localNonZero) {
+        AppLogger.instance.log('sync', '[听歌统计] 规则3：本地为空，下发云端');
         await rust.statsImportListenSnapshot(
           dbPath: dbPath,
           snapshotJson: jsonEncode(cloudStats),
@@ -1574,12 +1583,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
       // 规则2：双端都有数据。
       if (cloudNonZero && localNonZero) {
         if (cloudMerged) {
+          AppLogger.instance.log('sync', '[听歌统计] 规则2a：已并入过，取较大值刷新');
           // 已并入过 → 取两端较大值刷新（避免重复累加）。
           await rust.statsImportListenSnapshot(
             dbPath: dbPath,
             snapshotJson: jsonEncode(cloudStats),
           );
         } else {
+          AppLogger.instance.log('sync', '[听歌统计] 规则2b：双端有数据，累加合并一次');
           // 老用户回归未及时登录：累加合并一次并标记 merged。
           await rust.statsImportListenSnapshotAdd(
             dbPath: dbPath,
@@ -1587,6 +1598,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           );
         }
         final mergedJson = await rust.statsExportListenSnapshot(dbPath: dbPath);
+        AppLogger.instance
+            .log('sync', '[听歌统计] 合并后=${_summarizeStats(jsonDecode(mergedJson) as Map<String, dynamic>)}，上传');
         await _api.uploadListenStats(
           jsonDecode(mergedJson) as Map<String, dynamic>,
           merged: true,
@@ -1598,10 +1611,20 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       // 云端仅存空存根（非清零）→ 视为规则1，上传本地。
       await _api.uploadListenStats(localStats, resetAt: resetAt);
+      AppLogger.instance.log('sync', '[听歌统计] 规则1/空存根：已上传本地快照');
       _finishListenStatsSync();
     } catch (e) {
       AppLogger.instance.log('sync', '听歌统计同步失败: $e');
     }
+  }
+
+  /// 快照摘要（日志用）：全局总时长秒 + 每日条数。
+  String _summarizeStats(Map<String, dynamic> stats) {
+    final global = stats['global'] as Map<String, dynamic>?;
+    final totalMs = (global?['total_play_time_ms'] as num?)?.toInt() ?? 0;
+    final daily = stats['daily'];
+    final dailyCount = daily is List ? daily.length : 0;
+    return '总${(totalMs / 1000).round()}s/日条$dailyCount';
   }
 
   void _finishListenStatsSync() async {
