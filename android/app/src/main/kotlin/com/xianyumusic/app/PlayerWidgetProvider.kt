@@ -214,12 +214,14 @@ internal object WidgetShared {
     }
 
     /**
-     * Android 15+ 组件选择面板的「生成的预览」：未调用 setWidgetPreview 时系统
-     * 回退 previewImage（layer-list 在部分 ROM 上渲染异常）。用各入口的预览布局
-     * 推送一次；系统限速约 2 次/小时 → 每小时最多尝试一轮，全部成功后记版本号，
-     * 预览布局有改动时递增 PREVIEW_GEN_VERSION 重新推送。
+     * Android 15+ 组件选择面板的「生成的预览」：推送单 ImageView 满幅位图
+     * （与 previewImage 同一张 PNG）。此前推真实布局 RemoteViews，MagicOS
+     * 桌面对布局的预览渲染错乱（元素放大/错位、多入口缓存串扰），预览坏图；
+     * 单 ImageView 位图任何桌面都只会原样绘制。系统限速约 2 次/小时 →
+     * 每小时最多尝试一轮，全部成功后记版本号，位图有改动时递增
+     * PREVIEW_GEN_VERSION 重新推送。
      */
-    private const val PREVIEW_GEN_VERSION = 13
+    private const val PREVIEW_GEN_VERSION = 14
     private const val PREVIEW_GEN_RETRY_MS = 55 * 60 * 1000L
 
     fun ensurePreviewGen(ctx: Context) {
@@ -231,16 +233,17 @@ internal object WidgetShared {
         prefs.edit().putLong("preview_gen_attempt_ts", now).apply()
         val mgr = AppWidgetManager.getInstance(ctx)
         val defs = listOf(
-            SquareWidgetProvider::class.java to R.layout.player_widget_2x2,
-            RecognizeWidgetProvider::class.java to R.layout.player_widget_recognize,
+            SquareWidgetProvider::class.java to R.drawable.widget_preview_square,
+            RecognizeWidgetProvider::class.java to R.drawable.widget_preview_recognize,
         )
         var ok = 0
-        for ((cls, layout) in defs) {
+        for ((cls, res) in defs) {
             try {
+                val rv = RemoteViews(ctx.packageName, R.layout.player_widget_gen_preview)
+                rv.setImageViewResource(R.id.genPreview, res)
                 mgr.setWidgetPreview(
                     ComponentName(ctx, cls),
-                    AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN,
-                    RemoteViews(ctx.packageName, layout))
+                    AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN, rv)
                 ok++
             } catch (_: Exception) {
             }
@@ -281,6 +284,13 @@ internal object WidgetShared {
             else -> R.layout.player_widget
         }
         val views = RemoteViews(ctx.packageName, layout)
+
+        // 圆角统一由 root 自裁：root 的 widget_bg（圆角 shape）提供 outline，
+        // clipToOutline 按实际渲染尺寸裁出精确圆角。本 ROM（MagicOS）桌面不做
+        // 组件整体裁剪（方形背景直接呈直角），自绘位图圆角又会因 fitXY 拉伸
+        // 缩放与 widget_bg 标准圆角错位（四角漏暗月牙）；outline 裁剪与拉伸
+        // 无关，恒精确对齐。minSdk 24，setClipToOutline(API 18+) 全覆盖。
+        views.setBoolean(R.id.root, "setClipToOutline", true)
 
         val title = s.optString("title").takeUnless { it.isBlank() } ?: "弦予音乐"
         val artist = s.optString("artist").takeUnless { it.isBlank() } ?: "未在播放"
@@ -664,7 +674,8 @@ internal object WidgetShared {
     /**
      * 封面 -> 整卡模糊背景位图（三行大卡）：
      * 极小尺寸下采样 + 双线性放大形成快速平滑模糊，叠加上浅下深暗色蒙层
-     * （类播放详情页），并按宽度比例裁圆角对齐 widget_bg 的 20dp 圆角。
+     * （类播放详情页）。方形满幅无圆角：圆角由 root 的 clipToOutline
+     * （widget_bg 圆角 shape 提供 outline）按实际渲染尺寸统一裁剪。
      */
     private fun blurredBackground(
         ctx: Context, path: String, sizeDp: Pair<Int, Int>?,
@@ -676,22 +687,11 @@ internal object WidgetShared {
             // 位图宽高 = 卡片实际像素尺寸（与卡片同宽高比，fitXY 渲染零变形）。
             val w = ((sizeDp?.first ?: 300) * density).toInt().coerceAtLeast(1)
             val h = ((sizeDp?.second ?: 150) * density).toInt().coerceAtLeast(1)
-            // 圆角与卡片容器（widget_bg）同一半径：API 31+ 跟随系统组件圆角
-            // （widget_card_radius），与桌面裁剪半径重合，角落不透壁纸。
-            val radius = ctx.resources.getDimension(R.dimen.widget_card_radius)
             val smallW = 12
             val smallH = (smallW.toLong() * bmp.height / bmp.width).toInt().coerceAtLeast(1)
             val small = Bitmap.createScaledBitmap(bmp, smallW, smallH, true)
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val cv = Canvas(out)
-
-            // 圆角裁剪（与卡片容器同一半径，见上）。
-            val corner = Path().apply {
-                addRoundRect(
-                    RectF(0f, 0f, w.toFloat(), h.toFloat()),
-                    radius, radius, Path.Direction.CW)
-            }
-            cv.clipPath(corner)
 
             // centerCrop 语义：小图按比例放大铺满，居中采样。
             val scale = maxOf(

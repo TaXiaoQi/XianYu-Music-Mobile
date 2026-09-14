@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 生成式预览（setWidgetPreview）专用：单 ImageView 满幅位图。
+     MagicOS 桌面对 RemoteViews 布局的预览渲染错乱（元素放大/错位、多入口
+     缓存串扰），单一满幅 ImageView 仅绘制一张位图，任何桌面都不会渲染坏。
+     位图内容见 scripts/gen-widget-previews.ps1。 -->
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/genPreview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY" />
+</FrameLayout>
