@@ -62,6 +62,9 @@ void main(List<String> args) {
   // 跨数字版本天然单调递增，满足商店要求（同数字的 beta/正式版不重复上架
   // 即无同码冲突）。
   // 显式带 +build 的版本号视为手动指定，原样使用（可覆盖推导结果应急）。
+  // versionCode 单调保护：同一版本号重新同步时，推导值若低于 pubspec 现值
+  // （历史上手动抬过码过渡，如 1.0.2 → 1000299），保留现值不回退——回退会让
+  // 已安装用户被系统判降级拦截；跨数字版本推导值天然更高，不受影响。
   final pubContent = pubspec.readAsStringSync();
   var pubUpdated = false;
   final pubMatch = RegExp(r'^version\s*:[^\n]*', multiLine: true).firstMatch(pubContent);
@@ -69,9 +72,21 @@ void main(List<String> args) {
     final oldLine = pubMatch.group(0)!;
     final hasCr = oldLine.endsWith('\r');
     final bareOld = hasCr ? oldLine.substring(0, oldLine.length - 1) : oldLine;
+    final oldCode =
+        int.tryParse(RegExp(r'\+(\d+)\s*$').firstMatch(bareOld)?.group(1) ?? '');
+    final derived =
+        version.contains('+') ? null : int.tryParse(deriveVersionCode(version));
+    var targetCode = derived;
+    if (derived != null && oldCode != null && derived < oldCode) {
+      targetCode = oldCode;
+      stderr.writeln(
+        'NOTE: 推导 versionCode $derived 低于 pubspec 现值 $oldCode，'
+        '保留现值（单调保护）。如确需回退请显式写 +build。',
+      );
+    }
     final newBare = version.contains('+')
         ? 'version: $version'
-        : 'version: $version+${deriveVersionCode(version)}';
+        : 'version: $version+$targetCode';
     final newLine = newBare + (hasCr ? '\r' : '');
     pubUpdated = bareOld != newBare;
     if (pubUpdated) pubspec.writeAsStringSync(pubContent.replaceFirst(oldLine, newLine));
