@@ -219,7 +219,7 @@ internal object WidgetShared {
      * 推送一次；系统限速约 2 次/小时 → 每小时最多尝试一轮，全部成功后记版本号，
      * 预览布局有改动时递增 PREVIEW_GEN_VERSION 重新推送。
      */
-    private const val PREVIEW_GEN_VERSION = 12
+    private const val PREVIEW_GEN_VERSION = 13
     private const val PREVIEW_GEN_RETRY_MS = 55 * 60 * 1000L
 
     fun ensurePreviewGen(ctx: Context) {

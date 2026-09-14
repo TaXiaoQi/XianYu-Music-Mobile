@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- previewImage 用位图：layer-list 在部分 ROM（MagicOS 等）选择器上渲染
+     失效，见 square_widget_info.xml 注释；画面改动后重跑
+     scripts/gen-widget-previews.ps1。 -->
 <appwidget-provider
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
@@ -11,7 +14,7 @@
     android:maxResizeHeight="140dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/player_widget_recognize"
-    android:previewImage="@drawable/widget_preview_image"
+    android:previewImage="@drawable/widget_preview_recognize"
     android:previewLayout="@layout/player_widget_recognize_preview"
     android:resizeMode="none"
     android:widgetCategory="home_screen" />
