@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面组件卡片圆角兜底值（API < 31 系统不提供组件圆角半径资源，沿用原 24dp）。
+     API 31+ 由 values-v31 覆盖为系统半径。 -->
+<resources>
+    <dimen name="widget_card_radius">24dp</dimen>
+</resources>

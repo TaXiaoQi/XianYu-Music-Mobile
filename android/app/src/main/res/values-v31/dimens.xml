@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ 桌面按 system_app_widget_background_radius 整体裁剪组件。
+     自绘圆角必须取同一半径：若自绘半径小于系统裁剪半径，四角「自绘圆角之外、
+     裁剪之内」的环形区域全透明，壁纸（尤其浅色光晕）会从四个角透出（亮角）。 -->
+<resources>
+    <dimen name="widget_card_radius">@android:dimen/system_app_widget_background_radius</dimen>
+</resources>

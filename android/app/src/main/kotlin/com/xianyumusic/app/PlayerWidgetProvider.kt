@@ -56,8 +56,9 @@ internal object WidgetShared {
     private const val COVER_RECOGNIZE_DP = 120
     private const val COVER_2X2_SMALL_DP = 85
 
-    // 卡片容器圆角（widget_bg 固定 24dp）：2×2/识曲封面按此绝对值渲染，
-    // 避免按位图边长比例（0.26×）换算后随组件尺寸缩放导致的圆角错位。
+    // 卡片内部封面元素的圆角（2×2/识曲封面按此绝对值渲染），避免按位图边长
+    // 比例（0.26×）换算后随组件尺寸缩放导致的圆角错位。卡片边缘重合的圆角
+    // （widget_bg 背景、模糊背景位图）用 widget_card_radius 跟随系统半径。
     private const val CARD_CORNER_DP = 24f
 
     // 识曲（已改分享）深链：右上按钮经拉起 App 分享当前歌曲。
@@ -672,18 +673,19 @@ internal object WidgetShared {
         return try {
             val bmp = BitmapFactory.decodeFile(path) ?: return null
             val density = ctx.resources.displayMetrics.density
-            // 位图宽高 = 卡片实际像素尺寸（与卡片同宽高比，fitXY 渲染零变形），
-            // 圆角用与卡片一致的绝对 24dp，避免往昔比例圆角+centerCrop 顶坏卡片圆角。
+            // 位图宽高 = 卡片实际像素尺寸（与卡片同宽高比，fitXY 渲染零变形）。
             val w = ((sizeDp?.first ?: 300) * density).toInt().coerceAtLeast(1)
             val h = ((sizeDp?.second ?: 150) * density).toInt().coerceAtLeast(1)
-            val radius = CARD_CORNER_DP * density
+            // 圆角与卡片容器（widget_bg）同一半径：API 31+ 跟随系统组件圆角
+            // （widget_card_radius），与桌面裁剪半径重合，角落不透壁纸。
+            val radius = ctx.resources.getDimension(R.dimen.widget_card_radius)
             val smallW = 12
             val smallH = (smallW.toLong() * bmp.height / bmp.width).toInt().coerceAtLeast(1)
             val small = Bitmap.createScaledBitmap(bmp, smallW, smallH, true)
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val cv = Canvas(out)
 
-            // 圆角裁剪（卡片绝对 24dp）。
+            // 圆角裁剪（与卡片容器同一半径，见上）。
             val corner = Path().apply {
                 addRoundRect(
                     RectF(0f, 0f, w.toFloat(), h.toFloat()),
