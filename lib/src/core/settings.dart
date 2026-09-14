@@ -244,11 +244,8 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
-    this.onlineFailureBehavior = 'pause',
+    this.onlineFailureBehavior = 'autoswitch',
     this.onlineQualityFallbackBehavior = 'lower',
-    // 默认开启：播放失败自动换源是音源插件场景的基础预期（单插件直链
-    // 失效/付费墙很常见），关闭只会让失败停在报错，用户需手动逐个换源。
-    this.autoSwitchSourceOnFailure = true,
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
     this.enablePredictiveBack = false,
@@ -443,15 +440,13 @@ class AppSettings {
   /// 防削波破音保护：增益可能超出 0 dB 极限时自动压低；无峰值标签的正增益降级为不提升。
   final bool volumeBalancePreventClipping;
 
-  /// 在线歌曲起播失败时的行为：skip 跳到下一首 / stop 停止播放。
+  /// 在线歌曲起播失败时的行为：autoswitch 自动换源（默认）/ skip 跳到下一首 /
+  /// pause 暂停播放 / stop 停止播放。autoswitch 在换源失败后等价 pause。
   final String onlineFailureBehavior;
 
   /// 在线歌曲默认音质播放失败时的音质回退：
   /// pause 严格不回退 / lower 向下降级 / higher 向上升级。
   final String onlineQualityFallbackBehavior;
-
-  /// 在线播放失败时自动切换其他落雪音源播放同一首歌（仅在线歌曲生效）。
-  final bool autoSwitchSourceOnFailure;
 
   /// USB 独占输出所选目标设备 ID（AAudio setDeviceId）。-1 = 系统默认设备。
   final int usbExclusiveDeviceId;
@@ -620,7 +615,6 @@ class AppSettings {
     bool? volumeBalancePreventClipping,
     String? onlineFailureBehavior,
     String? onlineQualityFallbackBehavior,
-    bool? autoSwitchSourceOnFailure,
     int? usbExclusiveDeviceId,
     String? songClickAction,
     bool? enablePredictiveBack,
@@ -736,8 +730,6 @@ class AppSettings {
           onlineFailureBehavior ?? this.onlineFailureBehavior,
       onlineQualityFallbackBehavior:
           onlineQualityFallbackBehavior ?? this.onlineQualityFallbackBehavior,
-      autoSwitchSourceOnFailure:
-          autoSwitchSourceOnFailure ?? this.autoSwitchSourceOnFailure,
       usbExclusiveDeviceId: usbExclusiveDeviceId ?? this.usbExclusiveDeviceId,
       songClickAction: songClickAction ?? this.songClickAction,
       enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
@@ -893,12 +885,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
+      // 自动换源已并入 onlineFailureBehavior（'autoswitch'）：旧版独立开关
+      // 未持久化为 false 时（默认开）迁移为自动换源，显式关闭过则回退 pause。
       onlineFailureBehavior:
-          prefs.getString('onlineFailureBehavior') ?? 'pause',
+          prefs.getString('onlineFailureBehavior') ??
+              ((prefs.getBool('autoSwitchSourceOnFailure') ?? true)
+                  ? 'autoswitch'
+                  : 'pause'),
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
-      autoSwitchSourceOnFailure:
-          prefs.getBool('autoSwitchSourceOnFailure') ?? true,
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,
@@ -1093,7 +1088,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
       prefs.setString('onlineFailureBehavior', next.onlineFailureBehavior),
       prefs.setString('onlineQualityFallbackBehavior', next.onlineQualityFallbackBehavior),
-      prefs.setBool('autoSwitchSourceOnFailure', next.autoSwitchSourceOnFailure),
       prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
       prefs.setString('songClickAction', next.songClickAction),
       prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
@@ -1256,7 +1250,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setVolumeBalancePreventClipping(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalancePreventClipping: v));
   Future<void> setOnlineFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineFailureBehavior: v));
   Future<void> setOnlineQualityFallbackBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(onlineQualityFallbackBehavior: v));
-  Future<void> setAutoSwitchSourceOnFailure(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(autoSwitchSourceOnFailure: v));
   Future<void> setUsbExclusiveDeviceId(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveDeviceId: v));
   Future<void> setSongClickAction(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(songClickAction: v));
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));

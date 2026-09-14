@@ -7,6 +7,7 @@ import '../../src/core/developer_mode.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/navigation/shell.dart'
     show landscapeSettingsCategoryProvider;
+import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/landscape_page_fade.dart';
@@ -73,7 +74,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final isDeveloperMode = ref.watch(developerModeProvider);
-    final groups = _buildGroups(isDeveloperMode);
+    final hasPlugin = ref.watch(pluginManagerProvider
+        .select((s) => s.sources.any((p) => p.enabled)));
+    final groups = _buildGroups(isDeveloperMode, hasPlugin);
 
     // 横屏重排为 master-detail（左导航 + 右内嵌详情），两套 UI 完全分开。
     return LandscapeGate(
@@ -466,6 +469,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           category: SettingsCategory.playback, embedded: true),
       '/settings/download' => const SettingsCategoryPage(
           category: SettingsCategory.download, embedded: true),
+      '/settings/watch' => const SettingsCategoryPage(
+          category: SettingsCategory.watch, embedded: true),
+      '/settings/tools' => const SettingsCategoryPage(
+          category: SettingsCategory.tools, embedded: true),
       '/settings/advanced' => const SettingsCategoryPage(
           category: SettingsCategory.advanced, embedded: true),
       '/plugin' => const PluginPage(embedded: true),
@@ -487,8 +494,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   /// 构建分类分组；开发者模式开启时在「系统」分组末尾追加「调试」入口（对齐桌面端）。
-  List<(String, List<_CategoryEntry>)> _buildGroups(bool isDeveloperMode) {
-    final groups = <(String, List<_CategoryEntry>)>[..._groups];
+  /// 无已启用插件时隐藏「下载」入口（下载场景依赖插件内容）。
+  List<(String, List<_CategoryEntry>)> _buildGroups(
+    bool isDeveloperMode,
+    bool hasPlugin,
+  ) {
+    var groups = <(String, List<_CategoryEntry>)>[..._groups];
+    if (!hasPlugin) {
+      groups = [
+        for (final (header, entries) in groups)
+          (
+            header,
+            [
+              for (final e in entries)
+                if (e.path != '/settings/download') e,
+            ],
+          ),
+      ];
+    }
     if (isDeveloperMode) {
       final systemIndex = groups.indexWhere((g) => g.$1 == '系统');
       if (systemIndex >= 0) {
@@ -540,7 +563,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     (
       tr('偏好'),
       [
-        _CategoryEntry(tr('常规'), Icons.tune, tr('语言、反馈、存储'), '/settings/general'),
+        _CategoryEntry(tr('常规'), Icons.tune, tr('语言、反馈、常亮、存储'), '/settings/general'),
         _CategoryEntry(
           tr('外观'),
           Icons.palette_outlined,
@@ -556,19 +579,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ],
     ),
     (
-      tr('在线与音源'),
+      tr('腕上联动'),
       [
         _CategoryEntry(
-          tr('音源'),
-          Icons.library_music_outlined,
-          tr('插件音源：导入、启用、更新、卸载'),
-          '/plugin',
+          tr('腕上联动'),
+          Icons.watch_outlined,
+          tr('手表遥控、云端兜底、传递策略'),
+          '/settings/watch',
+        ),
+      ],
+    ),
+    (
+      tr('播放'),
+      [
+        _CategoryEntry(
+          tr('工具'),
+          Icons.build_outlined,
+          tr('音频转换、剪辑、解密、重命名'),
+          '/settings/tools',
         ),
         _CategoryEntry(
           tr('播放'),
           Icons.play_circle_outline,
-          tr('音量、双击播放、在线音质、输出'),
+          tr('音量、双击播放、播放行为、输出'),
           '/settings/playback',
+        ),
+        _CategoryEntry(
+          tr('插件'),
+          Icons.library_music_outlined,
+          tr('插件：导入、启用、更新、卸载'),
+          '/plugin',
         ),
         _CategoryEntry(
           tr('下载'),
@@ -584,7 +624,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _CategoryEntry(
           tr('高级设置'),
           Icons.settings_suggest_outlined,
-          tr('屏幕常亮、应用备份、预测返回'),
+          tr('应用备份、日志、预测返回'),
           '/settings/advanced',
         ),
         _CategoryEntry(
@@ -778,13 +818,14 @@ class _SearchResultTile extends StatelessWidget {
 const _settingsSearchItems = <_SearchItem>[
   // 分类
   _SearchItem(label: '账号', section: '设置分类', path: '/settings/account', categoryName: '账号', isCategory: true, keywords: '账户 登录 服务端'),
-  _SearchItem(label: '常规', section: '设置分类', path: '/settings/general', categoryName: '常规', isCategory: true, keywords: '语言 反馈 存储'),
+  _SearchItem(label: '常规', section: '设置分类', path: '/settings/general', categoryName: '常规', isCategory: true, keywords: '语言 反馈 存储 常亮'),
   _SearchItem(label: '外观', section: '设置分类', path: '/settings/appearance', categoryName: '外观', isCategory: true, keywords: '主题 壁纸 材质 皮肤 皮肤配色'),
   _SearchItem(label: '歌词', section: '设置分类', path: '/settings/lyrics', categoryName: '歌词', isCategory: true, keywords: '悬浮歌词 卡拉OK 歌词页'),
   _SearchItem(label: '播放', section: '设置分类', path: '/settings/playback', categoryName: '播放', isCategory: true, keywords: '音量 音质 输出 播放设置'),
   _SearchItem(label: '下载', section: '设置分类', path: '/settings/download', categoryName: '下载', isCategory: true, keywords: '路径 音质 歌词'),
-  _SearchItem(label: '高级设置', section: '设置分类', path: '/settings/advanced', categoryName: '高级设置', isCategory: true, keywords: '备份 日志 常亮 高级'),
-  _SearchItem(label: '音源', section: '设置分类', path: '/plugin', categoryName: '音源', isCategory: true, keywords: '插件 音乐源 落雪'),
+  _SearchItem(label: '高级设置', section: '设置分类', path: '/settings/advanced', categoryName: '高级设置', isCategory: true, keywords: '备份 日志 高级'),
+  _SearchItem(label: '工具', section: '设置分类', path: '/settings/tools', categoryName: '工具', isCategory: true, keywords: '音频 转换 剪辑 解密 重命名'),
+  _SearchItem(label: '插件', section: '设置分类', path: '/plugin', categoryName: '插件', isCategory: true, keywords: '插件 音乐源 音源 落雪'),
   _SearchItem(label: '意见反馈', section: '设置分类', path: '/feedback', categoryName: '意见反馈', isCategory: true, keywords: '反馈 建议 问题'),
   _SearchItem(label: '关于', section: '设置分类', path: '/about', categoryName: '关于', isCategory: true, keywords: '版本 信息 项目 主页'),
   _SearchItem(label: '调试', section: '设置分类', path: '/debug', categoryName: '调试', isCategory: true, keywords: 'debug 测试 弹窗'),
@@ -793,8 +834,9 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '语言', section: '语言', path: '/settings/general', categoryName: '常规', keywords: '简体中文 繁體中文 English 跟随系统'),
   _SearchItem(label: '触觉反馈力度', section: '反馈', path: '/settings/general', categoryName: '常规', keywords: '震动 力度 手感'),
   _SearchItem(label: '检测更新模式', section: '检测更新', path: '/settings/general', categoryName: '常规', keywords: '启动 检查 版本 更新'),
-  _SearchItem(label: '腕上联动', section: '腕上联动', path: '/settings/general', categoryName: '常规', keywords: '手表 蓝牙 遥控 播放 连接'),
-  _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/general', categoryName: '常规', keywords: '手表 传递 询问 记住 默认 自动'),
+  _SearchItem(label: '腕上联动', section: '设置分类', path: '/settings/watch', categoryName: '腕上联动', isCategory: true, keywords: '手表 蓝牙 遥控 连接'),
+  _SearchItem(label: '腕上联动', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 蓝牙 遥控 播放 连接'),
+  _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 传递 询问 记住 默认 自动'),
   _SearchItem(label: '存储设置', section: '存储空间', path: '/settings/general', categoryName: '常规', keywords: '缓存 空间 清理'),
 
   // 外观
@@ -840,10 +882,9 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '音量平衡', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: 'ReplayGain 响度 标准化'),
   _SearchItem(label: '整体增益偏移', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: 'ReplayGain dB 增益'),
   _SearchItem(label: '防削波破音保护', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: '峰值 clipping 破音'),
-  _SearchItem(label: '在线默认音质', section: '在线音质', path: '/settings/playback', categoryName: '播放', keywords: '无损 Hi-Res 320k 音质'),
-  _SearchItem(label: '起播失败行为', section: '在线音质', path: '/settings/playback', categoryName: '播放', keywords: '播放失败 换源'),
-  _SearchItem(label: '音质回退行为', section: '在线音质', path: '/settings/playback', categoryName: '播放', keywords: '降级 回退 音质'),
-  _SearchItem(label: '播放失败自动换源', section: '在线音质', path: '/settings/playback', categoryName: '播放', keywords: '换源 搜索 播放'),
+  _SearchItem(label: '播放默认音质', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '无损 Hi-Res 320k 音质'),
+  _SearchItem(label: '起播失败行为', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '播放失败 换源'),
+  _SearchItem(label: '音质回退行为', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '降级 回退 音质'),
   _SearchItem(label: '分享链接有效时长', section: '分享', path: '/settings/playback', categoryName: '播放', keywords: '分享 过期'),
   _SearchItem(label: '分享链接播放失败行为', section: '分享', path: '/settings/playback', categoryName: '播放', keywords: '分享 失败'),
   _SearchItem(label: '输出设备', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: 'USB DAC 声卡 扬声器 耳机'),
@@ -869,7 +910,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '导出全部日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '日志 导出'),
   _SearchItem(label: '导出错误日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '错误 日志 故障'),
   _SearchItem(label: '清理日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '删除 清空 日志'),
-  _SearchItem(label: '保持屏幕常亮', section: '系统', path: '/settings/advanced', categoryName: '高级设置', keywords: '屏幕 常亮 唤醒'),
+  _SearchItem(label: '保持屏幕常亮', section: '系统', path: '/settings/general', categoryName: '常规', keywords: '屏幕 常亮 唤醒'),
   _SearchItem(label: '预测返回手势', section: '导航', path: '/settings/advanced', categoryName: '高级设置', keywords: '返回 手势 预测'),
 
   // 账号

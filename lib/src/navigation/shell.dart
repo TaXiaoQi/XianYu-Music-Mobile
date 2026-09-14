@@ -155,6 +155,8 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/lyrics',
   '/settings/playback',
   '/settings/download',
+  '/settings/watch',
+  '/settings/tools',
   '/settings/advanced',
   '/about',
   '/plugin',

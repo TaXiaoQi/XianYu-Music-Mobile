@@ -74,8 +74,6 @@ const Map<String, String> enDictManual = {
   'LX 插件初始化失败': 'LX plugin initialization failed',
   'lxmc 备份解压失败：不是有效的 gzip 数据': 'Failed to decompress lxmc backup: not valid gzip data',
   'M3U 文件中未找到有效的歌曲条目': 'No valid song entries found in the M3U file',
-  'M3U/M3U8 播放列表、椒盐音乐 TXT 导出，自动匹配已安装音源插件，':
-      'M3U/M3U8 playlists and SaltPlayer TXT exports, auto-matched against installed source plugins,',
   'MusicFree 插件': 'MusicFree plugin',
   'QMC 文件解密': 'QMC file decryption',
   'QQ 空间支持网页分享，不支持音乐卡片': 'Qzone supports web sharing only, not music cards',
@@ -121,7 +119,6 @@ const Map<String, String> enDictManual = {
   '本地创建与编辑的歌单': 'Playlists created and edited locally',
   '本地还没有文件夹，请先在「本地 → 文件夹」页添加扫描目录':
       'No folders yet. Add a scan folder under "Library → Folders" first',
-  '本地路径歌曲匹配本地曲库导入。': 'Songs on local paths are matched against the library and imported.',
   '本地音乐已在设备': 'Local music already on device',
   '本地音乐以原音质播放': 'Local music plays at original quality',
   '本地与云端设置一致，无需同步': 'Local and cloud settings are identical; no sync needed',
@@ -175,7 +172,7 @@ const Map<String, String> enDictManual = {
   '插件大小超过 2MB': 'Plugin exceeds 2MB',
   '插件内容为空': 'Plugin content is empty',
   '插件信息缺失': 'Plugin info missing',
-  '插件音源：导入、启用、更新、卸载': 'Music sources: import, enable, update, uninstall',
+  '插件：导入、启用、更新、卸载': 'Plugins: import, enable, update, uninstall',
   '查看全部': 'View all',
   '颤音': 'Vibrato',
   '颤音深度': 'Vibrato depth',
@@ -362,7 +359,7 @@ const Map<String, String> enDictManual = {
   '轨道号': 'Track number',
   '过滤掉时长小于阈值的音频文件，重新扫描后生效':
       'Filters out audio files shorter than the threshold; takes effect after rescanning',
-  '还没有安装音源插件': 'No source plugins installed yet',
+  '还没有安装插件': 'No plugins installed yet',
   '还没有歌单': 'No playlists yet',
   '还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）':
       'No scan folders yet. Tap "+" in the top right to choose a folder with music\n(music read permission is requested only once)',
@@ -499,7 +496,6 @@ const Map<String, String> enDictManual = {
   '匿名用户': 'Anonymous user',
   '暖黄': 'Warm yellow',
   '偏好': 'Preferences',
-  '屏幕常亮、应用备份、预测返回': 'Keep screen on, app backup, predictive back',
   '普通': 'Normal',
   '普通提示': 'Info toast',
   '其他': 'Other',
@@ -742,6 +738,7 @@ const Map<String, String> enDictManual = {
   '无新脚本可更新': 'No new scripts to update',
   '五': '5',
   '喜欢': 'Likes',
+  '喜欢的音乐、歌单与专辑': 'Liked songs, playlists and albums',
   '系统': 'System',
   '系统默认设备': 'System default device',
   '峡谷': 'Canyon',
@@ -868,7 +865,12 @@ const Map<String, String> enDictManual = {
   '音乐': 'Music',
   '音乐文件夹 *': 'Music folder *',
   '音量（直出已锁定）': 'Volume (locked during bit-perfect)',
-  '音量、双击播放、在线音质、输出': 'Volume, double-tap play, online quality, output',
+  '语言、反馈、常亮、存储': 'Language, feedback, keep awake, storage',
+  '音量、双击播放、播放行为、输出': 'Volume, double-tap play, playback behavior, output',
+  '应用备份、日志、预测返回': 'App backup, logs, predictive back',
+  '手表遥控、云端兜底、传递策略': 'Watch remote, cloud fallback, transfer policy',
+  '自动换源': 'Auto switch source',
+  '音频转换、剪辑、解密、重命名': 'Convert, trim, decrypt, batch rename audio',
   '音量平衡 (ReplayGain)': 'Volume balance (ReplayGain)',
   '音效由 Rust DSP 引擎实时处理；变速变调即时生效，其余效果在播放时同步到引擎。':
       'Effects are processed in real time by the Rust DSP engine. Speed and pitch apply instantly; other effects sync to the engine during playback.',
@@ -891,7 +893,6 @@ const Map<String, String> enDictManual = {
   '邮箱绑定成功': 'Email linked',
   '邮箱绑定失败': 'Failed to link the email',
   '语言': 'Language',
-  '语言、反馈、存储': 'Language, feedback, storage',
   '语言设置': 'Language',
   '浴室': 'Bathroom',
   '预测返回手势': 'Predictive back gesture',
@@ -921,12 +922,12 @@ const Map<String, String> enDictManual = {
   '在线歌曲信息缺失': 'Online song info missing',
   '在线链接': 'Online link',
   '在线链接安装': 'Install from a link',
-  '在线默认音质': 'Default online quality',
   '在线搜索': 'Online search',
   '在线音源': 'Online sources',
   '在线音源完全无法播放时的处理方式': 'Behavior when online playback fails completely',
-  '在线音质': 'Online quality',
   '在在线详情页点击收藏按钮': 'Tap the favorite button on the online detail page',
+  '播放默认音质': 'Default playback quality',
+  '播放行为': 'Playback behavior',
   '暂不更新': 'Later',
   '暂停播放': 'Pause',
   '暂停时隐藏': 'Hide when paused',
@@ -985,13 +986,12 @@ const Map<String, String> enDictManual = {
   '正在下载中…': 'Downloading…',
   '支持 .ttf / .otf 字体文件，导入后立即应用到歌词':
       'Supports .ttf / .otf fonts; applied to lyrics immediately after import',
-  '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 ':
-      'Supports BakaMusic / MusicFree / LX Music backups (JSON, ZIP, lxmc) and ',
-  '支持 LX / MusicFree 格式音源插件，在线搜索与播放需要音源支持':
-      'Supports LX / MusicFree source plugins; online search and playback depend on the source',
+  '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 M3U/M3U8 播放列表、椒盐音乐 TXT 导出。':
+      'Supports BakaMusic / MusicFree / LX Music backups (JSON, ZIP, lxmc), M3U/M3U8 playlists, and Jiayan Music TXT exports.',
+  '支持 LX / MusicFree 格式插件':
+      'Supports LX and MusicFree plugins',
   '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）':
       'Supports LX and MusicFree formats; the link can be a single plugin or a plugin set (JSON)',
-  '支持 LX（落雪）与 MusicFree 格式音源插件': 'Supports LX and MusicFree source plugins',
   '直链解析失败': 'Failed to resolve the direct link',
   '中等': 'Medium',
   '重': 'Heavy',
@@ -1033,6 +1033,7 @@ const Map<String, String> enDictManual = {
   '最大': 'Large',
   '最近': 'Recent',
   '最近完成': 'Recently completed',
+  '最近听过的歌曲': 'Recently played songs',
   '最小': 'Compact',
 
   // ---- 动态占位符形式（迁移时统一使用这些键） ----
@@ -1509,4 +1510,10 @@ const Map<String, String> enDictManual = {
   '已禁用 {n} 个插件': 'Disabled {n} plugins',
   '处理中...': 'Working...',
   '操作失败：{e}': 'Operation failed: {e}',
+  '弦予音乐隐私政策': 'XianYu Music Privacy Policy',
+  '播放': 'Playback',
+  '和': 'and',
+  '同意并继续': 'Agree and continue',
+  '不同意并退出': 'Decline and exit',
+  '查看在线版': 'View online',
 };

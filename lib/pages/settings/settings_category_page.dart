@@ -38,6 +38,8 @@ enum SettingsCategory {
   lyrics,
   playback,
   download,
+  tools,
+  watch,
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
@@ -45,6 +47,8 @@ enum SettingsCategory {
     'lyrics' => SettingsCategory.lyrics,
     'playback' => SettingsCategory.playback,
     'download' => SettingsCategory.download,
+    'tools' => SettingsCategory.tools,
+    'watch' => SettingsCategory.watch,
     'advanced' => SettingsCategory.advanced,
     _ => SettingsCategory.general,
   };
@@ -55,6 +59,8 @@ enum SettingsCategory {
     SettingsCategory.lyrics => tr('歌词'),
     SettingsCategory.playback => tr('播放'),
     SettingsCategory.download => tr('下载'),
+    SettingsCategory.tools => tr('工具'),
+    SettingsCategory.watch => tr('腕上联动'),
     SettingsCategory.advanced => tr('高级设置'),
   };
 }
@@ -173,6 +179,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         return _playback(context, ref, settings, notifier, exclusivePlaying);
       case SettingsCategory.download:
         return _download(context, ref, settings, notifier);
+      case SettingsCategory.tools:
+        return _tools(context);
+      case SettingsCategory.watch:
+        return _watch(context, ref, settings, notifier);
       case SettingsCategory.advanced:
         return _advanced(context, settings, notifier);
     }
@@ -227,14 +237,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ],
         ),
       ],
-      _sectionHeader(context, tr('腕上联动')),
+      _sectionHeader(context, tr('系统')),
       _CardGroup(
         children: [
-          _watchLinkageTile(context, ref, s, n),
-          _watchCloudTile(context, s, n),
-          _watchTransferTile(context, ref, s),
+          _switchTile(
+            context,
+            icon: Icons.screen_lock_rotation_outlined,
+            title: tr('保持屏幕常亮'),
+            value: s?.keepScreenOn ?? true,
+            onChanged: (v) => n.setKeepScreenOn(v),
+          ),
         ],
       ),
+      // 腕上联动已独立成设置导航一级分类（/settings/watch）。
       _sectionHeader(context, tr('列表显示')),
       _CardGroup(
         children: [
@@ -250,6 +265,25 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       ),
       _sectionHeader(context, tr('存储空间')),
       const _StorageSettingsGroup(),
+    ];
+  }
+
+  /// 腕上联动分类详情：原「常规」下的腕上联动分组独立成页。
+  List<Widget> _watch(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    return [
+      _sectionHeader(context, tr('腕上联动')),
+      _CardGroup(
+        children: [
+          _watchLinkageTile(context, ref, s, n),
+          _watchCloudTile(context, s, n),
+          _watchTransferTile(context, ref, s),
+        ],
+      ),
     ];
   }
 
@@ -813,6 +847,36 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: (s?.songClickAction ?? 'single') == 'double',
             onChanged: (v) => n.setSongClickAction(v ? 'double' : 'single'),
           ),
+          _tile(
+            context,
+            icon: Icons.high_quality_outlined,
+            title: tr('播放默认音质'),
+            trailing: Text(s?.onlineDefaultQuality ?? '320k'),
+            onTap: () => _pickQuality(context, ref, s, isOnline: true),
+          ),
+          _tile(
+            context,
+            icon: Icons.vertical_align_bottom_outlined,
+            title: tr('音质回退行为'),
+            subtitle: tr('默认音质播放失败时如何切换音质档位'),
+            trailing: Text(
+              _qualityFallbackLabel(
+                s?.onlineQualityFallbackBehavior ?? 'lower',
+              ),
+            ),
+            onTap: () => _pickQualityFallback(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.play_disabled_outlined,
+            title: tr('起播失败行为'),
+            subtitle: tr('在线音源完全无法播放时的处理方式'),
+            trailing: Text(
+              _failureBehaviorLabel(
+                  s?.onlineFailureBehavior ?? 'autoswitch'),
+            ),
+            onTap: () => _pickFailureBehavior(context, ref, s),
+          ),
         ],
       ),
       _sectionHeader(context, tr('音量平衡 (ReplayGain)')),
@@ -842,69 +906,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               onChanged: (v) => n.setVolumeBalancePreventClipping(v),
             ),
           ],
-        ],
-      ),
-      // 以下两组原属「音源」页，随重构并入播放页，与桌面端播放设置对齐。
-      _sectionHeader(context, tr('在线音质')),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.high_quality_outlined,
-            title: tr('在线默认音质'),
-            trailing: Text(s?.onlineDefaultQuality ?? '320k'),
-            onTap: () => _pickQuality(context, ref, s, isOnline: true),
-          ),
-          _tile(
-            context,
-            icon: Icons.play_disabled_outlined,
-            title: tr('起播失败行为'),
-            subtitle: tr('在线音源完全无法播放时的处理方式'),
-            trailing: Text(
-              _failureBehaviorLabel(s?.onlineFailureBehavior ?? 'pause'),
-            ),
-            onTap: () => _pickFailureBehavior(context, ref, s),
-          ),
-          _tile(
-            context,
-            icon: Icons.vertical_align_bottom_outlined,
-            title: tr('音质回退行为'),
-            subtitle: tr('默认音质播放失败时如何切换音质档位'),
-            trailing: Text(
-              _qualityFallbackLabel(
-                s?.onlineQualityFallbackBehavior ?? 'lower',
-              ),
-            ),
-            onTap: () => _pickQualityFallback(context, ref, s),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.swap_horiz_outlined,
-            title: tr('播放失败自动换源'),
-            subtitle: tr('在线播放失败时自动在其他落雪音源搜索并播放同一首歌'),
-            value: s?.autoSwitchSourceOnFailure ?? false,
-            onChanged: (v) => n.setAutoSwitchSourceOnFailure(v),
-          ),
-        ],
-      ),
-      // 分享链接设置，与桌面端「播放 → 在线播放」下的分享设置对齐。
-      _sectionHeader(context, tr('分享')),
-      _CardGroup(
-        children: [
-          _shareValidityTile(context, s, n),
-          _tile(
-            context,
-            icon: Icons.link_outlined,
-            title: tr('分享链接播放失败行为'),
-            subtitle:
-                tr('通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌'),
-            trailing: Text(
-              _sharePlaybackFailureBehaviorLabel(
-                s?.sharePlaybackFailureBehavior ?? 'pause',
-              ),
-            ),
-            onTap: () => _pickShareFailureBehavior(context, ref, s),
-          ),
         ],
       ),
       _sectionHeader(context, tr('输出')),
@@ -985,6 +986,26 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             onTap: () => _editDlnaRendererName(context, ref),
+          ),
+        ],
+      ),
+      // 分享链接设置，与桌面端「播放 → 在线播放」下的分享设置对齐。
+      _sectionHeader(context, tr('分享')),
+      _CardGroup(
+        children: [
+          _shareValidityTile(context, s, n),
+          _tile(
+            context,
+            icon: Icons.link_outlined,
+            title: tr('分享链接播放失败行为'),
+            subtitle:
+                tr('通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌'),
+            trailing: Text(
+              _sharePlaybackFailureBehaviorLabel(
+                s?.sharePlaybackFailureBehavior ?? 'pause',
+              ),
+            ),
+            onTap: () => _pickShareFailureBehavior(context, ref, s),
           ),
         ],
       ),
@@ -1135,18 +1156,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       const _AppBackupGroup(),
       _sectionHeader(context, tr('日志')),
       const _LogGroup(),
-      _sectionHeader(context, tr('系统')),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.screen_lock_rotation_outlined,
-            title: tr('保持屏幕常亮'),
-            value: s?.keepScreenOn ?? true,
-            onChanged: (v) => n.setKeepScreenOn(v),
-          ),
-        ],
-      ),
       _sectionHeader(context, tr('导航')),
       _CardGroup(
         children: [
@@ -1160,6 +1169,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
+      // 工具已独立成设置导航一级分类（/settings/tools）。
+    ];
+  }
+
+  /// 工具分类详情：原「高级设置」下的工具分组独立成页。
+  List<Widget> _tools(BuildContext context) {
+    return [
       _sectionHeader(context, tr('工具')),
       _CardGroup(
         children: [
@@ -1223,6 +1239,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     VoidCallback? onTap,
     String? subtitle,
     bool enabled = true,
+    // chevron 仅用于「进入更多」（二级页/弹窗选择）；开关等行内直接生效的
+    // 条目不画，避免「点了会进详情」的歧义。
+    bool showChevron = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -1289,7 +1308,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                     ),
                   ),
                 ),
-                if (onTap != null) ...[
+                if (showChevron && onTap != null) ...[
                   const SizedBox(width: 4),
                   Icon(
                     Icons.chevron_right,
@@ -1322,6 +1341,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       title: title,
       subtitle: subtitle,
       enabled: enabled,
+      showChevron: false,
       trailing: Switch.adaptive(
         value: value,
         onChanged: enabled && onChanged != null ? onChanged : null,
@@ -1765,6 +1785,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       v % 60 == 0 ? tr('{h} 小时', {'h': v ~/ 60}) : tr('{m} 分钟', {'m': v});
 
   String _failureBehaviorLabel(String v) => switch (v) {
+    'autoswitch' => tr('自动换源'),
     'stop' => tr('停止播放'),
     'pause' => tr('暂停播放'),
     _ => tr('跳到下一首'),
@@ -2223,14 +2244,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.onlineFailureBehavior ?? 'pause';
+    final cur = s?.onlineFailureBehavior ?? 'autoswitch';
     final choice = await showSheetDialog<_Choice>(
       context,
       (_) => _choiceSheet(
         context,
           [
-          _Choice(tr('暂停播放'), 'pause',
-              subtitle: tr('起播失败时停止并显示错误，不自动跳转到下一首')),
+          _Choice(tr('自动换源'), 'autoswitch'),
+          _Choice(tr('暂停播放'), 'pause'),
           _Choice(tr('跳到下一首'), 'skip'),
           _Choice(tr('停止播放'), 'stop'),
         ],

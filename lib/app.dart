@@ -15,6 +15,7 @@ import 'src/i18n/i18n.dart';
 import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
+import 'src/widgets/privacy_policy.dart';
 import 'src/widgets/custom_background.dart';
 import 'src/widgets/liquid_wave.dart';
 import 'l10n/gen/app_localizations.dart';
@@ -62,10 +63,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     super.initState();
     // 系统语言变化时（跟随系统模式下）刷新界面语言。
     WidgetsBinding.instance.addObserver(this);
-    // 启动统计上报（fire-and-forget，失败静默）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(accountApiProvider).reportAppOpen();
-    });
+    // 注意：启动统计上报（reportAppOpen）已移至首页首帧后的隐私政策同意
+    // 门槛之后执行（_runStartupAfterConsent），确保任何数据上报都发生在
+    // 用户阅读并同意隐私政策之后（应用商店审核要求）。
   }
 
   @override
@@ -80,6 +80,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     if ((settings?.language ?? AppLanguage.system) == AppLanguage.system) {
       setState(() {});
     }
+  }
+
+  /// 首帧后启动链路：先过首次启动隐私政策同意门槛（不同意并退出时直接结束
+  /// 应用，返回 false），同意后才执行启动统计上报与版本检查，保证任何数据
+  /// 上报（reportAppOpen / 版本检查携带设备信息）都发生在用户同意之后。
+  Future<void> _runStartupAfterConsent(WidgetRef ref) async {
+    final agreed = await ensurePrivacyConsent(context);
+    if (!agreed || !mounted) return;
+    // 启动统计上报（原 initState 内 fire-and-forget，移至隐私同意之后）。
+    ref.read(accountApiProvider).reportAppOpen();
+    // 内测门槛（被拦截则不弹更新窗）+ 服务端新版本检查。
+    unawaited(runStartupVersionChecks(ref));
   }
 
   /// 精确主题色 ColorScheme：primary/tertiary 家族直接取用户所选颜色。
@@ -336,9 +348,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       _loggedHomeFirstFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         debugPrint('[startup] home first frame rendered');
-        // 首帧后静默做启动版本检查：先内测门槛（未授权 beta 构建直接全局拦截，
-        // 弹不可退出的申请弹窗并跳过更新提示），再查服务端新版本。
-        unawaited(runStartupVersionChecks(ref));
+        // 首帧后启动链路：先过首次启动隐私政策同意门槛（不同意直接退出应用，
+        // 同意后才允许任何上报），再静默做启动版本检查：内测门槛（未授权
+        // beta 构建直接全局拦截，弹不可退出的申请弹窗并跳过更新提示）、服务端新版本。
+        unawaited(_runStartupAfterConsent(ref));
       });
     }
 

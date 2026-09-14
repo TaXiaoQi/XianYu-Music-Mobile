@@ -15,7 +15,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTagline => 'Clean local & online music player';
 
   @override
-  String get navHome => 'Discover';
+  String get navHome => 'Home';
 
   @override
   String get navLibrary => 'Local';

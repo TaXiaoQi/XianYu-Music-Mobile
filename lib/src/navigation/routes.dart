@@ -476,7 +476,7 @@ class BottomNavItem {
 }
 
 final List<BottomNavItem> bottomNavItems = [
-  BottomNavItem(tr('发现'), Icons.home, '/home'),
+  BottomNavItem(tr('首页'), Icons.home, '/home'),
   BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine'),
 ];
 
@@ -486,7 +486,7 @@ final List<BottomNavItem> bottomNavItems = [
 String navTitle(BuildContext context, BottomNavItem item) {
   final l = Localizations.of<AppLocalizations>(context, AppLocalizations);
   return switch (item.location) {
-    '/home' => l?.navHome ?? tr('发现'),
+    '/home' => l?.navHome ?? tr('首页'),
     '/mine' => l?.navMine ?? tr('我的'),
     _ => l?.navEffects ?? tr('音效'),
   };

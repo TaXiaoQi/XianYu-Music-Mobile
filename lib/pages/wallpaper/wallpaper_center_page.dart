@@ -38,29 +38,45 @@ class WallpaperCenterPage extends ConsumerStatefulWidget {
 }
 
 class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(length: 4, vsync: this);
+    with TickerProviderStateMixin {
+  late TabController _tab;
+  bool _tabReady = false;
+  // 未登录时云端三 tab（广场/上传/下载）隐藏，仅保留自定义壁纸；
+  // 登录状态变化时重建 TabController 对齐 tab 数。
+  bool? _lastLoggedIn;
+
+  TabController _buildTab(bool loggedIn) =>
+      TabController(length: loggedIn ? 4 : 1, vsync: this);
 
   PreferredSizeWidget get _tabBar => TabBar(
         controller: _tab,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
         tabs: [
-          Tab(text: tr('壁纸广场')),
-          Tab(text: tr('我的上传')),
-          Tab(text: tr('我的下载')),
+          if (_lastLoggedIn == true) ...[
+            Tab(text: tr('壁纸广场')),
+            Tab(text: tr('我的上传')),
+            Tab(text: tr('我的下载')),
+          ],
           Tab(text: tr('自定义壁纸')),
         ],
       );
 
   @override
   void dispose() {
-    _tab.dispose();
+    if (_tabReady) _tab.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
+    if (!_tabReady || _lastLoggedIn != loggedIn) {
+      if (_tabReady) _tab.dispose();
+      _tab = _buildTab(loggedIn);
+      _tabReady = true;
+      _lastLoggedIn = loggedIn;
+    }
     // 竖屏悬浮顶栏：TabBarView 铺满全屏、避让量注入各 tab 滚动体 padding，
     // 内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感）。
     final portraitFloating =
@@ -88,9 +104,11 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
               child: TabBarView(
                 controller: _tab,
                 children: [
-                  _WallpaperBrowseTab(topInset: topInset),
-                  _MyUploadsTab(topInset: topInset),
-                  _MyDownloadsTab(topInset: topInset),
+                  if (_lastLoggedIn == true) ...[
+                    _WallpaperBrowseTab(topInset: topInset),
+                    _MyUploadsTab(topInset: topInset),
+                    _MyDownloadsTab(topInset: topInset),
+                  ],
                   // 编辑器 tab 自带整页预览（StackFit.expand），悬浮模式下
                   // 预览直接顶到屏幕顶，无需避让。
                   const CustomWallpaperEditor(),

@@ -5,6 +5,7 @@ import '../auth/account_api.dart';
 import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
 import 'predictive_dialog_route.dart';
+import 'privacy_policy.dart';
 
 /// 用户协议（对齐桌面端 Auth.vue 的 defaultAgreementContent）。
 const kUserAgreementDefaultContent = '''一、协议范围
@@ -96,6 +97,13 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
     }
   }
 
+  Future<void> _openPrivacyModal() async {
+    // 与用户协议一致：滚动到底部并点「同意」后视为同意（同时勾选上行）。
+    final ok = await showPrivacyPolicyModal(context: context);
+    if (!mounted) return;
+    if (ok) _setAgreed(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -134,6 +142,16 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
                     child: GestureDetector(
                       onTap: _openModal,
                       child: Text('《${tr(kUserAgreementDefaultTitle)}》',
+                          style: linkStyle),
+                    ),
+                  ),
+                  TextSpan(text: ' ${tr('和')} '),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.baseline,
+                    baseline: TextBaseline.alphabetic,
+                    child: GestureDetector(
+                      onTap: _openPrivacyModal,
+                      child: Text('《${tr(kPrivacyPolicyDefaultTitle)}》',
                           style: linkStyle),
                     ),
                   ),

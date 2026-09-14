@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../i18n/i18n.dart';
+import '../plugin/plugin_provider.dart';
 import 'glass_settings.dart';
 
 /// 首页/我的页共用搜索框扩展区（PreferredSizeWidget 以便 GlassTopBar 计算
@@ -66,7 +67,10 @@ class PageSearchBar extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (onRecognize != null) ...[
+              // 听歌识曲依赖插件播放识别结果，无已启用插件时隐藏入口。
+              if (onRecognize != null &&
+                  ref.watch(pluginManagerProvider
+                      .select((s) => s.sources.any((p) => p.enabled)))) ...[
                 const SizedBox(width: 8),
                 // 听歌识曲入口：搜索框内右侧（仅话筒图标标识）
                 GestureDetector(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
+import '../plugin/plugin_provider.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
@@ -50,7 +51,10 @@ class FloatingSearchBar extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (onRecognize != null) ...[
+              // 听歌识曲依赖插件播放识别结果，无已启用插件时隐藏入口。
+              if (onRecognize != null &&
+                  ref.watch(pluginManagerProvider
+                      .select((s) => s.sources.any((p) => p.enabled)))) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: onRecognize,

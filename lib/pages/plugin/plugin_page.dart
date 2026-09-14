@@ -341,7 +341,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         children: [
                           Expanded(
                             child: Text(
-                              tr('音源'),
+                              tr('插件'),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -363,7 +363,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                     )
                   : FlatTopBar(
                       leading: const BackButton(),
-                      title: tr('音源'),
+                      title: tr('插件'),
                       backgroundColor: appScaffoldBackground(context, ref),
                       actions: [
                         IconButton(
@@ -423,12 +423,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
           children: [
               Text(tr('安装插件'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(
-              tr('支持 LX（落雪）与 MusicFree 格式音源插件'),
-              style: TextStyle(
-                  fontSize: 12, color: Theme.of(ctx).colorScheme.outline),
-            ),
             const SizedBox(height: 14),
             _InstallOption(
               icon: Icons.folder_open_outlined,
@@ -766,18 +760,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.extension_outlined, size: 56, color: scheme.outline),
           const SizedBox(height: 12),
-          Text(tr('还没有安装音源插件'),
+          Text(tr('还没有安装插件'),
               style: TextStyle(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Text(
-            tr('支持 LX / MusicFree 格式音源插件，在线搜索与播放需要音源支持'),
+            tr('支持 LX / MusicFree 格式插件'),
             style: TextStyle(fontSize: 12, color: scheme.outline),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onInstall,
             icon: const Icon(Icons.add),
-            label:   Text(tr('安装音源')),
+            label:   Text(tr('安装插件')),
           ),
         ],
       ),

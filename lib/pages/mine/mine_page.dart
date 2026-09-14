@@ -76,10 +76,11 @@ class MinePage extends ConsumerWidget {
               SizedBox(height: 18),
               _AccountArea(),
               SizedBox(height: 22),
-              // 听歌统计三格卡（原首页「统计」tab 迁入）：账号区与音乐库入口之间，
-              // 整卡点击打开完整听歌排行榜。
-              StatsSummaryCard(),
-              SizedBox(height: 22),
+              // 听歌统计依赖云端数据，未登录时整卡隐藏。
+              if (ref.watch(authProvider.select((a) => a.isLoggedIn))) ...[
+                StatsSummaryCard(),
+                SizedBox(height: 22),
+              ],
               _QuickEntries(),
               SizedBox(height: 24),
               _MyPlaylistsSection(),
@@ -103,7 +104,7 @@ class MinePage extends ConsumerWidget {
   }
 
   /// 横屏专用：精简个人中心（独立一套 UI）。参考桌面版个人中心排布——
-  /// 账号区 + 收藏/歌单/历史统计 + 四个快捷入口卡片。音乐库各入口已由
+  /// 账号区 + 收藏/歌单/历史统计 + 快捷入口卡片。音乐库各入口已由
   /// 横屏侧边栏承接，此处不再重复列表分区。
   Widget _buildLandscapeProfile(BuildContext context, WidgetRef ref) {
     // 悬浮模式：壳层横屏全局顶栏独立悬浮在容器顶部，内容需预留其高度
@@ -111,22 +112,26 @@ class MinePage extends ConsumerWidget {
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
+    // 听歌统计卡依赖云端数据，未登录时隐藏（与竖屏一致）。
+    final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       // 顶部无需避让：壳层全局顶栏在内容上方 Column 中，自身处理状态栏。
       body: ListView(
         padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
-        children: const [
-          SizedBox(height: 18),
-          _AccountArea(),
-          SizedBox(height: 16),
-          StatsSummaryCard(),
-          SizedBox(height: 16),
-          _StatsRow(),
-          SizedBox(height: 24),
-          _QuickCards(),
-          SizedBox(height: 12),
+        children: [
+          const SizedBox(height: 18),
+          const _AccountArea(),
+          if (loggedIn) ...[
+            const SizedBox(height: 16),
+            StatsSummaryCard(),
+          ],
+          const SizedBox(height: 16),
+          const _StatsRow(),
+          const SizedBox(height: 24),
+          const _QuickCards(),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -199,29 +204,31 @@ class _QuickCards extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final isLandscape = useLandscape(ref);
+    // 下载入口依赖插件内容，无已启用插件时隐藏（与竖屏快捷入口一致）。
+    final hasPlugin = ref.watch(
+        pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)));
+    // 横屏专用：收藏/最近播放走侧边栏音乐库容器（1=我的收藏、2=最近播放）。
     final cards = [
-      (tr('账号设置'), tr('管理账号信息'), Icons.account_circle_outlined, '/account'),
-      (tr('主题外观'), tr('换肤与界面风格'), Icons.palette_outlined, '/wallpaper'),
+      (tr('我的收藏'), tr('喜欢的音乐、歌单与专辑'), Icons.favorite_outline, 'lib-fav'),
+      (tr('最近播放'), tr('最近听过的歌曲'), Icons.history_outlined, 'lib-recent'),
       (tr('本地音乐'), tr('管理本地曲库'), Icons.library_music_outlined, '/library'),
-      (tr('歌曲下载'), tr('管理下载任务'), Icons.download_outlined, '/download'),
+      if (hasPlugin)
+        (tr('歌曲下载'), tr('管理下载任务'), Icons.download_outlined, '/download'),
     ];
 
-    // 横屏：账号设置/歌曲下载在右侧容器内嵌打开、本地音乐切到侧边栏本地入口，
-    // 均不开二级页；其余（主题外观）保持 push。
+    // 横屏：收藏/最近播放/歌曲下载在右侧容器内嵌打开、本地音乐切到侧边栏
+    // 本地入口，均不开二级页。
     void open((String, String, IconData, String) c) {
-      if (!isLandscape) {
-        context.push(c.$4);
-        return;
-      }
       switch (c.$4) {
-        case '/account':
-          ref.read(landscapeAccountOpenProvider.notifier).state = true;
-        case '/download':
-          ref.read(landscapeDownloadOpenProvider.notifier).state = true;
+        case 'lib-fav':
+          ref.read(landscapeLibraryProvider.notifier).state = 1;
+        case 'lib-recent':
+          ref.read(landscapeLibraryProvider.notifier).state = 2;
         case '/library':
           // 本地音乐：路由到侧边栏音乐库的本地入口（0=本地）。
           ref.read(landscapeLibraryProvider.notifier).state = 0;
+        case '/download':
+          ref.read(landscapeDownloadOpenProvider.notifier).state = true;
         default:
           context.push(c.$4);
       }
@@ -289,28 +296,16 @@ class _QuickCards extends ConsumerWidget {
       );
     }
 
-    // 横屏：直接平铺 1×4（参考桌面版），单行四张卡均分宽度。
-    if (isLandscape) {
-      return Row(
-        children: [
-          for (var i = 0; i < cards.length; i++) ...[
-            Expanded(
-              child: SizedBox(height: 88, child: card(cards[i])),
-            ),
-            if (i != cards.length - 1) const SizedBox(width: 12),
-          ],
+    // 横屏：直接平铺单行（参考桌面版），卡片均分宽度。
+    return Row(
+      children: [
+        for (var i = 0; i < cards.length; i++) ...[
+          Expanded(
+            child: SizedBox(height: 88, child: card(cards[i])),
+          ),
+          if (i != cards.length - 1) const SizedBox(width: 12),
         ],
-      );
-    }
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.85,
-      children: [for (final c in cards) card(c)],
+      ],
     );
   }
 }
@@ -575,12 +570,15 @@ class _QuickEntries extends ConsumerWidget {
               count: '$localCount',
               onTap: () => context.push('/library?tab=0'),
             ),
-            entry(
-              icon: Icons.download_rounded,
-              label: tr('下载'),
-              count: '$dlCount',
-              onTap: () => context.push('/download'),
-            ),
+            // 下载入口依赖插件内容，无已启用插件时隐藏。
+            if (ref.watch(pluginManagerProvider
+                .select((s) => s.sources.any((p) => p.enabled))))
+              entry(
+                icon: Icons.download_rounded,
+                label: tr('下载'),
+                count: '$dlCount',
+                onTap: () => context.push('/download'),
+              ),
           ],
         ),
       ),
@@ -697,7 +695,7 @@ class _ReorderCard extends ConsumerWidget {
   }
 }
 
-/// 自建歌单分区：头部带「+ 新建」；条目封面+名称+歌曲数；末尾「导入外部歌单」。
+/// 自建歌单分区：头部带「+ 新建」「导入」胶囊按钮；条目封面+名称+歌曲数。
 class _MyPlaylistsSection extends ConsumerWidget {
   const _MyPlaylistsSection();
 
@@ -707,13 +705,11 @@ class _MyPlaylistsSection extends ConsumerWidget {
     final manager = ref.read(playlistManagerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final playlists = state.playlists;
-    // 末尾固定「导入外部歌单」条目，不参与排序。
-    final itemCount = playlists.length + 1;
 
     void onReorder(int oldIndex, int newIndex) {
-      if (newIndex < 0 || newIndex >= itemCount || newIndex == oldIndex) return;
-      // 仅允许在歌单条目间排序；末尾「导入」条目不可被移动。
-      if (oldIndex >= playlists.length) return;
+      if (newIndex < 0 || newIndex >= playlists.length || newIndex == oldIndex) {
+        return;
+      }
       final ids = playlists.map((p) => p.id).toList();
       final moved = ids.removeAt(oldIndex);
       // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
@@ -727,42 +723,50 @@ class _MyPlaylistsSection extends ConsumerWidget {
         _SectionHeader(
           title: tr('自建歌单'),
           count: playlists.length,
-          action: OutlinedButton.icon(
-            onPressed: () => _promptCreate(context, manager),
-            icon: const Icon(Icons.add, size: 15),
-            label:   Text(tr('新建'), style: TextStyle(fontSize: 13)),
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              minimumSize: const Size(0, 32),
-              side: BorderSide(
-                color: scheme.outlineVariant.withValues(alpha: 0.6),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
+          action: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _pillButton(context, scheme, Icons.add, '新建',
+                  () => _promptCreate(context, manager)),
+              const SizedBox(width: 8),
+              _pillButton(context, scheme, Icons.file_download_outlined, '导入',
+                  () => context.push('/playlist-import')),
+            ],
           ),
         ),
         _ReorderCard(
-          itemCount: itemCount,
+          itemCount: playlists.length,
           onReorder: onReorder,
-          itemKey: (i) => i < playlists.length
-              ? ValueKey(playlists[i].id)
-              : const ValueKey('import'),
-          itemBuilder: (ctx, i) {
-            if (i < playlists.length) {
-              return _PlaylistRow(
-                playlist: playlists[i],
-                index: i,
-                dragEnabled: true,
-              );
-            }
-            return const _ImportPlaylistRow();
-          },
+          itemKey: (i) => ValueKey(playlists[i].id),
+          itemBuilder: (ctx, i) => _PlaylistRow(
+            playlist: playlists[i],
+            index: i,
+            dragEnabled: true,
+          ),
         ),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  /// 胶囊按钮（「新建」「导入」共用样式）。
+  Widget _pillButton(BuildContext context, ColorScheme scheme, IconData icon,
+      String label, VoidCallback onTap) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 15),
+      label: Text(tr(label), style: TextStyle(fontSize: 13)),
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        minimumSize: const Size(0, 32),
+        side: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
     );
   }
 
@@ -932,65 +936,6 @@ class _PlaylistRow extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 「导入外部歌单」特殊条目（参考图：功能型条目，与内容条目区分）。
-class _ImportPlaylistRow extends StatelessWidget {
-  const _ImportPlaylistRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      onTap: () => context.push('/playlist-import'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 10, 14, 10),
-        child: Row(
-          children: [
-            // 可排序歌单行为整行长按拖拽，左侧并无常驻把手列，
-            // 故与上方歌单行一致，封面直接贴着 6px 左边距，不留空缺。
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: scheme.onSurface.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.file_download_outlined,
-                size: 26,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                    Text(
-                    tr('导入外部歌单'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    tr('备份文件 / 本地文件夹 / 云端导入'),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, size: 20, color: scheme.outline),
-          ],
         ),
       ),
     );

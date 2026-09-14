@@ -6,6 +6,7 @@ import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/plugin/plugin_provider.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
@@ -36,6 +37,32 @@ class _HomePageState extends ConsumerState<HomePage> {
         : _buildPortrait(context, ref);
   }
 
+  /// 「发现」（音源榜单）与「每日推荐」两个区块：无任何已启用插件时整体
+  /// 隐藏（连同区块标题与「查看全部」入口），避免新装应用首页堆两块「去安装
+  /// 插件」占位卡；插件列表为异步加载，加载完成前同样按无插件隐藏，完成后
+  /// watch 自动重建出现，不闪占位。
+  List<Widget> _discoverBlocks(BuildContext context, WidgetRef ref) {
+    final hasEnabledPlugin = ref.watch(pluginManagerProvider
+        .select((s) => s.sources.any((p) => p.enabled)));
+    if (!hasEnabledPlugin) return const [];
+    return [
+      _SectionHeader(
+        title: tr('发现'),
+        action: _viewAllAction(context, ref, '/home/toplists'),
+      ),
+      const SizedBox(height: 12),
+      const DiscoverSection(),
+      const SizedBox(height: 26),
+      _SectionHeader(
+        title: tr('每日推荐'),
+        action: _viewAllAction(context, ref, '/home/daily'),
+      ),
+      const SizedBox(height: 14),
+      const DailyRecommendSection(),
+      const SizedBox(height: 26),
+    ];
+  }
+
   /// 竖屏：原默认布局（封面轮播 + 发现 + 听过最多，标题 + 底部搜索框顶栏）。
   Widget _buildPortrait(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(settingsProvider.select(
@@ -61,24 +88,11 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: ListView(
             padding: EdgeInsets.fromLTRB(
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
-            children:   [
+            children: [
               SizedBox(height: 14),
               CoverCarousel(),
               SizedBox(height: 26),
-              _SectionHeader(
-                title: tr('发现'),
-                action: _viewAllAction(context, ref, '/home/toplists'),
-              ),
-              SizedBox(height: 12),
-              DiscoverSection(),
-              SizedBox(height: 26),
-              _SectionHeader(
-                title: tr('每日推荐'),
-                action: _viewAllAction(context, ref, '/home/daily'),
-              ),
-              SizedBox(height: 14),
-              DailyRecommendSection(),
-              SizedBox(height: 26),
+              ..._discoverBlocks(context, ref),
               _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
               _MostPlayedList(),
@@ -113,20 +127,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
             children: [
               SizedBox(height: 10),
-              _SectionHeader(
-                title: tr('发现'),
-                action: _viewAllAction(context, ref, '/home/toplists'),
-              ),
-              SizedBox(height: 12),
-              DiscoverSection(),
-              SizedBox(height: 26),
-              _SectionHeader(
-                title: tr('每日推荐'),
-                action: _viewAllAction(context, ref, '/home/daily'),
-              ),
-              SizedBox(height: 14),
-              DailyRecommendSection(),
-              SizedBox(height: 26),
+              ..._discoverBlocks(context, ref),
               _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
               _MostPlayedList(),

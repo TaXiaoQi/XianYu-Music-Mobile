@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
+import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/app_logger.dart';
 import '../../src/core/db_path.dart';
@@ -1135,7 +1136,14 @@ class SearchIdleView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final history = ref.watch(searchHistoryProvider);
-    final hotAsync = ref.watch(_hotSearchProvider);
+    // 大家都在搜聚合的是账号维度的数据，未登录时不请求、不展示；
+    // 无已启用插件时同样不展示（热搜为在线内容入口，与登录态无关）。
+    final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
+    final hasEnabledPlugin = ref.watch(
+        pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)));
+    final hotAsync = loggedIn && hasEnabledPlugin
+        ? ref.watch(_hotSearchProvider)
+        : const AsyncValue<List<HotSearchItem>>.data([]);
     final bottomInset = MediaQuery.of(context).padding.bottom + 24;
 
     return ListView(
@@ -1185,48 +1193,50 @@ class SearchIdleView extends ConsumerWidget {
           for (final kw in history) _HistoryTile(keyword: kw, onTap: onSearch),
         const SizedBox(height: 24),
 
-        // —— 大家都在搜 ——
-        Row(
-          children: [
-            Icon(Icons.local_fire_department_outlined,
-                size: 18, color: scheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              tr('大家都在搜'),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        hotAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.4),
-              ),
-            ),
-          ),
-          error: (_, _) => _EmptyHotHint(scheme),
-          data: (list) => list.isEmpty
-              ? _EmptyHotHint(scheme)
-              : Column(
-                  children: [
-                    for (var i = 0; i < list.length; i++)
-                      _HotTile(
-                        index: i,
-                        item: list[i],
-                        onTap: onSearch,
-                      ),
-                  ],
+        // —— 大家都在搜（登录后展示） ——
+        if (loggedIn) ...[
+          Row(
+            children: [
+              Icon(Icons.local_fire_department_outlined,
+                  size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                tr('大家都在搜'),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurfaceVariant,
                 ),
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          hotAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+              ),
+            ),
+            error: (_, _) => _EmptyHotHint(scheme),
+            data: (list) => list.isEmpty
+                ? _EmptyHotHint(scheme)
+                : Column(
+                    children: [
+                      for (var i = 0; i < list.length; i++)
+                        _HotTile(
+                          index: i,
+                          item: list[i],
+                          onTap: onSearch,
+                        ),
+                    ],
+                  ),
+          ),
+        ],
       ],
     );
   }

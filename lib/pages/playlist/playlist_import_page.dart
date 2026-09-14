@@ -34,14 +34,10 @@ class PlaylistImportPage extends ConsumerStatefulWidget {
 }
 
 class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
-  }
+    with TickerProviderStateMixin {
+  /// 云端导入依赖已启用的音源插件（搜索歌单/拉取详情），无插件时整 tab 隐藏。
+  late TabController _tabCtrl = TabController(length: 3, vsync: this);
+  bool _cloudTab = true;
 
   @override
   void dispose() {
@@ -51,12 +47,23 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
 
   @override
   Widget build(BuildContext context) {
+    final hasPlugin = ref.watch(pluginManagerProvider
+        .select((s) => s.sources.any((p) => p.enabled)));
+    // 插件可用性变化（异步加载完成 / 全部禁用）：重建 TabController 对齐 tab 数，
+    // 并保留当前选中位（收 tab 时钳制到有效范围）。
+    if (hasPlugin != _cloudTab) {
+      _cloudTab = hasPlugin;
+      final prev = _tabCtrl.index;
+      _tabCtrl.dispose();
+      _tabCtrl = TabController(length: hasPlugin ? 3 : 2, vsync: this)
+        ..index = prev.clamp(0, (hasPlugin ? 3 : 2) - 1);
+    }
     final tabBar = TabBar(
       controller: _tabCtrl,
       tabs:   [
         Tab(text: tr('备份文件')),
         Tab(text: tr('本地文件')),
-        Tab(text: tr('云端导入')),
+        if (hasPlugin) Tab(text: tr('云端导入')),
       ],
     );
     return Scaffold(
@@ -71,10 +78,10 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
             ),
             child: TabBarView(
               controller: _tabCtrl,
-              children: const [
-                _BackupImportTab(),
-                _LocalFolderTab(),
-                _CloudImportTab(),
+              children: [
+                const _BackupImportTab(),
+                const _LocalFolderTab(),
+                if (hasPlugin) const _CloudImportTab(),
               ],
             ),
           ),
@@ -264,7 +271,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          tr('支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 ') + tr('M3U/M3U8 播放列表、椒盐音乐 TXT 导出，自动匹配已安装音源插件，') + tr('本地路径歌曲匹配本地曲库导入。'),
+          tr('支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 M3U/M3U8 播放列表、椒盐音乐 TXT 导出。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),

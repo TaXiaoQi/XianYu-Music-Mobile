@@ -2608,10 +2608,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 在线歌曲起播失败时自动切换到其他落雪音源（同一首歌、另一平台）。
   /// 通过公共音源搜索同名曲目并解析直链播放；返回 true 表示已换源成功。
+  /// 仅当「起播失败行为」为 autoswitch（或分享链接 replace 的 force）时生效。
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {
     final settings = _ref.read(settingsProvider).valueOrNull;
     debugPrint('[autoSwitch] 进入换源 title="${item.title}" '
-        'autoSwitchOn=${settings?.autoSwitchSourceOnFailure} force=$force '
+        'behavior=${settings?.onlineFailureBehavior} force=$force '
         'settingsLoaded=${settings != null}');
     // 同曲防抖：错误事件与 stall 兜底可能 37ms 内先后到达，双路重复换源
     // 会让候选插件被串行白跑两轮（日志曾见同一首歌进入重试两次）。
@@ -2625,7 +2626,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _lastAutoSwitchAt = now;
     _lastAutoSwitchPath = item.path;
     // 分享链接「替换播放」走插件索引换源时允许绕过通用开关（force=true）。
-    if (!(settings?.autoSwitchSourceOnFailure ?? false) && !force) return false;
+    if ((settings?.onlineFailureBehavior ?? 'autoswitch') != 'autoswitch' &&
+        !force) {
+      return false;
+    }
 
     final infoJson = item.onlineInfoJson ?? item.onlineSongJson;
     if (infoJson == null || infoJson.isEmpty) return false;
