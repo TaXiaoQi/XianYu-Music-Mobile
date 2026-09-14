@@ -537,7 +537,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _posSub = _player.positionStream.listen((p) {
       final pos = p.inMilliseconds / 1000.0;
       state = state.copyWith(position: pos);
-      _syncToSystemMediaSession();
+      // 不推送系统媒体会话：Android 通知栏进度按 PlaybackState 的
+      // position+speed 外推，无需逐 tick 下发。这里曾每 200ms 同步一次，
+      // 导致 audio_service 以 ~5 次/秒重发通知，触发系统通知限流
+      // （logcat: Package enqueue rate is 5.0x Shedding）——切歌时的
+      // 元数据更新被成批丢弃，表现为「通知栏封面/标题切歌不刷新、
+      // 暂停后才更新」（暂停即洪水停止、限流解除）。
       _persistPositionDebounced();
       _maybePrecacheNextRemote(pos);
     });

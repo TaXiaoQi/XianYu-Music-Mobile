@@ -67,9 +67,8 @@ int compareVersions(String a, String b) {
     final bv = i < pb.fields.length ? pb.fields[i] : 0;
     if (av != bv) return av > bv ? 1 : -1;
   }
-  // 主版本相等：正式版 > 预发布版。
-  if (pa.pre == null && pb.pre != null) return 1;
-  if (pa.pre != null && pb.pre == null) return -1;
+  // 主版本数字相同：正式版与预发布互相独立（beta 与正式版互不触发更新）。
+  if (pa.pre == null || pb.pre == null) return 0;
   final preA = pa.pre;
   final preB = pb.pre;
   if (preA != null && preB != null) {

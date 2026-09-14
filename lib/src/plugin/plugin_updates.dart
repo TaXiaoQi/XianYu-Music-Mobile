@@ -28,24 +28,56 @@ class PluginUpdateCheckResult {
   });
 }
 
-/// 版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同。
-/// 支持语义化版本如 "1.0.5"、"1.0.5-fix7"、"2.0.0-beta.1"。
+/// 版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同/独立（不触发更新）。
+/// 语义：数字系列只和数字系列比（跨数字版本时后缀不参与，1.0.2-beta1 < 1.0.3）；
+/// 同数字版本下，正式版与预发布互相独立（1.0.2-beta1 与 1.0.2 互不视为更新）；
+/// 预发布之间按前缀（字母）再序号比较（beta2 > beta1）。
 int compareVersions(String a, String b) {
-  final va = _parseVersion(a);
-  final vb = _parseVersion(b);
-  final maxLen = va.length > vb.length ? va.length : vb.length;
+  final pa = _parseVersion(a);
+  final pb = _parseVersion(b);
+  final maxLen =
+      pa.fields.length > pb.fields.length ? pa.fields.length : pb.fields.length;
   for (var i = 0; i < maxLen; i++) {
-    final diff = (i < va.length ? va[i] : 0) - (i < vb.length ? vb[i] : 0);
-    if (diff != 0) return diff;
+    final av = i < pa.fields.length ? pa.fields[i] : 0;
+    final bv = i < pb.fields.length ? pb.fields[i] : 0;
+    if (av != bv) return av.compareTo(bv);
   }
-  return 0;
+  // 主版本数字相同：正式版与预发布互相独立，视为相同（不触发更新）。
+  if (pa.pre == null || pb.pre == null) return 0;
+  // 预发布之间：前缀（字母）不同按字母序（alpha < beta < rc），
+  // 同前缀比序号，避免 beta10 与 beta9 被字符串比较误判。
+  if (pa.preToken != pb.preToken) {
+    return pa.preToken.compareTo(pb.preToken);
+  }
+  return pa.preNum.compareTo(pb.preNum);
 }
 
-List<int> _parseVersion(String v) {
-  return v
-      .split(RegExp(r'[-.]'))
-      .map((p) => int.tryParse(p) ?? 0)
-      .toList();
+/// 解析版本号：数字主版本段 + 预发布段（前缀字母 + 序号）。
+/// 如 `1.0.2-beta1` → 主版本 [1,0,2]，预发布 `beta` + 1。
+class _VersionParts {
+  final List<int> fields;
+  final String? pre;
+  final String preToken;
+  final int preNum;
+  const _VersionParts(this.fields, this.pre, this.preToken, this.preNum);
+}
+
+_VersionParts _parseVersion(String v) {
+  var s = v.trim();
+  if (s.startsWith('v') || s.startsWith('V')) s = s.substring(1);
+  final dash = s.indexOf('-');
+  final main = dash >= 0 ? s.substring(0, dash) : s;
+  final preStr = dash >= 0 ? s.substring(dash + 1) : null;
+  final fields =
+      main.split(RegExp(r'[._+]')).map((p) => int.tryParse(p) ?? 0).toList();
+  var preToken = '';
+  var preNum = 0;
+  if (preStr != null) {
+    preToken = RegExp(r'^[a-zA-Z]*').firstMatch(preStr)?.group(0) ?? '';
+    final num = RegExp(r'(\d+)').firstMatch(preStr);
+    preNum = num != null ? int.tryParse(num.group(1)!) ?? 0 : 0;
+  }
+  return _VersionParts(fields, preStr, preToken, preNum);
 }
 
 /// 从 MusicFree/Baka 脚本中提取版本号（不执行脚本）。

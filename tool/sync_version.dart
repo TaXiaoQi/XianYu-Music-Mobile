@@ -49,13 +49,18 @@ void main(List<String> args) {
 
   // 3) 同步 pubspec.yaml 的 version（+build 段 = deriveVersionCode 推导结果）
   //
-  // versionCode 推导公式（应用商店/F-Droid 均要求 versionCode 随版本单调递增；
+  // versionCode 推导公式（应用商店/F-Droid 要求 versionCode 随版本单调递增；
   // 旧逻辑恒为 +1 会导致所有版本 versionCode 相同、商店无法识别升级）：
   //   versionCode = major×1,000,000 + minor×10,000 + patch×100
-  //                 + (预发布 betaN，N∈1..98 → N；正式版 → 99)
-  //   例：1.0.1-beta7 → 1000107；1.0.1 正式 → 1000199；1.0.2-beta1 → 1000201
-  // 同一 major.minor.patch 内 betaN 递增；正式版大于其全部 beta；更高 patch 的
-  // beta 大于低 patch 正式版；minor/major 进位天然更大——整体单调。
+  //   例：1.0.1 → 1000100；1.0.2 → 1000200；1.0.3-beta1 → 1000300
+  // 数字系列只和数字系列比：同一 major.minor.patch 的正式版与任意预发布版
+  // （betaN/alpha/rc…）取同一 versionCode —— Android 安装器只认一维整数、
+  // 无法表达「beta 与正式版互为独立分支」，若给预发布段编入序号（旧公式
+  // betaN→N、正式版→99），同数字系列先装的会拦截后装的（降级误判）。
+  // 同码后系统层面互相覆盖安装均放行；beta 先后关系由应用内 versionName
+  // 比较器承担（plugin_updates.dart / app_update.dart，预发布独立语义）。
+  // 跨数字版本天然单调递增，满足商店要求（同数字的 beta/正式版不重复上架
+  // 即无同码冲突）。
   // 显式带 +build 的版本号视为手动指定，原样使用（可覆盖推导结果应急）。
   final pubContent = pubspec.readAsStringSync();
   var pubUpdated = false;
@@ -82,9 +87,10 @@ void main(List<String> args) {
 
 /// 从版本号推导单调递增的 versionCode（pubspec 的 +build 段）。
 ///
-/// 公式与单调性论证见 main 内步骤 3 注释。beta 序号超出 1..98、或预发布段
-/// 不是 beta/bateN 形式时报错退出，避免生成破坏单调性的 versionCode。
-/// 历史版本号曾有 bate 拼写（如 1.0.0-bate2），推导时一并兼容。
+/// 公式与「数字系列只和数字系列比」的语义论证见 main 内步骤 3 注释：
+/// 预发布段（betaN/alpha/rc…）不参与推导，与同数字正式版共用 versionCode。
+/// 任意合法版本号均可推导；历史版本号曾有 bate 拼写（如 1.0.0-bate2），无需
+/// 特判——预发布段一律忽略。需要精细控制时显式写 +build 手动指定。
 String deriveVersionCode(String version) {
   final m = RegExp(r'^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$').firstMatch(version);
   if (m == null) {
@@ -94,23 +100,5 @@ String deriveVersionCode(String version) {
   final major = int.parse(m.group(1)!);
   final minor = int.parse(m.group(2)!);
   final patch = int.parse(m.group(3)!);
-  final pre = m.group(4);
-  int suffix;
-  if (pre == null) {
-    suffix = 99;
-  } else {
-    final n = int.tryParse(
-          RegExp(r'^(?:beta|bate)(\d+)$').firstMatch(pre)?.group(1) ?? '',
-        ) ??
-        -1;
-    if (n < 1 || n > 98) {
-      stderr.writeln(
-        'ERROR: 预发布段「-$pre」无法推导 versionCode（仅支持 beta/bate 1..98）。'
-        '请改用如 1.0.1-beta3 的形式，或显式写 +build 手动指定',
-      );
-      exit(1);
-    }
-    suffix = n;
-  }
-  return '${major * 1000000 + minor * 10000 + patch * 100 + suffix}';
+  return '${major * 1000000 + minor * 10000 + patch * 100}';
 }
