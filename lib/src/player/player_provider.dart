@@ -515,6 +515,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _currentPlayCountRecorded = false;
   /// 通知栏封面路径缓存（歌曲 path → 缩略图路径；空串 = 无封面）。
   final Map<String, String> _notifCoverCache = {};
+  /// 进行中的封面解析（path → future），防并发重复查询并支持首推前 await。
+  final Map<String, Future<String>> _notifCoverPending = {};
   /// 已发起封面预加载的歌曲 path（避免同歌重复预热；满额清首保活）。
   final Set<String> _preloadedCovers = {};
   /// 进程内是否已请求过通知权限（Android 13+ 媒体通知必需）。
@@ -980,6 +982,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   /// 通知栏/锁屏封面兜底：本地歌曲播放时查曲库缩略图（含 SAF 自愈），
   /// 结果缓存（空串 = 无封面，同样缓存防重复查询）。
+  /// 支持并发去重：同曲重复调用会等待进行中的那次解析（首推前 await 依赖此语义）。
   Future<void> _resolveNotificationCover(QueueItem item) async {
     if (item.isOnline) return;
     // coverUrl/coverPath 齐备且真实存在时无需兜底；coverPath 为死路径
@@ -990,7 +993,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (File(cp).existsSync()) return;
       AppLog.info('media_cover', 'coverPath 失效，走缩略图兜底: $cp');
     }
-    if (_notifCoverCache.containsKey(item.path)) return;
+    final pending = _notifCoverPending[item.path];
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final fut = _resolveNotificationCoverInner(item);
+    _notifCoverPending[item.path] = fut;
+    try {
+      await fut;
+    } finally {
+      _notifCoverPending.remove(item.path);
+    }
+  }
+
+  /// 实际解析并写缓存，返回解析出的缩略图路径（可能为空串）。
+  Future<String> _resolveNotificationCoverInner(QueueItem item) async {
+    if (_notifCoverCache.containsKey(item.path)) {
+      return _notifCoverCache[item.path] ?? '';
+    }
     _notifCoverCache[item.path] = '';
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
@@ -1018,8 +1039,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } else if (p.isEmpty) {
         AppLog.info('media_cover', '缩略图兜底为空: ${item.path}');
       }
+      return p;
     } catch (e) {
       AppLog.info('media_cover', '缩略图兜底异常: $e');
+      return '';
     }
   }
 
@@ -1137,9 +1160,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         playMode: mode,
       );
 
+      // 会话恢复同样在首推前解析本地封面（库内按 path 查询极快）：
+      // 首包即带封面，避免起播后补推的第二次 artwork 更新被
+      // Android 12+ SystemUI 竞态丢弃（重启后封面空白直到暂停刷新）。
+      if (!currentItem.isOnline && currentItem.coverUrl?.isNotEmpty != true) {
+        try {
+          await _resolveNotificationCover(currentItem);
+        } catch (_) {}
+      }
       _syncToSystemMediaSession();
-      // 会话恢复时本地曲目封面同样走懒提取补封面（否则重启后媒体会话无封面）。
-      unawaited(_resolveNotificationCover(currentItem));
 
       final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
       await _player.setVolume(vol);
@@ -1305,6 +1334,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
       _activeProbeKey = null;
     }
+    // 本地歌曲在首推前先按本地逻辑解析库内缩略图封面。本地曲库页的
+    // Song 原生携带 coverPath 首包即带封面；收藏/歌单/最近播放等入口
+    // 转换的条目不携带，若不带封面首推，起播后补推的第二次 artwork
+    // 更新会被 Android 12+ 的 SystemUI 竞态丢弃（封面停留在上一首、
+    // 直到暂停刷新）。库内按 path 查询极快，等解析完再首推，对所有
+    // 播放入口对齐本地曲库页行为。
+    if (!item.isOnline && item.coverUrl?.isNotEmpty != true) {
+      try {
+        await _resolveNotificationCover(item);
+      } catch (_) {}
+      if (epoch != _playEpoch) return;
+    }
     state = state.copyWith(
       queueIndex: index,
       current: item,
@@ -1416,9 +1457,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _recordRecentPlay(item);
       _recordHistory(item);
       _trackStartTime = DateTime.now();
+      // 本地封面已在首推前解析（见 _playAt 顶部），首包即带封面；
+      // 此处仅随起播完成常规补推一次元数据（在线歌曲解析期间的
+      // 音质/封面信息更新依赖这次同步）。
       _syncToSystemMediaSession();
-      // 本地歌曲通知栏封面兜底（异步，不阻塞起播）。
-      unawaited(_resolveNotificationCover(item));
       // 预热队列后续歌曲封面，使切歌/封面动画时下一首封面多数已就绪。
       unawaited(Future(() => _preloadQueueCovers()));
     } catch (e) {
