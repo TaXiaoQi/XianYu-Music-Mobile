@@ -72,8 +72,10 @@ void main(List<String> args) {
     final oldLine = pubMatch.group(0)!;
     final hasCr = oldLine.endsWith('\r');
     final bareOld = hasCr ? oldLine.substring(0, oldLine.length - 1) : oldLine;
-    final oldCode =
-        int.tryParse(RegExp(r'\+(\d+)\s*$').firstMatch(bareOld)?.group(1) ?? '');
+    // 从版本 token（# 注释前的第一个词）里取现值 +build 码——版本行可能带
+    // 行内注释，不能用「行尾 +数字」匹配，否则注释会令解析失败、单调保护失效。
+    final oldToken = RegExp(r'^version\s*:\s*([^\s#]+)').firstMatch(bareOld)?.group(1) ?? '';
+    final oldCode = int.tryParse(RegExp(r'\+(\d+)$').firstMatch(oldToken)?.group(1) ?? '');
     final derived =
         version.contains('+') ? null : int.tryParse(deriveVersionCode(version));
     var targetCode = derived;
