@@ -756,13 +756,14 @@ class _ScanFoldersCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  subtitle: Text(
-                    isLost ? tr('授权已失效，点击钥匙重新授权') : '${f.songCount} 首',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isLost ? scheme.error : scheme.onSurfaceVariant,
-                    ),
-                  ),
+                  subtitle: isLost
+                      ? Text(
+                          tr('授权已失效，点击钥匙重新授权'),
+                          style: TextStyle(fontSize: 12, color: scheme.error),
+                        )
+                      // 不展示歌曲首数：添加目录已改为不自动扫描，首数
+                      // 只会是上次扫描的旧值或 0，展示出来徒增误解。
+                      : null,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
