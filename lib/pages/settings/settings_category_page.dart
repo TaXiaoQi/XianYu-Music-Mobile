@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../src/backup/app_backup.dart';
 import '../../src/core/app_colors.dart';
@@ -2512,6 +2513,18 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             return;
           }
           await ref.read(settingsProvider.notifier).setDownloadPath(path);
+          // 设置下载地址时一次性申请下载所需全部权限（原先拖到点下载才申请）：
+          // 「所有文件访问」用于自选目录直写，「通知」用于下载进度通知。
+          // 恢复默认目录不申请——默认路径走 MediaStore 兼容写入，无需该权限。
+          if (Platform.isAndroid) {
+            var manage = await Permission.manageExternalStorage.request();
+            if (manage.isPermanentlyDenied) await openAppSettings();
+            await Permission.notification.request();
+            if (!manage.isGranted && context.mounted) {
+              showXianYuToast(
+                  context, tr('未授予所有文件访问权限，将尝试兼容模式写入'));
+            }
+          }
           if (context.mounted) {
             showXianYuToast(context, tr('下载路径已更新'));
           }

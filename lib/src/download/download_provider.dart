@@ -215,10 +215,12 @@ class DownloadManager extends StateNotifier<DownloadState> {
       (!Platform.isAndroid && !Platform.isIOS) ||
       (_ref.read(settingsProvider).valueOrNull?.downloadPath ?? '').isNotEmpty;
 
-  /// 下载前校验：①未设置自定义下载目录时提示；②Android 未授予
-  /// 「所有文件访问」（MANAGE_EXTERNAL_STORAGE）时给出非阻断提示——
+  /// 下载前校验：①未设置自定义下载目录时提示；②Android 检查
+  /// 「所有文件访问」（MANAGE_EXTERNAL_STORAGE）状态并给出非阻断提示——
+  /// 权限申请已前移到「设置 → 下载目录」选完路径时一次性完成（连同通知
+  /// 权限），这里不再拉起申请，仅兜底检测（用户事后撤权等场景）。
   /// 直写受限时下载会自动走 MediaStore 兼容模式（API 29+ 自有媒体条目
-  /// 免存储权限），不应因未授权直接中止。返回 false 时调用方中止下载
+  /// 免存储权限），不因未授权直接中止。返回 false 时调用方中止下载
   /// （仅目录未设置的情况）。供各下载入口复用。
   /// iOS/ohos：目录固定可用，无存储权限概念，直接放行。
   Future<bool> requireDownloadDir(BuildContext context) async {
@@ -228,16 +230,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       return false;
     }
     if (Platform.isAndroid) {
-      var status = await Permission.manageExternalStorage.status;
-      // 未授予时主动拉起系统「所有文件访问」授权页：MediaStore 兼容回退只能
-      // 落 Music/Download 集合，用户自选任意目录必须授权才能直写成功。
-      // 之前只 toast 不申请，而 Manifest 又未声明该权限（已补），导致自选
-      // 目录永远直写失败、静默回落 Music/弦予。
-      if (!status.isGranted && !status.isPermanentlyDenied) {
-        status = await Permission.manageExternalStorage.request();
-      }
-      // await 期间调用方面板可能已被关闭（可拖拽的底部面板），此时用
-      // 失效 context 查 Overlay 会触发 framework ancestor 断言崩溃。
+      final status = await Permission.manageExternalStorage.status;
       if (!context.mounted) return false;
       if (!status.isGranted) {
         showXianYuToast(
