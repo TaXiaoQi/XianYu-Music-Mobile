@@ -123,7 +123,7 @@ flutter build apk --release
 一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
 
 - **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
-- 产物自动归档到 `releases/弦予音乐_<版本>_arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译）
+- 产物自动归档到 `releases/android/弦予音乐v<版本>-Mobile.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译；预发布版本名自带 -betaN 后缀）
 - 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
 
 #### iOS（Xcode 归档 / .ipa）
