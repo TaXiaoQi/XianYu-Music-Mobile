@@ -24,14 +24,14 @@ import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../settings/folder_picker_page.dart';
+import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 文件夹页：扫描歌曲一体化界面（参考魅族音乐「扫描歌曲」）。
 ///
 /// 由本地库「文件夹」Tab 独立而来的二级页面（本地页顶部搜索框右侧「+」进入）：
 /// 顶部扫描引导（图标 + 开始扫描）→ 过滤设置（按时长过滤）→ 扫描目录管理
-/// （添加 / 移除 / 重新授权）→ 远程音乐库（WebDAV）入口。
-/// （原「已扫描文件夹树」浏览/导入歌单区已移除：数据不实时更新，易误导。）
+/// （添加 / 移除 / 重新授权）→ 已扫描文件夹树（浏览 / 播放 / 导入歌单）。
 class LibraryFolderPage extends ConsumerStatefulWidget {
   const LibraryFolderPage({super.key});
 
@@ -40,6 +40,7 @@ class LibraryFolderPage extends ConsumerStatefulWidget {
 }
 
 class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
+  final Set<String> _expanded = {};
   bool _scanning = false;
   bool _adding = false;
 
@@ -264,6 +265,61 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     }
   }
 
+  void _buildNodes(
+      BuildContext context, List<FolderNodeData> nodes, List<Widget> out) {
+    for (final n in nodes) {
+      final hasChildren = n.children.isNotEmpty || n.childCount > 0;
+      final isExpanded = _expanded.contains(n.path);
+      out.add(_FolderTile(
+        node: n,
+        hasChildren: hasChildren,
+        isExpanded: isExpanded,
+        onToggle: () {
+          setState(() {
+            if (isExpanded) {
+              _expanded.remove(n.path);
+            } else {
+              _expanded.add(n.path);
+            }
+          });
+        },
+        onOpen: () {
+          if (n.songCount > 0) {
+            Navigator.of(context, rootNavigator: true).push(
+              coverPageRoute(
+                context,
+                (_) => SongListPage(
+                  title: n.name,
+                  loader: () =>
+                      ref.read(libraryProvider.notifier).songsByFolder(n.path),
+                ),
+              ),
+            );
+          }
+        },
+        onImport: () => _importAsPlaylist(n),
+      ));
+      if (isExpanded && n.children.isNotEmpty) {
+        _buildNodes(context, n.children, out);
+      }
+    }
+  }
+
+  Future<void> _importAsPlaylist(FolderNodeData node) async {
+    final count = await ref
+        .read(libraryProvider.notifier)
+        .importFolderAsPlaylist(node.path);
+    if (!mounted) return;
+    final name = node.name.isNotEmpty ? node.name : node.path.split('/').last;
+    showXianYuToast(
+      context,
+      count > 0
+          ? tr('已将 {n} 首歌曲导入到歌单「{name}」', {'n': count, 'name': name})
+          : tr('「{name}」下没有可导入的歌曲', {'name': name}),
+      duration: const Duration(seconds: 2),
+    );
+  }
+
   /// 一键扫描全部目录（也作为下拉刷新动作）。
   Future<void> _onRefresh() => _startScan();
 
@@ -340,6 +396,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
+    final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
     final lost =
         ref.watch(libraryProvider.select((s) => s.unauthorizedFolders));
     final foldersAsync = ref.watch(scanFoldersProvider);
@@ -349,6 +406,9 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
             ?.libraryMinDurationSeconds ??
         0;
     final scheme = Theme.of(context).colorScheme;
+
+    final tiles = <Widget>[];
+    _buildNodes(context, root, tiles);
 
     return HideShellChrome(
       child: Scaffold(
@@ -423,6 +483,30 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                       const SizedBox(height: 16),
                       // —— 远程音乐库（WebDAV）入口 ——
                       const _RemoteLibraryCard(),
+                      // —— 已扫描文件夹树 ——
+                      if (root.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                          child: Text(
+                            tr('已扫描文件夹'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ),
+                        Material(
+                          color: appCardFill(context, ref),
+                          clipBehavior: Clip.antiAlias,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide.none,
+                          ),
+                          child: Column(children: tiles),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -751,6 +835,71 @@ class _UnauthorizedBanner extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FolderTile extends StatelessWidget {
+  final FolderNodeData node;
+  final bool hasChildren;
+  final bool isExpanded;
+  final VoidCallback onToggle;
+  final VoidCallback onOpen;
+  final VoidCallback onImport;
+  const _FolderTile({
+    required this.node,
+    required this.hasChildren,
+    required this.isExpanded,
+    required this.onToggle,
+    required this.onOpen,
+    required this.onImport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.folder),
+      title: Text(
+        node.name.isNotEmpty ? node.name : node.path.split('/').last,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        tr('{n} 首', {'n': node.songCount}),
+        style: const TextStyle(fontSize: 12),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasChildren)
+            IconButton(
+              icon: AnimatedRotation(
+                turns: isExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(Icons.expand_more),
+              ),
+              onPressed: onToggle,
+            ),
+          if (node.songCount > 0)
+            IconButton(icon: const Icon(Icons.play_arrow), onPressed: onOpen),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: tr('更多'),
+            onSelected: (action) {
+              if (action == 'import') onImport();
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: 'import',
+                enabled: node.songCount > 0,
+                child:   Text(tr('导入为歌单')),
+              ),
+            ],
+          ),
+        ],
+      ),
+      onTap: hasChildren ? onToggle : onOpen,
     );
   }
 }
