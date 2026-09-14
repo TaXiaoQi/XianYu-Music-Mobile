@@ -206,24 +206,28 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   /// [floating]=悬浮顶栏模式（居于顶栏下方悬浮行，内边距 2）；固定模式并入
   /// 顶栏底段（内边距 14，与工具行对齐）。
   Widget _buildSourceBar({bool floating = false}) {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.symmetric(horizontal: floating ? 2 : 14),
-        children: [
-          for (final s in _sources)
-            Padding(
-              key: _chipKeys[s.id],
-              padding: const EdgeInsets.only(right: 8),
-              child: FloatingSourcePill(
-                name: s.name,
-                selected: _selectedId == s.id,
-                onTap: () => _selectSource(_sources.indexOf(s)),
+    // SourceBarScrollBridge：横向拖动接玻璃活动信号（液态下拖动折射跟随，
+    // 不然玻璃停旧快照上平移，与播放条当年拖拽错位同毛病）。
+    return SourceBarScrollBridge(
+      child: SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.symmetric(horizontal: floating ? 2 : 14),
+          children: [
+            for (final s in _sources)
+              Padding(
+                key: _chipKeys[s.id],
+                padding: const EdgeInsets.only(right: 8),
+                child: FloatingSourcePill(
+                  name: s.name,
+                  selected: _selectedId == s.id,
+                  onTap: () => _selectSource(_sources.indexOf(s)),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

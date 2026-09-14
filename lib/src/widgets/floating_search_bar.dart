@@ -153,6 +153,54 @@ class FloatingGlassSurface extends ConsumerWidget {
   }
 }
 
+/// 来源条横向滚动 → 液态玻璃活动信号桥。
+///
+/// 来源胶囊条是横向 ListView，拖动时胶囊平移盖到不同底色上（与播放条
+/// 拖拽同型），但 [ScrollOffsetCapture] 只捕获竖直滚动——横向拖动既不会让
+/// BiliPaiGlass 退冻结（背板停在旧快照上跟着平移，折射不动），也没有逐帧
+/// 重绘驱动。这里监听子树横向滚动：拖动期间置全局拖拽标志（退冻结 + 涟漪
+/// 时钟驱动逐帧重绘 + 每帧新建层实例/扰动像素强制重抓背板，即播放条拖拽
+/// 的既有修法），松手即恢复静止冻结。
+class SourceBarScrollBridge extends StatefulWidget {
+  const SourceBarScrollBridge({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<SourceBarScrollBridge> createState() => _SourceBarScrollBridgeState();
+}
+
+class _SourceBarScrollBridgeState extends State<SourceBarScrollBridge> {
+  @override
+  void dispose() {
+    // 兜底：页面在惯性滚动未落定（松手后 fling 中）时被销毁（如切页），
+    // ScrollEndNotification 不会再来，全局拖拽标志会卡死在 true——所有
+    // BiliPaiGlass 从此常驻实时渲染。销毁时无条件清零（即使此刻真有播放条
+    // 拖拽在进行的重叠概率也极低，代价只是那次拖拽期间回冻结）。
+    if (globalIsDragging.value) setGlobalDragging(false);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.metrics.axis != Axis.horizontal) return false;
+        if (n is ScrollStartNotification) {
+          setGlobalDragging(true);
+        } else if (n is ScrollUpdateNotification) {
+          // 持续标记滚动活动（连带 blur 预算降级口径与竖直滚动一致）。
+          markScrollActivity();
+        } else if (n is ScrollEndNotification) {
+          setGlobalDragging(false);
+        }
+        return false;
+      },
+      child: widget.child,
+    );
+  }
+}
+
 /// BiliPai 风格小液态玻璃胶囊/圆钮：跟随全局玻璃设置（液态 shader / 伪液态
 /// 毛玻璃 / 毛玻璃 / 纯色），材质口径与 [FloatingSearchBar] 完全一致。
 /// 用于顶栏标题、图标按钮等小控件的玻璃包裹（BiliPai 首页顶部按钮观感）。

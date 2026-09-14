@@ -832,26 +832,30 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   /// 来源插件切换条：与音源榜单一致，拆成独立玻璃气泡（[FloatingSourcePill]），
   /// 不再铺实色底板，壁纸反色下来源仍清晰可读。
   Widget _buildSourceBar({bool floating = false}) {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.symmetric(
-          horizontal: floating ? 2 : 14,
-        ),
-        children: [
-          for (final s in _sources)
-            Padding(
-              key: _sourceKeys[s.id],
-              padding: const EdgeInsets.only(right: 8),
-              child: FloatingSourcePill(
-                name: s.name,
-                selected: s.id == _selected.id,
-                onTap: () => _onSourceSelected(s.id),
+    // SourceBarScrollBridge：横向拖动接玻璃活动信号（液态下拖动折射跟随，
+    // 不然玻璃停旧快照上平移，与播放条当年拖拽错位同毛病）。
+    return SourceBarScrollBridge(
+      child: SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.symmetric(
+            horizontal: floating ? 2 : 14,
+          ),
+          children: [
+            for (final s in _sources)
+              Padding(
+                key: _sourceKeys[s.id],
+                padding: const EdgeInsets.only(right: 8),
+                child: FloatingSourcePill(
+                  name: s.name,
+                  selected: s.id == _selected.id,
+                  onTap: () => _onSourceSelected(s.id),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
