@@ -43,6 +43,7 @@ class BiliPaiGlass extends StatefulWidget {
     this.saturation = 1.0,
     this.depthEffect = 0.0,
     this.alwaysLive = false,
+    this.freshBackdrop = false,
     required this.child,
   });
 
@@ -84,6 +85,17 @@ class BiliPaiGlass extends StatefulWidget {
   /// 容忍冻结背板错位的浮层（迷你播放条）。代价是静止时也持续实时渲染
   /// （面积小、成本可控）；关闭则维持静止冻结缓存以省电。
   final bool alwaysLive;
+
+  /// 背板恒定逐帧重抓（不依赖全局拖拽标志）。
+  ///
+  /// 实时路径默认「静止用缓存 filter + 不画微扰像素」，Impeller 会按
+  /// filter/层实例缓存背板快照——玻璃自身平移（如来源胶囊横向拖动）时
+  /// 折射采样停在旧快照。全局拖拽标志对这类表面不可靠（滚动信号桥在
+  /// 真机不生效），开启本项后实时路径每帧新建 blur filter 实例并画逐帧
+  /// 微扰像素，强制引擎每帧重抓背板，静止/拖动折射恒实时跟随。须与
+  /// [alwaysLive] 同开（不冻结才有实时路径可谈）。代价是静止时也逐帧
+  /// 重抓背板（面积小、成本可控，同迷你播放条常驻口径）。
+  final bool freshBackdrop;
 
   final Widget child;
 
@@ -337,6 +349,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               depthEffect: widget.depthEffect,
               frozen: _frozen,
               fadeBlend: _fade.value,
+              freshBackdrop: widget.freshBackdrop,
             ),
           ),
         ),
@@ -366,6 +379,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     required this.depthEffect,
     this.frozen,
     this.fadeBlend = 1.0,
+    this.freshBackdrop = false,
   });
 
   final ui.FragmentShader shader;
@@ -385,6 +399,9 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
   /// 背板「实时 ↔ 冻结」淡变值（0=纯实时，1=纯冻结图）。
   final double fadeBlend;
 
+  /// 实时路径背板恒定逐帧重抓（见 [BiliPaiGlass.freshBackdrop]）。
+  final bool freshBackdrop;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -400,6 +417,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       depthEffect: depthEffect,
       frozen: frozen,
       fadeBlend: fadeBlend,
+      freshBackdrop: freshBackdrop,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -421,6 +439,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       ..saturation = saturation
       ..depthEffect = depthEffect
       ..frozen = frozen
+      ..freshBackdrop = freshBackdrop
       ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
@@ -464,6 +483,7 @@ class RenderLiquidBacking extends RenderBox {
     required double depthEffect,
     required ui.Image? frozen,
     required double fadeBlend,
+    required bool freshBackdrop,
     required double dpr,
   }) : _shader = shader,
        _radius = radius,
@@ -477,6 +497,7 @@ class RenderLiquidBacking extends RenderBox {
        _depthEffect = depthEffect,
        _frozen = frozen,
        _fadeBlend = fadeBlend,
+       _freshBackdrop = freshBackdrop,
        _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -573,6 +594,16 @@ class RenderLiquidBacking extends RenderBox {
     final v = value.clamp(0.0, 1.0).toDouble();
     if (_fadeBlend == v) return;
     _fadeBlend = v;
+    markNeedsPaint();
+  }
+
+  /// 背板恒定逐帧重抓（来源胶囊等自身平移表面用，见
+  /// [BiliPaiGlass.freshBackdrop]）。
+  bool _freshBackdrop;
+  bool get freshBackdrop => _freshBackdrop;
+  set freshBackdrop(bool value) {
+    if (_freshBackdrop == value) return;
+    _freshBackdrop = value;
     markNeedsPaint();
   }
 
@@ -720,15 +751,16 @@ class RenderLiquidBacking extends RenderBox {
     // 贴着模糊内部的拼接缝（「折射对不上背景」的根因）。
     final bg = _backgroundColor;
 
-    // Pass1 模糊 filter：静止/滚动按 sigma 缓存复用；**拖拽中每帧新建**——
-    // Impeller 的背板快照对层树结构 + filter 实例敏感，复用缓存 filter 时
-    // 玻璃平移仍可能命中拖拽起点的旧快照，折射采样停在旧位置（「拖拽时
-    // 折射效果留在原地/不明显」根因）。层对象本就每帧新建（见下），拖拽
-    // 期 filter 一并新建，两处口径对齐；拖拽结束回到缓存路径，无常态开销。
+    // 恒定逐帧重抓（来源胶囊等自身平移表面，[BiliPaiGlass.freshBackdrop]）
+    // 与全局拖拽共用同一条强制路径：Impeller 的背板快照对层树结构 + filter
+    // 实例敏感，复用缓存 filter 时玻璃平移仍可能命中旧快照，折射采样停在
+    // 旧位置（「拖拽/平移时折射效果留在原地」根因）。层对象本就每帧新建
+    // （见下），filter 一并新建，两处口径对齐；普通静止表面维持缓存路径。
     // 注意：ImageFilter.blur 的 sigma 就是逻辑像素（画布坐标系），不能再乘
     // dpr——乘过会导致模糊强度虚高 ~3 倍（实测中心糊成一片）。
+    final forceFresh = _freshBackdrop || globalIsDragging.value;
     final targetSigma = _blurSigma;
-    _cachedBlurFilter = globalIsDragging.value
+    _cachedBlurFilter = forceFresh
         ? cheapBackdropBlurFresh(targetSigma)
         : (_cachedBlurFilter != null && _cachedBlurSigma == targetSigma
             ? _cachedBlurFilter!
@@ -792,13 +824,14 @@ class RenderLiquidBacking extends RenderBox {
       Offset.zero & size,
       clipPath,
       (context, offset) {
-        // 拖拽中在 blur 层 push【之前】画 1/255 透明度逐帧黑白交替像素（视觉
-        // 不可见）。BackdropFilter 的背板输入 = 该层 push 时画布上已有的内容
-        // ——像素画在这里才属于背板输入，逐帧变化即强制引擎重抓背板，玻璃
-        // 平移时模糊/折射跟随。此前把像素画在 blurLayer 的 child 里属于滤镜
-        // 输出侧，根本不进背板输入，故「拖动毛玻璃不跟随」依旧。滚动/转场
-        // 路径被采样内容本就在变，恒不画、零开销。
-        if (globalIsDragging.value) {
+        // 强制重抓背板的表面（拖拽中，或 freshBackdrop 常开）在 blur 层
+        // push【之前】画 1/255 透明度逐帧黑白交替像素（视觉不可见）。
+        // BackdropFilter 的背板输入 = 该层 push 时画布上已有的内容——像素
+        // 画在这里才属于背板输入，逐帧变化即强制引擎重抓背板，玻璃平移时
+        // 模糊/折射跟随。此前把像素画在 blurLayer 的 child 里属于滤镜输出
+        // 侧，根本不进背板输入，故「拖动毛玻璃不跟随」依旧。无强制重抓的
+        // 滚动/转场路径被采样内容本就在变，恒不画、零开销。
+        if (forceFresh) {
           final parity = (uiTime * 1000).toInt().isEven;
           // 画在玻璃中心：左上角原点在圆角裁剪弧外会被 clipPath 裁掉。
           context.canvas.drawRect(

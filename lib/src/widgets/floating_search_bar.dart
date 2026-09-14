@@ -153,54 +153,6 @@ class FloatingGlassSurface extends ConsumerWidget {
   }
 }
 
-/// 来源条横向滚动 → 液态玻璃活动信号桥。
-///
-/// 来源胶囊条是横向 ListView，拖动时胶囊平移盖到不同底色上（与播放条
-/// 拖拽同型），但 [ScrollOffsetCapture] 只捕获竖直滚动——横向拖动既不会让
-/// BiliPaiGlass 退冻结（背板停在旧快照上跟着平移，折射不动），也没有逐帧
-/// 重绘驱动。这里监听子树横向滚动：拖动期间置全局拖拽标志（退冻结 + 涟漪
-/// 时钟驱动逐帧重绘 + 每帧新建层实例/扰动像素强制重抓背板，即播放条拖拽
-/// 的既有修法），松手即恢复静止冻结。
-class SourceBarScrollBridge extends StatefulWidget {
-  const SourceBarScrollBridge({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<SourceBarScrollBridge> createState() => _SourceBarScrollBridgeState();
-}
-
-class _SourceBarScrollBridgeState extends State<SourceBarScrollBridge> {
-  @override
-  void dispose() {
-    // 兜底：页面在惯性滚动未落定（松手后 fling 中）时被销毁（如切页），
-    // ScrollEndNotification 不会再来，全局拖拽标志会卡死在 true——所有
-    // BiliPaiGlass 从此常驻实时渲染。销毁时无条件清零（即使此刻真有播放条
-    // 拖拽在进行的重叠概率也极低，代价只是那次拖拽期间回冻结）。
-    if (globalIsDragging.value) setGlobalDragging(false);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n.metrics.axis != Axis.horizontal) return false;
-        if (n is ScrollStartNotification) {
-          setGlobalDragging(true);
-        } else if (n is ScrollUpdateNotification) {
-          // 持续标记滚动活动（连带 blur 预算降级口径与竖直滚动一致）。
-          markScrollActivity();
-        } else if (n is ScrollEndNotification) {
-          setGlobalDragging(false);
-        }
-        return false;
-      },
-      child: widget.child,
-    );
-  }
-}
-
 /// BiliPai 风格小液态玻璃胶囊/圆钮：跟随全局玻璃设置（液态 shader / 伪液态
 /// 毛玻璃 / 毛玻璃 / 纯色），材质口径与 [FloatingSearchBar] 完全一致。
 /// 用于顶栏标题、图标按钮等小控件的玻璃包裹（BiliPai 首页顶部按钮观感）。
@@ -210,6 +162,8 @@ class BiliPaiPill extends ConsumerWidget {
     required this.child,
     this.onTap,
     this.radius = 20,
+    this.alwaysLive = false,
+    this.freshBackdrop = false,
   });
 
   final Widget child;
@@ -219,6 +173,16 @@ class BiliPaiPill extends ConsumerWidget {
 
   /// 视觉圆角：40px 高胶囊/圆钮用 20（半高），搜索胶囊 44 高用 22。
   final double radius;
+
+  /// 常驻实时渲染（不抓屏冻结）。用于会平移盖到不同内容上的小胶囊
+  /// （来源插件条等）——冻结快照在平移中必然错位，拖拽信号桥在真机
+  /// 上不可靠，直接同迷你播放条口径常驻实时（面积小，成本可控）。
+  final bool alwaysLive;
+
+  /// 背板恒定逐帧重抓（见 [BiliPaiGlass.freshBackdrop]）：实时路径每帧
+  /// 新建 blur filter 实例并画微扰像素，强制引擎逐帧重抓背板，不依赖
+  /// 全局拖拽标志。须与 [alwaysLive] 同开（不冻结才有实时路径可谈）。
+  final bool freshBackdrop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -253,6 +217,8 @@ class BiliPaiPill extends ConsumerWidget {
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
         radius: radius,
+        alwaysLive: alwaysLive,
+        freshBackdrop: freshBackdrop,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
@@ -316,6 +282,13 @@ class FloatingSourcePill extends ConsumerWidget {
     return BiliPaiPill(
       onTap: onTap,
       radius: radius,
+      // 常驻实时 + 背板恒定逐帧重抓（同迷你播放条拖拽口径）：胶囊随横向
+      // 拖动平移盖到不同内容上，冻结/引擎缓存快照必然错位——每帧新建
+      // filter 实例 + 微扰像素强制引擎逐帧重抓背板，拖动/惯性/静止折射恒
+      // 实时跟随，不依赖滚动信号桥（真机上该信号不可靠，表现为拖动中不
+      // 刷新、松手才刷新）。
+      alwaysLive: true,
+      freshBackdrop: true,
       child: Container(
         height: height,
         constraints: BoxConstraints(

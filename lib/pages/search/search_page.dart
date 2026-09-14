@@ -390,7 +390,10 @@ class _SuggestionTile extends ConsumerWidget {
 /// 搜索页：顶部搜索输入框 + 搜索历史/热搜。提交后跳到结果页（/search/result）。
 /// 结果页不在此页内联展示，因此本路由不显示迷你播放条。
 class SearchPage extends ConsumerStatefulWidget {
-  const SearchPage({super.key});
+  const SearchPage({super.key, this.initialQuery});
+
+  /// 从结果页「返回搜索」重推时预填的关键词（/search?q=xxx）。
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchPage> createState() => _SearchPageState();
@@ -399,6 +402,17 @@ class SearchPage extends ConsumerStatefulWidget {
 class _SearchPageState extends ConsumerState<SearchPage>
     with HidesShellChrome {
   final TextEditingController _ctrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 预填关键词（回搜索页改词场景）：只填框不触发联想/统计。
+    final q = widget.initialQuery;
+    if (q != null && q.isNotEmpty) {
+      _ctrl.text = q;
+      _lastQueryLength = q.length;
+    }
+  }
 
   // 输入统计：1.5s 无新输入后批量上报新增字符数。
   int _pendingCharCount = 0;
@@ -498,6 +512,10 @@ class _SearchPageState extends ConsumerState<SearchPage>
   }
 
   /// 提交搜索：记录历史与会话，跳到结果页（/search/result）。
+  ///
+  /// 用 pushReplacement 把 /search 从栈里替换掉：竖屏下结果页返回时直接
+  /// 回到打开在线搜索的页面，无需连退两次。「回搜索页改词」由结果页
+  /// 「返回搜索」按钮重推 /search（带关键词预填）承担。
   void _submitSearch(String raw) {
     final q = raw.trim();
     if (q.isEmpty) return;
@@ -506,7 +524,7 @@ class _SearchPageState extends ConsumerState<SearchPage>
     ref.read(searchHistoryProvider.notifier).add(q);
     final sourceId = ref.read(searchSessionProvider).sourceId;
     ref.read(searchSessionProvider.notifier).startSearch(q, sourceId);
-    context.push('/search/result');
+    context.pushReplacement('/search/result');
   }
 
   void _clearInput() {
@@ -832,30 +850,26 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
   /// 来源插件切换条：与音源榜单一致，拆成独立玻璃气泡（[FloatingSourcePill]），
   /// 不再铺实色底板，壁纸反色下来源仍清晰可读。
   Widget _buildSourceBar({bool floating = false}) {
-    // SourceBarScrollBridge：横向拖动接玻璃活动信号（液态下拖动折射跟随，
-    // 不然玻璃停旧快照上平移，与播放条当年拖拽错位同毛病）。
-    return SourceBarScrollBridge(
-      child: SizedBox(
-        height: 40,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.symmetric(
-            horizontal: floating ? 2 : 14,
-          ),
-          children: [
-            for (final s in _sources)
-              Padding(
-                key: _sourceKeys[s.id],
-                padding: const EdgeInsets.only(right: 8),
-                child: FloatingSourcePill(
-                  name: s.name,
-                  selected: s.id == _selected.id,
-                  onTap: () => _onSourceSelected(s.id),
-                ),
-              ),
-          ],
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.symmetric(
+          horizontal: floating ? 2 : 14,
         ),
+        children: [
+          for (final s in _sources)
+            Padding(
+              key: _sourceKeys[s.id],
+              padding: const EdgeInsets.only(right: 8),
+              child: FloatingSourcePill(
+                name: s.name,
+                selected: s.id == _selected.id,
+                onTap: () => _onSourceSelected(s.id),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1087,8 +1101,13 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     }
   }
 
-  /// 结果页返回搜索页，在新搜索页发起新搜索。
-  void _goToSearchPage() => context.pop();
+  /// 结果页「返回搜索」：提交搜索时 /search 已被结果页替换出栈，pop 只会
+  /// 回到打开搜索的页面——改为重新推入搜索页并带上当前关键词预填，便于
+  /// 直接改词重搜。
+  void _goToSearchPage() {
+    final q = ref.read(searchSessionProvider).query;
+    context.push(q.isEmpty ? '/search' : '/search?q=${Uri.encodeComponent(q)}');
+  }
 }
 // ==================== 默认页（搜索历史 + 大家都在搜） ====================
 

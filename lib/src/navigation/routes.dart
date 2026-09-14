@@ -126,7 +126,10 @@ final appRouter = GoRouter(
       path: '/search',
       pageBuilder: (context, state) => _coverPage(
         context,
-        (_) => const SearchPage(),
+        (_) => SearchPage(
+          // /search?q=xxx：结果页「返回搜索」重推时预填关键词。
+          initialQuery: state.uri.queryParameters['q'],
+        ),
         key: state.pageKey,
       ),
     ),
