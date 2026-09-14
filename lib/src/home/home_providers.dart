@@ -71,6 +71,10 @@ class ListenStatsData {
 /// 云端累计听歌总时长（秒），登录后由后台同步填充（跨端同步，不阻塞本地展示）。
 final serverTotalDurationProvider = StateProvider<int>((ref) => 0);
 
+/// 上次 report_listen_stats 上报时间（毫秒）。播放落库/切页都会触发
+/// listenStatsProvider 重算，30s 节流避免频繁上报（对齐桌面端 REPORT_THROTTLE_MS）。
+int _lastListenReportAt = 0;
+
 final listenStatsProvider = FutureProvider<ListenStatsData>((ref) async {
   final dbPath = await ref.read(dbPathProvider.future);
 
@@ -87,21 +91,31 @@ final listenStatsProvider = FutureProvider<ListenStatsData>((ref) async {
     todayCount = (dj['today_play_count'] as num?)?.toInt() ?? 0;
   } catch (_) {}
 
-  // 2. 登录账号：后台上报并拉取云端累计总时长（不阻塞本地展示）。
-  //    服务端按 MAX 合并，实现桌面端/移动端跨端同步；今日时长/首数保持本地。
+  // 2. 登录账号：后台上报本地时长并做双向对齐（不阻塞本地展示）。
+  //    服务端对累计总时长做 GREATEST 合并并回传合并值；云端更长时必须把它
+  //    落库进本地 SQLite（MAX 抬高），否则本地从旧基线继续累计、永远追不上
+  //    云端旧值 → 服务端 MAX 永远取云端，新听时长进不了云端、显示也不涨。
+  //    （对齐桌面端 leaderboardReport.reportListenDuration + mergeCloudListenDuration）
   final auth = ref.watch(authProvider);
   if (auth.isLoggedIn) {
     Future(() async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastListenReportAt < 30000) return;
+      _lastListenReportAt = now;
       try {
         final api = ref.read(accountApiProvider);
-        await api.reportListenStats({
+        final cloudTotal = await api.reportListenStats({
           'total': totalSecs,
           'daily': todaySecs,
         });
-        final server = await api.fetchListenStats();
-        final serverTotal = (server['total_duration'] as num?)?.toInt() ?? 0;
-        if (serverTotal > 0) {
-          ref.read(serverTotalDurationProvider.notifier).state = serverTotal;
+        if (cloudTotal > 0) {
+          try {
+            await mergeCloudListenDuration(
+                dbPath: dbPath, totalSeconds: cloudTotal);
+          } catch (_) {
+            // 落库失败不影响云端值展示。
+          }
+          ref.read(serverTotalDurationProvider.notifier).state = cloudTotal;
         }
       } catch (_) {
         // 网络失败时沿用本地数据。

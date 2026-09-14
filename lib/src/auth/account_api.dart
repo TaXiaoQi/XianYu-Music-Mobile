@@ -278,37 +278,61 @@ class AccountApi {
     }, fetchTimeoutMs: 20000);
   }
 
-  /// 从云端下载设置。
-  Future<Map<String, dynamic>?> downloadSettings() async {
-    final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      throw AuthException(tr('请先登录后再同步设置'));
+  /// 从云端下载设置（跨平台取最新快照，见 [downloadSettingsCrossPlatform]）。
+  Future<Map<String, dynamic>?> downloadSettings() async =>
+      (await downloadSettingsCrossPlatform()).settings;
+
+  /// 跨平台取最新云端设置快照。
+  ///
+  /// 服务端按平台分文件存储（settings_desktop.json / settings_mobile.json），
+  /// 各端只写自己的文件、下载只读自己的——跨平台设置同步在服务端契约上
+  /// 不通（移动端永远看不到桌面端快照；首次上传后移动端文件又被自己的
+  /// 旧数据占住，「下载/登录同步」全变空转）。这里并发拉两端快照，按快照
+  /// 时间取更新的一份：桌面端是主配置端（打平/解析失败优先桌面），
+  /// 多手机互传时移动端快照更新则用移动端。
+  Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
+      downloadSettingsCrossPlatform() async {
+    final results = await Future.wait([
+      _downloadSettingsSnapshot('mobile'),
+      _downloadSettingsSnapshot('desktop'),
+    ]);
+    final own = results[0];
+    final desktop = results[1];
+    final ownOk = own.settings != null && own.settings!.isNotEmpty;
+    final deskOk = desktop.settings != null && desktop.settings!.isNotEmpty;
+    if (ownOk && deskOk) {
+      final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+      final ownAt = own.uploadedAt ?? epoch;
+      final deskAt = desktop.uploadedAt ?? epoch;
+      return ownAt.isAfter(deskAt) ? own : desktop;
     }
-    final data = await _action('settings_sync_download', {
-      'user_id': ciyuanxiId,
-      'platform': 'mobile',
-    }, fetchTimeoutMs: 15000);
-    final settings = data['settings'];
-    if (settings is! Map<String, dynamic>) return null;
-    return settings;
+    if (deskOk) return desktop;
+    return own;
   }
 
-  /// 从云端下载设置（含上传时间元数据，供冲突弹窗展示）。
+  /// 拉取指定平台快照（时间优先取 `timestamp` unix 秒，回退解析
+  /// `uploaded_at` 字符串；服务端存的是 UTC 去时区格式，两端同格式可比较）。
   Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
-      downloadSettingsWithMeta() async {
+      _downloadSettingsSnapshot(String platform) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步设置'));
     }
     final data = await _action('settings_sync_download', {
       'user_id': ciyuanxiId,
-      'platform': 'mobile',
+      'platform': platform,
     }, fetchTimeoutMs: 15000);
     final settings = data['settings'];
     DateTime? uploadedAt;
-    final uploadedAtStr = data['uploaded_at'];
-    if (uploadedAtStr is String && uploadedAtStr.isNotEmpty) {
-      uploadedAt = DateTime.tryParse(uploadedAtStr);
+    final ts = data['timestamp'];
+    if (ts is num && ts > 0) {
+      // 解析为本地时间：快照间比较两端一致，冲突弹窗直接展示也是用户本地钟。
+      uploadedAt = DateTime.fromMillisecondsSinceEpoch((ts * 1000).round());
+    } else {
+      final uploadedAtStr = data['uploaded_at'];
+      if (uploadedAtStr is String && uploadedAtStr.isNotEmpty) {
+        uploadedAt = DateTime.tryParse(uploadedAtStr);
+      }
     }
     return (
       settings: settings is Map<String, dynamic> ? settings : null,
@@ -653,10 +677,10 @@ class AccountApi {
     return LeaderboardData.fromJson(data);
   }
 
-  Future<void> _reportListenStats(
+  Future<int> _reportListenStats(
       String ciyuanxiId, Map<String, int> durations) async {
     try {
-      await _action('report_listen_stats', {
+      final data = await _action('report_listen_stats', {
         'ciyuanxi_id': ciyuanxiId,
         'duration': durations['total'] ?? 0,
         'daily_duration': durations['daily'] ?? 0,
@@ -664,30 +688,21 @@ class AccountApi {
         'total_duration': durations['total'] ?? 0,
         'unique_songs_count': 0,
       }, fetchTimeoutMs: 8000);
+      // 服务端对累计总时长做 GREATEST 合并后回传（对齐桌面端），供本地落库对齐。
+      return (data['server_total_duration'] as num?)?.toInt() ?? 0;
     } catch (_) {
       // 上报失败不影响排行榜获取。
+      return 0;
     }
   }
 
-  /// 上报本地听歌时长到账号（服务端按 MAX 合并，跨端累计总时长）。
+  /// 上报本地听歌时长到账号（服务端按 MAX 合并，跨端累计总时长），
+  /// 返回服务端合并后的累计总时长（秒；0 表示未登录/失败/服务端未回传）。
   /// 登录态下播放落库 / 首页统计读取时调用。
-  Future<void> reportListenStats(Map<String, int> durations) async {
+  Future<int> reportListenStats(Map<String, int> durations) async {
     final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return;
-    await _reportListenStats(ciyuanxiId, durations);
-  }
-
-  /// 获取账号累计听歌时长（秒）与唯一歌曲数，登录后合并进本地统计（跨端同步）。
-  Future<Map<String, dynamic>> fetchListenStats() async {
-    final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return const {};
-    try {
-      return await _action(
-          'get_listen_stats', {'ciyuanxi_id': ciyuanxiId},
-          fetchTimeoutMs: 10000);
-    } catch (_) {
-      return const {};
-    }
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return 0;
+    return _reportListenStats(ciyuanxiId, durations);
   }
 
   // ─── 统计上报（fire-and-forget） ────────────────────────
@@ -803,61 +818,114 @@ Map<String, dynamic> settingsToSyncMap(AppSettings s) => {
       'organizeRule': s.organizeRule,
     };
 
-/// 将云端设置映射合并回本地 AppSettings（缺失字段保留本地值）。
-AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
-  int themeIndex(String key) {
-    final v = cloud[key];
+/// 云端快照归一化：桌面端嵌套全量快照与移动端扁平快照 → 「移动端同步键 →
+/// 本地类型值」的扁平映射。
+///
+/// 服务端按平台分文件存快照：桌面端是完整嵌套 AppSettings（theme.mode /
+/// theme.accentColor / audio.onlineDefaultQuality / lyrics.enableWordEffect /
+/// download.quality…），移动端才是扁平 13 键——此前按扁平键直取，桌面快照
+/// 几乎全 miss，「下载/登录同步」即使拉到桌面数据也空转。归一化规则：移动端
+/// 扁平键优先，缺失时回退桌面嵌套路径；桌面端没有的字段（volume/playMode/
+/// keepScreenOn/showLyricsTranslation/downloadLyrics 属播放态或移动端特有）
+/// 不产出，合并/比较时视为「保留本地」。
+Map<String, Object?> normalizeCloudSettingsMap(Map<String, dynamic> cloud) {
+  Object? pick(String flatKey, [String? nestedPath]) {
+    final flat = cloud[flatKey];
+    if (flat != null) return flat;
+    if (nestedPath == null) return null;
+    Object? cur = cloud;
+    for (final p in nestedPath.split('.')) {
+      if (cur is Map) {
+        cur = cur[p];
+      } else {
+        return null;
+      }
+    }
+    return cur;
+  }
+
+  int? accentColorOf(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) {
+      var hex = v.trim().replaceFirst('#', '').replaceFirst('0x', '');
+      if (hex.length == 6) hex = 'FF$hex';
+      return int.tryParse(hex, radix: 16);
+    }
+    return null;
+  }
+
+  int? themeModeOf(Object? v) {
     if (v is int) return v;
     if (v is String) {
       return switch (v) {
         'light' => 1,
         'dark' => 2,
-        _ => 0,
+        'system' => 0,
+        _ => null,
       };
     }
-    return local.themeMode.index;
+    return null;
   }
 
+  bool? boolOf(Object? v) => v is bool ? v : null;
+  String? strOf(Object? v) => v is String ? v : null;
+
+  return {
+    'volume': (pick('volume') as num?)?.toDouble(),
+    'playMode': (pick('playMode') as num?)?.toInt(),
+    'keepScreenOn': boolOf(pick('keepScreenOn')),
+    'themeMode': themeModeOf(pick('themeMode', 'theme.mode')),
+    'accentColor': accentColorOf(pick('accentColor', 'theme.accentColor')),
+    'showQualityBadges': boolOf(pick('showQualityBadges')),
+    'onlineDefaultQuality':
+        strOf(pick('onlineDefaultQuality', 'audio.onlineDefaultQuality')),
+    'libraryMinDurationSeconds':
+        (pick('libraryMinDurationSeconds') as num?)?.toInt(),
+    'showLyricsTranslation': boolOf(pick('showLyricsTranslation')),
+    'enableWordEffect': boolOf(pick('enableWordEffect', 'lyrics.enableWordEffect')),
+    'downloadQuality': strOf(pick('downloadQuality', 'download.quality')),
+    'downloadLyrics': boolOf(pick('downloadLyrics')),
+    'organizeRule': strOf(pick('organizeRule')),
+  };
+}
+
+/// 将云端设置映射合并回本地 AppSettings（缺失字段保留本地值）。
+AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
+  final m = normalizeCloudSettingsMap(cloud);
+  final themeIdx = m['themeMode'] as int?;
+  final maxIdx = ThemeModePreference.values.length - 1;
   return local.copyWith(
-    volume: (cloud['volume'] as num?)?.toDouble() ?? local.volume,
-    playMode: (cloud['playMode'] as num?)?.toInt() ?? local.playMode,
-    keepScreenOn: (cloud['keepScreenOn'] as bool?) ?? local.keepScreenOn,
-    themeMode: ThemeModePreference.values[themeIndex('themeMode')],
-    accentColor: (cloud['accentColor'] as num?)?.toInt() ?? local.accentColor,
-    showQualityBadges:
-        (cloud['showQualityBadges'] as bool?) ?? local.showQualityBadges,
+    volume: (m['volume'] as double?) ?? local.volume,
+    playMode: (m['playMode'] as int?) ?? local.playMode,
+    keepScreenOn: (m['keepScreenOn'] as bool?) ?? local.keepScreenOn,
+    themeMode: themeIdx == null
+        ? local.themeMode
+        : ThemeModePreference.values[themeIdx.clamp(0, maxIdx)],
+    accentColor: (m['accentColor'] as int?) ?? local.accentColor,
+    showQualityBadges: (m['showQualityBadges'] as bool?) ?? local.showQualityBadges,
     onlineDefaultQuality:
-        (cloud['onlineDefaultQuality'] as String?) ?? local.onlineDefaultQuality,
-    libraryMinDurationSeconds: (cloud['libraryMinDurationSeconds'] as num?)
-            ?.toInt() ??
-        local.libraryMinDurationSeconds,
+        (m['onlineDefaultQuality'] as String?) ?? local.onlineDefaultQuality,
+    libraryMinDurationSeconds:
+        (m['libraryMinDurationSeconds'] as int?) ?? local.libraryMinDurationSeconds,
     showLyricsTranslation:
-        (cloud['showLyricsTranslation'] as bool?) ?? local.showLyricsTranslation,
-    enableWordEffect:
-        (cloud['enableWordEffect'] as bool?) ?? local.enableWordEffect,
-    downloadQuality:
-        (cloud['downloadQuality'] as String?) ?? local.downloadQuality,
-    downloadLyrics: (cloud['downloadLyrics'] as bool?) ?? local.downloadLyrics,
-    organizeRule: (cloud['organizeRule'] as String?) ?? local.organizeRule,
+        (m['showLyricsTranslation'] as bool?) ?? local.showLyricsTranslation,
+    enableWordEffect: (m['enableWordEffect'] as bool?) ?? local.enableWordEffect,
+    downloadQuality: (m['downloadQuality'] as String?) ?? local.downloadQuality,
+    downloadLyrics: (m['downloadLyrics'] as bool?) ?? local.downloadLyrics,
+    organizeRule: (m['organizeRule'] as String?) ?? local.organizeRule,
   );
 }
 
 /// 比较本地设置与云端设置是否一致（排除设备相关字段，与桌面端 areSettingsEqual 对齐）。
 ///
-/// 仅比较同步字段（settingsToSyncMap 的键集合）；云端缺字段视为与本地一致
-/// （本地保留）；themeMode 兼容 int/string 两种存储表示。
+/// 仅比较同步字段（settingsToSyncMap 的键集合）；先经 [normalizeCloudSettingsMap]
+/// 归一化（兼容桌面嵌套快照），云端缺字段/类型不合视为与本地一致（本地保留）。
 bool areSettingsEqual(AppSettings local, Map<String, dynamic> cloud) {
   final localMap = settingsToSyncMap(local);
+  final m = normalizeCloudSettingsMap(cloud);
   for (final entry in localMap.entries) {
-    var cloudVal = cloud[entry.key];
+    final cloudVal = m[entry.key];
     if (cloudVal == null) continue;
-    if (entry.key == 'themeMode' && cloudVal is String) {
-      cloudVal = switch (cloudVal) {
-        'light' => 1,
-        'dark' => 2,
-        _ => 0,
-      };
-    }
     if (cloudVal != entry.value) return false;
   }
   return true;

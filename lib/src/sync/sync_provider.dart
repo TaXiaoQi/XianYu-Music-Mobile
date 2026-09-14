@@ -183,6 +183,16 @@ class SyncState {
 class SyncNotifier extends StateNotifier<SyncState> {
   SyncNotifier(this._ref) : super(const SyncState()) {
     _init();
+    // 登出（显式退出或会话失效）→ 重置「首次登录全量同步」标记：下次登录
+    // （含换账号登录）重新执行 syncOnLoginSuccess（云端设置下发/冲突弹窗
+    // 等），不再被设备级永久标记吞掉。应用重启后仍已登录的场景不受影响
+    // （标记还在，启动不重复全量同步）。
+    _ref.listen<bool>(
+      authProvider.select((s) => s.user != null),
+      (prev, next) {
+        if (prev == true && next == false) _resetLoginSyncFlag();
+      },
+    );
   }
 
   final Ref _ref;
@@ -190,7 +200,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   static const _autoSyncKey = 'sync_auto_config';
   static const _loginSyncKey = 'sync_login_synced';
 
-  // 首次登录同步标记：每个设备仅在首次登录做一次全量一致性同步
+  // 首次登录同步标记：每次登录（登出后重置）做一次全量一致性同步
   bool _loginSyncCompleted = false;
   bool _loginSyncInProgress = false;
 
@@ -219,13 +229,23 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
+  /// 登出后重置「首次登录全量同步」标记（内存 + 持久化）：
+  /// 下次登录重新走 syncOnLoginSuccess（设置同步/冲突弹窗等）。
+  Future<void> _resetLoginSyncFlag() async {
+    _loginSyncCompleted = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_loginSyncKey, false);
+    } catch (_) {}
+  }
+
   Future<void> updateUploadConfig(UploadConfig next) async {
     state = state.copyWith(uploadConfig: next);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_uploadKey, jsonEncode(next.toJson()));
   }
 
-  /// 首次登录全量一致性同步（每个设备仅执行一次，标记持久化）。
+  /// 登录成功全量一致性同步（每次登录执行一次，登出重置标记）。
   ///
   /// - 歌单/插件做「上传后下载」双向合并，收藏做「下载后上传」（含空列表保护），
   ///   让两端数据保持一致；
@@ -1274,7 +1294,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         _setSettingsError(tr('本地设置尚未加载完成'));
         return;
       }
-      final meta = await _api.downloadSettingsWithMeta();
+      final meta = await _api.downloadSettingsCrossPlatform();
       final cloud = meta.settings;
       final cloudTime = meta.uploadedAt;
       final upload = _ref.read(syncProvider).uploadConfig;
