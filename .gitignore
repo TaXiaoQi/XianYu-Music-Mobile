@@ -120,3 +120,8 @@ app.*.map.json
 # 鸿蒙就地构建的 ohpm 物化产物（third_party har 模块，构建时自动生成）
 **/oh_modules/
 third_party/*/ohos/oh-package-lock.json5
+third_party/*/ohos/BuildProfile.ets
+third_party/*/ohos/build/
+# 鸿蒙就地构建产物：rust .so 与 flutter_assets（每次构建重新生成）
+/ohos/entry/libs/
+/ohos/entry/src/main/resources/rawfile/

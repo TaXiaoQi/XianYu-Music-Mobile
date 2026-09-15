@@ -91,18 +91,22 @@
 
   > **改完代码怎么传递一句话记住**：`run` 进程还在就只在 run 终端按 `r`（热重载）或 `R`（热重启）直接传新构建，**不用每次全量 `flutter build`**；只有当 `run` 终端被关 / 进程退了才需要重新 `flutter run`。改的都是 Dart 业务代码（含新增 import、State、Ticker 等）时 `r`/`R` 都能覆盖，无需整包重装。改了 Rust 代码则不走热重载，重编后需 `R` 热重启或重新 Run。
 
-3. 鸿蒙构建 / 调试（统一走 `scripts/ohos/build-ohos.ps1`，**代码始终在主工程改**）：
+3. 鸿蒙构建 / 调试（与安卓同款体验，根目录直接用 flutter 命令；**代码始终在主工程改**）：
 
   ```powershell
-  .\scripts\ohos\build-ohos.ps1 -Run -d 127.0.0.1:5555    # run 调试（热重载 r / 热重启 R）
-  .\scripts\ohos\build-ohos.ps1 -SkipRust                 # 只改 Dart/ets 时快速出 HAP
-  .\scripts\ohos\build-ohos.ps1                           # 完整构建（自动编 Rust）
-  .\scripts\ohos\build-ohos.ps1 -Codegen                  # 改了 Rust API 签名时，强制 FRB 再生成
+  flutter hap                # 鸿蒙调试运行（对应安卓 flutter run；热重载 r / 热重启 R，-d 选设备）
+  flutter build app          # 鸿蒙正式版构建（默认 --release + ohos-arm64），对应安卓的 flutter build apk
+  flutter build hap --target-platform ohos-x64   # 模拟器包（x86_64）
+  .\scripts\ohos\build-ohos.ps1                  # 完整自动化：编 Rust + 构建 + 归档 releases\ohos
+  .\scripts\ohos\build-ohos.ps1 -AppPack         # 同上 + 出上架 AppGallery 的 .app
+  .\scripts\ohos\build-ohos.ps1 -Codegen         # 改了 Rust API 签名时，强制 FRB 再生成
   ```
 
+  > **flutter 命令路由（PowerShell profile 包装函数）**：本工程目录内，`flutter hap`（调试运行）、`flutter build app`/`build hap`（正式构建）、`pub get` 自动切到 Flutter-OH fork（与官方同为 3.44.9 引擎/Dart 3.12.2，仅多 ohos 目标），并注入 `PUB_CACHE=D:\pub-cache`（hvigor 插件要求 pub 缓存与工程同盘）与 DevEco ohpm/hvigor/node 工具，命令结束自动恢复环境，路由时终端会显示浅灰 `[flutter-ohos]` 提示；**裸 `flutter run` 与 `flutter build apk` 始终走官方 SDK（安卓）**，不做设备探测，安卓+鸿蒙设备同时在线也互不干扰。构建前自动做 rust 陈旧检测（rust 源码新于 `ohos/entry/libs/*.so` 时先编译，`XIANMU_SKIP_RUST=1` 跳过）。pub get 类操作务必用 flutter 命令而非 IDE 内置 dart——官方 flutter 重新生成的 `.flutter-plugins-dependencies` 没有 ohos 段，会让 DevEco 同步报 00305010。
+  >
   > **就地构建（镜像机制已退役）**：工程现位于无空格路径（`D:\XianYu-Music\XianYu-Music-Mobile`），ohpm/hvigor 可直接工作，构建全部在主工程内完成。历史遗留：工程旧路径含空格时需要镜像目录（`XIANYU_OHOS_MIRROR` 环境变量可恢复该模式，默认已关闭，`D:\xianyu-mobile-ohos` 为废弃镜像）。**主工程 `ohos/` 是唯一事实源**（含签名材料）。`pubspec_overrides.yaml` 常驻主工程根目录（由脚本每次从 `scripts/ohos/pubspec-ohos-overrides.yaml` 模板重写），使全平台统一解析鸿蒙 fork 依赖。
   >
-  > 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。产物在主工程 `build\ohos\hap\entry-default-signed.hap`，装机：`hdc install -r <HAP>`。
+  > build-ohos.ps1 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。**构建默认 `--release` 正式包**（测试用 `-Run`，无 debug 归档），产物在主工程 `build\ohos\hap\entry-default-signed.hap`，并自动归档到 `releases\ohos\弦予音乐v<版本>-Mobile.hap`——版本号原样取自 `version.ts` 的 `APP_VERSION`（如 `1.0.2-beta1` → `弦予音乐v1.0.2-beta1-Mobile.hap`，与安卓命名一致）；`-AppPack` 的 .app 同规则。装机：`hdc install -r <HAP>`。
   >
   > **注意：构建期间必须完全关闭 DevEco Studio**——它会对工程做 ohpm 重装（用未打补丁的 embedding 实例导致编译失败）并回写 `build-profile.json5`（清掉签名材料），与构建脚本互相破坏。
 

@@ -14,12 +14,12 @@
   if the project ever moves back under a path containing spaces.
 
   Usage:
-    .\scripts\ohos\build-ohos.ps1                    # build debug HAP
-    .\scripts\ohos\build-ohos.ps1 -Run               # flutter run (foreground)
+    .\scripts\ohos\build-ohos.ps1                    # build RELEASE HAP (archives to releases\ohos)
+    .\scripts\ohos\build-ohos.ps1 -Run               # flutter run (foreground; daily testing)
     .\scripts\ohos\build-ohos.ps1 -Run -d 127.0.0.1:5555
     .\scripts\ohos\build-ohos.ps1 -SkipRust          # reuse existing .so
     .\scripts\ohos\build-ohos.ps1 -Codegen           # force FRB regeneration
-    .\scripts\ohos\build-ohos.ps1 --release -AppPack # HAP + signed .app for AppGallery
+    .\scripts\ohos\build-ohos.ps1 -AppPack           # HAP + signed .app for AppGallery
 #>
 param(
     [switch]$Run,
@@ -353,11 +353,11 @@ try {
     } else {
         $buildArgs = @('build', 'hap')
         # Mode flag: honor an explicit --release/--profile/--debug passed through
-        # in $FlutterArgs; default to --debug when none given (appending both
-        # --debug and --release makes flutter abort on conflicting flags).
+        # in $FlutterArgs. Default is --release: archives are release-only (same as
+        # the Android flow); debug testing goes through -Run, never build.
         $hasModeFlag = $false
         foreach ($a in $FlutterArgs) { if ($a -in @('--release', '--profile', '--debug')) { $hasModeFlag = $true } }
-        if (-not $hasModeFlag) { $buildArgs += '--debug' }
+        if (-not $hasModeFlag) { $buildArgs += '--release' }
         if ($targetAbi -eq 'x64') { $buildArgs += @('--target-platform', 'ohos-x64') }
         elseif ($targetAbi -eq 'arm64') { $buildArgs += @('--target-platform', 'ohos-arm64') }
         if ($FlutterArgs) { $buildArgs += $FlutterArgs }
@@ -377,15 +377,34 @@ try {
         }
         $haps = Get-ChildItem (Join-Path $MirrorDir 'build') -Recurse -Filter *.hap -ErrorAction SilentlyContinue
         foreach ($h in $haps) { Write-Host ("  HAP: {0}  ({1:N1} MB)" -f $h.FullName, ($h.Length / 1MB)) -ForegroundColor Green }
+
+        # ---- archive to releases\ohos (parity with the Android release flow) ----
+        # Naming: 弦予音乐v<version>-Mobile.hap, version verbatim from version.ts
+        # (the single version source; '1.0.2-beta1' → 弦予音乐v1.0.2-beta1-Mobile.hap,
+        # matching 弦予音乐v1.0.2-Mobile.apk on Android). Explicit --debug builds are
+        # NOT archived - debug testing runs via -Run. Folder is gitignored (/releases/).
+        $buildMode = 'debug'
+        foreach ($a in $FlutterArgs) {
+            if ($a -eq '--release') { $buildMode = 'release' }
+            elseif ($a -eq '--profile') { $buildMode = 'profile' }
+        }
+        $appVersion = '0.0.0'
+        $versionTs = [System.IO.File]::ReadAllText((Join-Path $ProjectRoot 'version.ts'))
+        if ($versionTs -match "APP_VERSION\s*=\s*'([^']+)'") { $appVersion = $Matches[1] }
+        $relDir = Join-Path $ProjectRoot 'releases\ohos'
+        if ($buildMode -ne 'debug') {
+            New-Item -ItemType Directory -Force -Path $relDir | Out-Null
+            foreach ($h in $haps) {
+                $dst = Join-Path $relDir ("弦予音乐v{0}-Mobile.hap" -f $appVersion)
+                Copy-Item $h.FullName $dst -Force
+                Write-Host ("  archived: {0}" -f $dst) -ForegroundColor Green
+            }
+        }
         if ($AppPack) {
             # flutter build hap 只出 HAP（真机安装/调试）；上架 AppGallery 需要
             # .app（App Pack，一个或多个 HAP + pack.info）。assembleApp 是工程级
             # 任务（hvigor 根节点，勿带 --mode module 否则切到 entry 上下文找不到）。
-            $buildMode = 'debug'
-            foreach ($a in $FlutterArgs) {
-                if ($a -eq '--release') { $buildMode = 'release' }
-                elseif ($a -eq '--profile') { $buildMode = 'profile' }
-            }
+            # $buildMode 已在上方 HAP 归档处解析（--release/--profile/--debug）。
             Push-Location (Join-Path $MirrorDir 'ohos')
             try {
                 Write-Host "[ohos] hvigorw assembleApp (buildMode=$buildMode) ..." -ForegroundColor Cyan
@@ -400,7 +419,14 @@ try {
                     if ($LASTEXITCODE -ne 0) { throw "assembleApp failed ($LASTEXITCODE)" }
                 }
                 $apps = Get-ChildItem (Join-Path $MirrorDir 'ohos\build\outputs') -Recurse -Filter '*signed.app' -ErrorAction SilentlyContinue
-                foreach ($a in $apps) { Write-Host ("  APP: {0}  ({1:N1} MB)" -f $a.FullName, ($a.Length / 1MB)) -ForegroundColor Green }
+                foreach ($a in $apps) {
+                    Write-Host ("  APP: {0}  ({1:N1} MB)" -f $a.FullName, ($a.Length / 1MB)) -ForegroundColor Green
+                    if ($buildMode -ne 'debug') {
+                        $dst = Join-Path $relDir ("弦予音乐v{0}-Mobile.app" -f $appVersion)
+                        Copy-Item $a.FullName $dst -Force
+                        Write-Host ("  archived: {0}" -f $dst) -ForegroundColor Green
+                    }
+                }
             } finally { Pop-Location }
         }
     }
