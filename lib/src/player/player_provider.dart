@@ -615,8 +615,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _ref.listen(favoritesProvider, (_, _) {
       _syncToSystemMediaSession();
     });
-    // 音量即时同步到 DSP 管线（独占/共享）。
+    // 音量即时同步：普通播放直接作用于 just_audio 实例（表冠/外部改设置时
+    // 否则永不生效）；独占/共享 DSP 管线另有专属音量链路。
     _ref.listen(volumeProvider, (_, v) {
+      try {
+        _player.setVolume(_effectiveVolume());
+      } catch (_) {}
       if (state.usbExclusive || state.dspActive) {
         try {
           setUsbExclusiveVolume(volume: v);
@@ -1021,6 +1025,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } finally {
       _notifCoverPending.remove(item.path);
     }
+  }
+
+  /// 联动封面兜底：解析本地歌封面缩略图（与通知栏封面同一缓存链路，
+  /// 含 SAF 自愈），返回真实存在的缩略图路径；在线歌或无封面返回 null。
+  Future<String?> resolveLinkCoverPath(QueueItem item) async {
+    if (item.isOnline || item.coverUrl?.isNotEmpty == true) return null;
+    try {
+      await _resolveNotificationCover(item);
+    } catch (_) {
+      return null;
+    }
+    final p = _notifCoverCache[item.path];
+    if (p == null || p.isEmpty) return null;
+    return File(p).existsSync() ? p : null;
   }
 
   /// 实际解析并写缓存，返回解析出的缩略图路径（可能为空串）。

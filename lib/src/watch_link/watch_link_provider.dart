@@ -694,29 +694,40 @@ class WatchLinkController {
 
   /// 异步补发本地歌封面（512px JPEG base64，帧层自动分片；在线歌走 URL 不发）。
   ///
-  /// 缩放编码较重，放隔离池跑；结果按路径缓存。补发的 now_playing 只多带
-  /// coverData 字段，手表按歌曲 id 守卫落盘，标题先到封面随后跟上。
-  void _maybePushCoverData(QueueItem? item, {bool cloud = false}) {
+  /// 封面来源优先 coverPath；本地歌常见无封面字段（内嵌封面走缩略图链路），
+  /// 这里复用播放器的缩略图解析兜底，否则切歌时手表会一直挂着上一首的封面。
+  /// 结果按最终封面路径缓存。补发的 now_playing 只多带 coverData 字段，
+  /// 手表按歌曲 id 守卫落盘，标题先到封面随后跟上。
+  Future<void> _maybePushCoverData(QueueItem? item, {bool cloud = false}) async {
     if (item == null) return;
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty) return;
-    final path = item.coverPath;
-    if (path == null ||
-        path.isEmpty ||
-        path.startsWith('http') ||
-        path.startsWith('lx://')) {
-      return;
+    var path = item.coverPath;
+    final live = path != null &&
+        path.isNotEmpty &&
+        !path.startsWith('http') &&
+        !path.startsWith('lx://') &&
+        File(path).existsSync();
+    if (!live) {
+      final resolved = await _container
+          .read(playerProvider.notifier)
+          .resolveLinkCoverPath(item);
+      if (resolved == null) return; // 无封面：手表保持默认底色
+      path = resolved;
+      item = item.copyWith(coverPath: resolved);
     }
     final cached = _coverDataCache[path];
     if (cached != null) {
       _sendCoverData(item, cached, cloud: cloud);
       return;
     }
-    compute(_encodeLinkCoverData, path).then((data) {
+    final target = item;
+    final coverPath = path;
+    compute(_encodeLinkCoverData, coverPath).then((data) {
       if (data == null || data.isEmpty) return;
       if (_coverDataCache.length > 16) _coverDataCache.clear();
-      _coverDataCache[path] = data;
-      _sendCoverData(item, data, cloud: cloud);
+      _coverDataCache[coverPath] = data;
+      _sendCoverData(target, data, cloud: cloud);
     }).catchError((_) {});
   }
 
