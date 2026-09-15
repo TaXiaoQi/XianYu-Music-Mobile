@@ -69,6 +69,13 @@ class WatchLinkController {
   /// 当前播放会话是否已获准推送（起播经确认/记住选择后置 true，暂停或停止后清空）。
   bool _transferActive = false;
 
+  /// 当前播放会话是否已拒绝（弹窗被关闭未回答时置 true：本会话不再询问、
+  /// 不推送；暂停或停止后清空，与 [_transferActive] 同生命周期）。
+  bool _sessionDenied = false;
+
+  /// 进行中的授权弹窗（单飞：门控/握手同时触发复用同一次弹窗）。
+  Future<void>? _askInFlight;
+
   /// 当前已连接的手表名（调试/设置页展示用）。
   String get connectedName => _connectedName;
 
@@ -86,6 +93,8 @@ class WatchLinkController {
   void init() {
     if (!PlatformCaps.isAndroid) return;
     _channel.bind();
+    // 起播门控：有腕上设备且 ask 模式当天未决时，先弹授权确认再放行起播。
+    beforePlayGate = _playGate;
     _subs.add(_channel.onRaw.listen(_onRaw));
     _subs.add(_channel.onConnection.listen(_onConnection));
     _subs.add(_channel.onPermission.listen(_onPermission));
@@ -124,6 +133,7 @@ class WatchLinkController {
   }
 
   void dispose() {
+    beforePlayGate = null;
     for (final s in _subs) {
       s.cancel();
     }
@@ -366,6 +376,7 @@ class WatchLinkController {
       // 暂停/停止：先同步状态给手表，再关闭本次会话授权（下次起播重新确认）。
       _pushState();
       _transferActive = false;
+      _sessionDenied = false;
       return;
     }
     // 未获准的会话不推任何帧（内部状态已同步，防重复判定）。
@@ -411,7 +422,8 @@ class WatchLinkController {
   /// 播放会话起播：按设置评估是否推送。
   ///
   /// `remember` 模式按记住的选择直接放行或拒绝；`ask` 模式按天隔离——
-  /// 当天已有决定（弹窗选过）则静默应用，没有才弹窗（每天至多一次）。
+  /// 当天已有决定（弹窗选过）则静默应用。起播前的弹窗询问由 [_playGate]
+  /// 在 play() 内完成（先弹窗后起播），这里只兜底漏网场景。
   void _onPlaybackStart() {
     final s = _container.read(settingsProvider).valueOrNull;
     final mode = s?.watchLinkTransferMode ?? 'ask';
@@ -423,7 +435,7 @@ class WatchLinkController {
       // 记住「不传递」：本次会话不推，也不弹窗。
       return;
     }
-    // ask 模式：当天决定直接应用，跨天或从未问过才弹窗。
+    // ask 模式：当天决定直接应用；会话已拒绝（弹窗被关）不再问；其余兜底弹窗。
     switch (_dayGrantOf(s)) {
       case true:
         _transferActive = true;
@@ -431,7 +443,7 @@ class WatchLinkController {
       case false:
         break; // 今天已拒绝：不推也不弹。
       case null:
-        _askTransfer();
+        if (_needsAsk(s)) _askTransfer();
     }
   }
 
@@ -447,37 +459,72 @@ class WatchLinkController {
     return s.watchLinkAskGranted;
   }
 
-  /// ask 模式弹窗（每天至多一次，见 [_onPlaybackStart]）：确定才推送给腕上
-  /// 设备并把决定落库到当天（跨天重置）；勾选「默认传递」后升级为 remember
-  /// 模式（永久记住，不再询问）。点外部/返回键关闭视为未回答：不落库，
-  /// 下次起播可再次询问。
+  /// 是否需要弹窗询问：会话未决（未授准也未拒绝）且今天还没问过。
+  bool _needsAsk(AppSettings? s) =>
+      !_transferActive && !_sessionDenied && _dayGrantOf(s) == null;
+
+  /// 起播门控（player_provider 的 beforePlayGate 钩子）：任意 play() 真正出声
+  /// 前调用。腕上设备在线且 ask 模式当天未决时，先弹授权确认再放行——
+  /// 保证「优先弹窗、后进播放」；其余情况直通。无论作何选择（含关闭），
+  /// 播放都放行，弹窗只决定是否向腕上推送。
+  Future<void> _playGate() async {
+    if (!_connected && !_cloudWatchOnline) return;
+    final s = _container.read(settingsProvider).valueOrNull;
+    if ((s?.watchLinkTransferMode ?? 'ask') != 'ask') return;
+    if (!_needsAsk(s)) return;
+    await _askTransfer();
+  }
+
+  /// 授权弹窗（三选一）：
+  /// - 允许该设备：永久记住（升级为 remember+自动传递，不再询问）；
+  /// - 允许本次：仅当前播放会话推送，会话结束（暂停/停止）后下次再问；
+  /// - 不允许：按天隔离落库，当天不再询问、不推送，跨天重置。
+  /// 点外部/返回键关闭视为未回答：本会话不再问也不推，不落库。
+  /// 单飞：门控与握手同时触发时复用同一次弹窗，防叠加。
   Future<void> _askTransfer() async {
+    if (_askInFlight != null) return _askInFlight;
     final context = appNavigatorKey.currentContext;
     // 无导航宿主（如首帧前）：不弹窗也不传递，保守降级。
     if (context == null || !context.mounted) return;
-    final result = await showPredictiveDialog<(bool, bool)>(
+    final task = _doAskTransfer();
+    _askInFlight = task;
+    try {
+      await task;
+    } finally {
+      _askInFlight = null;
+    }
+  }
+
+  Future<void> _doAskTransfer() async {
+    final context = appNavigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    final result = await showPredictiveDialog<String>(
       context: context,
       barrierDismissible: true,
       builder: (_) => _TransferConfirmDialog(
         watchName: _connectedName.isNotEmpty ? _connectedName : _cloudWatchName,
       ),
     );
-    if (result == null) return; // 点外部/系统返回关闭：未回答，不落库。
-    final (send, remember) = result;
-    if (remember) {
-      // 勾选「默认传递」：永久记住本次选择（含取消→记住不传递）。
-      await _container
-          .read(settingsProvider.notifier)
-          .setWatchLinkTransferRemembered(autoTransfer: send);
-    } else {
-      // 按天隔离：记录今天的决定，当天后续起播静默应用不再询问。
-      await _container
-          .read(settingsProvider.notifier)
-          .setWatchLinkAskChoice(date: _today(), granted: send);
-    }
-    if (send) {
-      _transferActive = true;
-      _pushSnapshot();
+    switch (result) {
+      case 'device':
+        // 允许该设备：永久记住（含后续跨天），本会话立即生效。
+        await _container
+            .read(settingsProvider.notifier)
+            .setWatchLinkTransferRemembered(autoTransfer: true);
+        _transferActive = true;
+        _pushSnapshot();
+      case 'once':
+        // 允许本次：仅当前播放会话，不落库。
+        _transferActive = true;
+        _pushSnapshot();
+      case 'never':
+        // 不允许：按天隔离落库，当天静默不推不问。
+        await _container
+            .read(settingsProvider.notifier)
+            .setWatchLinkAskChoice(date: _today(), granted: false);
+      default:
+        // 关闭未回答：本会话不再询问、不推送。
+        _sessionDenied = true;
     }
   }
 
@@ -543,15 +590,15 @@ class WatchLinkController {
     return _transferActive || _dayGrantOf(s) == true;
   }
 
-  /// 握手后补询问：连接瞬间已在播放（起播转换早已错过）且当天未询问过时
+  /// 握手后补询问：连接瞬间已在播放（起播门控早已错过）且当天未询问过时
   /// 立即弹确认，否则手表要静默到下一次起播才被询问。快照推送本身已被
   /// [_snapshotAllowed] 拦住，这里只负责把弹窗时机提前到连接时刻。
   void _maybeAskOnHandshake() {
     final st = _container.read(playerProvider);
     if (!st.isPlaying) return;
     final s = _container.read(settingsProvider).valueOrNull;
-    if (s?.watchLinkTransferMode != 'ask') return;
-    if (_dayGrantOf(s) != null) return; // 今天已问过：静默应用，不弹。
+    if ((s?.watchLinkTransferMode ?? 'ask') != 'ask') return;
+    if (!_needsAsk(s)) return;
     _askTransfer();
   }
 
@@ -628,19 +675,12 @@ final watchLinkControllerProvider = Provider<WatchLinkController>((ref) {
 /// 当前已连接的手表名（设置页副标题展示，连接变化实时刷新）。
 final watchLinkConnectedNameProvider = StateProvider<String>((ref) => '');
 
-/// 传递确认弹窗：问「要不要传递给腕上设备」，带「默认传递（下次不再询问）」勾选。
-/// 返回 `(是否传递, 是否记住选择)`。
-class _TransferConfirmDialog extends StatefulWidget {
+/// 传递授权弹窗（三选一）：允许该设备 / 允许本次 / 不允许。
+/// 返回 `'device'` / `'once'` / `'never'`；点外部或系统返回关闭返回 null。
+class _TransferConfirmDialog extends StatelessWidget {
   const _TransferConfirmDialog({required this.watchName});
 
   final String watchName;
-
-  @override
-  State<_TransferConfirmDialog> createState() => _TransferConfirmDialogState();
-}
-
-class _TransferConfirmDialogState extends State<_TransferConfirmDialog> {
-  bool _remember = false;
 
   @override
   Widget build(BuildContext context) {
@@ -680,7 +720,7 @@ class _TransferConfirmDialogState extends State<_TransferConfirmDialog> {
             const SizedBox(height: 12),
             Text(
               tr('是否将当前播放传递给 {name}？', {
-                'name': widget.watchName.isEmpty ? tr('腕上设备') : widget.watchName,
+                'name': watchName.isEmpty ? tr('腕上设备') : watchName,
               }),
               style: TextStyle(
                 fontSize: 14,
@@ -688,49 +728,55 @@ class _TransferConfirmDialogState extends State<_TransferConfirmDialog> {
                 color: scheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 6),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              value: _remember,
-              onChanged: (v) => setState(() => _remember = v ?? false),
-              title: Text(
-                tr('默认传递（下次不再询问）'),
-                style: const TextStyle(fontSize: 13),
+            const SizedBox(height: 18),
+            // 三选一：主推「允许该设备」，其次「允许本次」，弱化「不允许」。
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop('device'),
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: Text(tr('允许该设备')),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: scheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop((false, _remember)),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pop('once'),
+                icon: const Icon(Icons.schedule, size: 18),
+                label: Text(tr('允许本次')),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: accent,
+                  side: BorderSide(color: accent.withValues(alpha: 0.45)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(tr('取消')),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop((true, _remember)),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: scheme.onPrimary,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop('never'),
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.onSurfaceVariant,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(tr('传递')),
                 ),
-              ],
+                child: Text(tr('不允许')),
+              ),
             ),
           ],
         ),

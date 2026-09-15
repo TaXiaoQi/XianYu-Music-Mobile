@@ -440,6 +440,22 @@ class PlaybackState {
 
 const Object _noChange = Object();
 
+/// 起播前门控（由腕上联动注入，见 WatchLinkController）：在任意 play() 真正
+/// 出声前等待确认流程完成（如授权弹窗），保证「先弹窗、后起播」。置 null 直通。
+typedef BeforePlayGate = Future<void> Function();
+BeforePlayGate? beforePlayGate;
+
+/// 覆写 play() 的 AudioPlayer：所有起播路径（播放按钮/点歌/上下首/系统媒体
+/// 会话/手表命令）都汇聚于 play()，在此统一挂门；暂停/seek 不经过。
+class _GatedAudioPlayer extends AudioPlayer {
+  @override
+  Future<void> play() async {
+    final gate = beforePlayGate;
+    if (gate != null) await gate();
+    return super.play();
+  }
+}
+
 class PlayerNotifier extends StateNotifier<PlaybackState>
     with WidgetsBindingObserver {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
@@ -451,7 +467,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   final Ref _ref;
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _player = _GatedAudioPlayer();
   /// 当前在线歌曲的共享探针 key，切歌时用于失效上一首的探测。
   String? _activeProbeKey;
   final Random _rand = Random();
