@@ -184,7 +184,9 @@ tasks.register("archiveReleaseApk") {
         val projectRoot = rootProject.projectDir.parentFile
         val releasesAndroidDir = File(File(projectRoot, "releases"), "android")
         releasesAndroidDir.mkdirs()
-        val dest = File(releasesAndroidDir, "弦予音乐v$version-Mobile.apk")
+        // 架构后缀：abiFilters 已限定 arm64-v8a 单架构（见 defaultConfig ndk 块），
+        // 包名恒为 -arm64，与鸿蒙 -arm64/-x86、腕上端 -arm32/-arm64 命名体系对齐。
+        val dest = File(releasesAndroidDir, "弦予音乐v$version-Mobile-arm64.apk")
         apk.copyTo(dest, overwrite = true)
         logger.lifecycle("已归档正式安装包: ${dest.absolutePath} (${"%.1f".format(dest.length() / 1024.0 / 1024.0)} MB)")
         // 混淆符号归档（abiFilters 已限定 arm64 单架构，符号有效）

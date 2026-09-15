@@ -95,7 +95,8 @@
 
   ```powershell
   flutter hap                # 鸿蒙调试运行（对应安卓 flutter run；热重载 r / 热重启 R，-d 选设备）
-  flutter build app          # 鸿蒙正式版构建（默认 --release + ohos-arm64），对应安卓的 flutter build apk
+  flutter build hap          # 鸿蒙安装包 HAP（默认 --release + ohos-arm64,ohos-x64 双架构合一，真机/模拟器通吃）
+  flutter build app          # 鸿蒙商店包 APP（纯 arm64 + assembleApp），对应安卓的 flutter build appbundle
   flutter build hap --target-platform ohos-x64   # 模拟器包（x86_64）
   .\scripts\ohos\build-ohos.ps1                  # 完整自动化：编 Rust + 构建 + 归档 releases\ohos
   .\scripts\ohos\build-ohos.ps1 -AppPack         # 同上 + 出上架 AppGallery 的 .app
@@ -106,7 +107,7 @@
   >
   > **就地构建（镜像机制已退役）**：工程现位于无空格路径（`D:\XianYu-Music\XianYu-Music-Mobile`），ohpm/hvigor 可直接工作，构建全部在主工程内完成。历史遗留：工程旧路径含空格时需要镜像目录（`XIANYU_OHOS_MIRROR` 环境变量可恢复该模式，默认已关闭，`D:\xianyu-mobile-ohos` 为废弃镜像）。**主工程 `ohos/` 是唯一事实源**（含签名材料）。依赖态切换：ohos 命令（build / hap / build app / pub get）进入时由 `scripts\ohos\pub-state.ps1` 从模板写入 `pubspec_overrides.yaml`（fork 解析态）并在退出时删除、还原 `pubspec.lock` 到 `build\ohos\pubspec.lock.android` 快照——overrides/ohos lock **绝不滞留主工程**，否则 Android/iOS `pub get` 被劫持到引用 `TargetPlatform.ohos` 的 fork 包、官方 SDK 编译即爆（2026-09-15 Android release 事故）；裸 `flutter run`/`build apk` 遇残留 overrides 会自动清理并重新 pub get。
   >
-  > build-ohos.ps1 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。**构建默认 `--release` 正式包**（测试用 `-Run`，无 debug 归档），产物在主工程 `build\ohos\hap\entry-default-signed.hap`，并自动归档到 `releases\ohos\弦予音乐v<版本>-Mobile.hap`——版本号原样取自 `version.ts` 的 `APP_VERSION`（如 `1.0.2-beta1` → `弦予音乐v1.0.2-beta1-Mobile.hap`，与安卓命名一致）；`-AppPack` 的 .app 同规则。装机：`hdc install -r <HAP>`。
+  > build-ohos.ps1 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。**构建默认 `--release` 正式包**（测试用 `-Run`，无 debug 归档），产物在主工程 `build\ohos\hap\entry-default-signed.hap`，并自动归档到 `releases\ohos\弦予音乐v<版本>-Mobile-<架构>.hap`——版本号原样取自 `version.ts` 的 `APP_VERSION`，架构后缀随 `-Abi`/自动探测（arm64 真机 → `-arm64`，x86_64 模拟器 → `-x86`，如 `1.0.2-beta1` → `弦予音乐v1.0.2-beta1-Mobile-arm64.hap`，与安卓命名体系一致）；`-AppPack` 的 .app 同规则。装机：`hdc install -r <HAP>`。
   >
   > **注意：构建期间必须完全关闭 DevEco Studio**——它会对工程做 ohpm 重装（用未打补丁的 embedding 实例导致编译失败）并回写 `build-profile.json5`（清掉签名材料），与构建脚本互相破坏。
 
@@ -127,7 +128,7 @@ flutter build apk --release
 一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
 
 - **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
-- 产物自动归档到 `releases/android/弦予音乐v<版本>-Mobile.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译；预发布版本名自带 -betaN 后缀）
+- 产物自动归档到 `releases/android/弦予音乐v<版本>-Mobile-arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译；预发布版本名自带 -betaN 后缀；架构后缀与鸿蒙 `-arm64/-x86`、腕上端 `-arm32/-arm64` 命名体系对齐）
 - 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
 
 #### iOS（Xcode 归档 / .ipa）
@@ -159,14 +160,15 @@ flutter build ios --release --no-codesign
 前置：安装 DevEco Studio 6+ 并完成一次「自动生成签名」（签名四件套落盘 `~/.ohos/config`，Bundle name 为正式包名 `com.xianyumusic.app`）；Rust 工具链 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。构建命令见上文「运行与调试」第 3 步（同一条 `build-ohos.ps1`，run 与出包共用）。
 
 ```powershell
-flutter build app        # 或 .\scripts\ohos\build-ohos.ps1（默认 release，无需 --release）
+flutter build app        # 商店包 .app（内含 HAP 流程，对应安卓 appbundle）
+flutter build hap        # 仅安装包 HAP（真机/模拟器自装，对应安卓 build apk）
 ```
 
 与安卓同款发版体验（构建即正式版，测试走 `flutter hap`）：
 
 - **版本号自动同步**：`version.ts` → `pubspec.yaml` / `app.json5`（改版本只需改 `version.ts`）
-- 产物自动归档到 `releases/ohos/弦予音乐v<版本>-Mobile.hap`（版本号原样取自 `APP_VERSION`，与安卓命名一致；预发布版本名自带 -betaN 后缀）
-- 上架 AppGallery 追加 `-AppPack` 出 `.app`（归档同名 `.app` 后缀）
+- 产物自动归档到 `releases/ohos/弦予音乐v<版本>-Mobile-<架构>.hap`（版本号原样取自 `APP_VERSION`，与安卓命名体系一致；预发布版本名自带 -betaN 后缀）
+- `flutter build app` 额外归档 `弦予音乐v<版本>-Mobile.app`（App Pack，AppGallery 上传用；HAP 不支持用户侧直接安装，分发一律走 AGC 上架/开放测试）
 - 调试直接 `hdc install -r` 归档产物或 `build\ohos\hap\entry-default-signed.hap`
 - 构建全流程自动化（主工程内完成，无镜像拷贝）：版本同步 → FRB codegen（按需）→ 依赖覆盖（`scripts/ohos/pubspec-ohos-overrides.yaml`）→ Rust 双架构 `.so` → hvigor 打包签名
 - 第三方插件鸿蒙适配：`shared_preferences` / `file_picker` 等走 openharmony-tpc 社区版本或 vendor 改造（`third_party/file_picker`），由 overrides 模板统一注入

@@ -382,10 +382,12 @@ try {
         foreach ($h in $haps) { Write-Host ("  HAP: {0}  ({1:N1} MB)" -f $h.FullName, ($h.Length / 1MB)) -ForegroundColor Green }
 
         # ---- archive to releases\ohos (parity with the Android release flow) ----
-        # Naming: 弦予音乐v<version>-Mobile.hap, version verbatim from version.ts
-        # (the single version source; '1.0.2-beta1' → 弦予音乐v1.0.2-beta1-Mobile.hap,
-        # matching 弦予音乐v1.0.2-Mobile.apk on Android). Explicit --debug builds are
-        # NOT archived - debug testing runs via -Run. Folder is gitignored (/releases/).
+        # Naming: 弦予音乐v<version>-Mobile-<arch>.hap, version verbatim from
+        # version.ts (the single version source; '1.0.2-beta1' →
+        # 弦予音乐v1.0.2-beta1-Mobile-arm64.hap, matching 弦予音乐v1.0.2-Mobile-arm64.apk
+        # on Android). Arch suffix from -Abi: arm64/x64 → arm64/x86 (三端命名体系).
+        # Explicit --debug builds are NOT archived - debug testing runs via -Run.
+        # Folder is gitignored (/releases/).
         $buildMode = 'debug'
         foreach ($a in $FlutterArgs) {
             if ($a -eq '--release') { $buildMode = 'release' }
@@ -395,10 +397,11 @@ try {
         $versionTs = [System.IO.File]::ReadAllText((Join-Path $ProjectRoot 'version.ts'))
         if ($versionTs -match "APP_VERSION\s*=\s*'([^']+)'") { $appVersion = $Matches[1] }
         $relDir = Join-Path $ProjectRoot 'releases\ohos'
+        $archSuffix = if ($targetAbi -eq 'x64') { 'x86' } else { 'arm64' }
         if ($buildMode -ne 'debug') {
             New-Item -ItemType Directory -Force -Path $relDir | Out-Null
             foreach ($h in $haps) {
-                $dst = Join-Path $relDir ("弦予音乐v{0}-Mobile.hap" -f $appVersion)
+                $dst = Join-Path $relDir ("弦予音乐v{0}-Mobile-{1}.hap" -f $appVersion, $archSuffix)
                 Copy-Item $h.FullName $dst -Force
                 Write-Host ("  archived: {0}" -f $dst) -ForegroundColor Green
             }
@@ -435,8 +438,11 @@ try {
     }
 } finally { Pop-Location }
 } finally {
-    # 无论成败（含 rust 步骤、构建失败、Ctrl-C），离开时恢复干净依赖态
-    Exit-XianyuOhosPubState -Root $MirrorDir
+    # 无论成败（含 rust 步骤、构建失败、Ctrl-C）：仅释放互斥标记。依赖态驻留
+    # ohos（驻留态模型，2026-09-15）：DevEco/hvigor 的 FlutterTask 需要 fork 态
+    # package_config 才能编译；切回 android 由下一次安卓命令的
+    # Restore-XianyuAndroidPubState 自愈（见 pub-state.ps1 头注释）
+    Exit-XianyuOhosPubState -Root $MirrorDir -KeepState
 }
 
 Write-Host ''
