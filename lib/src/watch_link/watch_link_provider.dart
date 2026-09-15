@@ -269,6 +269,7 @@ class WatchLinkController {
             name: '弦予音乐',
           ), cloud: true);
           _pushSnapshot(cloud: true);
+          _maybeAskOnHandshake();
         } else {
           // 蓝牙握手：回 hello + 立即推快照，并下发云端兜底绑定凭据。
           _send(LinkMessage.hello(
@@ -278,6 +279,7 @@ class WatchLinkController {
           ));
           _pushSnapshot();
           _maybePushCloudBind();
+          _maybeAskOnHandshake();
         }
       case LinkMsgType.ping:
         _send(LinkMessage(LinkMsgType.pong, {
@@ -406,7 +408,10 @@ class WatchLinkController {
     }
   }
 
-  /// 播放会话起播：按设置评估是否推送（ask 弹窗 / remember 直接放行或拒绝）。
+  /// 播放会话起播：按设置评估是否推送。
+  ///
+  /// `remember` 模式按记住的选择直接放行或拒绝；`ask` 模式按天隔离——
+  /// 当天已有决定（弹窗选过）则静默应用，没有才弹窗（每天至多一次）。
   void _onPlaybackStart() {
     final s = _container.read(settingsProvider).valueOrNull;
     final mode = s?.watchLinkTransferMode ?? 'ask';
@@ -418,11 +423,34 @@ class WatchLinkController {
       // 记住「不传递」：本次会话不推，也不弹窗。
       return;
     }
-    _askTransfer();
+    // ask 模式：当天决定直接应用，跨天或从未问过才弹窗。
+    switch (_dayGrantOf(s)) {
+      case true:
+        _transferActive = true;
+        _pushSnapshot();
+      case false:
+        break; // 今天已拒绝：不推也不弹。
+      case null:
+        _askTransfer();
+    }
   }
 
-  /// ask 模式弹窗：确定才推送给腕上设备；勾选「默认传递」后落库为
-  /// remember+自动传递（下次起播直接推，不再弹窗）。
+  /// 本地日期 `yyyy-MM-dd`（按天隔离的 key，跨天重置询问）。
+  String _today() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  /// ask 模式今天的决定：null=今天还没问过（可弹窗）；true/false=今天已授准/拒绝。
+  bool? _dayGrantOf(AppSettings? s) {
+    if (s == null || s.watchLinkAskDate != _today()) return null;
+    return s.watchLinkAskGranted;
+  }
+
+  /// ask 模式弹窗（每天至多一次，见 [_onPlaybackStart]）：确定才推送给腕上
+  /// 设备并把决定落库到当天（跨天重置）；勾选「默认传递」后升级为 remember
+  /// 模式（永久记住，不再询问）。点外部/返回键关闭视为未回答：不落库，
+  /// 下次起播可再次询问。
   Future<void> _askTransfer() async {
     final context = appNavigatorKey.currentContext;
     // 无导航宿主（如首帧前）：不弹窗也不传递，保守降级。
@@ -434,13 +462,18 @@ class WatchLinkController {
         watchName: _connectedName.isNotEmpty ? _connectedName : _cloudWatchName,
       ),
     );
-    if (result == null) return; // 点外部/系统返回关闭：本次不传、不记。
+    if (result == null) return; // 点外部/系统返回关闭：未回答，不落库。
     final (send, remember) = result;
     if (remember) {
-      // 勾选「默认传递」：记住本次选择（含取消→记住不传递）。
+      // 勾选「默认传递」：永久记住本次选择（含取消→记住不传递）。
       await _container
           .read(settingsProvider.notifier)
           .setWatchLinkTransferRemembered(autoTransfer: send);
+    } else {
+      // 按天隔离：记录今天的决定，当天后续起播静默应用不再询问。
+      await _container
+          .read(settingsProvider.notifier)
+          .setWatchLinkAskChoice(date: _today(), granted: send);
     }
     if (send) {
       _transferActive = true;
@@ -465,14 +498,13 @@ class WatchLinkController {
   }
 
   /// 全量快照（握手后立即同步当前播放现场）。
-  /// 记住「不传递」时整个链路不推任何帧（含握手快照），保持语义一致。
+  ///
+  /// 授权门（堵住「弹窗未决手表先收到数据」的泄漏）：任何路径推送快照前
+  /// 必须通过 [_snapshotAllowed]——remember 记住传递、ask 当天已授准、或
+  /// 本次会话已获准（[_transferActive]）三者其一；其余情况整个链路不推
+  /// 任何帧（含握手快照）。
   void _pushSnapshot({bool cloud = false}) {
-    if (!_connected && !_cloudWatchOnline) return;
-    final s = _container.read(settingsProvider).valueOrNull;
-    if (s?.watchLinkTransferMode == 'remember' &&
-        s?.watchLinkAutoTransfer != true) {
-      return;
-    }
+    if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
     final st = _container.read(playerProvider);
     final item = st.current;
     _songKey = item == null
@@ -501,6 +533,26 @@ class WatchLinkController {
     // 握手快照强制重发歌词（手表可能在切歌瞬间掉线错过上一条）。
     _lyricSentSongId = null;
     _maybePushLyric(cloud: cloud);
+  }
+
+  /// 快照授权门：remember 记住传递 / ask 当天已授准 / 会话已获准。
+  bool _snapshotAllowed() {
+    final s = _container.read(settingsProvider).valueOrNull;
+    final mode = s?.watchLinkTransferMode ?? 'ask';
+    if (mode == 'remember') return s?.watchLinkAutoTransfer == true;
+    return _transferActive || _dayGrantOf(s) == true;
+  }
+
+  /// 握手后补询问：连接瞬间已在播放（起播转换早已错过）且当天未询问过时
+  /// 立即弹确认，否则手表要静默到下一次起播才被询问。快照推送本身已被
+  /// [_snapshotAllowed] 拦住，这里只负责把弹窗时机提前到连接时刻。
+  void _maybeAskOnHandshake() {
+    final st = _container.read(playerProvider);
+    if (!st.isPlaying) return;
+    final s = _container.read(settingsProvider).valueOrNull;
+    if (s?.watchLinkTransferMode != 'ask') return;
+    if (_dayGrantOf(s) != null) return; // 今天已问过：静默应用，不弹。
+    _askTransfer();
   }
 
   /// 异步推送当前歌歌词（结构化 payload JSON，帧层自动分片）。

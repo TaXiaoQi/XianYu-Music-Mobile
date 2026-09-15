@@ -40,7 +40,7 @@ const Map<String, String> enDictManual = {
   '不传递': "Don't send",
   '传递': 'Send',
   '腕上设备': 'your watch',
-  '每次开始播放时询问是否传递': 'Ask whether to send each time playback starts',
+  '每次开始播放时询问是否传递': 'Ask once at the first playback each day',
   '记住选择：直接传递给腕上设备': 'Remembered: always send to your watch',
   '记住选择：不传递到腕上设备': 'Remembered: never send to your watch',
   '是否将当前播放传递给 {name}？': 'Send the current playback to {name}?',

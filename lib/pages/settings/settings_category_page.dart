@@ -370,7 +370,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ModernChoiceOption(
           label: tr('每次询问'),
           value: 'ask',
-          subtitle: tr('每次开始播放时询问是否传递'),
+          subtitle: tr('每天首次播放时询问一次，当天不再询问'),
         ),
         ModernChoiceOption(
           label: tr('自动传递'),

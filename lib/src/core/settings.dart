@@ -279,9 +279,12 @@ class AppSettings {
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
-    // 传递给腕上设备：ask=每次播放询问；remember=记住选择（配合下方 AutoTransfer）。
+    // 传递给腕上设备：ask=每天首次播放询问（按天隔离）；remember=记住选择（配合下方 AutoTransfer）。
     this.watchLinkTransferMode = 'ask',
     this.watchLinkAutoTransfer = false,
+    // ask 模式的按天隔离记录：最近一次询问的日期（本地 yyyy-MM-dd）与当天决定。
+    this.watchLinkAskDate = '',
+    this.watchLinkAskGranted = false,
     // 云端兜底：蓝牙不可达时经服务器 WS 中继控制消息（P4）。
     this.watchLinkCloudEnabled = true,
     this.watchLinkCloudKey = '',
@@ -530,11 +533,17 @@ class AppSettings {
   /// 手表联动总开关：开启后在登录且连接手表时上报播放信息并执行手表控制命令。
   final bool watchLinkageEnabled;
 
-  /// 传递给腕上设备的确认模式：`ask`=每次播放询问；`remember`=记住上次选择。
+  /// 传递给腕上设备的确认模式：`ask`=每天首次播放询问（按天隔离）；`remember`=记住上次选择。
   final String watchLinkTransferMode;
 
   /// 记住选择的结果：true=自动传递；false=不传递（仅 `remember` 模式生效）。
   final bool watchLinkAutoTransfer;
+
+  /// ask 模式按天隔离：最近一次询问的日期（本地 `yyyy-MM-dd`，空=从未问过）。
+  final String watchLinkAskDate;
+
+  /// ask 模式按天隔离：[watchLinkAskDate] 当天的决定（true=当天传递；false=当天不传递）。
+  final bool watchLinkAskGranted;
 
   /// 云端兜底通道开关：开启后蓝牙不可达时经服务器 WS 中继与手表通信。
   final bool watchLinkCloudEnabled;
@@ -644,6 +653,8 @@ class AppSettings {
     bool? watchLinkageEnabled,
     String? watchLinkTransferMode,
     bool? watchLinkAutoTransfer,
+    String? watchLinkAskDate,
+    bool? watchLinkAskGranted,
     bool? watchLinkCloudEnabled,
     String? watchLinkCloudKey,
     bool? dlnaRendererEnabled,
@@ -778,6 +789,8 @@ class AppSettings {
           watchLinkTransferMode ?? this.watchLinkTransferMode,
       watchLinkAutoTransfer:
           watchLinkAutoTransfer ?? this.watchLinkAutoTransfer,
+      watchLinkAskDate: watchLinkAskDate ?? this.watchLinkAskDate,
+      watchLinkAskGranted: watchLinkAskGranted ?? this.watchLinkAskGranted,
       watchLinkCloudEnabled:
           watchLinkCloudEnabled ?? this.watchLinkCloudEnabled,
       watchLinkCloudKey: watchLinkCloudKey ?? this.watchLinkCloudKey,
@@ -941,6 +954,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('watchLinkTransferMode') ?? 'ask',
       watchLinkAutoTransfer:
           prefs.getBool('watchLinkAutoTransfer') ?? false,
+      watchLinkAskDate: prefs.getString('watchLinkAskDate') ?? '',
+      watchLinkAskGranted: prefs.getBool('watchLinkAskGranted') ?? false,
       watchLinkCloudEnabled:
           prefs.getBool('watchLinkCloudEnabled') ?? true,
       watchLinkCloudKey: prefs.getString('watchLinkCloudKey') ?? '',
@@ -1124,6 +1139,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
       prefs.setString('watchLinkTransferMode', next.watchLinkTransferMode),
       prefs.setBool('watchLinkAutoTransfer', next.watchLinkAutoTransfer),
+      prefs.setString('watchLinkAskDate', next.watchLinkAskDate),
+      prefs.setBool('watchLinkAskGranted', next.watchLinkAskGranted),
       prefs.setBool('watchLinkCloudEnabled', next.watchLinkCloudEnabled),
       prefs.setString('watchLinkCloudKey', next.watchLinkCloudKey),
       prefs.setBool('dlnaRendererEnabled', next.dlnaRendererEnabled),
@@ -1152,6 +1169,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setWatchLinkCloudKey(String k) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkCloudKey: k));
   /// 弹窗勾选「默认传递」后落库：切到记住选择并写入记住的行为。
   Future<void> setWatchLinkTransferRemembered({required bool autoTransfer}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'remember', watchLinkAutoTransfer: autoTransfer));
+  /// ask 模式按天隔离：记录某天的询问决定（同天再起播不再询问，直接应用）。
+  Future<void> setWatchLinkAskChoice({required String date, required bool granted}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkAskDate: date, watchLinkAskGranted: granted));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
   Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
   Future<void> setShowRealSourceName(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showRealSourceName: v));
