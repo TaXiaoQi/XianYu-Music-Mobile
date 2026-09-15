@@ -47,6 +47,7 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)         # main
 # separate mirror dir to restore the legacy mirror workflow (see DESCRIPTION).
 $MirrorDir   = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { $ProjectRoot }
 $InPlace     = $MirrorDir -ieq $ProjectRoot
+. (Join-Path $ScriptDir 'pub-state.ps1')   # Enter/Exit-XianyuOhosPubState
 
 # ---- signing password auto-encryption ----
 # hvigor ALWAYS reads storePassword/keyPassword as an ENCRYPTED hex blob
@@ -150,14 +151,16 @@ if (-not $InPlace -and -not $SkipMirror) {
     $global:LASTEXITCODE = 0
 }
 
-# ---- 5. in-project: overrides template -> ohos platform -> pub get ----
+# ---- 5. in-project: ohos dependency state (overrides + lock) -> pub get ----
+# 进入 fork 解析态（写 overrides + 从 android 快照恢复 lock），整个构建期持有，
+# 结束（含失败）由外层 finally 恢复 Android/iOS 干净态 —— fork 包引用
+# TargetPlatform.ohos，覆盖文件绝不能滞留主工程，否则 Android/iOS pub get 被劫持。
+Enter-XianyuOhosPubState -Root $MirrorDir -ScriptDir $ScriptDir
+try {
+
 Push-Location $MirrorDir
 try {
-    $overridesDst = Join-Path $MirrorDir 'pubspec_overrides.yaml'
-    # ALWAYS (re)write from the template: the template is the single source of
-    # truth (a conditional copy left a stale overrides file in place after the
-    # template gained new entries - deps silently stayed on the old forks).
-    Copy-Item (Join-Path $ScriptDir 'pubspec-ohos-overrides.yaml') $overridesDst -Force
+    # overrides 由 Enter-XianyuOhosPubState 从模板写入（唯一事实源，强制重写）
     Write-Host '[ohos] pubspec_overrides.yaml synced from template'
 
     # create/repair the ohos template: trigger on the entry module profile
@@ -431,6 +434,10 @@ try {
         }
     }
 } finally { Pop-Location }
+} finally {
+    # 无论成败（含 rust 步骤、构建失败、Ctrl-C），离开时恢复干净依赖态
+    Exit-XianyuOhosPubState -Root $MirrorDir
+}
 
 Write-Host ''
 Write-Host '== ohos build done ==' -ForegroundColor Green
