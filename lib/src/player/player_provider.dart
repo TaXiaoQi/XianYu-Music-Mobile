@@ -1027,19 +1027,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 预览下一首（不消费随机栈）：腕上联动预缓存推送用。
-  /// 顺序/列表循环取 index+1；随机模式仅在已压入 _shuffleFuture 时可预知
-  /// （栈顶）；单曲循环返回 null（无下一首语义）。队列空返回 null。
-  QueueItem? peekNextItem() {
+  /// 联动预缓存用：接下来可预知的至多 [count] 首。顺序/列表循环按队列
+  /// 环形取 count 首；随机模式仅预知栈顶 1 首（后续顺序未定）；单曲循环
+  /// 无下一首返回空。
+  List<QueueItem> peekUpcomingItems(int count) {
     final n = state.queue.length;
-    if (n == 0 || state.playMode == 1) return null;
+    if (n == 0 || count <= 0 || state.playMode == 1) return const [];
     if (state.playMode == 2) {
-      if (_shuffleFuture.isEmpty) return null;
+      if (_shuffleFuture.isEmpty) return const [];
       final i = state.queue.indexWhere((q) => q.path == _shuffleFuture.last);
-      return i >= 0 ? state.queue[i] : null;
+      return i >= 0 ? [state.queue[i]] : const [];
     }
-    if (state.queueIndex < 0) return state.queue[0];
-    return state.queue[(state.queueIndex + 1) % n];
+    final start = state.queueIndex < 0 ? 0 : state.queueIndex + 1;
+    final take = count < n ? count : n;
+    return List.generate(
+      take,
+      (k) => state.queue[(start + k) % n],
+      growable: false,
+    );
   }
 
   /// 联动封面兜底：解析本地歌封面缩略图（与通知栏封面同一缓存链路，

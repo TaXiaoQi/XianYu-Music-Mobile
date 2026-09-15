@@ -93,9 +93,9 @@ class WatchLinkController {
   /// 已推送歌词的歌曲 id（同曲只发一次；快照推送时置空强制重发）。
   String? _lyricSentSongId;
 
-  /// 已完成下一首预载推送的歌曲路径（同一首只推一次；重连后置空重推，
-  /// 手表可能刚启动丢了落盘缓存）。
-  String? _precachedNextPath;
+  /// 已完成预载推送的歌曲路径集合（接下来五首批量预载；同一首只推一次；
+  /// 重连后清空重推，手表可能刚启动丢了落盘缓存；超限整体清空防膨胀）。
+  final Set<String> _precachedPaths = {};
   bool _lastPlaying = false;
   LinkPlayMode _lastMode = LinkPlayMode.order;
   bool _lastLiked = false;
@@ -273,7 +273,7 @@ class WatchLinkController {
     _connectedName = evt.name;
     _container.read(watchLinkConnectedNameProvider.notifier).state = evt.name;
     _songKey = null; // 重连后由 hello 重新推快照。
-    _precachedNextPath = null; // 重连后重推下一首预载（手表可能刚启动）。
+    _precachedPaths.clear(); // 重连后重推预载（手表可能刚启动丢了缓存）。
     // 连接切换：丢弃旧连接残留的分片会话与半包缓冲。
     _decoder = FrameDecoder();
   }
@@ -678,47 +678,58 @@ class WatchLinkController {
     } catch (_) {}
   }
 
-  // ---- 下一首预载（联动预缓存） ----
+  // ---- 接下来五首批量预载（联动预缓存） ----
 
-  /// 下一首预载推送：复用在线预缓存管线，把队列下一首的封面字节与歌词
-  /// payload 提前推给手表（precache 帧，手表静默落盘/缓存不改 UI）。真正
-  /// 切歌的 now_playing 到达时手表直接命中本地缓存——在线封面免手表二次
-  /// 拉 URL、歌词免等待，联动切换不再有几秒丢封面/状态。
+  /// 预载推送：复用在线预缓存管线，把队列接下来可预知的至多五首（在线歌
+  /// 与本地歌一视同仁）的封面字节与歌词 payload 提前推给手表（precache
+  /// 帧，手表静默落盘/缓存不改 UI）。真正切歌的 now_playing 到达时手表
+  /// 直接命中本地缓存——快速连切不再卡加载/丢封面。
   ///
-  /// 定位与播放器 `_precacheNextCover` 同款：顺序/列表循环取 index+1；
-  /// 随机模式仅在已压入预知栈时可预知（栈顶）；单曲循环无下一首。
-  /// 同一首只预载一次；推送前/发送前复检链路与会话授权（未获准零推送）。
+  /// 定位与播放器预缓存同款：顺序/列表循环环形取 5 首；随机模式仅预知栈
+  /// 顶；单曲循环无下一首。同一首只预载一次（集合去重，超 64 清空防膨胀）；
+  /// 逐首串行推送（封面编码本身耗时，天然错峰不挤兑当前会话帧）；推送前/
+  /// 发送前复检链路与会话授权（未获准零推送）。
   void _maybePrecacheNext({bool cloud = false}) {
     if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
-    final next = _container.read(playerProvider.notifier).peekNextItem();
-    if (next == null || next.path == _precachedNextPath) return;
-    _precachedNextPath = next.path;
+    final upcoming =
+        _container.read(playerProvider.notifier).peekUpcomingItems(5);
+    if (upcoming.isEmpty) return;
+    final todo = upcoming
+        .where((e) => !_precachedPaths.contains(e.path))
+        .toList(growable: false);
+    if (todo.isEmpty) return;
+    if (_precachedPaths.length > 64) _precachedPaths.clear();
     // 延迟 3s：让当前歌的 now_playing/封面/歌词帧先走完链路，避免挤兑带宽。
     Future.delayed(const Duration(seconds: 3), () async {
-      if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
-      if (_container.read(playerProvider).current?.path == next.path) {
-        return; // 期间已切到这首歌，切歌推送自带全量数据。
-      }
-      String? coverData;
-      try {
-        final bytes = await _nextCoverBytes(next);
-        if (bytes != null && bytes.isNotEmpty) {
-          coverData = await compute(_encodeLinkCoverBytes, bytes);
+      for (final next in todo) {
+        if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+        if (_precachedPaths.contains(next.path)) continue;
+        _precachedPaths.add(next.path);
+        if (_container.read(playerProvider).current?.path == next.path) {
+          continue; // 期间已切到这首歌，切歌推送自带全量数据。
         }
-      } catch (_) {}
-      String? lyricPayload;
-      try {
-        final payload =
-            await _container.read(lyricsRepositoryProvider).fetchPayloadJson(next);
-        if (payload.isNotEmpty && payload != 'null') lyricPayload = payload;
-      } catch (_) {}
-      if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
-      if (coverData == null && lyricPayload == null) return;
-      _send(LinkMessage.precache(
-        id: next.path,
-        coverData: coverData,
-        lyricPayload: lyricPayload,
-      ), cloud: cloud);
+        String? coverData;
+        try {
+          final bytes = await _nextCoverBytes(next);
+          if (bytes != null && bytes.isNotEmpty) {
+            coverData = await compute(_encodeLinkCoverBytes, bytes);
+          }
+        } catch (_) {}
+        String? lyricPayload;
+        try {
+          final payload = await _container
+              .read(lyricsRepositoryProvider)
+              .fetchPayloadJson(next);
+          if (payload.isNotEmpty && payload != 'null') lyricPayload = payload;
+        } catch (_) {}
+        if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+        if (coverData == null && lyricPayload == null) continue;
+        _send(LinkMessage.precache(
+          id: next.path,
+          coverData: coverData,
+          lyricPayload: lyricPayload,
+        ), cloud: cloud);
+      }
     });
   }
 
@@ -750,11 +761,11 @@ class WatchLinkController {
   /// 当前音量（0..1，与手机播放引擎同源）。
   double _volumeOf() => _container.read(volumeProvider);
 
-  /// 封面：在线歌曲给 http(s) URL，本地歌曲给文件路径（手表端按前缀区分渲染）。
+  /// 封面：本地歌曲给文件路径。在线歌曲一律不发 URL——防盗链/需代理的
+  /// 源手表直连拉不到，统一由 coverData 帧推送手机端已取到的字节（手表
+  /// 零网络请求）；预缓存命中时切歌瞬间封面已在手表本机。
   String? _coverOf(QueueItem? item) {
     if (item == null) return null;
-    final url = item.coverUrl;
-    if (url != null && url.isNotEmpty) return url;
     final path = item.coverPath;
     if (path != null &&
         path.isNotEmpty &&
@@ -765,16 +776,36 @@ class WatchLinkController {
     return null;
   }
 
-  /// 异步补发本地歌封面（512px JPEG base64，帧层自动分片；在线歌走 URL 不发）。
+  /// 异步补发封面（512px JPEG base64，帧层自动分片）。
   ///
-  /// 封面来源优先 coverPath；本地歌常见无封面字段（内嵌封面走缩略图链路），
-  /// 这里复用播放器的缩略图解析兜底，否则切歌时手表会一直挂着上一首的封面。
-  /// 结果按最终封面路径缓存。补发的 now_playing 只多带 coverData 字段，
-  /// 手表按歌曲 id 守卫落盘，标题先到封面随后跟上。
+  /// 本地歌：优先 coverPath；常见无封面字段（内嵌封面走缩略图链路），
+  /// 这里复用播放器的缩略图解析兜底。在线歌：走代理字节链（与在线预
+  /// 缓存同源）取字节后编码推送——防盗链/需代理的封面手表直连 URL 必
+  /// 失败（NetworkImage 无 Referer 也不经代理），是在线歌联动丢封面的
+  /// 根因；cover 字段（URL）仍随 now_playing 发出，能直连的源可先显示，
+  /// coverData 到达后手表落盘覆盖为文件路径。结果按路径/URL 缓存。
   Future<void> _maybePushCoverData(QueueItem? item, {bool cloud = false}) async {
     if (item == null) return;
     final url = item.coverUrl;
-    if (url != null && url.isNotEmpty) return;
+    if (url != null && url.isNotEmpty) {
+      // 在线歌：代理缓存字节（在线预缓存已播种，未命中兜底拉一次）。
+      if (url.startsWith('lx://')) return;
+      final cached = _coverDataCache[url];
+      if (cached != null) {
+        _sendCoverData(item, cached, cloud: cloud);
+        return;
+      }
+      try {
+        final bytes = await _nextCoverBytes(item);
+        if (bytes == null || bytes.isEmpty) return;
+        final data = await compute(_encodeLinkCoverBytes, bytes);
+        if (data == null || data.isEmpty) return;
+        if (_coverDataCache.length > 16) _coverDataCache.clear();
+        _coverDataCache[url] = data;
+        _sendCoverData(item, data, cloud: cloud);
+      } catch (_) {}
+      return;
+    }
     var path = item.coverPath;
     final live = path != null &&
         path.isNotEmpty &&
