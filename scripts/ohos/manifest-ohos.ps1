@@ -1,9 +1,9 @@
-# manifest-ohos.ps1 - inject permissions / background modes into the mirror's
+# manifest-ohos.ps1 - inject permissions / background modes into the project's
 # ohos/entry/src/main/module.json5 (idempotent).
 #
 # Why scripted: `flutter create --platforms ohos` regenerates a bare template,
-# and a fresh checkout of the mirror must reach a buildable state without
-# manual DevEco edits. Mirrors what poc_ohos/scripts/setup.ps1 did.
+# and a fresh checkout must reach a buildable state without manual DevEco
+# edits. Mirrors what poc_ohos/scripts/setup.ps1 did.
 #
 # Permissions (P0): INTERNET (network stack), KEEP_BACKGROUND_RUNNING
 # (audio_service long-running task - without it startBackgroundRunning's
@@ -14,7 +14,8 @@ param(
     [string]$ProjectRoot = ''
 )
 if (-not $ProjectRoot) {
-    $ProjectRoot = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $ProjectRoot = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { Split-Path -Parent (Split-Path -Parent $ScriptDir) }
 }
 
 $ErrorActionPreference = 'Stop'

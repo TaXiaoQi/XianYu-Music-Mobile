@@ -9,12 +9,14 @@
 # Idempotent: files carry a "POC-PATCH" marker; re-running is a no-op.
 # Re-run after oh_modules is rebuilt (ohpm reinstall).
 #
-# Targets the MIRROR build dir (space-free); pass -ProjectRoot to override.
+# Targets the project's ohos/ build dir (in place); pass -ProjectRoot to
+# override (legacy mirror mode).
 param(
     [string]$ProjectRoot = ''
 )
 if (-not $ProjectRoot) {
-    $ProjectRoot = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $ProjectRoot = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { Split-Path -Parent (Split-Path -Parent $ScriptDir) }
 }
 
 $ErrorActionPreference = 'Stop'

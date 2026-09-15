@@ -100,11 +100,11 @@
   .\scripts\ohos\build-ohos.ps1 -Codegen                  # 改了 Rust API 签名时，强制 FRB 再生成
   ```
 
-  > **镜像机制（为什么不能直接在主工程构建）**：主工程路径含空格（`Program Files`），ohpm/hvigor 会崩溃。脚本自动把源码同步到同盘无空格镜像目录（默认 `D:\xianyu-mobile-ohos`，`XIANYU_OHOS_MIRROR` 可覆盖）并在镜像内完成依赖解析与打包；Rust/FRB 仍在主工程执行，产物回填镜像。**主工程 `ohos/` 是唯一事实源**（含签名材料），镜像内 `ohos/` 仅承接构建。
+  > **就地构建（镜像机制已退役）**：工程现位于无空格路径（`D:\XianYu-Music\XianYu-Music-Mobile`），ohpm/hvigor 可直接工作，构建全部在主工程内完成。历史遗留：工程旧路径含空格时需要镜像目录（`XIANYU_OHOS_MIRROR` 环境变量可恢复该模式，默认已关闭，`D:\xianyu-mobile-ohos` 为废弃镜像）。**主工程 `ohos/` 是唯一事实源**（含签名材料）。`pubspec_overrides.yaml` 常驻主工程根目录（由脚本每次从 `scripts/ohos/pubspec-ohos-overrides.yaml` 模板重写），使全平台统一解析鸿蒙 fork 依赖。
   >
-  > 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。产物在镜像目录 `build\ohos\hap\entry-default-signed.hap`，装机：`hdc install -r <HAP>`。
+  > 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。产物在主工程 `build\ohos\hap\entry-default-signed.hap`，装机：`hdc install -r <HAP>`。
   >
-  > **注意：构建期间必须完全关闭 DevEco Studio**——它会对镜像工程做 ohpm 重装（用未打补丁的 embedding 实例导致编译失败）并回写 `build-profile.json5`（清掉签名材料），与构建脚本互相破坏。
+  > **注意：构建期间必须完全关闭 DevEco Studio**——它会对工程做 ohpm 重装（用未打补丁的 embedding 实例导致编译失败）并回写 `build-profile.json5`（清掉签名材料），与构建脚本互相破坏。
 
 > **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so` / `.framework`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
 >

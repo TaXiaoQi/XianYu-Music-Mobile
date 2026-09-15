@@ -1,15 +1,17 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-  HarmonyOS build entry: mirror -> toolchain -> ohos HAP, all automated.
+  HarmonyOS build entry: toolchain -> ohos HAP, all automated.
 
 .DESCRIPTION
-  The main project lives under a space-containing path which ohpm/hvigor
-  reject. This script mirrors the project to a space-free directory, builds
-  there, and keeps the main project's ohos/ template in sync (source only).
+  Builds the HarmonyOS HAP in the main project directory IN PLACE (the
+  project now lives at a space-free path, which is all ohpm/hvigor require).
+  Rust (cargo) and FRB codegen run in the main project too.
 
-  Rust (cargo) and FRB codegen run in the MAIN project (space-safe); Dart /
-  hvigor / ohpm run in the MIRROR.
+  LEGACY MIRROR MODE: setting XIANYU_OHOS_MIRROR to a space-free directory
+  restores the old mirror workflow (robocopy /MIR source -> mirror, Dart /
+  hvigor / ohpm run in the mirror, ohos/ sources back-synced). Only needed
+  if the project ever moves back under a path containing spaces.
 
   Usage:
     .\scripts\ohos\build-ohos.ps1                    # build debug HAP
@@ -41,7 +43,10 @@ param(
 $ErrorActionPreference = 'Continue' # native tool stderr must not abort; explicit LASTEXITCODE checks below
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path            # scripts\ohos
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)         # main project
-$MirrorDir   = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
+# In-place build by default (space-free path). XIANYU_OHOS_MIRROR points at a
+# separate mirror dir to restore the legacy mirror workflow (see DESCRIPTION).
+$MirrorDir   = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { $ProjectRoot }
+$InPlace     = $MirrorDir -ieq $ProjectRoot
 
 # ---- signing password auto-encryption ----
 # hvigor ALWAYS reads storePassword/keyPassword as an ENCRYPTED hex blob
@@ -124,15 +129,15 @@ if ($Codegen) {
     } finally { Pop-Location }
 }
 
-# ---- 4. mirror sync (main -> mirror, source only) ----
-# /XD names match at any depth. Kept out of the mirror on purpose: VCS,
-# other-platform builds, rust (built in-place), generated caches. `libs` and
-# `oh_modules` preserve mirror-only artifacts (the .so copies, ohpm install)
-# from being wiped by /MIR. build-profile.json5 excluded via /XF so the
-# user's local signing config in the mirror is never overwritten.
-if (-not $SkipMirror) {
+# ---- 4. mirror sync (only in legacy XIANYU_OHOS_MIRROR mode) ----
+if (-not $InPlace -and -not $SkipMirror) {
     Write-Host "[ohos] mirroring project -> $MirrorDir" -ForegroundColor Cyan
     New-Item -ItemType Directory -Force -Path $MirrorDir | Out-Null
+    # /XD names match at any depth. Kept out of the mirror on purpose: VCS,
+    # other-platform builds, rust (built in-place), generated caches. `libs` and
+    # `oh_modules` preserve mirror-only artifacts (the .so copies, ohpm install)
+    # from being wiped by /MIR. build-profile.json5 excluded via /XF so the
+    # user's local signing config in the mirror is never overwritten.
     # /XF matches SOURCE paths for copy and DEST paths for deletion: bare
     # names exclude main->mirror copy of files the mirror must own.
     # (pubspec.lock: mirror keeps its ohos-resolved lock - main's would churn
@@ -145,7 +150,7 @@ if (-not $SkipMirror) {
     $global:LASTEXITCODE = 0
 }
 
-# ---- 5. in-mirror: overrides template -> ohos platform -> pub get ----
+# ---- 5. in-project: overrides template -> ohos platform -> pub get ----
 Push-Location $MirrorDir
 try {
     $overridesDst = Join-Path $MirrorDir 'pubspec_overrides.yaml'
@@ -153,7 +158,7 @@ try {
     # truth (a conditional copy left a stale overrides file in place after the
     # template gained new entries - deps silently stayed on the old forks).
     Copy-Item (Join-Path $ScriptDir 'pubspec-ohos-overrides.yaml') $overridesDst -Force
-    Write-Host '[ohos] pubspec_overrides.yaml synced from template (mirror only)'
+    Write-Host '[ohos] pubspec_overrides.yaml synced from template'
 
     # create/repair the ohos template: trigger on the entry module profile
     # (a bare `ohos/` existence check is not enough - partial trees from an
@@ -283,7 +288,8 @@ try {
     & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
     & (Join-Path $ScriptDir 'manifest-ohos.ps1') -ProjectRoot $MirrorDir
 
-    # ---- 6. keep main project's ohos/ template in sync (source only) ----
+    # ---- 6. legacy mirror mode: back-sync ohos/ template (source only) ----
+    if (-not $InPlace) {
     $srcOhos = Join-Path $MirrorDir 'ohos'
     $dstOhos = Join-Path $ProjectRoot 'ohos'
     if (Test-Path $srcOhos) {
@@ -297,9 +303,11 @@ try {
         if ($LASTEXITCODE -ge 8) { throw "ohos/ back-sync failed (exit=$LASTEXITCODE)" }
         $global:LASTEXITCODE = 0
     }
+    } # end legacy back-sync
 } finally { Pop-Location }
 
-# ---- 7. rust .so (main project build, artifact -> mirror) ----
+# ---- 7. rust .so (built in the main project; artifact -> ohos/entry/libs,
+#         which lives in the mirror only in legacy mirror mode) ----
 if (-not $SkipRust) {
     & (Join-Path $ScriptDir 'build-rust-ohos.ps1')
     if ($LASTEXITCODE -ge 8) { throw "rust build failed" }

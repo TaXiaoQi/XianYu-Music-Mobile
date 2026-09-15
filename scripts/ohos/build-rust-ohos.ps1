@@ -22,11 +22,12 @@ param(
 $ErrorActionPreference = 'Continue' # native tool stderr must not abort; explicit LASTEXITCODE checks below
 
 # ---- 0. directory layout ----
-# This script lives in <main project>\scripts\ohos\; the mirror build dir
-# (space-free) receives the .so artifacts because hvigor/ohpm reject spaces.
+# This script lives in <main project>\scripts\ohos\; the .so artifacts are
+# copied into the project's own ohos/entry/libs (in-place build). Set
+# XIANYU_OHOS_MIRROR to restore the legacy space-free mirror dir.
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path        # scripts\ohos
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)    # main project
-$MirrorDir  = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { 'D:\xianyu-mobile-ohos' }
+$MirrorDir  = if ($env:XIANYU_OHOS_MIRROR) { $env:XIANYU_OHOS_MIRROR } else { $ProjectRoot }
 
 # Rust crate dir resolution: param > env > main project rust\
 if (-not $RustDir -and $env:XIANYU_RUST_DIR) { $RustDir = $env:XIANYU_RUST_DIR }
@@ -168,7 +169,7 @@ foreach ($arch in $Archs) {
         continue
     }
 
-    # copy artifact into the mirror build dir (hvigor rejects space paths)
+    # copy artifact into ohos/entry/libs (hvigor packages it into the HAP)
     $So = Join-Path $RustDir "target\$Target\release\libxianyu_core.so"
     if (-not (Test-Path $So)) { throw "artifact missing: $So" }
     $SoInfo = Get-Item $So
@@ -180,7 +181,7 @@ foreach ($arch in $Archs) {
         Copy-Item $So (Join-Path $DestDir 'libxianyu_core.so') -Force
         Write-Host "copied to: $DestDir\libxianyu_core.so"
     } else {
-        Write-Warning "mirror ohos/entry missing ($MirrorDir) - run build-ohos.ps1 first; artifact kept under rust/target"
+        Write-Warning "ohos/entry missing ($MirrorDir) - run build-ohos.ps1 first; artifact kept under rust/target"
     }
 }
 

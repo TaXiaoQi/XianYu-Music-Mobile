@@ -112,3 +112,11 @@ app.*.map.json
 /android/key.properties
 /android/app/*.keystore
 /android/app/*.jks
+
+# 鸿蒙依赖覆盖（脚本每次从 scripts/ohos/pubspec-ohos-overrides.yaml 模板重写，
+# 常驻本机但不得入库——它会整体替换 pubspec 的 dependency_overrides）
+/pubspec_overrides.yaml
+
+# 鸿蒙就地构建的 ohpm 物化产物（third_party har 模块，构建时自动生成）
+**/oh_modules/
+third_party/*/ohos/oh-package-lock.json5
