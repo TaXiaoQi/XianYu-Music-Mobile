@@ -13,7 +13,6 @@ import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
-import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
@@ -2058,30 +2057,20 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     FocusScope.of(context).unfocus();
     if (item.localArtist != null) {
       final a = item.localArtist!;
-      Navigator.of(context, rootNavigator: true).push(
-        coverPageRoute(
-          context,
-          (_) => SongListPage(
-            title: a.name,
-            loader: () =>
-                ref.read(libraryProvider.notifier).songsByArtist(a.name),
-          ),
-        ),
-      );
+      context.push('/song-list', extra: SongListArgs(
+        title: a.name,
+        loader: () =>
+            ref.read(libraryProvider.notifier).songsByArtist(a.name),
+      ));
       return;
     }
     if (item.localAlbum != null) {
       final a = item.localAlbum!;
-      Navigator.of(context, rootNavigator: true).push(
-        coverPageRoute(
-          context,
-          (_) => SongListPage(
-            title: a.name,
-            loader: () =>
-                ref.read(libraryProvider.notifier).songsByAlbum(a.key),
-          ),
-        ),
-      );
+      context.push('/song-list', extra: SongListArgs(
+        title: a.name,
+        loader: () =>
+            ref.read(libraryProvider.notifier).songsByAlbum(a.key),
+      ));
       return;
     }
     if (item.localPlaylist != null) {

@@ -285,16 +285,11 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         },
         onOpen: () {
           if (n.songCount > 0) {
-            Navigator.of(context, rootNavigator: true).push(
-              coverPageRoute(
-                context,
-                (_) => SongListPage(
-                  title: n.name,
-                  loader: () =>
-                      ref.read(libraryProvider.notifier).songsByFolder(n.path),
-                ),
-              ),
-            );
+            context.push('/song-list', extra: SongListArgs(
+              title: n.name,
+              loader: () =>
+                  ref.read(libraryProvider.notifier).songsByFolder(n.path),
+            ));
           }
         },
         onImport: () => _importAsPlaylist(n),

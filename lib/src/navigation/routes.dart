@@ -19,6 +19,7 @@ import '../../pages/home/top_lists_page.dart';
 import '../../pages/home/online_detail_page.dart';
 import '../../pages/library/library_page.dart';
 import '../../pages/library/library_folder_page.dart';
+import '../../pages/library/song_list_page.dart';
 import '../../pages/mine/mine_page.dart';
 import '../../pages/effects/effects_page.dart';
 import '../../pages/search/search_page.dart';
@@ -166,6 +167,21 @@ final appRouter = GoRouter(
         (_) => const LibraryFolderPage(),
         key: state.pageKey,
       ),
+    ),
+    // 本地歌曲列表详情（歌手/专辑/文件夹，从搜索结果/音乐库/文件夹页进入）。
+    // 顶层 GoRoute 压在 root navigator 上使 GoRouter.canPop() 如实反映栈深
+    //（同 /playlist/:id 注释）；但必须走 GoRouter 壳内栈而非裸 rootNavigator
+    // push——后者会盖住整个壳层，迷你播放条（壳层常驻）丢失。
+    GoRoute(
+      path: '/song-list',
+      pageBuilder: (context, state) {
+        final args = state.extra as SongListArgs;
+        return _coverBackPage(
+          context,
+          (_) => SongListPage(title: args.title, loader: args.loader),
+          key: state.pageKey,
+        );
+      },
     ),
     // 听歌识曲（从搜索页进入）。
     GoRoute(
