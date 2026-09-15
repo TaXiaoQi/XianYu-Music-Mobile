@@ -284,6 +284,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _watchTransferTile(context, ref, s),
         ],
       ),
+      _sectionHeader(context, tr('设备管理')),
+      _CardGroup(
+        children: [
+          _watchLinkStatusTile(context, ref, s),
+          _watchDisconnectTile(context, ref, s),
+          _watchResetAuthTile(context, s, n),
+        ],
+      ),
     ];
   }
 
@@ -353,6 +361,94 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       return s?.watchLinkAutoTransfer == true ? tr('自动传递') : tr('不传递');
     }
     return tr('每次询问');
+  }
+
+  /// 设备管理：联动状态详情行（蓝牙 + 云端通道实时状态）。
+  Widget _watchLinkStatusTile(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) {
+    final name = ref.watch(watchLinkConnectedNameProvider);
+    final cloudOn = ref.watch(watchLinkCloudOnlineProvider);
+    final linkOn = s?.watchLinkageEnabled ?? true;
+    final cloudEnabled = s?.watchLinkCloudEnabled ?? true;
+    final bt = !linkOn
+        ? tr('联动已关闭')
+        : name.isNotEmpty
+            ? tr('已连接 {name}', {'name': name})
+            : tr('未连接');
+    final cloud = !cloudEnabled ? tr('未开启') : (cloudOn ? tr('在线') : tr('离线'));
+    return _tile(
+      context,
+      icon: Icons.connect_without_contact,
+      title: tr('联动状态'),
+      subtitle: tr('蓝牙：{bt} · 云端：{cloud}', {'bt': bt, 'cloud': cloud}),
+      trailing: const SizedBox.shrink(),
+      showChevron: false,
+    );
+  }
+
+  /// 设备管理：手动断开当前手表（蓝牙踢下线 + 云端暂离），手表可随时重连。
+  Widget _watchDisconnectTile(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) {
+    final name = ref.watch(watchLinkConnectedNameProvider);
+    final cloudOn = ref.watch(watchLinkCloudOnlineProvider);
+    final connected = name.isNotEmpty || cloudOn;
+    return _tile(
+      context,
+      icon: Icons.link_off_outlined,
+      title: tr('断开连接'),
+      subtitle: connected
+          ? tr('断开当前手表连接，手表可随时重新连接')
+          : tr('当前无已连接的手表'),
+      trailing: const SizedBox.shrink(),
+      showChevron: false,
+      enabled: connected,
+      onTap: connected
+          ? () async {
+              await ref.read(watchLinkControllerProvider).disconnectWatch();
+              if (context.mounted) {
+                showXianYuToast(context, tr('已断开手表连接'),
+                    duration: const Duration(seconds: 2));
+              }
+            }
+          : null,
+    );
+  }
+
+  /// 设备管理：重置联动授权（记住的选择/当天决定 → 恢复每次询问）。
+  Widget _watchResetAuthTile(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    final mode = s?.watchLinkTransferMode ?? 'ask';
+    final now = DateTime.now();
+    final today =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final hasAuth = mode == 'remember' || (s?.watchLinkAskDate == today);
+    return _tile(
+      context,
+      icon: Icons.restart_alt_outlined,
+      title: tr('重置联动授权'),
+      subtitle: hasAuth
+          ? tr('清除记住的选择，恢复每次起播前询问')
+          : tr('当前为每次询问，无需重置'),
+      trailing: const SizedBox.shrink(),
+      showChevron: false,
+      enabled: hasAuth,
+      onTap: hasAuth ? () async {
+        await n.resetWatchLinkAuthorization();
+        if (context.mounted) {
+          showXianYuToast(context, tr('联动授权已重置'),
+              duration: const Duration(seconds: 2));
+        }
+      } : null,
+    );
   }
 
   Future<void> _pickWatchTransfer(

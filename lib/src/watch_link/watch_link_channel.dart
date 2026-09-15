@@ -66,6 +66,13 @@ class WatchLinkChannel {
     } catch (_) {}
   }
 
+  /// 仅断开当前手表连接：服务端继续监听，手表可随时重连（幂等）。
+  Future<void> disconnect() async {
+    try {
+      await _ch.invokeMethod('disconnect');
+    } catch (_) {}
+  }
+
   /// 发送原始帧字节。
   Future<void> send(Uint8List bytes) async {
     try {

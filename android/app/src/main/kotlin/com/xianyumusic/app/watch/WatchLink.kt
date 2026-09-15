@@ -62,6 +62,10 @@ object WatchLink {
                         stop()
                         result.success(null)
                     }
+                    "disconnect" -> {
+                        disconnect()
+                        result.success(null)
+                    }
                     "send" -> {
                         val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
                         send(bytes)
@@ -162,6 +166,12 @@ object WatchLink {
         running.set(false)
         runCatching { serverSocket?.close() }
         serverSocket = null
+        closeConnection()
+    }
+
+    /** 仅断开当前手表连接：服务端保持 accept，手表可随时重连（幂等）。 */
+    @Synchronized
+    fun disconnect() {
         closeConnection()
     }
 

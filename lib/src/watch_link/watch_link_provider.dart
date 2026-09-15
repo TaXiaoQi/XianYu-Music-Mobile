@@ -188,6 +188,7 @@ class WatchLinkController {
     if (!desired) {
       _cloudRunning = false;
       _cloudWatchOnline = false;
+      _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
       _cloudReconnect?.cancel();
       await _cloud.close();
       return;
@@ -213,6 +214,8 @@ class WatchLinkController {
 
   void _connectCloud() {
     _cloudReconnect?.cancel();
+    _cloudWatchOnline = false;
+    _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
     _cloud.connect(url: kWatchCloudRelayUrl, key: _cloudKeyOf());
   }
 
@@ -229,12 +232,15 @@ class WatchLinkController {
     switch (evt.kind) {
       case CloudLinkEvent.ready:
         _cloudWatchOnline = true;
+        _container.read(watchLinkCloudOnlineProvider.notifier).state = true;
         _cloudBackoff = const Duration(seconds: 5);
       case CloudLinkEvent.peerLost:
         _cloudWatchOnline = false;
+        _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
       case CloudLinkEvent.replaced:
       case CloudLinkEvent.closed:
         _cloudWatchOnline = false;
+        _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
         if (_cloudRunning) {
           // 断线退避重连（ready 时复位）。
           _cloudReconnect?.cancel();
@@ -257,6 +263,19 @@ class WatchLinkController {
     _songKey = null; // 重连后由 hello 重新推快照。
     // 连接切换：丢弃旧连接残留的分片会话与半包缓冲。
     _decoder = FrameDecoder();
+  }
+
+  // ---- 设备管理（设置页） ----
+
+  /// 手动断开当前手表：蓝牙踢下线（服务端继续监听，手表可重连）+ 云端通道
+  /// 暂离（3s 后自动重连中继）。授权与绑定状态不变。
+  Future<void> disconnectWatch() async {
+    await _channel.disconnect();
+    if (_cloudRunning) {
+      _cloudReconnect?.cancel();
+      await _cloud.close();
+      _cloudReconnect = Timer(const Duration(seconds: 3), _connectCloud);
+    }
   }
 
   // ---- 字节入口与消息分发 ----
@@ -674,6 +693,9 @@ final watchLinkControllerProvider = Provider<WatchLinkController>((ref) {
 
 /// 当前已连接的手表名（设置页副标题展示，连接变化实时刷新）。
 final watchLinkConnectedNameProvider = StateProvider<String>((ref) => '');
+
+/// 云端通道是否在线（ready 后 true；断开/关闭时 false），设置页设备管理展示用。
+final watchLinkCloudOnlineProvider = StateProvider<bool>((ref) => false);
 
 /// 传递授权弹窗（三选一）：允许该设备 / 允许本次 / 不允许。
 /// 返回 `'device'` / `'once'` / `'never'`；点外部或系统返回关闭返回 null。

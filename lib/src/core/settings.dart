@@ -1171,6 +1171,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setWatchLinkTransferRemembered({required bool autoTransfer}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'remember', watchLinkAutoTransfer: autoTransfer));
   /// ask 模式按天隔离：记录某天的询问决定（同天再起播不再询问，直接应用）。
   Future<void> setWatchLinkAskChoice({required String date, required bool granted}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkAskDate: date, watchLinkAskGranted: granted));
+  /// 设备管理：重置腕上联动授权（切回每次询问并清除当天记录，下次起播重新询问）。
+  Future<void> resetWatchLinkAuthorization() => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'ask', watchLinkAskDate: '', watchLinkAskGranted: false));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
   Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
   Future<void> setShowRealSourceName(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(showRealSourceName: v));
