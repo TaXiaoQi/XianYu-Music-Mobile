@@ -15,6 +15,8 @@ import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.Shader
 import android.net.Uri
@@ -674,8 +676,10 @@ internal object WidgetShared {
     /**
      * 封面 -> 整卡模糊背景位图（三行大卡）：
      * 极小尺寸下采样 + 双线性放大形成快速平滑模糊，叠加上浅下深暗色蒙层
-     * （类播放详情页）。方形满幅无圆角：圆角由 root 的 clipToOutline
-     * （widget_bg 圆角 shape 提供 outline）按实际渲染尺寸统一裁剪。
+     * （类播放详情页）。位图自带圆角（widget_card_radius）：部分 ROM
+     * （MagicOS 长按提起预览等）对组件不做桌面级圆角裁剪、也不认
+     * clipToOutline，直角模糊图会盖掉圆角卡底露成方角——位图自圆后
+     * 桌面实况/提起预览/选择器全路径观感一致。
      */
     private fun blurredBackground(
         ctx: Context, path: String, sizeDp: Pair<Int, Int>?,
@@ -719,6 +723,20 @@ internal object WidgetShared {
                     0x88000000.toInt(), 0xE6000000.toInt(), Shader.TileMode.CLAMP)
             }
             cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), scrim)
+
+            // 圆角收边：按 widget_card_radius（v31 跟随系统组件半径）把圆角外
+            // 区域置透明（DST_IN），与 widget_bg 卡底圆角精确重合。
+            val cornerR = ctx.resources.getDimensionPixelSize(
+                R.dimen.widget_card_radius).toFloat()
+            if (cornerR > 0f) {
+                val rr = RectF(0f, 0f, w.toFloat(), h.toFloat())
+                val clip = Path().apply {
+                    addRoundRect(rr, cornerR, cornerR, Path.Direction.CW)
+                }
+                cv.drawPath(clip, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                })
+            }
             out
         } catch (_: Throwable) {
             null

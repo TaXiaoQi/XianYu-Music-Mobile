@@ -17,6 +17,7 @@
         android:id="@+id/root"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipToOutline="true"
         android:background="@drawable/widget_bg">
 
         <!-- 封面模糊背景层：歌词卡同款「封面缩 24px 再放大 = 100% 模糊」作整卡底色。 -->
