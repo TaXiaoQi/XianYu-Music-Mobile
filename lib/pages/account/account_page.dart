@@ -120,9 +120,10 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final notifier = ref.read(authProvider.notifier);
     final isLogin = _tab.index == 0;
 
-    // 未勾选用户协议禁止提交（对齐桌面端 onSubmit）。
+    // 未勾选协议禁止提交（对齐桌面端 onSubmit）；提示需点名《隐私政策》，
+    // 对齐应用商店「注册登录界面明确提示用户阅读隐私政策」的审核措辞。
     if (!_agreed) {
-      notifier.setError(tr('请先勾选同意用户协议'));
+      notifier.setError(tr('请先阅读并同意《用户协议》和《隐私政策》'));
       return;
     }
 
