@@ -13,7 +13,7 @@
 ///
 /// 消息方向约定：
 /// - 双向：hello / bye / ping / pong
-/// - 手机→手表：state / now_playing / position / lyric
+/// - 手机→手表：state / now_playing / position / lyric / precache
 /// - 手表→手机：cmd
 ///
 /// 扩展预留：type 0x40–0x7F 为云端兜底通道（payload 以 `cloud_` 前缀），
@@ -55,6 +55,13 @@ class LinkMsgType {
   /// payload 为 parseLyrics 归一化产物（displayLines 格式），超限自动分片。
   static const int lyric = 0x13;
 
+  /// 手机→手表：下一首预载（payload
+  /// `{"precache":{"id":"<歌id>","cover":"<封面 base64>"?,"lyric":"<payload JSON>"?}}`）。
+  /// 复用在线预缓存管线：起播后提前推下一首的封面字节与歌词 payload，
+  /// 手表静默落盘/缓存（不改 UI），真正切歌的 now_playing 到达时直接命中，
+  /// 联动切换不再有几秒丢封面/歌词。超限自动分片。
+  static const int precache = 0x14;
+
   /// 手表→手机。
   static const int cmd = 0x20;
 
@@ -74,6 +81,7 @@ class LinkMsgType {
       t == nowPlaying ||
       t == position ||
       t == lyric ||
+      t == precache ||
       t == cmd ||
       t == chunk ||
       t == cloudBind;
@@ -181,6 +189,21 @@ class LinkMessage {
         'lyric': {
           'id': id,
           'payload': payload,
+        },
+      });
+
+  /// 手机→手表：下一首预载（cover=封面 base64；lyric=结构化 payload JSON；
+  /// 两者都可空按需携带，手表按 id 静默缓存，不影响当前 UI 状态）。
+  static LinkMessage precache({
+    required String id,
+    String? coverData,
+    String? lyricPayload,
+  }) =>
+      LinkMessage(LinkMsgType.precache, {
+        'precache': {
+          'id': id,
+          'cover': ?coverData,
+          'lyric': ?lyricPayload,
         },
       });
 

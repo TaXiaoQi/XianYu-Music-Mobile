@@ -1027,6 +1027,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
+  /// 预览下一首（不消费随机栈）：腕上联动预缓存推送用。
+  /// 顺序/列表循环取 index+1；随机模式仅在已压入 _shuffleFuture 时可预知
+  /// （栈顶）；单曲循环返回 null（无下一首语义）。队列空返回 null。
+  QueueItem? peekNextItem() {
+    final n = state.queue.length;
+    if (n == 0 || state.playMode == 1) return null;
+    if (state.playMode == 2) {
+      if (_shuffleFuture.isEmpty) return null;
+      final i = state.queue.indexWhere((q) => q.path == _shuffleFuture.last);
+      return i >= 0 ? state.queue[i] : null;
+    }
+    if (state.queueIndex < 0) return state.queue[0];
+    return state.queue[(state.queueIndex + 1) % n];
+  }
+
   /// 联动封面兜底：解析本地歌封面缩略图（与通知栏封面同一缓存链路，
   /// 含 SAF 自愈），返回真实存在的缩略图路径；在线歌或无封面返回 null。
   Future<String?> resolveLinkCoverPath(QueueItem item) async {

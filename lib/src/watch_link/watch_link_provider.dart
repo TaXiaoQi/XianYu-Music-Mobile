@@ -15,6 +15,7 @@ import '../favorites/favorites_provider.dart';
 import '../i18n/i18n.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../navigation/routes.dart';
+import '../online/cover_proxy.dart';
 import '../player/player_provider.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
@@ -91,6 +92,10 @@ class WatchLinkController {
 
   /// 已推送歌词的歌曲 id（同曲只发一次；快照推送时置空强制重发）。
   String? _lyricSentSongId;
+
+  /// 已完成下一首预载推送的歌曲路径（同一首只推一次；重连后置空重推，
+  /// 手表可能刚启动丢了落盘缓存）。
+  String? _precachedNextPath;
   bool _lastPlaying = false;
   LinkPlayMode _lastMode = LinkPlayMode.order;
   bool _lastLiked = false;
@@ -268,6 +273,7 @@ class WatchLinkController {
     _connectedName = evt.name;
     _container.read(watchLinkConnectedNameProvider.notifier).state = evt.name;
     _songKey = null; // 重连后由 hello 重新推快照。
+    _precachedNextPath = null; // 重连后重推下一首预载（手表可能刚启动）。
     // 连接切换：丢弃旧连接残留的分片会话与半包缓冲。
     _decoder = FrameDecoder();
   }
@@ -381,6 +387,8 @@ class WatchLinkController {
           await _container
               .read(settingsProvider.notifier)
               .setVolume(v.clamp(0.0, 1.0));
+          // 回推 state：手表 UI 音量与手机实际音量保持同源。
+          _pushState();
         }
       default:
         break;
@@ -402,6 +410,7 @@ class WatchLinkController {
         : '${item.path}|${item.title}|${item.artist}|${item.durationMs}';
     final wasPlaying = _lastPlaying;
     final isPlaying = st.isPlaying;
+    final prevKey = _songKey;
     _lastPlaying = isPlaying;
     _songKey = key;
 
@@ -424,7 +433,9 @@ class WatchLinkController {
     // 未获准的会话不推任何帧（内部状态已同步，防重复判定）。
     if (!_transferActive) return;
 
-    if (key != _songKey) {
+    // 切歌检测：与上一帧的 key 比较（prevKey 先于赋值捕获，自动接续
+    // isPlaying 不翻转时也能推 now_playing）。
+    if (key != prevKey) {
       _send(LinkMessage.nowPlaying(
         id: item?.path ?? '',
         title: item?.title ?? '',
@@ -443,6 +454,7 @@ class WatchLinkController {
       _lastPosPush = DateTime.now();
       _send(LinkMessage.position(pos: st.position, duration: st.duration));
       _maybePushLyric();
+      _maybePrecacheNext();
       return;
     }
     final mode = linkPlayModeFromInt(st.playMode);
@@ -624,6 +636,7 @@ class WatchLinkController {
     // 握手快照强制重发歌词（手表可能在切歌瞬间掉线错过上一条）。
     _lyricSentSongId = null;
     _maybePushLyric(cloud: cloud);
+    _maybePrecacheNext(cloud: cloud);
   }
 
   /// 快照授权门：remember 记住传递 / ask 当天已授准 / 会话已获准。
@@ -663,6 +676,66 @@ class WatchLinkController {
       if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
       _send(LinkMessage.lyric(id: id, payload: payload), cloud: cloud);
     } catch (_) {}
+  }
+
+  // ---- 下一首预载（联动预缓存） ----
+
+  /// 下一首预载推送：复用在线预缓存管线，把队列下一首的封面字节与歌词
+  /// payload 提前推给手表（precache 帧，手表静默落盘/缓存不改 UI）。真正
+  /// 切歌的 now_playing 到达时手表直接命中本地缓存——在线封面免手表二次
+  /// 拉 URL、歌词免等待，联动切换不再有几秒丢封面/状态。
+  ///
+  /// 定位与播放器 `_precacheNextCover` 同款：顺序/列表循环取 index+1；
+  /// 随机模式仅在已压入预知栈时可预知（栈顶）；单曲循环无下一首。
+  /// 同一首只预载一次；推送前/发送前复检链路与会话授权（未获准零推送）。
+  void _maybePrecacheNext({bool cloud = false}) {
+    if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+    final next = _container.read(playerProvider.notifier).peekNextItem();
+    if (next == null || next.path == _precachedNextPath) return;
+    _precachedNextPath = next.path;
+    // 延迟 3s：让当前歌的 now_playing/封面/歌词帧先走完链路，避免挤兑带宽。
+    Future.delayed(const Duration(seconds: 3), () async {
+      if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+      if (_container.read(playerProvider).current?.path == next.path) {
+        return; // 期间已切到这首歌，切歌推送自带全量数据。
+      }
+      String? coverData;
+      try {
+        final bytes = await _nextCoverBytes(next);
+        if (bytes != null && bytes.isNotEmpty) {
+          coverData = await compute(_encodeLinkCoverBytes, bytes);
+        }
+      } catch (_) {}
+      String? lyricPayload;
+      try {
+        final payload =
+            await _container.read(lyricsRepositoryProvider).fetchPayloadJson(next);
+        if (payload.isNotEmpty && payload != 'null') lyricPayload = payload;
+      } catch (_) {}
+      if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+      if (coverData == null && lyricPayload == null) return;
+      _send(LinkMessage.precache(
+        id: next.path,
+        coverData: coverData,
+        lyricPayload: lyricPayload,
+      ), cloud: cloud);
+    });
+  }
+
+  /// 下一首封面字节：在线歌走代理缓存（在线预缓存已播种，未命中兜底拉
+  /// 一次），本地歌走联动封面解析链（与通知栏封面同源，含内嵌封面兜底）。
+  Future<Uint8List?> _nextCoverBytes(QueueItem item) async {
+    final url = item.coverUrl;
+    if (url != null && url.isNotEmpty && !url.startsWith('lx://')) {
+      return CoverProxy.cached(url) ?? await CoverProxy.fetch(url);
+    }
+    final path = await _container
+        .read(playerProvider.notifier)
+        .resolveLinkCoverPath(item);
+    if (path == null || path.isEmpty) return null;
+    final f = File(path);
+    if (!await f.exists()) return null;
+    return f.readAsBytes();
   }
 
   bool _likedOf(QueueItem? item) {
@@ -783,8 +856,16 @@ Future<String?> _encodeLinkCoverData(String path) async {
   try {
     final f = File(path);
     if (!await f.exists()) return null;
-    final bytes = await f.readAsBytes();
-    final decoded = img.decodeImage(bytes);
+    return await _encodeLinkCoverBytes(await f.readAsBytes());
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 字节版联动封面编码（预缓存的代理封面字节走同一管线）。
+Future<String?> _encodeLinkCoverBytes(List<int> raw) async {
+  try {
+    final decoded = img.decodeImage(Uint8List.fromList(raw));
     if (decoded == null) return null;
     final resized = img.copyResize(
       decoded,
