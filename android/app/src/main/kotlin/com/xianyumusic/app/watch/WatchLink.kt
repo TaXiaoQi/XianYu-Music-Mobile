@@ -48,6 +48,9 @@ object WatchLink {
     private var out: OutputStream? = null
     private val writeLock = Any()
 
+    /** 手机端主动连接手表进行中标志（防并发连接线程叠加）。 */
+    private val connecting = AtomicBoolean(false)
+
     /** 注册 MethodChannel（configureFlutterEngine 时调用）。 */
     fun register(messenger: BinaryMessenger, activity: android.app.Activity) {
         this.activity = activity
@@ -69,6 +72,12 @@ object WatchLink {
                     "send" -> {
                         val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
                         send(bytes)
+                        result.success(null)
+                    }
+                    "pairedDevices" -> result.success(pairedDevices())
+                    "connect" -> {
+                        val address = call.argument<String>("address") ?: ""
+                        connect(address)
                         result.success(null)
                     }
                     "hasPermission" -> result.success(hasPermission())
@@ -175,6 +184,56 @@ object WatchLink {
         closeConnection()
     }
 
+    /** 已配对设备列表 [{address, name}]（无权限/无适配器返回空）。 */
+    private fun pairedDevices(): List<Map<String, String>> {
+        val adapter = adapter() ?: return emptyList()
+        if (!hasPermission()) return emptyList()
+        return try {
+            adapter.bondedDevices.map { dev ->
+                mapOf(
+                    "address" to dev.address,
+                    "name" to (try { dev.name ?: dev.address } catch (_: Exception) { dev.address }),
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 手机端主动连接手表（反向配对）：作为 SPP 客户端连入手表侧服务端，
+     * 手表端会弹「允许/拒绝」确认；采纳后与手表主动连入同流程（adopt）。
+     */
+    fun connect(address: String) {
+        if (address.isEmpty()) return
+        if (!connecting.compareAndSet(false, true)) return
+        if (!hasPermission()) {
+            connecting.set(false)
+            return
+        }
+        val adapter = adapter()
+        if (adapter == null || !adapter.isEnabled) {
+            connecting.set(false)
+            emitConnection(false, "")
+            return
+        }
+        Thread {
+            var sock: BluetoothSocket? = null
+            try {
+                val dev = adapter.getRemoteDevice(address)
+                runCatching { adapter.cancelDiscovery() }
+                sock = dev.createRfcommSocketToServiceRecord(SERVICE_UUID)
+                sock.connect() // 阻塞直至建立或抛 IOException（手表确认前不返回）
+                connecting.set(false)
+                adoptConnection(sock)
+            } catch (_: Exception) {
+                connecting.set(false)
+                runCatching { sock?.close() }
+                emitConnection(false, "")
+            }
+        }.apply { setName("xy-phone-connect") }.start()
+    }
+
     /** 采纳新连接：关旧保新（最新手表优先），起读线程。 */
     private fun adoptConnection(sock: BluetoothSocket) {
         closeConnection()
@@ -192,7 +251,9 @@ object WatchLink {
             val buf = ByteArray(READ_BUFFER)
             try {
                 val ins: InputStream = sock.inputStream
-                while (running.get()) {
+                // 不判 running：手机端主动连接时服务端可能未启动；stop()/断开
+                // 会关闭套接字使 read 抛异常退出。
+                while (true) {
                     val n = ins.read(buf)
                     if (n < 0) break
                     if (n > 0) {

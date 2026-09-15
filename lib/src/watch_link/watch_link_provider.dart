@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image/image.dart' as img;
 
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
@@ -81,6 +85,9 @@ class WatchLinkController {
 
   /// 当前已推送歌曲 key（切歌检测）。
   String? _songKey;
+
+  /// 联动封面 base64 缓存（key = 本地封面文件路径，上限 16 条防膨胀）。
+  final Map<String, String> _coverDataCache = {};
 
   /// 已推送歌词的歌曲 id（同曲只发一次；快照推送时置空强制重发）。
   String? _lyricSentSongId;
@@ -267,6 +274,22 @@ class WatchLinkController {
 
   // ---- 设备管理（设置页） ----
 
+  /// 已配对蓝牙设备列表（手机端主动连接手表的选择列表）。
+  Future<List<WatchBondedDevice>> loadPairedDevices() =>
+      _channel.pairedDevices();
+
+  /// 手机端主动连接手表（反向配对）：连入手表侧服务端，手表端弹
+  /// 「允许/拒绝」确认。返回 false 表示缺蓝牙权限（已代为发起授权）。
+  Future<bool> connectToWatch(String address) async {
+    if (_connected) return true;
+    if (!await _channel.hasPermission()) {
+      await _channel.requestPermission();
+      return false;
+    }
+    _channel.connect(address);
+    return true;
+  }
+
   /// 手动断开当前手表：蓝牙踢下线（服务端继续监听，手表可重连）+ 云端通道
   /// 暂离（3s 后自动重连中继）。授权与绑定状态不变。
   Future<void> disconnectWatch() async {
@@ -410,6 +433,7 @@ class WatchLinkController {
         cover: _coverOf(item),
         duration: st.duration,
       ));
+      _maybePushCoverData(item);
       _send(LinkMessage.state(
         isPlaying: st.isPlaying,
         playMode: _lastMode,
@@ -587,6 +611,7 @@ class WatchLinkController {
       cover: _coverOf(item),
       duration: st.duration,
     ), cloud: cloud);
+    _maybePushCoverData(item, cloud: cloud);
     _send(LinkMessage.state(
       isPlaying: st.isPlaying,
       playMode: _lastMode,
@@ -667,6 +692,50 @@ class WatchLinkController {
     return null;
   }
 
+  /// 异步补发本地歌封面（512px JPEG base64，帧层自动分片；在线歌走 URL 不发）。
+  ///
+  /// 缩放编码较重，放隔离池跑；结果按路径缓存。补发的 now_playing 只多带
+  /// coverData 字段，手表按歌曲 id 守卫落盘，标题先到封面随后跟上。
+  void _maybePushCoverData(QueueItem? item, {bool cloud = false}) {
+    if (item == null) return;
+    final url = item.coverUrl;
+    if (url != null && url.isNotEmpty) return;
+    final path = item.coverPath;
+    if (path == null ||
+        path.isEmpty ||
+        path.startsWith('http') ||
+        path.startsWith('lx://')) {
+      return;
+    }
+    final cached = _coverDataCache[path];
+    if (cached != null) {
+      _sendCoverData(item, cached, cloud: cloud);
+      return;
+    }
+    compute(_encodeLinkCoverData, path).then((data) {
+      if (data == null || data.isEmpty) return;
+      if (_coverDataCache.length > 16) _coverDataCache.clear();
+      _coverDataCache[path] = data;
+      _sendCoverData(item, data, cloud: cloud);
+    }).catchError((_) {});
+  }
+
+  /// 发送带 coverData 的 now_playing（复检链路/授权/切歌）。
+  void _sendCoverData(QueueItem item, String data, {bool cloud = false}) {
+    if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
+    final st = _container.read(playerProvider);
+    if (st.current?.path != item.path) return; // 编码期间已切歌
+    _send(LinkMessage.nowPlaying(
+      id: item.path,
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      cover: _coverOf(item),
+      coverData: data,
+      duration: st.duration,
+    ), cloud: cloud);
+  }
+
   /// 发送消息：显式 [cloud]=true 走云端；否则蓝牙优先、蓝牙未连且手表云在线时走云。
   void _send(LinkMessage msg, {bool cloud = false}) {
     final useCloud = cloud || (!_connected && _cloudWatchOnline);
@@ -696,6 +765,27 @@ final watchLinkConnectedNameProvider = StateProvider<String>((ref) => '');
 
 /// 云端通道是否在线（ready 后 true；断开/关闭时 false），设置页设备管理展示用。
 final watchLinkCloudOnlineProvider = StateProvider<bool>((ref) => false);
+
+/// 隔离池内编码联动封面：读文件 → 解码 → 512px 等比缩放 → JPEG(78) → base64。
+/// image 包解码较重，避免卡主线程；失败返回 null（静默无封面）。
+Future<String?> _encodeLinkCoverData(String path) async {
+  try {
+    final f = File(path);
+    if (!await f.exists()) return null;
+    final bytes = await f.readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final resized = img.copyResize(
+      decoded,
+      width: decoded.width <= 512 ? decoded.width : 512,
+    );
+    final jpg = img.encodeJpg(resized, quality: 78);
+    if (jpg.isEmpty) return null;
+    return base64Encode(jpg);
+  } catch (_) {
+    return null;
+  }
+}
 
 /// 传递授权弹窗（三选一）：允许该设备 / 允许本次 / 不允许。
 /// 返回 `'device'` / `'once'` / `'never'`；点外部或系统返回关闭返回 null。

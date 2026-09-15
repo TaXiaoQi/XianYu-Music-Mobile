@@ -29,6 +29,7 @@ import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/i18n/i18n.dart';
 import '../../src/library/saf_channel.dart';
+import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 
 /// 设置分类。对应桌面版导航分类中在移动端可用的分组。
@@ -288,6 +289,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _CardGroup(
         children: [
           _watchLinkStatusTile(context, ref, s),
+          _watchConnectTile(context, ref, s),
           _watchDisconnectTile(context, ref, s),
           _watchResetAuthTile(context, s, n),
         ],
@@ -418,6 +420,74 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             }
           : null,
     );
+  }
+
+  /// 设备管理：手机端主动发起配对（反向连接手表，手表端弹确认）。
+  Widget _watchConnectTile(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) {
+    final connectedName = ref.watch(watchLinkConnectedNameProvider);
+    return _tile(
+      context,
+      icon: Icons.add_link_outlined,
+      title: tr('主动连接手表'),
+      subtitle: connectedName.isNotEmpty
+          ? tr('已连接 {name}', {'name': connectedName})
+          : tr('从已配对设备列表选择手表发起连接'),
+      trailing: const SizedBox.shrink(),
+      onTap: connectedName.isNotEmpty
+          ? null
+          : () => _pickWatchToConnect(context, ref, s),
+    );
+  }
+
+  /// 打开设备选择弹窗：加载已配对蓝牙设备，选后发起反向连接。
+  Future<void> _pickWatchToConnect(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final devs = await ref
+        .read(watchLinkControllerProvider)
+        .loadPairedDevices()
+        .catchError((_) => <WatchBondedDevice>[]);
+    if (!context.mounted) return;
+
+    final options = devs
+        .where((d) => d.address.isNotEmpty)
+        .map((d) => ModernChoiceOption<WatchBondedDevice>(
+              label: d.name.isEmpty ? d.address : d.name,
+              value: d,
+              subtitle: tr('点击连接，手表端需确认'),
+            ))
+        .toList();
+
+    if (options.isEmpty) {
+      final enabled = s?.watchLinkageEnabled ?? true;
+      await showModernConfirmDialog(
+        context: context,
+        title: tr('未发现可连接的手表'),
+        message: !enabled
+            ? tr('请先开启腕上联动并授予蓝牙权限')
+            : tr('请在蓝牙设置中与手表完成配对后重试'),
+        isDanger: false,
+      );
+      return;
+    }
+
+    final picked = await showModernChoiceSheet<WatchBondedDevice>(
+      context: context,
+      title: tr('选择要连接的手表'),
+      options: options,
+    );
+    if (picked == null || !context.mounted) return;
+    await ref.read(watchLinkControllerProvider).connectToWatch(picked.address);
+    if (context.mounted) {
+      showXianYuToast(context, tr('已发起连接，请在手表端确认'),
+          duration: const Duration(seconds: 2));
+    }
   }
 
   /// 设备管理：重置联动授权（记住的选择/当天决定 → 恢复每次询问）。

@@ -10,6 +10,22 @@ class WatchLinkConnection {
   final String name;
 }
 
+/// 已配对蓝牙设备。
+class WatchBondedDevice {
+  const WatchBondedDevice({required this.address, required this.name});
+
+  final String address;
+  final String name;
+
+  static WatchBondedDevice fromMap(Object? m) {
+    final map = m as Map? ?? const {};
+    return WatchBondedDevice(
+      address: (map['address'] as String?) ?? '',
+      name: (map['name'] as String?) ?? '',
+    );
+  }
+}
+
 /// 手机端手表联动 MethodChannel 封装（对应 Kotlin `watch/WatchLink.kt`）。
 ///
 /// Kotlin 只做 RFCOMM 字节管道：本类把 onRaw 原始字节 / onConnection 连接事件 /
@@ -50,6 +66,23 @@ class WatchLinkChannel {
           _permCtrl.add(call.arguments == true);
       }
     });
+  }
+
+  /// 已配对蓝牙设备列表（手机端主动连接手表的选择列表）。
+  Future<List<WatchBondedDevice>> pairedDevices() async {
+    try {
+      final list = await _ch.invokeMethod<List<dynamic>>('pairedDevices');
+      return (list ?? const []).map(WatchBondedDevice.fromMap).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 主动连接手表（SPP 客户端连入手表侧服务端；手表端弹确认，阻塞至确认）。
+  Future<void> connect(String address) async {
+    try {
+      await _ch.invokeMethod('connect', {'address': address});
+    } catch (_) {}
   }
 
   /// 启动 RFCOMM 服务端 accept 循环（幂等）。
