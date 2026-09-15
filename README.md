@@ -159,10 +159,16 @@ flutter build ios --release --no-codesign
 前置：安装 DevEco Studio 6+ 并完成一次「自动生成签名」（签名四件套落盘 `~/.ohos/config`，Bundle name 为正式包名 `com.xianyumusic.app`）；Rust 工具链 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。构建命令见上文「运行与调试」第 3 步（同一条 `build-ohos.ps1`，run 与出包共用）。
 
 ```powershell
-.\scripts\ohos\build-ohos.ps1 --release    # release HAP（--release 透传给 flutter build hap）
+flutter build app        # 或 .\scripts\ohos\build-ohos.ps1（默认 release，无需 --release）
 ```
 
-- 构建全流程自动化：版本同步 → FRB codegen（按需）→ 镜像同步 → 依赖覆盖（`scripts/ohos/pubspec-ohos-overrides.yaml`）→ Rust 双架构 `.so` → hvigor 打包签名
+与安卓同款发版体验（构建即正式版，测试走 `flutter hap`）：
+
+- **版本号自动同步**：`version.ts` → `pubspec.yaml` / `app.json5`（改版本只需改 `version.ts`）
+- 产物自动归档到 `releases/ohos/弦予音乐v<版本>-Mobile.hap`（版本号原样取自 `APP_VERSION`，与安卓命名一致；预发布版本名自带 -betaN 后缀）
+- 上架 AppGallery 追加 `-AppPack` 出 `.app`（归档同名 `.app` 后缀）
+- 调试直接 `hdc install -r` 归档产物或 `build\ohos\hap\entry-default-signed.hap`
+- 构建全流程自动化（主工程内完成，无镜像拷贝）：版本同步 → FRB codegen（按需）→ 依赖覆盖（`scripts/ohos/pubspec-ohos-overrides.yaml`）→ Rust 双架构 `.so` → hvigor 打包签名
 - 第三方插件鸿蒙适配：`shared_preferences` / `file_picker` 等走 openharmony-tpc 社区版本或 vendor 改造（`third_party/file_picker`），由 overrides 模板统一注入
 - 签名/证书变更一律回主工程 `ohos/` 修改（或 DevEco 里直接对主工程签名，注意别开着构建）
 
