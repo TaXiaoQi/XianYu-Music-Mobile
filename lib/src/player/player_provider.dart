@@ -70,17 +70,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     _notifier = notifier;
   }
 
-  /// 应用确认退出时的收尾：停止播放器并把媒体会话置为 idle——
-  /// audio_service 平台侧收到 idle 即取消媒体通知并退出前台服务，
-  /// 进程不再被通知栏服务钉住（配合 Activity finish + exit(0) 真正销毁）。
-  Future<void> shutdown() async {
-    await _notifier?.shutdownForExit();
-    playbackState.add(as_pkg.PlaybackState(
-      processingState: as_pkg.AudioProcessingState.idle,
-      playing: false,
-    ));
-  }
-
   /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
   void syncMediaItem(QueueItem item, double durationSecs) {
     _lastSyncItem = item;
@@ -1189,7 +1178,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         AppLogger.instance.log('session', '读取数据库播放会话失败: $e');
       }
 
-      if (jsonStr.isEmpty || jsonStr == 'null') return;
+      if (jsonStr.isEmpty || jsonStr == 'null') {
+        AppLog.info('session', 'restore skip: empty session');
+        return;
+      }
 
       final Map<String, dynamic> data = jsonDecode(jsonStr);
       final String curPath = data['currentSongPath'] as String? ?? '';
@@ -1198,7 +1190,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final int mode = (data['playMode'] as num?)?.toInt() ?? 0;
       final double pos = (data['currentPositionSecs'] as num?)?.toDouble() ?? 0;
 
-      if (rawQueue.isEmpty || curPath.isEmpty) return;
+      if (rawQueue.isEmpty || curPath.isEmpty) {
+        AppLog.info('session',
+            'restore skip: queue=${rawQueue.length} curPath=$curPath');
+        return;
+      }
 
       final List<QueueItem> queue = [];
       for (final p in rawQueue) {
@@ -1302,6 +1298,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } else {
         _restoredOnlinePending = pos;
       }
+      AppLog.info('session',
+          'restored queue=${queue.length} cur="${currentItem.title}" '
+          'pos=${pos.toStringAsFixed(1)} online=${currentItem.isOnline}');
     } catch (e) {
       AppLogger.instance.log('session', '恢复播放会话异常: $e');
     }
@@ -1313,22 +1312,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  /// 防抖持久化进度（每 5 秒一次），供重启恢复。在线会话不持久化。
+  /// 防抖持久化进度（每 5 秒一次），供重启恢复。在线歌同样持久化：
+  /// 会话存的是歌曲 meta + 位置，恢复时在线歌经 _restoredOnlinePending
+  /// 重新解析直链续播（直链过期不影响），清空感全部来自这里被排除。
   void _persistPositionDebounced() {
     final current = state.current;
-    if (current == null || current.isOnline) return;
+    if (current == null) return;
     final now = DateTime.now();
     if (now.difference(_lastPosPersist).inSeconds < 5) return;
     _lastPosPersist = now;
+    final pos = state.position;
+    final isPlaying = state.isPlaying;
     Future(() async {
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await updatePlaybackPosition(
           dbPath: dbPath,
-          positionSecs: state.position,
-          isPlaying: state.isPlaying,
+          positionSecs: pos,
+          isPlaying: isPlaying,
         );
-      } catch (_) {}
+        AppLog.debug('session',
+            'position saved cur=${current.title} pos=${pos.toStringAsFixed(1)} '
+            'playing=$isPlaying online=${current.isOnline}');
+      } catch (e) {
+        AppLog.warn('session', 'position save failed: $e');
+      }
     });
   }
 
@@ -3528,16 +3536,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         StackTrace.current.toString().split('\n').take(3).join(' <- ');
     AppLog.warn('playgate', 'pauseFromSystem $st');
     await toggle();
-  }
-
-  /// 应用确认退出：停止播放并落盘听歌统计（媒体会话由 handler.shutdown
-  /// 置 idle，前台服务退出后进程可被真正销毁）。
-  Future<void> shutdownForExit() async {
-    try {
-      await _player.stop();
-    } catch (_) {}
-    _flushPlayStats();
-    state = state.copyWith(isPlaying: false);
   }
 
   Future<void> toggle() async {
