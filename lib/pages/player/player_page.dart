@@ -521,19 +521,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               mvActive: mv.ready,
             ),
           ),
-          // MV 背景视频层（仅横屏挂底层）：B 站式自适应铺满——等比放大到
-          // 覆盖全屏（BoxCover，超出部分裁切），不留 letterbox 空隙；上压
-          // black/40 保证前景文字仍可读。竖屏时视频嵌在内容区居中显示
-          // （flexible 槽 _MvVideoStage）。
+          // MV 背景视频层（仅横屏挂底层）：等比缩放到完全可见（contain），
+          // 一个方向贴满屏幕——4:3 视频上下贴满、左右留黑；21:9 视频左右
+          // 贴满、上下留黑。留黑处透出模糊封面底衬，上压 black/40 保证前景
+          // 文字仍可读。竖屏时视频嵌在内容区居中显示（flexible 槽 _MvVideoStage）。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
             Positioned.fill(
               child: LayoutBuilder(builder: (context, cons) {
                 final ar = mv.controller!.value.aspectRatio;
                 final w = cons.maxWidth;
                 final h = cons.maxHeight;
-                // cover：宽优先铺满，若高不足则改高铺满（等比放大裁切）
-                final vw = w >= h * ar ? w : h * ar;
-                final vh = w >= h * ar ? w / ar : h;
+                // contain：等比取小方向贴满，不裁切
+                final vw = w >= h * ar ? h * ar : w;
+                final vh = w >= h * ar ? h : w / ar;
                 return Align(
                   child: SizedBox(
                     width: vw,
