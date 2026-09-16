@@ -244,7 +244,7 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
-    this.onlineFailureBehavior = 'autoswitch',
+    this.onlineFailureBehavior = 'stop',
     this.onlineQualityFallbackBehavior = 'lower',
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
@@ -443,8 +443,9 @@ class AppSettings {
   /// 防削波破音保护：增益可能超出 0 dB 极限时自动压低；无峰值标签的正增益降级为不提升。
   final bool volumeBalancePreventClipping;
 
-  /// 在线歌曲起播失败时的行为：autoswitch 自动换源（默认）/ skip 跳到下一首 /
-  /// pause 暂停播放 / stop 停止播放。autoswitch 在换源失败后等价 pause。
+  /// 在线歌曲起播失败时的行为：stop 停止播放（默认，对齐桌面端）/
+  /// skip 跳到下一首 / pause 暂停播放 / autoswitch 自动换源（换源失败后
+  /// 等价 pause）。仅 autoswitch 会尝试换源。
   final String onlineFailureBehavior;
 
   /// 在线歌曲默认音质播放失败时的音质回退：
@@ -898,13 +899,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
-      // 自动换源已并入 onlineFailureBehavior（'autoswitch'）：旧版独立开关
-      // 未持久化为 false 时（默认开）迁移为自动换源，显式关闭过则回退 pause。
-      onlineFailureBehavior:
-          prefs.getString('onlineFailureBehavior') ??
-              ((prefs.getBool('autoSwitchSourceOnFailure') ?? true)
-                  ? 'autoswitch'
-                  : 'pause'),
+      // 对齐桌面端默认 'stop'：自动换源不再是默认行为（'autoswitch' 仅为
+      // 显式可选项），「没选过自动换源」的用户不应默认换源；旧版独立开关
+      // 的迁移分支一并移除。
+      onlineFailureBehavior: prefs.getString('onlineFailureBehavior') ?? 'stop',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,

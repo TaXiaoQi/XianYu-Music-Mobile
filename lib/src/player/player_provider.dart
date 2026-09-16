@@ -2680,7 +2680,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _lastAutoSwitchAt = now;
     _lastAutoSwitchPath = item.path;
     // 分享链接「替换播放」走插件索引换源时允许绕过通用开关（force=true）。
-    if ((settings?.onlineFailureBehavior ?? 'autoswitch') != 'autoswitch' &&
+    if ((settings?.onlineFailureBehavior ?? 'stop') != 'autoswitch' &&
         !force) {
       return false;
     }
@@ -3632,15 +3632,33 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(isPlaying: false);
       _syncToSystemMediaSession();
       if (item.isOnline) {
+        final behavior = _ref
+                .read(settingsProvider)
+                .valueOrNull
+                ?.onlineFailureBehavior ??
+            'skip';
         final switched = await _autoSwitchSource(item);
         if (switched) return;
-        // 换源不可用/失败：透出错误并保持暂停，交由用户决定（重试/跳过）。
+        // 未启用自动换源时 _autoSwitchSource 在设置门处直接返回 false，
+        // 此处不得出现「换源无果」文案；按所选失败行为处理（对齐桌面端）。
         if (state.current?.path != item.path) return;
+        if (behavior == 'skip') {
+          // 批量标记该曲音源为失败，后续同源队列歌曲快速跳过。
+          _markOnlineSourceFailed(item);
+          _skipDepth++;
+          final next = _pickNextIndex();
+          if (next >= 0 && next != state.queueIndex) {
+            await _playAt(next);
+            return;
+          }
+        }
         state = state.copyWith(
           error: tr('播放失败：{e}', {'e': e.toString()}),
           isPlaying: false,
         );
-        _showPlaybackToast(tr('在线播放失败，已自动换源无果，请重试或更换音源'));
+        _showPlaybackToast(behavior == 'autoswitch'
+            ? tr('在线播放失败，已自动换源无果，请重试或更换音源')
+            : tr('在线播放失败：{e}', {'e': e.toString()}));
         _syncToSystemMediaSession();
       } else {
         if (state.current?.path != item.path) return;
@@ -3662,14 +3680,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _playbackErrorHandling = true;
     try {
       state = state.copyWith(isPlaying: false, resolving: true);
-      final switched = await _autoSwitchSource(item);
-      if (switched) return;
-      if (state.current?.path != item.path) return;
       final behavior = _ref
               .read(settingsProvider)
               .valueOrNull
               ?.onlineFailureBehavior ??
           'skip';
+      final switched = await _autoSwitchSource(item);
+      if (switched) return;
+      if (state.current?.path != item.path) return;
       if (behavior == 'skip') {
         // 批量标记该曲音源为失败（对齐桌面端 knownFailedPluginPrefixes）。
         _markOnlineSourceFailed(item);
@@ -3680,12 +3698,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           return;
         }
       }
+      // 仅当确实启用了自动换源（尝试过但无果）才在文案中提换源。
+      final msg = behavior == 'autoswitch'
+          ? tr('在线音源已失效，未能自动换源')
+          : tr('在线音源已失效');
       state = state.copyWith(
-        error: tr('在线音源已失效，未能自动换源'),
+        error: msg,
         isPlaying: false,
         resolving: false,
       );
-      _showPlaybackToast(tr('在线音源已失效，未能自动换源'));
+      _showPlaybackToast(msg);
       _syncToSystemMediaSession();
     } finally {
       _playbackErrorHandling = false;

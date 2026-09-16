@@ -515,84 +515,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          // MV 背景视频层（插在底色和模糊封面之间，保证前景文字可读时 MV 仍是最底视频源）。
+          // MV 背景视频层（插在底色之上）：激活时模糊封面淡出让位，
+          // 视频上压 black/40 保证前景文字仍可读。
           if (_mvEnabled && _mvController != null) ...[
             Positioned.fill(child: VideoPlayer(_mvController!)),
             Positioned.fill(
               child: Container(color: const Color(0x66000000)),
             ),
           ],
-          // MV 悬浮按钮（两种布局共用）—— 右下角圆形按钮，放在模糊封面之上。
+          // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用；
+          // MV 视频激活时淡出（RenderOpacity 停止绘制，模糊图层保温），
+          // 关闭 MV / 切歌清除控制器后淡回。
           Positioned.fill(
-            // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用。
-            child: _BlurredCoverBackground(current: current),
-          ),
-          if (current?.source != null)
-            Positioned(
-              right: 14,
-              bottom: 200,
-              child: Semantics(
-                label: _mvEnabled ? '关闭 MV' : '开启 MV',
-                child: Material(
-                  color: Colors.black45,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () async {
-                      final c = current;
-                      if (c == null) return;
-                      Map<String, dynamic> song;
-                      final js = c.onlineSongJson;
-                      if (js != null && js.isNotEmpty) {
-                        try {
-                          final raw = jsonDecode(js) as Map<String, dynamic>;
-                          // MusicFree 包装格式：{format:musicfree, musicInfo:{...实际歌曲...}}
-                          if (raw['format'] == 'musicfree' && raw['musicInfo'] is Map) {
-                            song = Map<String, dynamic>.from(
-                              raw['musicInfo'] as Map,
-                            );
-                            // 外层可能有 plugin 描述，拷贝到内层方便后续匹配
-                            final plugin = raw['plugin'];
-                            if (plugin != null) {
-                              song['plugin'] = plugin;
-                            }
-                          } else {
-                            song = raw;
-                          }
-                        } catch (_) {
-                          song = {
-                            'source': c.source,
-                            'path': c.path,
-                            'title': c.title,
-                            'artist': c.artist,
-                          };
-                        }
-                      } else {
-                        song = {
-                          'source': c.source,
-                          'path': c.path,
-                          'title': c.title,
-                          'artist': c.artist,
-                        };
-                      }
-                      await toggleMv(song: song);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Icon(
-                        _mvEnabled
-                            ? Icons.movie
-                            : Icons.movie_creation_outlined,
-                        color: _mvEnabled
-                            ? const Color(0xFF6ADB6F)
-                            : Colors.white70,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            child: AnimatedOpacity(
+              opacity:
+                  (_mvEnabled && _mvController != null) ? 0 : 1,
+              duration: const Duration(milliseconds: 300),
+              child: _BlurredCoverBackground(current: current),
             ),
+          ),
           _DragDismissSheet(
         // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
@@ -604,26 +545,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   current: current,
                   chromeVisible: _chromeVisible,
                   mvEnabled: _mvEnabled,
-                  mvSupported: current?.source != null,
-                  onToggleMv: current != null
-                      ? () async {
-                          Map<String, dynamic> song;
-                          if (current.onlineSongJson != null) {
-                            song = jsonDecode(current.onlineSongJson!)
-                                as Map<String, dynamic>;
-                            debugPrint('[MV] onlineSongJson keys: ${song.keys.toList()}');
-                            debugPrint('[MV] onlineSongJson raw: ${current.onlineSongJson}');
-                          } else {
-                            song = {
-                              'source': current.source,
-                              'path': current.path,
-                              'title': current.title,
-                              'artist': current.artist,
-                            };
-                          }
-                          await toggleMv(song: song);
-                        }
-                      : null,
+                  // 对齐桌面端 supportsMusicVideo：仅 MusicFree 格式插件歌曲
+                  // 可能带 MV（LX 格式插件歌曲无 MV 概念，本地歌曲同样无）。
+                  mvSupported: _mvSupportOf(current),
+                  onToggleMv:
+                      current != null ? () => _toggleMvFor(current) : null,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -1055,8 +981,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     if (_mvBusy) return false;
     _mvBusy = true;
     try {
-      // 从多种可能的字段里提取 plugin/source 标识
-      String? sourceId = song['source']?.toString();
+      // 从多种可能的字段里提取 plugin/source 标识：
+      // 对齐桌面端 song.plugin_id —— wrapper 顶层 pluginId 优先。
+      String? sourceId = song['pluginId']?.toString();
+      if (sourceId == null || sourceId.isEmpty) {
+        sourceId = song['source']?.toString();
+      }
       if (sourceId == null || sourceId.isEmpty) {
         // 尝试从 plugin 对象/字符串里取
         final plugin = song['plugin'];
@@ -1180,6 +1110,63 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     _disposeMvController();
     _mvEnabled = false;
     _mvSourceCache = null;
+  }
+
+  /// 当前歌曲是否可能支持 MV（对齐桌面端 supportsMusicVideo）：
+  /// 仅「插件在线歌曲」且所属插件为 MusicFree 格式时为真——
+  /// LX 格式插件歌曲无 MV 概念（桌面端 source.format !== 'lx'），
+  /// 本地歌曲同样无 MV。
+  bool _mvSupportOf(QueueItem? c) {
+    if (c == null) return false;
+    final js = c.onlineSongJson;
+    if (js == null || js.isEmpty) return false;
+    try {
+      final raw = jsonDecode(js);
+      if (raw is! Map) return false;
+      if (raw['format'] == 'lx') return false;
+      final pluginId = raw['pluginId']?.toString() ?? '';
+      return pluginId.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 从 QueueItem 提取传给插件 getMvSource 的歌曲参数。
+  Map<String, dynamic> _mvSongOf(QueueItem c) {
+    final js = c.onlineSongJson;
+    if (js != null && js.isNotEmpty) {
+      try {
+        final raw = jsonDecode(js) as Map<String, dynamic>;
+        // MusicFree 包装格式：{format:musicfree, musicInfo:{...实际歌曲...}}
+        if (raw['format'] == 'musicfree' && raw['musicInfo'] is Map) {
+          final song = Map<String, dynamic>.from(raw['musicInfo'] as Map);
+          // 对齐桌面端：以 wrapper 顶层 pluginId 定位所属插件（song.plugin_id）
+          if (raw['pluginId'] != null) {
+            song['pluginId'] = raw['pluginId'];
+          }
+          // 外层可能有 plugin 描述，拷贝到内层方便后续匹配
+          final plugin = raw['plugin'];
+          if (plugin != null) {
+            song['plugin'] = plugin;
+          }
+          return song;
+        }
+        return raw;
+      } catch (_) {
+        // JSON 异常时退回基础字段。
+      }
+    }
+    return {
+      'source': c.source,
+      'path': c.path,
+      'title': c.title,
+      'artist': c.artist,
+    };
+  }
+
+  /// 「更多」弹窗的 MV 开关入口。
+  Future<void> _toggleMvFor(QueueItem c) async {
+    await toggleMv(song: _mvSongOf(c));
   }
 }
 
@@ -1545,12 +1532,7 @@ class _TraditionalPlayerLayoutState
             child: _ProgressBar(notifier: widget.notifier),
           ),
         ),
-        _Controls(
-          notifier: widget.notifier,
-          mvEnabled: widget.mvEnabled,
-          mvSupported: widget.mvSupported,
-          onToggleMv: widget.onToggleMv,
-        ),
+        _Controls(notifier: widget.notifier),
         const SizedBox(height: 32),
       ],
       // 歌词调节入口已并入封面歌词双态「词」控件（进度条上方动作行），
@@ -2210,7 +2192,10 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 封面页「更多」弹层：桌面歌词开关 + 添加到歌单。
+  /// 封面页「更多」弹层：MV 开关 + 添加到歌单 + 桌面歌词开关。
+  ///
+  /// MV 开关仅对可能支持 MV 的歌曲显示（对齐桌面端 supportsMusicVideo：
+  /// 仅 MusicFree 格式插件歌曲；LX 格式插件歌曲无 MV 概念）。
   Future<void> _showCoverMoreSheet(
       BuildContext context, bool lyricsEnabled) async {
     final c = widget.current;
@@ -2287,6 +2272,24 @@ class _TraditionalPlayerLayoutState
                 onCommit: _startSleepTimer,
                 onCancel: _cancelSleepTimer,
               ),
+              // ── MV 背景开关（仅 MusicFree 格式插件歌曲可用）──
+              if (widget.mvSupported && widget.onToggleMv != null)
+                ListTile(
+                  leading: Icon(
+                    widget.mvEnabled
+                        ? Icons.movie
+                        : Icons.movie_creation_outlined,
+                    color: widget.mvEnabled
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                    size: 22,
+                  ),
+                  title: Text(widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    widget.onToggleMv?.call();
+                  },
+                ),
               ListTile(
                 leading:
                     Icon(Icons.playlist_add, color: scheme.primary, size: 22),
@@ -4415,16 +4418,8 @@ class _ProgressBar extends ConsumerWidget {
 }
 
 class _Controls extends ConsumerWidget {
-  const _Controls({
-    required this.notifier,
-    this.mvEnabled = false,
-    this.mvSupported = false,
-    this.onToggleMv,
-  });
+  const _Controls({required this.notifier});
   final PlayerNotifier notifier;
-  final bool mvEnabled;
-  final bool mvSupported;
-  final VoidCallback? onToggleMv;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4485,21 +4480,6 @@ class _Controls extends ConsumerWidget {
           ))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
-          if (mvSupported)
-            Expanded(
-              child: Center(
-                child: IconButton(
-                  iconSize: 28,
-                  icon: Icon(
-                    mvEnabled ? Icons.movie : Icons.movie_creation_outlined,
-                    color: mvEnabled
-                        ? const Color(0xFF6ADB6F)
-                        : scheme.onSurfaceVariant,
-                  ),
-                  onPressed: onToggleMv,
-                ),
-              ),
-            ),
         ],
       ),
     );
