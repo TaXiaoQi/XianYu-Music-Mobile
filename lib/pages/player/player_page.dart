@@ -503,12 +503,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          // MV 背景视频层（仅横屏：保持原比例居中 letterbox，模糊封面淡出
-          // 让位，视频上压 black/40 保证前景文字仍可读）。竖屏时视频嵌在
-          // 内容区居中显示（抖音式竖屏看横屏），模糊封面保留做底衬。
+          // 模糊封面铺满全屏，全模式恒显示（抖音式沉浸底衬）：非 MV 时是
+          // 页面主背景；MV 播放时视频层盖在其上，letterbox 空隙透出模糊
+          // 封面而非纯黑。
+          Positioned.fill(
+            child: _BlurredCoverBackground(current: current),
+          ),
+          // MV 背景视频层（仅横屏挂底层）：保持原比例居中 letterbox，盖在
+          // 模糊封面之上，上压 black/40 保证前景文字仍可读。竖屏时视频嵌在
+          // 内容区居中显示（flexible 槽 _MvVideoStage）。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
-            // 保持视频原始宽高比居中显示（letterbox），不强行拉伸铺满；
-            // 空隙透出底衬深色。
             Positioned.fill(
               child: Center(
                 child: AspectRatio(
@@ -521,16 +525,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               child: Container(color: const Color(0x66000000)),
             ),
           ],
-          // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用；
-          // 横屏 MV 视频就绪时淡出（RenderOpacity 停止绘制，模糊图层保温），
-          // 关闭 MV / 切歌清除控制器后淡回。竖屏时恒显示（做视频底衬）。
-          Positioned.fill(
-            child: AnimatedOpacity(
-              opacity: (landscapeNow && mv.ready) ? 0 : 1,
-              duration: const Duration(milliseconds: 300),
-              child: _BlurredCoverBackground(current: current),
-            ),
-          ),
           _DragDismissSheet(
         // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
