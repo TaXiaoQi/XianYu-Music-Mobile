@@ -51,6 +51,14 @@ object WatchLink {
     /** 手机端主动连接手表进行中标志（防并发连接线程叠加）。 */
     private val connecting = AtomicBoolean(false)
 
+    /**
+     * 单线程串行写：蓝牙 SPP 每帧 write+flush 可达百毫秒级，绝不能在主
+     * 线程执行——预缓存帧洪峰（5 首 × 封面+歌词 ≈ 数百片 4KB 分片）曾把
+     * 主线程占死导致双端卡死。写完回调 [onDone]（回主线程）后 Dart 侧才
+     * 发下一帧，形成天然背压。
+     */
+    private val writeExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     /** 注册 MethodChannel（configureFlutterEngine 时调用）。 */
     fun register(messenger: BinaryMessenger, activity: android.app.Activity) {
         this.activity = activity
@@ -71,8 +79,9 @@ object WatchLink {
                     }
                     "send" -> {
                         val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
-                        send(bytes)
-                        result.success(null)
+                        send(bytes) {
+                            runCatching { result.success(null) }
+                        }
                     }
                     "pairedDevices" -> result.success(pairedDevices())
                     "connect" -> {
@@ -292,13 +301,24 @@ object WatchLink {
         runCatching { sock?.close() }
     }
 
-    /** 发送原始字节（帧由 Dart 层编码；写失败静默，断连由读线程统一上报）。 */
-    fun send(bytes: ByteArray) {
-        if (bytes.isEmpty()) return
-        val stream = synchronized(writeLock) { out } ?: return
-        try {
-            synchronized(writeLock) { stream.write(bytes); stream.flush() }
-        } catch (_: Exception) {
+    /**
+     * 异步串行写一帧到蓝牙（写完回主线程回调 [onDone]，Dart await 该帧
+     * 发送后才发下一帧 = 背压）。断连时 [out] 为 null，快速空回调排空队列。
+     */
+    fun send(bytes: ByteArray, onDone: () -> Unit = {}) {
+        if (bytes.isEmpty()) {
+            onDone()
+            return
+        }
+        writeExecutor.execute {
+            val stream = synchronized(writeLock) { out }
+            try {
+                if (stream != null) {
+                    synchronized(writeLock) { stream.write(bytes); stream.flush() }
+                }
+            } catch (_: Exception) {
+            }
+            mainHandler.post { onDone() }
         }
     }
 

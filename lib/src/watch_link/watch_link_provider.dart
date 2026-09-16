@@ -728,7 +728,9 @@ class WatchLinkController {
           id: next.path,
           coverData: coverData,
           lyricPayload: lyricPayload,
-        ), cloud: cloud);
+        ), cloud: cloud, low: true);
+        // 逐首间隔：给实时帧和链路喘息窗口，预缓存全程低调背景化。
+        await Future.delayed(const Duration(milliseconds: 800));
       }
     });
   }
@@ -851,19 +853,63 @@ class WatchLinkController {
     ), cloud: cloud);
   }
 
-  /// 发送消息：显式 [cloud]=true 走云端；否则蓝牙优先、蓝牙未连且手表云在线时走云。
-  void _send(LinkMessage msg, {bool cloud = false}) {
+  // ---- 帧发送队列（背压） ----
+
+  /// 实时帧（state/now_playing/position/lyric 等当前会话数据）。
+  final List<(Uint8List, bool)> _txQueue = []; // (frame, useCloud)
+
+  /// 预缓存帧：低优先级，只在实时队列为空时逐帧放行——预缓存一次最多
+  /// 五首封面+歌词（数百片 4KB 分片），蓝牙吞吐有限，不排队会挤兑实时
+  /// 帧并塞爆通道（曾致双端卡死）。
+  final List<(Uint8List, bool)> _txLowQueue = [];
+
+  bool _txDraining = false;
+
+  /// 发送消息：显式 [cloud]=true 走云端；否则蓝牙优先、蓝牙未连且手表
+  /// 云在线时走云。[low]=true 进低优先级队列（预缓存）。
+  ///
+  /// 帧 encode 后入队，由单一 worker 逐帧 await 写链路（Kotlin 侧一帧写
+  /// 完才回 result）——上一帧没写完不发下一帧，通道永不灌爆。
+  void _send(LinkMessage msg, {bool cloud = false, bool low = false}) {
     final useCloud = cloud || (!_connected && _cloudWatchOnline);
     try {
+      final q = low ? _txLowQueue : _txQueue;
       for (final frame in encodeFrames(msg, nextSeq: _nextSeq)) {
-        if (useCloud) {
-          _cloud.send(frame);
-        } else {
-          _channel.send(frame);
-        }
+        q.add((frame, useCloud));
       }
+      _drainTx();
     } catch (_) {
       // 发送失败静默：断连由读线程统一上报。
+    }
+  }
+
+  /// 单 worker 排空发送队列：优先发完实时帧，实时为空时放行一帧预缓存
+  /// 再回头检查（预缓存不阻塞实时）。断连即清空两队列。
+  Future<void> _drainTx() async {
+    if (_txDraining) return;
+    _txDraining = true;
+    try {
+      while (true) {
+        if (!_connected && !_cloudWatchOnline) {
+          _txQueue.clear();
+          _txLowQueue.clear();
+          return;
+        }
+        final q = _txQueue.isNotEmpty ? _txQueue : _txLowQueue;
+        if (q.isEmpty) return;
+        final (frame, useCloud) = q.first;
+        if (useCloud) {
+          await _cloud.send(frame);
+        } else {
+          await _channel.send(frame);
+        }
+        q.removeAt(0);
+      }
+    } catch (_) {
+      _txQueue.clear();
+      _txLowQueue.clear();
+    } finally {
+      _txDraining = false;
     }
   }
 }
