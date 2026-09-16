@@ -368,7 +368,15 @@ class MvNotifier extends StateNotifier<MvState> {
   /// 幻灯片（一段一个画面）——冷却期给解码器喘息，靠倍速慢慢追回。
   void _syncTimeline() {
     final c = state.controller;
-    if (c == null || !c.value.isInitialized) return;
+    if (c == null || !c.value.isInitialized) {
+      // 控制器缺失（加载中/已关闭）：每 10 tick 报一次，暴露 tick 异常路径
+      _missCount++;
+      if (_missCount % 10 == 1) {
+        AppLog.warn('mv', 'tick skip: hasCtrl=${c != null} '
+            'init=${c?.value.isInitialized}');
+      }
+      return;
+    }
     final vd = c.value.duration;
     if (vd <= Duration.zero) return;
     final audio = _ref.read(playerProvider);
@@ -433,17 +441,16 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
     _applyNudge(c, driftMs);
-    // 每 10 tick 一条心跳，用于离线分析视频推进是否正常
+    // 每 tick 心跳，用于离线分析视频推进是否正常
     _tickCount++;
-    if (_tickCount % 10 == 0) {
-      AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
-          'ap=${audio.position} drift=${driftMs.round()}ms '
-          'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
-          'spd=${c.value.playbackSpeed}');
-    }
+    AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
+        'ap=${audio.position} drift=${driftMs.round()}ms '
+        'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
+        'spd=${c.value.playbackSpeed}');
   }
 
   int _tickCount = 0;
+  int _missCount = 0;
   bool _lastBuffering = false;
 
   /// 硬 seek 后的冷却期（解码器恢复窗口）。
@@ -481,7 +488,10 @@ class MvNotifier extends StateNotifier<MvState> {
   }
 }
 
-/// 页面级 MV 状态（播放页退出即销毁，视频解码随之释放）。
-final mvProvider = StateNotifierProvider.autoDispose<MvNotifier, MvState>(
+/// 页面级 MV 状态。**非 autoDispose**：autoDispose 下播放页短暂失去观察者
+/// （更多弹窗开合、横竖屏切换、页面转场）即销毁 Notifier——视频控制器被
+/// 连带 dispose，重进页面 MV 全没、画面反复黑屏重启。改为常驻生命周期，
+/// 控制器只在 stop/切歌/换画质时释放（_hardStop），app 退出随 container 回收。
+final mvProvider = StateNotifierProvider<MvNotifier, MvState>(
   (ref) => MvNotifier(ref),
 );
