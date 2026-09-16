@@ -70,6 +70,17 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     _notifier = notifier;
   }
 
+  /// 应用确认退出时的收尾：停止播放器并把媒体会话置为 idle——
+  /// audio_service 平台侧收到 idle 即取消媒体通知并退出前台服务，
+  /// 进程不再被通知栏服务钉住（配合 Activity finish + exit(0) 真正销毁）。
+  Future<void> shutdown() async {
+    await _notifier?.shutdownForExit();
+    playbackState.add(as_pkg.PlaybackState(
+      processingState: as_pkg.AudioProcessingState.idle,
+      playing: false,
+    ));
+  }
+
   /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
   void syncMediaItem(QueueItem item, double durationSecs) {
     _lastSyncItem = item;
@@ -3517,6 +3528,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         StackTrace.current.toString().split('\n').take(3).join(' <- ');
     AppLog.warn('playgate', 'pauseFromSystem $st');
     await toggle();
+  }
+
+  /// 应用确认退出：停止播放并落盘听歌统计（媒体会话由 handler.shutdown
+  /// 置 idle，前台服务退出后进程可被真正销毁）。
+  Future<void> shutdownForExit() async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    _flushPlayStats();
+    state = state.copyWith(isPlaying: false);
   }
 
   Future<void> toggle() async {
