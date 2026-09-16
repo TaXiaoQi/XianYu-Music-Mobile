@@ -503,11 +503,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          // MV 背景视频层（仅横屏全屏铺满：插在底色之上，模糊封面淡出让位，
-          // 视频上压 black/40 保证前景文字仍可读）。竖屏时视频嵌在内容区
-          // 居中显示（抖音式竖屏看横屏），模糊封面保留做底衬。
+          // MV 背景视频层（仅横屏：保持原比例居中 letterbox，模糊封面淡出
+          // 让位，视频上压 black/40 保证前景文字仍可读）。竖屏时视频嵌在
+          // 内容区居中显示（抖音式竖屏看横屏），模糊封面保留做底衬。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
-            Positioned.fill(child: VideoPlayer(mv.controller!)),
+            // 保持视频原始宽高比居中显示（letterbox），不强行拉伸铺满；
+            // 空隙透出底衬深色。
+            Positioned.fill(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: mv.controller!.value.aspectRatio,
+                  child: VideoPlayer(mv.controller!),
+                ),
+              ),
+            ),
             Positioned.fill(
               child: Container(color: const Color(0x66000000)),
             ),
