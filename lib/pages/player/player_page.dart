@@ -507,7 +507,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           // 页面主背景；MV 播放时视频层盖在其上，letterbox 空隙透出模糊
           // 封面而非纯黑。
           Positioned.fill(
-            child: _BlurredCoverBackground(current: current),
+            child: _BlurredCoverBackground(
+              current: current,
+              mvActive: mv.ready,
+            ),
           ),
           // MV 背景视频层（仅横屏挂底层）：保持原比例居中 letterbox，盖在
           // 模糊封面之上，上压 black/40 保证前景文字仍可读。竖屏时视频嵌在
@@ -3150,9 +3153,13 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
 /// 模糊用 [ImageFiltered] 作用于图片本身而非 BackdropFilter——静态图
 /// 只渲染一次即缓存，不参与每帧合成。
 class _BlurredCoverBackground extends StatelessWidget {
-  const _BlurredCoverBackground({required this.current});
+  const _BlurredCoverBackground({required this.current, this.mvActive = false});
 
   final QueueItem? current;
+
+  /// MV 播放中：模糊背景降级为「低分辨率放大拉丝」（抖音式），不再跑
+  /// 高斯模糊 shader——视频纹理合成 + 全屏 blur 双载会把弱 GPU 拖成 PPT。
+  final bool mvActive;
 
   @override
   Widget build(BuildContext context) {
@@ -3175,7 +3182,8 @@ class _BlurredCoverBackground extends StatelessWidget {
           _AnimatedPlayerCover(
             current: current,
             role: 'bg',
-            builder: (context, cur) => _blurCoverLayer(context, cur, scheme),
+            builder: (context, cur) =>
+                _blurCoverLayer(context, cur, scheme, mvActive: mvActive),
           ),
           // 桌面端同款渐晕：左右 black/6 + 底部 black/22（歌词区在下部，
           // 底部压暗直接提升可读性），顶部仅 black/3 保持通透。
@@ -3206,9 +3214,12 @@ class _BlurredCoverBackground extends StatelessWidget {
     );
   }
 
-  /// 单首歌的模糊铺底层：深色兜底 + 1/8 预烘焙高斯模糊封面铺满。
+  /// 单首歌的模糊铺底层：深色兜底 + 1/8 预烘焙高斯模糊封面铺满；
+  /// MV 激活时（mvActive）去掉高斯模糊 shader，仅靠低分辨率小图放大
+  /// 双线性拉丝实现柔化（抖音式背景），把 GPU 让给视频合成。
   Widget _blurCoverLayer(
-      BuildContext context, QueueItem? item, ColorScheme scheme) {
+      BuildContext context, QueueItem? item, ColorScheme scheme,
+      {bool mvActive = false}) {
     // 无歌（理论上不达，外层已拦截）：仅深色兜底。
     if (item == null) {
       return Container(color: Color.lerp(scheme.surface, Colors.black, 0.6));
@@ -3234,46 +3245,58 @@ class _BlurredCoverBackground extends StatelessWidget {
       -0.0809, -0.2717, 1.2575, 0, -0.08, //
       0, 0, 0, 1, 0,
     ];
-    // 封面铺满全屏 + 大半径模糊（对应 MusicFree blurRadius=50）
+    // 封面铺满全屏：常规态叠大半径高斯模糊（MusicFree blurRadius=50），
+    // MV 激活态跳过 ImageFiltered——ImageFilterLayer 会阻断 raster cache
+    // 且每帧执行 blur pass，与视频纹理合成叠加是「一帧一帧播放」的主因。
+    final coverChild = CoverImage(
+      songPath: item.path,
+      networkUrl: item.coverUrl,
+      width: smallW,
+      height: smallH,
+      radius: 0,
+      gradient: [
+        scheme.primary,
+        scheme.primary.withValues(alpha: 0.72),
+      ],
+      // 全屏背景占位不要中央大图标
+      placeholder: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              scheme.primary.withValues(alpha: 0.55),
+              Color.lerp(scheme.surface, Colors.black, 0.6)!,
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // MV 激活：仅色调矩阵 + 低分辨率放大拉丝，跳过 blur shader。
+    final inner = mvActive
+        ? ColorFiltered(
+            colorFilter: const ColorFilter.matrix(toneMatrix),
+            child: coverChild,
+          )
+        : ImageFiltered(
+            imageFilter: ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.decal,
+            ),
+            child: ColorFiltered(
+              colorFilter: const ColorFilter.matrix(toneMatrix),
+              child: coverChild,
+            ),
+          );
+
     return FittedBox(
       fit: BoxFit.cover,
       child: SizedBox(
         width: smallW,
         height: smallH,
-        child: ImageFiltered(
-          imageFilter: ImageFilter.blur(
-            sigmaX: sigma,
-            sigmaY: sigma,
-            tileMode: TileMode.decal,
-          ),
-          child: ColorFiltered(
-            colorFilter: const ColorFilter.matrix(toneMatrix),
-            child: CoverImage(
-              songPath: item.path,
-              networkUrl: item.coverUrl,
-              width: smallW,
-              height: smallH,
-              radius: 0,
-              gradient: [
-                scheme.primary,
-                scheme.primary.withValues(alpha: 0.72),
-              ],
-              // 全屏背景占位不要中央大图标
-              placeholder: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      scheme.primary.withValues(alpha: 0.55),
-                      Color.lerp(scheme.surface, Colors.black, 0.6)!,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+        child: inner,
       ),
     );
   }
