@@ -20,6 +20,7 @@ import 'package:video_player/video_player.dart';
 
 import '../core/application_logger.dart';
 import '../core/settings.dart';
+import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import 'mv_source.dart';
@@ -394,6 +395,8 @@ class MvNotifier extends StateNotifier<MvState> {
         final t = _ringTarget(audio.position * 1000, vd);
         if ((c.value.position - t).abs() > const Duration(milliseconds: 50)) {
           _lastSeekAt = DateTime.now();
+          AppLog.debug('mv', 'paused align vpos=${c.value.position} '
+              'target=$t');
           unawaited(c.seekTo(t));
         }
       }
@@ -439,7 +442,7 @@ class MvNotifier extends StateNotifier<MvState> {
       var destMs =
           ((c.value.position.inMilliseconds + driftMs) % vdMs).round();
       if (destMs < 0) destMs += vdMs;
-      unawaited(c.setPlaybackSpeed(1.0)); // 对齐桌面端：seek 后恢复基础倍速
+      unawaited(c.setPlaybackSpeed(_audioRate())); // seek 后恢复音频倍速基准
       unawaited(c.seekTo(Duration(milliseconds: destMs)));
       return;
     }
@@ -466,14 +469,29 @@ class MvNotifier extends StateNotifier<MvState> {
   DateTime? _lastSeekAt;
 
   /// 倍速微调追偏差（对齐桌面端 nudge）：±8% 内的平滑追赶，避免可见跳帧。
+  /// 基准倍速 = 音频倍速（桌面端 audioPlaybackRate 同语义）——否则倍速播放
+  /// 时视频永远追不上，drift 持续增大触发周期性硬 seek。
+  /// 死区 0.35s：audio.position 是 positionStream 缓存值（滞后 ~200-350ms），
+  /// 缓存滞后若被当成偏差修正，视频会被系统性放慢（越走越慢再硬 seek）。
   void _applyNudge(VideoPlayerController c, double driftMs) {
-    const base = 1.0;
-    final nudge = (driftMs / 1000.0 * 0.5).clamp(-0.08, 0.08);
-    final nextRate = base + nudge;
-    // 靠近同步点后恢复基础倍速（|nudge| 极小视为同步）
-    final target = nudge.abs() <= 0.01 ? base : nextRate;
+    final base = _audioRate();
+    // |drift| ≤ 350ms 视为同步（死区 > position 缓存滞后），恢复基准倍速
+    final nudge = driftMs.abs() <= 350
+        ? 0.0
+        : (driftMs / 1000.0 * 0.5).clamp(-0.08, 0.08);
+    final target = base * (1 + nudge);
     if ((c.value.playbackSpeed - target).abs() > 0.001) {
       unawaited(c.setPlaybackSpeed(target));
+    }
+  }
+
+  /// 音频倍速（音效设置的 playbackRate：50~200 → 0.5~2.0）。
+  double _audioRate() {
+    try {
+      final s = _ref.read(soundEffectProvider).settings.playbackRate;
+      return (s.clamp(50.0, 200.0)) / 100.0;
+    } catch (_) {
+      return 1.0;
     }
   }
 
