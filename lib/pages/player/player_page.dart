@@ -521,17 +521,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               mvActive: mv.ready,
             ),
           ),
-          // MV 背景视频层（仅横屏挂底层）：保持原比例居中 letterbox，盖在
-          // 模糊封面之上，上压 black/40 保证前景文字仍可读。竖屏时视频嵌在
-          // 内容区居中显示（flexible 槽 _MvVideoStage）。
+          // MV 背景视频层（仅横屏挂底层）：B 站式自适应铺满——等比放大到
+          // 覆盖全屏（BoxCover，超出部分裁切），不留 letterbox 空隙；上压
+          // black/40 保证前景文字仍可读。竖屏时视频嵌在内容区居中显示
+          // （flexible 槽 _MvVideoStage）。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
             Positioned.fill(
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: mv.controller!.value.aspectRatio,
-                  child: VideoPlayer(mv.controller!),
-                ),
-              ),
+              child: LayoutBuilder(builder: (context, cons) {
+                final ar = mv.controller!.value.aspectRatio;
+                final w = cons.maxWidth;
+                final h = cons.maxHeight;
+                // cover：宽优先铺满，若高不足则改高铺满（等比放大裁切）
+                final vw = w >= h * ar ? w : h * ar;
+                final vh = w >= h * ar ? w / ar : h;
+                return Align(
+                  child: SizedBox(
+                    width: vw,
+                    height: vh,
+                    child: VideoPlayer(mv.controller!),
+                  ),
+                );
+              }),
             ),
             Positioned.fill(
               child: Container(color: const Color(0x66000000)),
@@ -4080,9 +4090,14 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
     final source = mv.source;
     final qualities = source?.availableVideoQualities ?? const <MvQuality>[];
     final cur = (source?.videoQuality ?? '').toUpperCase();
+    final size = MediaQuery.of(context).size;
+    final landscape = size.width > size.height;
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
+        // 横屏时屏高很小，纵向列表会被压成滚动小条——横屏改矮弹窗 + 选项
+        // 横排 pill（B 站全屏画质同款紧凑布局），竖屏保持纵向列表。
+        maxHeight: landscape ? size.height * 0.85 : size.height * 0.7,
+        maxWidth: landscape ? 560 : double.infinity,
       ),
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -4109,6 +4124,25 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
                   child: Text(mv.loading ? tr('MV 加载中…') : tr('暂无可切换画质')),
                 ),
               )
+            else if (landscape)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final q in qualities)
+                      _qualityPill(
+                        context,
+                        label: _mvQualityTileLabel(q),
+                        selected: q.key.toUpperCase() == cur,
+                        onTap: q.key.toUpperCase() == cur
+                            ? null
+                            : () => _switch(q),
+                      ),
+                  ],
+                ),
+              )
             else
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -4132,6 +4166,40 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 横屏画质 pill：选中主色描边+底色，未选中 surfaceVariant。
+  Widget _qualityPill(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback? onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.primary.withOpacity(0.16) : scheme.surfaceVariant,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected ? scheme.primary : scheme.outlineVariant,
+          width: selected ? 1.4 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
         ),
       ),
     );
