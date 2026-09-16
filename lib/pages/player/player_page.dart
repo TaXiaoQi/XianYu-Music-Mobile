@@ -16,6 +16,7 @@ import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/mv_source.dart';
+import '../../src/player/mv_provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/effects/sound_effect_provider.dart';
@@ -27,7 +28,6 @@ import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/plugin/plugin_provider.dart';
-import '../../src/plugin/plugin_models.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/navigation/shell.dart' show isLandscapeProvider;
 import '../../src/share/share_service.dart';
@@ -398,20 +398,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _chromeVisible = true;
   Timer? _chromeHideTimer;
 
-  // ── MV 背景 ──
-
-  /// 是否开启 MV 背景视频（详情页底栏按钮切换）。
-  bool _mvEnabled = false;
-
-  /// 当前 MV 视频控制器（视频存在才非 null）。
-  VideoPlayerController? _mvController;
-
-  /// 缓存的 MV 源（null = 未探测；url 为空 = 这首歌没有 MV）。
-  MvSource? _mvSourceCache;
-
-  /// 当前 MV 探测/初始化中（去重 + 按钮 loading）。
-  bool _mvBusy = false;
-
   /// 任意触摸唤回顶栏/底栏并重新计时（竖屏下为 no-op）。
   void _wakeChrome() {
     _chromeHideTimer?.cancel();
@@ -439,14 +425,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final current = ref.watch(playerProvider.select((s) => s.current));
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
+    // MV 状态（requested/ready/画质/控制器）——对齐桌面端 useBilibiliVideoBackground。
+    final mv = ref.watch(mvProvider);
 
     // 队列被清空/删空（current 非空 → 空）时自动退出播放详情页：
     // 覆盖清空队列、删除最后一首等所有「没有歌曲」的路径。仅在本页处于
     // 栈顶时退出；若队列弹窗盖在本页上，由弹窗的统一关闭逻辑连带退出，
     // 避免双重 pop 把弹窗下面的页面也关掉。
     ref.listen(playerProvider.select((s) => s.current), (prev, next) {
-      // 切歌 → 清除上一首 MV 状态（下一首歌的 MV 要重新探测）。
-      if (prev != next) resetMvState();
+      // 切歌：MV 开启时自动续接新歌 MV（无缝），新歌不支持则自动关闭。
+      if (prev != next) ref.read(mvProvider.notifier).syncSong(next);
       if (prev != null && next == null && mounted) {
         if (ModalRoute.of(context)?.isCurrent == true) {
           final nav = Navigator.of(context);
@@ -515,21 +503,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          // MV 背景视频层（插在底色之上）：激活时模糊封面淡出让位，
-          // 视频上压 black/40 保证前景文字仍可读。
-          if (_mvEnabled && _mvController != null) ...[
-            Positioned.fill(child: VideoPlayer(_mvController!)),
+          // MV 背景视频层（仅横屏全屏铺满：插在底色之上，模糊封面淡出让位，
+          // 视频上压 black/40 保证前景文字仍可读）。竖屏时视频嵌在内容区
+          // 居中显示（抖音式竖屏看横屏），模糊封面保留做底衬。
+          if (landscapeNow && mv.ready && mv.controller != null) ...[
+            Positioned.fill(child: VideoPlayer(mv.controller!)),
             Positioned.fill(
               child: Container(color: const Color(0x66000000)),
             ),
           ],
           // 模糊封面铺满全屏（学 MusicFree 播放详情页），全模式共用；
-          // MV 视频激活时淡出（RenderOpacity 停止绘制，模糊图层保温），
-          // 关闭 MV / 切歌清除控制器后淡回。
+          // 横屏 MV 视频就绪时淡出（RenderOpacity 停止绘制，模糊图层保温），
+          // 关闭 MV / 切歌清除控制器后淡回。竖屏时恒显示（做视频底衬）。
           Positioned.fill(
             child: AnimatedOpacity(
-              opacity:
-                  (_mvEnabled && _mvController != null) ? 0 : 1,
+              opacity: (landscapeNow && mv.ready) ? 0 : 1,
               duration: const Duration(milliseconds: 300),
               child: _BlurredCoverBackground(current: current),
             ),
@@ -544,12 +532,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   notifier: notifier,
                   current: current,
                   chromeVisible: _chromeVisible,
-                  mvEnabled: _mvEnabled,
+                  mvEnabled: mv.requested,
+                  mvLoading: mv.loading,
+                  mvReady: mv.ready,
                   // 对齐桌面端 supportsMusicVideo：仅 MusicFree 格式插件歌曲
                   // 可能带 MV（LX 格式插件歌曲无 MV 概念，本地歌曲同样无）。
-                  mvSupported: _mvSupportOf(current),
-                  onToggleMv:
-                      current != null ? () => _toggleMvFor(current) : null,
+                  mvSupported: mvSupports(current),
+                  onToggleMv: current != null
+                      ? () async {
+                          // 先捕获 messenger，避免 async gap 后触碰 context。
+                          final messenger = ScaffoldMessenger.of(context);
+                          final err =
+                              await ref.read(mvProvider.notifier).toggle(current);
+                          if (err != null && mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(tr(err))),
+                            );
+                          }
+                        }
+                      : null,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -579,6 +580,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
+    // MV 视频就绪时页面让渡：竖屏隐藏封面/歌词预览、中区改挂视频（居中）；
+    // 横屏中区整体隐藏（视频已全屏铺在底层），顶栏/底栏控件保留。
+    final mv = ref.watch(mvProvider);
+    final mvReady = mv.ready;
     // 竖屏＝默认封面页；横屏＝独立一套横向 UI，两套完全分开（见 LandscapeGate）。
     final landscapeBody = _buildLandscapeAdvancedBody(
       notifier: notifier,
@@ -610,7 +615,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
                 Expanded(
                   child: Text(
-                    _showLyrics ? tr('歌词') : tr('正在播放'),
+                    _showLyrics && !mvReady ? tr('歌词') : tr('正在播放'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 15,
@@ -624,8 +629,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ],
             ),
           ),
-          if (!_showLyrics) const SizedBox(height: 12),
-          if (!_showLyrics)
+          if (!_showLyrics && !mvReady) const SizedBox(height: 12),
+          if (!_showLyrics && !mvReady)
             GestureDetector(
               onTap: () {
                 setState(() => _showLyrics = true);
@@ -666,33 +671,37 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ),
             ),
         ],
-        // 中区唯一 Expanded：封面模式为 3 行 Mini 歌词，歌词模式为歌词视图。
-        flexible: _showLyrics
-            ? ClipRect(
-                child: RepaintBoundary(
-                  child: _LyricsView(
-                    key: _lyricsKey,
-                    current: current,
-                    visible: _showLyrics,
-                    onTap: () {
-                      setState(() => _showLyrics = false);
-                    },
-                    onRomajiAvailable: (has) {
-                      if (_lyricsViewHasRomaji != has) {
-                        setState(() => _lyricsViewHasRomaji = has);
-                      }
-                    },
+        // 中区唯一 Expanded：MV 就绪时让渡给视频（竖屏居中 letterbox，
+        // 抖音式竖屏看横屏，模糊封面做底衬）；封面模式为 3 行 Mini 歌词，
+        // 歌词模式为歌词视图。
+        flexible: mvReady
+            ? _MvVideoStage(controller: mv.controller)
+            : _showLyrics
+                ? ClipRect(
+                    child: RepaintBoundary(
+                      child: _LyricsView(
+                        key: _lyricsKey,
+                        current: current,
+                        visible: _showLyrics,
+                        onTap: () {
+                          setState(() => _showLyrics = false);
+                        },
+                        onRomajiAvailable: (has) {
+                          if (_lyricsViewHasRomaji != has) {
+                            setState(() => _lyricsViewHasRomaji = has);
+                          }
+                        },
+                      ),
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _LyricPreview(current: current),
+                    ),
                   ),
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 32, vertical: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _LyricPreview(current: current),
-                ),
-              ),
         // 底部：毛玻璃控制卡（独立图层），歌词模式下中区顶部再多留一处空隙。
         bottom: [
           if (_showLyrics) const SizedBox(height: 8),
@@ -706,8 +715,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ),
         ],
-        // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮。
-        overlay: _showLyrics
+        // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（MV 让渡时不显示）。
+        overlay: _showLyrics && !mvReady
             ? Positioned(
                 top: 4,
                 right: 12,
@@ -751,6 +760,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
+    // MV 就绪时中区隐藏，让渡给底层全屏视频。
+    final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
       isLandscape: true,
@@ -802,8 +813,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ),
       ],
-      // 中区：左封面 + 右歌词（固定横向对半布局，不提供可拖动中线）。
-      flexible: Padding(
+      // 中区：左封面 + 右歌词（固定横向对半布局，不提供可拖动中线）；
+      // MV 就绪时整体隐藏让渡全屏视频（顶栏/底栏保留，自动隐藏逻辑不变）。
+      flexible: mvReady
+          ? const SizedBox.shrink()
+          : Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -917,256 +931,29 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     );
   }
 
-  // ── MV 背景生命周期 ──
-
   @override
   void dispose() {
-    _mvController?.dispose();
     super.dispose();
   }
+}
 
-  void _disposeMvController() {
-    _mvController?.dispose();
-    _mvController = null;
-  }
+/// MV 竖屏视频舞台：居中 letterbox（抖音式竖屏看横屏视频），上下留空
+/// 透出底衬模糊封面。横屏不走此组件（视频由页面底层 Positioned.fill 铺满）。
+class _MvVideoStage extends StatelessWidget {
+  const _MvVideoStage({this.controller});
 
-  /// LX 格式插件的 source 短代码 → 可能的 MusicFree 插件 name/id 关键字。
-  /// MusicFree 插件（如 music.cwo.cc.cd 上的 kg/kw/qq/wy/mg）每个都是独立插件，
-  /// 需要从已安装列表里按关键字匹配到对应 pluginId，再调它的 getMvSource。
-  static const _kSourceToMfKeywords = <String, List<String>>{
-    'kg':       ['酷狗', 'kugou'],
-    'kugou':    ['酷狗', 'kugou'],
-    'kw':       ['酷我', 'kuwo'],
-    'kuwo':     ['酷我', 'kuwo'],
-    'qq':       ['QQ音乐', 'qq', 'tencent'],
-    'tencent':  ['QQ音乐', 'qq', 'tencent'],
-    'wy':       ['网易云', 'netease', '163'],
-    'netease':  ['网易云', 'netease', '163'],
-    '163':      ['网易云', 'netease', '163'],
-    'migu':     ['咪咕', 'migu', 'mg'],
-    'mg':       ['咪咕', 'migu', 'mg'],
-    'bili':     ['bilibili', 'bili', 'B站'],
-    'bilibili': ['bilibili', 'bili', 'B站'],
-    'qishui':   ['汽水', 'qishui'],
-    'qishu':    ['汽水', 'qishui'],
-  };
+  final VideoPlayerController? controller;
 
-  /// 从已启用的 MusicFree 插件里匹配 LX source 短代码。
-  List<(String pluginId, String name)> _matchMfPlugins(String sourceId) {
-    final keywords = _kSourceToMfKeywords[sourceId.toLowerCase()] ?? const [];
-    if (keywords.isEmpty) return const [];
-    final store = ref.read(pluginManagerProvider);
-    final sources = store.sources.where((s) =>
-        s.format == PluginFormat.musicfree);
-    final matched = <(String, String)>[];
-    for (final s in sources) {
-      final lowerName = s.name.toLowerCase();
-      final lowerId = s.id.toLowerCase();
-      for (final kw in keywords) {
-        if (lowerName.contains(kw.toLowerCase()) || lowerId.contains(kw.toLowerCase())) {
-          matched.add((s.id, s.name));
-          break;
-        }
-      }
-    }
-    return matched;
-  }
-
-  Future<bool> _ensureMvReady({required Map<String, dynamic> song}) async {
-    if (_mvSourceCache != null &&
-        _mvSourceCache!.url.isNotEmpty &&
-        !_mvSourceCache!.isExpired) {
-      return true;
-    }
-    if (_mvBusy) return false;
-    _mvBusy = true;
-    try {
-      // 从多种可能的字段里提取 plugin/source 标识：
-      // 对齐桌面端 song.plugin_id —— wrapper 顶层 pluginId 优先。
-      String? sourceId = song['pluginId']?.toString();
-      if (sourceId == null || sourceId.isEmpty) {
-        sourceId = song['source']?.toString();
-      }
-      if (sourceId == null || sourceId.isEmpty) {
-        // 尝试从 plugin 对象/字符串里取
-        final plugin = song['plugin'];
-        if (plugin is Map) {
-          sourceId = plugin['id']?.toString() ?? plugin['name']?.toString();
-        } else if (plugin != null) {
-          sourceId = plugin.toString();
-        }
-      }
-      if (sourceId == null || sourceId.isEmpty) {
-        _mvSourceCache = emptyMvSource;
-        return false;
-      }
-      final quality = ref.read(settingsProvider).valueOrNull?.onlineDefaultMvQuality;
-      final engine = await ref.read(pluginEngineProvider.future);
-
-      debugPrint('[MV] resolved sourceId=$sourceId keys=${song.keys.toList()}');
-
-      // 先用 sourceId 直接当 pluginId 调一次
-      final directArgs = <dynamic>[song, if (quality != null && quality.isNotEmpty) quality];
-      try {
-        final raw = await engine.call(sourceId, 'getMvSource', directArgs);
-        if (raw is Map<String, dynamic> && raw.isNotEmpty) {
-          _mvSourceCache = MvSource.fromJson(raw);
-          if (_mvSourceCache!.url.isNotEmpty) {
-            debugPrint('[MV] direct MF hit: $sourceId');
-            return true;
-          }
-        }
-      } catch (e) {
-        debugPrint('[MV] direct call $sourceId no getMvSource: $e');
-      }
-
-      // 关键词匹配：把 sourceId 当关键词匹配已安装的 MF 插件
-      final candidates = _matchMfPlugins(sourceId);
-      // 如果没匹配到，也把 plugin 对象里的 name 当关键词再试一次
-      if (candidates.isEmpty) {
-        final plugin = song['plugin'];
-        String? extraKw;
-        if (plugin is Map) {
-          extraKw = plugin['name']?.toString();
-        }
-        if (extraKw != null && extraKw.isNotEmpty) {
-          candidates.addAll(_matchMfPlugins(extraKw));
-        }
-      }
-      debugPrint('[MV] source=$sourceId matched MF plugins=$candidates');
-      for (final (pluginId, name) in candidates) {
-        try {
-          final raw = await engine.call(pluginId, 'getMvSource', directArgs);
-          if (raw is Map<String, dynamic> && raw.isNotEmpty) {
-            _mvSourceCache = MvSource.fromJson(raw);
-            if (_mvSourceCache!.url.isNotEmpty) {
-              debugPrint('[MV] MF hit via $name($pluginId)');
-              return true;
-            }
-          }
-        } catch (e) {
-          debugPrint('[MV] call $name($pluginId) getMvSource failed: $e');
-        }
-      }
-
-      debugPrint('[MV] no MV for $sourceId (no MF plugin matched or all miss)');
-      _mvSourceCache = emptyMvSource;
-      return false;
-    } catch (e, st) {
-      debugPrint('[MV] _ensureMvReady error: $e\n$st');
-      _mvSourceCache = emptyMvSource;
-      return false;
-    } finally {
-      _mvBusy = false;
-    }
-  }
-
-  Future<void> _loadMvController() async {
-    final src = _mvSourceCache;
-    if (src == null || src.url.isEmpty) return;
-    _disposeMvController();
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(src.url),
-      httpHeaders: src.headers,
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    if (c == null || !c.value.isInitialized) return const SizedBox.shrink();
+    return Center(
+      child: AspectRatio(
+        aspectRatio: c.value.aspectRatio,
+        child: VideoPlayer(c),
+      ),
     );
-    try {
-      await controller.initialize();
-      await controller.setLooping(true);
-      await controller.play();
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-      setState(() {
-        _mvController = controller;
-        _mvEnabled = true;
-      });
-    } catch (_) {
-      controller.dispose();
-      _disposeMvController();
-    }
-  }
-
-  Future<void> toggleMv({required Map<String, dynamic> song}) async {
-    if (_mvEnabled) {
-      _disposeMvController();
-      if (mounted) setState(() => _mvEnabled = false);
-      return;
-    }
-    final ok = await _ensureMvReady(song: song);
-    if (!ok) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('此歌曲无 MV 或画质不支持'))),
-        );
-      }
-      return;
-    }
-    await _loadMvController();
-  }
-
-  /// 切歌时外部调用，清除上一首的 MV 状态。
-  void resetMvState() {
-    _disposeMvController();
-    _mvEnabled = false;
-    _mvSourceCache = null;
-  }
-
-  /// 当前歌曲是否可能支持 MV（对齐桌面端 supportsMusicVideo）：
-  /// 仅「插件在线歌曲」且所属插件为 MusicFree 格式时为真——
-  /// LX 格式插件歌曲无 MV 概念（桌面端 source.format !== 'lx'），
-  /// 本地歌曲同样无 MV。
-  bool _mvSupportOf(QueueItem? c) {
-    if (c == null) return false;
-    final js = c.onlineSongJson;
-    if (js == null || js.isEmpty) return false;
-    try {
-      final raw = jsonDecode(js);
-      if (raw is! Map) return false;
-      if (raw['format'] == 'lx') return false;
-      final pluginId = raw['pluginId']?.toString() ?? '';
-      return pluginId.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// 从 QueueItem 提取传给插件 getMvSource 的歌曲参数。
-  Map<String, dynamic> _mvSongOf(QueueItem c) {
-    final js = c.onlineSongJson;
-    if (js != null && js.isNotEmpty) {
-      try {
-        final raw = jsonDecode(js) as Map<String, dynamic>;
-        // MusicFree 包装格式：{format:musicfree, musicInfo:{...实际歌曲...}}
-        if (raw['format'] == 'musicfree' && raw['musicInfo'] is Map) {
-          final song = Map<String, dynamic>.from(raw['musicInfo'] as Map);
-          // 对齐桌面端：以 wrapper 顶层 pluginId 定位所属插件（song.plugin_id）
-          if (raw['pluginId'] != null) {
-            song['pluginId'] = raw['pluginId'];
-          }
-          // 外层可能有 plugin 描述，拷贝到内层方便后续匹配
-          final plugin = raw['plugin'];
-          if (plugin != null) {
-            song['plugin'] = plugin;
-          }
-          return song;
-        }
-        return raw;
-      } catch (_) {
-        // JSON 异常时退回基础字段。
-      }
-    }
-    return {
-      'source': c.source,
-      'path': c.path,
-      'title': c.title,
-      'artist': c.artist,
-    };
-  }
-
-  /// 「更多」弹窗的 MV 开关入口。
-  Future<void> _toggleMvFor(QueueItem c) async {
-    await toggleMv(song: _mvSongOf(c));
   }
 }
 
@@ -1259,6 +1046,8 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     required this.current,
     this.chromeVisible = true,
     this.mvEnabled = false,
+    this.mvLoading = false,
+    this.mvReady = false,
     this.mvSupported = false,
     this.onToggleMv,
   });
@@ -1269,7 +1058,15 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   /// 触摸唤回同样由外层 Listener 完成后经重建下传。竖屏恒 true。
   final bool chromeVisible;
 
+  /// MV 用户意图开启（对齐桌面端 requested）。
   final bool mvEnabled;
+
+  /// MV 探测/加载中（更多弹窗开关转圈）。
+  final bool mvLoading;
+
+  /// MV 视频就绪（页面让渡/竖屏视频区渲染的依据）。
+  final bool mvReady;
+
   final bool mvSupported;
   final VoidCallback? onToggleMv;
 
@@ -1481,6 +1278,10 @@ class _TraditionalPlayerLayoutState
 
   /// 竖屏：顶栏 + 封面/歌词上下翻页 + 动作行 + 进度条 + 播放控制。
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
+    // MV 就绪时中区让渡给视频（居中 letterbox，模糊封面做底衬）；
+    // PageView 挂 Offstage 保温，关 MV 后封面/歌词状态不丢。
+    final mv = ref.watch(mvProvider);
+    final mvReady = mv.ready;
     return _PlayerShell(
       current: current,
       top: [
@@ -1490,37 +1291,46 @@ class _TraditionalPlayerLayoutState
       // allowImplicitScrolling：挂载后空闲帧即预构建相邻歌词页（KeepAlive
       // 留存），歌词解析/行布局/逐字模糊烘焙在用户滑动前完成——首次切换
       // 封面⇄歌词不再带一次性建页卡顿。
-      flexible: PageView.builder(
-        controller: _pageController,
-        itemCount: 2,
-        allowImplicitScrolling: true,
-        onPageChanged: (i) {
-          if (_showLyrics != (i == 1)) {
-            setState(() => _showLyrics = i == 1);
-          }
-        },
-        itemBuilder: (context, i) {
-          if (i == 0) {
-            return _KeepAliveWrap(child: _buildCoverSection(context));
-          }
-          return _KeepAliveWrap(
-            child: ClipRect(
-              child: RepaintBoundary(
-                child: _LyricsView(
-                  key: _lyricsKey,
-                  current: current,
-                  visible: _showLyrics,
-                  onTap: () {},
-                  onRomajiAvailable: (has) {
-                    if (_lyricsViewHasRomaji != has) {
-                      setState(() => _lyricsViewHasRomaji = has);
-                    }
-                  },
-                ),
-              ),
+      flexible: Stack(
+        fit: StackFit.expand,
+        children: [
+          Offstage(
+            offstage: mvReady,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: 2,
+              allowImplicitScrolling: true,
+              onPageChanged: (i) {
+                if (_showLyrics != (i == 1)) {
+                  setState(() => _showLyrics = i == 1);
+                }
+              },
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return _KeepAliveWrap(child: _buildCoverSection(context));
+                }
+                return _KeepAliveWrap(
+                  child: ClipRect(
+                    child: RepaintBoundary(
+                      child: _LyricsView(
+                        key: _lyricsKey,
+                        current: current,
+                        visible: _showLyrics,
+                        onTap: () {},
+                        onRomajiAvailable: (has) {
+                          if (_lyricsViewHasRomaji != has) {
+                            setState(() => _lyricsViewHasRomaji = has);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          if (mvReady) _MvVideoStage(controller: mv.controller),
+        ],
       ),
       // 竖屏播放控件：动作行 + 进度条 + 播放控制，留白再上移一格避免贴底。
       bottom: [
@@ -1543,6 +1353,8 @@ class _TraditionalPlayerLayoutState
 
   /// 横屏：顶栏（仅标题）+ 左封面｜右歌词并排 + 进度条 + 三区控制行，独立一套 UI。
   Widget _buildTraditionalLandscape(BuildContext context, QueueItem? current) {
+    // MV 就绪时中区整体隐藏让渡全屏视频（顶栏/底栏保留，自动隐藏不变）。
+    final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
       isLandscape: true,
@@ -1556,7 +1368,9 @@ class _TraditionalPlayerLayoutState
       ],
       // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词），
       // 固定横向对半布局，不提供可拖动中线。
-      flexible: Row(
+      flexible: mvReady
+          ? const SizedBox.shrink()
+          : Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 封面整体右移一点：横屏下封面与左缘留出呼吸间距。
@@ -2068,6 +1882,13 @@ class _TraditionalPlayerLayoutState
     final lyricsEnabled = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
+    // MV 开启时音质按钮改显当前 MV 画质（弹窗同样分流，对齐桌面端）。
+    final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
+    final mvQuality = ref.watch(
+      mvProvider.select((s) => s.source?.videoQuality),
+    );
+    final mvQualityShown =
+        mvRequested && mvQuality != null && mvQuality.isNotEmpty;
     final dlActive = current != null &&
         dl.tasks.any((t) =>
             t.songPath == current.path &&
@@ -2091,7 +1912,7 @@ class _TraditionalPlayerLayoutState
           ))),
           Expanded(child: Center(child: _qualityActionItem(
             context,
-            quality: currentQuality,
+            quality: mvQualityShown ? mvQuality : currentQuality,
             onTap: () {
               final c = current;
               if (c == null) return;
@@ -2273,22 +2094,32 @@ class _TraditionalPlayerLayoutState
                 onCancel: _cancelSleepTimer,
               ),
               // ── MV 背景开关（仅 MusicFree 格式插件歌曲可用）──
+              // 加载中转圈并忽略点击，防止重复探测（对齐桌面端 loading 态）。
               if (widget.mvSupported && widget.onToggleMv != null)
                 ListTile(
-                  leading: Icon(
-                    widget.mvEnabled
-                        ? Icons.movie
-                        : Icons.movie_creation_outlined,
-                    color: widget.mvEnabled
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
-                    size: 22,
-                  ),
+                  leading: widget.mvLoading
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, color: scheme.primary),
+                        )
+                      : Icon(
+                          widget.mvEnabled
+                              ? Icons.movie
+                              : Icons.movie_creation_outlined,
+                          color: widget.mvEnabled
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                          size: 22,
+                        ),
                   title: Text(widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV')),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    widget.onToggleMv?.call();
-                  },
+                  onTap: widget.mvLoading
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          widget.onToggleMv?.call();
+                        },
                 ),
               ListTile(
                 leading:
@@ -3764,6 +3595,12 @@ class _TitleRow extends ConsumerWidget {
     final lyricsEnabled = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
+    // MV 开启时音质按钮切换为显示当前 MV 画质（对齐桌面端底栏同款联动）。
+    final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
+    final mvQuality = ref.watch(
+      mvProvider.select((s) => s.source?.videoQuality),
+    );
+    final mvQualityShown = mvRequested && mvQuality != null && mvQuality.isNotEmpty;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -3811,13 +3648,14 @@ class _TitleRow extends ConsumerWidget {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     child: Text(
-                      _qualityLabel(currentQuality),
+                      mvQualityShown ? mvQuality : _qualityLabel(currentQuality),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
-                        color: (currentQuality != null &&
-                                isLosslessQuality(currentQuality))
+                        color: (mvQualityShown ||
+                                (currentQuality != null &&
+                                    isLosslessQuality(currentQuality)))
                             ? scheme.primary
                             : const Color(0xFFEC4141).withValues(alpha: 0.9),
                       ),
@@ -3929,7 +3767,13 @@ Future<void> _shareCurrent(
 }
 
 /// 打开音质选择弹窗（触发全量探测真实可用档位）。
+/// MV 开启时分流为 MV 画质菜单（对齐桌面端底栏音质键的联动切换）。
 void _showQualitySheet(BuildContext context, WidgetRef ref) {
+  final mv = ref.read(mvProvider);
+  if (mv.requested) {
+    showSheetDialog<void>(context, (_) => const _MvQualitySheet());
+    return;
+  }
   final notifier = ref.read(playerProvider.notifier);
   showSheetDialog<void>(
   context,
@@ -4182,6 +4026,102 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
       ),
     );
   }
+}
+
+/// MV 画质选择弹窗（MV 开启时音质按钮分流到此，对齐桌面端底栏画质菜单）：
+/// 列表 = 插件返回 availableVideoQualities（带体积/码率后缀），
+/// 选中 = 当前源实际返回档位；点选以新档位重新解析加载（无缝换源）。
+class _MvQualitySheet extends ConsumerStatefulWidget {
+  const _MvQualitySheet();
+
+  @override
+  ConsumerState<_MvQualitySheet> createState() => _MvQualitySheetState();
+}
+
+class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
+  @override
+  Widget build(BuildContext context) {
+    final mv = ref.watch(mvProvider);
+    final source = mv.source;
+    final qualities = source?.availableVideoQualities ?? const <MvQuality>[];
+    final cur = (source?.videoQuality ?? '').toUpperCase();
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                tr('MV 画质'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (qualities.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: Center(
+                  child: Text(mv.loading ? tr('MV 加载中…') : tr('暂无可切换画质')),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final q in qualities) ...[
+                      ModernOptionTile<String>(
+                        option: ModernChoiceOption(
+                          label: _mvQualityTileLabel(q),
+                          value: q.key,
+                        ),
+                        isSelected: q.key.toUpperCase() == cur,
+                        onTap: q.key.toUpperCase() == cur
+                            ? () {}
+                            : () => _switch(q),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 切换画质：以新档位重新解析加载；弹窗先关、toast 回报结果
+  /// （成功报新档位，失败报插件错误文案，对齐音质弹窗的交互节奏）。
+  Future<void> _switch(MvQuality q) async {
+    final err = await ref.read(mvProvider.notifier).setQuality(q.key);
+    if (!mounted) return;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    Navigator.of(context).pop();
+    showXianYuToastByOverlay(overlay, err ?? tr('画质已切换为${q.label}'));
+  }
+}
+
+/// MV 画质档标签：label（缺省用 key）+ 体积/码率后缀（对齐音质弹窗的
+/// 「320K · 28.6M」样式）。
+String _mvQualityTileLabel(MvQuality q) {
+  final label = q.label.isNotEmpty ? q.label : q.key;
+  if (q.size != null && q.size! > 0) return '$label · ${_compactSize(q.size!)}';
+  if (q.bitrate != null && q.bitrate! > 0) {
+    return '$label · ${(q.bitrate! / 1000).round()}K';
+  }
+  return label;
 }
 
 /// 下载音质选择弹窗：复用共享探针探测真实可用档位，点选即按该档下载。
@@ -4561,6 +4501,13 @@ class _LandscapeControlsRow extends ConsumerWidget {
       settingsProvider.select(
           (s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
+    // MV 开启时音质按钮改显当前 MV 画质（弹窗同样分流，对齐桌面端）。
+    final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
+    final mvQuality = ref.watch(
+      mvProvider.select((s) => s.source?.videoQuality),
+    );
+    final mvQualityShown =
+        mvRequested && mvQuality != null && mvQuality.isNotEmpty;
     final playMode = ref.watch(playerProvider.select((s) => s.playMode));
     final resolving = ref.watch(playerProvider.select((s) => s.resolving));
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
@@ -4752,7 +4699,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
               alignment: Alignment.center,
               decoration: const BoxDecoration(shape: BoxShape.circle),
               child: Text(
-                _qualityAbbr(currentQuality),
+                mvQualityShown ? mvQuality : _qualityAbbr(currentQuality),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
