@@ -442,14 +442,12 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     _applyNudge(c, driftMs);
     // 每 tick 心跳，用于离线分析视频推进是否正常
-    _tickCount++;
     AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
         'ap=${audio.position} drift=${driftMs.round()}ms '
         'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
         'spd=${c.value.playbackSpeed}');
   }
 
-  int _tickCount = 0;
   int _missCount = 0;
   bool _lastBuffering = false;
 

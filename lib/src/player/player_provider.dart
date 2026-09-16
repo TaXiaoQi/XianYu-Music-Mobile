@@ -575,6 +575,19 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
       if (playing != state.isPlaying) {
+        // 暂停取证：所有暂停（我们代码/系统媒体会话/just_audio 焦点中断）
+        // 都在此汇聚，栈首帧可直接指认发起方
+        if (!playing) {
+          final st = StackTrace.current
+              .toString()
+              .split('\n')
+              .take(4)
+              .join(' <- ');
+          AppLog.warn('playgate',
+              'player PAUSED proc=${ps.processingState} $st');
+        } else {
+          AppLog.info('playgate', 'player PLAY proc=${ps.processingState}');
+        }
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
       }
@@ -3500,11 +3513,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 系统控制中心「暂停 / 停止」键：仅播放中生效。
   Future<void> pauseFromSystem() async {
     if (!state.isPlaying) return;
+    final st =
+        StackTrace.current.toString().split('\n').take(3).join(' <- ');
+    AppLog.warn('playgate', 'pauseFromSystem $st');
     await toggle();
   }
 
   Future<void> toggle() async {
     if (state.current == null) return;
+    final st =
+        StackTrace.current.toString().split('\n').take(3).join(' <- ');
+    AppLog.info('playgate',
+        'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} $st');
     // [DLNA 投屏] 投屏中：播放/暂停遥控电视而非本地引擎。
     if (_ref.read(dlnaCastProvider).isCasting) {
       final cast = _ref.read(dlnaCastProvider.notifier);
