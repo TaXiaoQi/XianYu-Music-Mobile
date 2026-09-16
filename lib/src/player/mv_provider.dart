@@ -122,8 +122,11 @@ bool _sameSong(QueueItem? a, QueueItem? b) {
 
 class MvNotifier extends StateNotifier<MvState> {
   MvNotifier(this._ref) : super(const MvState()) {
-    // 1s 周期对齐：播放/暂停跟随 + 大偏差硬 seek（节流由周期天然保证）。
-    _syncTimer = Timer.periodic(const Duration(seconds: 1), (_) => _syncTimeline());
+    // 500ms 周期对齐（桌面端 syncBackgroundVideo 由 currentTime 事件驱动，
+    // 粒度远细于 1s；移动端用半秒 tick 逼近同一体验）：播放/暂停跟随 +
+    // 环形 drift 分层纠偏。**只操作视频控制器，音频侧零干预**——音频永远
+    // 放歌（唯一声源），前台只是 MV 视频匹配音频进度。
+    _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _syncTimeline());
   }
 
   final Ref _ref;
@@ -441,13 +444,17 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
     _applyNudge(c, driftMs);
-    // 每 tick 心跳，用于离线分析视频推进是否正常
-    AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
-        'ap=${audio.position} drift=${driftMs.round()}ms '
-        'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
-        'spd=${c.value.playbackSpeed}');
+    // 心跳节流到 1s 一条（纠偏仍是 500ms 粒度），日志密度可控
+    _tickCount++;
+    if (_tickCount % 2 == 0) {
+      AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
+          'ap=${audio.position} drift=${driftMs.round()}ms '
+          'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
+          'spd=${c.value.playbackSpeed}');
+    }
   }
 
+  int _tickCount = 0;
   int _missCount = 0;
   bool _lastBuffering = false;
 
