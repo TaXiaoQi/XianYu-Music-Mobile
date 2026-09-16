@@ -117,7 +117,13 @@ class _SequentialFadeGateState extends State<_SequentialFadeGate>
   Future<void> _swapTo(bool target) async {
     final gen = ++_gen;
     // 旧形态淡出（1 → 0），快速压暗并掩盖旋转过渡期的拉伸帧。
-    await _c.forward().orCancel;
+    // 转场途中再次翻转（新一次 forward 会 stop 掉旧 Ticker）或组件卸载时
+    // orCancel 会抛 TickerCanceled，静默放弃本轮即可。
+    try {
+      await _c.forward().orCancel;
+    } catch (_) {
+      return;
+    }
     if (!mounted || gen != _gen) return;
     // 换挂载新形态，等它完成一帧 build/布局再淡入。
     setState(() => _showLandscape = target);
@@ -125,7 +131,11 @@ class _SequentialFadeGateState extends State<_SequentialFadeGate>
     if (!mounted || gen != _gen) return;
     // 新形态淡入（0 → 1）。
     _c.duration = const Duration(milliseconds: 200);
-    await _c.reverse().orCancel;
+    try {
+      await _c.reverse().orCancel;
+    } catch (_) {
+      return;
+    }
   }
 
   @override
