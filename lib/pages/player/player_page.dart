@@ -346,29 +346,38 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
             color: scheme.onSurfaceVariant,
           ),
         ),
+        // 蓝牙场景提示：蓝牙耳机有编码/传输固有延迟（常见 200~400ms），
+        // 听感上声音比进度晚 → 歌词相对提前，向"延后"方向调节即可
+        Text(
+          tr('蓝牙耳机存在固有延迟，歌词提前时请向"延后"方向调节'),
+          style: TextStyle(
+            fontSize: 11,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
         // 粗调滑杆（10ms 步进）
         Slider(
           value: value.toDouble(),
-          min: -500,
-          max: 500,
-          divisions: 100,
+          min: -2000,
+          max: 2000,
+          divisions: 400,
           label: '${value}ms',
           onChanged: (v) => notifier.setLyricOffsetMs(v.round()),
         ),
-        // 细调按钮行（1 / 5 / 10 / 100ms 步进）
+        // 细调按钮行（1 / 10 / 100 / 200ms 步进；±200 对应蓝牙常见延迟量级）
         Wrap(
           alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
           children: [
-            '-100', '-10', '-1', '+1', '+10', '+100',
+            '-200', '-100', '-10', '-1', '+1', '+10', '+100', '+200',
           ].map((label) {
             final step = int.parse(label);
             return _LyricsViewState._offsetStepChip(
               context,
               label,
               scheme,
-              () => notifier.setLyricOffsetMs((value + step).clamp(-500, 500)),
+              () => notifier.setLyricOffsetMs((value + step).clamp(-2000, 2000)),
             );
           }).toList(),
         ),
