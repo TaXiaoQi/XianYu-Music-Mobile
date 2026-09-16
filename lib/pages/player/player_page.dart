@@ -5399,9 +5399,18 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         boundary.debugNeedsPaint) {
       return;
     }
+    // attached 但 layer 尚未建立/已被剥离（MV 让渡、横竖屏转场瞬间）时，
+    // toImage 内部 layer! 会抛 Null check——由下方 catch 静默丢弃本轮。
     final dpr =
         MediaQuery.of(context).devicePixelRatio.clamp(1.0, 2.0).toDouble();
-    final raw = await boundary.toImage(pixelRatio: dpr);
+    final ui.Image raw;
+    try {
+      raw = await boundary.toImage(pixelRatio: dpr);
+    } catch (_) {
+      // 捕获失败（layer 竞态等）：丢弃本轮任务，绝不向上传播——
+      // addPostFrameCallback 的 async 回调里 uncaught 会连环打断渲染帧。
+      return;
+    }
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.drawImage(

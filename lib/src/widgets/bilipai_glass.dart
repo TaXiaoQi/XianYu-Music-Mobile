@@ -289,10 +289,18 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       });
       return;
     }
+    // attached 但 layer 尚未建立/已被剥离（MV 让渡、转场瞬间）时，
+    // toImage 内部 layer! 会抛 Null check——由下方 catch 静默丢弃本轮。
     _capturing = true;
     try {
       final dpr = MediaQuery.devicePixelRatioOf(context);
-      final image = await ro.toImage(pixelRatio: dpr);
+      final ui.Image image;
+      try {
+        image = await ro.toImage(pixelRatio: dpr);
+      } catch (_) {
+        // 捕获失败：丢弃，绝不向上传播打断渲染帧。
+        return;
+      }
       // 抓屏期间又开始运动 / 组件已卸载：本次结果作废。
       if (!mounted ||
           !_idle ||
