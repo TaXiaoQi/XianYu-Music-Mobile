@@ -437,7 +437,7 @@ class MvNotifier extends StateNotifier<MvState> {
     _lastVposMs = vposMs;
     if (_stallTicks >= 4) {
       _stallTicks = 0;
-      await _restartForStall(vposMs);
+      unawaited(_restartForStall(vposMs));
       return;
     }
 
