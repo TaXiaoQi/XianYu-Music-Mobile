@@ -130,6 +130,7 @@ class LinkCmdAction {
   static const String next = 'next';
   static const String prev = 'prev';
   static const String like = 'like';
+  static const String dislike = 'dislike'; // 「不喜欢」日推歌：上报负反馈并跳下一首
   static const String mode = 'mode';
   static const String seek = 'seek';
   static const String volume = 'volume'; // arg {v: 0..1}，表冠调音量
@@ -168,6 +169,7 @@ class LinkMessage {
     String? cover,
     String? coverData,
     required double duration,
+    bool daily = false, // 是否来自日推队列（手表据此显示「不喜欢」按钮）
   }) =>
       LinkMessage(LinkMsgType.nowPlaying, {
         'id': id,
@@ -178,6 +180,7 @@ class LinkMessage {
         // 手机端本地歌封面（512px JPEG base64）；在线歌用 cover URL。
         'coverData': ?coverData,
         'duration': duration,
+        'daily': daily,
       });
 
   static LinkMessage position({required double pos, required double duration}) =>

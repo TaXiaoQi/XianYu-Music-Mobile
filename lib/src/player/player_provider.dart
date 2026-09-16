@@ -477,6 +477,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<ProcessingState>? _procSub;
   StreamSubscription<dynamic>? _errSub;
   Timer? _listenTimer;
+  /// 听歌时长结算的最近进度位：结算按 position 增量而非墙钟——播放器死亡/
+  /// 中段卡死时 position 不推进，即使 isPlaying 状态失真也不会虚计时长。
+  double _lastStatPos = -1;
   /// 播放错误处理互斥：错误风暴（换源探测失败链）时只处理一次。
   bool _playbackErrorHandling = false;
   // 自然播完衔接互斥：completed 事件在解析直链的长窗口内可能重复到达，
@@ -2583,13 +2586,22 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   void _flushPlayStats() {
     final item = state.current;
     if (item == null) return;
-    // 只要 _trackStartTime 非空即代表存在待结算的连续播放段（含刚自然播完/刚暂停
-    // 的时刻，此时 isPlaying 已被置 false），一律按 now - 起点 结算，避免丢失尾段时长。
+    // 按进度增量结算（对齐桌面端防虚增语义）：只有 position 真实推进的时长
+    // 才计入。播放器死亡/中段卡死时 position 不动、增量恒为 0，即使 isPlaying
+    // 状态失真（stall 兜底只覆盖近末尾，中段死亡不触发）也不会虚计听歌时长。
     double currentSession = 0;
-    if (_trackStartTime != null) {
-      currentSession =
-          DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
+    final pos = state.position;
+    if (_trackStartTime != null && state.isPlaying && pos > 0) {
+      final delta = _lastStatPos >= 0 ? pos - _lastStatPos : 0.0;
+      if (delta > 0) {
+        final wallSec =
+            DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
+        // 超出墙钟的跳变（seek 向前/换歌重置）不计，下个周期恢复正常累计；
+        // 倒退（seek 向后/新歌从 0 起）同样计 0，宁少勿虚。
+        if (delta <= wallSec + 2) currentSession = delta;
+      }
     }
+    _lastStatPos = pos;
     final totalDuration = _accumulatedTime + currentSession;
     final shouldPersist =
         totalDuration >= 10 || (_currentPlayCountRecorded && totalDuration > 0);

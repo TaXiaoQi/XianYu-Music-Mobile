@@ -394,47 +394,6 @@ class AccountApi {
 
   // ─── 听歌统计同步 ───────────────────────────────────────
 
-  /// 从云端下载听歌统计快照；服务器无记录时返回 null。
-  /// 返回 { merged, cleared, resetAt, listenStats }，listenStats 为 null 表示服务器无快照。
-  Future<Map<String, dynamic>?> downloadListenStats() async {
-    final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      return null;
-    }
-    final data = await _action('listen_stats_sync_download', {
-      'user_id': ciyuanxiId,
-    }, fetchTimeoutMs: 15000);
-    final stats = data['listen_stats'];
-    return {
-      'merged': (data['merged'] as bool?) ?? false,
-      'cleared': (data['cleared'] as bool?) ?? false,
-      'resetAt': (data['reset_at'] as num?)?.toInt(),
-      'reason': (data['reason'] as String?) ?? '',
-      'listenStats': stats is Map<String, dynamic> ? stats : null,
-    };
-  }
-
-  /// 上传听歌统计快照（含 merged/cleared/resetAt 状态）到云端。
-  Future<bool> uploadListenStats(
-    Map<String, dynamic> listenStats, {
-    bool merged = false,
-    bool cleared = false,
-    int? resetAt,
-  }) async {
-    final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
-      return false;
-    }
-    final data = await _action('listen_stats_sync_upload', {
-      'user_id': ciyuanxiId,
-      'listen_stats': listenStats,
-      'merged': merged,
-      'cleared': cleared,
-      'reset_at': ?resetAt,
-    }, fetchTimeoutMs: 15000);
-    return (data['updated'] as bool?) ?? false;
-  }
-
   // ─── 播放历史同步 ───────────────────────────────────────
 
   /// 上传播放历史到云端。
@@ -659,16 +618,13 @@ class AccountApi {
 
   // ─── 排行榜 ─────────────────────────────────────────────
 
-  /// 获取排行榜。登录用户先上报本地听歌时长（日/周/总）再拉取。
+  /// 获取排行榜。听歌时长上报已统一走 delta 协议（listenStatsProvider），
+  /// 此处只拉取榜单数据。
   Future<LeaderboardData> fetchLeaderboard({
     int limit = 50,
     String period = 'total',
-    Map<String, int>? durations,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId != null && ciyuanxiId.isNotEmpty && durations != null) {
-      await _reportListenStats(ciyuanxiId, durations);
-    }
     final data = await _action('get_leaderboard', {
       if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) 'ciyuanxi_id': ciyuanxiId,
       'limit': limit,
@@ -677,32 +633,39 @@ class AccountApi {
     return LeaderboardData.fromJson(data);
   }
 
-  Future<int> _reportListenStats(
-      String ciyuanxiId, Map<String, int> durations) async {
+  // ─── 听歌统计增量上报 ───────────────────────────────────
+
+  /// 增量上报听歌时长（stats_mode=delta，与桌面/腕上端统一协议）：
+  /// 只上报自上次成功上报后的增量，服务端合计后回传账号累计/今日/本周真源值。
+  /// 服务端存在待处理重置信号时返回 {resetAt: 时间戳}。
+  Future<Map<String, dynamic>> reportListenStatsDelta({
+    required int deltaTotal,
+    required int deltaDaily,
+  }) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      return const {};
+    }
     try {
       final data = await _action('report_listen_stats', {
         'ciyuanxi_id': ciyuanxiId,
-        'duration': durations['total'] ?? 0,
-        'daily_duration': durations['daily'] ?? 0,
-        'weekly_duration': durations['weekly'] ?? 0,
-        'total_duration': durations['total'] ?? 0,
-        'unique_songs_count': 0,
+        'stats_mode': 'delta',
+        'delta_duration': deltaTotal.clamp(0, 1 << 31),
+        'delta_daily_duration': deltaDaily.clamp(0, 1 << 31),
       }, fetchTimeoutMs: 8000);
-      // 服务端对累计总时长做 GREATEST 合并后回传（对齐桌面端），供本地落库对齐。
-      return (data['server_total_duration'] as num?)?.toInt() ?? 0;
+      final resetAt = data['reset_at'];
+      if (resetAt is String && resetAt.isNotEmpty) {
+        return {'resetAt': resetAt};
+      }
+      return {
+        'total': (data['server_total_duration'] as num?)?.toInt() ?? 0,
+        'daily': (data['server_daily_duration'] as num?)?.toInt() ?? 0,
+        'weekly': (data['server_weekly_duration'] as num?)?.toInt() ?? 0,
+      };
     } catch (_) {
-      // 上报失败不影响排行榜获取。
-      return 0;
+      // 上报失败保留本地增量基线，下轮重试。
+      return const {};
     }
-  }
-
-  /// 上报本地听歌时长到账号（服务端按 MAX 合并，跨端累计总时长），
-  /// 返回服务端合并后的累计总时长（秒；0 表示未登录/失败/服务端未回传）。
-  /// 登录态下播放落库 / 首页统计读取时调用。
-  Future<int> reportListenStats(Map<String, int> durations) async {
-    final ciyuanxiId = _ciyuanxiId;
-    if (ciyuanxiId == null || ciyuanxiId.isEmpty) return 0;
-    return _reportListenStats(ciyuanxiId, durations);
   }
 
   // ─── 统计上报（fire-and-forget） ────────────────────────

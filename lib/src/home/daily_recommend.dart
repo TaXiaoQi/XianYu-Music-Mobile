@@ -272,9 +272,24 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
   for (final p in enabledPlugins) {
     if (await engine.canPlayMusic(p)) playable.add(p);
   }
+  // 活体探测：声明可播 ≠ 接口活着（服务器宕机/密钥 401 是运行时状态）。
+  // 并行跑最小链路（search 1 条 + 低档直链），死插件剔除出候选池。
+  String probeKeyword = '热门音乐';
+  for (final s in algorithm.strategies) {
+    if (s.queries.isNotEmpty) {
+      probeKeyword = s.queries.first;
+      break;
+    }
+  }
+  final probes = await Future.wait(
+      playable.map((p) => _probePluginAlive(engine, p, probeKeyword)));
+  final alivePlugins = <PluginSource>[
+    for (var i = 0; i < playable.length; i++)
+      if (probes[i]) playable[i],
+  ];
   final collected = <_Collected>[];
-  if (playable.isEmpty) return const [];
-  await _searchAll(engine, algorithm, playable, exclusionSet, collected);
+  if (alivePlugins.isEmpty) return const [];
+  await _searchAll(engine, algorithm, alivePlugins, exclusionSet, collected);
 
   // 打分去重：score = 策略权重 + 搜索排名，同曲多源保留最高分
   final best = <String, _Collected>{};
@@ -367,6 +382,72 @@ Future<List<PluginSearchResult>> _searchPlugin(
     }
   }
   return merged;
+}
+
+// ─── 插件活体探测 ─────────────────────────────────────────────
+// 声明级 canPlayMusic 之外的最小运行时证明：search(1 条) + 直链解析(低档)。
+// search 通只证明宿主代取/搜索接口活着（如聆澜系 search 正常但 musicUrl 401），
+// 必须完成直链解析才算「能播」。结果 TTL 缓存，日推重生成不重复探测。
+
+const Duration _aliveProbeTtl = Duration(minutes: 15);
+const Duration _aliveProbeTimeout = Duration(seconds: 4);
+final Map<String, ({bool alive, DateTime at})> _aliveProbes = {};
+
+/// 活体探测：最小链路（search 1 条 → 低档直链）验证插件接口连通且鉴权有效。
+/// 超时/异常/直链为空 → 判死；搜索通但无结果 → 视为活着（接口通，仅无数据）。
+Future<bool> _probePluginAlive(
+    PluginEngine engine, PluginSource p, String keyword) async {
+  final cached = _aliveProbes[p.id];
+  if (cached != null && DateTime.now().difference(cached.at) < _aliveProbeTtl) {
+    return cached.alive;
+  }
+  bool alive = false;
+  try {
+    if (!await engine.canPlayMusic(p)) throw StateError('not playable');
+    final hits = await _probeSearchOne(engine, p, keyword)
+        .timeout(_aliveProbeTimeout);
+    if (hits.isEmpty) {
+      alive = true;
+    } else if (p.format == PluginFormat.lx) {
+      // LX：宿主代取搜索活着不代表插件本体 musicUrl 活着，直链必须实测
+      final first = hits.first;
+      final lxSource = first.source.isNotEmpty ? first.source : 'kw';
+      final songInfo = first.rawData is Map<String, dynamic>
+          ? Map<String, dynamic>.from(first.rawData as Map)
+          : first.toJson();
+      final r = await engine
+          .getMusicUrl(p, lxSource, songInfo, '128k')
+          .timeout(_aliveProbeTimeout);
+      alive = r != null && (r['url'] as String?)?.isNotEmpty == true;
+    } else {
+      final r = await engine
+          .getMusicFreeUrl(p, Map<String, dynamic>.from(hits.first.toJson()),
+              preferred: 'low', fallback: 'pause')
+          .timeout(_aliveProbeTimeout);
+      alive = r != null && r.url.isNotEmpty;
+    }
+  } catch (_) {
+    alive = false;
+  }
+  _aliveProbes[p.id] = (alive: alive, at: DateTime.now());
+  return alive;
+}
+
+/// 活体探测用单条搜索（MusicFree 走 search music，LX 逐声明音源取首条）。
+Future<List<PluginSearchResult>> _probeSearchOne(
+    PluginEngine engine, PluginSource p, String keyword) async {
+  if (p.format == PluginFormat.musicfree) {
+    return PluginCatalogService(engine, [p]).searchMusic(p, keyword, limit: 1);
+  }
+  for (final key in (p.sources.isEmpty ? <String>['default'] : p.sources)) {
+    try {
+      final r = await engine.searchInPlugin(p, key, keyword, limit: 1);
+      if (r.isNotEmpty) return r;
+    } catch (_) {
+      /* 试下一音源 */
+    }
+  }
+  return const [];
 }
 
 /// 插件搜索结果 → 日推条目。

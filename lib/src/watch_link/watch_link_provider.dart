@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 
+import '../auth/auth_provider.dart';
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
@@ -373,6 +374,8 @@ class WatchLinkController {
         await notifier.previous();
       case LinkCmdAction.like:
         await notifier.toggleFavoriteFromSystem();
+      case LinkCmdAction.dislike:
+        await _dislikeAndSkip();
       case LinkCmdAction.mode:
         await notifier.cyclePlayMode();
       case LinkCmdAction.seek:
@@ -393,6 +396,28 @@ class WatchLinkController {
       default:
         break;
     }
+  }
+
+  /// 「不喜欢」日推歌（手表 cmd）：上报负反馈后跳过下一首（同移动端播放页）。
+  /// 未登录仅跳过不上报，上报失败不阻断跳歌。
+  Future<void> _dislikeAndSkip() async {
+    final item = _container.read(playerProvider).current;
+    if (item == null) return;
+    final ciyuanxiId =
+        _container.read(authProvider).user?.ciyuanxiId?.trim() ?? '';
+    if (ciyuanxiId.isNotEmpty) {
+      try {
+        await _container.read(authProvider.notifier).requestAction(
+          'report_daily_dislike',
+          {
+            'ciyuanxi_id': ciyuanxiId,
+            'song_name': item.title,
+            'singer': item.artist,
+          },
+        );
+      } catch (_) {}
+    }
+    await _container.read(playerProvider.notifier).next();
   }
 
   // ---- 状态推送 ----
@@ -426,6 +451,13 @@ class WatchLinkController {
     if (!isPlaying && wasPlaying && _transferActive) {
       // 暂停/停止：先同步状态给手表，再关闭本次会话授权（下次起播重新确认）。
       _pushState();
+      // 在线歌切歌常以「暂停 + current 已变」的合并状态出现（解析流 URL
+      // 期间）：这里也要推新歌帧组，手表立即跟随手机 UI；否则要等起播
+      // 快照才更新，解析慢时手表停留旧歌数秒。手机有数据却"没传递"的
+      // 根因即此。
+      if (key != prevKey && item != null) {
+        _pushNowPlayingBlock(st, item);
+      }
       _transferActive = false;
       _sessionDenied = false;
       return;
@@ -436,25 +468,7 @@ class WatchLinkController {
     // 切歌检测：与上一帧的 key 比较（prevKey 先于赋值捕获，自动接续
     // isPlaying 不翻转时也能推 now_playing）。
     if (key != prevKey) {
-      _send(LinkMessage.nowPlaying(
-        id: item?.path ?? '',
-        title: item?.title ?? '',
-        artist: item?.artist ?? '',
-        album: item?.album ?? '',
-        cover: _coverOf(item),
-        duration: st.duration,
-      ));
-      _maybePushCoverData(item);
-      _send(LinkMessage.state(
-        isPlaying: st.isPlaying,
-        playMode: _lastMode,
-        liked: _lastLiked,
-        volume: _volumeOf(),
-      ));
-      _lastPosPush = DateTime.now();
-      _send(LinkMessage.position(pos: st.position, duration: st.duration));
-      _maybePushLyric();
-      _maybePrecacheNext();
+      if (item != null) _pushNowPlayingBlock(st, item);
       return;
     }
     final mode = linkPlayModeFromInt(st.playMode);
@@ -472,6 +486,31 @@ class WatchLinkController {
         _send(LinkMessage.position(pos: st.position, duration: st.duration));
       }
     }
+  }
+
+  /// 切歌帧组：now_playing + 封面补发 + state + position 重置 + 歌词 +
+  /// 预缓存。切歌检测与暂停分支共用以保证任意时序都立即推新歌。
+  void _pushNowPlayingBlock(PlaybackState st, QueueItem item) {
+    _send(LinkMessage.nowPlaying(
+      id: item.path,
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      cover: _coverOf(item),
+      duration: st.duration,
+      daily: item.fromDailyRecommend,
+    ));
+    _maybePushCoverData(item);
+    _send(LinkMessage.state(
+      isPlaying: st.isPlaying,
+      playMode: _lastMode,
+      liked: _lastLiked,
+      volume: _volumeOf(),
+    ));
+    _lastPosPush = DateTime.now();
+    _send(LinkMessage.position(pos: st.position, duration: st.duration));
+    _maybePushLyric();
+    _maybePrecacheNext();
   }
 
   /// 播放会话起播：按设置评估是否推送。
@@ -622,6 +661,7 @@ class WatchLinkController {
       album: item?.album ?? '',
       cover: _coverOf(item),
       duration: st.duration,
+      daily: item?.fromDailyRecommend ?? false,
     ), cloud: cloud);
     _maybePushCoverData(item, cloud: cloud);
     _send(LinkMessage.state(
@@ -850,6 +890,7 @@ class WatchLinkController {
       cover: _coverOf(item),
       coverData: data,
       duration: st.duration,
+      daily: item.fromDailyRecommend,
     ), cloud: cloud);
   }
 

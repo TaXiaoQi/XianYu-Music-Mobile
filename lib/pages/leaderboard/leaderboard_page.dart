@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -9,9 +8,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
-import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
-import '../../src/rust/api.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
@@ -227,26 +224,12 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
       _error = false;
     });
     try {
-      // 听歌时长取自数据库（日/周/总，与桌面端 getListenDurations 对齐），
-      // 播放器落库后据此上报，保证排行榜与首页统计一致。
-      Map<String, int> durations;
-      try {
-        final dbPath = await ref.read(dbPathProvider.future);
-        final dj = jsonDecode(await statsGetListenDurations(dbPath: dbPath))
-            as Map<String, dynamic>;
-        durations = {
-          'daily': (dj['daily'] as num?)?.toInt() ?? 0,
-          'weekly': (dj['weekly'] as num?)?.toInt() ?? 0,
-          'total': (dj['total'] as num?)?.toInt() ?? 0,
-        };
-      } catch (_) {
-        durations = {'daily': 0, 'weekly': 0, 'total': 0};
-      }
+      // 听歌时长上报统一走 delta 协议（listenStatsProvider 30s 节流），
+      // 排行榜页只拉取榜单数据。
       if (!mounted || requestId != _requestId) return;
       final data = await ref
           .read(accountApiProvider)
-          .fetchLeaderboard(
-              limit: 15, period: widget.period, durations: durations);
+          .fetchLeaderboard(limit: 15, period: widget.period);
       if (!mounted || requestId != _requestId) return;
       final list = List<LeaderboardEntry>.from(data.leaderboard);
       if (data.me != null && !list.any((e) => e.isMe)) {
