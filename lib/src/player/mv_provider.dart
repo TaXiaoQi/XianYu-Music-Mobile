@@ -354,15 +354,14 @@ class MvNotifier extends StateNotifier<MvState> {
     return matched;
   }
 
-  /// 视频跟随音频（对齐桌面端 syncBackgroundVideo 简化版）：
-  /// 播放/暂停同步；进度偏差超阈值硬对齐（环形取模，视频短于音频时循环）。
+  /// 视频跟随音频（对齐桌面端 syncBackgroundVideo，PlayerDetailBackground.vue）：
+  /// 播放/暂停同步 + 环形 drift + 分层纠偏——大偏差硬 seek、中等偏差
+  /// ±8% 倍速微调平滑追赶、小偏差不动。
   ///
-  /// 阈值必须大于「tick 周期 1s + 音频 position 缓存滞后 ~0.2s」的锯齿
-  /// 峰值（~1.2s）：两次 tick 之间视频实时前进约 1s，而 audio.position 是
-  /// positionStream 的缓存值，用小于峰值的阈值会导致每个周期尾部必然误判
-  /// 大偏差而硬 seek——视频每播 1s 被拉回 ~1s，表现为「播一下暂停一下」。
-  /// 缓冲中同样跳过评估：位置停滞是缓冲所致，此时 seek 会形成
-  /// 「seek → 缓冲 → 位置不动 → 再 seek」的风暴循环。
+  /// 弱机加固（桌面端没有的）：硬 seek 后 5s 冷却期，期内只用倍速追不 seek。
+  /// ExoPlayer 的 seek 会中断解码管线重新定位，低端机一次 seek 卡 1~3s，
+  /// 「解码慢 → position 不动 → drift 超阈值 → 每 tick 硬 seek」会瘫成
+  /// 幻灯片（一段一个画面）——冷却期给解码器喘息，靠倍速慢慢追回。
   void _syncTimeline() {
     final c = state.controller;
     if (c == null || !c.value.isInitialized) return;
@@ -373,18 +372,76 @@ class MvNotifier extends StateNotifier<MvState> {
       if (c.value.isPlaying) unawaited(c.pause());
       return;
     }
-    if (audio.isPlaying) {
-      if (!c.value.isPlaying) unawaited(c.play());
-    } else {
+    if (!audio.isPlaying) {
       if (c.value.isPlaying) unawaited(c.pause());
+      // 暂停态对齐一次（桌面端 paused 分支），受 seek 冷却保护
+      if (!_seekCooling && !c.value.isBuffering) {
+        final t = _ringTarget(audio.position * 1000, vd);
+        if ((c.value.position - t).abs() > const Duration(milliseconds: 50)) {
+          _lastSeekAt = DateTime.now();
+          unawaited(c.seekTo(t));
+        }
+      }
+      return;
     }
+    if (!c.value.isPlaying) unawaited(c.play());
+    // 缓冲中跳过评估：位置停滞是缓冲所致，评估会形成 seek 风暴循环
     if (c.value.isBuffering) return;
-    final targetMs = (audio.position * 1000).round() % vd.inMilliseconds;
-    final target = Duration(milliseconds: targetMs);
-    final drift = (c.value.position - target).abs();
-    if (drift > const Duration(milliseconds: 1500)) {
-      unawaited(c.seekTo(target));
+
+    final vdMs = vd.inMilliseconds;
+    final target = _ringTarget(audio.position * 1000, vd);
+    // 环形距离：视频循环换圈瞬间 position 与 target 分居 0/duration 两端，
+    // 线性距离会误判成大偏差回跳（对齐桌面端环形修正）
+    double driftMs = (target.inMilliseconds - c.value.position.inMilliseconds)
+        .toDouble();
+    if (driftMs.abs() > vdMs / 2) {
+      driftMs += driftMs > 0 ? -vdMs : vdMs;
     }
+    final drift = Duration(milliseconds: driftMs.round());
+
+    final now = DateTime.now();
+    if (_seekCooling) {
+      _applyNudge(c, driftMs);
+      return;
+    }
+    if (drift.abs() > const Duration(milliseconds: 1200)) {
+      _lastSeekAt = now;
+      // 环形最近点落位（可能为负或超一圈，取模回 [0, vd)）
+      var destMs =
+          ((c.value.position.inMilliseconds + driftMs) % vdMs).round();
+      if (destMs < 0) destMs += vdMs;
+      unawaited(c.setPlaybackSpeed(1.0)); // 对齐桌面端：seek 后恢复基础倍速
+      unawaited(c.seekTo(Duration(milliseconds: destMs)));
+      return;
+    }
+    _applyNudge(c, driftMs);
+  }
+
+  /// 硬 seek 后的冷却期（解码器恢复窗口）。
+  bool get _seekCooling =>
+      _lastSeekAt != null &&
+      DateTime.now().difference(_lastSeekAt!) < const Duration(seconds: 5);
+
+  DateTime? _lastSeekAt;
+
+  /// 倍速微调追偏差（对齐桌面端 nudge）：±8% 内的平滑追赶，避免可见跳帧。
+  void _applyNudge(VideoPlayerController c, double driftMs) {
+    const base = 1.0;
+    final nudge = (driftMs / 1000.0 * 0.5).clamp(-0.08, 0.08);
+    final nextRate = base + nudge;
+    // 靠近同步点后恢复基础倍速（|nudge| 极小视为同步）
+    final target = nudge.abs() <= 0.01 ? base : nextRate;
+    if ((c.value.playbackSpeed - target).abs() > 0.001) {
+      unawaited(c.setPlaybackSpeed(target));
+    }
+  }
+
+  /// 音频进度对视频时长的环形取模目标。
+  Duration _ringTarget(double audioPosMs, Duration vd) {
+    final vdMs = vd.inMilliseconds;
+    var t = audioPosMs.round() % vdMs;
+    if (t < 0) t += vdMs;
+    return Duration(milliseconds: t);
   }
 
   @override
