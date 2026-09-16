@@ -155,6 +155,10 @@ class MvNotifier extends StateNotifier<MvState> {
   void syncSong(QueueItem? c) {
     if (_sameSong(_song, c)) return;
     _song = c;
+    // 切歌重置停滞检测与重建配额
+    _stallTicks = 0;
+    _lastVposMs = -1;
+    _restartCount = 0;
     if (!state.requested) {
       // 未开启时仅清理上一首的源缓存（控制器本就没有）。
       if (state.source != null) {
@@ -417,6 +421,26 @@ class MvNotifier extends StateNotifier<MvState> {
           'ap=${audio.position}');
     }
 
+    // 停滞检测：ExoPlayer seek 后解码器可能完全不推进（弱机 codec 卡死），
+    // 表现为 vpos 停在 seek 目标不动而音频正常走 → 冷却期一过又 seek →
+    // 幻灯片循环。连续 2 秒视频几乎不走（排除循环接缝的负跳变）即重建
+    // 控制器（换解码器实例绕开 seek 卡死）。
+    final vposMs = c.value.position.inMilliseconds;
+    if (_lastVposMs >= 0) {
+      final step = vposMs - _lastVposMs;
+      if (step >= -1000 && step < 200) {
+        _stallTicks++;
+      } else {
+        _stallTicks = 0;
+      }
+    }
+    _lastVposMs = vposMs;
+    if (_stallTicks >= 4) {
+      _stallTicks = 0;
+      await _restartForStall(vposMs);
+      return;
+    }
+
     final vdMs = vd.inMilliseconds;
     final target = _ringTarget(audio.position * 1000, vd);
     // 环形距离：视频循环换圈瞬间 position 与 target 分居 0/duration 两端，
@@ -460,6 +484,35 @@ class MvNotifier extends StateNotifier<MvState> {
   int _tickCount = 0;
   int _missCount = 0;
   bool _lastBuffering = false;
+
+  // 停滞检测与重建状态
+  int _stallTicks = 0;
+  int _lastVposMs = -1;
+  DateTime? _lastRestartAt;
+  int _restartCount = 0;
+
+  /// seek 停滞（ExoPlayer 解码器卡死）时的兜底：用当前画质重建视频控制器。
+  /// 重建走完整 _start（重新 resolve，复用用户所选画质），旧控制器原子替换。
+  /// 冷却 10s 防连环重建；同一首歌最多 3 次，超出放弃（避免死循环）。
+  Future<void> _restartForStall(int vposMs) async {
+    final now = DateTime.now();
+    if (_lastRestartAt != null &&
+        now.difference(_lastRestartAt!) < const Duration(seconds: 10)) {
+      return;
+    }
+    if (_restartCount >= 3) {
+      AppLog.warn('mv', 'stall restart give up (3 times) vpos=$vposMs');
+      return;
+    }
+    final song = _song;
+    final q = state.source?.videoQuality;
+    if (song == null) return;
+    _lastRestartAt = now;
+    _restartCount++;
+    AppLog.warn('mv', 'stall detected, restart #$_restartCount '
+        'vpos=$vposMs q=$q');
+    await _start(song, quality: q);
+  }
 
   /// 硬 seek 后的冷却期（解码器恢复窗口）。
   bool get _seekCooling =>
