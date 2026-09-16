@@ -4180,7 +4180,9 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
   }) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? scheme.primary.withOpacity(0.16) : scheme.surfaceVariant,
+      color: selected
+          ? scheme.primary.withValues(alpha: 0.16)
+          : scheme.surfaceContainerHighest,
       shape: StadiumBorder(
         side: BorderSide(
           color: selected ? scheme.primary : scheme.outlineVariant,
