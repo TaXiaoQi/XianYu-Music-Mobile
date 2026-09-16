@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
@@ -242,6 +243,9 @@ class MvNotifier extends StateNotifier<MvState> {
     );
     await old?.dispose();
     unawaited(controller.play());
+    final vs = controller.value.size;
+    AppLog.debug('mv', 'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
+        'dur=${controller.value.duration} q=$target url=${src.url}');
     return null;
   }
 
@@ -386,7 +390,18 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (!c.value.isPlaying) unawaited(c.play());
     // 缓冲中跳过评估：位置停滞是缓冲所致，评估会形成 seek 风暴循环
-    if (c.value.isBuffering) return;
+    if (c.value.isBuffering) {
+      if (!_lastBuffering) {
+        _lastBuffering = true;
+        AppLog.warn('mv', 'buffering start vpos=${c.value.position}');
+      }
+      return;
+    }
+    if (_lastBuffering) {
+      _lastBuffering = false;
+      AppLog.info('mv', 'buffering end vpos=${c.value.position} '
+          'ap=${audio.position}');
+    }
 
     final vdMs = vd.inMilliseconds;
     final target = _ringTarget(audio.position * 1000, vd);
@@ -406,6 +421,9 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (drift.abs() > const Duration(milliseconds: 1200)) {
       _lastSeekAt = now;
+      AppLog.warn('mv', 'hard seek drift=${drift.inMilliseconds}ms '
+          'vpos=${c.value.position.inMilliseconds} '
+          'ap=${audio.position} spd=${c.value.playbackSpeed}');
       // 环形最近点落位（可能为负或超一圈，取模回 [0, vd)）
       var destMs =
           ((c.value.position.inMilliseconds + driftMs) % vdMs).round();
@@ -415,7 +433,18 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
     _applyNudge(c, driftMs);
+    // 每 10 tick 一条心跳，用于离线分析视频推进是否正常
+    _tickCount++;
+    if (_tickCount % 10 == 0) {
+      AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
+          'ap=${audio.position} drift=${driftMs.round()}ms '
+          'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
+          'spd=${c.value.playbackSpeed}');
+    }
   }
+
+  int _tickCount = 0;
+  bool _lastBuffering = false;
 
   /// 硬 seek 后的冷却期（解码器恢复窗口）。
   bool get _seekCooling =>
