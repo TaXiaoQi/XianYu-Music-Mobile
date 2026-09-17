@@ -114,11 +114,13 @@ class MvState {
   bool get active => requested;
 }
 
-/// 同一首歌判断：path 相同即同一首（切进度/切音质不触发重挂）。
+/// 同一首歌判断：path + 标题 + 歌手组合（切进度/切音质不触发重挂）。
+/// 在线歌 path 可能是 `lx://` / `plugin://` 统一前缀、不含歌曲唯一 ID，
+/// 单靠 path 会把切歌误判为同一首导致 MV 不换。
 bool _sameSong(QueueItem? a, QueueItem? b) {
   if (identical(a, b)) return true;
   if (a == null || b == null) return false;
-  return a.path == b.path;
+  return a.path == b.path && a.title == b.title && a.artist == b.artist;
 }
 
 class MvNotifier extends StateNotifier<MvState> {
