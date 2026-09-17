@@ -128,7 +128,45 @@ class MvNotifier extends StateNotifier<MvState> {
     // 环形 drift 分层纠偏。**只操作视频控制器，音频侧零干预**——音频永远
     // 放歌（唯一声源），前台只是 MV 视频匹配音频进度。
     _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _syncTimeline());
+    // ROM 音频策略压制守卫：MV 视频的 ExoPlayer 激活后，部分 ROM 会在
+    // 音频 play() 后 200~500ms 把 just_audio 压停（无 Dart 调用、非用户
+    // 操作），用户点播放即被打断成「播一下停一下」。MV 激活期间检测到
+    // 非用户暂停沿 → 450ms 后自动恢复；60s 内最多恢复 3 次防拉锯。
+    _ref.listen<bool>(
+      playerProvider.select((s) => s.isPlaying),
+      (prev, playing) {
+        if (playing) return;
+        if (!state.requested || !state.ready) return;
+        final pn = _ref.read(playerProvider.notifier);
+        if (DateTime.now().difference(pn.lastUserPauseAt).inMilliseconds <
+            1500) {
+          return; // 用户刚主动暂停，尊重用户意图
+        }
+        final now = DateTime.now();
+        if (now.difference(_guardWindowStart) >
+            const Duration(minutes: 1)) {
+          _guardWindowStart = now;
+          _guardCount = 0;
+        }
+        _guardCount++;
+        if (_guardCount > 3) {
+          AppLog.warn('mv', 'focus-fight guard give up (3/min)');
+          return;
+        }
+        AppLog.warn('mv',
+            'non-user pause while mv active, auto resume #$_guardCount');
+        Future.delayed(const Duration(milliseconds: 450), () async {
+          if (!mounted || !state.requested || !state.ready) return;
+          final s = _ref.read(playerProvider);
+          if (s.isPlaying || s.current == null) return;
+          await _ref.read(playerProvider.notifier).resumeAfterMvPause();
+        });
+      },
+    );
   }
+
+  int _guardCount = 0;
+  DateTime _guardWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
 
   final Ref _ref;
   Timer? _syncTimer;

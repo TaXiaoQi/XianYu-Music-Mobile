@@ -3538,6 +3538,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await toggle();
   }
 
+  /// 最近一次用户主动暂停的时刻（toggle 暂停分支更新）。
+  /// MV 守卫用它区分「用户暂停」与「ROM 音频策略压制」。
+  DateTime _lastUserPauseAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime get lastUserPauseAt => _lastUserPauseAt;
+
+  /// MV 守卫的恢复入口：直接 native play（gate 放行），绕过 toggle 语义
+  /// （不改变用户的暂停意图记忆）。
+  Future<void> resumeAfterMvPause() async {
+    AppLog.warn('playgate', 'resume after mv focus-fight pause');
+    await _player.play();
+  }
+
   Future<void> toggle() async {
     if (state.current == null) return;
     final st =
@@ -3576,6 +3588,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     if (state.isPlaying) {
       _flushPlayStats();
+      _lastUserPauseAt = DateTime.now();
       await _player.pause();
     } else {
       _trackStartTime = DateTime.now();
