@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -149,8 +150,8 @@ class MvNotifier extends StateNotifier<MvState> {
           _guardCount = 0;
         }
         _guardCount++;
-        if (_guardCount > 3) {
-          AppLog.warn('mv', 'focus-fight guard give up (3/min)');
+        if (_guardCount > 8) {
+          AppLog.warn('mv', 'focus-fight guard give up (8/min)');
           return;
         }
         AppLog.warn('mv',
@@ -186,7 +187,41 @@ class MvNotifier extends StateNotifier<MvState> {
       return null;
     }
     _song = c;
+    await _configureAudioFocus(mixWithOthers: true);
     return _start(c);
+  }
+
+  /// 音频焦点策略切换（ROM 压制釜底抽薪）：
+  ///
+  /// 部分 ROM 对同进程第二个 AudioTrack（MV 视频的 ExoPlayer）执行
+  /// 「焦点独占回收」，just_audio 平台层收到焦点丢失自动暂停，且每次
+  /// play 都重新触发——用户点播放 200~500ms 内必被压停（守卫恢复也被
+  /// 立刻再压，日志实锤）。MV 激活期间把音频会话切成 mixWithOthers：
+  /// just_audio 不再请求/持有焦点，ROM 无焦点事件可派发，压制源头消失。
+  /// 关 MV 恢复默认 gain（来电暂停、独占语义照旧）。
+  Future<void> _configureAudioFocus({required bool mixWithOthers}) async {
+    try {
+      final session = await AudioSession.instance;
+      if (mixWithOthers) {
+        await session.configure(const AudioConfiguration(
+          android: AndroidAudioConfiguration(
+            androidAudioFocusGainType: AndroidAudioFocusGainType.mixWithOthers,
+          ),
+        ));
+        // 放弃可能已持有的焦点（正在播放不受影响，AudioTrack 继续跑）
+        await session.setActive(false);
+      } else {
+        await session.configure(const AudioConfiguration(
+          android: AndroidAudioConfiguration(
+            androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+          ),
+        ));
+        await session.setActive(true);
+      }
+      AppLog.info('mv', 'audio focus mode ${mixWithOthers ? "mix" : "gain"}');
+    } catch (e) {
+      AppLog.warn('mv', 'audio focus configure failed: $e');
+    }
   }
 
   /// MV 开启状态下切歌：为新歌自动续接 MV；不支持则关闭（对齐桌面端）。
@@ -212,8 +247,11 @@ class MvNotifier extends StateNotifier<MvState> {
     unawaited(_start(c));
   }
 
-  /// 关闭 MV：销毁控制器回退封面背景。
-  Future<void> stop() => _hardStop();
+  /// 关闭 MV：销毁控制器回退封面背景，并恢复默认音频焦点策略。
+  Future<void> stop() async {
+    await _configureAudioFocus(mixWithOthers: false);
+    await _hardStop();
+  }
 
   /// MV 播放中切换画质：以新档位重新解析加载（桌面端 setQuality 同款）。
   /// 返回 null=成功，否则错误文案。
