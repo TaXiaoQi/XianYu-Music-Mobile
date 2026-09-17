@@ -196,6 +196,12 @@ class PluginEngine {
       throw PluginEngineException(
           tr('插件实例不存在: {pluginId}', {'pluginId': pluginId}));
     }
+    // 鉴权熔断：密钥失效插件的请求直接本地失败，不打源站（防封 IP）
+    if (method == 'request' && isAuthBanned(sandboxId)) {
+      throw PluginEngineException(
+          tr('音源鉴权失效已临时熔断（5 分钟后自动重试）: {pluginId}',
+              {'pluginId': sandboxId}));
+    }
     final result = EngineCallResult.fromJsonString(await frb.pluginEngineCall(
       dataDir: dataDir,
       pluginId: sandboxId,
@@ -206,8 +212,13 @@ class PluginEngine {
     ));
     _emitLogs(result.logs);
     if (!result.ok) {
-      throw PluginEngineException(result.error ?? tr('方法调用失败'));
+      final err = result.error ?? tr('方法调用失败');
+      if (method == 'request' && _isAuthError(err)) {
+        _markAuthFailure(sandboxId, err);
+      }
+      throw PluginEngineException(err);
     }
+    if (method == 'request') _authFailStreak[sandboxId] = 0;
     return result.data;
   }
 
@@ -289,6 +300,40 @@ class PluginEngine {
       return false;
     } catch (_) {
       return false;
+    }
+  }
+
+  // ==================== 鉴权失效熔断 ====================
+  // 插件 API 密钥失效（401/API密钥不存在或已被禁用）时重试毫无意义，
+  // 且批量播放（专辑页"播放所有"）会对同一死 API 连环扫射上百请求，
+  // 导致源站封 IP。按插件粒度熔断：连续 2 次鉴权错误 → 5 分钟内所有
+  // 请求直接本地失败（零 HTTP），到期自动恢复重试。
+  static final Map<String, DateTime> _authBannedUntil = {};
+  static final Map<String, int> _authFailStreak = {};
+  static const Duration _authBanTtl = Duration(minutes: 5);
+  static const int _authBanThreshold = 2;
+
+  static bool _isAuthError(String msg) =>
+      RegExp(r'API密钥|API\s*key|api[_\s-]?secret|401', caseSensitive: false)
+          .hasMatch(msg);
+
+  static bool isAuthBanned(String pluginId) {
+    final until = _authBannedUntil[pluginId];
+    if (until == null) return false;
+    if (DateTime.now().isAfter(until)) {
+      _authBannedUntil.remove(pluginId);
+      _authFailStreak[pluginId] = 0;
+      return false;
+    }
+    return true;
+  }
+
+  static void _markAuthFailure(String pluginId, String msg) {
+    final streak = (_authFailStreak[pluginId] ?? 0) + 1;
+    _authFailStreak[pluginId] = streak;
+    if (streak >= _authBanThreshold) {
+      _authBannedUntil[pluginId] = DateTime.now().add(_authBanTtl);
+      AppLog.warn('plugin', '[$pluginId] 鉴权连续失败 $streak 次，熔断 5 分钟: $msg');
     }
   }
 
