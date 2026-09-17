@@ -99,6 +99,7 @@ dependencies:
   # liquid_glass_widgets 代码里硬编码引用了 CupertinoIcons 字体常量，但其 pubspec
   # 未声明 cupertino_icons 依赖（上游 bug），需在本工程补上。tree-shake 后体积≈0。
   cupertino_icons: ^1.0.8
+  audio_session: ^0.1.25
 
 # 本地 vendor 的 tencent_kit（third_party/tencent_kit）：
 # 2026-09-04 起使用官方最新 OpenSDK 3.5.19（open_sdk_3.5.19_r9483ffc7_lite.jar，

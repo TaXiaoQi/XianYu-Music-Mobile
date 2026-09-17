@@ -7,6 +7,7 @@ import 'package:audio_service/audio_service.dart' as as_pkg;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -448,6 +449,8 @@ BeforePlayGate? beforePlayGate;
 /// 覆写 play() 的 AudioPlayer：所有起播路径（播放按钮/点歌/上下首/系统媒体
 /// 会话/手表命令）都汇聚于 play()，在此统一挂门；暂停/seek 不经过。
 class _GatedAudioPlayer extends AudioPlayer {
+  _GatedAudioPlayer() : super(handleInterruptions: false);
+
   @override
   Future<void> play() async {
     final gate = beforePlayGate;
@@ -476,6 +479,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<dynamic>? _stateSub;
   StreamSubscription<ProcessingState>? _procSub;
   StreamSubscription<dynamic>? _errSub;
+  StreamSubscription<dynamic>? _interruptionSub;
+  // 音频中断（来电/瞬断）期间被我们暂停，中断结束需自动恢复
+  bool _interruptedByInterruption = false;
   Timer? _listenTimer;
   /// 听歌时长结算的最近进度位：结算按 position 增量而非墙钟——播放器死亡/
   /// 中段卡死时 position 不推进，即使 isPlaying 状态失真也不会虚计时长。
@@ -571,6 +577,33 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final dur = (d ?? Duration.zero).inMilliseconds / 1000.0;
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
+    });
+    // 自管音频中断（关闭 just_audio 内置 handleInterruptions 的定制版）：
+    // ROM 会把「同进程第二个解码器（MV 视频）激活」误报为永久焦点丢失
+    // (unknown)——内置逻辑遇 loss 必停，用户点播放即被压停。定制规则：
+    //   - duck：忽略（不做音量让路）
+    //   - pause（来电/瞬断）：照常暂停，中断结束自动恢复
+    //   - unknown（永久丢失）：MV 激活时忽略（ROM 对视频解码器的焦点回收，
+    //     不是真的被打断）；非 MV 时照常暂停（其他 app 抢焦点场景）
+    AudioSession.instance.then((session) {
+      _interruptionSub = session.interruptionEventStream.listen((event) async {
+        if (!event.begin) {
+          if (_interruptedByInterruption) {
+            _interruptedByInterruption = false;
+            await _player.play();
+          }
+          return;
+        }
+        if (event.type == AudioInterruptionType.duck) return;
+        if (event.type == AudioInterruptionType.unknown && mvSuppressFocusLoss) {
+          AppLog.warn('playgate', 'ignore focus loss (mv active)');
+          return;
+        }
+        if (state.isPlaying) {
+          _interruptedByInterruption = true;
+          await _player.pause();
+        }
+      });
     });
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
@@ -3550,6 +3583,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
   }
 
+  /// MV 激活标志：MV 视频解码器会诱发 ROM 误报「永久焦点丢失」，激活
+  /// 期间 unknown 类中断由 mv_notifier 置位忽略（非 MV 场景照常暂停）。
+  bool mvSuppressFocusLoss = false;
+
   Future<void> toggle() async {
     if (state.current == null) return;
     final st =
@@ -4236,6 +4273,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _stateSub?.cancel();
     _procSub?.cancel();
     _errSub?.cancel();
+    _interruptionSub?.cancel();
     try {
       stopUsbExclusivePlayback();
     } catch (_) {}
