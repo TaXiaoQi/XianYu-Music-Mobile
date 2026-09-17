@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show exit;
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -17,7 +16,6 @@ import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
-import '../player/player_provider.dart' show audioHandler;
 import '../widgets/glass_settings.dart';
 import '../widgets/custom_background.dart';
 import '../widgets/landscape_page_fade.dart';
@@ -344,10 +342,6 @@ class _AppShellState extends ConsumerState<AppShell> {
   /// 根节点返回分发：二级页弹栈 → 切回主界面 Tab → 双击退出。
   /// 同时被系统返回与鼠标侧键触发，避免两处重复实现。
   void _handleBack() {
-    _handleBackAsync();
-  }
-
-  Future<void> _handleBackAsync() async {
     final router = GoRouter.of(context);
     AppLogger.instance.log('back',
         'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}');
@@ -378,16 +372,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       return;
     }
 
-    // 4. 2秒内再次触发系统返回，顺畅退出程序：
-    //    停播放器 → 媒体会话置 idle（媒体通知/前台服务退场）→ Activity 结束
-    //    → 兜底 exit(0)。audio_service 前台服务在部分机型不会随 Activity
-    //    结束退出，只 SystemNavigator.pop 会让进程驻留后台（需手动清多任务）。
-    AppLogger.instance.log('back', '退出应用: 停止音频服务并结束进程');
-    try {
-      await audioHandler?.shutdown();
-    } catch (_) {}
-    await SystemNavigator.pop();
-    Future.delayed(const Duration(milliseconds: 400), () => exit(0));
+    // 4. 2秒内再次触发系统返回，顺畅退出程序
+    AppLogger.instance.log('back', 'SystemNavigator.pop 退出应用');
+    SystemNavigator.pop();
   }
 }
 

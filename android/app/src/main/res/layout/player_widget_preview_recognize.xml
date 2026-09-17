@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- previewLayout（Android 12+ 拖动/长按浮层预览）专用：4×2 识曲横条。
+     长按组件时 MagicOS 桌面用此布局渲染浮层，替代 previewImage 静态位图。
+     结构与 player_widget_recognize 对齐：左封面 + 右歌名/歌手/识曲钮/三大键/
+     进度条，外层 20dp 上下留白 + 大圆角 root（widget_bg）裁剪。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingTop="20dp"
+    android:paddingBottom="20dp">
+
+    <FrameLayout
+        android:id="@+id/root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToOutline="true"
+        android:background="@drawable/widget_bg">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:layout_marginStart="6dp"
+                android:src="@drawable/widget_preview_cover"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/widget_label" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="16dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/widget_preview_drag_hint"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/widget_text_primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="@string/widget_preview_title_hint"
+                    android:textSize="12sp"
+                    android:textColor="@color/widget_text_secondary" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

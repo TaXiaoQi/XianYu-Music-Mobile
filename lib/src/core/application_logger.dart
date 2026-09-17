@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -299,5 +300,44 @@ class AppLogLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     AppLog.info('lifecycle', '应用状态 -> ${state.name}');
+  }
+}
+
+/// 预测返回手势观察者（常开打点）：记录系统预测返回事件是否送达应用。
+///
+/// 框架派发规则：start 广播给所有 observer；update/commit/cancel 只派发给
+/// **认领了手势**的 observer（见 WidgetsBinding._backGestureObservers）。
+/// 本观察者恒返回 false 只旁观、不认领，因此只会收到 start——够用于判定
+/// 「系统是否下发事件」；进度类证据由认领方 PredictiveBackGestureDetector
+/// 打点（update/commit/cancel）。
+class AppLogBackGestureObserver with WidgetsBindingObserver {
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    AppLog.debug('backgesture',
+        'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
+        'progress=${backEvent.progress.toStringAsFixed(3)}');
+    return false;
+  }
+}
+
+/// 原生预测返回观察者桥：MainActivity 以「系统导航观察者」优先级旁听系统
+/// 预测返回事件，把每帧 BackEvent 原文（progress/touch/swipeEdge）经
+/// xianyu/backgesture 通道推进来打点。它与引擎送达 Dart 的值分属两条链路：
+/// 日志中 native 值正常而引擎 claim/update 值恒 0 → 引擎转发链问题；
+/// native 值同样恒 0 → ROM 对本应用门控（PiliNara 可用即证明 ROM 会按应用
+/// 差异化下发，可继续查包名/签名门控差异）。同一 [AppLog] 分组，一轮构建
+/// 即可逐帧对比。未收到任何 native 打点即原生未注册（API < 34）。
+class BackGestureNativeBridge {
+  BackGestureNativeBridge._();
+
+  static const MethodChannel _channel = MethodChannel('xianyu/backgesture');
+
+  /// 启动时调用一次：挂上通道接收，消息正文即原生拼好的打点串。
+  static void init() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'event') {
+        AppLog.debug('backgesture', 'native ${call.arguments}');
+      }
+    });
   }
 }

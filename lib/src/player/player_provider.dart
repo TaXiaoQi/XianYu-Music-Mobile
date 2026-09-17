@@ -1699,7 +1699,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (start != null) {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
-        await _startOnlineUrl(start.url, headers: start.headers, item: item);
+        await _startOnlineUrl(start.url,
+            headers: start.headers, item: item, ekey: start.ekey);
         state = state.copyWith(currentQuality: start.quality);
         _refreshQualityMenuState(probe);
         unawaited(_prewarmOnlineSizes(item));
@@ -1710,11 +1711,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // onlineInfoJson：走 LX 直链解析（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError(tr('无法获取播放链接'));
+    // 预取直链播种：LX 起播不走共享探针，把已解析直链注入注册表供
+    // 菜单/下载/体积探测直接复用，避免预热阶段重复解析起播档
+    // （对齐桌面 seedSharedProbeUrl）。
+    final infoJson = item.onlineInfoJson;
+    if (infoJson != null && infoJson.isNotEmpty) {
+      try {
+        final infoMap = jsonDecode(infoJson) as Map<String, dynamic>;
+        final seedKey = _songProbeKey(infoMap, item);
+        onlineQualityProbeRegistry.seed(
+            seedKey, url.quality ?? '320k', url.url,
+            headers: url.headers, ekey: url.ekey);
+      } catch (_) {
+        // 播种失败不影响播放。
+      }
+    }
     state = state.copyWith(
       resolving: false,
       currentQuality: url.quality,
     );
-    await _startOnlineUrl(url.url, headers: url.headers, item: item);
+    await _startOnlineUrl(url.url,
+        headers: url.headers, item: item, ekey: url.ekey);
     unawaited(_prewarmOnlineSizes(item));
   }
 
@@ -1736,12 +1753,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (!_prewarmKeys.add(key)) return;
     if (_prewarmKeys.length > 16) _prewarmKeys.remove(_prewarmKeys.first);
     try {
-      final probe = onlineQualityProbeRegistry.peek(key);
-      if (probe == null) {
-        _prewarmKeys.remove(key);
-        return;
-      }
       final songJson = jsonDecode(json) as Map<String, dynamic>;
+      // 用 ensure 而非 peek：LX 起播播种的探针（空解析回调）在此挂上真实
+      // 解析回调并补探测；失败冷却/运行中/已有成果的探针原样复用。
+      final probe = onlineQualityProbeRegistry.ensure(
+          key, _buildResolveCallback(songJson, item));
       // 1) 声明档就后台解析（填充 probe.resolved 供 qualitySizes 读取）；
       //    无声明时探常用无损档 + 320k/128k 兜底档。
       final declared = await _declaredQualities(songJson);
@@ -1935,12 +1951,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<List<String>> downloadQualityOptions() =>
       _probeQualityOptions(forDownload: true);
 
-  /// 当前歌曲各已解析档位的实测体积：实际音质 → 体积信息。
+  /// 当前歌曲各已解析档位的实测体积：展示档 → 体积信息。
   ///
-  /// 对齐桌面端弹窗的「扩展名 · 体积」：复用共享探针已解析出的直链，
-  /// 逐条做 Range 体积探测（Rust `probe_url_size`）；结果按直链缓存，
-  /// 弹窗重复打开不重复请求。仅含已解析完成的档位，探测中的档位不出现在
-  /// 返回值里，由 UI 以「未知体积」兜底。
+  /// 对齐桌面端弹窗的「扩展名 · 体积」：复用共享探针已解析出的直链，逐条做
+  /// Range 体积探测（Rust `probe_url_size`），结果按直链缓存，弹窗重复打开不
+  /// 重复请求；直链探测失败（防盗链/签名过期/无 Range）时回退到插件/落雪搜索
+  /// 元数据里上报的体积（Baka `qualities.size` 语义），保证 FLAC+ 档位也有体积。
   Future<Map<String, QualitySizeInfo>> qualitySizes() async {
     final item = state.current;
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
@@ -1950,29 +1966,67 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final key = _songProbeKey(songJson, item);
       final probe = onlineQualityProbeRegistry.peek(key);
       if (probe == null) return const {};
+
+      // 对齐桌面端「展示的档位必有体积」：信任模式（Baka）下声明档全量进菜单，
+      // 但只实测过最高档，其余档位没有直链 → 体积探测读不到。这里对菜单中
+      // 缺直链的档位补一次解析，再统一探体积（probe 内建并发去重/槽位，失败
+      // 返回 null 不抛错，单档失败不影响其他档）。have 按请求档判断，降级解析
+      // 出的结果已属该档，不重复探测。
+      final shown = state.availableQualities;
+      if (shown.isNotEmpty) {
+        final have = {
+          for (final r in probe.resolved) r.requested ?? r.quality
+        };
+        final missing = shown.where((q) => !have.contains(q)).toList();
+        if (missing.isNotEmpty) {
+          await Future.wait(missing.map(probe.probe))
+              .timeout(const Duration(seconds: 20),
+                  onTimeout: () => <QualityProbeResult?>[]);
+        }
+      }
+
       final entries = probe.resolved;
       if (entries.isEmpty) return const {};
+      final metaSizes = _metadataQualitySizes(songJson);
       final out = <String, QualitySizeInfo>{};
-      await Future.wait(entries.map((r) async {
-        final cached = _qualitySizeByUrl[r.url];
-        if (cached != null) {
-          out[r.quality] = QualitySizeInfo(url: r.url, bytes: cached);
-          return;
-        }
-        try {
-          final raw = await probeUrlSize(url: r.url);
-          final info = jsonDecode(raw);
-          final size = info is Map<String, dynamic> ? info['size'] : null;
-          if (size is num && size > 0) {
-            if (_qualitySizeByUrl.length > 200) _qualitySizeByUrl.clear();
-            _qualitySizeByUrl[r.url] = size.toInt();
-            out[r.quality] = QualitySizeInfo(url: r.url, bytes: size.toInt());
+      // 体积表按键对齐菜单展示档（shown）而非实际解析档：Baka 信任模式下菜单
+      // 展示声明档，请求 hires 实际返回 flac24bit 时若按实际档做键，sizes['hires']
+      // 恒为空，UI 取不到体积（对齐桌面 footerQualitySizes 按展示档为键）。
+      // 再并入已解析档的请求键：预热（_prewarmOnlineSizes）先于菜单时 shown 偏窄，
+      // 并集保证预热广度，弹窗打开时各档体积多数已在手。
+      final keys = <String>[
+        ...shown,
+        for (final r in entries)
+          if (r.requested != null && !shown.contains(r.requested!))
+            r.requested!,
+      ];
+      for (final q in keys) {
+        final entry = _entryForShown(entries, q);
+        if (entry != null) {
+          final cached = _qualitySizeByUrl[entry.url];
+          if (cached != null) {
+            out[q] = QualitySizeInfo(url: entry.url, bytes: cached);
+            continue;
           }
-        } catch (_) {
-          // 单条直链体积探测失败不影响其他档位（服务器不支持 Range 等）。
+          try {
+            final raw = await probeUrlSize(url: entry.url);
+            final info = jsonDecode(raw);
+            final size = info is Map<String, dynamic> ? info['size'] : null;
+            if (size is num && size > 0) {
+              if (_qualitySizeByUrl.length > 200) _qualitySizeByUrl.clear();
+              _qualitySizeByUrl[entry.url] = size.toInt();
+              out[q] = QualitySizeInfo(url: entry.url, bytes: size.toInt());
+              continue;
+            }
+          } catch (_) {
+            // 单条直链体积探测失败回退元数据体积（服务器不支持 Range 等）。
+          }
         }
-      }));
-      _dedupeSameSize(out);
+        final meta = metaSizes[q];
+        if (meta != null) {
+          out[q] = QualitySizeInfo(url: entry?.url ?? '', bytes: meta);
+        }
+      }
       return out;
     } catch (e) {
       AppLog.debug('quality', '[quality] 体积探测失败: $e');
@@ -1980,29 +2034,80 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 同体积去重：不同直链返回完全相同字节数时几乎必为同一音频文件
-  /// （音源插件多档位回吐同一文件、仅 URL 签名参数不同的变体），
-  /// 保留最低档标签，去掉更高档的「假体积」，避免菜单显示
-  /// 「flac · 4.1MB」这类与实际文件不符的条目。
-  void _dedupeSameSize(Map<String, QualitySizeInfo> out) {
-    if (out.length < 2) return;
-    final keys = out.keys.toList()
-      ..sort((a, b) {
-        final ra = kQualityLadder.indexOf(a);
-        final rb = kQualityLadder.indexOf(b);
-        return (ra < 0 ? 1 << 30 : ra).compareTo(rb < 0 ? 1 << 30 : rb);
-      });
-    final seenBytes = <int, String>{};
-    for (final q in keys) {
-      final bytes = out[q]!.bytes;
-      final existing = seenBytes[bytes];
-      if (existing == null) {
-        seenBytes[bytes] = q;
-      } else {
-        // 同字节数：q 档位更高（升序遍历后到者），视为与已保留档同文件。
-        out.remove(q);
+  /// 展示档 → 解析结果：优先按请求档匹配（降级解析的直链也挂回请求档），
+  /// 其次按实际档匹配（LX/预热的常规路径）。
+  QualityProbeResult? _entryForShown(
+      List<QualityProbeResult> entries, String q) {
+    for (final r in entries) {
+      if (r.requested == q) return r;
+    }
+    for (final r in entries) {
+      if (r.quality == q) return r;
+    }
+    return null;
+  }
+
+  /// 从插件/落雪搜索元数据读取各档位体积（对齐 BakaMusic `qualities.size`
+  /// 语义，免网络探测）：依次扫描 musicInfo.rawData.qualities、
+  /// musicInfo.qualities / 顶层 qualities / _types（lx_types）逐档 size。
+  Map<String, int> _metadataQualitySizes(Map<String, dynamic> songJson) {
+    final out = <String, int>{};
+    void scan(dynamic raw) {
+      if (raw is! Map) return;
+      final m = raw.cast<String, dynamic>();
+      for (final entry in m.entries) {
+        final norm = PluginEngine.normalizeQualityKey(entry.key);
+        if (norm == null || out.containsKey(norm)) continue;
+        final v = entry.value;
+        final size = v is Map ? v['size'] : null;
+        final bytes = _parseQualitySize(size);
+        if (bytes != null) out[norm] = bytes;
       }
     }
+
+    final musicInfo = songJson['musicInfo'];
+    if (musicInfo is Map) {
+      final info = musicInfo.cast<String, dynamic>();
+      final rawData = info['rawData'];
+      if (rawData is Map) {
+        scan(rawData.cast<String, dynamic>()['qualities']);
+      }
+      scan(info['qualities']);
+      scan(info['_types']);
+      scan(info['lx_types']);
+    }
+    scan(songJson['qualities']);
+    scan(songJson['_types']);
+    scan(songJson['lx_types']);
+    return out;
+  }
+
+  /// 解析体积文本（"23.5MB"/"1.2GB"/"320K"/数字字节）为字节数；无法解析返回 null。
+  static int? _parseQualitySize(dynamic size) {
+    if (size is num) return size > 0 ? size.toInt() : null;
+    if (size is! String) return null;
+    final s = size.trim().toLowerCase();
+    if (s.isEmpty ||
+        s == '0' ||
+        s == '未知' ||
+        s == 'unknown' ||
+        s == '--' ||
+        s == '-') {
+      return null;
+    }
+    final m = RegExp(r'^([\d.]+)\s*([kmgt]?b?)$').firstMatch(s);
+    if (m == null) return null;
+    final v = double.tryParse(m.group(1)!);
+    if (v == null || v <= 0) return null;
+    final unit = m.group(2)!;
+    final mult = switch (unit) {
+      'k' || 'kb' => 1024.0,
+      'm' || 'mb' => 1024.0 * 1024,
+      'g' || 'gb' => 1024.0 * 1024 * 1024,
+      't' || 'tb' => 1024.0 * 1024 * 1024 * 1024,
+      _ => 1.0,
+    };
+    return (v * mult).round();
   }
 
   Future<List<String>> _probeQualityOptions(
@@ -2051,6 +2156,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
       AppLog.info('quality', '[quality] probe done opts=$ordered');
+      // 整轮探测全空 → 标记失败冷却，短窗口内重开菜单不再反复请求音源。
+      if (ordered.isEmpty) probe.markFailed();
       state = state.copyWith(
         availableQualities: ordered,
         qualityMenuProbing: false,
@@ -2121,6 +2228,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (opts.isEmpty) opts.addAll(base);
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
+      // 整轮探测全空 → 标记失败冷却，短窗口内不再反复请求音源。
+      if (ordered.isEmpty) probe.markFailed();
       state = state.copyWith(
         availableQualities: ordered,
         qualityMenuProbing: false,
@@ -2567,6 +2676,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String url, {
     Map<String, String>? headers,
     required QueueItem item,
+    String? ekey,
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
@@ -2575,6 +2685,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       normalizeMediaRequestHeaders(clean, headers),
       dataDir: _ref.read(appDataDirProvider.future),
     );
+    // 加密源（QMC2 ekey/cek）：ExoPlayer/共享 DSP 管线都无法实时解密，先经
+    // Rust 流式下载+解密成明文临时文件，再按本地文件起播（对齐桌面携带 ekey
+    // 解密播放的语义；代价是首播需完整下载到明文，播放前短暂加载）。
+    if (ekey != null && ekey.isNotEmpty) {
+      await _startEncryptedFile(clean, h, item, ekey);
+      return;
+    }
     // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
@@ -2608,6 +2725,82 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
     // 本首起播成功：预取队列后续 ≤5 首在线歌的直链/封面/歌词/15 秒片头。
     _triggerOnlinePrecache(item);
+  }
+
+  /// 加密源（QMC2 ekey）起播：下载+解密成明文临时文件后按本地文件播放。
+  /// 缓存按直链 hash 落盘，命中复用避免重复下载；超出上限按时间淘汰最旧的。
+  Future<void> _startEncryptedFile(
+    String url,
+    Map<String, String>? headers,
+    QueueItem item,
+    String ekey,
+  ) async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    final plainPath = await _decryptUrlToTemp(url, headers, ekey);
+    await _player.setFilePath(plainPath);
+    await _player.setVolume(_ref.read(volumeProvider));
+    await _player.play();
+    _triggerOnlinePrecache(item);
+  }
+
+  static const int _decryptCacheMax = 48;
+  final Map<String, String> _decryptPathCache = {};
+
+  /// 把加密直链流式下载并经 Rust QMC2 解密为明文临时文件，返回明文路径。
+  /// 同一直链只下/解一次；文件已存在（上次解密残留）直接复用。
+  Future<String> _decryptUrlToTemp(
+    String url,
+    Map<String, String>? headers,
+    String ekey,
+  ) async {
+    final cached = _decryptPathCache[url];
+    if (cached != null) {
+      final f = File(cached);
+      if (f.existsSync() && f.lengthSync() > 0) return cached;
+    }
+    final dir = Directory(p.join((await getTemporaryDirectory()).path,
+        'xianyu_decrypt'));
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    // 上限淘汰：超出时删最旧文件，避免临时区无限膨胀。
+    final list = dir
+        .listSync(followLinks: false)
+        .whereType<File>()
+        .toList()
+      ..sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+    for (var i = 0; i < list.length - _decryptCacheMax + 1; i++) {
+      try {
+        list[i].deleteSync();
+      } catch (_) {}
+    }
+    final dest = p.join(dir.path,
+        'dec_${sha256.convert(utf8.encode(url)).toString().substring(0, 24)}.tmp');
+    if (File(dest).existsSync()) {
+      // 同名残留（非空）直接复用；空文件删除重下。
+      try {
+        final f = File(dest);
+        if (f.lengthSync() > 0) {
+          _decryptPathCache[url] = dest;
+          return dest;
+        }
+        f.deleteSync();
+      } catch (_) {}
+    }
+    // Rust 端 QMC2 解密：流式下载 + ekey 解出明文，返回最终路径（可能改名）。
+    final plainPath = await downloadOnlineSong(
+      url: url,
+      destPath: dest,
+      ekey: ekey,
+      headersJson: jsonEncode(headers ?? <String, String>{}),
+    );
+    _decryptPathCache[url] = plainPath;
+    // 淘汰缓存表，防单 song 切换内存无界累积。
+    if (_decryptPathCache.length > _decryptCacheMax) {
+      final key0 = _decryptPathCache.keys.first;
+      _decryptPathCache.remove(key0);
+    }
+    return plainPath;
   }
 
   /// 按候选音质依次调用插件引擎解析 LX 直链（含缓存/并发去重），
@@ -2872,7 +3065,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
-        await _startOnlineUrl(url.url, headers: url.headers, item: newItem);
+        await _startOnlineUrl(url.url,
+            headers: url.headers, item: newItem, ekey: url.ekey);
       } catch (_) {
         _failedSources.add(srcId);
         continue;
@@ -2993,7 +3187,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         error: null,
       );
       _skipDepth = 0;
-      await _startOnlineUrl(hit.url, headers: hit.headers, item: item);
+      await _startOnlineUrl(hit.url,
+          headers: hit.headers, item: item, ekey: hit.ekey);
       state = state.copyWith(resolving: false, error: null);
       // 换源成功等同一次全新起播（对齐跨平台换源分支的记账逻辑）。
       _currentPlayCountRecorded = false;

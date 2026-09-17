@@ -23,6 +23,7 @@ import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import 'mv_host_fallback.dart';
 import 'mv_source.dart';
 import 'player_provider.dart';
 
@@ -114,13 +115,36 @@ class MvState {
   bool get active => requested;
 }
 
-/// 同一首歌判断：path + 标题 + 歌手组合（切进度/切音质不触发重挂）。
-/// 在线歌 path 可能是 `lx://` / `plugin://` 统一前缀、不含歌曲唯一 ID，
-/// 单靠 path 会把切歌误判为同一首导致 MV 不换。
+/// 从歌曲提取稳定的音乐/MV 唯一标识（用于切歌判定）。
+/// 在线歌 path 是 `lx://` / `plugin://` 统一前缀、不含歌 ID；标题+歌手在
+/// 专辑/榜单/MV 合集类列表行上可能大量相同（同名 EP、合集多首）。只凭
+/// path+标题+歌手会把不同歌误判为同一首，导致 MV 切歌不重建（视频不换）。
+/// 优先用音乐层的唯一键（mvHash/mvid/bvid/aid/vid/songmid...），都缺才
+/// 退回 path+标题+歌手。
+String _songIdentity(QueueItem? c) {
+  if (c == null) return '';
+  final song = mvSongOf(c);
+  final buf = <String>[];
+  for (final k in const [
+    'mv', 'mvHash', 'mvdata', 'mvVid', 'mvId', 'vid', 'vid_hash', 'vhash',
+    'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
+  ]) {
+    final v = song[k];
+    if (v != null && v.toString().trim().isNotEmpty) {
+      buf.add('$k=$v');
+      break; // 命中任一音乐层唯一键即可，不必把同首歌多个 id 字段都拼进去
+    }
+  }
+  if (buf.isNotEmpty) return buf.join('&');
+  return '${c.path}|${c.title}|${c.artist}';
+}
+
+/// 同一首歌判断：音乐层唯一标识优先（mv/bvid/aid/vid...），缺省回退
+/// path+标题+歌手组合。
 bool _sameSong(QueueItem? a, QueueItem? b) {
   if (identical(a, b)) return true;
   if (a == null || b == null) return false;
-  return a.path == b.path && a.title == b.title && a.artist == b.artist;
+  return _songIdentity(a) == _songIdentity(b);
 }
 
 class MvNotifier extends StateNotifier<MvState> {
@@ -259,16 +283,13 @@ class MvNotifier extends StateNotifier<MvState> {
       return '此歌曲无 MV 或画质不支持';
     }
 
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(src.url),
-      httpHeaders: src.headers,
-    );
-    try {
-      await controller.initialize();
-    } catch (_) {
-      await controller.dispose();
+    // 多源 fallback（对齐 BakaMusic 原生播放器多源候选语义）：主 URL +
+    // backupUrls 逐个初始化，任一成功即用；全部失败才报「MV 加载失败」。
+    final controller = await _initControllerWithFallback(src);
+    if (controller == null) {
       if (ver != _requestVersion || !mounted) return null;
       state = const MvState();
+      AppLog.warn('mv', 'init failed for all candidates: ${src.url}');
       return 'MV 加载失败';
     }
     if (ver != _requestVersion || !mounted) {
@@ -310,9 +331,61 @@ class MvNotifier extends StateNotifier<MvState> {
     await old?.dispose();
   }
 
+  /// 多源 fallback 初始化（对齐 BakaMusic 原生播放器多源候选语义）：
+  /// 主 URL + backupUrls 逐个尝试，首个初始化成功的控制器即用；
+  /// 全部失败返回 null。单源挂掉（CDN 失效/防盗链/超时）不再整首 MV 失败。
+  Future<VideoPlayerController?> _initControllerWithFallback(MvSource src) async {
+    final candidates = [src.url, ...src.backupUrls];
+    Object? lastError;
+    for (final u in candidates) {
+      final c = VideoPlayerController.networkUrl(
+        Uri.parse(u),
+        httpHeaders: src.headers,
+      );
+      try {
+        await c.initialize();
+        if (c.value.hasError) throw StateError(c.value.errorDescription ?? 'init error');
+        if (candidates.length > 1) {
+          AppLog.debug('mv', 'init ok via backup(${candidates.indexOf(u) + 1}/'
+              '${candidates.length}) url=$u');
+        }
+        return c;
+      } catch (e) {
+        lastError = e;
+        await c.dispose().catchError((_) {});
+      }
+    }
+    AppLog.warn('mv', 'init failed all ${candidates.length} candidates: $lastError');
+    return null;
+  }
+
   /// 解析 MV 源：所属插件直调 getMvSource，未命中再按 source 关键词匹配
   /// 已安装的 MusicFree 插件逐个尝试（迁移自页面 _ensureMvReady）。
+  ///
+  /// 对齐 BakaMusic 多画质候选语义：目标画质失败后按降档序列重试
+  /// （4K→1080P→720P→480P→360P，最多试 3 档），避免「目标档接口报错 /
+  /// 插件只支持更低档」时整首 MV 无法播放。
   Future<MvSource?> _resolve(Map<String, dynamic> song, String quality) async {
+    for (final q in _qualityCandidates(quality)) {
+      final src = await _resolveQuality(song, q);
+      if (src != null && src.url.isNotEmpty) return src;
+    }
+    return null;
+  }
+
+  /// 目标画质起步的降档候选（对齐 BakaMusic declaredCandidates 择优语义）。
+  static List<String> _qualityCandidates(String quality) {
+    const ladder = ['4K', '1080P', '720P', '480P', '360P'];
+    final idx = ladder.indexOf(quality);
+    final start = idx < 0 ? 2 : idx;
+    return [
+      for (var i = start; i < ladder.length && i < start + 3; i++) ladder[i],
+    ];
+  }
+
+  /// 单档解析：插件 getMvSource → 宿主兜底（酷狗 mvHash / B 站 BV·AV）。
+  Future<MvSource?> _resolveQuality(
+      Map<String, dynamic> song, String quality) async {
     // 从多种可能的字段里提取 plugin/source 标识（wrapper 顶层 pluginId 优先）。
     String? sourceId = song['pluginId']?.toString();
     sourceId ??= song['source']?.toString();
@@ -368,6 +441,15 @@ class MvNotifier extends StateNotifier<MvState> {
       }
     } catch (e, st) {
       debugPrint('[MV] resolve error: $e\n$st');
+    }
+
+    // 宿主兜底：插件 getMvSource 全链路失败后，用酷狗 mvHash / B 站 BV·AV
+    // 从宿主补齐视频源（对齐桌面端 useBilibiliVideoBackground 的 kugou/bili 分支），
+    // 避免旧版插件只有歌曲解析没有 MV 接口时误报"此歌曲无 MV"。
+    final host = await resolveHostMvFallback(song: song, quality: quality);
+    if (host != null) {
+      debugPrint('[MV] host fallback hit url=${host.url} q=$quality');
+      return host;
     }
     return null;
   }

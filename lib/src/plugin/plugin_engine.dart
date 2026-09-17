@@ -695,10 +695,14 @@ class PluginEngine {
           reported = _normalizeQualityKey(qField);
         }
         final h = obj['headers'];
+        // 加密源密钥（QMC2 ekey/cek）透传：仅下载链路消费，在线播放端
+        // ExoPlayer 无法实时解密，交由下载端 Rust QMC2 解密。
+        final ekey = (obj['ekey'] ?? obj['cek']) as String?;
         return ResolvedMediaUrl(
           url: url,
           headers: h is Map ? h.cast<String, String>() : null,
           quality: reported ?? requestedNorm,
+          ekey: (ekey != null && ekey.isNotEmpty) ? ekey : null,
         );
       }
     }

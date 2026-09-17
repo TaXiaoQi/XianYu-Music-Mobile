@@ -46,7 +46,9 @@
         <!-- 开启 Impeller 渲染器：BiliPai 液态玻璃依赖 ImageFilter.shader
              （自定义背景着色器仅 Impeller 支持，Skia 下无法运行）。
              注意：旧版 Flutter 的 Impeller 损伤追踪曾致预测返回手势期间
-             页面不跟随手指重绘；若当前版本仍出现该问题，需回退 Skia -->
+             页面不跟随手指重绘；若当前版本仍出现该问题，需回退 Skia。
+             已实测对照（2026/9/17）：Skia 版 progress 仍恒 0，Impeller
+             非根因，保持 Impeller 恢复液态玻璃。 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="true" />
@@ -87,6 +89,8 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustNothing">

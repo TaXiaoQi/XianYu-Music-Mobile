@@ -17,6 +17,10 @@ import android.graphics.Color
 import android.view.Surface
 import android.view.View
 import android.view.WindowManager
+import android.window.BackEvent
+import android.window.OnBackAnimationCallback
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -74,6 +78,9 @@ class MainActivity : AudioServiceActivity() {
 
     // DLNA 渲染器：Wi-Fi 组播锁（SSDP 1900 端口组播接收必需）。
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+    // 预测返回诊断：系统导航观察者回调（onDestroy 注销）。
+    private var backGestureObserver: OnBackInvokedCallback? = null
 
     /** 获取组播锁（引用计数为 0 时真正加锁，幂等）。 */
     private fun dlnaMulticastLock() {
@@ -226,6 +233,14 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        backGestureObserver?.let { cb ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                runCatching {
+                    onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+                }
+            }
+        }
+        backGestureObserver = null
         if (live === this) live = null
         super.onDestroy()
     }
@@ -245,6 +260,75 @@ class MainActivity : AudioServiceActivity() {
         val orientation =
             if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
         mainHandler.post { runCatching { rotationEvents?.success(orientation) } }
+    }
+
+    /**
+     * 预测返回诊断：以「系统导航观察者」优先级旁听系统预测返回事件原值。
+     *
+     * 背景：引擎送达 Dart 的手势进度恒 0（日志实锤 update 3~5 帧 p=0.000），
+     * Dart 层两条路径（自研 detector / 框架内置 PiliNara 同款）均不跟手，
+     * 应用侧已全部排除。本观察者与引擎回调**并行**收到同一系统回调序列——
+     * 引擎用 PRIORITY_DEFAULT 注册、本观察者用 PRIORITY_SYSTEM_NAVIGATION_
+     * OBSERVER 注册（纯旁听，不参与手势 target 竞争，不影响引擎链路）。
+     * 把系统原始 BackEvent（progress/touch/swipeEdge）逐帧打进应用日志：
+     *  · native 值正常递增而引擎送达值恒 0 → 引擎转发链问题，可自建通道驱动；
+     *  · native 值同样恒 0 → ROM 对本应用门控，只能自绘手势兜底。
+     * OnBackAnimationCallback / 观察者优先级均为 API 34 引入，低版本不注册。
+     */
+    private fun registerBackGestureObserver() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        val callback = object : OnBackAnimationCallback {
+            private var frame = 0
+            private var committed = false
+
+            private fun emit(phase: String, event: BackEvent?) {
+                val touch = event?.touch
+                val msg = "$phase #${++frame} " +
+                    "p=${"%.3f".format(event?.progress ?: 0f)} " +
+                    "touch=${touch?.x?.toInt()},${touch?.y?.toInt()} " +
+                    "edge=${event?.swipeEdge ?: '-'}"
+                android.util.Log.i("XyBack", msg)
+                val messenger = FlutterMessengerHolder.messenger ?: return
+                mainHandler.post {
+                    runCatching {
+                        MethodChannel(messenger, "xianyu/backgesture")
+                            .invokeMethod("event", msg)
+                    }
+                }
+            }
+
+            override fun onBackStarted(event: BackEvent) {
+                frame = 0
+                committed = false
+                emit("start", event)
+            }
+
+            override fun onBackProgressed(event: BackEvent) = emit("update", event)
+
+            override fun onBackCancelled() = emit("cancel", null)
+
+            // API 34 的提交通知（无参）；35+ 与带参 onBackCommitted 并存，flag 防重。
+            override fun onBackInvoked() {
+                if (committed) return
+                committed = true
+                emit("commit", null)
+            }
+
+            override fun onBackCommitted(event: BackEvent) {
+                if (committed) return
+                committed = true
+                emit("commit", event)
+            }
+        }
+        runCatching {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_SYSTEM_NAVIGATION_OBSERVER,
+                callback,
+            )
+            backGestureObserver = callback
+            android.util.Log.i(
+                "XyBack", "observer registered (API ${Build.VERSION.SDK_INT})")
+        }
     }
 
     private fun processDeepLink(intent: Intent?) {
@@ -680,6 +764,8 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // 预测返回诊断观察者（messenger 就绪后注册，事件经 xianyu/backgesture 转发）。
+        registerBackGestureObserver()
     }
 
     /** 应用安装来源：返回 installer 包名（如 Google Play 的 com.android.vending、

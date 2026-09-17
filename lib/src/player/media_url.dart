@@ -181,8 +181,17 @@ Future<Map<String, String>?> withBilibiliStreamCookie(
 
 /// 解析得到的播放源：直链 + 可选请求头 + 实际命中的音质档位（LX 多档回退时可知实际档）。
 class ResolvedMediaUrl {
-  const ResolvedMediaUrl({required this.url, this.headers, this.quality});
+  const ResolvedMediaUrl({
+    required this.url,
+    this.headers,
+    this.quality,
+    this.ekey,
+  });
   final String url;
   final Map<String, String>? headers;
   final String? quality;
+
+  /// 可选 QMC2 加密密钥（base64）。Baka 系插件加密源在 getMediaSource 返回
+  /// ekey/cek，透传给下载端 Rust QMC2 解密（对齐桌面携带 ekey 的处理）。
+  final String? ekey;
 }

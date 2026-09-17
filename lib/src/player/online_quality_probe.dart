@@ -24,6 +24,17 @@ const List<String> kQualityLadder = [
 /// 首个无损档下标（flac），往下为有损档。
 const int _losslessStart = 4;
 
+/// 失败冷却窗口（对齐桌面 PROBE_FAIL_TTL_MS=3000）：整轮探测全空后，
+/// 短窗口内复用失败态，不再重复请求音源。
+const Duration kProbeFailCooldown = Duration(milliseconds: 3000);
+
+/// 风控错误文案（对齐桌面 rateLimitPattern）：命中后清空队列停手冷却，
+/// 避免继续打音源接口被风控加重。
+final RegExp _rateLimitPattern = RegExp(
+  r'请求过于频繁|访问过于频繁|频率限制|请求太频繁|rate.?limit|too many requests|频繁|frequent',
+  caseSensitive: false,
+);
+
 int _rankOf(String q, List<String> ladder) {
   final i = ladder.indexOf(q);
   return i < 0 ? -1 : i;
@@ -60,11 +71,20 @@ class QualityProbeResult {
   const QualityProbeResult({
     required this.url,
     required this.quality,
+    this.requested,
     this.headers,
+    this.ekey,
   });
   final String url;
   final String quality;
   final Map<String, String>? headers;
+
+  /// 发起探测时请求的档位（可能因插件静默降级而高于 [quality]）。
+  /// 体积表按键需对齐菜单展示档，降级时靠它把实测体积挂回请求档。
+  final String? requested;
+
+  /// 可选 QMC2 加密密钥（base64）：加密源经探针转交播放端下载解密链路。
+  final String? ekey;
 }
 
 /// 档位体积信息：直链 + 实测文件字节数（对齐桌面端弹窗「扩展名 · 体积」）。
@@ -76,10 +96,14 @@ class QualitySizeInfo {
 
 /// 每首歌共享一轮音质探测。
 class SongQualityProbe {
-  SongQualityProbe({required this.resolveQuality, this.maxConcurrency = 3});
+  SongQualityProbe({required Future<ResolvedMediaUrl?> Function(String quality) resolveQuality, this.maxConcurrency = 3})
+      : _resolveQuality = resolveQuality;
 
-  /// 单档解析回调（LX 或插件），由调用方按歌曲类型注入。
-  final Future<ResolvedMediaUrl?> Function(String quality) resolveQuality;
+  /// 单档解析回调（LX 或插件），由调用方按歌曲类型注入；播种探针重建时
+  /// 经 [attachResolver] 替换，保留已注入直链。
+  Future<ResolvedMediaUrl?> Function(String quality) _resolveQuality;
+  Future<ResolvedMediaUrl?> Function(String quality) get resolveQuality =>
+      _resolveQuality;
   final int maxConcurrency;
 
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
@@ -89,6 +113,54 @@ class SongQualityProbe {
   final ListQueue<Future<void> Function()> _queue = ListQueue();
   int _active = 0;
   bool _disposed = false;
+  /// 失败冷却：整轮探测全空后短窗口内复用失败态（对齐桌面 PROBE_FAIL_TTL_MS）。
+  DateTime? _cooldownUntil;
+  /// 风控停手：命中「请求过于频繁」等文案后清空队列，冷却窗口内不再发起探测。
+  bool _rateLimited = false;
+  /// 预取直链播种标记：仅全新探针可注入（对齐桌面 seedSharedProbeUrl）。
+  bool _seeded = false;
+
+  /// 替换单档解析回调（对齐桌面 seeded 探针就地重建完整探测轮）。
+  void attachResolver(Future<ResolvedMediaUrl?> Function(String quality) resolve) {
+    _resolveQuality = resolve;
+  }
+
+  /// 整轮探测失败（所有档位均未解析出直链）后标记：进入失败冷却，
+  /// 冷却窗口内 [probe] 快速返回 null，避免反复请求音源。
+  void markFailed() {
+    if (_done.isNotEmpty || _rateLimited) return;
+    _cooldownUntil = DateTime.now().add(kProbeFailCooldown);
+  }
+
+  /// 是否处于失败冷却窗口内。
+  bool get failedRecently {
+    final t = _cooldownUntil;
+    return t != null && DateTime.now().isBefore(t);
+  }
+
+  /// 是否已因风控停手（清空队列 + 冷却窗口内不再发起任何探测）。
+  bool get rateLimited => _rateLimited;
+
+  /// 是否已注入预取直链（起播复用，尚无真实整轮探测）。
+  bool get seeded => _seeded;
+
+  /// 预取直链播种：仅当本轮尚无任何真实解析结果时注入（对齐桌面
+  /// seedSharedProbeUrl 的「运行中/已有真实结果不覆盖」语义），并把该档
+  /// 直链同时写入档位缓存，后续 [probe] 直接命中不重复解析。
+  void seed(String quality, String url,
+      {Map<String, String>? headers, String? ekey}) {
+    if (_seeded || _done.isNotEmpty || _rateLimited || url.isEmpty) return;
+    _seeded = true;
+    final result = QualityProbeResult(
+      url: url,
+      quality: quality,
+      requested: quality,
+      headers: headers,
+      ekey: ekey,
+    );
+    _done.add(result);
+    _perQuality[quality] = Future.value(result);
+  }
 
   /// 信任声明档：将声明档位并入可用列表（对齐桌面 probeDownloadableQualities 的
   /// Baka 快径）。只影响音质菜单展示；直链/体积仍以实际解析结果为准。
@@ -108,10 +180,25 @@ class SongQualityProbe {
     final existing = _perQuality[quality];
     if (existing != null) return existing;
     if (_disposed) return Future.value(null);
+    // 失败冷却/风控停手窗口内快速返回，不再重复请求音源（对齐桌面 fail TTL）。
+    if (failedRecently || _rateLimited) return Future.value(null);
 
     final future = _runInSlot(() async {
       if (_disposed) return null;
-      final res = await resolveQuality(quality);
+      if (failedRecently || _rateLimited) return null;
+      final ResolvedMediaUrl? res;
+      try {
+        res = await _resolveQuality(quality);
+      } catch (e) {
+        // 单档解析异常不抛给调用方；命中风控文案时清空队列停手并进入冷却
+        // （对齐桌面 worker 检测到「请求过于频繁」后清队抛错停止整轮）。
+        if (_rateLimitPattern.hasMatch(e.toString())) {
+          _rateLimited = true;
+          _queue.clear();
+          _cooldownUntil = DateTime.now().add(kProbeFailCooldown);
+        }
+        return null;
+      }
       if (res == null || res.url.isEmpty) return null;
       // 优先采用插件报告的实际音质（res.quality）而非请求档位——插件可能把
       // flac 请求静默降级为 128k 并如实报告，此时要修正到报告档，再叠加
@@ -120,13 +207,17 @@ class SongQualityProbe {
       _done.add(QualityProbeResult(
         url: res.url,
         quality: actual,
+        requested: quality,
         headers: res.headers,
+        ekey: res.ekey,
       ));
       _dedupeSameUrl();
       return QualityProbeResult(
         url: res.url,
         quality: actual,
+        requested: quality,
         headers: res.headers,
+        ekey: res.ekey,
       );
     });
     _perQuality[quality] = future;
@@ -166,7 +257,9 @@ class SongQualityProbe {
           _done[i] = QualityProbeResult(
             url: _done[i].url,
             quality: _done[bestIdx].quality,
+            requested: _done[i].requested,
             headers: _done[i].headers,
+            ekey: _done[i].ekey,
           );
         }
       }
@@ -234,6 +327,9 @@ class SongQualityProbe {
       final res = await probe(q);
       if (res != null && res.url.isNotEmpty) return res;
     }
+    // 整轮起播全空 → 标记失败冷却，冷却窗口内重复起播不再反复请求音源
+    // （对齐桌面整轮探测全空后 failAt 冷却）。
+    markFailed();
     return null;
   }
 
@@ -255,13 +351,44 @@ final class OnlineQualityProbeRegistry {
     String songKey,
     Future<ResolvedMediaUrl?> Function(String q) resolve,
   ) {
-    return _registry.putIfAbsent(
-      songKey,
-      () => SongQualityProbe(
-        resolveQuality: resolve,
-        maxConcurrency: maxConcurrency,
-      ),
+    final existing = _registry[songKey];
+    if (existing != null) {
+      // 运行中、已有成果（含播种直链）或失败冷却内 → 复用同一轮探测。
+      // 播种探针：保留已注入直链，替换解析回调后继续补探测
+      // （对齐桌面 ensureSharedQualityProbe 对 seeded 探针就地重建完整轮）。
+      if (existing.probing ||
+          existing.resolved.isNotEmpty ||
+          existing.seeded ||
+          existing.failedRecently) {
+        if (existing.seeded) existing.attachResolver(resolve);
+        return existing;
+      }
+      // 冷却已过且无成果 → 重建（dispose 旧探针，避免残留探测继续跑）。
+      _registry.remove(songKey);
+      existing.dispose();
+    }
+    final probe = SongQualityProbe(
+      resolveQuality: resolve,
+      maxConcurrency: maxConcurrency,
     );
+    _registry[songKey] = probe;
+    return probe;
+  }
+
+  /// 预取直链播种（对齐桌面 seedSharedProbeUrl）：起播拿到直链后注入注册表，
+  /// 仅当该歌尚无真实探测轮时生效；已有真实结果/运行中不覆盖。无探针时以
+  /// 空解析回调创建（后续 ensure 命中播种探针会替换为真实回调）。
+  void seed(String songKey, String quality, String url,
+      {Map<String, String>? headers, String? ekey}) {
+    final probe = _registry[songKey];
+    if (probe == null) {
+      _registry[songKey] = SongQualityProbe(
+        resolveQuality: (_) async => null,
+        maxConcurrency: maxConcurrency,
+      )..seed(quality, url, headers: headers, ekey: ekey);
+      return;
+    }
+    probe.seed(quality, url, headers: headers, ekey: ekey);
   }
 
   /// 取已存在的探针（不创建），供体积探测等只读复用。

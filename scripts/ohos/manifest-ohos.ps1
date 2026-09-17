@@ -1,4 +1,4 @@
-# manifest-ohos.ps1 - inject permissions / background modes into the project's
+﻿# manifest-ohos.ps1 - inject permissions / background modes into the project's
 # ohos/entry/src/main/module.json5 (idempotent).
 #
 # Why scripted: `flutter create --platforms ohos` regenerates a bare template,

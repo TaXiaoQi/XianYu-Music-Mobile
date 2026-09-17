@@ -15,5 +15,6 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/player_widget_2x2"
     android:previewImage="@drawable/widget_preview_square"
+    android:previewLayout="@layout/player_widget_preview_square"
     android:resizeMode="none"
     android:widgetCategory="home_screen" />

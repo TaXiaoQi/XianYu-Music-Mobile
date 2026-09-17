@@ -365,6 +365,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     var usedQuality = task.quality;
     String? url;
     Map<String, String>? urlHeaders;
+    String? ekey;
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
       final tried = parsed.containsKey('pluginId')
@@ -381,6 +382,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       }
       url = u;
       urlHeaders = tried.headers;
+      ekey = tried.ekey;
       usedQuality = effective;
       break;
     }
@@ -424,7 +426,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       await downloadOnlineSong(
         url: url,
         destPath: destPath,
-        ekey: null,
+        ekey: ekey,
         headersJson: headersJson,
       );
     } catch (e) {
@@ -443,6 +445,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         parsed: parsed,
         settings: settings,
         headersJson: headersJson,
+        ekey: ekey,
       );
       if (fallback == null) {
         ApplicationLogManager.instance
@@ -483,6 +486,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     required Map<String, dynamic> parsed,
     AppSettings? settings,
     required String headersJson,
+    String? ekey,
   }) async {
     if (!Platform.isAndroid) return null;
     if (!await MediaStoreWriter.available) return null;
@@ -494,7 +498,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       await downloadOnlineSong(
         url: url,
         destPath: tempPath,
-        ekey: null,
+        ekey: ekey,
         headersJson: headersJson,
       );
 

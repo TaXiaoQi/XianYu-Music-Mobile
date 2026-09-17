@@ -36,6 +36,10 @@ Future<void> main() async {
   ApplicationLogManager.instance.bootstrap();
   WidgetsBinding.instance
       .addObserver(AppLogLifecycleObserver());
+  WidgetsBinding.instance
+      .addObserver(AppLogBackGestureObserver());
+  // 原生预测返回观察者桥：接收 MainActivity 旁听的系统事件原值打点。
+  BackGestureNativeBridge.init();
   _installErrorReporting(container);
   AppLog.info('startup', '应用启动（main 开始）');
 

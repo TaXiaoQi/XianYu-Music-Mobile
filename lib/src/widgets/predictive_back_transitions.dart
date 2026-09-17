@@ -4,8 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import 'custom_background.dart';
+
+/// 临时对照开关（预测返回触摸排查）：true 时 [PredictiveBackGestureDetector]
+/// 的认领路径与 PiliNara 的框架内置 [PredictiveBackPageTransitionsBuilder]
+/// 完全一致——纯靠 route 自带接口 + 系统 progress 驱动，不额外自绘快照。
+const bool kFrameworkPredictiveCompare = true;
 
 /// 让任意 [PageRoute] 参与 Android 预测返回的公共转场组件。
 ///
@@ -35,6 +41,10 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     return widget.route.isCurrent && widget.route.popGestureEnabled;
   }
 
+  /// 打点用路由名（settings.name 缺省时退回运行时类型）。
+  String get _routeName =>
+      widget.route.settings.name ?? widget.route.runtimeType.toString();
+
   PredictiveBackPhase get phase => _phase;
   PredictiveBackPhase _phase = PredictiveBackPhase.idle;
   set phase(PredictiveBackPhase phase) {
@@ -54,6 +64,32 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   /// `RenderBox was not laid out: RenderTransform` 崩溃。因此分支判断只信
   /// 本路由自己认领的手势，不信全局标志。
   bool _owned = false;
+
+  // ── 每手势诊断/兜底状态（认领时重置）─────────────────────────────
+  /// 本手势已收到的 update 事件数（cancel/commit 打点用：实锤 ROM 是否
+  /// 持续下发进度事件，还是只发一帧）。
+  int _updateCount = 0;
+
+  /// 手势首触点（合成进度的位移基准）。
+  Offset? _firstTouch;
+
+  /// 连续 progress=0 的 update 帧数。
+  int _zeroStreak = 0;
+
+  /// ROM 进度死亡兜底是否已在本手势内激活（ Honor/MagicOS 分层下发：
+  /// update 有、progress 恒 0，用触点位移合成进度）。
+  bool _synth = false;
+
+  /// 最近一帧系统原始进度（cancel/commit 打点用）。
+  double _lastProgress = 0;
+
+  /// 屏幕逻辑宽度（合成进度的归一化基准；不依赖 context，手势回调中可安全取）。
+  double get _screenWidth {
+    final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+    final size = view?.physicalSize;
+    if (view == null || size == null || size.isEmpty) return 360;
+    return size.width / view.devicePixelRatio;
+  }
 
   /// The back event when the gesture first started.
   PredictiveBackEvent? get startBackEvent => _startBackEvent;
@@ -79,11 +115,24 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
     if (!gestureInProgress) {
+      // 仅当本路由是顶层路由时记录拒绝：顶层拒绝意味着「系统事件已送达但
+      // 应用未认领」（预测返回开关关闭 / 路由不允许手势），与「系统未下发」
+      // 区分开。非顶层路由的广播拒绝属正常现象，不打点避免刷屏。
+      if (!backEvent.isButtonEvent && widget.route.isCurrent) {
+        AppLog.debug('backgesture',
+            'decline $_routeName popGestureEnabled=${widget.route.popGestureEnabled}');
+      }
       // 未认领：不置 phase、不残留状态（此前无条件置 start 会污染其他
       // 路由手势期间本 detector 的 phase）。
       return false;
     }
+    AppLog.debug('backgesture', 'claim $_routeName progress=${backEvent.progress.toStringAsFixed(3)}');
     _owned = true;
+    _updateCount = 0;
+    _firstTouch = backEvent.touchOffset;
+    _zeroStreak = 0;
+    _synth = false;
+    _lastProgress = 0;
     phase = PredictiveBackPhase.start;
 
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
@@ -94,9 +143,45 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
     if (!_owned) return;
+    final touch = backEvent.touchOffset;
+    _firstTouch ??= touch;
+    _updateCount++;
+    final p = backEvent.progress;
+    _lastProgress = p;
+    if (p <= 0.001) {
+      _zeroStreak++;
+    } else {
+      // 系统 progress 活着：解除兜底，交还系统进度。
+      _zeroStreak = 0;
+      _synth = false;
+    }
+    // 首帧打点：实锤 progress 事件形态（没下发 / 下发恒 0 / 正常）。
+    // touch 显式取 dx/dy——release 混淆下 Offset.toString 只剩类名。
+    if (_updateCount == 1) {
+      AppLog.debug('backgesture',
+          'update $_routeName progress=${p.toStringAsFixed(3)} '
+          'edge=${backEvent.swipeEdge} '
+          'touch=${touch == null ? 'null' : '${touch.dx.toStringAsFixed(0)},${touch.dy.toStringAsFixed(0)}'}');
+    }
+    // ROM 进度死亡兜底：连续 2+ 帧 progress=0 且触点位移已超过 24 逻辑像素
+    // → 判定 Honor/MagicOS 式「update 有、progress 恒 0」，本手势内锁定改用
+    // 触点位移合成进度。健康设备（progress 正常递增）永不激活。
+    final displaced = _firstTouch != null && touch != null &&
+        (touch - _firstTouch!).distance > 24;
+    if (!_synth && p <= 0.001 && _zeroStreak >= 2 && displaced) {
+      _synth = true;
+      AppLog.debug('backgesture', 'synth engage $_routeName');
+    }
+    double effective = p;
+    if (_synth && touch != null && _firstTouch != null) {
+      final dx = touch.dx - _firstTouch!.dx;
+      // 左缘手势手指向右为正行程；右缘手势相反。
+      final signed = backEvent.swipeEdge == SwipeEdge.right ? -dx : dx;
+      effective = signed / _screenWidth > p ? clampDouble(signed / _screenWidth, 0.0, 1.0) : p;
+    }
     phase = PredictiveBackPhase.update;
 
-    widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+    widget.route.handleUpdateBackGestureProgress(progress: 1 - effective);
     currentBackEvent = backEvent;
   }
 
@@ -104,6 +189,9 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   void handleCancelBackGesture() {
     if (!_owned) return;
     _owned = false;
+    AppLog.debug('backgesture',
+        'cancel $_routeName updates=$_updateCount '
+        'last=${_lastProgress.toStringAsFixed(3)} synth=$_synth');
     // 取消后立刻回到 idle：跟手分支退出，路由自身的反向过渡随动画回弹
     //（与原先经 popGestureInProgress 门控后的实际行为一致）。
     phase = PredictiveBackPhase.idle;
@@ -116,6 +204,9 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   void handleCommitBackGesture() {
     if (!_owned) return;
     _owned = false;
+    AppLog.debug('backgesture',
+        'commit $_routeName updates=$_updateCount '
+        'last=${_lastProgress.toStringAsFixed(3)} synth=$_synth');
     // 提交后立刻回到 idle：pop 动画由路由自身的反向过渡接管（isCurrent 在
     // pop 开始即失效，与原先经 popGestureInProgress 门控后的实际行为一致），
     // 同时避免本 detector 残留 commit 桩状态。
@@ -179,6 +270,11 @@ class CoverPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     if (!predictiveBack) {
+      return _coverSlide(context, animation, child);
+    }
+    // 临时对照（预测返回触摸排查）：走纯 route 自带预测返回 + 平移转场，
+    // 与 PiliNara 框架内置路径一致，不自绘快照/缩放。
+    if (kFrameworkPredictiveCompare) {
       return _coverSlide(context, animation, child);
     }
     return PredictiveBackGestureDetector(

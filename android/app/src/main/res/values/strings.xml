@@ -7,4 +7,8 @@
     <!-- 桌面组件选择面板的静态预览演示文案（仅用于 previewLayout，不进入运行时） -->
     <string name="widget_preview_song">夜空中最亮的星</string>
     <string name="widget_preview_artist">弦予音乐</string>
+
+    <!-- previewLayout 长按/拖动浮层的提示文案（仅用于预览布局） -->
+    <string name="widget_preview_drag_hint">长按可拖动</string>
+    <string name="widget_preview_title_hint">弦予音乐 · 播放组件</string>
 </resources>

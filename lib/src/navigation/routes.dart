@@ -927,6 +927,15 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    // 临时对照（预测返回触摸排查，kFrameworkPredictiveCompare=true）：
+    // 直接委托给框架内置 PredictiveBackPageTransitionsBuilder（PiliNara 同款），
+    // 它内部自带框架级 _PredictiveBackGestureDetector 认领 + progress 驱动 route，
+    // 与 PiliNara 逐字同路；验证「真手触摸 progress 死值是否与弦予自定义转场有关」。
+    if (kFrameworkPredictiveCompare) {
+      return const PredictiveBackPageTransitionsBuilder(
+        fallbackColor: Colors.transparent,
+      ).buildTransitions(this, context, animation, secondaryAnimation, child);
+    }
     // 始终挂载预测返回手势认领：detector 把手势进度同步到路由 controller
     //（value = 1 - 手势进度），下方覆盖平移本身就是跟手视觉。手势跟行/
     // 取消回弹/提交滑出/普通返回共用同一套转场，全程无分支切换跳变。
@@ -1190,6 +1199,14 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    // 临时对照（预测返回触摸排查，kFrameworkPredictiveCompare=true）：
+    // 设置详情页走 _CoverBackRoute，这里同样委托框架内置 builder，
+    // 与 PiliNara 逐字同路。
+    if (kFrameworkPredictiveCompare) {
+      return const PredictiveBackPageTransitionsBuilder(
+        fallbackColor: Colors.transparent,
+      ).buildTransitions(this, context, animation, secondaryAnimation, child);
+    }
     // 必须「始终」挂载 PredictiveBackGestureDetector 认领系统预测返回手势；
     // 手势中由 detector 驱动 controller（value = 1 - 手势进度），转场本身即
     // 跟手视觉，提交/取消回弹/普通返回共用同一套转场，无分支切换跳变。

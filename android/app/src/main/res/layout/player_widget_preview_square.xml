@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- previewLayout（Android 12+ 拖动/长按浮层预览）专用：2×2 方形。
+     长按组件时 MagicOS 桌面用此布局渲染浮层，替代 previewImage 静态位图。
+     结构：外层 14dp 留白（对齐 player_widget_2x2）+ 大圆角卡 root（widget_bg）+
+     封面 + 歌名 + 歌手 + 三大键 + 中央「长按可拖动」图文提示。
+     圆角由 root 的 widget_bg（widget_card_radius）裁剪，MagicOS 浮层渲染本
+     布局时即带大圆角（走 previewLayout 不认 previewImage 固有多么方角问题）。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp">
+
+    <FrameLayout
+        android:id="@+id/root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToOutline="true"
+        android:background="@drawable/widget_bg">
+
+        <!-- 中央拖动提示：大圆角卡底色上压「长按拖动」文字，预览场景通俗易懂。 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="12dp">
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:src="@drawable/widget_preview_cover"
+                android:scaleType="centerCrop"
+                android:contentDescription="@string/widget_label" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/widget_preview_drag_hint"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/widget_text_primary" />
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>
