@@ -163,8 +163,12 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
             Positioned.fill(child: _buildBody(scheme, contentTop: contentTop))
           else
             Padding(
-              padding:
-                  EdgeInsets.only(top: embedded ? 0 : GlassTopBar.height(context)),
+              padding: EdgeInsets.only(
+                  top: embedded
+                      ? 0
+                      // 固定模式来源条并入顶栏底段，避让量必须含其高度（与搜索
+                      // 结果页同口径），否则首行网格被来源条盖住。
+                      : GlassTopBar.height(context, bottom: chromeBottom)),
               child: Column(
                 children: [
                   if (embedded && _sources.isNotEmpty)
@@ -194,6 +198,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                   onPressed: () => context.pop(),
                 ),
                 title: Text(tr('音源榜单')),
+                // 固定顶栏默认已去掉底部全局分隔线（见 GlassTopBar）。
                 bottom: floating ? null : chromeBottom,
               ),
             ),

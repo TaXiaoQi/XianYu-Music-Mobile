@@ -94,6 +94,27 @@ enum ListSize {
   large;
 }
 
+/// 全局字体大小档位：跟随系统 / 小 / 标准 / 大 / 更大（更大档位可按需扩展）。
+///
+/// 跟随系统独立成档，直接透传系统 `textScaler`（随系统字号实时变化，保留其
+/// 非线性缩放）；其余固定档位使用应用内恒定系数（不随系统跳动）。两者互斥，
+/// 与「默认跟随系统」对齐。
+enum AppFontSize {
+  system(1.0, followsSystem: true),
+  small(0.9),
+  standard(1.0),
+  large(1.1),
+  larger(1.25);
+
+  const AppFontSize(this.scale, {this.followsSystem = false});
+
+  /// 应用内字号放大系数（固定档位生效，跟随系统档忽略）。
+  final double scale;
+
+  /// 是否为「跟随系统」档：根级直接透传系统 textScaler。
+  final bool followsSystem;
+}
+
 /// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
 
@@ -251,6 +272,7 @@ class AppSettings {
     this.enablePredictiveBack = false,
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
+    this.fontSize = AppFontSize.system,
     // 分享链接有效时长（分钟）：5~24*60，默认 2 小时。
     this.shareLinkValidityMinutes = 120,
     // 分享链接播放失败行为：pause 暂停播放 / replace 替换播放（走插件索引）。
@@ -467,6 +489,9 @@ class AppSettings {
   /// 歌曲/歌手/专辑/歌单列表项尺寸。
   final ListSize listSize;
 
+  /// 全局字体大小档位（根级 textScaler 与系统缩放相乘）。
+  final AppFontSize fontSize;
+
   /// 分享链接有效时长（分钟）：分享到服务端后过期丢弃，范围 5~24*60，默认 120（2 小时）。
   final int shareLinkValidityMinutes;
 
@@ -630,6 +655,7 @@ class AppSettings {
     bool? enablePredictiveBack,
     AppLanguage? language,
     ListSize? listSize,
+    AppFontSize? fontSize,
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
@@ -747,8 +773,8 @@ class AppSettings {
       enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
       language: language ?? this.language,
       listSize: listSize ?? this.listSize,
-      shareLinkValidityMinutes:
-          shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
+      fontSize: fontSize ?? this.fontSize,
+      shareLinkValidityMinutes: shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
@@ -910,6 +936,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,
       language: _langFromString(prefs.getString('language') ?? 'system'),
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
+      fontSize: _fontSizeFromString(prefs.getString('fontSize') ?? 'standard'),
       shareLinkValidityMinutes:
           prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
@@ -980,6 +1007,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         'compact' => ListSize.compact,
         'large' => ListSize.large,
         _ => ListSize.medium,
+      };
+
+  AppFontSize _fontSizeFromString(String v) => switch (v) {
+        'system' => AppFontSize.system,
+        'small' => AppFontSize.small,
+        'large' => AppFontSize.large,
+        'larger' => AppFontSize.larger,
+        _ => AppFontSize.system,
       };
 
   PlayerStyle _playerStyleFromString(String v) => switch (v) {
@@ -1106,6 +1141,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
       prefs.setString('language', next.language.name),
       prefs.setString('listSize', next.listSize.name),
+      prefs.setString('fontSize', next.fontSize.name),
       prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
@@ -1273,6 +1309,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setSongClickAction(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(songClickAction: v));
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
   Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
+  Future<void> setFontSize(AppFontSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(fontSize: v));
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));

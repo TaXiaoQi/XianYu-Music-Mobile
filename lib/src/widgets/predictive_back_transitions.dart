@@ -8,10 +8,14 @@ import '../core/application_logger.dart';
 import '../core/settings.dart';
 import 'custom_background.dart';
 
-/// 临时对照开关（预测返回触摸排查）：true 时 [PredictiveBackGestureDetector]
-/// 的认领路径与 PiliNara 的框架内置 [PredictiveBackPageTransitionsBuilder]
-/// 完全一致——纯靠 route 自带接口 + 系统 progress 驱动，不额外自绘快照。
-const bool kFrameworkPredictiveCompare = true;
+/// 预测返回手势认领开关：false 时由 [PredictiveBackGestureDetector] 认领触摸
+/// 手势（正常运行即跟手）；true 时为对照 PiliNara 的框架内置路径，纯靠系统
+/// progress 驱动。
+/// 注：Honor/MagicOS 触摸路径实锤为 progress 恒 0 且 touch 坐标逐帧不变
+/// （引擎从 BackEvent 拿不到真实位移），故 `_synth` 触点位移合成在此 ROM 上
+/// 不激活、页面不跟手；非荣耀机型 progress/touch 正常递增，跟手正常。
+/// 保留引擎 BackEvent 驱动链路，待荣耀 ROM 下发位移后回归。
+const bool kFrameworkPredictiveCompare = false;
 
 /// 让任意 [PageRoute] 参与 Android 预测返回的公共转场组件。
 ///
@@ -155,11 +159,12 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
       _zeroStreak = 0;
       _synth = false;
     }
-    // 首帧打点：实锤 progress 事件形态（没下发 / 下发恒 0 / 正常）。
-    // touch 显式取 dx/dy——release 混淆下 Offset.toString 只剩类名。
+    // 首帧打点（诊断用，一次/手势）：确认 progress 与 touch 形态。正常机型
+    // progress 递增且不需触底；荣耀 ROM 该路径 progress 恒 0 且 touch 逐帧不变
+    // （引擎拿不到真实位移，_synth 因此不激活），留待 ROM 适配后回归对照。
     if (_updateCount == 1) {
       AppLog.debug('backgesture',
-          'update $_routeName progress=${p.toStringAsFixed(3)} '
+          'update $_routeName #$_updateCount progress=${p.toStringAsFixed(3)} '
           'edge=${backEvent.swipeEdge} '
           'touch=${touch == null ? 'null' : '${touch.dx.toStringAsFixed(0)},${touch.dy.toStringAsFixed(0)}'}');
     }

@@ -859,7 +859,6 @@ class _PluginCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final manager = ref.read(pluginManagerProvider.notifier);
 
     // 图标/开关按插件格式分类配色（对齐桌面端，不随主题色变化）。
     // 落雪=绿、MusicFree=橙、BakaMusic(Toskysun)=蓝、其它=红。
@@ -907,162 +906,197 @@ class _PluginCard extends ConsumerWidget {
         children: [
           // 内容：左侧预留拖动图标让位
           Padding(
-            padding: const EdgeInsets.fromLTRB(56, 8, 8, 6),
-            child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 上面行：图标 + [名称(带格式标签) / 版本·作者] + 开关
-            Row(
-              children: [
-                // 图标
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    source.format == PluginFormat.lx
-                        ? Icons.music_note
-                        : Icons.extension,
-                    color: iconColor,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // 名称 + 格式标签（第 1 行）/ 版本·作者（第 2 行）
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              source.name,
-                              style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: iconBg,
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              tagLabel,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: iconColor,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          // 有可用更新：格式标签后追加红色「可更新」标签（对齐桌面端）
-                          if (source.updateAvailable) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: scheme.error.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                tr('可更新'),
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    color: scheme.error,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                          // 有用户变量时，在标签后显示变量入口图标
-                          if (hasVars) ...[
-                            const SizedBox(width: 6),
-                            Icon(Icons.tune_outlined,
-                                size: 15, color: scheme.primary),
-                          ],
-                        ],
-                      ),
-                      if (subText.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subText,
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.outline),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                // 开关（仍在上面行右侧）
-                Switch(
-                  value: source.enabled,
-                  activeThumbColor: iconColor,
-                  onChanged: (_) => manager.toggleEnabled(source.id),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            // 下面一行：详情 / 更新 / 删除，与上方插件图标同一左缘对齐
-            Row(
-              children: [
-                _action(
-                  context,
-                  Icons.info_outline,
-                  tr('详情'),
-                  () => _openDetail(context, ref),
-                ),
-                const SizedBox(width: 4),
-                _action(
-                  context,
-                  Icons.system_update_alt_outlined,
-                  tr('更新'),
-                  () => _checkUpdate(context, ref),
-                  // 有可用更新时更新按钮标红，一眼可辨（对齐桌面端 update-available）
-                  color: source.updateAvailable ? scheme.error : null,
-                ),
-                const SizedBox(width: 4),
-                _action(
-                  context,
-                  Icons.delete_outline,
-                  tr('删除'),
-                  () => _confirmRemove(context, ref, manager),
-                ),
-              ],
-            ),
-          ],
-        ),
-        ),
-        // 拖动 UI：最前方，整条垂直居中；点击立即触发拖拽
+            padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
+            child: _buildBody(context, ref, scheme, iconBg, iconColor,
+                subText, tagLabel),
+          ),
+          // 拖动 UI：最前方，整条垂直居中；点击立即触发拖拽
         Positioned(
           left: 4,
           top: 0,
           bottom: 0,
-          width: 40,
+          width: 36,
           child: Center(
             child: dragEnabled
                 ? _HoldDragStartListener(
                     index: index,
                     // 长按满 1 秒才进入排布，避免一按即拖造成滑动卡顿
                     child: Icon(Icons.drag_indicator,
-                        size: 38, color: scheme.outline),
+                        size: 34, color: scheme.outline),
                   )
                 : Icon(Icons.drag_indicator,
-                    size: 38, color: scheme.outline),
+                    size: 34, color: scheme.outline),
           ),
         ),
       ],
       ),
+    );
+  }
+
+  /// 插件条内容主体：竖屏两行（上=图标+名称+开关，下=详情/更新/删除）；
+  /// 横屏够长，合并为一行（图标 + 名称 + 控件 + 开关），对齐桌面端把控件直接放后面。
+  Widget _buildBody(
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme scheme,
+    Color iconBg,
+    Color iconColor,
+    String subText,
+    String tagLabel,
+  ) {
+    final manager = ref.read(pluginManagerProvider.notifier);
+
+    final icon = Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: iconBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(
+        source.format == PluginFormat.lx
+            ? Icons.music_note
+            : Icons.extension,
+        color: iconColor,
+        size: 22,
+      ),
+    );
+
+    // 名称 + 格式标签 / 版本·作者·描述
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                source.name,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                tagLabel,
+                style: TextStyle(
+                    fontSize: 10,
+                    color: iconColor,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (source.updateAvailable) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: scheme.error.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  tr('可更新'),
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: scheme.error,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+            if (hasVars) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.tune_outlined,
+                  size: 15, color: scheme.primary),
+            ],
+          ],
+        ),
+        if (subText.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            subText,
+            style: TextStyle(fontSize: 12, color: scheme.outline),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+
+    final toggle = Switch(
+      value: source.enabled,
+      activeThumbColor: iconColor,
+      onChanged: (_) => manager.toggleEnabled(source.id),
+    );
+
+    // 操作控件：详情 / 更新 / 删除
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _action(
+          context,
+          Icons.info_outline,
+          tr('详情'),
+          () => _openDetail(context, ref),
+        ),
+        const SizedBox(width: 4),
+        _action(
+          context,
+          Icons.system_update_alt_outlined,
+          tr('更新'),
+          () => _checkUpdate(context, ref),
+          color: source.updateAvailable ? scheme.error : null,
+        ),
+        const SizedBox(width: 4),
+        _action(
+          context,
+          Icons.delete_outline,
+          tr('删除'),
+          () => _confirmRemove(context, ref, manager),
+        ),
+      ],
+    );
+
+    final isWide =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    // 横屏单行：图标 + 名称 + 控件 + 开关（控件直接放后面）
+    if (isWide) {
+      return Row(
+        children: [
+          icon,
+          const SizedBox(width: 12),
+          Expanded(child: info),
+          const SizedBox(width: 8),
+          actions,
+          const SizedBox(width: 4),
+          toggle,
+        ],
+      );
+    }
+
+    // 竖屏两行
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            icon,
+            const SizedBox(width: 12),
+            Expanded(child: info),
+            const SizedBox(width: 6),
+            toggle,
+          ],
+        ),
+        const SizedBox(height: 4),
+        actions,
+      ],
     );
   }
 

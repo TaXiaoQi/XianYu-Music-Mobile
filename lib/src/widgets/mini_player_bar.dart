@@ -343,8 +343,31 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
     final fp = _targetProvider;
     if (widget.registerTarget) {
-      _targetProvider ??= () => _coverRect;
-      FlyingCover.instance.registerTarget(_targetProvider!);
+      // 仅当前（顶层）路由的播放条才注册为飞封面目标：平滑（平移）模式下被
+      // 覆盖的旧页与顶层新页同时在屏，且旧页整体左移 1/4。若旧页播放条在转场
+      // 中「最后注册」（last-wins），封面会飞向屏幕外左侧；覆盖模式下旧页不
+      // 位移、即使误注册也落 x=0 所以看似正常。用 ModalRoute.isCurrent 门控，
+      // 只有当前展示页的播放条是有效目标，被覆盖页在转场中即时注销。
+      final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+      if (!isCurrent) {
+        if (fp != null) {
+          FlyingCover.instance.unregisterTarget(fp);
+          _targetProvider = null;
+        }
+      } else {
+        // 每次读取都实时重算封面全局矩形（不回读缓存 [_coverRect]）：二级页在
+        // 路由转场/首播挂载期间 [_coverRect] 可能在 build 后定格在入场瞬间的
+        // 错位坐标，造成「封面飞向屏幕外左侧、只有拖动播放条重建后才正确」。
+        // 读取时即时 localToGlobal 始终命中播放条当前真实位置；未及就位时回退
+        // 缓存值（由外部 waitTargetReady 兜底）。
+        _targetProvider ??= () {
+          final c = _coverKey.currentContext;
+          final b = c?.findRenderObject() as RenderBox?;
+          if (b == null || !b.hasSize || !b.attached) return _coverRect;
+          return b.localToGlobal(Offset.zero) & b.size;
+        };
+        FlyingCover.instance.registerTarget(_targetProvider!);
+      }
     } else if (fp != null) {
       FlyingCover.instance.unregisterTarget(fp);
       _targetProvider = null;

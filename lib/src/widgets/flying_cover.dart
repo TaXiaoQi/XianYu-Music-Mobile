@@ -51,6 +51,29 @@ class FlyingCover {
     return provider?.call();
   }
 
+  /// 等待迷你播放条就位：直到注册了有效（非空、有尺寸）的目标矩形再返回。
+  ///
+  /// 首曲播放时列表先于播放条挂载，若此时启动飞封面会把封面落到上一页/兜底
+  /// 位置。调用方应先触发播放使播放条挂载并注册，再 `await` 本方法，随后才
+  /// 启动飞封面（「先就位再飞」）；overlay 会逐帧从注册目标实时重取落点，
+  /// 进一步保证即便目标短暂错位（路由转场期间）封面仍落向播放条真实位置。
+  ///
+  /// 正常首帧即返回（播放条 post-frame 注册后约 1~2 帧）；[timeout] 兜底防止
+  /// 播放条压根没挂载时无限等待，超时返回 false 由调用方自行降级。
+  Future<bool> waitTargetReady({
+    Duration timeout = const Duration(milliseconds: 600),
+  }) async {
+    final end = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(end)) {
+      final r = targetRect;
+      if (r != null && !r.isEmpty && r.width > 0 && r.height > 0) {
+        return true;
+      }
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    return targetRect != null;
+  }
+
   /// 触发飞封面动画。返回的 Future 在封面落地时完成：
   /// - `true`：封面正常落地，可继续播放；
   /// - `false`：被更新的飞封面取代，不应再播放（新封面落地后自行触发播放）。
@@ -224,19 +247,12 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
   late final AnimationController _flyCtrl;
   late final Animation<double> _t;
   late final AnimationController _fadeCtrl;
-  late final Rect _toRect;
 
-  /// 起点中心位置（封面中心坐标）。
+  /// 无注册目标时的兜底落点（首曲播放时迷你播放栏尚未挂载）。
+  late final Rect _fallbackRect;
+
+  /// 起点中心位置（封面中心坐标，起飞前排定不再变）。
   late final Offset _p0;
-
-  /// 终点中心位置（迷你条封面中心坐标）。
-  late final Offset _p2;
-
-  /// 弧线控制点（中段最高点）。
-  late final Offset _ctrl;
-
-  /// 目标缩放比例（终点尺寸 / 起点尺寸）。
-  late final double _sx;
 
   /// 固定解码宽度：按起点封面尺寸 × 屏幕密度锁定，飞行中宽度逐帧变化时
   /// 不重解码，避免封面模糊/时隐时现。
@@ -264,11 +280,8 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     // dependOnInheritedWidgetOfExactType 异常。
     final size = MediaQuery.of(context).size;
     final bottom = MediaQuery.of(context).padding.bottom;
-    _toRect = widget.targetProvider?.call() ??
-        // 首曲播放时迷你播放栏尚未挂载：用左下角固定坐标兜底。
-        Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
+    _fallbackRect = Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
 
-    _sx = _toRect.width / widget.fromRect.width;
     _cacheWidth =
         (widget.fromRect.width * MediaQuery.of(context).devicePixelRatio)
             .round();
@@ -276,13 +289,6 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     // 用封面中心点作为位移基准（对齐桌面端 transform-origin: center）。
     // 飞行中封面始终绕自身中心缩放，起点/终点的 topLeft 需补偿中心偏移。
     _p0 = widget.fromRect.center;
-    _p2 = _toRect.center;
-
-    // 弧线控制点：中段 50% 处向上抬升，营造「飞」的弧线感。
-    // 对齐桌面端：midY = dy * 0.5 - min(60, abs(dy) * 0.25 + 24)
-    final dy = _p2.dy - _p0.dy;
-    final lift = math.min(60.0, dy.abs() * 0.25 + 24);
-    _ctrl = Offset.lerp(_p0, _p2, 0.5)! - Offset(0, lift);
 
     _flyCtrl.forward().whenComplete(_landed);
   }
@@ -308,17 +314,6 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     _fadeCtrl.forward().whenComplete(widget.onDone);
   }
 
-  /// 二次贝塞尔弧线：起点 → 控制点 → 终点。
-  /// 返回封面中心点坐标。
-  Offset _bezier(double t) {
-    final u = 1 - t;
-    return _p0 * (u * u) + _ctrl * (2 * u * t) + _p2 * (t * t);
-  }
-
-  /// 缩放：全程从源封面尺寸平滑缩到迷你条封面尺寸（与位移同曲线），
-  /// 视觉上「大封面缩进播放条」，与播放页 Hero 回程一致。
-  double _scale(double t) => 1.0 + (_sx - 1.0) * t;
-
   /// 圆角过渡：从列表行圆角线性渐变到圆形（半径 = 边长一半），
   /// 与全程线性缩放同步，收拢进播放条时与圆形封面无缝衔接。
   double _radius(double t) {
@@ -339,8 +334,19 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
           animation: Listenable.merge([_flyCtrl, _fadeCtrl]),
           builder: (context, _) {
             final t = _t.value;
-            final center = _bezier(t);
-            final scale = _scale(t);
+            // 终点每次构建时实时从注册目标重取（而非定格首次值）：二级页在路由
+            // 转场/首播挂载期间目标矩形可能先落到错位坐标，随后才摆正。逐帧跟随
+            // 能保证封面始终落向播放条当前真实位置，杜绝「飞向屏幕外左侧」。
+            final toRect = widget.targetProvider?.call() ?? _fallbackRect;
+            final toCenter = toRect.center;
+            final dy = toCenter.dy - _p0.dy;
+            final lift = math.min(60.0, dy.abs() * 0.25 + 24);
+            final ctrl = Offset.lerp(_p0, toCenter, 0.5)! - Offset(0, lift);
+            final u = 1 - t;
+            final center =
+                _p0 * (u * u) + ctrl * (2 * u * t) + toCenter * (t * t);
+            final sx = toRect.width / widget.fromRect.width;
+            final scale = 1.0 + (sx - 1.0) * t;
             final w = widget.fromRect.width * scale;
             final h = widget.fromRect.height * scale;
             // 从中心位置反推 topLeft，使封面中心恰好落在贝塞尔曲线上

@@ -311,11 +311,19 @@ class AppLogLifecycleObserver with WidgetsBindingObserver {
 /// 「系统是否下发事件」；进度类证据由认领方 PredictiveBackGestureDetector
 /// 打点（update/commit/cancel）。
 class AppLogBackGestureObserver with WidgetsBindingObserver {
+  static bool _pulledNativeStatus = false;
+
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     AppLog.debug('backgesture',
         'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
         'progress=${backEvent.progress.toStringAsFixed(3)}');
+    // 热启动场景 main 未重跑、init 的 pull 没发过——首支手势时补拉一次
+    // 原生注册结果，保证任何启动路径下「注册状态」必然进日志。
+    if (!_pulledNativeStatus) {
+      _pulledNativeStatus = true;
+      BackGestureNativeBridge.pull();
+    }
     return false;
   }
 }
@@ -332,12 +340,28 @@ class BackGestureNativeBridge {
 
   static const MethodChannel _channel = MethodChannel('xianyu/backgesture');
 
-  /// 启动时调用一次：挂上通道接收，消息正文即原生拼好的打点串。
+  /// 启动时调用一次：挂上通道接收，并主动拉取注册结果。热启动（进程未死
+  /// 切回）main 不重跑，所以 [AppLogBackGestureObserver] 还会在首支手势时
+  /// 兜底再 pull 一次。
+  ///
+  /// 「有 registered 无事件」= ROM 不给观察者优先级下发；「native skip」=
+  /// 设备 API < 34；「pull failed」= 原生侧没有本通道（APK 未含改动）。
   static void init() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'event') {
         AppLog.debug('backgesture', 'native ${call.arguments}');
       }
+    });
+    pull();
+  }
+
+  /// 向原生拉取注册结果（拉取后原生清空，幂等可重复调）。
+  static void pull() {
+    _channel.invokeMethod<String>('pull').then((status) {
+      if (status != null) AppLog.debug('backgesture', status);
+    }).catchError((Object e) {
+      // 不静默：MissingPluginException = 原生侧无本通道（构建未含改动）。
+      AppLog.debug('backgesture', 'pull failed: $e');
     });
   }
 }

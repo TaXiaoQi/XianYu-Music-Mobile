@@ -90,7 +90,6 @@ class GlassTopBar extends ConsumerWidget {
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scheme = Theme.of(context).colorScheme;
     final statusBarHeight = MediaQuery.of(context).padding.top;
     final lowPerf = ref.watch(
       settingsProvider.select(
@@ -117,13 +116,14 @@ class GlassTopBar extends ConsumerWidget {
                 ? Colors.white.withValues(alpha: 0.20)
                 : Colors.white.withValues(alpha: 0.52)));
     final glassFill = fill;
-    final divider = scheme.onSurface.withValues(alpha: 0.06);
 
     final bar = _bar(context, statusBarHeight);
     final inner = Container(
       decoration: BoxDecoration(
         color: glassFill,
-        border: Border(bottom: BorderSide(color: divider)),
+        // 固定顶栏统一不再画底部全局分隔线（用户需求：所有固定顶栏分割线去掉，
+        // 底段紧贴 Tab/来源条等下层内容，避免叠加多余线条）。
+        border: null,
       ),
       child: bar,
     );

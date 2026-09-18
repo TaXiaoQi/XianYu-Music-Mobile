@@ -596,6 +596,23 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/wallpaper'),
           ),
+          _tile(
+            context,
+            icon: Icons.view_list_outlined,
+            title: tr('列表大小'),
+            subtitle: tr('歌曲 / 歌手 / 专辑 / 歌单列表项尺寸'),
+            trailing: Text(listSizeLabel(
+                s?.listSize ?? ListSize.medium)),
+            onTap: () => _pickListSize(context, ref, s),
+          ),
+          _tile(
+            context,
+            icon: Icons.text_fields_outlined,
+            title: tr('字体大小'),
+            subtitle: tr('跟随系统缩放，或选择应用内固定字号'),
+            trailing: Text(_fontSizeLabel(s?.fontSize ?? AppFontSize.system)),
+            onTap: () => _pickFontSize(context, ref, s),
+          ),
         ],
       ),
       // 材质：毛玻璃（伪毛玻璃）与液态玻璃是两种独立材质，默认交给玻璃表面渲染。
@@ -765,20 +782,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               value: s?.playerLiquidGlass ?? true,
               onChanged: (v) => n.setPlayerLiquidGlass(v),
             ),
-        ],
-      ),
-      _sectionHeader(context, tr('列表')),
-      _CardGroup(
-        children: [
-          _tile(
-            context,
-            icon: Icons.view_list_outlined,
-            title: tr('列表大小'),
-            subtitle: tr('歌曲 / 歌手 / 专辑 / 歌单列表项尺寸'),
-            trailing: Text(listSizeLabel(
-                s?.listSize ?? ListSize.medium)),
-            onTap: () => _pickListSize(context, ref, s),
-          ),
         ],
       ),
     ];
@@ -1442,9 +1445,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                     children: [
                       Text(
                         title,
-                        // 与设置导航页 ListTile 同字号/字重：bodyLarge 常规权重。
+                        // 与设置导航页 ListTile 标题统一字号 15（bodyLarge 为 16，
+                        // 显式收敛到 15，保证两级设置页行标题一致）。
                         style: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
                           color: titleColor,
+                          fontSize: 15,
                         ),
                       ),
                       if (subtitle != null) ...[
@@ -1523,6 +1528,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       ThemeModePreference.dark => tr('深色'),
     });
   }
+
+  String _fontSizeLabel(AppFontSize v) => switch (v) {
+    AppFontSize.system => tr('跟随系统'),
+    AppFontSize.small => tr('小'),
+    AppFontSize.standard => tr('标准'),
+    AppFontSize.large => tr('大'),
+    AppFontSize.larger => tr('更大'),
+  };
 
   String _languageLabel(AppLanguage v) => switch (v) {
     AppLanguage.system => tr('跟随系统'),
@@ -2153,6 +2166,49 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setListSize(choice);
+    }
+  }
+
+  Future<void> _pickFontSize(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.fontSize ?? AppFontSize.system;
+    final choice = await showModernChoiceSheet<AppFontSize>(
+      context: context,
+      title: tr('字体大小'),
+      options: [
+        ModernChoiceOption(
+          label: tr('跟随系统'),
+          subtitle: tr('字号随系统字体缩放实时变化'),
+          value: AppFontSize.system,
+        ),
+        ModernChoiceOption(
+          label: tr('小'),
+          subtitle: tr('紧凑排版，同屏更多文字'),
+          value: AppFontSize.small,
+        ),
+        ModernChoiceOption(
+          label: tr('标准'),
+          subtitle: tr('应用设定的默认字号'),
+          value: AppFontSize.standard,
+        ),
+        ModernChoiceOption(
+          label: tr('大'),
+          subtitle: tr('放大 10%，更易阅读'),
+          value: AppFontSize.large,
+        ),
+        ModernChoiceOption(
+          label: tr('更大'),
+          subtitle: tr('放大 25%，清晰醒目'),
+          value: AppFontSize.larger,
+        ),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref.read(settingsProvider.notifier).setFontSize(choice);
     }
   }
 
@@ -3436,7 +3492,7 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
         ),
         ListTile(
           leading: const Icon(Icons.cleaning_services_outlined),
-          title:   Text(tr('清理在线播放缓存')),
+          title:   Text(tr('清理播放缓存')),
           subtitle: Text(
             cur == null
                 ? tr('读取中…')

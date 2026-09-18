@@ -106,7 +106,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              GlassTopBar.height(context, bottom: searchBox) + 12,
+              // 内容紧贴顶栏（含搜索框）底部，去掉额外的 +12 空白，避免固定
+              // 顶栏下顶栏与内容之间出现一段空白；滚动时内容仍会滑入顶栏被模糊。
+              GlassTopBar.height(context, bottom: searchBox),
               16,
               92 + MediaQuery.of(context).padding.bottom,
             ),
@@ -579,10 +581,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ],
     ),
     (
-      tr('腕上联动'),
+      tr('联动'),
       [
         _CategoryEntry(
-          tr('腕上联动'),
+          tr('联动'),
           Icons.watch_outlined,
           tr('手表遥控、云端兜底、传递策略'),
           '/settings/watch',
@@ -704,7 +706,12 @@ class _CategoryTile extends StatelessWidget {
         entry.icon,
         color: selected ? scheme.primary : null,
       ),
-      title: Text(entry.title),
+      title: Text(
+        entry.title,
+        // 与详情页 _tile 标题统一字号 15。注意 dense ListTile 会把 title
+        // 字体强改为 13，这里显式写 15 覆盖（Text.style 优先于 DefaultTextStyle）。
+        style: const TextStyle(fontSize: 15),
+      ),
       subtitle: compact
           ? null
           : Text(
@@ -802,7 +809,11 @@ class _SearchResultTile extends StatelessWidget {
         size: 20,
         color: scheme.primary,
       ),
-      title: Text(tr(item.label)),
+      title: Text(
+        tr(item.label),
+        // 与分类行/详情页统一行标题字号 15。
+        style: const TextStyle(fontSize: 15),
+      ),
       subtitle: Text(
         item.isCategory
             ? tr('设置分类')
@@ -855,6 +866,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '播放页液态玻璃', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '控制卡 液态'),
   _SearchItem(label: '横屏自动隐藏顶栏/底栏', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '横屏 自动隐藏 隐藏 唤回 常显'),
   _SearchItem(label: '列表大小', section: '列表', path: '/settings/appearance', categoryName: '外观', keywords: '歌曲 歌手 专辑 歌单 尺寸'),
+  _SearchItem(label: '字体大小', section: '字体', path: '/settings/appearance', categoryName: '外观', keywords: '字号 字体 文字 大小 缩放 跟随系统'),
 
   // 歌词
   _SearchItem(label: '显示翻译', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '翻译 translation'),

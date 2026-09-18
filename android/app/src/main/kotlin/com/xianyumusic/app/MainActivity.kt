@@ -276,16 +276,19 @@ class MainActivity : AudioServiceActivity() {
      * OnBackAnimationCallback / 观察者优先级均为 API 34 引入，低版本不注册。
      */
     private fun registerBackGestureObserver() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // guard 跳过也要留痕：否则「无 registered」无法区分「API 不足」与「没装上」。
+            storeBackGestureStatus("native skip: API=${Build.VERSION.SDK_INT} < 34")
+            return
+        }
         val callback = object : OnBackAnimationCallback {
             private var frame = 0
             private var committed = false
 
             private fun emit(phase: String, event: BackEvent?) {
-                val touch = event?.touch
                 val msg = "$phase #${++frame} " +
                     "p=${"%.3f".format(event?.progress ?: 0f)} " +
-                    "touch=${touch?.x?.toInt()},${touch?.y?.toInt()} " +
+                    "touch=${event?.touchX?.toInt()},${event?.touchY?.toInt()} " +
                     "edge=${event?.swipeEdge ?: '-'}"
                 android.util.Log.i("XyBack", msg)
                 val messenger = FlutterMessengerHolder.messenger ?: return
@@ -307,17 +310,12 @@ class MainActivity : AudioServiceActivity() {
 
             override fun onBackCancelled() = emit("cancel", null)
 
-            // API 34 的提交通知（无参）；35+ 与带参 onBackCommitted 并存，flag 防重。
+            // 提交通知（无参）：API 34~37 的 OnBackInvokedCallback 仅有这一条提交
+            // 回调（带参 onBackCommitted 在现有平台 SDK 中不存在），flag 防重复触发。
             override fun onBackInvoked() {
                 if (committed) return
                 committed = true
                 emit("commit", null)
-            }
-
-            override fun onBackCommitted(event: BackEvent) {
-                if (committed) return
-                committed = true
-                emit("commit", event)
             }
         }
         runCatching {
@@ -326,9 +324,23 @@ class MainActivity : AudioServiceActivity() {
                 callback,
             )
             backGestureObserver = callback
-            android.util.Log.i(
-                "XyBack", "observer registered (API ${Build.VERSION.SDK_INT})")
+            val ok = "native registered API=${Build.VERSION.SDK_INT} " +
+                "rom=${romVersion()}"
+            android.util.Log.i("XyBack", ok)
+            storeBackGestureStatus(ok)
+        }.onFailure { e ->
+            // 注册失败也要可见：应用日志里「有 registered 无事件」= ROM 不给
+            // 观察者优先级下发；「无 registered」= 注册本身失败。
+            storeBackGestureStatus("native register failed: ${e.message}")
         }
+    }
+
+    /** 暂存注册结果：注册发生在 Dart handler 挂上之前，主动推送会被引擎
+     *  静默丢弃；Dart 就绪后经 pull 主动取走（deepLink 同款就绪门套路）。 */
+    private var backGestureStatus: String? = null
+
+    private fun storeBackGestureStatus(msg: String) {
+        backGestureStatus = msg
     }
 
     private fun processDeepLink(intent: Intent?) {
@@ -766,6 +778,17 @@ class MainActivity : AudioServiceActivity() {
             }
         // 预测返回诊断观察者（messenger 就绪后注册，事件经 xianyu/backgesture 转发）。
         registerBackGestureObserver()
+        // Dart 就绪后主动拉取注册结果（注册先于 Dart handler，推送会丢）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/backgesture")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "pull" -> {
+                        result.success(backGestureStatus)
+                        backGestureStatus = null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     /** 应用安装来源：返回 installer 包名（如 Google Play 的 com.android.vending、

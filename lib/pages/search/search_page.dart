@@ -882,6 +882,10 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
 
     final tabBar = TabBar(
       controller: _tab,
+      // 去掉 Tab 底部默认分隔线：来源切换条紧贴其下方，M3 默认 dividerColor
+      // 会在 tab 与来源气泡之间多画一条横线（固定顶栏下裸露；悬浮模式由
+      // FloatingTabPill 内部已设透明，与悬浮口径一致）。
+      dividerColor: Colors.transparent,
       tabs:   [
         Tab(text: tr('单曲')),
         Tab(text: tr('歌手')),
@@ -1536,6 +1540,20 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
   }
 
+  /// 起飞前同步捕获封面源矩形。
+  ///
+  /// 必须赶在 [_play] 之前调用：首播起播后列表行会重建为「正在播放」态，
+  /// [coverCtx] 指代的 Element 随之失效，`findRenderObject` 取不到矩形，
+  /// 飞封面会因 fromRect 为空被静默跳过（在线结果页此前「飞不到播放条」）。
+  /// 先在点击回调内取到不可变的 [Rect]，再播放、就位、起飞。
+  Rect? _coverSourceRect(BuildContext rowContext, BuildContext? coverCtx) {
+    final ro = (coverCtx ?? rowContext).findRenderObject();
+    if (ro is RenderBox && ro.hasSize) {
+      return ro.localToGlobal(Offset.zero) & ro.size;
+    }
+    return null;
+  }
+
   /// 打开「更多」菜单：复用长按菜单（showSongActionsSheet）。
   void _openActions(int index) {
     final item = _queueItem(index);
@@ -1633,17 +1651,19 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                 ),
                 verticalPadding: m.vPad,
                 onTap: () async {
-                  // 等封面落地后再播放：播放条封面随落地同步更新。
-                  final ok = await launchFlyCover(
-                    rowContext,
-                    coverContext: coverCtx,
-                    coverSize: m.songCover,
-                    vPad: m.vPad,
+                  // 先就位再飞：先同步取源矩形（见 _coverSourceRect，必须在
+                  // _play 前拍下不可变坐标），再起播让播放条挂载注册目标位，
+                  // 最后从源矩形起飞进本页播放条。
+                  final from = _coverSourceRect(rowContext, coverCtx);
+                  _play(i);
+                  if (from == null) return;
+                  if (!await FlyingCover.instance.waitTargetReady()) return;
+                  await FlyingCover.instance.launch(
+                    fromRect: from,
                     songPath: s.path,
                     thumbPath: s.coverThumbPath,
                     radius: m.songRadius,
                   );
-                  if (ok) _play(i);
                 },
               );
             },
@@ -1707,19 +1727,19 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             onTap: () async {
                 debugPrint('[search] online row onTap i=$i');
                 try {
-                  // 等封面落地后再播放：播放条封面随落地同步更新。
-                  final ok = await launchFlyCover(
-                    rowContext,
-                    coverContext: coverCtx,
-                    coverSize: m.songCover,
-                    vPad: m.vPad,
+                  // 先就位再飞：同本地行——先同步取源矩形，再起播挂载播放条
+                  // 目标位，最后从源矩形起飞。
+                  final from = _coverSourceRect(rowContext, coverCtx);
+                  _play(i);
+                  if (from == null) return;
+                  if (!await FlyingCover.instance.waitTargetReady()) return;
+                  await FlyingCover.instance.launch(
+                    fromRect: from,
                     networkUrl: r.img,
                     radius: m.songRadius,
                   );
-                  if (ok) _play(i);
                 } catch (e, st) {
                   debugPrint('[search] launchFlyCover ERROR: $e\n$st');
-                  _play(i);
                 }
               },
             );

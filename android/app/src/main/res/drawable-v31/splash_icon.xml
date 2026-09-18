@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+ 系统闪屏图标（方案 1：背景透明，去掉白色方形卡片）。
-     背景层用透明：系统闪屏底色由 windowSplashScreenBackground =
-     @color/splash_background（昼白 / 夜 #121212）提供，前景 splash_foreground
-     （透明底裸 logo）直接呈现，深浅色统一为「无卡片、仅有 logo」，避免
-     浅色模式下 solid 背景块被部分 ROM 渲染成可见的直角方形。
+<!-- Android 12+ 系统闪屏图标。背景层必须填 @color/splash_background（昼白 /
+     夜 #121212，与 windowSplashScreenBackground 同资源），不能用透明：
+     荣耀/EMUI 系 ROM 会把 adaptive icon 合成到不透明画布上，透明背景层被
+     垫成黑色——浅色模式下日间深色 logo 落在黑色垫底上，整块发黑（2026-09-18
+     实测）。同色背景被垫时方块与窗口底色无缝隐形。
      注意（历史坑，保留备忘）：
-     - EMUI 曾把 adaptive icon 透明背景层垫成黑色（黑方块），故若需照顾
-       EMUI 机型，可退回背景层填 @color/splash_background 的方案；
+     - 背景层透明 = 上述垫黑问题，禁止回退；
      - 前景 splash_foreground 按 0.31 占比预缩放进 108dp 方形画布，并带
        drawable-night 反白变体。启动器图标不受影响。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@android:color/transparent"/>
+    <background android:drawable="@color/splash_background"/>
     <foreground android:drawable="@drawable/splash_foreground"/>
 </adaptive-icon>

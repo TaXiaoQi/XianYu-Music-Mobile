@@ -408,15 +408,25 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               // 默认底色，视觉不变。
               // ScrollOffsetCapture：全局捕获任意页面的竖直滚动，驱动 blur 预算
               // 在滚动期间统一降级（覆盖主 Tab 与推入 root navigator 的二级页）。
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: appSurfaceBg(context),
-                    child: const CustomBackgroundLayer(),
-                  ),
-                  ScrollOffsetCapture(child: child!),
-                ],
+              // 全局字体大小档位：跟随系统档直接透传系统 textScaler（随系统
+              // 字号实时变化、保留非线性），固定档使用应用内恒定系数（不随系统
+              // 跳动）。「跟随系统」为默认档。
+              final fontSize = settings?.fontSize ?? AppFontSize.system;
+              final textScaler = fontSize.followsSystem
+                  ? MediaQuery.textScalerOf(context)
+                  : TextScaler.linear(fontSize.scale);
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ColoredBox(
+                      color: appSurfaceBg(context),
+                      child: const CustomBackgroundLayer(),
+                    ),
+                    ScrollOffsetCapture(child: child!),
+                  ],
+                ),
               );
             },
           );
