@@ -12,10 +12,6 @@ import 'dart:io';
 
 import 'mv_source.dart';
 
-/// 统一把 http 直链升为 https（移动端播放器强制 HTTPS，与 MvSource.fromJson 一致）。
-String _https(String url) =>
-    url.toLowerCase().startsWith('http://') ? 'https://${url.substring(7)}' : url;
-
 /// 取多个候选字符串里的第一个非空（用于字段名不一的兼容取值）。
 String _firstString(List<dynamic Function()> getters) {
   for (final g in getters) {
@@ -183,7 +179,7 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
       : (backupVal is String && backupVal.isNotEmpty ? [backupVal] : const <dynamic>[]);
   for (final b in list) {
     final s = b?.toString() ?? '';
-    if (s.toLowerCase().startsWith('http')) backupUrls.add(_https(s));
+    if (s.toLowerCase().startsWith('http')) backupUrls.add(s);
     if (backupUrls.length >= 4) break;
   }
 
@@ -206,7 +202,7 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
       .toList();
 
   return MvSource(
-    url: _https(url),
+    url: url,
     headers: const {'Referer': 'https://www.kugou.com/', 'User-Agent': ua},
     videoQuality: selected.$1,
     mimeType: 'video/mp4',
@@ -375,11 +371,11 @@ Future<MvSource?> resolveBilibiliVideoSource(
   final backupUrls = <String>[];
   void addBackup(dynamic val) {
     if (val is String && val.toLowerCase().startsWith('http')) {
-      backupUrls.add(_https(val));
+      backupUrls.add(val);
     } else if (val is List) {
       for (final b in val) {
         final s = b?.toString() ?? '';
-        if (s.toLowerCase().startsWith('http')) backupUrls.add(_https(s));
+        if (s.toLowerCase().startsWith('http')) backupUrls.add(s);
       }
     }
   }
@@ -401,7 +397,7 @@ Future<MvSource?> resolveBilibiliVideoSource(
   }
 
   return MvSource(
-    url: _https(directUrl),
+    url: directUrl,
     headers: const {'Referer': 'https://www.bilibili.com/'},
     videoQuality: qualityLabel,
     mimeType: mimeType,

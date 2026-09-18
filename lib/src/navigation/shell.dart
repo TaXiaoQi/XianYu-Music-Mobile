@@ -627,7 +627,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         // master-detail 按返回回主页、侧边栏切走）则作废——否则转回竖屏会把
         // 用户推回早已离开的页，形成「每次翻转都被塞回设置」的死循环。
         final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
-        final onShell = top == '/' || top == '/home' || top == '/profile';
+        // 壳层根路径判定复用 _rootPaths（'/'、'/home'、'/mine'）——此前硬编码
+        // '/profile'，而「我的」分支实际路径是 '/mine'，导致从我的页进入的
+        // 本地/收藏/歌单/下载二级页转回竖屏时 onShell 恒 false、恢复 push
+        // 永不执行（只停在我的页，进不了详情页）。
+        final onShell = _isRootPathOf(top);
         final onSettings = top == '/settings';
         if (onSettings && kLandscapeSettingPaths.contains(back)) {
           // 仍在设置横屏 master-detail：恢复最后停留的分类。

@@ -119,8 +119,8 @@ class MvState {
 /// 在线歌 path 是 `lx://` / `plugin://` 统一前缀、不含歌 ID；标题+歌手在
 /// 专辑/榜单/MV 合集类列表行上可能大量相同（同名 EP、合集多首）。只凭
 /// path+标题+歌手会把不同歌误判为同一首，导致 MV 切歌不重建（视频不换）。
-/// 优先用音乐层的唯一键（mvHash/mvid/bvid/aid/vid/songmid...），都缺才
-/// 退回 path+标题+歌手。
+/// 优先用音乐层的唯一键（mvHash/mvid/bvid/aid/vid/songmid...），标题+歌手
+/// 恒参与拼接兜底（见实现内注释）。
 String _songIdentity(QueueItem? c) {
   if (c == null) return '';
   final song = mvSongOf(c);
@@ -130,17 +130,34 @@ String _songIdentity(QueueItem? c) {
     'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
   ]) {
     final v = song[k];
-    if (v != null && v.toString().trim().isNotEmpty) {
+    if (_isValidIdValue(v)) {
       buf.add('$k=$v');
       break; // 命中任一音乐层唯一键即可，不必把同首歌多个 id 字段都拼进去
     }
   }
-  if (buf.isNotEmpty) return buf.join('&');
-  return '${c.path}|${c.title}|${c.artist}';
+  // 标题+歌手恒参与身份：唯一键缺失或只是占位值（如 mv:0）时仍能区分不同
+  // 歌，不会「切歌 MV 不换」；同一首歌标题/歌手不变，不影响「同一首」判定
+  // （换源重解析场景身份变化，允许重建 MV）。
+  buf.add('${c.title}|${c.artist}');
+  return buf.join('&');
 }
 
-/// 同一首歌判断：音乐层唯一标识优先（mv/bvid/aid/vid...），缺省回退
-/// path+标题+歌手组合。
+/// 键值是否构成有效唯一标识：0/false/null/空容器等「占位值」toString 非空
+/// 但不指向具体歌（很多插件对无 MV 的歌填 mv:0 / mvdata:{}），必须跳过，
+/// 否则不同歌命中同一占位键被误判为同一首——MV 切歌不重建（视频不换）。
+bool _isValidIdValue(Object? v) {
+  if (v == null) return false;
+  final s = v.toString().trim();
+  return s.isNotEmpty &&
+      s != '0' &&
+      s != 'false' &&
+      s != 'null' &&
+      s != '{}' &&
+      s != '[]';
+}
+
+/// 同一首歌判断：音乐层唯一标识 + 标题+歌手组合（占位值过滤后仍命中
+/// 同键且同标题歌手才算同一首，杜绝「切歌 MV 不换」）。
 bool _sameSong(QueueItem? a, QueueItem? b) {
   if (identical(a, b)) return true;
   if (a == null || b == null) return false;
@@ -382,6 +399,11 @@ class MvNotifier extends StateNotifier<MvState> {
       for (var i = start; i < ladder.length && i < start + 3; i++) ladder[i],
     ];
   }
+
+  /// 为下载解析指定档位的 MV 源（不启动播放、不写播放状态，对齐桌面端
+  /// resolveDownloadSource）。沿用播放同款降档候选链；全部失败返回 null。
+  Future<MvSource?> resolveDownloadSource(QueueItem song, String quality) =>
+      _resolve(mvSongOf(song), quality);
 
   /// 单档解析：插件 getMvSource → 宿主兜底（酷狗 mvHash / B 站 BV·AV）。
   Future<MvSource?> _resolveQuality(

@@ -16,6 +16,7 @@ import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../player/media_url.dart';
+import '../player/mv_source.dart';
 import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_provider.dart';
@@ -214,6 +215,46 @@ class DownloadManager extends StateNotifier<DownloadState> {
   bool get hasCustomDownloadDir =>
       (!Platform.isAndroid && !Platform.isIOS) ||
       (_ref.read(settingsProvider).valueOrNull?.downloadPath ?? '').isNotEmpty;
+
+  /// MV 视频下载：按命名风格生成「基名 (画质).mp4」→ 直链（含备用链依次
+  /// 重试）流式写入下载目录。对齐桌面端 MV 下载：不做音频收尾（歌词/封面/
+  /// 元数据）也不写下载历史，保存即完成，结果由调用方提示。
+  Future<String> downloadMvVideo({
+    required QueueItem item,
+    required MvSource source,
+    required String qualityKey,
+  }) async {
+    final settings = _ref.read(settingsProvider).valueOrNull;
+    final dir = await _downloadDir();
+    final base = await buildDownloadBasename(
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      fileNameStyle: settings?.downloadFileNameStyle ?? 'artist-title',
+    );
+    final destPath = await resolveDownloadPath(
+      directory: dir,
+      fileName: '$base ($qualityKey).mp4',
+      overwriteExisting: settings?.overwriteExisting ?? false,
+    );
+    final headersJson = jsonEncode(source.headers);
+    Object? lastError;
+    for (final candidate in [source.url, ...source.backupUrls]) {
+      try {
+        await downloadOnlineSong(
+          url: candidate,
+          destPath: destPath,
+          headersJson: headersJson,
+        );
+        return destPath;
+      } catch (e) {
+        lastError = e;
+        ApplicationLogManager.instance
+            .warn('下载', 'MV 直链下载失败，尝试备用链：$e');
+      }
+    }
+    throw lastError ?? StateError(tr('MV 下载失败'));
+  }
 
   /// 下载前校验：①未设置自定义下载目录时提示；②Android 检查
   /// 「所有文件访问」（MANAGE_EXTERNAL_STORAGE）状态并给出非阻断提示——

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ 系统闪屏图标 · 夜间（日间见 drawable-v31 同名文件）。
+     深色保持裸 logo 方案：背景层 @color/splash_background 夜间解析为
+     #121212，与窗口底同色，即使 HyperOS 垫出方形容器也因对比低不可见；
+     前景 splash_foreground 命中 drawable-night-*dpi 反白变体。
+     背景层禁止透明：荣耀/EMUI 系 ROM 会垫成不透明画布，透明背景层被垫黑，
+     反白 logo 会落在黑色垫底上（2026-09-18 实测）。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/splash_background"/>
+    <foreground android:drawable="@drawable/splash_foreground"/>
+</adaptive-icon>

@@ -514,17 +514,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
           // 模糊封面铺满全屏，全模式恒显示（抖音式沉浸底衬）：非 MV 时是
           // 页面主背景；MV 播放时视频层盖在其上，letterbox 空隙透出模糊
-          // 封面而非纯黑。
+          // 封面而非纯黑。MV 开关不改变背景外观（毛玻璃恒定，无跳变）。
           Positioned.fill(
             child: _BlurredCoverBackground(
               current: current,
-              mvActive: mv.ready,
             ),
           ),
           // MV 背景视频层（仅横屏挂底层）：等比缩放到完全可见（contain），
           // 一个方向贴满屏幕——4:3 视频上下贴满、左右留黑；21:9 视频左右
           // 贴满、上下留黑。留黑处透出模糊封面底衬，上压 black/40 保证前景
-          // 文字仍可读。竖屏时视频嵌在内容区居中显示（flexible 槽 _MvVideoStage）。
+          // 文字仍可读。竖屏时视频由本 Stack 贴最前层居中悬浮（见下方）。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
             Positioned.fill(
               child: LayoutBuilder(builder: (context, cons) {
@@ -589,6 +588,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
         ),
       ),
+        // 竖屏：MV 视频贴最前层——页面零重排（封面/歌词/控件原样保留），
+        // 视频等比 contain 居中悬浮其上，letterbox 透出原页面与模糊背景，
+        // 开/关 MV 均无背景与布局跳变。视频纹理不吸收手势，下层控件可用。
+        if (!landscapeNow && mv.ready && mv.controller != null)
+          Positioned.fill(
+            child: Center(
+              child: LayoutBuilder(builder: (context, cons) {
+                final ar = mv.controller!.value.aspectRatio;
+                final w = cons.maxWidth;
+                final h = cons.maxHeight;
+                // contain：等比取小方向贴满，不裁切
+                final vw = w >= h * ar ? h * ar : w;
+                final vh = w >= h * ar ? h : w / ar;
+                return SizedBox(
+                  width: vw,
+                  height: vh,
+                  child: VideoPlayer(mv.controller!),
+                );
+              }),
+            ),
+          ),
         ],
       ),
     );
@@ -605,10 +625,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
-    // MV 视频就绪时页面让渡：竖屏隐藏封面/歌词预览、中区改挂视频（居中）；
-    // 横屏中区整体隐藏（视频已全屏铺在底层），顶栏/底栏控件保留。
-    final mv = ref.watch(mvProvider);
-    final mvReady = mv.ready;
+    // MV 视频由外层 Stack 贴最前层展示（竖屏悬浮居中/横屏底层全屏），
+    // 页面本身零重排：封面、歌词、顶栏/底栏控件在 MV 开关全程原样保留。
     // 竖屏＝默认封面页；横屏＝独立一套横向 UI，两套完全分开（见 LandscapeGate）。
     final landscapeBody = _buildLandscapeAdvancedBody(
       notifier: notifier,
@@ -640,7 +658,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
                 Expanded(
                   child: Text(
-                    _showLyrics && !mvReady ? tr('歌词') : tr('正在播放'),
+                    _showLyrics ? tr('歌词') : tr('正在播放'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 15,
@@ -654,8 +672,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ],
             ),
           ),
-          if (!_showLyrics && !mvReady) const SizedBox(height: 12),
-          if (!_showLyrics && !mvReady)
+          if (!_showLyrics) const SizedBox(height: 12),
+          if (!_showLyrics)
             GestureDetector(
               onTap: () {
                 setState(() => _showLyrics = true);
@@ -696,12 +714,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ),
             ),
         ],
-        // 中区唯一 Expanded：MV 就绪时让渡给视频（竖屏居中 letterbox，
-        // 抖音式竖屏看横屏，模糊封面做底衬）；封面模式为 3 行 Mini 歌词，
-        // 歌词模式为歌词视图。
-        flexible: mvReady
-            ? _MvVideoStage(controller: mv.controller)
-            : _showLyrics
+        // 中区唯一 Expanded：封面模式为 3 行 Mini 歌词，歌词模式为歌词视图
+        // （MV 视频由外层贴最前层展示，中区不再让渡重排）。
+        flexible: _showLyrics
                 ? ClipRect(
                     child: RepaintBoundary(
                       child: _LyricsView(
@@ -740,8 +755,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ),
         ],
-        // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮（MV 让渡时不显示）。
-        overlay: _showLyrics && !mvReady
+        // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮。
+        overlay: _showLyrics
             ? Positioned(
                 top: 4,
                 right: 12,
@@ -959,26 +974,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   @override
   void dispose() {
     super.dispose();
-  }
-}
-
-/// MV 竖屏视频舞台：居中 letterbox（抖音式竖屏看横屏视频），上下留空
-/// 透出底衬模糊封面。横屏不走此组件（视频由页面底层 Positioned.fill 铺满）。
-class _MvVideoStage extends StatelessWidget {
-  const _MvVideoStage({this.controller});
-
-  final VideoPlayerController? controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = controller;
-    if (c == null || !c.value.isInitialized) return const SizedBox.shrink();
-    return Center(
-      child: AspectRatio(
-        aspectRatio: c.value.aspectRatio,
-        child: VideoPlayer(c),
-      ),
-    );
   }
 }
 
@@ -1303,10 +1298,7 @@ class _TraditionalPlayerLayoutState
 
   /// 竖屏：顶栏 + 封面/歌词上下翻页 + 动作行 + 进度条 + 播放控制。
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
-    // MV 就绪时中区让渡给视频（居中 letterbox，模糊封面做底衬）；
-    // PageView 挂 Offstage 保温，关 MV 后封面/歌词状态不丢。
-    final mv = ref.watch(mvProvider);
-    final mvReady = mv.ready;
+    // MV 视频由外层 Stack 贴最前层展示，本页零重排（封面/歌词原样保留）。
     return _PlayerShell(
       current: current,
       top: [
@@ -1319,42 +1311,38 @@ class _TraditionalPlayerLayoutState
       flexible: Stack(
         fit: StackFit.expand,
         children: [
-          Offstage(
-            offstage: mvReady,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: 2,
-              allowImplicitScrolling: true,
-              onPageChanged: (i) {
-                if (_showLyrics != (i == 1)) {
-                  setState(() => _showLyrics = i == 1);
-                }
-              },
-              itemBuilder: (context, i) {
-                if (i == 0) {
-                  return _KeepAliveWrap(child: _buildCoverSection(context));
-                }
-                return _KeepAliveWrap(
-                  child: ClipRect(
-                    child: RepaintBoundary(
-                      child: _LyricsView(
-                        key: _lyricsKey,
-                        current: current,
-                        visible: _showLyrics,
-                        onTap: () {},
-                        onRomajiAvailable: (has) {
-                          if (_lyricsViewHasRomaji != has) {
-                            setState(() => _lyricsViewHasRomaji = has);
-                          }
-                        },
-                      ),
+          PageView.builder(
+            controller: _pageController,
+            itemCount: 2,
+            allowImplicitScrolling: true,
+            onPageChanged: (i) {
+              if (_showLyrics != (i == 1)) {
+                setState(() => _showLyrics = i == 1);
+              }
+            },
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                return _KeepAliveWrap(child: _buildCoverSection(context));
+              }
+              return _KeepAliveWrap(
+                child: ClipRect(
+                  child: RepaintBoundary(
+                    child: _LyricsView(
+                      key: _lyricsKey,
+                      current: current,
+                      visible: _showLyrics,
+                      onTap: () {},
+                      onRomajiAvailable: (has) {
+                        if (_lyricsViewHasRomaji != has) {
+                          setState(() => _lyricsViewHasRomaji = has);
+                        }
+                      },
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
-          if (mvReady) _MvVideoStage(controller: mv.controller),
         ],
       ),
       // 竖屏播放控件：动作行 + 进度条 + 播放控制，留白再上移一格避免贴底。
@@ -3172,13 +3160,9 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
 /// 模糊用 [ImageFiltered] 作用于图片本身而非 BackdropFilter——静态图
 /// 只渲染一次即缓存，不参与每帧合成。
 class _BlurredCoverBackground extends StatelessWidget {
-  const _BlurredCoverBackground({required this.current, this.mvActive = false});
+  const _BlurredCoverBackground({required this.current});
 
   final QueueItem? current;
-
-  /// MV 播放中：模糊背景降级为「低分辨率放大拉丝」（抖音式），不再跑
-  /// 高斯模糊 shader——视频纹理合成 + 全屏 blur 双载会把弱 GPU 拖成 PPT。
-  final bool mvActive;
 
   @override
   Widget build(BuildContext context) {
@@ -3201,8 +3185,7 @@ class _BlurredCoverBackground extends StatelessWidget {
           _AnimatedPlayerCover(
             current: current,
             role: 'bg',
-            builder: (context, cur) =>
-                _blurCoverLayer(context, cur, scheme, mvActive: mvActive),
+            builder: (context, cur) => _blurCoverLayer(context, cur, scheme),
           ),
           // 桌面端同款渐晕：左右 black/6 + 底部 black/22（歌词区在下部，
           // 底部压暗直接提升可读性），顶部仅 black/3 保持通透。
@@ -3233,12 +3216,10 @@ class _BlurredCoverBackground extends StatelessWidget {
     );
   }
 
-  /// 单首歌的模糊铺底层：深色兜底 + 1/8 预烘焙高斯模糊封面铺满；
-  /// MV 激活时（mvActive）去掉高斯模糊 shader，仅靠低分辨率小图放大
-  /// 双线性拉丝实现柔化（抖音式背景），把 GPU 让给视频合成。
-  Widget _blurCoverLayer(
-      BuildContext context, QueueItem? item, ColorScheme scheme,
-      {bool mvActive = false}) {
+  /// 单首歌的模糊铺底层：深色兜底 + 1/8 预烘焙高斯模糊封面铺满。
+  /// 恒定毛玻璃：MV 开关不改变背景外观（模糊作用于 1/8 小图，GPU 开销
+  /// 可忽略，视频播放期间保持同一外观，无背景跳变）。
+  Widget _blurCoverLayer(BuildContext context, QueueItem? item, ColorScheme scheme) {
     // 无歌（理论上不达，外层已拦截）：仅深色兜底。
     if (item == null) {
       return Container(color: Color.lerp(scheme.surface, Colors.black, 0.6));
@@ -3264,9 +3245,8 @@ class _BlurredCoverBackground extends StatelessWidget {
       -0.0809, -0.2717, 1.2575, 0, -0.08, //
       0, 0, 0, 1, 0,
     ];
-    // 封面铺满全屏：常规态叠大半径高斯模糊（MusicFree blurRadius=50），
-    // MV 激活态跳过 ImageFiltered——ImageFilterLayer 会阻断 raster cache
-    // 且每帧执行 blur pass，与视频纹理合成叠加是「一帧一帧播放」的主因。
+    // 封面铺满全屏：恒定叠大半径高斯模糊（MusicFree blurRadius=50），
+    // 打开/收回/MV 开关全程外观不变，消除一切背景观感跳变。
     final coverChild = CoverImage(
       songPath: item.path,
       networkUrl: item.coverUrl,
@@ -3292,23 +3272,17 @@ class _BlurredCoverBackground extends StatelessWidget {
       ),
     );
 
-    // MV 激活：仅色调矩阵 + 低分辨率放大拉丝，跳过 blur shader。
-    final inner = mvActive
-        ? ColorFiltered(
-            colorFilter: const ColorFilter.matrix(toneMatrix),
-            child: coverChild,
-          )
-        : ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: sigma,
-              sigmaY: sigma,
-              tileMode: TileMode.decal,
-            ),
-            child: ColorFiltered(
-              colorFilter: const ColorFilter.matrix(toneMatrix),
-              child: coverChild,
-            ),
-          );
+    final inner = ImageFiltered(
+      imageFilter: ImageFilter.blur(
+        sigmaX: sigma,
+        sigmaY: sigma,
+        tileMode: TileMode.decal,
+      ),
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.matrix(toneMatrix),
+        child: coverChild,
+      ),
+    );
 
     return FittedBox(
       fit: BoxFit.cover,
@@ -3694,6 +3668,9 @@ class _TitleRow extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     child: Text(
                       mvQualityShown ? mvQuality : _qualityLabel(currentQuality),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
@@ -3830,6 +3807,13 @@ void _showQualitySheet(BuildContext context, WidgetRef ref) {
 void _showDownloadQualitySheet(
     BuildContext context, WidgetRef ref, QueueItem song) {
   final notifier = ref.read(playerProvider.notifier);
+  // MV 开启中：下载按钮切 MV 画质档（对齐桌面端底栏同款联动——MV 态下载
+  // 即下视频文件，选档后解析直链落盘下载目录）。
+  final mv = ref.read(mvProvider);
+  if (mv.requested && mv.ready && mv.source != null) {
+    showSheetDialog<void>(context, (_) => _MvDownloadSheet(song: song));
+    return;
+  }
   showSheetDialog<void>(
   context,
   (_) => _DownloadQualitySheet(notifier: notifier, song: song),
@@ -4215,6 +4199,131 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
     final overlay = Overlay.of(context, rootOverlay: true);
     Navigator.of(context).pop();
     showXianYuToastByOverlay(overlay, err ?? tr('画质已切换为${q.label}'));
+  }
+}
+
+/// MV 下载画质选择弹窗：MV 开启时由下载按钮唤起（对齐桌面端底栏 MV 态
+/// 下载联动），点选档位后按该档解析直链并下载到下载目录（背景执行，
+/// 结果 toast 提示）。
+class _MvDownloadSheet extends ConsumerStatefulWidget {
+  const _MvDownloadSheet({required this.song});
+
+  final QueueItem song;
+
+  @override
+  ConsumerState<_MvDownloadSheet> createState() => _MvDownloadSheetState();
+}
+
+class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
+  bool _downloading = false;
+
+  Future<void> _download(BuildContext ctx, MvQuality q) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    // OverlayState/notifier 先于 await 与 pop 捕获：OverlayState 不随弹窗
+    // 销毁而失效；notifier 对象在 State dispose 后仍可安全调用。
+    final overlay = Overlay.of(ctx, rootOverlay: true);
+    final mvNotifier = ref.read(mvProvider.notifier);
+    final dlNotifier = ref.read(downloadProvider.notifier);
+    if (!await dlNotifier.requireDownloadDir(ctx)) {
+      if (mounted) setState(() => _downloading = false);
+      return;
+    }
+    if (!ctx.mounted) return;
+    Navigator.of(ctx).pop();
+    _runDownload(overlay, mvNotifier, dlNotifier, q);
+  }
+
+  /// 弹窗已关闭后的后台下载：解析直链（url+备用链）→ 落盘下载目录。
+  Future<void> _runDownload(
+    OverlayState overlay,
+    MvNotifier mvNotifier,
+    DownloadManager dlNotifier,
+    MvQuality q,
+  ) async {
+    final quality = q.key.toUpperCase();
+    try {
+      final source = await mvNotifier.resolveDownloadSource(
+        widget.song,
+        q.key,
+      );
+      if (source == null || source.url.isEmpty) {
+        throw StateError(tr('此歌曲无 MV 或画质不支持'));
+      }
+      await dlNotifier.downloadMvVideo(
+        item: widget.song,
+        source: source,
+        qualityKey: quality,
+      );
+      showXianYuToastByOverlay(
+        overlay,
+        tr('MV 已下载（{quality}），保存到下载目录', {'quality': quality}),
+      );
+    } catch (e) {
+      showXianYuToastByOverlay(
+        overlay,
+        tr('MV 下载失败：{e}', {'e': e.toString()}),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mv = ref.watch(mvProvider);
+    final qualities = mv.source?.availableVideoQualities ?? const <MvQuality>[];
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              child: Text(
+                tr('下载 MV'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (qualities.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: Center(
+                  child: Text(tr('暂无可下载画质')),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final q in qualities) ...[
+                      ModernOptionTile<String>(
+                        option: ModernChoiceOption(
+                          label: _mvQualityTileLabel(q),
+                          value: q.key,
+                        ),
+                        isSelected: false,
+                        onTap: _downloading ? () {} : () => _download(context, q),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
