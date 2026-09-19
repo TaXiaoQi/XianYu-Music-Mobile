@@ -1,5 +1,3 @@
-// 繁体精确词典（opencc cn→twp 全量转换）
-// 由 tools 脚本从桌面端词典与 opencc 数据生成，请勿手工修改。
 
 const Map<String, String> twDict = {
   ' · 文件缺失': ' · 檔案缺失',

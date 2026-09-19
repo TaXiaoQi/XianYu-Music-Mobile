@@ -8,15 +8,6 @@ import '../sync/favorites_sync_state.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/sheet_dialog.dart';
 
-/// 收藏删除范围确认（对齐桌面收藏删除范围弹窗）。
-///
-/// [resolveFavoriteDeleteScope]：已登录且任一 path 在「上次已同步」集合中时
-/// 弹「删除本地/删除全部/仅保留本地」三选一；否则返回 null（调用方走原确认流程）。
-/// [applyFavoriteDeleteScope]：按范围应用删除动作。
-
-/// 收藏是否存在云端副本（已登录且任一 path 在「上次已同步」集合中）。
-/// 调用方先据此分流：false → 未同步走原普通确认框；true → 弹范围三选一，
-/// 此时 [resolveFavoriteDeleteScope] 返回 null 即用户取消，应直接中止不再弹普通框。
 Future<bool> shouldAskFavoriteDeleteScope(
     WidgetRef ref, List<String> paths) async {
   final api = ref.read(accountApiProvider);
@@ -27,7 +18,6 @@ Future<bool> shouldAskFavoriteDeleteScope(
   return paths.any(synced.contains);
 }
 
-/// 已同步收藏弹出删除范围选择；返回 'local' | 'all' | 'cloud'，取消返回 null。
 Future<String?> resolveFavoriteDeleteScope(
     BuildContext context, WidgetRef ref, List<String> paths) async {
   if (!await shouldAskFavoriteDeleteScope(ref, paths)) return null;
@@ -95,10 +85,6 @@ Future<String?> resolveFavoriteDeleteScope(
   return scope;
 }
 
-/// 按范围应用收藏删除：
-/// - local：写「仅删本地」墓碑后执行 [onLocalRemove]（上传时排除出 delete_paths、下载合并跳过回灌）
-/// - all：直接执行 [onLocalRemove]（diff 天然传播到云端）
-/// - cloud：立即删除云端副本并写「仅保留本地」墓碑，本机不动
 Future<void> applyFavoriteDeleteScope(
   BuildContext context,
   WidgetRef ref,
@@ -112,13 +98,12 @@ Future<void> applyFavoriteDeleteScope(
       await onLocalRemove();
     case 'all':
       await onLocalRemove();
-    default: // 'cloud'
+    default:
       final ok = await _deleteCloud(context, ref, paths);
       if (ok) await FavoritesSyncState.addLocalOnlyPaths(paths);
   }
 }
 
-/// 删除云端收藏副本（merge 模式空集合 + delete_paths）；失败提示并返回 false。
 Future<bool> _deleteCloud(
     BuildContext context, WidgetRef ref, List<String> paths) async {
   try {

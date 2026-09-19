@@ -6,7 +6,6 @@ import 'package:record/record.dart';
 import '../rust/api.dart' as frb;
 import '../i18n/i18n.dart';
 
-/// 单条识别匹配结果（酷狗识曲返回，映射为可播放的歌曲信息）。
 class RecognizeMatch {
   final String name;
   final String singer;
@@ -31,7 +30,6 @@ class RecognizeMatch {
   });
 }
 
-/// 听歌识曲服务：麦克风采集 8000Hz/16bit/单声道 PCM → Rust 酷狗指纹识别。
 class RecognizeService {
   static const maxSeconds = 10;
 
@@ -40,10 +38,6 @@ class RecognizeService {
   Timer? _timer;
   StreamSubscription? _sub;
 
-  /// 采集 10 秒麦克风音频并识别。
-  ///
-  /// [onProgress]：0~1 采集进度；[onRecorded]：采集完成、进入识别阶段。
-  /// 用户取消时抛出「识别已取消」。
   Future<List<RecognizeMatch>> recordAndRecognize({
     void Function(double progress)? onProgress,
     void Function()? onRecorded,
@@ -53,7 +47,6 @@ class RecognizeService {
       throw   RecognizeException(tr('需要麦克风权限，请在系统设置中授权'));
     }
 
-    // 采集 8000Hz/16bit/单声道 PCM，与 Rust 识别接口要求一致
     final stream = await _recorder.startStream(const RecordConfig(
       encoder: AudioEncoder.pcm16bits,
       sampleRate: 8000,
@@ -80,8 +73,7 @@ class RecognizeService {
 
     try {
       await completer.future.timeout(const Duration(seconds: maxSeconds + 2));
-    } on TimeoutException {
-      // 采集异常超时，直接用已采集数据
+    } on TimeoutException catch (_) {
     } finally {
       _timer?.cancel();
       _timer = null;
@@ -97,7 +89,6 @@ class RecognizeService {
       throw   RecognizeException(tr('未采集到音频，请靠近音源重试'));
     }
 
-    // Rust 识别（酷狗指纹接口）
     final responseJson = await frb.recognizeWithPcm(pcm: chunks);
     final response = jsonDecode(responseJson) as Map<String, dynamic>;
     final status = (response['status'] as num?)?.toInt() ?? 0;
@@ -107,7 +98,6 @@ class RecognizeService {
     return _parseResponse(response['body'] as String? ?? '');
   }
 
-  /// 取消识别：停止采集并通知 Rust 取消进行中的请求。
   Future<void> cancel() async {
     _cancelled = true;
     _timer?.cancel();
@@ -117,12 +107,10 @@ class RecognizeService {
     try {
       await _recorder.stop();
     } catch (_) {
-      // 未在录音时忽略
     }
     try {
       await frb.cancelRecognizeSystemAudio();
     } catch (_) {
-      // 忽略
     }
   }
 
@@ -140,7 +128,6 @@ class RecognizeService {
       throw   RecognizeException(tr('识别响应解析失败'));
     }
     if (parsed is! Map) return const [];
-    // 酷狗成功状态 status === 1；非 1 视为无匹配
     if ((parsed['status'] as num?)?.toInt() != 1) return const [];
     final list = parsed['data'];
     if (list is! List) return const [];
@@ -237,7 +224,6 @@ class RecognizeService {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  /// 复现桌面端 formatCoverUrl：替换 {size}、补全协议、统一 https、替换旧域名。
   String? _formatCover(Map<String, dynamic> item, Map<String, dynamic> albumMap) {
     final raw = _pickString([
       item['union_cover'],
@@ -254,7 +240,6 @@ class RecognizeService {
   }
 }
 
-/// 识曲异常。
 class RecognizeException implements Exception {
   final String message;
   const RecognizeException(this.message);

@@ -13,13 +13,11 @@ import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/widgets/glass_appbar.dart';
 
-// 与桌面端 SettingsAudioConvert.vue 对齐的 9 种输出格式
-// ffmpeg_kit 可编码的有 7 种；wma / ape 只有解码器没有好的开源编码器
 class _Format {
   final String value;
   final String label;
   final String ext;
-  final String encoderArg; // ffmpeg -c:a 参数
+  final String encoderArg;
   final String extraArgs;
   final bool lossless;
   const _Format({
@@ -87,7 +85,6 @@ const _FORMATS = [
       encoderArg: 'wmav2',
       extraArgs: '-b:a 192k',
       lossless: false),
-  // APE: ffmpeg 没有可靠的无损 APE 编码器, 跳过
 ];
 
 enum _Status { pending, running, done, failed }
@@ -95,7 +92,7 @@ enum _Status { pending, running, done, failed }
 class _Item {
   final String name;
   final String input;
-  final String originalDir; // 选文件时真正的原目录（可能与 input.parent 不同）
+  final String originalDir;
   _Status status = _Status.pending;
   String? output;
   String? error;
@@ -116,9 +113,8 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   String _format = 'mp3';
   bool _keepCover = true;
   bool _keepLyrics = true;
-  int _sampleRate = 0; // 0 = 保留原采样率
+  int _sampleRate = 0;
 
-  // 与桌面端 SettingsAudioConvert.vue 对齐
   static const _SAMPLE_RATES = [
     (0, '保留原采样率'),
     (22050, '22050 Hz'),
@@ -140,13 +136,11 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
     );
     if (files.isEmpty) return;
 
-    // Android 10+ 分区存储：从真实路径推断原目录，推断失败回退常用音乐目录
     final tmpDir = await getTemporaryDirectory();
     String? fallbackDir;
     try {
       final ext = await getExternalStorageDirectory();
       if (ext != null) {
-        // /storage/emulated/0/Android/data/xxx/files → /storage/emulated/0/Music
         final m = RegExp(r'(/storage/emulated/\d+)').firstMatch(ext.path);
         if (m != null) fallbackDir = '${m.group(1)}/Music';
       }
@@ -160,14 +154,12 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       if (path != null && path.isNotEmpty && File(path).existsSync()) {
         originalDir = Directory(path).parent.path;
       } else {
-        // 无效路径（content:// URI 等），先读 bytes 存 temp
         final bytes = await f.readAsBytes();
         if (bytes.isEmpty) continue;
         final safe = f.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
         final tmp = File('${tmpDir.path}/$safe');
         await tmp.writeAsBytes(bytes);
         path = tmp.path;
-        // content URI 拿不到真实路径，用 fallback
         originalDir = fallbackDir;
       }
       items.add(_Item(

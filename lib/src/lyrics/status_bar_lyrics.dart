@@ -9,14 +9,6 @@ import 'lyric_model.dart';
 import 'lyrics_repository.dart';
 import '../i18n/i18n.dart';
 
-/// 状态栏/通知栏歌词控制器。
-///
-/// 数据流：Flutter 侧持有播放状态与歌词（复用 [LyricsRepository]），
-/// 每当当前歌词行变化时，经 MethodChannel 推送给原生把一个「歌词通知」，
-/// 让歌词出现在系统通知栏/锁屏（部分车机/蓝牙联屏靠读通知文本实现）。
-///
-/// 与 [FloatingLyricsController] 完全独立：它只关心活动歌词行的文本，
-/// 不做卡拉OK逐字，也不占据后台悬浮窗权限，仅用普通通知。
 class StatusBarLyricsController {
   StatusBarLyricsController(this._container);
 
@@ -32,12 +24,10 @@ class StatusBarLyricsController {
   List<LyricLine> _lyrics = const [];
   int _fetchToken = 0;
 
-  /// 已推送的歌词行文本（+ 歌曲标识），行变化时才更新通知，避免高频刷新。
   String? _lastPushedLine;
   String? _lastPushedMeta;
 
   void init() {
-    // 语言切换（简↔繁）后重新拉取当前歌曲歌词，通知栏文本跟随界面语言。
     I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
       final s = next.valueOrNull;
@@ -56,7 +46,6 @@ class StatusBarLyricsController {
     _cancel();
   }
 
-  /// 界面语言变化：清空歌词行并重新拉取（repository 按新语言转换）。
   void _onLanguageChanged() {
     if (!_enabled) return;
     _lyrics = const [];
@@ -71,7 +60,6 @@ class StatusBarLyricsController {
     final enabled = s.statusBarLyricsEnabled;
     if (enabled && !_enabled) {
       _enabled = true;
-      // 开启瞬间立即推算一次当前歌曲/歌词，无需等播放状态翻转。
       final state = _container.read(playerProvider);
       _onPlaybackChanged(state);
     } else if (!enabled && _enabled) {
@@ -88,7 +76,6 @@ class StatusBarLyricsController {
 
     final item = state.current;
     if (item == null || !state.isPlaying) {
-      // 无歌或已暂停：隐藏通知栏歌词（连暂停也收起，避免残留误导）。
       _lastPushedLine = null;
       _cancel();
       return;
@@ -100,7 +87,7 @@ class StatusBarLyricsController {
       _lyrics = const [];
       _lastPushedLine = null;
       _fetchLyrics(item);
-      return; // 歌词未就绪前不推送，等 _fetchLyrics 完成后首推。
+      return;
     }
     _pushActiveLine(item, state.position);
   }
@@ -109,7 +96,7 @@ class StatusBarLyricsController {
     final token = ++_fetchToken;
     if (item == null) return;
     final lines = await _container.read(lyricsRepositoryProvider).fetchLyrics(item);
-    if (token != _fetchToken) return; // 已切歌，丢弃过期结果。
+    if (token != _fetchToken) return;
     _lyrics = lines;
     final state = _container.read(playerProvider);
     if (state.current != null &&
@@ -119,7 +106,6 @@ class StatusBarLyricsController {
     }
   }
 
-  /// 由播放进度推算当前歌词行并推送（仅行变化时更新通知）。
   void _pushActiveLine(QueueItem item, double positionSecs) {
     if (_lyrics.isEmpty) return;
     final posMs = (positionSecs * 1000).round();
@@ -157,7 +143,6 @@ class StatusBarLyricsController {
   }
 }
 
-/// 状态栏歌词控制器 provider：首次读取时创建（init 由 main 显式调用）。
 final statusBarLyricsControllerProvider = Provider<StatusBarLyricsController>((ref) {
   final controller = StatusBarLyricsController(ref.container);
   ref.onDispose(controller.dispose);

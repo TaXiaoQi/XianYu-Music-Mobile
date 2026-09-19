@@ -11,14 +11,9 @@ import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import 'lyric_model.dart';
 
-/// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
-/// 避免重复网络请求与主线程 JSON 解析。上限防止长期播放后无界增长。
-/// 条目记录获取时的界面语言：语言切换（简↔繁）后旧缓存失效重新解析，
-/// 使歌词文本跟随语言转换（对齐桌面端繁体模式歌词转换行为）。
 final Map<String, (I18nMode, List<LyricLine>)> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
-/// 歌词 payload JSON 缓存（腕上链路推送用，path → payload）。
 final Map<String, String> _payloadCache = {};
 
 void _cacheLyrics(String path, List<LyricLine> lines) {
@@ -29,17 +24,12 @@ void _cacheLyrics(String path, List<LyricLine> lines) {
   }
 }
 
-/// 歌词仓库：统一从插件 / 内置音源 / 本地数据库获取歌词并解析为
-/// [LyricLine] 列表。播放页歌词视图与桌面歌词悬浮窗共用。
 class LyricsRepository {
   LyricsRepository(this._ref);
 
   final Ref _ref;
 
-  /// 获取并解析指定曲目的歌词；无歌词返回空列表。
   Future<List<LyricLine>> fetchLyrics(QueueItem item) async {
-    // 命中缓存：语言未变直接复用，跳过网络请求与解析；
-    // 语言已切换（简↔繁）则丢弃旧语言缓存，重新解析并按新语言转换。
     final cached = _lyricsCache[item.path];
     if (cached != null && cached.$2.isNotEmpty) {
       if (cached.$1 == I18n.mode) return cached.$2;
@@ -48,7 +38,6 @@ class LyricsRepository {
     try {
       final jsonStr = await fetchPayloadJson(item);
       if (jsonStr.isEmpty || jsonStr == 'null') return const [];
-      // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
       final parsed = await compute(_parseLyricsJson, jsonStr);
       final lines = await compute(_normalizeBoundaries, parsed);
       final localized = localizeLyricLines(lines);
@@ -59,10 +48,6 @@ class LyricsRepository {
     }
   }
 
-  /// 获取歌词结构化 payload JSON（parseLyrics 归一化产物 / 本地库原样返回）。
-  ///
-  /// 除解析消费外，还作为腕上联动链路的歌词推送格式（手表端同款解析）。
-  /// 带 path 级小缓存：同曲不重复走插件网络请求。
   Future<String> fetchPayloadJson(QueueItem item) async {
     final cached = _payloadCache[item.path];
     if (cached != null) return cached;
@@ -76,15 +61,12 @@ class LyricsRepository {
     return payload;
   }
 
-  /// 按优先级获取歌词原始 JSON（插件 → 内置 LX 音源 → 本地数据库）。
   Future<String> _fetchLyricsJson(QueueItem item) async {
     if (item.isOnline) {
-      // (A) 插件来源：通过插件 getLyric 拉歌词（lxlyric/lyric/翻译/罗马音）。
       final pluginText = await _fetchPluginLyric(item);
       if (pluginText.trim().isNotEmpty) {
         return parseLyrics(rawLyrics: pluginText);
       }
-      // (B) 内置 lx 音源：通过 Rust 接口在线抓取指定音源的歌词。
       if (item.source != null && item.onlineInfoJson != null) {
         final rawResultStr = await fetchLyricFromSource(
           source: item.source!,
@@ -116,12 +98,10 @@ class LyricsRepository {
       }
       return '';
     }
-    // 本地曲目：通过数据库及本地资源提取。
     final dbPath = await _ref.read(dbPathProvider.future);
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
   }
 
-  /// 从在线插件拉取当前播放曲目的歌词正文。
   Future<String> _fetchPluginLyric(QueueItem item) async {
     final online = item.onlineSongJson;
     if (online == null || online.isEmpty) return '';
@@ -149,9 +129,6 @@ class LyricsRepository {
               res['lyric']) as String? ??
           '';
       if (mainText.trim().isEmpty) return '';
-      // 插件可能额外返回翻译（tlyric / translation / translateLyric）。与内置音源
-      // 路径同口径：把翻译追加到主歌词后，由 Rust parseLyrics 按时间戳聚类为译文
-      // 行；否则插件翻译会在这里被丢弃、译文行永远为空。
       final tlyric = (res['tlyric'] as String?)?.trim() ?? '';
       if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
         return '$mainText\n$tlyric';
@@ -163,11 +140,9 @@ class LyricsRepository {
   }
 }
 
-/// 剥离所有音源内嵌的逐字时间戳与元数据标签。
 String _cleanLyricText(String raw) {
   if (raw.isEmpty) return '';
   String text = raw;
-  // 1. 过滤元数据控制头 [ar:xx], [ti:xx] 等。
   text = text.replaceAll(
     RegExp(
       r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
@@ -175,18 +150,12 @@ String _cleanLyricText(String raw) {
     ),
     '',
   );
-  // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳。
   text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
-  // 3. 过滤方括号内嵌逐字时间戳。
   text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
-  // 4. 过滤尖括号时间戳。
   text = text.replaceAll(RegExp(r'<[^>]*>'), '');
   return text.trim();
 }
 
-/// 将歌词 JSON（displayLines/lines）解析为歌词行列表。
-///
-/// 顶层函数以便 [compute] 在后台 isolate 中执行。
 List<LyricLine> _parseLyricsJson(String jsonStr) {
   final map = jsonDecode(jsonStr) as Map<String, dynamic>;
   final rawLines =
@@ -226,7 +195,6 @@ List<LyricLine> _parseLyricsJson(String jsonStr) {
         ? rawRomaji
         : null;
 
-    // 富歌词：背景/副歌等次要歌词行。
     final secondary = <String>[];
     final rawSecondary = item['secondary'] as List?;
     if (rawSecondary != null) {
@@ -281,10 +249,6 @@ List<LyricLine> _parseLyricsJson(String jsonStr) {
   return lines;
 }
 
-/// 时间边界修正：行结束时间缺失时用下一行起点回推，逐字裁剪重叠，
-/// 多字符词拆成逐字符子词（英文单词也能逐字母卡拉OK）。
-///
-/// 顶层函数以便 [compute] 在后台 isolate 中执行。
 List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
     final result = <LyricLine>[];
     for (var i = 0; i < lines.length; i++) {
@@ -355,10 +319,6 @@ final lyricsRepositoryProvider = Provider<LyricsRepository>(
   (ref) => LyricsRepository(ref),
 );
 
-/// 繁体模式下把歌词行文本（主词/翻译/次要行/逐字）转换为繁体，
-/// 对齐桌面端 localizeLyricLine（romaji 为拉丁字母，转换无副作用）。
-/// 非繁体语言原样返回同一列表，避免不必要的重建开销。
-/// 在主 isolate 出口执行：s2t 转换为纯函数，单首歌词毫秒级。
 List<LyricLine> localizeLyricLines(List<LyricLine> lines) {
   if (I18n.mode != I18nMode.zhTw) return lines;
   return [

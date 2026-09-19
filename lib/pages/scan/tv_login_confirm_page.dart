@@ -8,10 +8,6 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/user_agreement.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 扫码确认登录页：展示被扫桌面端（应用名/设备ID/位置）与当前登录账号，
-/// 勾选同意用户协议后点击确认，为桌面端签发登录凭证。
-///
-/// 样式对齐 QQ/微信扫码登录确认。成功确认后以 `Navigator.pop(true)` 返回扫码页。
 class TvLoginConfirmPage extends ConsumerStatefulWidget {
   const TvLoginConfirmPage({super.key, required this.code, required this.info});
 
@@ -78,7 +74,6 @@ class _TvLoginConfirmPageState extends ConsumerState<TvLoginConfirmPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 应用品牌
                     Center(
                       child: Column(
                         children: [
@@ -124,7 +119,6 @@ class _TvLoginConfirmPageState extends ConsumerState<TvLoginConfirmPage> {
                       ),
                     ),
                     const SizedBox(height: 28),
-                    // 设备信息卡片
                     Container(
                       decoration: BoxDecoration(
                         color: appCardColor(context),

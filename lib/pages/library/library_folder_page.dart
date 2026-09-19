@@ -27,11 +27,6 @@ import '../settings/folder_picker_page.dart';
 import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 文件夹页：扫描歌曲一体化界面（参考魅族音乐「扫描歌曲」）。
-///
-/// 由本地库「文件夹」Tab 独立而来的二级页面（本地页顶部搜索框右侧「+」进入）：
-/// 顶部扫描引导（图标 + 开始扫描）→ 过滤设置（按时长过滤）→ 扫描目录管理
-/// （添加 / 移除 / 重新授权）→ 已扫描文件夹树（浏览 / 播放 / 导入歌单）。
 class LibraryFolderPage extends ConsumerStatefulWidget {
   const LibraryFolderPage({super.key});
 
@@ -44,24 +39,19 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   bool _scanning = false;
   bool _adding = false;
 
-  /// 关闭「按时长过滤」时记住上次的阈值，重新开启时恢复。
   int _lastDuration = 60;
 
   @override
   void initState() {
     super.initState();
-    // 进入本页即刷新各 SAF 目录的授权状态（失效目录显示红标与重新授权按钮）。
     Future.microtask(() {
       if (mounted) {
         ref.read(libraryProvider.notifier).checkSafFolderAuthorization();
       }
     });
-    // OHOS：首访预置沙盒目录（Downloads/Music），下载与导入的音乐自动入库。
     Future.microtask(_seedSandboxFolders);
   }
 
-  /// OHOS 沙盒库：扫描目录为空时预置应用 Documents 下的 Downloads/Music。
-  /// HarmonyOS NEXT 无任意目录访问（同 iOS 沙盒），本地库仅覆盖沙盒内容。
   Future<void> _seedSandboxFolders() async {
     if (!PlatformCaps.supportsSandboxLibrary) return;
     final existing = ref.read(scanFoldersProvider).valueOrNull;
@@ -74,12 +64,9 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         await ref.read(scanFoldersProvider.notifier).addFolder(dir.path);
       }
     } catch (_) {
-      // 预置失败不打扰用户，扫描目录仍可手动管理（移除后不再重复预置）。
     }
   }
 
-  /// OHOS 导入音频：系统文件选择器多选 → 拷入沙盒 Music → 自动扫描入库。
-  /// DocumentViewPicker 授予所选文件的读权限，拷贝进沙盒后即可长期访问。
   static const _audioExts = [
     'mp3', 'flac', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'ape', 'wma', 'aiff',
   ];
@@ -87,7 +74,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   Future<void> _importFiles() async {
     setState(() => _adding = true);
     try {
-      // allowMultiple：ohos vendored fork（10.x API）必需；pub 12.x 上弃用但仍生效。
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: _audioExts,
@@ -127,11 +113,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  /// 申请存储权限（按 Android 版本细分，仅申请音乐读取）。
-  ///
-  /// Android 13+ 申请 READ_MEDIA_AUDIO（Permission.audio）；13 以下该权限
-  /// 不存在，申请不会弹窗直接返回拒绝，必须走 READ_EXTERNAL_STORAGE
-  /// （Permission.storage）。
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final sdkInt = await SafChannel.androidSdkInt();
@@ -149,9 +130,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     return false;
   }
 
-  /// 添加扫描目录：应用内文件夹选择页（MediaStore），无权限时回退系统 SAF。
-  /// iOS 沙盒限制：目录选择后无持久访问权（安全作用域），扫描不可行，
-  /// 入口已隐藏，此处兜底拦截。
   Future<void> _addFolder() async {
     if (!PlatformCaps.supportsFolderScan) {
       _toast(tr('当前平台不支持扫描本地文件夹'));
@@ -194,7 +172,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     }
   }
 
-  /// 经系统 SAF 选择器添加目录（DSD / USB 等特殊目录的兜底入口）。
   Future<void> _addFolderViaSaf() async {
     setState(() => _adding = true);
     try {
@@ -202,8 +179,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
       if (treeUri == null) return;
       await SafChannel.persistPermission(treeUri);
       await ref.read(scanFoldersProvider.notifier).addFolder(treeUri);
-      // 只注册扫描目录，不在此触发全库扫描（否则会一直卡在添加页面等扫完）。
-      // 歌曲扫描改由文件夹页/顶栏手动触发。
       if (mounted) _toast('已添加扫描目录');
     } catch (e) {
       if (mounted) _toast(tr('添加失败：{e}', {'e': e}));
@@ -212,7 +187,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     }
   }
 
-  /// 重新授权失效目录：选回同一目录时 tree URI 不变，旧曲库数据直接复活。
   Future<void> _reauthorize(String treeUri) async {
     setState(() => _adding = true);
     try {
@@ -224,7 +198,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         await ref.read(scanFoldersProvider.notifier).removeFolder(treeUri);
         await ref.read(scanFoldersProvider.notifier).addFolder(newUri);
       }
-      // 只完成授权，不在此触发全库扫描（避免卡在选择页）。
       if (mounted) _toast(tr('重新授权成功'));
     } catch (e) {
       if (mounted) _toast(tr('重新授权失败：{e}', {'e': e}));
@@ -315,12 +288,10 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     );
   }
 
-  /// 一键扫描全部目录（也作为下拉刷新动作）。
   Future<void> _onRefresh() => _startScan();
 
   Future<void> _startScan() async {
     if (_scanning) return;
-    // 本地与远程文件夹都为空时，先提示需要添加文件夹，避免空扫。
     final localFolders =
         ref.read(scanFoldersProvider).valueOrNull ?? const <ScanFolder>[];
     final remoteSources = ref.read(remoteLibraryProvider).sources;
@@ -342,7 +313,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
     }
   }
 
-  /// 按时长过滤阈值选择（不排除 / 10 / 30 / 60 秒）。
   Future<void> _pickMinDuration(int cur) async {
     final choice = await showSheetDialog<int>(
       context,
@@ -429,7 +399,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                     ),
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
-                      // —— 扫描引导（魅族风格：渐变圆标 + 一键扫描）——
                       _ScanHero(
                         scanning: _scanning,
                         onScan: _startScan,
@@ -440,7 +409,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                       ),
                       if (lost.isNotEmpty) _UnauthorizedBanner(lost: lost),
                       const SizedBox(height: 16),
-                      // —— 过滤设置 ——
                       _FilterCard(
                         minDuration: minDuration,
                         onToggle: (v) {
@@ -452,7 +420,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                         onPick: () => _pickMinDuration(minDuration),
                       ),
                       const SizedBox(height: 16),
-                      // —— 扫描目录管理 ——
                       foldersAsync.when(
                         loading: () => const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
@@ -476,9 +443,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // —— 远程音乐库（WebDAV）入口 ——
                       const _RemoteLibraryCard(),
-                      // —— 已扫描文件夹树 ——
                       if (root.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         Padding(
@@ -515,7 +480,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                   title: Text(tr('文件夹')),
                 ),
               ),
-              // 统一播放条由外壳承载的逻辑与其他本地页一致：页内自渲染迷你条。
               if (lib.songs.isNotEmpty) const MiniPlayerBar(),
             ],
           ),
@@ -525,7 +489,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   }
 }
 
-/// 扫描引导头图：径向渐变圆标 + 主标题 + 「开始扫描」胶囊按钮 + SAF 兜底入口。
 class _ScanHero extends StatelessWidget {
   const _ScanHero({
     required this.scanning,
@@ -617,7 +580,6 @@ class _ScanHero extends StatelessWidget {
   }
 }
 
-/// 过滤设置卡：按时长过滤开关 + 阈值选择。
 class _FilterCard extends ConsumerWidget {
   const _FilterCard({
     required this.minDuration,
@@ -659,7 +621,6 @@ class _FilterCard extends ConsumerWidget {
   }
 }
 
-/// 扫描目录管理卡：目录列表 + 添加 / 重新授权 / 移除。
 class _ScanFoldersCard extends ConsumerWidget {
   const _ScanFoldersCard({
     required this.folders,
@@ -674,7 +635,6 @@ class _ScanFoldersCard extends ConsumerWidget {
   final List<ScanFolder> folders;
   final List<String> lost;
   final bool adding;
-  /// OHOS 沙盒库模式：「+」为导入音频文件（无任意目录概念）。
   final bool importMode;
   final VoidCallback? onAdd;
   final void Function(String path) onRemove;
@@ -756,8 +716,6 @@ class _ScanFoldersCard extends ConsumerWidget {
                           tr('授权已失效，点击钥匙重新授权'),
                           style: TextStyle(fontSize: 12, color: scheme.error),
                         )
-                      // 不展示歌曲首数：添加目录已改为不自动扫描，首数
-                      // 只会是上次扫描的旧值或 0，展示出来徒增误解。
                       : null,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -785,7 +743,6 @@ class _ScanFoldersCard extends ConsumerWidget {
   }
 }
 
-/// tree URI → 用户可读目录名（静态缓存，避免列表滚动时反复跨 channel 查询）。
 Future<String> _friendlyFolderName(String path) async {
   final hit = _folderNameCache[path];
   if (hit != null) return hit;
@@ -797,9 +754,6 @@ Future<String> _friendlyFolderName(String path) async {
 
 final Map<String, String> _folderNameCache = {};
 
-/// 授权失效目录的警示横幅（重新授权入口在下方「扫描目录」卡片内）。
-///
-/// 重新授权选回同一目录时 tree URI 不变，旧曲库数据直接复活，无需重扫。
 class _UnauthorizedBanner extends StatelessWidget {
   final List<String> lost;
   const _UnauthorizedBanner({required this.lost});
@@ -900,7 +854,6 @@ class _FolderTile extends StatelessWidget {
   }
 }
 
-/// 远程音乐库 WebDAV 管理入口（从设置页「本地」迁至本文件夹页）。
 class _RemoteLibraryCard extends ConsumerWidget {
   const _RemoteLibraryCard();
 

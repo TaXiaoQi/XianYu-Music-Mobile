@@ -7,7 +7,6 @@ import 'package:xianyu_music_mobile/src/navigation/shell.dart';
 
 void main() {
   setUp(() {
-    // settings 走 SharedPreferences，测试中用内存实现。
     SharedPreferences.setMockInitialValues({});
   });
 
@@ -15,14 +14,12 @@ void main() {
     test('悬浮式返回 175，页面需自行避让', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
-      // 等设置加载完成
       await c.read(settingsProvider.future);
       await c.read(settingsProvider.notifier).setFloatingNavBar(true);
       expect(c.read(navBarInsetProvider), 175);
     });
 
     test('固定式返回 82，仅为悬浮播放条留白', () async {
-      // 底栏贴底由 Scaffold 收缩内容区，但播放条仍是浮层，需页面留白。
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await c.read(settingsProvider.future);
@@ -65,7 +62,6 @@ void main() {
       const base = AppSettings();
       expect(base.floatingNavBar, isTrue);
       expect(base.copyWith(floatingNavBar: false).floatingNavBar, isFalse);
-      // 未传时保持原值
       expect(base.copyWith(volume: 0.5).floatingNavBar, isTrue);
     });
   });
@@ -89,9 +85,7 @@ void main() {
     test('copyWith 与其他字段互不干扰', () {
       const base = AppSettings();
       expect(base.copyWith(liquidGlass: false).liquidGlass, isFalse);
-      // 改液态玻璃不应影响底栏形态
       expect(base.copyWith(liquidGlass: false).floatingNavBar, isTrue);
-      // 改底栏形态不应影响液态玻璃
       expect(base.copyWith(floatingNavBar: false).liquidGlass, isTrue);
     });
 

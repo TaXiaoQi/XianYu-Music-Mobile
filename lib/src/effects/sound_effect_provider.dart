@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../i18n/i18n.dart';
 
-/// 10 段 EQ 频率标签（与 Rust equalizer.rs 的 EQ_FREQUENCIES 一致）。
 const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 
-/// 内置 EQ 预设（与桌面端 freqsPreset 对齐）。
 class EqPreset {
   final String name;
   final List<double> gains;
@@ -26,7 +24,6 @@ List<EqPreset> get eqPresets => <EqPreset>[
   EqPreset(tr('高音增强'), [0, 0, 0, 0, 0, 1, 2, 3, 4, 4]),
 ];
 
-/// 混响预设（卷积 IR 列表，与桌面端 convolutions 对齐）。
 class ReverbPreset {
   final String label;
   final int dry;
@@ -43,7 +40,6 @@ List<ReverbPreset> get reverbPresets => <ReverbPreset>[
   ReverbPreset(tr('教堂'), 60, 45),
 ];
 
-/// 算法混响预设。
 List<ReverbPreset> get algoReverbPresets => <ReverbPreset>[
   ReverbPreset(tr('算法大厅'), 85, 40),
   ReverbPreset(tr('算法房间'), 90, 30),
@@ -51,20 +47,19 @@ List<ReverbPreset> get algoReverbPresets => <ReverbPreset>[
   ReverbPreset(tr('算法弹簧'), 88, 35),
 ];
 
-/// 音效设置（camelCase，与 Rust SoundEffectSettings JSON 对齐，可部分省略）。
 class SoundEffectSettings {
-  final double pitchShift; // 50~200
-  final double playbackRate; // 50~200
+  final double pitchShift;
+  final double playbackRate;
   final bool preservesPitch;
-  final String reverbKind; // none | convolution | algorithmic
+  final String reverbKind;
   final String reverbPreset;
   final double reverbDry;
   final double reverbWet;
-  final String spatialMode; // none | surround3d | d8 | d36 | virtual
+  final String spatialMode;
   final double spatialSpeed;
   final double spatialRadius;
   final double spatialIntensity;
-  final String virtualSurroundMode; // 5.1 | 7.1
+  final String virtualSurroundMode;
   final double virtualSurroundSpread;
   final bool vocalRemoval;
   final bool vibratoEnabled;
@@ -80,12 +75,12 @@ class SoundEffectSettings {
   final double trebleGain;
   final bool distortionEnabled;
   final double distortionAmount;
-  final String distortionType; // soft | hard
+  final String distortionType;
   final bool delayEnabled;
   final double delayTime;
   final double delayFeedback;
   final double delayMix;
-  final String delayType; // single | pingpong
+  final String delayType;
   final bool flangerEnabled;
   final double flangerRate;
   final double flangerDepth;
@@ -339,7 +334,6 @@ class SoundEffectSettings {
     );
   }
 
-  /// 构建传给 Rust SoundEffectSettings 的完整 JSON（camelCase）。
   Map<String, dynamic> toRustJson() => {
         'pitchShift': pitchShift,
         'playbackRate': playbackRate,
@@ -443,7 +437,6 @@ class SoundEffectSettings {
 
   static double _clamp01(double v) => v.clamp(0.0, 1.0).toDouble();
 
-  /// 是否有真正会改变音频内容的音效（用于判断是否直通）。
   bool get hasAudibleProcessing =>
       (pitchShift - 100).abs() > 0.1 ||
       (playbackRate - 100).abs() > 0.1 ||
@@ -541,7 +534,6 @@ class SoundEffectSettings {
         'eqGains': eqGains,
       };
 
-  /// 转换为 Rust EqualizerSettings 兼容 JSON（10 段 EQ，任一频带非 0 即启用）。
   Map<String, dynamic> toEqualizerRustJson() => {
         'enabled': eqGains.any((g) => g != 0),
         'preamp': 0.0,
@@ -629,7 +621,6 @@ class SoundEffectSettings {
   }
 }
 
-/// 用户自定义 EQ 预设。
 class CustomEqPreset {
   final String name;
   final List<double> gains;
@@ -667,7 +658,6 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
       final raw = prefs.getString(_key);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        // 新版为 { settings, customEqPresets } 包装；兼容旧版扁平 settings。
         final settingsRaw = decoded.containsKey('settings')
             ? decoded['settings'] as Map<String, dynamic>
             : decoded;
@@ -724,7 +714,6 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
     await _update(state.settings.copyWith(eqGains: [...preset.first.gains]));
   }
 
-  /// 保存当前 EQ 增益为自定义预设；同名则覆盖。
   Future<void> saveCustomEqPreset(String name) async {
     final g = name.trim();
     if (g.isEmpty) return;
@@ -739,7 +728,6 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
     await _mutateCustom(list);
   }
 
-  /// 重命名（编辑）自定义预设。
   Future<void> renameCustomEqPreset(String oldName, String newName) async {
     final g = newName.trim();
     if (g.isEmpty || g == oldName) return;
@@ -750,13 +738,11 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
     await _mutateCustom(list);
   }
 
-  /// 删除自定义预设。
   Future<void> deleteCustomEqPreset(String name) async {
     await _mutateCustom(
         state.customEqPresets.where((p) => p.name != name).toList());
   }
 
-  /// 应用自定义预设到 EQ 增益。
   Future<void> applyCustomEqPreset(String name) async {
     final preset =
         state.customEqPresets.where((p) => p.name == name).toList();
@@ -811,7 +797,6 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
     await _update(state.settings.copyWith(bypass: v));
   }
 
-  /// 重置所有音效（含 EQ）。
   Future<void> resetAll() async {
     await _update(const SoundEffectSettings());
   }

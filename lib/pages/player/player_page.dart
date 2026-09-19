@@ -48,8 +48,6 @@ import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 歌词解析结果缓存（按歌曲路径）：切回同一首歌直接复用，
-/// 避免重复网络请求与主线程 JSON 解析。上限防止长期播放后无界增长。
 final Map<String, List<_LyricLineItem>> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
@@ -61,7 +59,6 @@ void _cacheLyrics(String path, List<_LyricLineItem> lines) {
   }
 }
 
-/// 是否有任意音效实际启用（驱动「音效」按钮是否点亮为主题色，与桌面端一致）。
 bool _hasPlayerEffects(SoundEffectSettings sfx) {
   return sfx.bassBoostEnabled ||
       sfx.trebleEnabled ||
@@ -85,8 +82,6 @@ bool _hasPlayerEffects(SoundEffectSettings sfx) {
       sfx.eqGains.any((g) => g != 0);
 }
 
-/// 正在播放页：现代毛玻璃风格。
-/// 封面大圆角浮于流光背景之上，支持点击封面在“封面模式”与“歌词模式”间平滑切换。
 class PlayerPage extends ConsumerStatefulWidget {
   const PlayerPage({super.key});
 
@@ -94,9 +89,6 @@ class PlayerPage extends ConsumerStatefulWidget {
   ConsumerState<PlayerPage> createState() => _PlayerPageState();
 }
 
-/// 歌词调节弹窗（单弹窗内多面板：主菜单 / 字号 / 偏移）。
-/// 字号与偏移不采用「先 pop 再 push 新弹窗」的路由叠换（会造成切换白屏盖屏），
-/// 而是在同一个弹窗内经 setState 切换子面板，含返回箭头回到主菜单。
 class _LyricsAdjustDialog extends ConsumerStatefulWidget {
   const _LyricsAdjustDialog({
     required this.hasRomaji,
@@ -138,7 +130,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
     );
   }
 
-  /// 返回主菜单按钮（子面板左上）。
   Widget _backButton(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return IconButton(
@@ -154,7 +145,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
     );
   }
 
-  /// 主菜单：对齐分段 +（字号 / 时间偏移）入口 + 翻译 / 罗马音开关。
   Widget _buildMain(
     BuildContext context,
     ColorScheme scheme,
@@ -177,7 +167,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           ),
         ),
         const SizedBox(height: 16),
-        // 左/中/右 对齐分段（横竖屏歌词菜单完全一致）。
         if (widget.showAlign) ...[
           _TraditionalPlayerLayoutState._buildAlignSegmented(
               context, align, notifier),
@@ -185,14 +174,12 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           const Divider(height: 1),
           const SizedBox(height: 4),
         ],
-        // 字号 → 子面板
         _TraditionalPlayerLayoutState._buildLyricMenuAction(
           context,
           icon: Icons.format_size_rounded,
           label: tr('歌词字号'),
           onTap: () => setState(() => _panel = _LyricAdjustPanel.font),
         ),
-        // 翻译开关
         _TraditionalPlayerLayoutState._buildLyricMenuSwitch(
           context,
           icon: Icons.translate_rounded,
@@ -200,7 +187,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           value: showTranslation,
           onChanged: (v) => notifier.setShowLyricsTranslation(v),
         ),
-        // 罗马音开关
         _TraditionalPlayerLayoutState._buildLyricMenuSwitch(
           context,
           icon: Icons.abc_rounded,
@@ -209,7 +195,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           enabled: widget.hasRomaji,
           onChanged: (v) => notifier.setShowLyricsRomaji(v),
         ),
-        // 时间偏移 → 子面板
         _TraditionalPlayerLayoutState._buildLyricMenuAction(
           context,
           icon: Icons.av_timer_rounded,
@@ -220,7 +205,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
     );
   }
 
-  /// 字号子面板：小 / 标准 / 大 / 特大四档 + 自定义字体导入。
   Widget _buildFont(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final notifier = ref.read(settingsProvider.notifier);
@@ -281,7 +265,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
         const SizedBox(height: 16),
         const Divider(height: 1),
         const SizedBox(height: 12),
-        // 自定义字体导入
         Row(
           children: [
             Icon(
@@ -307,7 +290,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
     );
   }
 
-  /// 偏移子面板：滑杆 + 细调按钮 + 重置。
   Widget _buildOffset(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final notifier = ref.read(settingsProvider.notifier);
@@ -334,7 +316,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
             ),
           ],
         ),
-        // 当前偏移值
         Text(
           value > 0
               ? tr('提前 {v}ms', {'v': value})
@@ -346,8 +327,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
             color: scheme.onSurfaceVariant,
           ),
         ),
-        // 蓝牙场景提示：蓝牙耳机有编码/传输固有延迟（常见 200~400ms），
-        // 听感上声音比进度晚 → 歌词相对提前，向"延后"方向调节即可
         Text(
           tr('蓝牙耳机存在固有延迟，歌词提前时请向"延后"方向调节'),
           style: TextStyle(
@@ -355,7 +334,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
             color: scheme.onSurfaceVariant,
           ),
         ),
-        // 粗调滑杆（10ms 步进）
         Slider(
           value: value.toDouble(),
           min: -2000,
@@ -364,7 +342,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           label: '${value}ms',
           onChanged: (v) => notifier.setLyricOffsetMs(v.round()),
         ),
-        // 细调按钮行（1 / 10 / 100 / 200ms 步进；±200 对应蓝牙常见延迟量级）
         Wrap(
           alignment: WrapAlignment.center,
           spacing: 8,
@@ -387,27 +364,17 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
 }
 
 class _PlayerPageState extends ConsumerState<PlayerPage> {
-  /// 是否显示歌词视图
   bool _showLyrics = false;
 
-  /// 歌词视图实例 key：本播放页实例内横竖屏翻转时 _LyricsView 凭它 reparent
-  /// （保留跟随锁定/居中/滚动位置）。key 跟实例走——关闭后销毁，快速重开的
-  /// 新实例拿新 key，避免与退出转场中的旧歌词视图撞 GlobalKey。
   final GlobalKey _lyricsKey = GlobalKey();
 
-  /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
   bool _lyricsViewHasRomaji = false;
 
-  /// 已预加载分享链接的歌曲 path（切歌时预生成，避免点击分享才等网络）。
   String? _sharePreloadPath;
 
-  // ── 横屏播放页顶栏/底栏自动隐藏（对齐桌面版：无操作 3.5s 淡出让位，触摸唤回）──
-
-  /// 顶栏/底栏是否可见（仅横屏参与隐藏，竖屏常显）。
   bool _chromeVisible = true;
   Timer? _chromeHideTimer;
 
-  /// 任意触摸唤回顶栏/底栏并重新计时（竖屏下为 no-op）。
   void _wakeChrome() {
     _chromeHideTimer?.cancel();
     _chromeHideTimer = null;
@@ -416,7 +383,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     if (needRestore && mounted) setState(() => _chromeVisible = true);
   }
 
-  /// 启动隐藏倒计时；到点且仍处于横屏时收起顶栏/底栏。
   void _armChromeHide() {
     _chromeHideTimer?.cancel();
     _chromeHideTimer = Timer(const Duration(milliseconds: 3500), () {
@@ -428,21 +394,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 顶层只订阅当前歌曲（切歌才重建整页）；播放态/进度/音量等由各自叶子
-    // 组件内部 select 局部刷新，避免任何播放状态变化（暂停/切模式/解析中）
-    // 都触发整页重建。position 由进度条/歌词等需要它的组件内部各自 select。
     final current = ref.watch(playerProvider.select((s) => s.current));
     final notifier = ref.read(playerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    // MV 状态（requested/ready/画质/控制器）——对齐桌面端 useBilibiliVideoBackground。
     final mv = ref.watch(mvProvider);
 
-    // 队列被清空/删空（current 非空 → 空）时自动退出播放详情页：
-    // 覆盖清空队列、删除最后一首等所有「没有歌曲」的路径。仅在本页处于
-    // 栈顶时退出；若队列弹窗盖在本页上，由弹窗的统一关闭逻辑连带退出，
-    // 避免双重 pop 把弹窗下面的页面也关掉。
     ref.listen(playerProvider.select((s) => s.current), (prev, next) {
-      // 切歌：MV 开启时自动续接新歌 MV（无缝），新歌不支持则自动关闭。
       if (prev != next) ref.read(mvProvider.notifier).syncSong(next);
       if (prev != null && next == null && mounted) {
         if (ModalRoute.of(context)?.isCurrent == true) {
@@ -452,7 +409,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       }
     });
 
-    // 播放歌曲变化时预加载分享链接（服务内部对已缓存/生成中的歌去重，重复触发安全）。
     if (current != null && _sharePreloadPath != current.path) {
       _sharePreloadPath = current.path;
       final toPreload = current;
@@ -461,8 +417,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       });
     }
 
-    // 背景是深色模糊封面（学 MusicFree），前景统一按深色主题渲染，
-    // 保证浅色系统主题下文字/图标仍可读。
     final bgScheme = scheme.copyWith(
       brightness: Brightness.dark,
       onSurface: Colors.white,
@@ -477,8 +431,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final hasRomaji = _lyricsViewHasRomaji;
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
-    // 横屏自动隐藏：进入横屏后开始计时；转回竖屏立即恢复常显并停表。
-    // 设置关闭自动隐藏时恒常显（竖屏本就常显，一并走恢复分支）。
     final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
     final landscapeNow = ref.watch(isLandscapeProvider);
     if (!landscapeNow || !autoHideChrome) {
@@ -504,33 +456,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 常驻底衬（不参与横竖屏转场淡出）：Scaffold 底色 + 模糊封面自
-          // _PlayerShell 上提至此。转场内容淡出到底/淡入初期时整条子树接近
-          // 全透明，若无此层托底会透出下层路由壁纸/主题底（「闪背景」）。
           Positioned.fill(
             child: ColoredBox(
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          // 模糊封面铺满全屏，全模式恒显示（抖音式沉浸底衬）：非 MV 时是
-          // 页面主背景；MV 播放时视频层盖在其上，letterbox 空隙透出模糊
-          // 封面而非纯黑。MV 开关不改变背景外观（毛玻璃恒定，无跳变）。
           Positioned.fill(
             child: _BlurredCoverBackground(
               current: current,
             ),
           ),
-          // MV 背景视频层（仅横屏挂底层）：等比缩放到完全可见（contain），
-          // 一个方向贴满屏幕——4:3 视频上下贴满、左右留黑；21:9 视频左右
-          // 贴满、上下留黑。留黑处透出模糊封面底衬，上压 black/40 保证前景
-          // 文字仍可读。竖屏时视频由本 Stack 贴最前层居中悬浮（见下方）。
           if (landscapeNow && mv.ready && mv.controller != null) ...[
             Positioned.fill(
               child: LayoutBuilder(builder: (context, cons) {
                 final ar = mv.controller!.value.aspectRatio;
                 final w = cons.maxWidth;
                 final h = cons.maxHeight;
-                // contain：等比取小方向贴满，不裁切
                 final vw = w >= h * ar ? h * ar : w;
                 final vh = w >= h * ar ? h : w / ar;
                 return Align(
@@ -547,7 +488,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ],
           _DragDismissSheet(
-        // 任意触摸唤回横屏顶栏/底栏（竖屏下为 no-op），不拦截子手势。
         child: Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) => _wakeChrome(),
@@ -559,12 +499,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   mvEnabled: mv.requested,
                   mvLoading: mv.loading,
                   mvReady: mv.ready,
-                  // 对齐桌面端 supportsMusicVideo：仅 MusicFree 格式插件歌曲
-                  // 可能带 MV（LX 格式插件歌曲无 MV 概念，本地歌曲同样无）。
                   mvSupported: mvSupports(current),
                   onToggleMv: current != null
                       ? () async {
-                          // 先捕获 messenger，避免 async gap 后触碰 context。
                           final messenger = ScaffoldMessenger.of(context);
                           final err =
                               await ref.read(mvProvider.notifier).toggle(current);
@@ -588,9 +525,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
         ),
       ),
-        // 竖屏：MV 视频贴最前层——页面零重排（封面/歌词/控件原样保留），
-        // 视频等比 contain 居中悬浮其上，letterbox 透出原页面与模糊背景，
-        // 开/关 MV 均无背景与布局跳变。视频纹理不吸收手势，下层控件可用。
         if (!landscapeNow && mv.ready && mv.controller != null)
           Positioned.fill(
             child: Center(
@@ -598,7 +532,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 final ar = mv.controller!.value.aspectRatio;
                 final w = cons.maxWidth;
                 final h = cons.maxHeight;
-                // contain：等比取小方向贴满，不裁切
                 final vw = w >= h * ar ? h * ar : w;
                 final vh = w >= h * ar ? h : w / ar;
                 return SizedBox(
@@ -614,7 +547,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     );
   }
 
-  /// 「高级模式」正在播放页（现代毛玻璃风格，原布局）。
   Widget _buildAdvancedBody({
     required PlayerNotifier notifier,
     required QueueItem? current,
@@ -625,9 +557,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
-    // MV 视频由外层 Stack 贴最前层展示（竖屏悬浮居中/横屏底层全屏），
-    // 页面本身零重排：封面、歌词、顶栏/底栏控件在 MV 开关全程原样保留。
-    // 竖屏＝默认封面页；横屏＝独立一套横向 UI，两套完全分开（见 LandscapeGate）。
     final landscapeBody = _buildLandscapeAdvancedBody(
       notifier: notifier,
       current: current,
@@ -638,12 +567,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       offsetMs: offsetMs,
       hasRomaji: hasRomaji,
     );
-    // 两套子树有同名 Hero（封面）与歌词视图 key，交叉转场共存瞬间会冲突，
-    // 与传统模式同样用顺序转场（见 LandscapeGate.sequential）。
     return LandscapeGate.sequential(
       portrait: _PlayerShell(
         current: current,
-        // 顶栏 + 封面：封面模式下封面（固定）放在顶栏之下、歌词预览之上。
         top: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -667,7 +593,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     ),
                   ),
                 ),
-                // 右侧留位 48px 占位，保持标题居中
                 const SizedBox(width: 48),
               ],
             ),
@@ -714,8 +639,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ),
             ),
         ],
-        // 中区唯一 Expanded：封面模式为 3 行 Mini 歌词，歌词模式为歌词视图
-        // （MV 视频由外层贴最前层展示，中区不再让渡重排）。
         flexible: _showLyrics
                 ? ClipRect(
                     child: RepaintBoundary(
@@ -742,7 +665,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       child: _LyricPreview(current: current),
                     ),
                   ),
-        // 底部：毛玻璃控制卡（独立图层），歌词模式下中区顶部再多留一处空隙。
         bottom: [
           if (_showLyrics) const SizedBox(height: 8),
           RepaintBoundary(
@@ -755,7 +677,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ),
         ],
-        // 歌词模式下顶栏最右侧浮动展示毛玻璃设置按钮。
         overlay: _showLyrics
             ? Positioned(
                 top: 4,
@@ -789,7 +710,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     );
   }
 
-  /// 「高级模式」横屏横排：左封面 + 右（歌词 + 控制卡），顶栏返回/设置悬浮。
   Widget _buildLandscapeAdvancedBody({
     required PlayerNotifier notifier,
     required QueueItem? current,
@@ -800,13 +720,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
-    // MV 就绪时中区隐藏，让渡给底层全屏视频。
     final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
       isLandscape: true,
-      // 顶栏：返回 + 居中歌名/歌手（参照桌面版顶部，无「正在播放」占位标题）；
-      // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
       top: [
         AutoHideChrome(
           visible: _chromeVisible,
@@ -846,15 +763,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     ],
                   ),
                 ),
-                // 右侧留位 44px 占位，保持标题居中
                 const SizedBox(width: 44),
               ],
             ),
           ),
         ),
       ],
-      // 中区：左封面 + 右歌词（固定横向对半布局，不提供可拖动中线）；
-      // MV 就绪时整体隐藏让渡全屏视频（顶栏/底栏保留，自动隐藏逻辑不变）。
       flexible: mvReady
           ? const SizedBox.shrink()
           : Padding(
@@ -914,8 +828,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
               ),
             ),
-            // 右：歌词视口（剩余宽度占满；整体再左移一截，
-            // 避免行内容贴到挖孔/右缘，与桌面歌词区留白观感一致）
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(right: 22),
@@ -924,7 +836,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     child: _LyricsView(
                       key: _lyricsKey,
                       current: current,
-                      // 横屏横排下歌词常显
                       visible: _showLyrics,
                       onTap: () =>
                           setState(() => _showLyrics = !_showLyrics),
@@ -941,8 +852,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ],
         ),
       ),
-      // 底部：播放控制带（桌面版 PlayerFooter 语义，全宽置底）；整体下移一点。
-      // 无操作自动隐藏（对齐桌面版），触摸任意处唤回。
       bottom: [
         RepaintBoundary(
           child: AutoHideChrome(
@@ -954,7 +863,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 notifier: notifier,
                 current: current,
                 landscape: true,
-                // 横屏歌词调节并入底栏最右组件（对齐桌面歌词页最右菜单）。
                 onLyricAdjust: () => _TraditionalPlayerLayoutState
                     ._showLyricAdjustMenu(
                   context,
@@ -966,7 +874,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ),
       ],
-      // 横屏歌词调节已并入底栏最右组件，不再叠加右上角浮动 rail。
       overlay: null,
     );
   }
@@ -977,18 +884,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   }
 }
 
-/// 播放页统一「底壳」。
-///
-/// 高级/传统两种模式 × 竖屏/横屏两种方向，播放页外层完全共用同一套框架：
-/// 深色模糊封面铺满全屏的背景 + Scaffold + SafeArea（横屏再补偿挖孔安全区）
-/// + 纵向排布 [top / flexible / bottom] + 可选的 [overlay] 悬浮槽。
-///
-/// 各变体只需把自己差异的部分注入对应槽位：
-/// - [top]：中区 flexible 之前的定长内容（顶栏、封面等）；
-/// - [flexible]：唯一占满剩余高度的中区（封面+歌词 / 歌词 / 翻页等）；
-/// - [bottom]：中区之下的定长控件（控制卡 / 进度条 / 播放控制等）；
-/// - [overlay]：悬浮于整体之上的弹出部件（如歌词设置按钮），Slot 内 Stack 定位。
-/// 背景与整体结构不再由各变体各自铺设。
 class _PlayerShell extends StatelessWidget {
   const _PlayerShell({
     this.current,
@@ -1003,32 +898,21 @@ class _PlayerShell extends StatelessWidget {
 
   final QueueItem? current;
 
-  /// 横屏时对 SafeArea 内层补偿挖孔安全区。
   final bool isLandscape;
 
-  /// 中区 flexible 之前的一组定长内容。
   final List<Widget> top;
 
-  /// 唯一占满剩余高度的中区；由底壳统一包进 [Expanded]。
   final Widget flexible;
 
-  /// 中区之下的一组定长内容。
   final List<Widget> bottom;
 
-  /// 悬浮于整体之上的部件（如 [Positioned] 包裹的歌词设置按钮）。
   final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
-    // 背景底色与模糊封面已上提为路由级常驻底衬（不参与横竖屏转场淡出）。
-    // 本 Scaffold 只保留 Material 祖先（IconButton/InkWell 依赖）与
-    // SafeArea 载体，背景透明——否则转场内容淡出时它会连同整条子树一起
-    // 变透明，透出下层路由壁纸（「闪背景」）。
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        // 竖屏沿用系统四边安全区；横屏让播放页插进摄像头区域（左右不再避让挖孔），
-        // 与主内容用满摄像区保持一致，避免仅单侧避让挖孔造成左右不对称。
         top: true,
         bottom: true,
         left: !isLandscape,
@@ -1039,9 +923,6 @@ class _PlayerShell extends StatelessWidget {
   }
 
   Widget _body() {
-    // 顶/底栏参与布局（AutoHideChrome 的 AnimatedSize 收缩让位）：
-    // 进退栏时中区内容自动放大/缩小占满。曾改过「浮层化」（栏盖内容、
-    // 中区恒定），因栏压在歌词/封面上穿透显示观感差，还原为布局参与式。
     return Stack(
       children: [
         Column(
@@ -1057,9 +938,6 @@ class _PlayerShell extends StatelessWidget {
   }
 }
 
-/// 「传统模式」正在播放页（经典 QQ 音乐式布局）：
-/// 顶部封面居中，标题/歌手与动作栏在下方，进度条与播放控制固定底部；
-/// 顶栏用「封面/歌词」分段切换，也可点击封面切换歌词，封面可开启频谱「闪」动效。
 class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   const _TraditionalPlayerLayout({
     required this.notifier,
@@ -1074,17 +952,12 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   final PlayerNotifier notifier;
   final QueueItem? current;
 
-  /// 横屏顶栏/底栏是否可见：由外层播放页的自动隐藏计时驱动，
-  /// 触摸唤回同样由外层 Listener 完成后经重建下传。竖屏恒 true。
   final bool chromeVisible;
 
-  /// MV 用户意图开启（对齐桌面端 requested）。
   final bool mvEnabled;
 
-  /// MV 探测/加载中（更多弹窗开关转圈）。
   final bool mvLoading;
 
-  /// MV 视频就绪（页面让渡/竖屏视频区渲染的依据）。
   final bool mvReady;
 
   final bool mvSupported;
@@ -1100,25 +973,16 @@ class _TraditionalPlayerLayoutState
     with SingleTickerProviderStateMixin {
   bool _showLyrics = false;
 
-  /// 上一次构建时的横屏态：横屏回竖屏时把封面/歌词翻页复位到封面页，
-  /// 否则歌词页残留的「歌词调节」控件不会变回封面页的「词」按钮。
   bool _wasLandscape = false;
 
-  /// 当前歌词是否含罗马音（由 _LyricsView 上报，驱动设置栏罗马音按钮可用态）。
   bool _lyricsViewHasRomaji = false;
 
-  /// 歌词视图实例 key：本实例内横竖屏翻转 reparent（同 _PlayerPageState）。
   final GlobalKey _lyricsKey = GlobalKey();
 
-  // ── 封面页外观偏好（「更多」弹层调节，本地持久化）──
-
-  /// 封面页 mini 歌词对齐：left（默认）/ center / right。
   String _coverLyricAlign = 'left';
 
-  /// 封面大小档：large（默认/最大）/ medium / small。
   String _coverSizeTier = 'large';
 
-  /// 读取封面页外观偏好（缺失/异常回退默认值）。
   Future<void> _loadCoverAppearancePrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1129,11 +993,9 @@ class _TraditionalPlayerLayoutState
         _coverSizeTier = prefs.getString('player_cover_size') ?? 'large';
       });
     } catch (_) {
-      // 读取失败保持默认值。
     }
   }
 
-  /// 更新 mini 歌词对齐并持久化。
   Future<void> _setCoverLyricAlign(String v) async {
     if (_coverLyricAlign == v) return;
     setState(() => _coverLyricAlign = v);
@@ -1143,7 +1005,6 @@ class _TraditionalPlayerLayoutState
     } catch (_) {}
   }
 
-  /// 更新封面大小档并持久化。
   Future<void> _setCoverSizeTier(String v) async {
     if (_coverSizeTier == v) return;
     setState(() => _coverSizeTier = v);
@@ -1153,18 +1014,12 @@ class _TraditionalPlayerLayoutState
     } catch (_) {}
   }
 
-  // ── 定时播放（「更多」弹层横向条调节，1~120 分钟）──
-
-  /// 定时分钟数（1~120，默认 10，本地持久化作为下次默认值）。
   int _sleepMinutes = 10;
 
-  /// 当前生效的定时截止时刻；null = 未启用。
   DateTime? _sleepDeadline;
 
-  /// 到点触发器（自动暂停播放）。
   Timer? _sleepFire;
 
-  /// 读取定时分钟数（缺失/异常回退默认 10）。
   Future<void> _loadSleepMinutes() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1172,11 +1027,9 @@ class _TraditionalPlayerLayoutState
       setState(
           () => _sleepMinutes = prefs.getInt('player_sleep_minutes') ?? 10);
     } catch (_) {
-      // 读取失败保持默认值。
     }
   }
 
-  /// 拖动落定：启动/重设定时播放，minutes 分钟后自动暂停。
   void _startSleepTimer(int minutes) {
     _sleepFire?.cancel();
     setState(() {
@@ -1189,7 +1042,6 @@ class _TraditionalPlayerLayoutState
         duration: const Duration(seconds: 1));
   }
 
-  /// 取消定时播放。
   void _cancelSleepTimer() {
     _sleepFire?.cancel();
     _sleepFire = null;
@@ -1197,7 +1049,6 @@ class _TraditionalPlayerLayoutState
     setState(() => _sleepDeadline = null);
   }
 
-  /// 定时到点：播放中则暂停并提示；未播放静默清除。
   void _onSleepTimeout() {
     _sleepFire = null;
     if (!mounted) return;
@@ -1209,7 +1060,6 @@ class _TraditionalPlayerLayoutState
     }
   }
 
-  /// 持久化定时分钟数。
   Future<void> _persistSleepMinutes() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1217,10 +1067,8 @@ class _TraditionalPlayerLayoutState
     } catch (_) {}
   }
 
-  /// 封面/歌词左右滑动翻页控制器。
   late final PageController _pageController;
 
-  /// 「闪」频谱动效已由音质按钮替换，保留字段仅作封面频谱条的固定开关（默认关闭）。
   final bool _flashOn = false;
 
   late final AnimationController _eq;
@@ -1234,7 +1082,6 @@ class _TraditionalPlayerLayoutState
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    // 关闭即销毁，默认封面页（0），不再跨开关记忆歌词模式。
     _pageController = PageController(initialPage: 0);
   }
 
@@ -1246,7 +1093,6 @@ class _TraditionalPlayerLayoutState
     super.dispose();
   }
 
-  /// 顶栏分段点击：切换到对应页（封面 0 / 歌词 1）。
   void _switchPage(int i) {
     _pageController.animateToPage(
       i,
@@ -1256,7 +1102,6 @@ class _TraditionalPlayerLayoutState
     if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
   }
 
-  /// 依据「闪」开关与播放状态启停频谱动效。
   void _syncEq(bool isPlaying) {
     final run = _flashOn && isPlaying;
     if (run && !_eq.isAnimating) {
@@ -1270,11 +1115,8 @@ class _TraditionalPlayerLayoutState
   @override
   Widget build(BuildContext context) {
     final current = widget.current;
-    // 播放态只在此局部订阅（驱动封面频谱与播放键），不随整页重建。
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     _syncEq(isPlaying);
-    // 横屏回竖屏：封面/歌词翻页复位到封面页（0），让最右控件变回「词」按钮；
-    // 否则残留的歌词页会把该控件渲染成「歌词调节」。postFrame 内跳转以避开构建期。
     final isLandscape = ref.watch(isLandscapeProvider);
     if (!isLandscape && _wasLandscape) {
       _wasLandscape = false;
@@ -1287,27 +1129,18 @@ class _TraditionalPlayerLayoutState
     } else {
       _wasLandscape = isLandscape;
     }
-    // 传统模式横屏：封面与歌词左右并排，取代封面/歌词上下翻页。
-    // 竖屏＝默认封面/歌词上下翻页；横屏＝独立一套横向 UI，两套完全分开。
-    // 两套子树有同名 Hero/GlobalKey（见 _buildAdvancedBody），用顺序转场。
     return LandscapeGate.sequential(
       portrait: _buildTraditionalPortrait(context, current),
       landscape: _buildTraditionalLandscape(context, current),
     );
   }
 
-  /// 竖屏：顶栏 + 封面/歌词上下翻页 + 动作行 + 进度条 + 播放控制。
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
-    // MV 视频由外层 Stack 贴最前层展示，本页零重排（封面/歌词原样保留）。
     return _PlayerShell(
       current: current,
       top: [
         _buildTopBar(context),
       ],
-      // 中间区域：竖屏为封面/歌词左右滑动切换。
-      // allowImplicitScrolling：挂载后空闲帧即预构建相邻歌词页（KeepAlive
-      // 留存），歌词解析/行布局/逐字模糊烘焙在用户滑动前完成——首次切换
-      // 封面⇄歌词不再带一次性建页卡顿。
       flexible: Stack(
         fit: StackFit.expand,
         children: [
@@ -1345,7 +1178,6 @@ class _TraditionalPlayerLayoutState
           ),
         ],
       ),
-      // 竖屏播放控件：动作行 + 进度条 + 播放控制，留白再上移一格避免贴底。
       bottom: [
         _buildActionsRow(context),
         const SizedBox(height: 4),
@@ -1358,20 +1190,15 @@ class _TraditionalPlayerLayoutState
         _Controls(notifier: widget.notifier),
         const SizedBox(height: 32),
       ],
-      // 歌词调节入口已并入封面歌词双态「词」控件（进度条上方动作行），
-      // 不再在右上角叠加浮动 rail，避免挤压分享按钮。
       overlay: null,
     );
   }
 
-  /// 横屏：顶栏（仅标题）+ 左封面｜右歌词并排 + 进度条 + 三区控制行，独立一套 UI。
   Widget _buildTraditionalLandscape(BuildContext context, QueueItem? current) {
-    // MV 就绪时中区整体隐藏让渡全屏视频（顶栏/底栏保留，自动隐藏不变）。
     final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
       isLandscape: true,
-      // 顶栏随外层自动隐藏计时收起（触摸唤回由外层 Listener 负责）。
       top: [
         AutoHideChrome(
           visible: widget.chromeVisible,
@@ -1379,23 +1206,17 @@ class _TraditionalPlayerLayoutState
           child: _buildTopBar(context, landscape: true),
         ),
       ],
-      // 中间区域：横屏为「左封面｜右歌词」并排（歌词常显，封面不滚动歌词），
-      // 固定横向对半布局，不提供可拖动中线。
       flexible: mvReady
           ? const SizedBox.shrink()
           : Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 封面整体右移一点：横屏下封面与左缘留出呼吸间距。
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(left: 24),
               child: _buildCoverSection(context, showLyricPreview: false),
             ),
           ),
-          // 歌词贴近放大的封面；左 12 贴中线侧留呼吸、右 56 多让位——
-          // 不对称让位使歌词内容整体往屏幕中间靠（原居中于 75% 屏宽偏右，
-          // 左移约 22px），左对齐模式下歌词也随之前移贴近封面。
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(left: 12, right: 56),
@@ -1404,7 +1225,6 @@ class _TraditionalPlayerLayoutState
                 child: _LyricsView(
                   key: _lyricsKey,
                   current: current,
-                  // 横屏歌词常显
                   visible: true,
                   onTap: () {},
                   onRomajiAvailable: (has) {
@@ -1419,8 +1239,6 @@ class _TraditionalPlayerLayoutState
           ),
         ],
       ),
-      // 横屏播放控件：进度条 + 三区控制行（时长/下载/收藏｜播放顺序/三大键/歌词｜音质/音效/队列）。
-      // 底部控制带整体随外层自动隐藏计时收起。
       bottom: [
         AutoHideChrome(
           visible: widget.chromeVisible,
@@ -1433,7 +1251,6 @@ class _TraditionalPlayerLayoutState
                   padding: const EdgeInsets.symmetric(horizontal: 22),
                   child: _ProgressBar(
                     notifier: widget.notifier,
-                    // 时长已移到控制行左下角，进度条这里不再重复显示。
                     showTime: false,
                   ),
                 ),
@@ -1442,7 +1259,6 @@ class _TraditionalPlayerLayoutState
               _LandscapeControlsRow(
                 notifier: widget.notifier,
                 current: current,
-                // 歌词调节菜单移至底栏最右组件打开（对齐桌面）。
                 onLyricAdjust: () => _showLyricAdjustMenu(
                   context,
                   ref,
@@ -1454,22 +1270,16 @@ class _TraditionalPlayerLayoutState
           ),
         ),
       ],
-      // 横屏歌词调节已并入底栏最右组件，右上是音乐卡片，不再叠加浮动 rail。
       overlay: null,
     );
   }
 
-  /// 歌词调节菜单（居中弹窗，对齐桌面歌词页）。
-  /// 含左/中/右对齐 + 字号/翻译/罗马音/偏移入口，横竖屏弹窗完全一致；
-  /// 竖屏封面页的入口保持「桌面歌词」原状。
   static void _showLyricAdjustMenu(
     BuildContext context,
     WidgetRef ref, {
     required bool hasRomaji,
     bool showAlign = true,
   }) {
-    // 在一个弹窗内用子面板切换字号/偏移/主菜单，避免「先 pop 弹窗再立刻 push
-    // 新弹窗」的路由叠换造成切换瞬间白屏盖屏。
     showSheetDialog<void>(
       context,
       (_) => _LyricsAdjustDialog(
@@ -1479,7 +1289,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 歌词左/中/右对齐分段选择。
   static Widget _buildAlignSegmented(
     BuildContext ctx,
     String align,
@@ -1534,7 +1343,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 歌词菜单里的点击行（字号 / 时间偏移）。
   static Widget _buildLyricMenuAction(
     BuildContext ctx, {
     required IconData icon,
@@ -1571,7 +1379,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 歌词菜单里的开关行（翻译 / 罗马音）。
   static Widget _buildLyricMenuSwitch(
     BuildContext ctx, {
     required IconData icon,
@@ -1614,7 +1421,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 顶栏：返回 / 封面·歌词分段切换（横屏并排时仅标题） / 分享。
   Widget _buildTopBar(BuildContext context, {bool landscape = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1645,7 +1451,6 @@ class _TraditionalPlayerLayoutState
             ),
           ),
           IconButton(
-            // 右上角分享：收窄视觉尺寸，避免与返回键争夺顶栏视觉重心。
             icon: const Icon(
               Icons.ios_share,
               size: 20,
@@ -1664,14 +1469,9 @@ class _TraditionalPlayerLayoutState
 
   Widget _buildCoverSection(BuildContext context,
       {bool showLyricPreview = true}) {
-    // 播放态局部订阅：仅驱动封面频谱，不随整页重建。
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     return LayoutBuilder(
       builder: (context, cons) {
-        // 竖屏取较紧凑尺寸，给封面下方信息条(歌名/作者/收藏)与歌词预览留空间；
-        // 横屏去掉了信息条，封面放大铺满更多可用高度。
-        // 封面大小档（「更多」弹层调节）：large=1.0（默认/最大）/ medium=0.85 /
-        // small=0.70，乘进基准尺寸；hInset 随 coverSize 自动联动收窄。
         final coverTierScale = switch (_coverSizeTier) {
           'medium' => 0.85,
           'small' => 0.70,
@@ -1681,14 +1481,10 @@ class _TraditionalPlayerLayoutState
           cons.maxWidth * (showLyricPreview ? 0.85 : 0.92),
           cons.maxHeight * (showLyricPreview ? 0.6 : 0.88),
         ) * coverTierScale;
-        // 封面居中后的左右缩进：歌名/收藏/歌词以封面左右边缘为基准对齐。
         final hInset = (cons.maxWidth - coverSize) / 2;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 竖屏：封面略下移，与顶部切换 tab 留出呼吸间距；
-            // 横屏（沉浸无顶栏）：封面上下均分弹性空间垂直居中，栏退出后
-            // 中区变高时封面居中于屏幕而非贴顶。
             showLyricPreview
                 ? const SizedBox(height: 14)
                 : const Expanded(child: SizedBox.shrink()),
@@ -1730,14 +1526,10 @@ class _TraditionalPlayerLayoutState
                 ),
               ),
             ),
-            // 竖屏：封面下方保留歌名/作者/收藏信息条；横屏这些信息冗余
-            // （顶部有歌名、底部有收藏），去掉并把空间留给放大的封面。
             if (showLyricPreview) ...[
               const SizedBox(height: 30),
               _buildCaption(context, inset: hInset),
             ],
-            // 中部剩余空间：3 行歌词预览，对齐方式跟随「更多」弹层的设置
-            // （左对齐与封面左缘对齐 / 居中 / 右对齐与封面右缘对齐）。
             Expanded(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: hInset),
@@ -1747,7 +1539,6 @@ class _TraditionalPlayerLayoutState
                     'right' => Alignment.centerRight,
                     _ => Alignment.centerLeft,
                   },
-                  // 横屏(showLyricPreview=false)时封面下方只显示封面、不带滚动歌词预览。
                   child: showLyricPreview
                       ? _LyricPreview(
                           current: widget.current,
@@ -1763,13 +1554,10 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 封面下方的信息条：左边歌名/作者（分开于歌词，不再内嵌歌词预览），右边收藏按钮。
-  /// [inset] 与封面居中后的左右缩进一致，使歌名左缘与封面左边、收藏右缘与封面右边对齐。
   Widget _buildCaption(BuildContext context, {required double inset}) {
     final c = widget.current;
     final isFav = c != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
-    // 仅日推队列显示「不喜欢」：跳过本曲并上报负反馈，帮助调整日推算法。
     final fromDaily = c?.fromDailyRecommend ?? false;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: inset),
@@ -1781,7 +1569,6 @@ class _TraditionalPlayerLayoutState
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 歌名过长时在容器内水平滚动展示（加大字号）
                 SizedBox(
                   height: (20 * 1.2).ceilToDouble(),
                   child: _Marquee(
@@ -1819,7 +1606,6 @@ class _TraditionalPlayerLayoutState
                 child: SizedBox(
                   width: 28,
                   height: 28,
-                  // 样式：收藏爱心 + 一条贯穿斜线（不喜欢）。
                   child: CustomPaint(
                     painter: _DislikeStrokePainter(
                       color: Colors.white.withValues(alpha: 0.9),
@@ -1857,7 +1643,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 「不喜欢」当前日推歌曲：上报负反馈到服务器（调整日推算法），随后跳过本曲。
   Future<void> _reportDailyDislike(BuildContext context, QueueItem? c) async {
     if (c == null) return;
     final ciyuanxiId = ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '';
@@ -1875,7 +1660,6 @@ class _TraditionalPlayerLayoutState
         },
       );
     } catch (_) {
-      // 上报失败不阻断跳过体验。
     }
     if (!context.mounted) return;
     showXianYuToast(context, tr('已减少此类推荐'));
@@ -1886,7 +1670,6 @@ class _TraditionalPlayerLayoutState
     final sfx = ref.watch(soundEffectProvider).settings;
     final bypass = sfx.bypass;
     final current = widget.current;
-    // 下载状态：本地曲天然已在设备；在线曲按下载历史/进行中任务判断。
     final dl = ref.watch(downloadProvider);
     final isLocal = current != null && !current.isOnline;
     final currentQuality = ref.watch(
@@ -1895,7 +1678,6 @@ class _TraditionalPlayerLayoutState
     final lyricsEnabled = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
-    // MV 开启时音质按钮改显当前 MV 画质（弹窗同样分流，对齐桌面端）。
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
       mvProvider.select((s) => s.source?.videoQuality),
@@ -1910,7 +1692,6 @@ class _TraditionalPlayerLayoutState
     final dlDone = current != null &&
         (isLocal ||
             dl.history.any((h) => h.songPath == current.path));
-    // 动作项纯图标、5 等分+居中铺满一行（与进度条下方播放控件行 5 列严格同轴）。
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
@@ -1920,7 +1701,6 @@ class _TraditionalPlayerLayoutState
             icon: Icons.graphic_eq,
             tooltip: tr('音效'),
             active: !bypass && _hasPlayerEffects(sfx),
-            // 点击打开音效页（原首页底部栏音效入口已迁入传统播放页）。
             onTap: () => context.push('/effects'),
           ))),
           Expanded(child: Center(child: _qualityActionItem(
@@ -1930,10 +1710,8 @@ class _TraditionalPlayerLayoutState
               final c = current;
               if (c == null) return;
               if (c.isOnline) {
-                // 在线歌曲：弹出音质选择弹窗，可修改播放音质。
                 _showQualitySheet(context, ref);
               } else {
-                // 本地音乐按原文件音质直传，无需切换。
                 showXianYuToast(context, tr('本地音乐以原音质播放'));
               }
             },
@@ -1956,14 +1734,12 @@ class _TraditionalPlayerLayoutState
                 );
                 return;
               }
-              // 在线歌曲：弹出下载音质选择弹窗，选档后按该档下载。
               _showDownloadQualitySheet(context, ref, current);
             },
           ))),
           Expanded(child: Center(child: _actionItem(
             context,
             icon: Icons.chat_bubble_outline,
-            // 圆形评论气泡（对齐桌面端 lucide MessageCircle）
             iconWidget: _MessageCircleIcon(
               size: 24,
               color: current != null && current.isOnline
@@ -1971,7 +1747,6 @@ class _TraditionalPlayerLayoutState
                   : Colors.white.withValues(alpha: 0.32),
             ),
             tooltip: tr('评论'),
-            // 本地歌曲无在线评论信息，置灰不可点
             enabled: current != null && current.isOnline,
             onTap: () {
               final c = current;
@@ -1982,18 +1757,13 @@ class _TraditionalPlayerLayoutState
               );
             },
           ))),
-          // 桌面歌词「词」按钮：与音效/音质/下载/评论并排、位于最右（对齐桌面端 FooterControlIcon 词字样式）
           Expanded(child: Center(child: _lyricsActionItem(context, lyricsEnabled))),
         ],
       ),
     );
   }
 
-  /// 进度条上方动作行最右的控件：封面页是「更多」弹层入口；
-  /// 歌词页变为「歌词调节」入口（打开调节菜单，含字号/翻译/罗马音/偏移
-  /// 与左中右对齐，横竖屏弹窗完全一致），不再挤压右上角分享按钮。
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
-    // 歌词页：桌面歌词控件变身歌词调节控件。默认白色，仅触发调节菜单时才点亮。
     if (_showLyrics) {
       return IconButton(
         iconSize: 28,
@@ -2007,13 +1777,10 @@ class _TraditionalPlayerLayoutState
           context,
           ref,
           hasRomaji: _lyricsViewHasRomaji,
-          // 横竖屏歌词菜单一致：都提供左/中/右对齐。
           showAlign: true,
         ),
       );
     }
-    // 封面页：「更多」按钮（弹层内含桌面歌词开关与添加到歌单），
-    // 原桌面歌词直达入口已收进弹层，避免动作行语义拥挤。
     return IconButton(
       iconSize: 28,
       tooltip: tr('更多'),
@@ -2026,10 +1793,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 封面页「更多」弹层：MV 开关 + 添加到歌单 + 桌面歌词开关。
-  ///
-  /// MV 开关仅对可能支持 MV 的歌曲显示（对齐桌面端 supportsMusicVideo：
-  /// 仅 MusicFree 格式插件歌曲；LX 格式插件歌曲无 MV 概念）。
   Future<void> _showCoverMoreSheet(
       BuildContext context, bool lyricsEnabled) async {
     final c = widget.current;
@@ -2063,7 +1826,6 @@ class _TraditionalPlayerLayoutState
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // ── 封面页外观调节：mini 歌词对齐 + 封面大小 ──
               StatefulBuilder(
                 builder: (ctx, setSheetState) => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2099,15 +1861,12 @@ class _TraditionalPlayerLayoutState
                   ],
                 ),
               ),
-              // ── 定时播放：1~120 分钟无极横条，拖动落定即生效 ──
               _SleepTimerRow(
                 initialMinutes: _sleepMinutes,
                 deadlineGetter: () => _sleepDeadline,
                 onCommit: _startSleepTimer,
                 onCancel: _cancelSleepTimer,
               ),
-              // ── MV 背景开关（仅 MusicFree 格式插件歌曲可用）──
-              // 加载中转圈并忽略点击，防止重复探测（对齐桌面端 loading 态）。
               if (widget.mvSupported && widget.onToggleMv != null)
                 ListTile(
                   leading: widget.mvLoading
@@ -2144,7 +1903,6 @@ class _TraditionalPlayerLayoutState
                       ctx, ref, [importedSongFromQueueItem(c)]);
                 },
               ),
-              // 桌面歌词开关置于弹层最下（外观调节/添加到歌单之后）。
               ListTile(
                 leading: Icon(
                   Icons.closed_caption_outlined,
@@ -2171,7 +1929,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 弹层内的分段选择行：小标题 + 一组互斥选项（选中项主题色高亮）。
   Widget _sheetSegmentRow(
     BuildContext ctx, {
     required String label,
@@ -2208,7 +1965,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 下载按钮（对齐桌面端）：下载中显示环形加载，已下载显示绿色对勾。
   Widget _downloadActionItem(
     BuildContext context, {
     required bool isLocal,
@@ -2238,8 +1994,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 音质按钮（对齐桌面端）：以文字缩写显示当前音质，固定默认颜色展示
-  /// （与歌词设置 ui 一致），不再用主题色高亮无损档。
   Widget _qualityActionItem(
     BuildContext context, {
     required String? quality,
@@ -2268,7 +2022,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 单个动作项：纯图标（对齐播放控件行）；enabled=false 时置灰且不可点。
   Widget _actionItem(
     BuildContext context, {
     required IconData icon,
@@ -2296,7 +2049,6 @@ class _TraditionalPlayerLayoutState
   }
 }
 
-/// 圆形评论气泡图标（对齐桌面端 lucide MessageCircle）。
 class _MessageCircleIcon extends StatelessWidget {
   const _MessageCircleIcon({
     this.size = 24,
@@ -2350,7 +2102,6 @@ class _MessageCirclePainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-/// 顶栏封面/歌词分段切换控件。
 class _SegmentSwitcher extends StatelessWidget {
   const _SegmentSwitcher({
     required this.items,
@@ -2406,12 +2157,10 @@ class _SegmentSwitcher extends StatelessWidget {
   }
 }
 
-/// 封面下歌词预览：取当前播放行的上一行/当前/下一行 共 3 行展示。
 class _LyricPreview extends ConsumerStatefulWidget {
   const _LyricPreview({required this.current, this.align = 'left'});
   final QueueItem? current;
 
-  /// 行内文字对齐：left（默认）/ center / right，跟随「更多」弹层设置。
   final String align;
 
   @override
@@ -2419,7 +2168,6 @@ class _LyricPreview extends ConsumerStatefulWidget {
 }
 
 class _LyricPreviewState extends ConsumerState<_LyricPreview> {
-  /// 单行高度：包含相邻行间隙，滚动一次即移动一行高度。
   static const double _kLineH = 23.0;
 
   List<_LyricLineItem> _lines = const [];
@@ -2441,8 +2189,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     }
   }
 
-  /// 获取插件源歌词（含 MusicFree/LX），返回待解析的纯歌词文本。
-  /// 优先级与主歌词面板一致：lxlyric → yrc → qrc → eslrc → lyric。
   Future<String> _fetchPluginPreviewLyric(QueueItem item) async {
     final online = item.onlineSongJson;
     if (online == null || online.isEmpty) return '';
@@ -2478,7 +2224,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     final item = widget.current;
     final path = item?.path ?? '';
     if (path.isEmpty || _loading || _lines.isNotEmpty) return;
-    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
     final cached = _lyricsCache[path];
     if (cached != null && cached.isNotEmpty) {
       if (mounted) setState(() => _lines = cached);
@@ -2488,13 +2233,10 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     try {
       String jsonStr = '';
       if (item!.isOnline) {
-        // 在线曲目：优先取插件歌词（插件源走 pluginId 命中的插件），
-        // 取不到再走 Rust 内置音源在线抓词
         final pluginText = await _fetchPluginPreviewLyric(item);
         if (pluginText.trim().isNotEmpty) {
           jsonStr = await parseLyrics(rawLyrics: pluginText);
         } else if (item.source != null && item.onlineInfoJson != null) {
-          // 在线曲目：通过 Rust 接口在线抓取指定音源的歌词
           final rawResultStr = await fetchLyricFromSource(
             source: item.source!,
             songInfoJson: item.onlineInfoJson!,
@@ -2525,11 +2267,9 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
           }
         }
       } else {
-        // 本地曲目：通过数据库及本地资源提取
         final dbPath = await ref.read(dbPathProvider.future);
         jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
       }
-      // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate。
       final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
           ? await compute(_parseLyricsJson, jsonStr)
           : const <_LyricLineItem>[];
@@ -2547,7 +2287,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
   @override
   Widget build(BuildContext context) {
     if (_lines.isEmpty) return const SizedBox.shrink();
-    // 预览歌词随播放进度局部刷新（只重建本行组，不影响整页）。
     final posMs = (ref.watch(playerProvider.select((s) => s.position)) * 1000);
     var active = 0;
     for (var i = 0; i < _lines.length; i++) {
@@ -2557,10 +2296,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
         break;
       }
     }
-    // 定高滚动窗口：把歌词按行高 _kLineH 排成一列，ClipRect 只露出当前行 +
-    // 上下各一行（3 × _kLineH）。用 TweenAnimationBuilder（begin:null）随目标行
-    // 变化自动从当前值平滑续接，无手动 controller 的 stop/赋值竞态，逐字歌词
-    // 高频推进也不会跳动或卡死。当前行从底部滚入中间、旧当前行滚出顶部。
     return ClipRect(
       child: SizedBox(
         width: double.infinity,
@@ -2571,7 +2306,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
           curve: Curves.easeOutCubic,
           builder: (context, cur, _) {
             final activeLine = cur.round().clamp(0, _lines.length - 1);
-            // 只渲染视野内（当前行 ± 2 行）的行，避免整列全量构建。
             final rows = <Widget>[];
             for (var i = (cur - 2).floor(); i <= (cur + 2).ceil(); i++) {
               if (i < 0 || i >= _lines.length) continue;
@@ -2587,8 +2321,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
                     _lines[i].text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    // 行占满宽度（left:0/right:0），对齐用 textAlign 生效：
-                    // 跟随「更多」弹层的迷你歌词对齐设置。
                     textAlign: switch (widget.align) {
                       'center' => TextAlign.center,
                       'right' => TextAlign.right,
@@ -2616,7 +2348,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
   }
 }
 
-/// 单行动态跑马灯：文本超出容器宽度时自动无缝横向滚动，否则静态展示。
 class _Marquee extends StatefulWidget {
   const _Marquee({required this.text, required this.style});
   final String text;
@@ -2631,7 +2362,7 @@ class _MarqueeState extends State<_Marquee>
   late final AnimationController _controller;
   double _textWidth = 0;
   static const _gap = 60.0;
-  static const _speed = 42.0; // 滚动速度（像素/秒）
+  static const _speed = 42.0;
 
   @override
   void initState() {
@@ -2667,7 +2398,6 @@ class _MarqueeState extends State<_Marquee>
     return LayoutBuilder(
       builder: (context, cons) {
         final maxWidth = cons.maxWidth;
-        // 文本未溢出：静态展示，不启动滚动
         if (_textWidth <= maxWidth) {
           _controller.stop();
           return Align(
@@ -2680,7 +2410,6 @@ class _MarqueeState extends State<_Marquee>
             ),
           );
         }
-        // 无缝循环滚动：总移动距离 = 文本宽 + 间隙，滚动到末尾时第二份文本续上
         final total = _textWidth + _gap;
         final seconds = total / _speed;
         if ((_controller.duration?.inMilliseconds ?? 0) !=
@@ -2727,18 +2456,6 @@ class _MarqueeState extends State<_Marquee>
   }
 }
 
-/// 封面切换「左右覆盖」动画：
-/// 切歌时旧封面原地停留，新封面从侧向滑入把旧封面盖住。
-/// 前进（切到下一首，queueIndex 增大）从右向左覆盖，后退从左向右覆盖；
-/// 同 index 自动换源默认从右。无播放 / 未切换时零开销直出当前封面。
-///
-/// 触发主路径是 [didUpdateWidget]：播放页顶层只订阅 current，切歌必然整页
-/// 重建并逐层下发新 current，本组件在配置更新中同步启动动画——不依赖
-/// provider 侦听时序，不存在「侦听与同帧重建互相吞动画」的竞态（旧实现
-/// listenManual 先行提交进程级路径，导致 didUpdateWidget 兜底被守卫拦下、
-/// 侦听路径的动画又被销毁吞掉，表现为切歌直接硬切闪一帧）。
-/// 进程级「上一张封面」注册表按 [role] 隔离，仅用于整页重建导致本组件
-/// 重挂载时 initState 的兜底补播（5 秒宽限期内有效）。
 class _AnimatedPlayerCover extends ConsumerStatefulWidget {
   const _AnimatedPlayerCover({
     required this.current,
@@ -2748,11 +2465,8 @@ class _AnimatedPlayerCover extends ConsumerStatefulWidget {
 
   final QueueItem? current;
 
-  /// 由实际封面构建：对给定的 [QueueItem] 生成一张完整封面（含边框阴影）。
   final Widget Function(BuildContext, QueueItem?) builder;
 
-  /// 注册表隔离键：'cover'（封面）/ 'bg'（模糊背景）各自记录自己的上一张，
-  /// 避免同帧多个实例互相覆盖注册表导致兜底动画丢失。
   final String role;
 
   @override
@@ -2760,7 +2474,6 @@ class _AnimatedPlayerCover extends ConsumerStatefulWidget {
       _AnimatedPlayerCoverState();
 }
 
-/// 进程级「上一张封面」注册表条目。
 class _SwitchCoverRecord {
   QueueItem? item;
   int index = -1;
@@ -2777,28 +2490,19 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     with SingleTickerProviderStateMixin {
   AnimationController? _ctrlC;
 
-  /// 惰性创建但不允许在 dispose 里创建：实例若在 build 抛错后未初始化即被
-  /// 卸载，late final 会在 dispose 首次访问时才执行初始化器——createTicker
-  /// 在已失活元素上查 TickerMode 直接抛异常，中断 finalizeTree 卸载流程，
-  /// 元素树记账损坏后引发连环 GlobalKey 断言（鸿蒙模拟器红屏根因，实测）。
   AnimationController get _ctrl => _ctrlC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 420),
   );
 
-  /// 被覆盖的旧封面（仅动画期间非空，作为静止的底）。
   QueueItem? _base;
 
-  /// 当前已呈现的歌 path（实例级事实源：didUpdateWidget 据此判定切歌）。
   String? _shownPath;
 
-  /// 上次呈现时的 queueIndex（实例级方向判定；多实例互不串扰）。
   int _lastIndex = -1;
 
-  /// 当前是否处于切歌覆盖动画中。
   bool _animating = false;
 
-  /// 1 = 新封面从右滑入向左覆盖；-1 = 从左滑入向右覆盖。
   int _dir = 1;
 
   late final _SwitchCoverRecord _record = _switchCoverRecordOf(widget.role);
@@ -2807,7 +2511,6 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
   void initState() {
     super.initState();
     _shownPath = widget.current?.path;
-    // initState 阶段不可 setState：重挂载兜底直接赋值，build 首帧即用上底封面。
     _maybeStartFromPrevious();
   }
 
@@ -2817,14 +2520,12 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     _onTrackChange(widget.current, old.current);
   }
 
-  /// 切歌主路径：与 [_shownPath]（实例级）比对，命中即同步启动覆盖动画。
   void _onTrackChange(QueueItem? next, QueueItem? prev) {
     if (next == null || next.path == _shownPath) return;
     final idx = ref.read(playerProvider).queueIndex;
     _dir = (_lastIndex < 0 || idx >= _lastIndex) ? 1 : -1;
     _lastIndex = idx;
     _shownPath = next.path;
-    // 底图：上一个配置里的歌；不可得（重挂载/首次）时退进程级注册表。
     final base = (prev != null && prev.path != next.path)
         ? prev
         : _record.item;
@@ -2837,8 +2538,6 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     _runForward();
   }
 
-  /// 重挂载兜底：整页重建销毁重建本组件时，用进程级「上一张封面」立即补播
-  /// 动画（仅当上一张封面是最近 5 秒内的有效值）。
   void _maybeStartFromPrevious() {
     final cur = widget.current;
     if (cur == null) return;
@@ -2889,16 +2588,10 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
       return widget.builder(context, null);
     }
     if (!_animating || _base == null) return widget.builder(context, cur);
-    // passthrough 而非 expand：封面场景父级是 Center/Hero（松约束），expand 会在
-    // 动画期间把封面强制撑满可用空间、结束弹回原尺寸产生跳变；passthrough 下
-    // 封面保持固有尺寸（Stack 恰好包住封面），背景场景父级是紧约束全屏 Stack，
-    // 行为与不动画时完全一致。
     return Stack(
       fit: StackFit.passthrough,
       children: [
-        // 底：旧封面静止不动。
         widget.builder(context, _base),
-        // 面：新封面从侧向滑入覆盖旧封面（ClipRect 收敛到封面区域内）。
         AnimatedBuilder(
           animation: _ctrl,
           child: widget.builder(context, cur),
@@ -2923,8 +2616,6 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
   }
 }
 
-/// 传统模式大封面：圆角方形 + 阴影，开启「闪」时在底部叠加频谱条。
-/// （歌名/收藏信息条挂在封面下方的独立行，不再叠加在封面上。）
 class _TraditionalCover extends StatelessWidget {
   const _TraditionalCover({
     required this.size,
@@ -3028,7 +2719,6 @@ class _TraditionalCover extends StatelessWidget {
   }
 }
 
-/// 封面底部频谱条（「闪」动效）：底部渐隐 + 跳动的等化器竖条。
 class _EqStrip extends StatelessWidget {
   const _EqStrip({required this.eq});
   final AnimationController eq;
@@ -3079,9 +2769,6 @@ class _EqStrip extends StatelessWidget {
   }
 }
 
-/// 播放页下拉收回手势：向下拖拽整页跟手位移，松手超过阈值或快速下甩
-/// 即关闭页面（关闭时由路由的下滑转场从当前位置继续收到底部），
-/// 否则弹回原位。歌词列表等内部纵向滚动手势由滚动视图优先接管。
 class _DragDismissSheet extends StatefulWidget {
   const _DragDismissSheet({required this.child});
   final Widget child;
@@ -3153,12 +2840,6 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
   }
 }
 
-/// 模糊封面全屏背景（学 MusicFree 播放详情页）：
-/// 封面 cover 填满全屏 + 大半径模糊 + 深色遮罩保证前景可读；
-/// 无封面时回退氛围光斑。
-///
-/// 模糊用 [ImageFiltered] 作用于图片本身而非 BackdropFilter——静态图
-/// 只渲染一次即缓存，不参与每帧合成。
 class _BlurredCoverBackground extends StatelessWidget {
   const _BlurredCoverBackground({required this.current});
 
@@ -3172,23 +2853,16 @@ class _BlurredCoverBackground extends StatelessWidget {
       return const _AmbientBackground();
     }
 
-    // 模糊封面铺底层（深色兜底 + 1/8 预烘焙高斯模糊封面）随切歌做与封面
-    // 同款的「左右覆盖」过渡（重用 _AnimatedPlayerCover，背景与封面同步
-    // 滑动，消除硬切闪变）；两条渐晕为静态叠层，不参与动画。
     return RepaintBoundary(
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 深色兜底：封面图加载/渐进解码未就绪或失败时保证背景不透明——
-          // 传统模式 Scaffold 是透明的，缺这层会直接透出底层页面。
           Container(color: Color.lerp(scheme.surface, Colors.black, 0.6)),
           _AnimatedPlayerCover(
             current: current,
             role: 'bg',
             builder: (context, cur) => _blurCoverLayer(context, cur, scheme),
           ),
-          // 桌面端同款渐晕：左右 black/6 + 底部 black/22（歌词区在下部，
-          // 底部压暗直接提升可读性），顶部仅 black/3 保持通透。
           const _DecoratedGradient(
             gradient: LinearGradient(
               begin: Alignment.centerLeft,
@@ -3216,37 +2890,21 @@ class _BlurredCoverBackground extends StatelessWidget {
     );
   }
 
-  /// 单首歌的模糊铺底层：深色兜底 + 1/8 预烘焙高斯模糊封面铺满。
-  /// 恒定毛玻璃：MV 开关不改变背景外观（模糊作用于 1/8 小图，GPU 开销
-  /// 可忽略，视频播放期间保持同一外观，无背景跳变）。
   Widget _blurCoverLayer(BuildContext context, QueueItem? item, ColorScheme scheme) {
-    // 无歌（理论上不达，外层已拦截）：仅深色兜底。
     if (item == null) {
       return Container(color: Color.lerp(scheme.surface, Colors.black, 0.6));
     }
-    // 低分辨率预烘焙：把封面先渲染到 1/8 尺寸的小图空间里做高斯模糊，再整体
-    // 放大铺满（FittedBox）。高斯模糊只在 ~1/64 的像素上计算一次，放大由 GPU
-    // 插值完成且模糊天然平滑；RepaintBoundary 把结果冻结成图层，整页上滑/收回
-    // 与键盘适配时只搬贴图、不打重采样。
     final size = MediaQuery.of(context).size;
     const downscale = 8.0;
     final smallW = size.width / downscale;
     final smallH = size.height / downscale;
-    // 背景模糊恒定为大模糊（MusicFree blurRadius=50），打开/收回全程不变，
-    // 不再跟随路由转场动态调 sigma，消除开关过程中背景的观感变化。
     const sigma = 50.0 / downscale;
-    // 桌面端 PlayerDetailBackground 同款色调处理：brightness(0.78) 压暗 +
-    // saturate(1.42) 提饱和 + contrast(1.16) 提对比（CSS filter 顺序：
-    // brightness → saturate → contrast，矩阵已按序合成，含 -0.08 对比偏置）。
-    // 无此处理时模糊封面整体偏亮，歌词白字可读性差。
     const toneMatrix = <double>[
-      1.2039, -0.2717, -0.0274, 0, -0.08, //
-      -0.0809, 1.0131, -0.0274, 0, -0.08, //
-      -0.0809, -0.2717, 1.2575, 0, -0.08, //
+      1.2039, -0.2717, -0.0274, 0, -0.08,
+      -0.0809, 1.0131, -0.0274, 0, -0.08,
+      -0.0809, -0.2717, 1.2575, 0, -0.08,
       0, 0, 0, 1, 0,
     ];
-    // 封面铺满全屏：恒定叠大半径高斯模糊（MusicFree blurRadius=50），
-    // 打开/收回/MV 开关全程外观不变，消除一切背景观感跳变。
     final coverChild = CoverImage(
       songPath: item.path,
       networkUrl: item.coverUrl,
@@ -3257,7 +2915,6 @@ class _BlurredCoverBackground extends StatelessWidget {
         scheme.primary,
         scheme.primary.withValues(alpha: 0.72),
       ],
-      // 全屏背景占位不要中央大图标
       placeholder: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -3295,7 +2952,6 @@ class _BlurredCoverBackground extends StatelessWidget {
   }
 }
 
-/// 全屏渐晕层：纯渐变装饰，静态图层零成本。
 class _DecoratedGradient extends StatelessWidget {
   const _DecoratedGradient({required this.gradient});
 
@@ -3309,7 +2965,6 @@ class _DecoratedGradient extends StatelessWidget {
   }
 }
 
-/// 背景氛围光斑：用主题色与深色点缀营造流光感。
 class _AmbientBackground extends StatelessWidget {
   const _AmbientBackground();
 
@@ -3336,7 +2991,6 @@ class _AmbientBackground extends StatelessWidget {
           right: -120,
           child: _blob(scheme.tertiary.withValues(alpha: 0.12), 260),
         ),
-        // 光斑已改为径向渐晕，不再需要全屏 sigma60 BackdropFilter。
       ],
     );
   }
@@ -3346,19 +3000,16 @@ class _AmbientBackground extends StatelessWidget {
     height: size,
     decoration: BoxDecoration(
       shape: BoxShape.circle,
-      // 自带 alpha 径向渐晕即为柔光，替代原全屏 sigma60 BackdropFilter（常驻高成本点）。
       gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
     ),
   );
 }
 
-/// 大封面：本地/在线封面，无封面时回退渐变占位。
 class _BigCover extends StatelessWidget {
   const _BigCover({required this.current, this.size});
 
   final QueueItem? current;
 
-  /// 指定封面边长；为空时按竖屏直觉取值（屏宽 68%）。
   final double? size;
 
   @override
@@ -3428,7 +3079,6 @@ class _BigCover extends StatelessWidget {
   }
 }
 
-/// 毛玻璃控制卡：标题 + 进度 + 播放控制。
 class _GlassControlCard extends ConsumerWidget {
   const _GlassControlCard({
     required this.notifier,
@@ -3440,7 +3090,6 @@ class _GlassControlCard extends ConsumerWidget {
   final QueueItem? current;
   final bool landscape;
 
-  /// 横屏时打开歌词调节菜单（含左/中/右对齐），为空则横屏底栏不显示该按钮。
   final VoidCallback? onLyricAdjust;
 
   @override
@@ -3458,17 +3107,13 @@ class _GlassControlCard extends ConsumerWidget {
             ) ??
             true) &&
             !lowPerf;
-    // 毛玻璃材质开关：关闭时控制卡回退为高不透明度纯色（无模糊）。
     final frosted = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? false),
     );
-    // 全局 blur 预算：滚动/转场时播放页控制卡玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
-    // 错误态只在此局部订阅，不随整页重建。
     final error = ref.watch(playerProvider.select((s) => s.error));
 
     final content = Padding(
-      // 横屏时标题已居中在顶栏，控制卡只留进度 + 三区控制行，内边距收敛。
       padding: landscape
           ? const EdgeInsets.fromLTRB(8, 10, 8, 12)
           : const EdgeInsets.fromLTRB(20, 10, 20, 14),
@@ -3484,7 +3129,6 @@ class _GlassControlCard extends ConsumerWidget {
                 RepaintBoundary(
                   child: _ProgressBar(
                     notifier: notifier,
-                    // 时长已移到控制行左下角，进度条这里不再重复显示。
                     showTime: false,
                   ),
                 ),
@@ -3516,7 +3160,6 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 4),
-                // 进度条独立成图层：position tick 只重绘进度条，不重绘整张玻璃卡。
                 RepaintBoundary(
                   child: _ProgressBar(notifier: notifier),
                 ),
@@ -3526,11 +3169,7 @@ class _GlassControlCard extends ConsumerWidget {
             ),
     );
 
-    // 材质优先级：低性能 > 液态玻璃（固定控件，优先级最高）> 毛玻璃 >
-    // 毛玻璃关闭时的纯色回退。液态与毛玻璃可共存，液态只覆盖此控制卡。
     if (lowPerf || (!frosted && !playerLiquid)) {
-      // 性能模式 / 毛玻璃关闭且液态未开：更高不透明度纯色补偿模糊缺失，
-      // 省去 premium shader 与 BackdropFilter。
       return Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
@@ -3544,8 +3183,6 @@ class _GlassControlCard extends ConsumerWidget {
     }
 
     if (playerLiquid) {
-      // BiliPai 液态玻璃控制卡：与底栏/迷你播放条同一套 shader 观感
-      // （边缘透镜折射 + 滚动波浪 + 色差），档位联动折射/色差/高光强度。
       final quality = liquidGlassQualitySetting(ref);
       return BiliPaiGlass(
         radius: 26,
@@ -3564,8 +3201,6 @@ class _GlassControlCard extends ConsumerWidget {
       );
     }
 
-    // 壁纸模式下播放页控制卡与迷你播放条/底栏同口径（wallpaperNavGlassFill +
-    // kNavSurfaceBlurSigma）：保持极淡磨砂，不随「反色色块」变深（播放条不套色块）。
     final glassColor = wallpaperGlassActive(ref)
         ? wallpaperNavGlassFill(context)
         : (isDark
@@ -3579,8 +3214,6 @@ class _GlassControlCard extends ConsumerWidget {
             budget: budget,
             type: BlurSurfaceType.drawerOrSheet,
           );
-    // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，运动期保持
-    // 玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
@@ -3614,7 +3247,6 @@ class _TitleRow extends ConsumerWidget {
     final lyricsEnabled = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
-    // MV 开启时音质按钮切换为显示当前 MV 画质（对齐桌面端底栏同款联动）。
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
       mvProvider.select((s) => s.source?.videoQuality),
@@ -3625,7 +3257,6 @@ class _TitleRow extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 顶部行：歌名与歌手完整展示，适当向下平移并保持顶部空隙
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Row(
@@ -3685,7 +3316,6 @@ class _TitleRow extends ConsumerWidget {
                   ),
                 ),
               const SizedBox(width: 4),
-              // 桌面歌词「词」按钮
               InkWell(
                 borderRadius: BorderRadius.circular(10),
                 onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
@@ -3717,7 +3347,6 @@ class _TitleRow extends ConsumerWidget {
             ],
           ),
         ),
-        // 下方行：功能动作图标行（收藏 / 分享 / 下载 / 评论），向下微平移
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Row(
@@ -3782,14 +3411,11 @@ class _TitleRow extends ConsumerWidget {
   }
 }
 
-/// 弹出歌曲分享菜单（分享到 QQ 好友 / QQ 空间 / 复制链接）。
 Future<void> _shareCurrent(
     BuildContext context, WidgetRef ref, QueueItem current) async {
   await showSongShareSheet(context, ref: ref, song: current);
 }
 
-/// 打开音质选择弹窗（触发全量探测真实可用档位）。
-/// MV 开启时分流为 MV 画质菜单（对齐桌面端底栏音质键的联动切换）。
 void _showQualitySheet(BuildContext context, WidgetRef ref) {
   final mv = ref.read(mvProvider);
   if (mv.requested) {
@@ -3803,12 +3429,9 @@ void _showQualitySheet(BuildContext context, WidgetRef ref) {
 );
 }
 
-/// 打开下载音质选择弹窗（复用共享探针探测真实可用档位，选档后直接下载）。
 void _showDownloadQualitySheet(
     BuildContext context, WidgetRef ref, QueueItem song) {
   final notifier = ref.read(playerProvider.notifier);
-  // MV 开启中：下载按钮切 MV 画质档（对齐桌面端底栏同款联动——MV 态下载
-  // 即下视频文件，选档后解析直链落盘下载目录）。
   final mv = ref.read(mvProvider);
   if (mv.requested && mv.ready && mv.source != null) {
     showSheetDialog<void>(context, (_) => _MvDownloadSheet(song: song));
@@ -3820,7 +3443,6 @@ void _showDownloadQualitySheet(
 );
 }
 
-/// 把 12 档内部键转成菜单/按钮上的人类可读标签。
 String _qualityLabel(String? q) {
   if (q == null || q.isEmpty) return 'HQ';
   switch (q) {
@@ -3853,7 +3475,6 @@ String _qualityLabel(String? q) {
   }
 }
 
-/// 紧凑体积文本（对齐桌面端 compactFileSize：28.6M / 1.2G / 320K）。
 String _compactSize(int bytes) {
   final mb = bytes / 1024 / 1024;
   if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)}G';
@@ -3863,16 +3484,12 @@ String _compactSize(int bytes) {
   return '${bytes}B';
 }
 
-/// 音质档位标签追加实测体积后缀（体积未知时返回空串）。
 String _qualitySizeSuffix(String q, Map<String, QualitySizeInfo> sizes) {
   final info = sizes[q];
   if (info == null) return '';
   return ' · ${_compactSize(info.bytes)}';
 }
 
-/// 期望档位不在可用列表时，按设置的回退方向选最近可用档（对齐桌面端
-/// DownloadDialog.ensureSelectedQualityAvailable）：higher 向上找最近档、
-/// lower 向下找最近档，越界落到边界档。
 String _nearestAvailable(
     String preferred, List<String> available, String behavior) {
   if (available.isEmpty || available.contains(preferred)) return preferred;
@@ -3891,19 +3508,13 @@ String _nearestAvailable(
       .firstWhere((q) => rank(q) < prefRank, orElse: () => sorted.first);
 }
 
-/// 音质档位弹窗共享状态：档位探测 future + 实测体积轮询。
-/// 播放音质（[_QualitySheet]）与下载音质（[_DownloadQualitySheet]）共用。
 mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
     on ConsumerState<W> {
   Future<List<String>>? _future;
-  /// 实测体积映射：探测/解析过程中分批填充，随 `setState` 在弹窗里即时刷新，
-  /// 避免「打开时探测未完 → 首次查询为空 → 之后不再更新」导致体积不显示。
   Map<String, QualitySizeInfo> _sizes = const {};
 
-  /// 弹窗打开时要加载的档位列表（播放音质/下载音质各取所需）。
   Future<List<String>> loadQualityOptions();
 
-  /// 播放器 notifier（由具体弹窗状态暴露，mixin 内探测体积用）。
   PlayerNotifier get sheetNotifier;
 
   @override
@@ -3913,9 +3524,6 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
     _loadSizes();
   }
 
-  /// 体积探测：等待档位菜单探测收尾，再轮询读取体积并按批次刷新。
-  /// 直链体积结果按 URL 缓存，命中即返回不重复请求；后台探测晚完成时，
-  /// 只要探针一 resolved，后续轮询就能把体积补进 `_sizes`。
   Future<void> _loadSizes() async {
     await _future;
     for (var i = 0; i < 20; i++) {
@@ -3923,7 +3531,6 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
       final sizes = await sheetNotifier.qualitySizes();
       if (!mounted) return;
       if (sizes.isNotEmpty) setState(() => _sizes = sizes);
-      // 探测空闲且已至少拉过一次 → 收手；否则继续轮询等后台探测补全。
       final probing =
           ref.read(playerProvider.select((s) => s.qualityMenuProbing));
       if (!probing && (sizes.isNotEmpty || i > 0)) return;
@@ -3932,7 +3539,6 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
   }
 }
 
-/// 音质选择弹窗：探测并展示当前在线歌曲的真实可用档位，点选即切换。
 class _QualitySheet extends ConsumerStatefulWidget {
   const _QualitySheet({required this.notifier});
 
@@ -3986,17 +3592,12 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                   );
                 }
                 final opts = snap.data ?? const <String>[];
-                // 兜底：future 返回空但状态里已有探测结果时展示状态结果，
-                // 避免探测时序导致菜单空态。
                 final fallbackOpts = ref.watch(
                   playerProvider.select((s) => s.availableQualities),
                 );
                 final cur = ref.watch(
                   playerProvider.select((s) => s.currentQuality),
                 );
-                // 始终把当前正在播放的实际档位并入列表：声明/探测档位可能与实际
-                // 播放档不一致（插件实际上报档、会话覆盖等），不并入就会出现
-                // 「打开弹窗却没有选中播放音质」。并入后仍按高 → 低排序。
                 final base = opts.isNotEmpty ? opts : fallbackOpts;
                 final combined = <String>{...base};
                 if (cur != null && cur.isNotEmpty) combined.add(cur);
@@ -4057,9 +3658,6 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
   }
 }
 
-/// MV 画质选择弹窗（MV 开启时音质按钮分流到此，对齐桌面端底栏画质菜单）：
-/// 列表 = 插件返回 availableVideoQualities（带体积/码率后缀），
-/// 选中 = 当前源实际返回档位；点选以新档位重新解析加载（无缝换源）。
 class _MvQualitySheet extends ConsumerStatefulWidget {
   const _MvQualitySheet();
 
@@ -4078,8 +3676,6 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
     final landscape = size.width > size.height;
     return ConstrainedBox(
       constraints: BoxConstraints(
-        // 横屏时屏高很小，纵向列表会被压成滚动小条——横屏改矮弹窗 + 选项
-        // 横排 pill（B 站全屏画质同款紧凑布局），竖屏保持纵向列表。
         maxHeight: landscape ? size.height * 0.85 : size.height * 0.7,
         maxWidth: landscape ? 560 : double.infinity,
       ),
@@ -4155,7 +3751,6 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
     );
   }
 
-  /// 横屏画质 pill：选中主色描边+底色，未选中 surfaceVariant。
   Widget _qualityPill(
     BuildContext context, {
     required String label,
@@ -4191,8 +3786,6 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
     );
   }
 
-  /// 切换画质：以新档位重新解析加载；弹窗先关、toast 回报结果
-  /// （成功报新档位，失败报插件错误文案，对齐音质弹窗的交互节奏）。
   Future<void> _switch(MvQuality q) async {
     final err = await ref.read(mvProvider.notifier).setQuality(q.key);
     if (!mounted) return;
@@ -4202,9 +3795,6 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
   }
 }
 
-/// MV 下载画质选择弹窗：MV 开启时由下载按钮唤起（对齐桌面端底栏 MV 态
-/// 下载联动），点选档位后按该档解析直链并下载到下载目录（背景执行，
-/// 结果 toast 提示）。
 class _MvDownloadSheet extends ConsumerStatefulWidget {
   const _MvDownloadSheet({required this.song});
 
@@ -4220,8 +3810,6 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
   Future<void> _download(BuildContext ctx, MvQuality q) async {
     if (_downloading) return;
     setState(() => _downloading = true);
-    // OverlayState/notifier 先于 await 与 pop 捕获：OverlayState 不随弹窗
-    // 销毁而失效；notifier 对象在 State dispose 后仍可安全调用。
     final overlay = Overlay.of(ctx, rootOverlay: true);
     final mvNotifier = ref.read(mvProvider.notifier);
     final dlNotifier = ref.read(downloadProvider.notifier);
@@ -4234,7 +3822,6 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
     _runDownload(overlay, mvNotifier, dlNotifier, q);
   }
 
-  /// 弹窗已关闭后的后台下载：解析直链（url+备用链）→ 落盘下载目录。
   Future<void> _runDownload(
     OverlayState overlay,
     MvNotifier mvNotifier,
@@ -4327,8 +3914,6 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
   }
 }
 
-/// MV 画质档标签：label（缺省用 key）+ 体积/码率后缀（对齐音质弹窗的
-/// 「320K · 28.6M」样式）。
 String _mvQualityTileLabel(MvQuality q) {
   final label = q.label.isNotEmpty ? q.label : q.key;
   if (q.size != null && q.size! > 0) return '$label · ${_compactSize(q.size!)}';
@@ -4338,7 +3923,6 @@ String _mvQualityTileLabel(MvQuality q) {
   return label;
 }
 
-/// 下载音质选择弹窗：复用共享探针探测真实可用档位，点选即按该档下载。
 class _DownloadQualitySheet extends ConsumerStatefulWidget {
   const _DownloadQualitySheet({required this.notifier, required this.song});
 
@@ -4363,9 +3947,6 @@ class _DownloadQualitySheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 默认档位对齐桌面端 getInitialDownloadQuality：下载的歌曲就是当前播放
-    // 歌曲时优先实际播放音质，否则优先下载设置中的音质；期望档位不在可用
-    // 列表时按设置的回退方向取最近可用档（ensureSelectedQualityAvailable）。
     final playingPath =
         ref.watch(playerProvider.select((s) => s.current?.path));
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
@@ -4374,8 +3955,6 @@ class _DownloadQualitySheetState
         widget.song.path == playingPath &&
         cur != null &&
         cur.isNotEmpty;
-    // 下载音质默认优先用设置页选择的 downloadQuality；若未配置则回退到
-    // 当前正在播放的实际音质（与桌面端 getInitialDownloadQuality 对齐）。
     final String initial;
     final settingQuality = settings?.downloadQuality;
     if (settingQuality != null && settingQuality.isNotEmpty) {
@@ -4421,8 +4000,6 @@ class _DownloadQualitySheetState
                   );
                 }
                 final opts = snap.data ?? const <String>[];
-                // 与音质选择弹窗一致：future 空时回退状态里已有的探测结果
-                // （availableQualities），避免探测时序/失败让下载弹窗空态。
                 final fallbackOpts = ref.watch(
                   playerProvider.select((s) => s.availableQualities),
                 );
@@ -4430,8 +4007,6 @@ class _DownloadQualitySheetState
                 final sizes = _sizes;
                 final defaultQ =
                     _nearestAvailable(initial, shown, fallbackBehavior);
-                    // 仍无档位（非插件在线源探测全失败）：给一个「默认音质」
-                    // 兜底项，下载器会回退用户设置的下载音质，避免死胡同空态。
                     final options = shown.isNotEmpty
                         ? shown
                         : const <String>[''];
@@ -4462,19 +4037,13 @@ class _DownloadQualitySheetState
                               isSelected:
                                   shown.isEmpty ? true : q == defaultQ,
                               onTap: () async {
-                                // OverlayState 先于 await 捕获：OverlayState
-                                // 不随弹窗销毁而失效，await 后仍可安全用。
                                 final overlay =
                                     Overlay.of(ctx, rootOverlay: true);
-                                // 未设置自定义下载目录/无「所有文件访问」权限：
-                                // 禁止下载并提示（弹窗不关闭）。
                                 if (!await ref
                                     .read(downloadProvider.notifier)
                                     .requireDownloadDir(ctx)) {
                                   return;
                                 }
-                                // await 期间弹窗可能已被用户关闭，此时用失效
-                                // ctx pop 会触发 framework ancestor 断言崩溃。
                                 if (!ctx.mounted) return;
                                 Navigator.of(ctx).pop();
                                 ref
@@ -4511,7 +4080,6 @@ class _ProgressBar extends ConsumerWidget {
   const _ProgressBar({required this.notifier, this.showTime = true});
   final PlayerNotifier notifier;
 
-  /// 是否在进度条下方显示当前/总时长文本。横屏时长移到控制行左下角，此处关闭。
   final bool showTime;
 
   String _fmt(double s) {
@@ -4523,8 +4091,6 @@ class _ProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 进度条是唯一随播放进度每秒变化的区域，单独 select position 局部刷新，
-    // 不影响上层（顶层已只订阅 current，切歌才重建）。
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = ref.watch(playerProvider.select((s) => s.duration));
     final duration = dur <= 0 ? 1.0 : dur;
@@ -4578,16 +4144,12 @@ class _Controls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 播放态/播放模式/解析中仅在此局部订阅，不随整页重建。
     final playMode = ref.watch(playerProvider.select((s) => s.playMode));
     final resolving = ref.watch(playerProvider.select((s) => s.resolving));
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
-    // 播放条下一行：4 个侧键统一大小（28）与等距（spaceEvenly），播放键除外保持突出
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
-        // 5 等分+居中：与进度条上方动作行的 5 列严格同轴（用 Expanded/Center 替代
-        // spaceEvenly，避免大播放键拉宽让两排列中心偏移）。
         children: [
           Expanded(child: Center(child: IconButton(
             iconSize: 28,
@@ -4599,7 +4161,6 @@ class _Controls extends ConsumerWidget {
             onPressed: notifier.cyclePlayMode,
           ))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_previous), onPressed: notifier.previous))),
-          // 主题色实心播放键
           Expanded(child: Center(child: Container(
             width: 64,
             height: 64,
@@ -4614,7 +4175,6 @@ class _Controls extends ConsumerWidget {
                 ),
               ],
             ),
-            // 在线曲目解析直链期间显示加载态，避免看起来无响应。
             child: resolving
                 ? const Padding(
                     padding: EdgeInsets.all(18),
@@ -4639,14 +4199,12 @@ class _Controls extends ConsumerWidget {
     );
   }
 
-  /// 播放队列弹窗：展示/点播/移除/拖拽排序。
   void _showQueueSheet(BuildContext context, WidgetRef ref) {
     showSheetDialog<void>(
         context, (_) => _QueueSheet(player: ref.read(playerProvider)));
   }
 }
 
-/// 音质缩写（对齐桌面端 QUALITY_ABBR）。
 String _qualityAbbr(String? q) {
   switch (q) {
     case null:
@@ -4681,8 +4239,6 @@ String _qualityAbbr(String? q) {
   }
 }
 
-/// 横屏底栏三区控制行：左（下载/音效/播放顺序）｜中（上一首/播放/下一首）｜
-/// 右（桌面歌词/音质/播放队列）。评论不在此列；横竖屏共用传统动作图标样式。
 class _LandscapeControlsRow extends ConsumerWidget {
   const _LandscapeControlsRow({
     required this.notifier,
@@ -4693,17 +4249,13 @@ class _LandscapeControlsRow extends ConsumerWidget {
   final PlayerNotifier notifier;
   final QueueItem? current;
 
-  /// 打开歌词调节菜单（含左/中/右对齐），对齐桌面歌词页最右组件。
-  /// 为空则不显示该按钮（竖屏控制卡无此入口）。
   final VoidCallback? onLyricAdjust;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final accent = scheme.primary;
-    // 局部变量承接字段：可被 null 提升（字段在闭包内不提升）。
     final item = current;
-    // 局部订阅：仅此底栏随播放态/下载态重建，不波及中区封面/歌词。
     final sfx = ref.watch(soundEffectProvider).settings;
     final bypass = sfx.bypass;
     final dl = ref.watch(downloadProvider);
@@ -4715,7 +4267,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
       settingsProvider.select(
           (s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
     );
-    // MV 开启时音质按钮改显当前 MV 画质（弹窗同样分流，对齐桌面端）。
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
       mvProvider.select((s) => s.source?.videoQuality),
@@ -4734,10 +4285,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
         (isLocal || dl.history.any((h) => h.songPath == item.path));
     final isFav = item != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(item.path)));
-    // 底栏图标统一白 85%（对齐传统动作行），选中/活跃项用主题色。
     final idle = Colors.white.withValues(alpha: 0.85);
-    // 左下角时长：仅此时间文本随播放进度局部刷新，不波及其余控制键。
-    // 参考桌面端歌词页「当前时间 / 总时长」并排显示，进度条仍留在上方。
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = ref.watch(playerProvider.select((s) => s.duration));
     String fmtTime(double s) {
@@ -4746,12 +4294,9 @@ class _LandscapeControlsRow extends ConsumerWidget {
       return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
     }
 
-    // 桌面对齐底部栏（对齐桌面端歌词页布局）：
-    // 左簇 [时长 下载 收藏]｜中簇 [播放顺序 上一首 播放 下一首 歌词]｜右簇 [音质 音效 队列]。
     final leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 时长（左下角）：桌面端样式「当前时间 / 总时长」
         Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Text(
@@ -4763,7 +4308,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        // 下载
         IconButton(
           iconSize: 28,
           tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
@@ -4796,7 +4340,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
             _showDownloadQualitySheet(context, ref, item);
           },
         ),
-        // 收藏（放在下载右边，激活色固定红色）
         IconButton(
           iconSize: 28,
           tooltip: tr('收藏'),
@@ -4816,7 +4359,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
     final centerCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 播放顺序（三大键左边）
         IconButton(
           iconSize: 28,
           icon: _PlayModeIcon(mode: playMode, color: idle, size: 28),
@@ -4863,7 +4405,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
           icon: Icon(Icons.skip_next, color: idle),
           onPressed: notifier.next,
         ),
-        // 歌词（三大键右边）：桌面歌词「词」入口
         IconButton(
           iconSize: 28,
           tooltip: tr('桌面歌词'),
@@ -4894,7 +4435,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
     final rightCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 音质
         Tooltip(
           message: tr('音质'),
           child: InkWell(
@@ -4923,7 +4463,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        // 音效（音质和队列中间）：仅在实际启用了音效且非直出时点亮主题色。
         IconButton(
           iconSize: 28,
           tooltip: tr('音效'),
@@ -4933,7 +4472,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
           ),
           onPressed: () => context.push('/effects'),
         ),
-        // 播放队列
         IconButton(
           iconSize: 28,
           icon: Icon(Icons.queue_music, color: idle),
@@ -4942,7 +4480,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
             (_) => _QueueSheet(player: ref.read(playerProvider)),
           ),
         ),
-        // 歌词调节（最右组件，样式与竖屏歌词页的「调节歌词」一致：tune 图标，默认白色）
         if (onLyricAdjust != null)
           IconButton(
             iconSize: 28,
@@ -4974,8 +4511,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
   }
 }
 
-/// 播放顺序图标（对齐桌面端 FooterControlIcon 的线性 SVG 风格）：
-/// 0=列表循环、1=单曲循环、2=随机播放。
 class _PlayModeIcon extends StatelessWidget {
   const _PlayModeIcon({
     required this.mode,
@@ -5014,7 +4549,6 @@ class _PlayModePainter extends CustomPainter {
     final s = size.width / 24;
     final path = Path();
     if (mode == 0 || mode == 1) {
-      // 列表循环 / 单曲循环：Heroicons arrow-path
       path
         ..moveTo(4 * s, 4 * s)
         ..lineTo(4 * s, 9 * s)
@@ -5040,7 +4574,6 @@ class _PlayModePainter extends CustomPainter {
         ..moveTo(19.419 * s, 15 * s)
         ..lineTo(15 * s, 15 * s);
     } else {
-      // 随机播放：Heroicons arrows-right-left
       path
         ..moveTo(16 * s, 3 * s)
         ..lineTo(21 * s, 3 * s)
@@ -5085,7 +4618,6 @@ class _PlayModePainter extends CustomPainter {
       oldDelegate.mode != mode || oldDelegate.color != color;
 }
 
-/// 切换悬浮歌词（桌面歌词）：未开启且无悬浮窗权限时引导授权。
 Future<void> _toggleFloatingLyrics(
   BuildContext context,
   WidgetRef ref,
@@ -5127,13 +4659,11 @@ Future<void> _toggleFloatingLyrics(
   await n.setFloatingLyricsEnabled(true);
 }
 
-/// 剥离所有音源（酷我/酷狗/LX/KRC/YRC/QRC 等）内嵌的逐字时间戳与元数据标签。
 String _cleanLyricText(String raw) {
   if (raw.isEmpty) return '';
 
   String text = raw;
 
-  // 1. 过滤元数据控制头 [ar:xx], [ti:xx], [al:xx], [by:xx], [offset:xx], [kuwo:xx], [kugou:xx], [hash:xx] 等
   text = text.replaceAll(
     RegExp(
       r'\[(ar|ti|al|by|offset|kuwo|kugou|hash|sign|qq|total|language|types):[^\]]*\]',
@@ -5142,20 +4672,15 @@ String _cleanLyricText(String raw) {
     '',
   );
 
-  // 2. 过滤酷狗 KRC / YRC 圆括号逐字时间戳 (如 (1234,500,0) 或 (1234,500))
   text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
 
-  // 3. 过滤方括号内嵌逐字时间戳 [1234,5678]
   text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
 
-  // 4. 过滤尖括号时间戳 <2688,-2688> 或 <00:12.34>
   text = text.replaceAll(RegExp(r'<[^>]*>'), '');
 
   return text.trim();
 }
 
-/// 将歌词 JSON（displayLines/lines，含 time/endTime/text/translation/romaji/words）
-/// 解析为歌词行列表。供歌词视图与封面下预览共用。
 List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
   final map = jsonDecode(jsonStr) as Map<String, dynamic>;
   final rawLines =
@@ -5177,7 +4702,6 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
         timeSec = (item['startTimeMs'] as num).toDouble() / 1000.0;
       }
 
-      // 行结束时间（Rust 侧 camelCase 序列化为 endTime）
       double endTimeSec = 0.0;
       final rawEndTime = item['endTime'] ?? item['end_time'];
       if (rawEndTime is num) {
@@ -5199,7 +4723,6 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
           ? rawRomaji
           : null;
 
-      // 提取 Rust 侧解析出来的逐字 words 数组 (包含每个字/词的 start/end 秒数)
       final words = <_LyricWordItem>[];
       final rawWords = item['words'] as List?;
       if (rawWords != null && rawWords.isNotEmpty) {
@@ -5236,13 +4759,6 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
   return lines;
 }
 
-/// 时间边界修正（移植自桌面端 converters.ts）：
-/// - 行结束时间缺失/无效时，用下一行起点回推（提前量 = min(300ms, 间隔×25%)，
-///   行最短 40ms）；最后一行给 5s 宽松结束
-/// - 词的 end 裁剪到下一词 start 与行结束之内（最短 20ms），
-///   避免相邻词重叠导致的填充回跳
-///
-/// 顶层函数以便 [compute] 在后台 isolate 中执行。
 List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
   final result = <_LyricLineItem>[];
   for (var i = 0; i < lines.length; i++) {
@@ -5275,9 +4791,6 @@ List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
       wEndMs = math.min(wEndMs, endMs);
       wEndMs = math.max(wEndMs, wStartMs + 20);
 
-      // 移植 MusicFree splitWordToChars：多字符词拆成逐字符子词，
-      // 时长按字符数均分——英文单词也能逐字母卡拉OK
-      // （中文音源逐字数据通常已是单字，不受影响）。
       final chars = w.text.runes.toList();
       if (chars.length > 1) {
         final durMs = (wEndMs - wStartMs) / chars.length;
@@ -5315,7 +4828,6 @@ List<_LyricLineItem> _normalizeBoundaries(List<_LyricLineItem> lines) {
   return result;
 }
 
-/// 单字/单词逐字时间数据 (单位: 秒)
 class _LyricWordItem {
   final String text;
   final double start;
@@ -5328,11 +4840,9 @@ class _LyricWordItem {
   });
 }
 
-/// 单行歌词数据
 class _LyricLineItem {
   final int timeMs;
 
-  /// 行结束时间（毫秒）；0 表示未知，解析后由边界修正补齐。
   final int endTimeMs;
   final String text;
   final String? translation;
@@ -5349,16 +4859,6 @@ class _LyricLineItem {
   });
 }
 
-/// 歌词展示组件：逐字卡拉OK填充 + 自动滚屏，点击可切回封面。
-///
-/// 逐字效果移植自桌面端方案：positionStream 约 200ms 一跳，直接驱动逐字
-/// 填充会呈阶梯跳变；这里用 Ticker 每帧外推（显示进度 = 锚点进度 + 锚点
-/// 以来的流逝时间），实现 60fps 平滑扫字。
-
-/// PageView 页保活包装：传统播放页封面/歌词左右滑切换时，保持两页的
-/// Element/State 不被销毁重建（滚动位置、行布局缓存、模糊烘焙全部留存）。
-/// 每次切换销毁+重建一页（全列表逐字排版 + 模糊重烘焙）是切换卡顿与歌词
-/// 居中跳动的根源；keepAlive 后视口外仍不布局不绘制，无常驻成本。
 class _KeepAliveWrap extends StatefulWidget {
   const _KeepAliveWrap({required this.child});
 
@@ -5390,7 +4890,7 @@ class _LyricsView extends ConsumerStatefulWidget {
   });
 
   final QueueItem? current;
-  final bool visible; // 歌词视图是否可见（不可见时停帧省电）
+  final bool visible;
   final VoidCallback onTap;
   final ValueChanged<bool> onRomajiAvailable;
 
@@ -5405,122 +4905,76 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   String? _loadedPath;
   final ScrollController _scrollCtrl = ScrollController();
 
-  /// 用户是否手动翻看/拖动了歌词
   bool _userInteracted = false;
 
   Timer? _recenterTimer;
   int _lastActiveIndex = -1;
 
-  /// 自动居中死区（px）已移除：RwaS 等字号样式下换行无布局跳变。
-
-  /// 横屏歌词字号放大系数（build 时回写；竖屏 1.0 不变）。
   double _fontScale = 1.0;
 
   // ---- RwaS 换行拽动（LyricPullEngine 移植）----
-  // 前进换行时，锚点之后的行在 550ms 窗口内先被“按住”（随滚动补偿位移），
-  // 再按 每行递增 delay 逐行弹回落位，形成整组歌词的弹性拽动。
   bool _pullActive = false;
   int _pullAnchor = -1;
   double _pullDistance = 0;
-  int _pullDelayMs = 50; // 首行延迟，按滚动距离/视口比在 50→4ms 间取值
+  int _pullDelayMs = 50;
   final Stopwatch _pullWatch = Stopwatch();
   final Map<int, double> _pullOffsets = {};
 
-  /// 拽动位移修订号：行内 ListenableBuilder 监听，逐帧只重挂 Transform 不重建内容。
   final ValueNotifier<int> _pullRevision = ValueNotifier<int>(0);
 
-  /// 拖动选行播放（移植自 MusicFree）：视口中心对应的行索引，
-  /// 拖动时显示中央指示条，点击播放按钮从该行开始播放。
   int? _draggingIndex;
   Timer? _draggingIndexTimer;
 
-  /// 每行在滚动内容中的布局缓存（内容偏移, 高度），供拖动定位中心行。
-  /// 对应 MusicFree LayoutCache 的前缀和，用实测替代估算。
   final Map<int, (double, double)> _lineLayouts = {};
 
-  // 歌词样式设置（build 中从 settingsProvider 同步，供非 build 路径读取）。
   int _fontSizeIdx = 1;
   bool _showTranslation = true;
   bool _showRomaji = false;
   int _offsetMs = 0;
 
-  /// 歌词水平对齐：left / center / right（横屏歌词菜单设定）。
   TextAlign _align = TextAlign.center;
 
-  /// 是否有任一行含罗马音（供设置栏罗马音按钮的可用态判断）。
   bool _hasRomaji = false;
 
-  /// 逐字卡拉OK时钟（等价桌面端 rAF 驱动 setCurrentTime）。
   late final Ticker _ticker;
   final Stopwatch _anchorWatch = Stopwatch();
 
-  /// 最近一次 positionStream 锚点进度（秒）。
   double _anchorPos = 0;
 
-  /// 当前帧用于渲染的平滑进度（秒）。
   double _displayPos = 0;
 
-  /// 逐字卡拉OK进度（秒），每帧更新；仅活动行染色订阅，避免整页每帧重建。
   final ValueNotifier<double> _progress = ValueNotifier<double>(0);
 
-  /// 当前 build 渲染的活动行索引；_onTick 据此判断是否需要重建列表（换行才重建）。
   int _renderActiveIndex = -1;
 
-  /// 一次性精确居中待办：进入歌词页 / 开始播放（含恢复播放）/ 换歌后置位，
-  /// 等当前行完成实测布局后瞬时跳到视口正中（无动画，桌面版 AMLL 同款瞬移）。
-  /// 未完成前不做按比例估算的粗略滚动，避免落位后二次动画。
   bool _pendingCenterJump = true;
 
-  /// 精确居中安全阀：粗跳后若 _onLineMeasured 未在限时内触发（目标行在缓存
-  /// 区外未被构建），自动清除 pending 交还常规跟随，避免 _autoScrollToActiveLine
-  /// 被长期短路。
   Timer? _pendingCenterFallback;
 
-  /// 上一次歌词视口高度：横竖屏/分屏切换检测用。
   double? _lastViewportHeight;
 
-  /// 上一次歌词视口宽度：与高度一起判定视口变化是否改变行布局（仅宽度变化
-  /// 才会让行高/换行全变；横屏栏进退只改高度、行布局不变）。
   double? _lastViewportWidth;
 
-  /// 视口高度变化防抖：栏进退（AnimatedSize 300ms 逐帧收缩）与横竖屏切换都会
-  /// 连续改变视口高度。若每次变化立即清缓存+精确居中，动画期间活动行会被反复
-  /// 强制跳位（「正在播放这句会丢」）；改为高度稳定后一次性执行，动画期间交还
-  /// 常规跟随保持行位置连续。
   Timer? _viewportChangeDebounce;
 
   // ==================== 模糊行静态烘焙缓存（稳态省逐帧高斯模糊） ====================
-  // 稳态（换行/交互过渡结束）后，非活动行的"内容+模糊"几乎不变，却仍每帧
-  // 重跑 ImageFiltered 高斯模糊。烘焙方案：稳态行把清晰内容捕获成位图，一次性
-  // 施加 blur 后缓存，直接贴 RawImage；换行时只有距离变化的 2 行走实时滤镜。
-  // 过渡期（450ms，覆盖 300ms sigma/alpha 与 320ms scale 动画）走实时滤镜，
-  // 结束后烘焙落位，视觉无缝（同 sigma 逐像素等价）。
 
-  /// 稳态起始时间戳（ms）。早于该时刻 = 过渡期，走实时滤镜。
   int _blurSteadyAtMs = 0;
   Timer? _blurSteadyTimer;
 
-  /// 烘焙位图缓存（LRU）。key 见 _blurSnapshotKey。
   final Map<String, _BlurredLineSnapshot> _blurSnapshots = {};
 
-  /// 上一次的活动行：自然换行时它从清晰退入模糊，是唯一保留 sigma 过渡
-  /// 动画的行（观众可感知）；其余行 sigma 只 ±1~2，直接跳变/贴近档图。
   int _prevActiveIndex = -1;
   static const int _blurSnapshotCap = 20;
 
-  /// 进行中的烘焙任务 key（防重复调度）。
   final Set<String> _blurCapturing = {};
 
-  /// 捕获用 RepaintBoundary 的 GlobalKey（按行号复用，换歌清理）。
   final Map<int, GlobalKey> _blurBoundaryKeys = {};
 
-  /// 是否处于稳态（可使用/可烘焙静态模糊位图）。
   bool get _blurSteady =>
       !_userInteracted &&
       DateTime.now().millisecondsSinceEpoch >= _blurSteadyAtMs;
 
-  /// 进入过渡期：700ms 内走实时滤镜（覆盖 550ms 跟随滚动 + 300ms sigma/alpha
-  /// + 320ms scale 动画，避免滚动中途翻稳态），随后定时器触发重建切到烘焙位图。
   void _enterBlurTransition() {
     _blurSteadyAtMs = DateTime.now().millisecondsSinceEpoch + 700;
     _blurSteadyTimer?.cancel();
@@ -5537,11 +4991,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         '|a${_align.index}';
   }
 
-  /// 近档兜底：同行、内容字段（字号/宽度/翻译/罗马音）一致、sigma 差 ≤1.5 的
-  /// 旧烘焙图。自然换行时每行 sigma 只 ±1~2，直接贴上一档位图在暗淡行
-  /// （alpha 0.16~0.28）上无可感差异——省掉换行后整屏重烘焙的 GPU 回读
-  /// 与实时滤镜窗口（这是 RwaS 用 GPU RenderEffect 免费得到、Flutter 需要
-  /// 烘焙来逼近的流畅度关键）。
   _BlurredLineSnapshot? _findFallbackSnapshot(
       int index, double sigma, double mainFont, int widthBucket) {
     final pathPrefix = '${widget.current?.path}|$index|';
@@ -5566,13 +5015,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     return best;
   }
 
-  /// 烘焙任务队列：稳态翻转时约 9 个可见行同时待烘焙，若同帧集中 toImage
-  /// （GPU 回读）+ blur 烘焙会造成换行后明显卡一下——改为每帧最多烘焙一行，
-  /// 逐帧摊平开销。
   final List<_BlurCaptureTask> _blurCaptureQueue = [];
   bool _blurCapturePumping = false;
 
-  /// 入队一次烘焙任务（_blurCapturing 防重复），并驱动逐帧泵。
   void _scheduleBlurCapture(int index, String key, double sigma) {
     if (_blurCapturing.contains(key)) return;
     _blurCapturing.add(key);
@@ -5581,7 +5026,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _pumpBlurCaptures();
   }
 
-  /// 每帧处理一个烘焙任务；处理完若队列非空，下一帧继续。
   void _pumpBlurCaptures() {
     if (_blurCapturePumping || !mounted) return;
     if (_blurCaptureQueue.isEmpty) return;
@@ -5600,9 +5044,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     });
   }
 
-  /// 执行单个烘焙：捕获行内容位图 → 一次性施加 blur → 入缓存并触发重建。
   Future<void> _captureBlurLine(_BlurCaptureTask task) async {
-    // 行可能在排队期间再次换行（sigma 已变）或用户开始翻看：丢弃过期任务。
     if (!mounted || !_blurSteady) return;
     final gk = _blurBoundaryKeys[task.index];
     final boundary =
@@ -5613,16 +5055,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         boundary.debugNeedsPaint) {
       return;
     }
-    // attached 但 layer 尚未建立/已被剥离（MV 让渡、横竖屏转场瞬间）时，
-    // toImage 内部 layer! 会抛 Null check——由下方 catch 静默丢弃本轮。
     final dpr =
         MediaQuery.of(context).devicePixelRatio.clamp(1.0, 2.0).toDouble();
     final ui.Image raw;
     try {
       raw = await boundary.toImage(pixelRatio: dpr);
     } catch (_) {
-      // 捕获失败（layer 竞态等）：丢弃本轮任务，绝不向上传播——
-      // addPostFrameCallback 的 async 回调里 uncaught 会连环打断渲染帧。
       return;
     }
     final recorder = PictureRecorder();
@@ -5641,7 +5079,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       blurred.dispose();
       return;
     }
-    // LRU 淘汰（Map 按插入序，重插实现"最近使用"）。
     while (_blurSnapshots.length >= _blurSnapshotCap) {
       _blurSnapshots.remove(_blurSnapshots.keys.first)?.dispose();
     }
@@ -5681,13 +5118,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   @override
   void didUpdateWidget(_LyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 换歌（path 变化）或同一首歌跨格式换源后 onlineSongJson 变化（pluginId
-    // 从悬空变为新插件），都需要重新拉取歌词。
     final pathChanged = oldWidget.current?.path != widget.current?.path;
     final onlineJsonChanged = oldWidget.current?.onlineSongJson !=
         widget.current?.onlineSongJson;
     if (pathChanged || onlineJsonChanged) {
-      // 换歌：重置插值时钟并重新拉取歌词
       final p = ref.read(playerProvider).position;
       _anchorPos = p;
       _displayPos = p;
@@ -5704,30 +5138,19 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _syncTicker();
       _fetchLyrics();
     } else if (!oldWidget.visible && widget.visible) {
-      // 歌词页重新可见：仅置重新居中待办，定位到当前行（隐藏期间歌曲可能
-      // 前进）。PageView 保活后滚动位置、行布局缓存、模糊烘焙全部留存，
-      // 不再清缓存——清缓存会令 _tryPendingCenterJump 退化为按比例粗跳
-      //（估算位与精确位偏差可上可下），粗跳→精跳二段修正正是切换时歌词
-      // 「一会儿上一会儿下」的根源。行高/视口真变化（横竖屏切换）由 build
-      // 内 viewport 检测兜底清缓存；目标行从未测量过时粗跳仍可用。
       _pendingCenterJump = true;
       _pendingCenterFallback?.cancel();
-      // 立即恢复逐字时钟（隐藏期间 _syncTicker 停帧），不等 200ms 后的
-      // position 回调，避免扫字短暂凝滞。
       _syncTicker();
     }
   }
 
   // ==================== RwaS 换行拽动（LyricPullEngine 移植） ====================
 
-  /// RwaS 减速插值（LyricPullSpec.interpolate）：距离远小于归一化常量，
-  /// factor≈1，退化为 1-(1-p)² 的二次减速。
   static double _pullEase(double p) {
     p = p.clamp(0.0, 1.0);
     return 1.0 - (1.0 - p) * (1.0 - p);
   }
 
-  /// 前进换行时启动拽动：后续行先按住、再逐行弹回。
   void _beginPull(int anchor, double distancePx, double viewport) {
     if (distancePx <= 1 || viewport <= 0) {
       _cancelPull();
@@ -5736,8 +5159,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _pullActive = true;
     _pullAnchor = anchor;
     _pullDistance = distancePx;
-    _pullOffsets.clear(); // 丢弃旧一轮拽动残留（含已回退到锚点上方的行）
-    // LyricPullSpec.itemDelayMs：距离占视口比例越大 delay 越小（50→4ms）。
+    _pullOffsets.clear();
     final ratio = (distancePx.abs() / viewport).clamp(0.0, 1.0);
     _pullDelayMs = (50 + ratio * (4 - 50)).round();
     _pullWatch
@@ -5752,7 +5174,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _pullRevision.value++;
   }
 
-  /// 每帧推进拽动位移（_onTick 驱动，仅播放中运行）。
   void _advancePull() {
     if (!_pullActive) return;
     const durationMs = 550;
@@ -5760,18 +5181,17 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final globalE = _pullEase(t / durationMs);
     final contribution = _pullDistance * globalE;
     var changed = _pullOffsets.isNotEmpty;
-    var previous = 0.0; // 行序单调钳制：后行不能越过前行（RwaS 同款不变式）
+    var previous = 0.0;
     for (var i = _pullAnchor + 1; i <= _pullAnchor + 16; i++) {
       if (i >= _lines.length) break;
       final startMs = _pullDelayMs * (i - _pullAnchor);
       double offset;
       if (t < startMs) {
-        offset = contribution; // 等待期：完全抵消列表滚动，视觉上按住不动
+        offset = contribution;
       } else {
         final itemE = _pullEase((t - startMs) / durationMs);
         offset = (contribution - _pullDistance * itemE).clamp(0.0, double.infinity);
       }
-      // 单调钳制（取与前行 offset 的较大者）：后行不能越过前行
       final clamped = math.max(offset, previous);
       previous = clamped;
       if (_pullOffsets[i] != clamped) {
@@ -5779,7 +5199,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         changed = true;
       }
     }
-    // 结束条件：全局窗口 + 最大行延迟均已过
     if (t >= durationMs + _pullDelayMs * 16) {
       _pullActive = false;
       _pullOffsets.clear();
@@ -5788,9 +5207,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (changed) _pullRevision.value++;
   }
 
-  /// 播放进度锚点更新（positionStream 约 200ms 一跳）。与外推值偏差过大视为
-  /// 用户 Seek。由 build 内 provider 订阅触发，歌词据此推进会；页面其余部分
-  /// 不受 position 每秒跳动影响（纯滑动不更新）。
   void _onPositionChanged(double next) {
     final isPlaying = ref.read(playerProvider).isPlaying;
     final jumped = (next - _displayPos).abs() > 1.2;
@@ -5803,13 +5219,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _progress.value = next;
       _autoScrollToActiveLine(force: true);
     } else if (!isPlaying) {
-      // 暂停态直接定格在新锚点
       _displayPos = next;
       _progress.value = next;
     }
     _syncTicker();
     _autoScrollToActiveLine();
-    // 活动行切换时重建列表（seek/暂停跳行也即时刷新高亮）。
     final idx = _activeIndexFor(_displayPos);
     if (idx != _renderActiveIndex) {
       _prevActiveIndex = _renderActiveIndex;
@@ -5833,7 +5247,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     super.dispose();
   }
 
-  /// 每帧外推平滑进度并刷新逐字填充。
   void _onTick(Duration _) {
     _advancePull();
     final next = _anchorPos + _anchorWatch.elapsedMilliseconds / 1000.0;
@@ -5841,10 +5254,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _displayPos = next;
     _progress.value = next;
     _autoScrollToActiveLine();
-    // 仅活动行切换时重建列表（换行才 setState，逐字染色走 ValueListenableBuilder）。
-    // 注意：自然换行【不】进入模糊过渡期（_enterBlurTransition）——那会让全部
-    // 非活动行退回实时高斯 700ms，是换行掉帧的大头。稳态下各行换行后直接贴
-    // 近档兜底图（见 _findFallbackSnapshot），只有旧活动行走一次清晰→模糊过渡。
     final idx = _activeIndexFor(_displayPos);
     if (idx != _renderActiveIndex) {
       _prevActiveIndex = _renderActiveIndex;
@@ -5853,7 +5262,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 根据播放/可见状态启停逐帧时钟。
   void _syncTicker() {
     final st = ref.read(playerProvider);
     final shouldRun = st.isPlaying && widget.visible;
@@ -5861,7 +5269,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _anchorPos = st.position;
       _displayPos = _anchorPos;
       _progress.value = _anchorPos;
-      // （重新）开始播放：触发一次精确居中（恢复播放/进入歌词页共用此分支）
       _pendingCenterJump = true;
       _pendingCenterFallback?.cancel();
       _anchorWatch
@@ -5872,7 +5279,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       _ticker.stop();
       _anchorWatch.stop();
       if (!st.isPlaying) {
-        // 暂停：定格在锚点，取消进行中的拽动（RwaS isPlaying=false 同款）
         _displayPos = _anchorPos;
         _progress.value = _anchorPos;
         _cancelPull();
@@ -5892,7 +5298,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   void _scheduleAutoRecenter() {
     _recenterTimer?.cancel();
-    // 用户停止翻看 1.8 秒后自动重聚焦当前行（对齐 RwaS follow 恢复延时）。
     _recenterTimer = Timer(const Duration(milliseconds: 1800), () {
       if (mounted && _userInteracted) {
         _recenterToActiveLine();
@@ -5906,7 +5311,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       setState(() {
         _userInteracted = false;
       });
-      // 模糊从 0 弹回目标值有 300ms 动画，过渡期内走实时滤镜
       _enterBlurTransition();
       _autoScrollToActiveLine(force: true);
     }
@@ -5914,12 +5318,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   // ==================== 拖动选行播放（移植自 MusicFree） ====================
 
-  /// 行布局回调：记录该行在滚动内容中的偏移与高度。
   void _onLineMeasured(int index, double viewportDy, double height) {
     if (!mounted) return;
     _lineLayouts[index] = (viewportDy + _scrollCtrl.offset, height);
-    // 粗跳后目标行进入 ListView 构建范围，_MeasuredLine 测量完成 → 立即
-    // 触发精确居中（对齐 RwaS 修正循环：拉入后读真实 offset 补齐偏移）。
     if (_pendingCenterJump &&
         !_userInteracted &&
         index == _activeIndexFor(_displayPos)) {
@@ -5927,7 +5328,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 滚动更新：定位视口中心对应的歌词行（MusicFree 的 onScroll 中心命中测试）。
   void _updateDraggingIndex() {
     if (!_scrollCtrl.hasClients || _lines.isEmpty) return;
 
@@ -5935,7 +5335,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final viewport = _scrollCtrl.position.viewportDimension;
     final center = offset + viewport / 2;
 
-    // 在已测量布局中找中心距离最近的行（视口内的行必然已构建测量）。
     int? best;
     var bestDist = double.infinity;
     _lineLayouts.forEach((i, layout) {
@@ -5951,7 +5350,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       if (_draggingIndex != idx) {
         setState(() => _draggingIndex = idx);
       }
-      // 停止拖动 2 秒后自动清除（对应 MusicFree useDelayFalsy 2000ms）。
       _draggingIndexTimer?.cancel();
       _draggingIndexTimer = Timer(const Duration(seconds: 2), () {
         if (mounted && _draggingIndex != null) {
@@ -5961,14 +5359,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 从拖动选中的歌词行开始播放（对应 MusicFree onLyricSeekPress）。
   void _seekToDraggingLine() {
     final idx = _draggingIndex;
     if (idx == null || idx < 0 || idx >= _lines.length) return;
 
     ref.read(playerProvider.notifier).seek(_lines[idx].timeMs / 1000.0);
 
-    // 立即清除拖动状态并回正到目标行。
     _draggingIndexTimer?.cancel();
     setState(() {
       _draggingIndex = null;
@@ -5977,7 +5373,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _autoScrollToActiveLine(force: true);
   }
 
-  /// 拖动指示条的时间文本（mm:ss）。
   String _draggingTimeLabel() {
     final idx = _draggingIndex;
     if (idx == null || idx < 0 || idx >= _lines.length) return '00:00';
@@ -5992,7 +5387,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (item == null) return;
     if (_loadedPath == item.path && _lines.isNotEmpty) return;
 
-    // 命中缓存：直接复用已解析行，跳过网络请求与解析。
     final cached = _lyricsCache[item.path];
     if (cached != null && cached.isNotEmpty) {
       if (mounted) {
@@ -6016,16 +5410,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       String jsonStr = '';
 
       if (item.isOnline) {
-        // (A) 插件来源：通过插件 getLyric 拉歌词（与下载流程同款，处理
-        // MusicFree 插件的 lxlyric/lyric/翻译/罗马音）。插件歌曲的直链信息
-        // 存在 onlineSongJson（含 pluginId/source/musicInfo），播放页此前只
-        // 认 onlineInfoJson 才导致插件歌词拉不到。
         final pluginText = await _fetchPluginLyric(item);
         if (pluginText.trim().isNotEmpty) {
           jsonStr = await parseLyrics(rawLyrics: pluginText);
         } else if (item.source != null && item.onlineInfoJson != null) {
-          // (B) 内置 lx 音源：通过 Rust 接口在线抓取指定音源的歌词
-          // (kw/kg/tx/wy/mg)。
           final rawResultStr = await fetchLyricFromSource(
             source: item.source!,
             songInfoJson: item.onlineInfoJson!,
@@ -6034,7 +5422,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
             String lyricsToParse = '';
 
-            // 提取 LyricResult JSON 对象中的真实歌词正文 (lxlyric > lyric)
             try {
               final lyricObj =
                   jsonDecode(rawResultStr) as Map<String, dynamic>;
@@ -6061,14 +5448,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           }
         }
       } else {
-        // 本地曲目：通过数据库及本地资源提取
         final dbPath = await ref.read(dbPathProvider.future);
         jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
       }
 
       if (jsonStr.isNotEmpty && jsonStr != 'null') {
-        // 解析移出主线程：JSON 解析 + 边界修正走后台 isolate，避免大歌词
-        // 阻塞 UI 线程造成卡顿。
         final parsed = await compute(_parseLyricsJson, jsonStr);
         final lines = await compute(_normalizeBoundaries, parsed);
 
@@ -6102,10 +5486,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 从在线插件拉取当前播放曲目的歌词正文（LRC/逐字/翻译/罗马音）。
-  ///
-  /// 播放队列项 `onlineSongJson` 含 `pluginId/source/musicInfo`；非插件来源或
-  /// 拉取失败返回空串，调用方据此回退到内置 lx 音源抓取。
   Future<String> _fetchPluginLyric(QueueItem item) async {
     final online = item.onlineSongJson;
     if (online == null || online.isEmpty) return '';
@@ -6137,7 +5517,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 汇总当前歌词是否含罗马音并上报给宿主页（驱动设置栏罗马音按钮可用态）。
   void _reportRomaji() {
     final has = _lines.any((l) => l.romaji != null && l.romaji!.isNotEmpty);
     if (has != _hasRomaji) {
@@ -6146,7 +5525,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  /// 计算当前进度对应的活动行索引（build 与 ticker 共用）。
   int _activeIndexFor(double pos) {
     final curMs = ((pos - _offsetMs / 1000.0) * 1000).toInt();
     int activeIndex = -1;
@@ -6160,22 +5538,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     return activeIndex;
   }
 
-  /// 一次性精确居中：等当前行实测布局后瞬时跳到视口正中（无动画）。
-  /// 目标行尚未被测量时按比例粗跳拉入 ListView 构建范围，保留 pending 等
-  /// _onLineMeasured 回调触发精确居中（对齐 RwaS 修正循环：拉入后读真实
-  /// offset 补齐偏移）。500ms 安全阀兜底防止长期短路 _autoScrollToActiveLine。
   void _tryPendingCenterJump() {
-    if (_userInteracted) return; // 用户正在手动翻看，不打扰
+    if (_userInteracted) return;
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
     final idx = _activeIndexFor(_displayPos);
     final viewport = _scrollCtrl.position.viewportDimension;
     if (viewport <= 0) return;
     final layout = _lineLayouts[idx];
     if (layout == null) {
-      // 目标活动行尚未被 ListView 构造测量——典型于歌曲已播到中段才打开/重开
-      // 歌词页，当前行远在视口之外。粗跳一次将目标行拉入 ListView 构建范围，
-      // 下一帧 _MeasuredLine 回调填充布局缓存后由 _onLineMeasured 触发精确居中。
-      // 对齐 RwaS animateScrollToItem 拉入 → 读真实 offset 补齐残余偏移。
       if (idx >= 0 && _lines.length > 1) {
         final maxScroll = _scrollCtrl.position.maxScrollExtent;
         final target = (maxScroll * idx / (_lines.length - 1))
@@ -6184,8 +5554,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           _scrollCtrl.jumpTo(target);
         }
       }
-      // 不清除 _pendingCenterJump：_onLineMeasured 会在目标行测量完成后
-      // 立即触发精确居中。安全阀：500ms 内未测量则自动清除，交还常规跟随。
       _pendingCenterFallback?.cancel();
       _pendingCenterFallback = Timer(const Duration(milliseconds: 500), () {
         if (mounted) {
@@ -6208,9 +5576,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   void _autoScrollToActiveLine({bool force = false}) {
     if (_lines.isEmpty || !_scrollCtrl.hasClients) return;
-    if (_userInteracted && !force) return; // 用户正在手动翻看歌词中，暂不打扰
+    if (_userInteracted && !force) return;
 
-    // 一次性精确居中优先（seek 的 force 路径直接走动画滚动）
     if (_pendingCenterJump && !force) {
       _tryPendingCenterJump();
       return;
@@ -6234,8 +5601,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final maxScroll = _scrollCtrl.position.maxScrollExtent;
     final viewport = _scrollCtrl.position.viewportDimension;
 
-    // 精确居中（弦予样式）：用该行实测布局（内容坐标顶 + 高/2）对齐视口中心；
-    // 行尚未构建测量时（如长距离 seek）退回按比例估算。
     double targetOffset;
     final layout = _lineLayouts[activeIndex];
     if (layout != null && viewport > 0) {
@@ -6246,7 +5611,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
     targetOffset = targetOffset.clamp(0.0, maxScroll);
 
-    // RwaS 换行拽动：仅前进自然换行（播放中、非 seek、非用户翻看）触发。
     final isPlaying = ref.read(playerProvider).isPlaying;
     if (force || !isPlaying || _userInteracted || activeIndex <= prevIndex) {
       _cancelPull();
@@ -6257,9 +5621,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final current = _scrollCtrl.offset;
     if (!force && (targetOffset - current).abs() < 1) return;
 
-    // RwaS 跟随节奏（LyricPullSpec/LyricFollowEasing）：固定 550ms。
-    // 拽动激活时列表滚动与 pull 全局插值同用二次减速曲线（保证被"按住"的行
-    // 纹丝不动），否则用 LyricFollowEasing CubicBezier(0.40, 0.10, 0, 1)。
     _scrollCtrl.animateTo(
       targetOffset,
       duration: const Duration(milliseconds: 550),
@@ -6271,8 +5632,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   @override
   Widget build(BuildContext context) {
-    // 局部订阅播放进度/播放态驱动歌词推进；页面其余部分（封面/背景/控制）
-    // 不随 position 每秒跳动重建（纯滑动不更新）。
     ref.listen(
       playerProvider.select((s) => s.position),
       (_, next) => _onPositionChanged(next),
@@ -6281,8 +5640,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       playerProvider.select((s) => s.isPlaying),
       (prev, next) => _syncTicker(),
     );
-    // 歌词样式设置（移植自 MF LyricOperations）：字号档位 / 翻译开关 / 时间偏移。
-    // 存到字段供 _onTick → _autoScrollToActiveLine 等非 build 路径使用。
     final settings = ref.watch(settingsProvider).valueOrNull;
     final newFontSizeIdx = settings?.lyricFontSize ?? 1;
     final newShowTranslation = settings?.showLyricsTranslation ?? true;
@@ -6293,9 +5650,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       'right' => TextAlign.right,
       _ => TextAlign.center,
     };
-    // 字号/对齐/翻译/罗马音变化：行高、对齐、逐字排版都变了，旧滚动布局缓存
-    // 与模糊烘焙（其 key 含字号/对齐/翻译/罗马音）全部失效。清掉后按新尺寸
-    // 重新实测并精确居中，否则会沿用旧缓存导致居中对位错乱、对齐不刷新。
     if (newFontSizeIdx != _fontSizeIdx ||
         newShowTranslation != _showTranslation ||
         newShowRomaji != _showRomaji ||
@@ -6315,19 +5669,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         ? settings!.lyricFontName
         : null;
 
-    // 横屏（宽≥高×1.05，与壳层判定一致）：歌词字号整体放大。
     final mqSize = MediaQuery.of(context).size;
     final isLandscape = mqSize.width >= mqSize.height * 1.05;
     _fontScale = isLandscape ? 1.18 : 1.0;
 
-    // RwaS 等字号样式：活动行不变号，靠缩放（1.0↔0.92）与亮度区分。
-    // 字号继承 RwaS 量级：主行档位 24/28/32/36（RwaS 默认 28sp，范围 24..40），
-    // 副行 = 主行 62%（RwaS secondarySize 比例，钳制 15..25）。
     final mainFont = [24.0, 28.0, 32.0, 36.0][_fontSizeIdx] * _fontScale;
     final transFont = (mainFont * 0.62).clamp(15.0, 25.0);
     final romajiFont = transFont;
 
-    // 活动行索引：build 与 ticker 共用同一计算，ticker 据此判断换行才重建。
     final activeIndex = _activeIndexFor(_displayPos);
     _renderActiveIndex = activeIndex;
 
@@ -6337,7 +5686,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
       );
     } else if (_lines.isEmpty) {
-      // 歌词页恒定白字（不受主题色控制），与模糊封面暗底适配。
       content = Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -6359,22 +5707,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         ),
       );
     } else {
-      // 头尾空白区 = 半视口 − 半行高：首句/末句也能精确落在视口中心，
-      // 不被滚动边界 clamp 顶到上/下缘。行高按当前字号档位估算。
       final typicalH = mainFont * 1.35 +
           (_showRomaji ? romajiFont * 1.2 + 5 : 0) +
           (_showTranslation ? transFont * 1.35 + 6 : 0);
       content = LayoutBuilder(
         builder: (context, constraints) {
           final viewport = constraints.maxHeight;
-          // 视口高度变化（横竖屏切换/栏进退）：滚动偏移不再居中，需重新精确
-          // 居中。但栏动画期间高度每帧都在变，若每次变化立即清缓存+硬跳，
-          // 活动行会被反复强制跳位（「正在播放这句会丢」）；防抖到高度稳定后
-          // 一次性执行（350ms 覆盖 AnimatedSize 300ms），动画期间交还常规跟随。
-          // 仅宽度变化（横竖屏切换）才清行布局缓存（行高/换行全变）：只改高度
-          // 的栏进退行布局不变，直接沿用缓存精确居中——清缓存会退化为按比例
-          // 粗跳（估算偏差 → 歌词整体上推对不齐），且行在视口内不会重建、
-          // _MeasuredLine 实测回调不触发，粗跳位置永久残留。
           if (_lastViewportHeight != null &&
               (_lastViewportHeight! - viewport).abs() > 1) {
             final widthChanged = _lastViewportWidth != null &&
@@ -6400,51 +5738,35 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             _onUserScrollStart();
             _scheduleAutoRecenter();
           } else if (notification is ScrollUpdateNotification) {
-            // 拖动/惯性滚动中：实时定位视口中心行（拖动选行播放）。
             if (_userInteracted) _updateDraggingIndex();
           }
           return false;
         },
         child: ListView.builder(
           controller: _scrollCtrl,
-          // 头尾空白区：正在唱的行始终可以居中（见上方 typicalH 注释）。
-          // 水平内边距对齐 RwaS lineHorizontalPadding 28dp。
           padding: EdgeInsets.fromLTRB(28, topPad, 28, bottomPad),
-          // 缓存视口外约 200px 的行：滚动时只搬运已构建/已测量（onMeasured 回调
-          // 已填充布局缓存）的行，拖动选行定位不依赖现建现量。
           scrollCacheExtent: ScrollCacheExtent.pixels(200),
           addAutomaticKeepAlives: false,
-          // 每行独立 RepaintBoundary：换行 setState 重建列表时，只有活动行
-          // 变化的两行重绘，其余行复用已缓存图层，避免整屏逐帧重绘抽帧。
           addRepaintBoundaries: true,
           itemCount: _lines.length,
           itemBuilder: (context, idx) {
             final line = _lines[idx];
             final isActive = idx == activeIndex;
             final isDragging = idx == _draggingIndex;
-            // RwaS 距离衰减（lyricLineVisuals）：近邻 0.42 / 次邻 0.28 / 其余 0.16。
             final dist = (idx - activeIndex).abs();
             final inactiveAlpha = dist == 1
                 ? 0.42
                 : dist == 2
                     ? 0.28
                     : 0.16;
-            // 桌面版 AMLL 模糊规则（PatchedLyricPlayer blurLevel）：除活动行外
-            // 全部模糊且常驻不落（一次只显示一行清晰）——下方（未唱）行
-            // sigma = 1+dist，上方（已唱）行再 +1（糊得更狠），钳 8；
-            // 仅用户手动翻看时归 0（RwaS userScrolling 同款，省光栅化）。
             final passed = idx < activeIndex;
             final blurSigma = (!_userInteracted && !isActive)
                 ? math.min(1.0 + dist + (passed ? 1.0 : 0.0), 8.0)
                 : 0.0;
 
-            // 行内各子项铺满整行宽度（stretch），让 textAlign / WrapAlignment
-            // 有剩余空间可分配——默认 center 会令子项收缩到内容宽度，左/中/右
-            // 对齐不产生任何视觉差异。
             Widget lineChild = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 罗马音在主行上方（RwaS ComposeLyricLine 排布）
                 if (_showRomaji &&
                     line.romaji != null &&
                     line.romaji!.isNotEmpty) ...[
@@ -6461,10 +5783,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   ),
                   const SizedBox(height: 5),
                 ],
-                // 逐字歌词渲染 (若包含 words 且当前处于活跃高亮行，走卡拉OK渲染)
                 if (isActive && line.words.isNotEmpty)
-                  // 活动行卡拉OK独立成图层 + ValueListenableBuilder 局部刷新：
-                  // 逐字漫过只重建这一行的染色，不再整页每帧 setState。
                   RepaintBoundary(
                     child: ValueListenableBuilder<double>(
                       valueListenable: _progress,
@@ -6493,8 +5812,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,
                     style: TextStyle(
-                      // RwaS 等字号：主行恒定字号 w700；全白配色，
-                      // 亮度随距离衰减（拖动选中行提亮为纯白）。
                       fontSize: mainFont,
                       fontWeight: FontWeight.w700,
                       color: isDragging
@@ -6528,8 +5845,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               ],
             );
 
-            // RwaS 行缩放（lyricLineVisuals spring 0.82/340 近似）：
-            // 活动行 1.0，其余 0.92；绘制层变换不影响布局测量。
             lineChild = AnimatedScale(
               scale: isActive ? 1.0 : 0.92,
               duration: const Duration(milliseconds: 320),
@@ -6537,10 +5852,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               child: lineChild,
             );
 
-            // 景深模糊层（桌面版 AMLL：除活动行外全部模糊、一次只显示一行清晰）。
-            // 稳态行贴烘焙位图（_blurSnapshots，逐帧高斯模糊归零）；过渡期/
-            // 烘焙未就绪行走实时 ImageFiltered（sigma 连续动画，绝不卸载重挂）。
-            // 位移层放在模糊层之外：平移与高斯模糊可交换，烘焙内容不含位移。
             if (dist >= 1) {
               final steady = _blurSteady;
               final widthBucket = constraints.maxWidth.isFinite
@@ -6548,15 +5859,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   : 0;
               final snapKey =
                   _blurSnapshotKey(idx, blurSigma, mainFont, widthBucket);
-              // 稳态命中优先精确档；未命中贴近档兜底图（sigma 差 ≤1.5 无感），
-              // 都没有才走实时滤镜。
               final snap = steady
                   ? (_blurSnapshots[snapKey] ??
                       _findFallbackSnapshot(
                           idx, blurSigma, mainFont, widthBucket))
                   : null;
               if (snap != null) {
-                // 命中：直接贴烘焙位图（布局尺寸与原内容一致）
                 lineChild = RawImage(
                   image: snap.image,
                   width: snap.width,
@@ -6565,17 +5873,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                 );
               } else {
                 if (steady) {
-                  // 稳态未命中：边界捕获清晰内容（置于滤镜内侧），
-                  // post-frame 烘焙一次性施加 blur 后入缓存
                   lineChild = RepaintBoundary(
                     key: _blurBoundaryKeys.putIfAbsent(idx, GlobalKey.new),
                     child: lineChild,
                   );
                   _scheduleBlurCapture(idx, snapKey, blurSigma);
                 }
-                // 只有刚从清晰退入模糊的旧活动行保留 300ms sigma 过渡
-                //（观众可感知的动效）；其余行 sigma 跳变直出，不再逐帧实时
-                // 高斯整屏铺开。
                 if (idx == _prevActiveIndex) {
                   lineChild = TweenAnimationBuilder<double>(
                     tween: Tween(end: blurSigma.toDouble()),
@@ -6602,10 +5905,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               }
             }
 
-            // RwaS 纵向位移（lyricLineVisuals graphicsLayer）：
-            // 静态项 = 各行向锚点轻微压缩（±2dp×距离，钳 ±4）；
-            // 拽动项 = 前进换行时后续行先按住再逐行弹回（_pullOffsets 逐帧更新）。
-            // ListenableBuilder 只重挂 Transform，不重建行内容。
             lineChild = ListenableBuilder(
               listenable: _pullRevision,
               child: lineChild,
@@ -6630,7 +5929,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       );
         },
       );
-      // 暂停态进入歌词页：逐帧时钟未运行，靠 post-frame 兜底完成一次性精确居中
       if (_pendingCenterJump) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _tryPendingCenterJump();
@@ -6646,14 +5944,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         children: [
           content,
 
-          // 拖动选行指示条（移植自 MusicFree draggingTime）：
-          // 拖动歌词时在中央显示目标时间 + 播放按钮，点按从该行开始播放。
           if (_draggingIndex != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
-                  // 时间胶囊
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -6673,7 +5968,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // 中央基准横线：穿过视口中心的选中行
                   Expanded(
                     child: Container(
                       height: 1,
@@ -6681,7 +5975,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // 播放按钮：从选中行开始播放
                   _DraggingPlayButton(onPressed: _seekToDraggingLine),
                 ],
               ),
@@ -6691,7 +5984,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     );
   }
 
-  /// 字号调节面板（对应 MF SetFontSize 面板：小/标准/大/特大四档滑杆）。
   static void _showFontSizeSheet(BuildContext context, WidgetRef ref) {
     showSheetDialog<void>(context, (sheetCtx) {
       final notifier = ref.read(settingsProvider.notifier);
@@ -6755,7 +6047,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               const SizedBox(height: 16),
               const Divider(height: 1),
               const SizedBox(height: 12),
-              // 自定义字体导入
               Row(
                 children: [
                   Icon(
@@ -6789,8 +6080,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     });
   }
 
-  /// 歌词偏移校正面板：粗调滑杆(-500~+500, 10ms) + 细调按钮(1/5/10/100ms)，
-  /// 拖蓝/暂停时点按微调可精确定位，满足“偏移步进细化”。
   static void _showOffsetSheet(BuildContext context, WidgetRef ref) {
     showSheetDialog<void>(context, (sheetCtx) {
       final notifier = ref.read(settingsProvider.notifier);
@@ -6826,7 +6115,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   final scheme = Theme.of(ctx).colorScheme;
                   return Column(
                     children: [
-                      // 当前偏移值
                       Text(
                         value > 0
                             ? tr('提前 {v}ms', {'v': value})
@@ -6838,7 +6126,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                      // 粗调滑杆（10ms 步进）
                       Slider(
                         value: value.toDouble(),
                         min: -500,
@@ -6847,7 +6134,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                         label: '${value}ms',
                         onChanged: (v) => apply(v.round(), setSheetState),
                       ),
-                      // 细调按钮行（1 / 5 / 10 / 100ms 步进）
                       Wrap(
                         alignment: WrapAlignment.center,
                         spacing: 8,
@@ -6919,7 +6205,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     });
   }
 
-  /// 偏移细调小按钮。
   static Widget _offsetStepChip(
     BuildContext ctx,
     String label,
@@ -6947,7 +6232,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     );
   }
 
-  /// 渲染单个词/字的卡拉OK漫过染色高光
   Widget _buildKaraokeWordWidget(
     _LyricWordItem word,
     double position,
@@ -6957,7 +6241,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final duration = math.max(0.001, word.end - word.start);
     final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
 
-    // RwaS 卡拉OK配色：高亮白 / 未唱白 28%（dimColor），无品牌红。
     const highlightColor = Colors.white;
     final dimColor = Colors.white.withValues(alpha: 0.28);
 
@@ -6973,7 +6256,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
 
     if (progress >= 1.0) {
-      // 已唱完的词带白色辉光（RwaS glowEnabled 的简化对应：已完成词加白晕）。
       return Text(
         word.text,
         style: style.copyWith(
@@ -6988,10 +6270,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       );
     }
 
-    // 正在唱当前词：渐变染色漫过 (ShaderMask) + 轻微跳动。
-    // 跳动 = 进度驱动的正弦包络：起唱快速上浮并微放大，唱到中段最高，
-    // 收尾落回（RwaS KaraokeLyricLine wordLift / AMLL word pop 的简化对应）。
-    // 填充前沿之后带 10% 宽度的羽化软边，对应桌面端 AMLL 的 wordFadeWidth 扫字效果。
     final featherEnd = (progress + 0.1).clamp(0.0, 1.0);
     final pop = math.sin(progress * math.pi);
     return Transform.translate(
@@ -7012,8 +6290,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 }
 
-/// 模糊行稳态烘焙位图：清晰内容捕获后一次性施加 blur 的结果。
-/// width/height 为逻辑像素（与行内容布局尺寸一致，贴图时保证布局不变）。
 class _BlurredLineSnapshot {
   _BlurredLineSnapshot({
     required this.image,
@@ -7028,7 +6304,6 @@ class _BlurredLineSnapshot {
   void dispose() => image.dispose();
 }
 
-/// 单个烘焙任务（逐帧队列消费）：目标行、缓存 key、烘焙用的 sigma。
 class _BlurCaptureTask {
   _BlurCaptureTask({
     required this.index,
@@ -7041,11 +6316,6 @@ class _BlurCaptureTask {
   final double sigma;
 }
 
-/// 行测量包装（拖动选行播放）：布局后上报该行在滚动内容中的偏移与高度。
-///
-/// 用 `RenderAbstractViewport.of` 拿到相对视口的位置，叠加当前滚动偏移
-/// 即得内容坐标——等价 MusicFree LayoutCache 的实测前缀和。仅视口附近
-/// 的行会被 ListView 构建，缓存规模天然可控。
 class _MeasuredLine extends StatefulWidget {
   const _MeasuredLine({
     required this.index,
@@ -7076,7 +6346,6 @@ class _MeasuredLineState extends State<_MeasuredLine> {
   }
 }
 
-/// 拖动选行的播放按钮：圆形主题色底 + 白色播放图标。
 class _DraggingPlayButton extends StatelessWidget {
   const _DraggingPlayButton({required this.onPressed});
 
@@ -7101,7 +6370,6 @@ class _DraggingPlayButton extends StatelessWidget {
   }
 }
 
-/// 歌词设置悬浮按钮面板（复用悬浮侧边栏 UI 设计）：位于歌词页右上角，点击调出字号/翻译/偏移控件。
 class _LyricSettingsRail extends ConsumerStatefulWidget {
   const _LyricSettingsRail({
     required this.fontSizeIdx,
@@ -7138,7 +6406,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final panelWidth = _expanded ? 46.0 : 40.0;
-    // 全局 blur 预算：转场/滚动期间歌词悬浮面板玻璃降级（overlay 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.overlay));
     final sigma = surfaceBlurSigma(
       base: 14,
@@ -7174,7 +6441,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 1. 右上角毛玻璃主控制 Icon 按钮
               InkWell(
                 onTap: () => setState(() => _expanded = !_expanded),
                 borderRadius: BorderRadius.circular(20),
@@ -7198,7 +6464,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                 ),
               ),
 
-              // 2. 展开时向下延伸显示的 3 个工具按钮（字号 / 翻译 / 偏移）
               AnimatedSize(
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
@@ -7216,14 +6481,12 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                           ),
                           const SizedBox(height: 4),
 
-                          // (1) 字号按钮
                           _RailIconButton(
                             icon: Icons.format_size_rounded,
                             active: widget.fontSizeIdx != 1,
                             onTap: widget.onFontSize,
                           ),
 
-                          // (2) 翻译开关按钮
                           _RailIconButton(
                             icon: Icons.translate_rounded,
                             active:
@@ -7232,7 +6495,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                             onTap: widget.onToggleTranslation,
                           ),
 
-                          // (3) 罗马音开关按钮
                           _RailIconButton(
                             icon: Icons.abc_rounded,
                             active: widget.showRomaji && widget.hasRomaji,
@@ -7240,7 +6502,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                             onTap: widget.onToggleRomaji,
                           ),
 
-                          // (4) 时间偏移校正按钮
                           _RailIconButton(
                             icon: Icons.av_timer_rounded,
                             active: widget.offsetMs != 0,
@@ -7260,7 +6521,6 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
   }
 }
 
-/// 自定义歌词字体的导入 / 恢复默认按钮（字号面板内）。
 class _FontImportAction extends ConsumerWidget {
   const _FontImportAction({required this.sheetCtx});
   final BuildContext sheetCtx;
@@ -7365,8 +6625,6 @@ class _RailIconButton extends StatelessWidget {
   }
 }
 
-/// 播放队列弹窗（移植自桌面端播放队列）：
-/// 顶部显示当前播放信息，下方为可拖拽排序的队列列表。
 class _QueueSheet extends ConsumerStatefulWidget {
   const _QueueSheet({required this.player});
 
@@ -7384,9 +6642,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
     final queue = player.queue;
     final currentIndex = player.queueIndex;
 
-    // 队列由非空变空（清空按钮/删掉最后一首）：先关本弹窗，再连带退出其下
-    // 的播放详情页。播放页自身的退出监听在本弹窗打开时不触发（非栈顶），
-    // 由这里统一负责两层的关闭，避免竞态。
     ref.listen(playerProvider.select((s) => s.queue.isEmpty), (prev, empty) {
       if (prev == false && empty == true && mounted) {
         final nav = Navigator.of(context);
@@ -7398,7 +6653,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 顶部标题栏
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
           child: Row(
@@ -7416,9 +6670,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const Spacer(),
-              // 清空播放队列（对齐桌面端 PlayQueueSidebar）：停止播放并清掉
-              // 全部队列（含无法加载的坏歌）。关闭弹窗与退出播放详情页由
-              // 上方「队列变空」监听统一处理。
               IconButton(
                 icon: Icon(
                   Icons.delete_outline,
@@ -7453,8 +6704,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
               shrinkWrap: true,
               buildDefaultDragHandles: false,
               itemCount: queue.length,
-              // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 ListTile 会以
-              // debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
               proxyDecorator: (child, index, animation) =>
                   Material(type: MaterialType.transparency, child: child),
               onReorderItem: (oldIndex, newIndex) {
@@ -7470,9 +6719,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                   index: index,
                   child: ListTile(
                     dense: true,
-                    // 行尾关闭图标与顶部「清空垃圾桶」对齐：表头右侧内边距为 12，
-                    // 这里把 contentPadding.right 也设为 12，使两枚 48px 宽的
-                    // IconButton 图标中心落在同一垂直列(距右边 12+24px)。
                     contentPadding: const EdgeInsets.only(
                         left: 16, top: 0, right: 12, bottom: 0),
                     leading: isCurrent
@@ -7554,7 +6800,6 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
   }
 }
 
-/// 「更多」弹层的分段选择按钮：选中主题色底 + 主色文字，未选中次级底色。
 class _SheetSegmentButton extends StatelessWidget {
   const _SheetSegmentButton({
     required this.label,
@@ -7597,7 +6842,6 @@ class _SheetSegmentButton extends StatelessWidget {
   }
 }
 
-/// 剩余时间格式化：<1h → mm:ss，≥1h → h:mm:ss。
 String _formatSleepRemaining(Duration d) {
   String two(int v) => v.toString().padLeft(2, '0');
   final h = d.inHours;
@@ -7606,10 +6850,6 @@ String _formatSleepRemaining(Duration d) {
   return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
 }
 
-/// 「更多」弹层的定时播放行：标签 + 剩余时间/取消 + 1~120 分钟无极横条。
-///
-/// 拖动由 [CommittedSlider] 本地跟手、松手提交；生效期间每秒刷新剩余时间
-/// 显示（仅本行局部 setState，不牵动播放页）。
 class _SleepTimerRow extends StatefulWidget {
   const _SleepTimerRow({
     required this.initialMinutes,
@@ -7618,16 +6858,12 @@ class _SleepTimerRow extends StatefulWidget {
     required this.onCancel,
   });
 
-  /// 上次使用的分钟数（持久化默认值）。
   final int initialMinutes;
 
-  /// 读取当前生效的定时截止时刻（null = 未启用）。
   final DateTime? Function() deadlineGetter;
 
-  /// 拖动落定提交（分钟）。
   final ValueChanged<int> onCommit;
 
-  /// 取消定时。
   final VoidCallback onCancel;
 
   @override
@@ -7717,8 +6953,6 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
   }
 }
 
-/// 「不喜欢」图标：在爱心上叠加一条贯穿斜线（左上 → 右下），
-/// 与收藏爱心形成同源对比，表达「不想要此类推荐」。
 class _DislikeStrokePainter extends CustomPainter {
   final Color color;
   const _DislikeStrokePainter({required this.color});
@@ -7729,7 +6963,6 @@ class _DislikeStrokePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
-    // 斜线稍微超出爱心边缘，确保「贯穿」观感。
     canvas.drawLine(
       Offset(size.width * 0.14, size.height * 0.14),
       Offset(size.width * 0.86, size.height * 0.86),

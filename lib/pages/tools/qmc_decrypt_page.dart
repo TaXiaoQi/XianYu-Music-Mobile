@@ -12,7 +12,6 @@ import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
-/// QMC 独立文件解密页：解密 QQ 音乐加密文件（.qmcflac/.mflac 等）。
 class QmcDecryptPage extends ConsumerStatefulWidget {
   const QmcDecryptPage({super.key});
 
@@ -53,7 +52,6 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
     );
     if (files.isEmpty) return;
 
-    // content URI 场景：file_picker 已复制到缓存（path 可用）；无 path 时落盘字节。
     final dir = await getTemporaryDirectory();
     final items = <_DecryptResult>[];
     for (final f in files) {

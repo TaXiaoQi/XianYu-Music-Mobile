@@ -1,7 +1,3 @@
-/// 备份导入结果：解析 + 平台匹配 + 歌曲转换。
-///
-/// 支持 BakaMusic / MusicFree / 洛雪音乐（LXMusic）三种备份格式，
-/// 与桌面端 pluginBackupImport.ts 对齐。
 library;
 
 import 'dart:convert';
@@ -10,20 +6,19 @@ import 'dart:io';
 import 'plugin_models.dart';
 import '../i18n/i18n.dart';
 
-/// 导入的歌曲（本地文件或在线插件歌曲）。
 class ImportedSong {
   final String title;
   final String artist;
   final String album;
-  final int duration; // 秒
+  final int duration;
   final String? coverUrl;
-  final String? coverThumbPath; // 本地内嵌封面缩略图路径（扫描期回写）
-  final String? localPath; // 本地文件路径
-  final String? pluginId; // 在线插件 ID
-  final String? source; // 插件内音源 key（lx）或平台标识
-  final String? format; // 'lx' / 'musicfree'
-  final Map<String, dynamic>? musicInfo; // 传给插件的原始歌曲数据
-  final String path; // lx:// 或 plugin:// 路径
+  final String? coverThumbPath;
+  final String? localPath;
+  final String? pluginId;
+  final String? source;
+  final String? format;
+  final Map<String, dynamic>? musicInfo;
+  final String path;
 
   ImportedSong({
     required this.title,
@@ -74,7 +69,6 @@ class ImportedSong {
         path: j['path'] as String? ?? '',
       );
 
-  /// 悬空 pluginId 修复回写：仅替换插件绑定，其余元数据原样保留。
   ImportedSong copyWith({
     String? pluginId,
     String? source,
@@ -96,14 +90,11 @@ class ImportedSong {
       );
 }
 
-/// 导入后的歌单。
 class PluginBackupPlaylist {
   final String name;
   final List<ImportedSong> songs;
   final int originalSongCount;
-  /// 云端歌单 ID（下载合并时绑定，为 null 表示普通备份导入/全新云端歌单）。
   final String? cloudId;
-  /// 是否来自云端（下载合并时标记，cloudId 可能因历史数据缺失，用此标记判定已同步）。
   final bool isCloud;
 
   PluginBackupPlaylist({
@@ -115,14 +106,13 @@ class PluginBackupPlaylist {
   });
 }
 
-/// 导入失败的歌曲。
 class PluginBackupFailedSong {
   final String playlist;
   final String title;
   final String artist;
   final String platform;
   final String reason;
-  final String reasonCode; // 'missing-plugin' | 'invalid-song'
+  final String reasonCode;
 
   PluginBackupFailedSong({
     required this.playlist,
@@ -134,7 +124,6 @@ class PluginBackupFailedSong {
   });
 }
 
-/// 歌单与插件的关联信息。
 class PluginBackupAssociation {
   final String pluginId;
   final String pluginName;
@@ -153,7 +142,6 @@ class PluginBackupAssociation {
   });
 }
 
-/// 缺失的插件。
 class MissingBackupPlugin {
   final String platform;
   final int songCount;
@@ -161,9 +149,8 @@ class MissingBackupPlugin {
   MissingBackupPlugin({required this.platform, required this.songCount});
 }
 
-/// 备份导入准备结果。
 class PreparedPluginBackupImport {
-  final String format; // 'bakamusic' | 'musicfree' | 'lxmusic'
+  final String format;
   final int sourcePlaylistCount;
   final int totalSongCount;
   final int importedSongCount;
@@ -288,8 +275,6 @@ int _pluginMatchScore(
     return 0;
   }
 
-  // 洛雪备份的歌曲用 LX source code（如 'wy'）标识来源，
-  // LX 插件原生支持这些 code，应优先于 MusicFree 插件匹配。
   if (plugin.format == PluginFormat.lx &&
       platform.lxSource != null &&
       plugin.sources.contains(platform.lxSource)) {
@@ -329,7 +314,6 @@ PluginSource? _findMatchingPlugin(
   scored.sort((a, b) {
     if (a.$1.enabled != b.$1.enabled) return a.$1.enabled ? -1 : 1;
     if (a.$2 != b.$2) return b.$2 - a.$2;
-    // 洛雪备份优先选择 LX 插件，其他备份优先 MusicFree 插件
     if (a.$1.format != b.$1.format) {
       if (format == 'lxmusic') {
         return a.$1.format == PluginFormat.lx ? -1 : 1;
@@ -341,15 +325,6 @@ PluginSource? _findMatchingPlugin(
   return scored.isEmpty ? null : scored.first.$1;
 }
 
-/// 按平台标签为歌曲重新匹配可用插件（悬空 pluginId 运行时修复用）。
-///
-/// 插件 id 是插件文件内容的 sha256——插件更新/重装后 id 必变，已导入歌曲
-/// 记录的 pluginId 随即悬空导致播放失败。此函数按存储格式与平台（如
-/// 'wy' → 网易云）在当前已装插件中重新匹配同格式插件。
-///
-/// [allowCrossFormat] 为 true 时，同格式无匹配则放宽到任意格式（LX ↔
-/// MusicFree/Baka 互通），命中的插件需由调用方重新搜索歌曲以获得兼容的
-/// musicInfo（不同格式的 musicInfo 结构不互通，不能直接复用）。
 PluginSource? findPluginForPlatform({
   required String platformLabel,
   required List<PluginSource> installedPlugins,
@@ -368,8 +343,6 @@ PluginSource? findPluginForPlatform({
   );
 }
 
-/// 跨格式按平台匹配插件：在所有已装插件（不限 LX/MusicFree）中找能服务
-/// [platformLabel] 的插件。用于悬空 pluginId 同格式无匹配时的兜底。
 PluginSource? findPluginForPlatformCrossFormat({
   required String platformLabel,
   required List<PluginSource> installedPlugins,
@@ -383,11 +356,6 @@ PluginSource? findPluginForPlatformCrossFormat({
   );
 }
 
-/// 按平台列出所有能服务该平台的启用插件（匹配度降序，用户排序兜底）。
-///
-/// 与 [findPluginForPlatform] 共用同一套平台归一化/打分逻辑，但返回完整
-/// 候选列表：播放直链解析失败时依次尝试其他启用插件（音源自动切换的
-/// 插件级兜底），而不是卡死在歌曲所属的单个失效音源上。
 List<PluginSource> listEnabledPluginsForPlatform({
   required String platformLabel,
   required List<PluginSource> installedPlugins,
@@ -410,8 +378,6 @@ List<PluginSource> listEnabledPluginsForPlatform({
   return scored.map((e) => e.$1).toList();
 }
 
-/// 把平台标签（wy/网易云/qq音乐/...）归一化为 LX 音源 key（wy/tx/kw/kg/mg）。
-/// 无法识别时返回空串。供跨格式换源时确定 LX 插件的搜索 sourceKey。
 String lxSourceKeyForPlatform(String platformLabel) {
   final desc = _describePlatform(platformLabel);
   return desc.lxSource ?? '';
@@ -476,7 +442,6 @@ String _extractSongId(Map<String, dynamic> rawSong) {
   return _pickRawSongId(rawSong).toString().trim();
 }
 
-/// 保留原始标量类型的歌曲 ID（部分歌词接口只在收到 number 时才返回逐字歌词）。
 Object? _normalizeTrackId(Object? value, bool restoreStringifiedNumber) {
   if (value is num) {
     return value.toDouble().isFinite ? value : null;
@@ -502,7 +467,6 @@ String _extractTitle(Map<String, dynamic> rawSong) {
   return '';
 }
 
-/// 从备份歌曲对象中提取本地文件路径。
 String _resolveLocalPath(Map<String, dynamic> rawSong) {
   final localPath = rawSong['localPath'];
   if (localPath is String && localPath.trim().isNotEmpty) {
@@ -546,7 +510,6 @@ String _resolveLocalPath(Map<String, dynamic> rawSong) {
   return '';
 }
 
-/// 将洛雪歌曲的 meta 字段展平到顶层。
 Map<String, dynamic> _flattenLxMeta(Map<String, dynamic> rawSong) {
   final meta = rawSong['meta'];
   if (meta is! Map) return rawSong;
@@ -598,10 +561,6 @@ ImportedSong _createMusicFreeSong(
     'album': album,
     'platform': rawSong['platform'] ?? platform.displayName,
   };
-  // 剥离来源 App 写入的临时代理直链（如 BakaMusic 备份的 share.*.cn/url/...）：
-  // 该类链接会过期/被限流，且 BakaMusic 自身播放从不复用 musicItem.url，
-  // 而是每次经插件 getMediaSource 按歌曲 id 重新解析。保留它会让个别插件
-  // 直接回传陈旧链接导致「导入能播、过段时间失效」，必须剥离强制重新解析。
   final staleUrl = musicItem['url'];
   if (staleUrl is String && staleUrl.startsWith('http')) {
     musicItem.remove('url');
@@ -690,7 +649,6 @@ class _DetectedBackup {
   });
 }
 
-/// 通过歌曲字段特征推断备份来源。
 String? _inferFormatFromSongFields(List<Map<String, dynamic>> sheets) {
   var bakaScore = 0;
   var mfScore = 0;
@@ -750,7 +708,6 @@ bool _hasMusicFreeAuthorSignature(Map<String, dynamic> data) {
 _DetectedBackup _detectBackup(Map<String, dynamic> data) {
   final version = data['version'] is num ? (data['version'] as num).toInt() : null;
 
-  // 0. 洛雪音乐
   final lxData = data['type'] == 'myList' && data['data'] is Map
       ? (data['data'] as Map).cast<String, dynamic>()
       : data['type'] == 'allData_v3' && data['data'] is Map && (data['data'] as Map)['lists'] is Map
@@ -794,7 +751,6 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     throw   FormatException(tr('未找到可导入的歌单'));
   }
 
-  // 洛雪内部存储结构 / v3 全量备份
   final defaultList = lxData['defaultList'];
   final loveList = lxData['loveList'];
   final userList = lxData['userList'];
@@ -835,7 +791,6 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     return _DetectedBackup(format: 'lxmusic', sheets: sheets, restoreStringifiedIds: false);
   }
 
-  // 1. BakaMusic: schema 字段存在时优先判定
   final schema = data['schema'];
   if (schema is String && schema.startsWith('bakamusic')) {
     final sheets = _extractSheets(data);
@@ -847,7 +802,6 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     );
   }
 
-  // 2. 作者身份标识优先
   final nestedSheets = data['data'] is Map && (data['data'] as Map)['musicSheets'] is List
       ? ((data['data'] as Map)['musicSheets'] as List)
           .whereType<Map>()
@@ -880,7 +834,6 @@ _DetectedBackup _detectBackup(Map<String, dynamic> data) {
     );
   }
 
-  // 3. 按结构特征判断，再用歌曲字段验证/修正
   if (nestedSheets != null) {
     final inferred = _inferFormatFromSongFields(nestedSheets);
     if (inferred == 'musicfree') {
@@ -924,7 +877,6 @@ List<Map<String, dynamic>> _extractSheets(Map<String, dynamic> data) {
       .toList();
 }
 
-/// 解析备份 JSON 并准备导入。
 PreparedPluginBackupImport preparePluginBackupImport(
   String jsonContent,
   List<PluginSource> installedPlugins,
@@ -984,7 +936,6 @@ PreparedPluginBackupImport preparePluginBackupImport(
         continue;
       }
 
-      // 优先检测本地文件路径
       final localPath = _resolveLocalPath(rawSong);
       if (localPath.isNotEmpty) {
         songs.add(_createLocalSong(rawSong, localPath));
@@ -1005,7 +956,6 @@ PreparedPluginBackupImport preparePluginBackupImport(
         continue;
       }
 
-      // 无本地路径：尝试匹配在线插件
       if (id.isEmpty || platform.normalized.isEmpty) {
         failures.add(PluginBackupFailedSong(
           playlist: playlistName,
@@ -1091,10 +1041,7 @@ PreparedPluginBackupImport preparePluginBackupImport(
 }
 
 // ==================== M3U / M3U8 / 椒盐音乐 TXT 解析 ====================
-// 与桌面端 backupImport.ts 对齐：M3U 播放列表与椒盐音乐纯文本导出，
-// 每行文件路径创建本地歌曲，跨设备失效路径按「标题|歌手」匹配本地曲库。
 
-/// 本地曲库歌曲引用（供 M3U/TXT 导入时把跨设备失效路径匹配回本地）。
 typedef LocalSongRef = ({
   String path,
   String title,
@@ -1127,7 +1074,6 @@ ImportedSong _createSongFromPath(
   var title = titleFromMeta;
   var artist = artistFromMeta;
 
-  // 无元信息时从文件名 "title-artist.ext" 模式解析。
   if (title.isEmpty && baseName.isNotEmpty) {
     final dashIdx = baseName.lastIndexOf('-');
     if (dashIdx > 0) {
@@ -1163,7 +1109,6 @@ List<PluginBackupPlaylist> _parseM3UContent(String content, String fileName) {
     final line = rawLine.trim();
     if (line.isEmpty) continue;
     if (line.startsWith('#EXTINF:')) {
-      // 解析 #EXTINF:duration,artist - title
       final rest = line.substring('#EXTINF:'.length);
       final commaIdx = rest.indexOf(',');
       if (commaIdx >= 0) {
@@ -1179,7 +1124,6 @@ List<PluginBackupPlaylist> _parseM3UContent(String content, String fileName) {
         }
       }
     } else if (line.startsWith('#')) {
-      // 其他指令（#EXTM3U / #PLAYLIST 等）忽略。
     } else {
       songs.add(
           _createSongFromPath(line, pendingTitle, pendingArtist, pendingDuration));
@@ -1206,7 +1150,6 @@ List<PluginBackupPlaylist> _parseSaltPlayerContent(
   for (final rawLine in content.split(RegExp(r'\r?\n'))) {
     final line = rawLine.trim();
     if (line.isEmpty || line.startsWith('#')) continue;
-    // 必须看起来像文件路径（含音频扩展名或路径分隔符）。
     if (!_audioExtRegex.hasMatch(line) && !line.contains(RegExp(r'[\\/]'))) {
       continue;
     }
@@ -1223,9 +1166,6 @@ List<PluginBackupPlaylist> _parseSaltPlayerContent(
 
 String _normMeta(String s) => s.trim().toLowerCase();
 
-/// 把 M3U/TXT 的本地路径歌曲匹配回本地曲库：
-/// 路径已存在则原样保留；否则按「标题|歌手」唯一命中直接采用，
-/// 多候选时用时长（±5s）消歧。与 sync_provider 的跨设备匹配规则一致。
 ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
   if (File(song.path).existsSync()) return song;
   final key = '${_normMeta(song.title)}|${_normMeta(song.artist)}';
@@ -1270,8 +1210,6 @@ ImportedSong _matchLocalSong(ImportedSong song, List<LocalSongRef> localSongs) {
   return song;
 }
 
-/// 解析 M3U / M3U8 / 椒盐音乐 TXT 播放列表为导入歌单。
-/// 每行文件路径创建本地歌曲；跨设备失效路径按「标题|歌手」匹配本地曲库。
 PreparedPluginBackupImport preparePlaylistFileImport(
   String content,
   String fileName, {
@@ -1316,7 +1254,6 @@ PreparedPluginBackupImport preparePlaylistFileImport(
   );
 }
 
-/// 生成备份版本的用户可读描述。
 String describeBackupVersion(PreparedPluginBackupImport prepared) {
   final formatName = switch (prepared.format) {
     'bakamusic' => 'BakaMusic',

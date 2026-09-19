@@ -15,9 +15,7 @@ import '../../src/i18n/i18n.dart';
 import '../../src/widgets/glass_appbar.dart';
 
 enum _OutMode {
-  // 原格式无损剪切（-c copy，最快，保留封面/歌词/元数据）
   original,
-  // 指定格式重编码剪切
   recode,
 }
 
@@ -29,26 +27,25 @@ class AudioTrimPage extends ConsumerStatefulWidget {
 
 class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   String? _filePath;
-  String? _originalDir; // 选文件时真正的原目录
+  String? _originalDir;
   String _fileName = '';
-  double _duration = 0; // 秒
+  double _duration = 0;
   bool _probing = false;
   bool _trimming = false;
 
   double _start = 0;
   double _end = 0;
 
-  // 试听
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
   bool _isLoading = false;
-  double _playProgress = 0; // 当前播放位置
+  double _playProgress = 0;
   double _playBuffered = 0;
-  double _playStartOffset = 0; // 试听从哪里开始（_start）
-  bool _previewRange = true; // true = 试听 [_start, _end]，false = 全文件
+  double _playStartOffset = 0;
+  bool _previewRange = true;
 
   _OutMode _mode = _OutMode.original;
-  String _recodeFmt = 'mp3'; // 与 audio_convert 保持一致的集合
+  String _recodeFmt = 'mp3';
   bool _keepCover = true;
   bool _keepLyrics = true;
 
@@ -83,7 +80,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     try {
       await _player.setFilePath(_filePath!);
       await _player.seek(Duration(milliseconds: (_playStartOffset * 1000).round()));
-      // 监听播放位置，到 _end 自动停
       _player.positionStream.listen((pos) {
         final cur = pos.inMilliseconds / 1000.0;
         final max = _previewRange ? _end : _duration;
@@ -108,13 +104,11 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
       await _player.pause();
     } else {
       if (_player.sequence != null) {
-        // 已经加载过，直接从当前位置或 start 开始
         final curMs = _player.position.inMilliseconds;
         final startMs = (_playStartOffset * 1000).round();
         final maxMs =
             (_previewRange ? _end : _duration).round() * 1000;
         if (curMs >= maxMs - 100) {
-          // 已经播完了，重头来
           await _player.seek(Duration(milliseconds: startMs));
         } else if (curMs < startMs - 50) {
           await _player.seek(Duration(milliseconds: startMs));
@@ -208,7 +202,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
         if (v != null && v > 0) return v;
       }
     } catch (_) {}
-    // fallback: 简单估算，让界面不至于空
     return 0;
   }
 
@@ -269,7 +262,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     final String cmd;
 
     if (_mode == _OutMode.original) {
-      // 无损 -c copy，输出保持原扩展名
       final ext = _fileName.contains('.')
           ? _fileName.substring(_fileName.lastIndexOf('.') + 1)
           : 'audio';
@@ -285,10 +277,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
       buf.write(' "$outPath"');
       cmd = buf.toString();
     } else {
-      // 重编码
       outPath = '$outDir${Platform.pathSeparator}${safeBase}_trim.$_recodeFmt';
 
-      // 复用音频转换页的编码器映射
       const encoders = {
         'mp3': ('libmp3lame', '-b:a 192k'),
         'aac': ('aac', '-b:a 192k'),

@@ -1,14 +1,3 @@
-// 横屏主 tab 切换回归测试（独立切换器 LandscapeTabSwitcher）。
-//
-// 历史 bug：横屏 out-in 曾与竖屏 PageView 容器共用一个组件（build 在
-// AnimatedBuilder ↔ PageView 间切换根槽位 widget 类型导致重挂载、跳页丢失）。
-// 现横屏为独立模式：独立的 LandscapeTabSwitcher（out-in + Offstage 保活），
-// 与竖屏 PageSwitchTabView 完全分开。本组测试锁定：
-// - out-in 切换落在目标页且结束后不透明度归位；
-// - 首页→我的→首页→我的 连续切换不卡死；
-// - enabled=false 硬切与面板 suppress 硬切（取 old 值）均正常换页。
-//
-// 运行：flutter test test/landscape_tab_switch_test.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,9 +21,9 @@ Widget _host(int index, {bool enabled = true, bool suppress = false}) =>
 Future<void> _switch(WidgetTester tester, int target,
     {bool suppress = false}) async {
   await tester.pumpWidget(_host(target, suppress: suppress));
-  await tester.pump(); // didUpdateWidget → out 阶段开始（硬切则立即换页）
-  await tester.pump(const Duration(milliseconds: 300)); // out 完成 + 换页
-  await tester.pump(const Duration(milliseconds: 300)); // in 完成
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 double _opacityOf(WidgetTester tester, String text) {
@@ -52,7 +41,6 @@ void main() {
 
     await _switch(tester, 1);
 
-    // 动画结束：静止态 Opacity 包装应回到恒等（opacity 1.0）
     expect(find.text('PROFILE'), findsOneWidget);
     expect(_opacityOf(tester, 'PROFILE'), 1.0,
         reason: 'out-in 结束后透明度应归位 1.0，否则页面停留在半透明');
@@ -85,7 +73,6 @@ void main() {
   testWidgets('面板打开时切 tab（suppress，取 old 值）：硬切换页', (tester) async {
     await tester.pumpWidget(_host(0));
     await tester.pump();
-    // 切换前 suppress=true（面板开着）→ 硬切，换页被面板淡出盖住。
     await _switch(tester, 1, suppress: true);
     expect(find.text('PROFILE'), findsOneWidget);
     expect(_opacityOf(tester, 'PROFILE'), 1.0);

@@ -3,9 +3,6 @@ import 'predictive_dialog_route.dart';
 import 'sheet_dialog.dart';
 import '../i18n/i18n.dart';
 
-/// 现代优雅弹窗组件与全局调用助手
-/// 包含：单选/多选居中面板 (ChoiceSheet)、确认提示框 (AlertDialog)、输入框 (InputDialog)
-
 class ModernChoiceOption<T> {
   final String label;
   final String? subtitle;
@@ -20,7 +17,6 @@ class ModernChoiceOption<T> {
   });
 }
 
-/// 1. 全局单选/多选现代居中弹窗（对齐「安装插件」弹窗风格，不再从底部滑出）
 Future<T?> showModernChoiceSheet<T>({
   required BuildContext context,
   required String title,
@@ -47,7 +43,6 @@ Future<T?> showModernChoiceSheet<T>({
   );
 }
 
-/// 2. 全局现代通用确认/提示弹窗
 Future<bool> showModernConfirmDialog({
   required BuildContext context,
   required String title,
@@ -149,7 +144,6 @@ Future<bool> showModernConfirmDialog({
   return res ?? false;
 }
 
-/// 3. 全局现代输入框弹窗
 Future<String?> showModernInputDialog({
   required BuildContext context,
   required String title,
@@ -257,7 +251,6 @@ Future<String?> showModernInputDialog({
 
 // ==================== 内部私有现代化组件 ====================
 
-/// 现代居中对话框圆角外框（适配深色/浅色、毛玻璃防护与阴影）
 class ModernDialogCard extends StatelessWidget {
   const ModernDialogCard({super.key, required this.child});
   final Widget child;
@@ -295,7 +288,6 @@ class ModernDialogCard extends StatelessWidget {
   }
 }
 
-/// 现代单选列表内容视图（软色胶囊高亮、对勾指示、自适应层次）
 class _ModernChoiceList<T> extends StatelessWidget {
   const _ModernChoiceList({
     required this.title,
@@ -361,7 +353,6 @@ class _ModernChoiceList<T> extends StatelessWidget {
   }
 }
 
-/// 现代单选列表项：软色胶囊高亮 + 对勾指示（设置页选择弹窗的通用样式）。
 class ModernOptionTile<T> extends StatelessWidget {
   const ModernOptionTile({
     super.key,

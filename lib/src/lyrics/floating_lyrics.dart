@@ -10,11 +10,6 @@ import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
 
-/// 悬浮歌词窗控制器（移植自 RawS-Music 外部歌词体系）。
-///
-/// 数据流：Flutter 侧持有播放状态与歌词（LyricsRepository 统一拉取），
-/// 经 MethodChannel 推送给原生 LyricsOverlayService 渲染卡拉OK逐字效果；
-/// 原生控制条（播放/暂停/切歌/字号/颜色/锁定/关闭）经事件通道回调本类执行。
 class FloatingLyricsController {
   FloatingLyricsController(this._container);
 
@@ -24,7 +19,6 @@ class FloatingLyricsController {
   static const MethodChannel _events =
       MethodChannel('xianyu/floating_lyrics_events');
 
-  /// 与 RawS-Music DesktopLyricService.QUICK_COLORS 一致的颜色轮换表。
   static const List<int> quickColors = [
     0xFFFFFFFF,
     0xFFBFBFBF,
@@ -44,10 +38,8 @@ class FloatingLyricsController {
   List<LyricLine> _lyrics = const [];
   int _fetchToken = 0;
 
-  /// 挂载事件监听并开始跟随设置与播放状态。
   void init() {
     _events.setMethodCallHandler(_onEvent);
-    // 语言切换（简↔繁）后重新拉取当前歌曲歌词，悬浮窗文本跟随界面语言。
     I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
       final s = next.valueOrNull;
@@ -66,7 +58,6 @@ class FloatingLyricsController {
     _playerSub?.close();
   }
 
-  /// 界面语言变化：清空歌词行并重新拉取（repository 按新语言转换）。
   void _onLanguageChanged() {
     if (!_enabled) return;
     _lyrics = const [];
@@ -87,7 +78,6 @@ class FloatingLyricsController {
       _enabled = false;
       _hide();
     } else if (enabled) {
-      // 已开启：设置变化（颜色/字号/锁定/位置等）实时同步到原生。
       _pushSettings(s);
       if (s.floatingLyricsLocked) _setLocked(true);
     }
@@ -118,7 +108,7 @@ class FloatingLyricsController {
       return;
     }
     final lines = await _container.read(lyricsRepositoryProvider).fetchLyrics(item);
-    if (token != _fetchToken) return; // 已切歌，丢弃过期结果。
+    if (token != _fetchToken) return;
     _lyrics = lines;
     _pushLyricsJson(serializeLyricsForOverlay(lines));
   }
@@ -278,7 +268,6 @@ class FloatingLyricsController {
   }
 }
 
-/// 悬浮歌词控制器 provider：首次读取时创建控制器（监听由 main 显式 init）。
 final floatingLyricsControllerProvider =
     Provider<FloatingLyricsController>((ref) {
   final controller = FloatingLyricsController(ref.container);

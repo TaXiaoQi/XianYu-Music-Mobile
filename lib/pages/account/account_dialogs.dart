@@ -5,11 +5,6 @@ import '../../src/auth/auth_provider.dart';
 import 'human_captcha_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 账号相关弹窗集合：修改密码 / 绑定邮箱 / 修改昵称 / 修改弦予号 / 注销账号 / 找回密码。
-///
-/// 每个弹窗以 `showXxxDialog(context, notifier)` 打开，返回是否成功。
-
-/// 修改密码弹窗（需邮箱验证码 + 人机验证）。
 Future<bool> showChangePasswordDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -229,7 +224,6 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   }
 }
 
-/// 绑定邮箱弹窗（需 type='bind' 的邮箱验证码）。
 Future<bool> showBindEmailDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -422,7 +416,6 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
   }
 }
 
-/// 修改昵称弹窗（走审核流程）。
 Future<String?> showChangeNicknameDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -531,7 +524,6 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
   }
 }
 
-/// 修改弦予号弹窗（每月限一次）。
 Future<bool> showChangeCiyuanxiDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -682,7 +674,6 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
   }
 }
 
-/// 注销账号弹窗（密码 + 邮箱验证码双重验证）。
 Future<bool> showDeleteAccountDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -770,7 +761,6 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
     }
     setState(() => _loading = true);
     try {
-      // 先预验证凭据，再弹二级确认。
       await widget.notifier
           .preVerifyDeleteAccount(verifyCode: code, password: password);
       if (!mounted) return;
@@ -912,7 +902,6 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
   }
 }
 
-/// 找回密码弹窗（未登录场景）。
 Future<bool> showForgotPasswordDialog(
   BuildContext context,
   AuthNotifier notifier,
@@ -1147,9 +1136,6 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   }
 }
 
-/// 资料修改前置确认弹窗（对齐桌面端「更换头像/修改昵称提示」）：
-/// 进入修改界面或选择头像前，先检测剩余机会并弹窗提示次数限制与审核规则。
-/// 被拦截（blocked=true）时仅提供「关闭」按钮并返回 false；正常时取消返回 false，继续返回 true。
 Future<bool> showProfileEditGate(
   BuildContext context, {
   required String title,
@@ -1171,7 +1157,6 @@ Future<bool> showProfileEditGate(
   ).then((v) => v ?? false);
 }
 
-/// 前置确认弹窗内容（圆形图标 + 标题 + 说明 + 可选提示条 + 按钮）。
 class ProfileEditGateDialog extends StatelessWidget {
   const ProfileEditGateDialog({
     super.key,

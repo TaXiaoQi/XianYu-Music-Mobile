@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 插件订阅链接（与桌面端 PluginSubscription 结构对齐，用于云同步）。
 class PluginSubscription {
   final String id;
   final String name;
@@ -33,7 +32,6 @@ class PluginSubscription {
       };
 }
 
-/// 订阅列表状态管理：SharedPreferences 持久化，按 URL 去重。
 class PluginSubscriptionsNotifier
     extends StateNotifier<List<PluginSubscription>> {
   PluginSubscriptionsNotifier() : super(const []) {
@@ -54,7 +52,6 @@ class PluginSubscriptionsNotifier
           .where((s) => s.url.isNotEmpty)
           .toList();
     } catch (_) {
-      // 损坏数据按空处理
     }
   }
 
@@ -64,7 +61,6 @@ class PluginSubscriptionsNotifier
       await prefs.setString(
           _key, jsonEncode(state.map((e) => e.toJson()).toList()));
     } catch (_) {
-      // 忽略写入失败
     }
   }
 
@@ -75,7 +71,6 @@ class PluginSubscriptionsNotifier
     return '${uri.host}${lastSeg.isNotEmpty ? '/$lastSeg' : ''}';
   }
 
-  /// URL 安装成功后记录订阅；已存在同 URL 时静默跳过。
   Future<void> addFromInstall(String url, {String? name}) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) return;
@@ -99,7 +94,6 @@ class PluginSubscriptionsNotifier
     await _persist();
   }
 
-  /// 云端订阅按 URL 合并进本地（本地已有的保留），返回新增条数。
   Future<int> mergeFromCloud(
       List<Map<String, dynamic>> cloud) async {
     final knownUrls = state.map((s) => s.url).toSet();

@@ -5,24 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// 设置页「问题诊断」开关的状态（驱动 UI 刷新，与 [AppLogger] 同步）。
 final diagRecordingProvider = StateProvider<bool>((ref) => false);
 
-/// 轻量诊断日志。
-///
-/// 专为排查「按返回直接回桌面」这类难复现的问题设计：
-/// - 内存环形缓冲（上限 [maxEntries] 条），不落盘、零开销（未记录时 log 直接返回）
-/// - [start] 开始记录，[stopAndSave] 停止并落盘为 txt
-/// - 记录期间监听应用生命周期（回桌面瞬间的事件序列是关键证据）
-///
-/// 打点位置：路由 push/pop（root 与 branch 各挂 observer）、
-/// shell 的 PopScope 回调、二级页面进出（HidesShellChrome）。
 class AppLogger with WidgetsBindingObserver {
   AppLogger._();
 
   static final AppLogger instance = AppLogger._();
 
-  /// 缓冲上限，超出丢弃最旧条目。
   static const int maxEntries = 2000;
 
   final List<String> _entries = [];
@@ -31,11 +20,6 @@ class AppLogger with WidgetsBindingObserver {
 
   bool get isRecording => _recording;
 
-  /// 开始记录。
-  ///
-  /// 不清空缓冲：日志在进程启动起就常驻内存环形缓冲（见 [log]），
-  /// 这样开启诊断后导出的内容**包含启动期的关键过程**（如播放会话
-  /// 恢复）——这些发生在用户打开设置页之前，事后无法补录。
   void start() {
     _recording = true;
     _entries.add('==== 诊断开启于 ${_fullStamp(DateTime.now())}'
@@ -43,12 +27,6 @@ class AppLogger with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  /// 记录一条日志。
-  ///
-  /// 常开缓存：即使未开启诊断也写入内存环形缓冲——启动期事件
-  /// （播放会话恢复、Rust 初始化）必须先记录下来，用户事后开启
-  /// 诊断才能看到。调用点均为低频事件（路由/生命周期/返回键），
-  /// 字符串拼接开销可忽略。
   void log(String tag, String message) {
     _entries.add('${_stamp(DateTime.now())} [#$_seq] [$tag] $message');
     _seq++;
@@ -57,7 +35,6 @@ class AppLogger with WidgetsBindingObserver {
     }
   }
 
-  /// 停止记录并写入文件，返回文件路径；失败/未记录返回 null。
   Future<String?> stopAndSave() async {
     if (!_recording) return null;
     _recording = false;
@@ -77,7 +54,6 @@ class AppLogger with WidgetsBindingObserver {
     }
   }
 
-  /// 生命周期事件：inactive→paused 即用户离开应用（回桌面）的关键信号。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     log('lifecycle', '应用状态 -> ${state.name}');
@@ -102,14 +78,9 @@ class AppLogger with WidgetsBindingObserver {
       '${t.second.toString().padLeft(2, '0')}';
 }
 
-/// 诊断用路由观察者：记录目标 navigator 上的路由进出。
-///
-/// 同一份类挂 root 与各 branch navigator，用 [tag] 区分来源——
-/// 「返回回桌面」问题的核心就是搞清楚 pop 打在了哪个 navigator 上。
 class DiagRouteObserver extends NavigatorObserver {
   DiagRouteObserver(this.tag);
 
-  /// navigator 标识（root / home / library / effects / settings）。
   final String tag;
 
   String _name(Route<dynamic>? route) =>

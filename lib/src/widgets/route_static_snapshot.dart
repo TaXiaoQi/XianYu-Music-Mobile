@@ -7,19 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../core/application_logger.dart';
 
-/// 整页转场静态化包装（「不牺牲效果、换一条低成本渲染路线」）。
-///
-/// 平移动效切页时，整页每个真实毛玻璃表面都会逐帧做全屏 SaveLayer 离屏合成
-/// + 高斯，这是切页掉帧根因。本组件在动画期间用【一帧预渲染的真实页面快照】
-/// 替代实时 widget 树做平移：
-/// - 毛玻璃/液态玻璃观感原样烘焙进快照（满档 sigma，不缩档、不降级）；
-/// - 动画全程只平移一张图，零逐帧全屏高斯、零实时 BackdropFilter；
-/// - 动画结束瞬间换回真实页面；快照捕获自同一页面的同一帧，无缝衔接、无跳变。
-///
-/// 真实页面子树用 [Offstage] 隐藏而非卸载，保证列表滚动位置等 State 全程保留。
-/// 仅在毛玻璃开启且竖屏覆盖/平滑切页时生效，朴素页面不引入抓屏开销。
-///
-/// 用法：放在滑动转场的 child 上（如 `SlideTransition(child: RouteStaticSnapshot(...))`）。
 class RouteStaticSnapshot extends ConsumerStatefulWidget {
   const RouteStaticSnapshot({
     super.key,
@@ -27,10 +14,8 @@ class RouteStaticSnapshot extends ConsumerStatefulWidget {
     required this.child,
   });
 
-  /// 控制本页面进出场转场的动画（用于判定「正在切页」窗口）。
   final Animation<double> animation;
 
-  /// 要被静态化的页面子树（保持挂载，切页时 Offstage 隐藏）。
   final Widget child;
 
   @override
@@ -39,7 +24,6 @@ class RouteStaticSnapshot extends ConsumerStatefulWidget {
 }
 
 class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
-  // 快照缩采样（1/2 → 像素 1/4）：运动期间轻微软化不可见，抓屏与内存成本大降。
   static const int _downscale = 2;
 
   final GlobalKey _boundaryKey = GlobalKey();
@@ -57,27 +41,17 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   @override
   void initState() {
     super.initState();
-    // 毛玻璃或液态玻璃任一开启即启用静态化：两者都含逐帧全屏
-    // SaveLayer/高斯/实时合成，切页平移时是掉帧主源；快照把观感原样
-    // 烘焙（满档 sigma，不缩档），朴素页面不引入抓屏开销。
     final s = ref.read(settingsProvider).valueOrNull;
     _enabled = (s?.frostedGlass ?? false) || (s?.liquidGlass ?? false);
     widget.animation.addStatusListener(_onStatus);
-    // 首帧布局后尽早抓一次，避免首个转场冷启动时无快照。
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
   }
 
   void _onStatus(AnimationStatus status) {
-    // 只在「开始运动（进入切页窗口）」这个边沿抓一次屏。
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
       _capture();
       return;
     }
-    // 转场结束边沿（completed/dismissed）：本组件全程靠「父级每帧重建」把
-    // moving 翻回 false、从而换回真实页面；个别设备/驱动返回阶段的最后
-    // 一帧若不重建，真实页面会一直定格在 Offstage 隐藏态、整页只剩灰白
-    // 底色（表现「点批量→返回后一直灰屏」）。这里转场结束时强制重建一把，
-    // 无论父级是否重建都能把页面换回。
     final wasMoving = _moving;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !wasMoving) setState(() {});
@@ -108,7 +82,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       _capturing = false;
       return;
     }
-    // 同步阶段取好 dpr 与尺寸，避免跨 async 用 BuildContext。
     final dpr = MediaQuery.devicePixelRatioOf(ctx);
     final size = box.size;
     ui.Image? img;
@@ -143,8 +116,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 真实页面保持挂载（Offstage 隐藏以跳过昂贵绘制、保留 State）；
-          // 快照未就绪时走原样渲染，逻辑不劣化。
           Offstage(offstage: showImg, child: widget.child),
           if (img != null && size != null && moving)
             Positioned.fill(

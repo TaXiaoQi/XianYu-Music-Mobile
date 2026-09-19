@@ -13,19 +13,16 @@ import 'song_list_scroll_fabs.dart';
 import 'song_list_view.dart';
 import '../i18n/i18n.dart';
 
-/// 分组项：某首字母对应的歌曲区间。
 class _IndexGroup {
   _IndexGroup(this.letter, this.startIndex, this.cou);
   final String letter;
 
-  /// 该分组首歌在 [songs] 中的原始下标。
   final int startIndex;
   final int cou;
 
   _IndexGroup add() => _IndexGroup(letter, startIndex, cou + 1);
 }
 
-/// 求某字段的索引导航首字母（A-Z；数字/非中英文字符归入 '#'）。
 String _initialOf(String text) {
   final raw = text.trim();
   if (raw.isEmpty) return '#';
@@ -41,7 +38,6 @@ String _initialOf(String text) {
 
 int _groupRank(String letter) => letter == '#' ? 27 : letter.codeUnitAt(0) - 0x41;
 
-/// 首字母分组：字母升序（A-Z 在前，'#' 殿后）。
 List<_IndexGroup> _buildGroups(List<Song> songs, String Function(Song) field) {
   final entries = <_IndexGroup>[];
   final idx = <String, int>{};
@@ -59,25 +55,15 @@ List<_IndexGroup> _buildGroups(List<Song> songs, String Function(Song) field) {
   return entries;
 }
 
-/// 带字母索引导航的歌曲列表：按 [indexField] 分组，行间插入分组表头，
-/// 右侧悬浮 A-Z 索引条支持拖拽/点按快速定位。
-///
-/// 行渲染复用 [SongsListView] 的原语（飞封面、长按操作菜单、关键词高亮），
-/// 但分组表头导致下标错位，无法直接复用其扁平 [ListView.builder]，故独立实现。
 class LetterIndexSongList extends ConsumerStatefulWidget {
   final List<Song> songs;
 
-  /// 索引字段取值器（如 `(s) => s.title`）。非空时按该字段首字母分组并显示
-  /// 索引条；传 null 则退化为无表头无索引条的扁平渲染。
   final String Function(Song)? indexField;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
-  /// 用 [EdgeInsets] 以兼容内嵌 [SongsListView] 的 padding 入参类型。
   final EdgeInsets? padding;
   final String? highlight;
   final bool enableActions;
-  /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
   final bool enableScrollFabs;
-  /// 批量选择控制器；非空且处于批量模式时整行点按切换选中。
   final SongBatchController? batch;
   const LetterIndexSongList({
     super.key,
@@ -102,7 +88,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
   final ScrollController _controller = ScrollController();
   final ValueNotifier<String> _active = ValueNotifier('');
 
-  /// 最近一次 build 的分组缓存，供滚动监听复用，避免每帧重算。
   List<_IndexGroup>? _groups;
   double _rowExtent = 0;
   double _padTop = 0;
@@ -131,7 +116,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
     if (cur != null && cur != _active.value) _active.value = cur;
   }
 
-  /// 该分组表头顶部的滚动位置（与 [ListView.builder] 扁平布局一致）。
   double _headerPixel(List<_IndexGroup> groups, int gi) {
     var songsBefore = 0;
     for (var i = 0; i < gi; i++) {
@@ -140,8 +124,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
     return gi * _headerExtent + songsBefore * _rowExtent;
   }
 
-  /// 指定歌曲行的内容坐标 top（含顶部 padding 与前置分组表头），供
-  /// 「回到顶部 / 定位播放」悬浮按钮定位与视口判定。
   double _rowTopOf(int songIndex) {
     final groups = _groups;
     if (groups == null) return _padTop;
@@ -215,7 +197,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
 
     final single = _singleClick;
 
-    // 批量状态在此每次重建时读取；进出批量模式/切换选中均触发重建。
     Widget buildContent() {
       final inBatch = batch != null && batch.batchMode;
       return Stack(
@@ -223,24 +204,18 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
           ListView.builder(
             controller: _controller,
             padding: widget.padding,
-            // 提前约半屏预渲染，避免快速滑动时行连同封面在进场帧现建现画而抽帧。
             scrollCacheExtent: ScrollCacheExtent.pixels(500),
-            // 行不保留状态，离屏即弃，省内存与重建（分组表头/歌曲行均无持久状态）。
             addAutomaticKeepAlives: false,
             itemCount: total,
             itemBuilder: (context, i) {
               final gIdx = flatGroup[i];
               if (gIdx >= 0) {
-                // 分组表头也包一层：滚动时整列表逐行复用缓存，避免整页重绘。
                 return RepaintBoundary(
                   child: _HeaderTile(
                       letter: groups[gIdx].letter, cou: groups[gIdx].cou),
                 );
               }
               final si = songAt[i];
-              // 歌曲行包 RepaintBoundary 隔离合成层：与默认列表路径对齐，
-              // 滚动时只重绘进/出可见区的行，可缓存图层避免掉帧。
-              // key 用分组下标+歌曲原始下标复合，避免重复 Key。
               return RepaintBoundary(
                 key: ValueKey('${si}_$gIdx'),
                 child: _SongRowItem(
@@ -271,8 +246,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
                 ),
               ),
             ),
-          // 右下角「回到顶部 / 定位播放」悬浮按钮；right 让出右侧 A-Z 索引条。
-          // 批量模式下隐藏，避免与底部批量操作栏叠压。
           if (widget.enableScrollFabs && !inBatch)
             SongListScrollFabs(
               controller: _controller,
@@ -296,7 +269,6 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
   }
 }
 
-/// 分组表头：首字母 + 本组数量。
 class _HeaderTile extends StatelessWidget {
   final String letter;
   final int cou;
@@ -323,7 +295,6 @@ class _HeaderTile extends StatelessWidget {
   }
 }
 
-/// 歌曲行：与 [SongsListView] 行渲染一致（飞封面/操作菜单/高亮）。
 class _SongRowItem extends ConsumerWidget {
   final Song song;
   final int originalIndex;
@@ -351,7 +322,6 @@ class _SongRowItem extends ConsumerWidget {
     final m = ListMetrics.ofRef(ref);
     final s = song;
     final hlColor = Theme.of(context).colorScheme.primary;
-    // 批量模式：整行点按切换选中，隐藏尾部操作与时长，行首由 wrapBatchRow 挂勾选。
     if (inBatch) {
       final batch = this.batch!;
       final row = CoverRow(
@@ -467,7 +437,6 @@ class _SongRowItem extends ConsumerWidget {
   }
 }
 
-/// 右侧 A-Z 字母索引条：可拖拽/点按，当前分组字母高亮放大。
 class _AlphabetIndexBar extends StatelessWidget {
   final List<String> keys;
   final ValueNotifier<String> active;

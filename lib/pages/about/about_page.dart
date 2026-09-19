@@ -15,11 +15,9 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 关于页：版本信息、检查更新、官网/开源/群组链接。
 class AboutPage extends ConsumerStatefulWidget {
   const AboutPage({super.key, this.embedded = false});
 
-  /// 横屏嵌入 mode：由 master-detail 右侧薄顶栏接管标题，隐藏自带顶栏与顶部避让。
   final bool embedded;
 
   @override
@@ -30,21 +28,17 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   AboutConfig _config = const AboutConfig();
   bool _checkingUpdate = false;
 
-  /// 版本号连点开启调试模式（对齐安卓开发者模式：1.5s 内连点 10 次，最后几次提示剩余次数）。
-  /// 开启后设置页出现「调试」入口，点击进入调试页。
   static const _debugTapTarget = 10;
   static const _debugTapHintStart = 7;
   static const _debugTapInterval = Duration(milliseconds: 1500);
   int _debugTapCount = 0;
   DateTime? _lastDebugTap;
 
-  /// 开发者名单（与桌面端一致），点击跳转 GitHub 主页。
   static List<(String, String)> get _developers => <(String, String)>[
     ('@ShenYichenCN', 'https://github.com/ShenYichenCN'),
     ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
   ];
 
-  /// 随开发者名单一起划入致谢名单的贡献者（本地静态成员，与服务端致谢合并展示）。
   static List<AcknowledgementItem> get _extraAcknowledgements =>
       const <AcknowledgementItem>[
         AcknowledgementItem(
@@ -53,7 +47,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             name: '@绛狐', url: 'https://github.com/kaishui-server'),
       ];
 
-  /// 服务端致谢 + 本地静态致谢，去重后再展示。
   List<AcknowledgementItem> get _allAcknowledgements {
     final merged = <AcknowledgementItem>[
       ..._config.acknowledgements,
@@ -109,8 +102,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
 
   Future<void> _openUrl(String url) async => openExternalUrl(context, url);
 
-  /// 点击「致谢名单」弹出的名单弹窗（统一走 showSheetDialog，对齐项目弹窗口径，
-  /// 壁纸/明暗模式自适应），成员可点击跳转主页。
   Future<void> _showAcknowledgements(List<AcknowledgementItem> items) {
     final scheme = Theme.of(context).colorScheme;
     final chipItems = List<AcknowledgementItem>.from(items);
@@ -182,9 +173,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       if (_config.referenceProjectUrl.isNotEmpty)
         (icon: Icons.book_outlined, label: tr('参考项目'), url: _config.referenceProjectUrl),
     ];
-    // 竖屏悬浮顶栏：列表铺满全屏、避让量注入列表 padding，滚动时内容从顶栏
-    // 胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由横屏壳层顶栏
-    // 承接，不参与悬浮。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -200,7 +188,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         padding: EdgeInsets.fromLTRB(
             24, portraitFloating ? GlassTopBar.height(context) + 6 : 24, 24, 24),
         children: [
-          // 品牌区
           Center(
             child: Container(
               width: 72,
@@ -243,7 +230,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           ),
           const SizedBox(height: 20),
-          // 检查更新：Android 自更新专属（iOS 由 App Store 托管更新）。
           if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
             FilledButton.icon(
               onPressed: _checkingUpdate ? null : _checkUpdate,
@@ -272,8 +258,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                // 壁纸模式抽透明：卡片底色随其他页面一致透出壁纸，配合壁纸
-                // 「亮/暗字」档位下翻转的前景，避免卡片实色与翻转后的明暗冲突。
                 color: appCardFill(context, ref),
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -345,8 +329,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     );
   }
 
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
-  /// 模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
   Widget _floatHost(bool floating, Widget child) {
     if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
@@ -357,7 +339,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
   }
 }
 
-/// 开发者名字标签：点击调用外部浏览器打开对应 GitHub 主页。
 class _DeveloperChip extends ConsumerStatefulWidget {
   const _DeveloperChip({
     required this.name,
@@ -416,7 +397,6 @@ class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
   }
 }
 
-/// 版本号徽标：点击时缩放 + 主题色高亮回弹特效（连点 5 次进入调试页）。
 class _VersionTapBadge extends StatefulWidget {
   const _VersionTapBadge({required this.label, required this.onTap});
 
@@ -444,7 +424,6 @@ class _VersionTapBadgeState extends State<_VersionTapBadge> {
 
   void _release() {
     _releaseTimer?.cancel();
-    // 松手后保持按压态一小段时间再回弹，避免快速点击时反馈一闪而过。
     _releaseTimer = Timer(const Duration(milliseconds: 180), () {
       if (mounted) setState(() => _pressed = false);
     });

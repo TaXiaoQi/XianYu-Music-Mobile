@@ -6,12 +6,6 @@ import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import 'sync_provider.dart';
 
-/// 自动同步调度器：每分钟 tick，到点后检查服务器负载并执行同步。
-///
-/// 与桌面端 autoSync.ts 对齐：
-/// - 服务器繁忙时按 suggestedDelaySeconds 延后，超过 maxDelayMinutes 上限则放弃本轮
-/// - 同步内容为歌单/收藏/插件/设置（按 UploadConfig 开关），对齐桌面端 performAutoSync
-/// - 配置统一存放在 syncProvider（账号页/同步页开关均写入同一份）
 class AutoSyncService {
   AutoSyncService(this._ref);
   final Ref _ref;
@@ -23,7 +17,6 @@ class AutoSyncService {
 
   AccountApi get _api => _ref.read(accountApiProvider);
 
-  /// 启动调度器（应用启动后调用）。
   void start() {
     _timer ??= Timer.periodic(const Duration(seconds: 60), (_) => _tick());
   }
@@ -95,11 +88,6 @@ class AutoSyncService {
     }
   }
 
-  /// 按上传配置同步歌单/收藏/插件/设置。
-  ///
-  /// 以客户端为主，仅上传（覆盖式同步，保证服务器保存的是客户端当前状态，
-  /// 含新增内容）。首次登录时已通过 syncOnLoginSuccess 做了一次全量一致性同步，
-  /// 此后自动同步不再下载、不再弹冲突窗。
   Future<void> _syncAll() async {
     final upload = _ref.read(syncProvider).uploadConfig;
     final notifier = _ref.read(syncProvider.notifier);
@@ -110,10 +98,8 @@ class AutoSyncService {
       await notifier.syncPluginsUpload();
     }
     if (upload.favorites) {
-      // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏。
       await notifier.syncFavoritesUpload();
     }
-    // 累计听歌统计同步（保证线上累计时长持续上传、离线数据回归时合并）。
     await notifier.syncListenStats();
     if (upload.settings) {
       await notifier.syncSettingsUpload();

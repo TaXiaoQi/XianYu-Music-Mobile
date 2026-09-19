@@ -5,18 +5,8 @@ import 'package:crypto/crypto.dart';
 
 import 'plugin_comments.dart';
 
-/// 宿主直连平台评论服务（LX/落雪插件评论区兜底）。
-///
-/// 落雪协议没有标准评论接口，但歌曲 id 全平台通用——宿主按歌曲平台直接
-/// 调用平台公开评论接口（与桌面端 platformComments.ts 逐一对齐），统一返回
-/// [CommentPage] 结构，[CommentSheet] 无需感知来源差异。
-///
-/// 返回 null 表示平台不受支持或缺少歌曲 id（调用方据此展示"不支持"）；
-/// 网络失败等一律返回空 [CommentPage]（展示"暂无评论"）。
-
 const _pageSize = 20;
 
-/// 识别歌曲所属评论平台（按 lx 源 key / 平台字段 / 插件名正则，顺序决定优先级）。
 String? detectCommentPlatform({
   String? pluginName,
   Map<String, dynamic>? musicInfo,
@@ -25,7 +15,6 @@ String? detectCommentPlatform({
     return null;
   }
 
-  // LX 源 key 即平台码
   const lxCodes = {
     'wy': 'wy',
     'tx': 'tx',
@@ -64,7 +53,6 @@ String? detectCommentPlatform({
   return null;
 }
 
-/// 获取平台评论。平台不支持或缺少歌曲 id 时返回 null。
 Future<CommentPage?> fetchPlatformComments({
   required String platform,
   required Map<String, dynamic> musicInfo,
@@ -328,14 +316,12 @@ const _kgSaltAndroid = 'OIlwieks28dk2k092lksi2UIkp';
 
 String _md5Hex(String input) => md5.convert(utf8.encode(input)).toString();
 
-/// md5(salt + sort(params).join('') + body + salt)
 String _kugouSign(String params, {String body = ''}) {
   final list = params.split('&')..sort();
   final input = '$_kgSaltAndroid${list.join()}$body$_kgSaltAndroid';
   return _md5Hex(input);
 }
 
-/// 酷狗 hash → mixsongid（res_id），评论接口的必选参数。
 Future<String?> _resolveKgMixsongId(String hash) async {
   final body = jsonEncode({
     'area_code': '1',
@@ -614,7 +600,6 @@ Future<CommentPage?> _fetchQishui(
 
 // ==================== 工具 ====================
 
-/// 从 musicInfo 依次取首个非空 id 字段（支持嵌套 rawData 兜底）。
 String? _id(Map<String, dynamic> musicInfo, List<String> keys) {
   String? pick(Map<String, dynamic> m, String key) {
     final v = m[key];

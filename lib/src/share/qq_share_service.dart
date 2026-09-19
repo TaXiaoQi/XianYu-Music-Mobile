@@ -1,8 +1,3 @@
-// QQ 互联分享服务（移动端，基于 tencent_kit 插件）。
-//
-// - 惰性初始化：首次分享时调用 registerApp 并订阅分享结果流，避免侵入启动流程。
-// - 分享以「网页卡片」形式发送落地页链接（歌名 + 歌手 + 封面 + 分享深链），
-//   接收方点开落地页再拉起 App 播放；QQ 好友与 QQ 空间均支持网页分享。
 import 'dart:async';
 
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
@@ -10,39 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 import '../i18n/i18n.dart';
 
-/// QQ 分享可能的结果。
 enum QqShareResult { success, canceled, failed, notInstalled }
 
 final qqShareServiceProvider = Provider<QqShareService>((_) => QqShareService());
 
 class QqShareService {
-  /// QQ 互联 APP_ID。必须与 pubspec.yaml 顶层 `tencent_kit.app_id` 保持一致。
   static const String appId = '1905495962';
 
-  /// QQ 互联 Universal Link（iOS SDK 初始化必填，Android 忽略该参数）。
-  /// 与分享落地页同域（api.xianyumusic.cn，服务端 SHARE_BASE_URL 未配置时
-  /// 分享链接即挂在请求 Host 下）。三处必须完全一致：本常量、pubspec.yaml
-  /// `tencent_kit.universal_link`、QQ 互联后台登记值。
   static const String universalLink =
       'https://api.xianyumusic.cn/qq_conn/1905495962/';
 
   bool _inited = false;
 
-  /// 前后台监听：留在 QQ 分享后经任务切换返回 App 时，新版 QQ 客户端不回传
-  /// 任何回执（onActivityResult 也不会触发），恢复前台即视为分享完成。
   AppLifecycleListener? _lifecycle;
 
-  /// 当前一次分享的回调接收器（respStream 异步回传结果）。
   Completer<QqShareResult>? _pending;
 
-  /// 发起一次分享。失败时返回 failed，由调用方展示结果并兜底复制链接。
-  ///
-  /// [coverPath] 为本地封面文件路径（QQ SDK 无法可靠拉取带防盗链的远程 CDN
-  /// 封面，卡片缩略图需本地文件），为空则卡片不带封面。
-  ///
-  /// [musicUrl] 非空时走「音乐卡片」类型（QQ_SHARE_TYPE_AUDIO，仅 QQ 好友
-  /// 场景支持）：封面在左、歌名/歌手在右的对齐卡片；为空时走普通网页卡片
-  /// （文字在左、小缩略图在右）。
   Future<QqShareResult> share({
     required int scene,
     required String title,
@@ -53,14 +31,12 @@ class QqShareService {
   }) async {
     if (!await _ensureInit()) return QqShareResult.failed;
 
-    // 清理上一个还未完成的回调，避免阻塞当前分享。
     final prev = _pending;
     if (prev != null && !prev.isCompleted) prev.complete(QqShareResult.failed);
     final completer = Completer<QqShareResult>();
     _pending = completer;
 
     try {
-      // 本地路径转 file:// URI，插件侧取 path 写入 QQ 分享参数。
       final path = coverPath ?? '';
       final imageUri = path.isEmpty ? null : Uri.file(path);
       final useMusicCard = musicUrl != null && musicUrl.isNotEmpty;
@@ -88,18 +64,12 @@ class QqShareService {
       if (!completer.isCompleted) completer.complete(QqShareResult.failed);
     }
 
-    // 超时兜底，避免播放页 await 卡死；新版 QQ 无回执，超时也按成功兜底
-    //（真实失败只有发起阶段异常一种，已在上面 catch 判 failed）。
     return completer.future.timeout(
       const Duration(seconds: 30),
       onTimeout: () => QqShareResult.success,
     );
   }
 
-  /// QQ 客户端是否已安装（未安装时走网页分享可能失败，调用方应提示并兜底复制链接）。
-  ///
-  /// 原生实现的 `isQQInstalled` 依赖 `tencent != null`（须先 registerApp 创建实例），
-  /// 若在首次分享前直接查询会因实例未创建而恒判「未安装」，故先走惰性初始化。
   Future<bool> isQQInstalled() async {
     if (!await _ensureInit()) return false;
     try {
@@ -112,14 +82,10 @@ class QqShareService {
   Future<bool> _ensureInit() async {
     if (_inited) return true;
     try {
-      // 3.1.0 之后必须先授予设备信息权限（隐私合规）。
       await TencentKitPlatform.instance.setIsPermissionGranted(granted: true);
-      // iOS 必须传 universalLink（SDK 以下列 UL 初始化，回调经关联域回来）。
       await TencentKitPlatform.instance
           .registerApp(appId: appId, universalLink: universalLink);
       TencentKitPlatform.instance.respStream().listen(_onResp);
-      // 留在 QQ 分享后经任务切换返回 App 不会触发 onActivityResult，恢复
-      // 前台即视为分享完成（新版 QQ 无回执，默认按成功）。
       _lifecycle ??= AppLifecycleListener(onResume: _completePendingSuccess);
       _inited = true;
       return true;
@@ -140,7 +106,6 @@ class QqShareService {
     if (resp is TencentShareMsgResp) {
       final pending = _pending;
       if (pending != null && !pending.isCompleted) {
-        // 插件取消码是 kRetUserCancel(-2)（此前误用微信的 -4，导致取消也提示失败）。
         final result = switch (resp.ret) {
           TencentResp.kRetSuccess => QqShareResult.success,
           TencentResp.kRetUserCancel => QqShareResult.canceled,

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import '../i18n/i18n.dart';
 
-/// 插件格式：LX（落雪）或 MusicFree。
 enum PluginFormat {
   lx('lx'),
   musicfree('musicfree');
@@ -13,7 +12,6 @@ enum PluginFormat {
       v == 'musicfree' ? PluginFormat.musicfree : PluginFormat.lx;
 }
 
-/// 插件源信息（与桌面端 PluginSource 对齐）。
 class PluginSource {
   final String id;
   final String name;
@@ -22,15 +20,12 @@ class PluginSource {
   final String author;
   final String description;
   final String filePath;
-  /// 来源 URL（URL/订阅安装时记录，用于更新检查对齐桌面端 filePath=URL 语义）。
   final String sourceUrl;
   final int importedAt;
   bool enabled;
-  /// 检测到有可用更新（桌面端 updateAvailable：为 true 时列表项标红「可更新」）。
   bool updateAvailable;
   final List<String> sources;
   final bool isBuiltin;
-  /// 用户自定义排序权重（数值越小越靠前），对齐桌面端 sortOrder。
   final int? sortOrder;
 
   PluginSource({
@@ -111,8 +106,6 @@ class PluginSource {
       );
 }
 
-/// 按用户自定义 sortOrder 稳定排序（数值越小越靠前；未排序项以原数组顺序兜底）。
-/// 与桌面端 sortPlugins 保持一致，供插件页/搜索页/音源榜单页复用。
 List<PluginSource> sortPluginSources(List<PluginSource> sources) {
   final indexed = <(PluginSource, int)>[];
   for (var i = 0; i < sources.length; i++) {
@@ -126,7 +119,6 @@ List<PluginSource> sortPluginSources(List<PluginSource> sources) {
   return indexed.map((e) => e.$1).toList();
 }
 
-/// 引擎日志条目（Rust 侧 EngineLog，camelCase）。
 class EngineLog {
   final String level;
   final String message;
@@ -141,7 +133,6 @@ class EngineLog {
       );
 }
 
-/// 引擎加载结果（Rust 侧 EngineLoadResult，camelCase）。
 class EngineLoadResult {
   final bool ok;
   final String? error;
@@ -178,7 +169,6 @@ class EngineLoadResult {
   }
 }
 
-/// 引擎调用结果（Rust 侧 EngineCallResult，camelCase）。
 class EngineCallResult {
   final bool ok;
   final String? error;
@@ -213,7 +203,6 @@ class EngineCallResult {
   }
 }
 
-/// LX 插件声明的音源信息。
 class LxSourceInfo {
   final String type;
   final String? name;
@@ -235,7 +224,6 @@ class LxSourceInfo {
       );
 }
 
-/// LX 插件初始化信息（initInfo）。
 class LxInitInfo {
   final Map<String, LxSourceInfo> sources;
 
@@ -255,7 +243,6 @@ class LxInitInfo {
   }
 }
 
-/// 搜索结果条目（插件搜索返回，兼容桌面端 PluginSearchResult）。
 class PluginSearchResult {
   final String name;
   final String singer;
@@ -272,8 +259,6 @@ class PluginSearchResult {
   final String? copyrightId;
   final List<Map<String, dynamic>> types;
   final Map<String, dynamic>? lxTypes;
-  /// MusicFree 插件搜索返回的原始条目（含 title/artist/id 及平台私有字段）。
-  /// 播放直链解析 getMediaSource 需透传该原始对象，仅补充 platform。
   final Map<String, dynamic>? rawData;
 
   PluginSearchResult({

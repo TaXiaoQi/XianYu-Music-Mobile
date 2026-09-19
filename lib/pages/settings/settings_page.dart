@@ -19,12 +19,6 @@ import '../plugin/plugin_page.dart';
 import 'account_settings_page.dart';
 import 'settings_category_page.dart';
 
-/// 设置导航页：浅白底 + 纯白分类卡片。
-///
-/// 竖屏：分类列表，点入详情（原行为）。
-/// 横屏：master-detail 平行布局 —— 左侧分类导航、右侧对应详情面板直嵌，无需跳页。
-///
-/// 本页为二级推入页（从「我的」页菜单与首页顶栏进入）。
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -33,16 +27,12 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  /// 设置搜索关键字；非空时列表区切换为搜索结果。
   String _query = '';
   final _searchCtrl = TextEditingController();
 
-  /// 横屏左下 nav 选中项用于 scroll 定位（GlobalKey 定位选中分类项居中）。
   final Map<String, GlobalKey> _tileKeys = {};
-  /// 最近一次横屏居中滚动过的分类；用于换分类/回横屏时触发重新定位。
   String? _lastCenteredSel;
 
-  /// 横屏 master-detail 左侧分类导航宽度（默认 260，可拖动分割线调整）。
   double _navWidth = 260;
 
   @override
@@ -51,8 +41,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     super.dispose();
   }
 
-  /// 让左侧导航滚到选中分类居中（进入横屏或切换分类时触发一次）。
-  /// alignment 0.5 = 该项在视口垂直居中，一眼看到当前所在分类。
   void _scheduleCenterSelected(String sel) {
     if (_lastCenteredSel == sel) return;
     _lastCenteredSel = sel;
@@ -78,7 +66,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         .select((s) => s.sources.any((p) => p.enabled)));
     final groups = _buildGroups(isDeveloperMode, hasPlugin);
 
-    // 横屏重排为 master-detail（左导航 + 右内嵌详情），两套 UI 完全分开。
     return LandscapeGate(
       portrait: _buildPortrait(context, groups),
       landscape: _buildLandscape(context, groups),
@@ -86,7 +73,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Widget _buildPortrait(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
-    // 搜索框并入顶栏 bottom：上下留边对齐我的页顶栏搜索栏（mine_page `_TopBarSearchSlot` 用 fromLTRB(18,2,18,12)），与首页/我的页/搜索页同款对比色。
     final searchBox = PreferredSize(
       preferredSize: const Size.fromHeight(54),
       child: Padding(
@@ -99,15 +85,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 内容列表：顶部预留顶栏（含搜索框）高度，静止时位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
-          // 底部避让：二级页底栏隐藏，仅迷你播放条悬浮在距底 18px 处（高 58）。
-          // 不要用 RepaintBoundary 包住列表：会隔离毛玻璃与壁纸的采样，壁纸模式下
-          // 划到顶/底时毛玻璃卸载成纯色块露壁纸底（对齐 settings_category_page.dart 的修复）。
           ListView(
             padding: EdgeInsets.fromLTRB(
               16,
-              // 内容紧贴顶栏（含搜索框）底部，去掉额外的 +12 空白，避免固定
-              // 顶栏下顶栏与内容之间出现一段空白；滚动时内容仍会滑入顶栏被模糊。
               GlassTopBar.height(context, bottom: searchBox),
               16,
               92 + MediaQuery.of(context).padding.bottom,
@@ -119,14 +99,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ..._buildSearchResults(context),
             ],
           ),
-          // 顶栏高斯模糊毛玻璃（二级页带返回按钮），底部内嵌搜索框。
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: GlassTopBar(
-              // 设置类页面不参与悬浮顶栏：内容从顶栏高度之下才开始，
-              // 固定条保持扁平背板布局（forceDocked 见 GlassTopBar）。
               forceDocked: true,
               leading: const BackButton(),
               title: Text(tr('设置')),
@@ -234,7 +211,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ];
   }
 
-  /// 检索设置选项：对静态索引做归一化 + 分词 + 打分排序（对齐桌面端 searchIndex）。
   List<_SearchItem> _searchSettings(String q, BuildContext context) {
     final qn = q.trim().toLowerCase();
     if (qn.isEmpty) return const [];
@@ -274,37 +250,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return scored.map((e) => e.$2).take(30).toList();
   }
 
-  /// 平台可见性过滤：Android 专属功能在不支持平台（iOS）的搜索结果中隐藏，
-  /// 与设置分类页的入口隐藏逻辑（PlatformCaps）保持一致。
   bool _searchItemVisible(_SearchItem item) {
-    // 悬浮歌词段：依赖 Android 悬浮窗 overlay。
     if (!PlatformCaps.supportsFloatingLyrics && item.section == '悬浮歌词') {
       return false;
     }
-    // 状态栏歌词段（车机歌词为同功能别名，靠读通知文本实现）：Android 专属。
     if (!PlatformCaps.supportsStatusBarLyrics &&
         (item.section == '状态栏歌词' || item.section == '车机歌词')) {
       return false;
     }
-    // 下载路径：依赖自定义目录直写（iOS 固定应用目录）。
     if (!PlatformCaps.supportsCustomDownloadDir && item.label == '下载路径') {
       return false;
     }
-    // 检测更新模式：Android 自更新专属（iOS 由 App Store 托管）。
     if (!PlatformCaps.supportsInAppUpdate && item.label == '检测更新模式') {
       return false;
     }
     return true;
   }
 
-  /// 横屏 master-detail：左侧分类导航（含选中态），右侧直嵌当前分类详情。
   Widget _buildLandscape(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
-    // 选中分类走全局 provider：翻转重定向（停在设置二级页进横屏）由 shell
-    // 先写入目标分类再 pop 揭开本页，master-detail 直接落在对应分类。
     final sel = ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
     final selTitle = _titleOf(groups, sel) ?? tr('设置');
-    // 进入横屏/切换分类时让左侧导航滚到当前分类居中。
     _scheduleCenterSelected(sel);
 
     return Scaffold(
@@ -313,13 +279,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 左：分类导航（透明继承外层页面底色，与右侧详情一致，避免割裂）
           Material(
             color: Colors.transparent,
             child: SizedBox(
               width: _navWidth,
-              // 只避让顶部（状态栏）与左侧（摄像头在左列时），右/下 padding 属右列，
-              // 否则翻转屏幕后右侧挖孔的 padding 会误作用到左列，导航条右侧空出一节。
               child: SafeArea(
                 top: true,
                 bottom: false,
@@ -342,9 +305,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ],
                       ),
                     ),
-                    // 横屏无底部栏，迷你条停靠右下，左列底部无需大留白，仅留少量安全间距。
                     const SizedBox(height: 6),
-                    // 搜索框：与竖屏/首页/我的页/搜索页同款对比色。
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _buildSearchBox(context),
@@ -387,7 +348,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               ),
                             ]
                           else
-                            // 横屏搜索结果：可嵌入分类直接切换右侧，其余整页跳转。
                             ..._buildSearchResults(
                               context,
                               compact: true,
@@ -414,18 +374,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
               setState(() {
-                // 最小即当前默认宽度 260，最远只能划到屏幕中部（对半）。
                 _navWidth = (_navWidth + dx).clamp(260.0, screenW * 0.5);
               });
             },
           ),
-          // 右：当前分类详情（薄顶栏 + 嵌入体，切换带淡入淡出）
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // plugin 嵌入时自带纯色标题条（含音源操作按钮），外层不再渲染；
-                // 其余分类（含 feedback，TabBar 在标题条之下）统一由外层渲染标题条。
                 if (sel != '/plugin')
                   Container(
                     height: GlassTopBar.height(context),
@@ -440,9 +396,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ),
                 Expanded(
-                  // 与横屏壳层右侧面板同一套桌面版 page-fade out-in（旧分类
-                  // 淡出微上移缩小 → 新分类自下方淡入），替换原 AnimatedSwitcher
-                  // 交叉淡入（切换观感与壳层面板不一致、近似硬切）。
                   child: LandscapePageFade(
                     open: detail != null,
                     trigger: sel,
@@ -457,7 +410,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  /// 可直嵌进 master-detail 右侧的分类详情；其余（调试）仍整页跳转。
   Widget? _detailFor(String path) {
     return switch (path) {
       '/settings/account' => const AccountSettingsPage(embedded: true),
@@ -495,8 +447,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return null;
   }
 
-  /// 构建分类分组；开发者模式开启时在「系统」分组末尾追加「调试」入口（对齐桌面端）。
-  /// 无已启用插件时隐藏「下载」入口（下载场景依赖插件内容）。
   List<(String, List<_CategoryEntry>)> _buildGroups(
     bool isDeveloperMode,
     bool hasPlugin,
@@ -549,7 +499,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
       );
 
-  /// 分组：标题 -> 分类条目。每个条目的 path 指向分类详情页或既有页面。
   static List<(String, List<_CategoryEntry>)> get _groups => [
     (
       tr('账号'),
@@ -641,7 +590,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   ];
 }
 
-/// 设置页 master-detail 的可拖动分割条：横跨全高的窄 hit 区，静置为细分隔线。
 class _SettingsDivider extends StatelessWidget {
   const _SettingsDivider({required this.onDragUpdate});
 
@@ -687,14 +635,12 @@ class _CategoryTile extends StatelessWidget {
   final VoidCallback? onTapOverride;
   final bool selected;
 
-  /// 紧凑模式（横屏左列）：收窄 ListTile 水平内边距，让内容更贴近卡片边缘。
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      // 横屏 compact：标准 ListTile 行高（无 subtitle 高 56），与右侧详情分组卡片的 ListTile 完全一致，保证左右卡片高度统一
       dense: !compact,
       contentPadding: compact
           ? const EdgeInsets.symmetric(horizontal: 12)
@@ -708,8 +654,6 @@ class _CategoryTile extends StatelessWidget {
       ),
       title: Text(
         entry.title,
-        // 与详情页 _tile 标题统一字号 15。注意 dense ListTile 会把 title
-        // 字体强改为 13，这里显式写 15 覆盖（Text.style 优先于 DefaultTextStyle）。
         style: const TextStyle(fontSize: 15),
       ),
       subtitle: compact
@@ -723,7 +667,6 @@ class _CategoryTile extends StatelessWidget {
   }
 }
 
-/// 分组圆角卡片包裹容器。
 class _CardGroup extends ConsumerWidget {
   const _CardGroup({required this.children});
   final List<Widget> children;
@@ -747,7 +690,6 @@ class _CardGroup extends ConsumerWidget {
       }
     }
 
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
       context: context,
       ref: ref,
@@ -765,7 +707,6 @@ class _CardGroup extends ConsumerWidget {
   }
 }
 
-/// 设置搜索索引项：label/section/categoryName 为 tr key，keywords 为同义词。
 class _SearchItem {
   const _SearchItem({
     required this.label,
@@ -784,7 +725,6 @@ class _SearchItem {
   final bool isCategory;
 }
 
-/// 设置搜索结果行。
 class _SearchResultTile extends StatelessWidget {
   const _SearchResultTile({
     required this.item,
@@ -811,7 +751,6 @@ class _SearchResultTile extends StatelessWidget {
       ),
       title: Text(
         tr(item.label),
-        // 与分类行/详情页统一行标题字号 15。
         style: const TextStyle(fontSize: 15),
       ),
       subtitle: Text(
@@ -825,9 +764,7 @@ class _SearchResultTile extends StatelessWidget {
   }
 }
 
-/// 设置检索静态索引（对齐桌面端 searchIndex.ts）：分类 + 各分类页设置项。
 const _settingsSearchItems = <_SearchItem>[
-  // 分类
   _SearchItem(label: '账号', section: '设置分类', path: '/settings/account', categoryName: '账号', isCategory: true, keywords: '账户 登录 服务端'),
   _SearchItem(label: '常规', section: '设置分类', path: '/settings/general', categoryName: '常规', isCategory: true, keywords: '语言 反馈 存储 常亮'),
   _SearchItem(label: '外观', section: '设置分类', path: '/settings/appearance', categoryName: '外观', isCategory: true, keywords: '主题 壁纸 材质 皮肤 皮肤配色'),
@@ -841,7 +778,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '关于', section: '设置分类', path: '/about', categoryName: '关于', isCategory: true, keywords: '版本 信息 项目 主页'),
   _SearchItem(label: '调试', section: '设置分类', path: '/debug', categoryName: '调试', isCategory: true, keywords: 'debug 测试 弹窗'),
 
-  // 常规
   _SearchItem(label: '语言', section: '语言', path: '/settings/general', categoryName: '常规', keywords: '简体中文 繁體中文 English 跟随系统'),
   _SearchItem(label: '触觉反馈力度', section: '反馈', path: '/settings/general', categoryName: '常规', keywords: '震动 力度 手感'),
   _SearchItem(label: '检测更新模式', section: '检测更新', path: '/settings/general', categoryName: '常规', keywords: '启动 检查 版本 更新'),
@@ -850,7 +786,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 传递 询问 记住 默认 自动'),
   _SearchItem(label: '存储设置', section: '存储空间', path: '/settings/general', categoryName: '常规', keywords: '缓存 空间 清理'),
 
-  // 外观
   _SearchItem(label: '主题模式', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '深色 浅色 跟随系统 暗色 明亮'),
   _SearchItem(label: '主题色', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '品牌色 强调色 颜色 HEX 预设 自定义 红色'),
   _SearchItem(label: '壁纸中心', section: '主题', path: '/wallpaper', categoryName: '外观', keywords: '自定义背景 动态壁纸 图片'),
@@ -868,7 +803,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '列表大小', section: '列表', path: '/settings/appearance', categoryName: '外观', keywords: '歌曲 歌手 专辑 歌单 尺寸'),
   _SearchItem(label: '字体大小', section: '字体', path: '/settings/appearance', categoryName: '外观', keywords: '字号 字体 文字 大小 缩放 跟随系统'),
 
-  // 歌词
   _SearchItem(label: '显示翻译', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '翻译 translation'),
   _SearchItem(label: '逐字动效', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '卡拉OK 逐字 动画'),
   _SearchItem(label: '悬浮歌词窗', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '悬浮 卡拉OK 逐字 歌词窗'),
@@ -888,7 +822,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '重置位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '重置 还原'),
   _SearchItem(label: '车机歌词', section: '车机歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '通知栏 锁屏 车机 蓝牙 状态栏'),
 
-  // 播放
   _SearchItem(label: '音量', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: 'volume 声音'),
   _SearchItem(label: '双击播放歌曲', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: '双击 单击 播放'),
   _SearchItem(label: '音量平衡', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: 'ReplayGain 响度 标准化'),
@@ -904,7 +837,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: 'Bit-perfect 直出', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: '位完美 直出 DAC 独占'),
   _SearchItem(label: 'DSD 原生直出', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: 'DSD DoP 直通 独占'),
 
-  // 下载
   _SearchItem(label: '下载路径', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '保存 文件夹 目录'),
   _SearchItem(label: '下载音质', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '无损 Hi-Res 320k'),
   _SearchItem(label: '同时下载歌词', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '歌词 lrc'),
@@ -916,7 +848,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '嵌入歌词', section: '下载后嵌入', path: '/settings/download', categoryName: '下载', keywords: '内嵌 歌词'),
   _SearchItem(label: '嵌入封面', section: '下载后嵌入', path: '/settings/download', categoryName: '下载', keywords: '封面 图片'),
 
-  // 高级设置
   _SearchItem(label: '导出应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导出 恢复'),
   _SearchItem(label: '导入应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导入 恢复'),
   _SearchItem(label: '导出全部日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '日志 导出'),
@@ -925,7 +856,6 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '保持屏幕常亮', section: '系统', path: '/settings/general', categoryName: '常规', keywords: '屏幕 常亮 唤醒'),
   _SearchItem(label: '预测返回手势', section: '导航', path: '/settings/advanced', categoryName: '高级设置', keywords: '返回 手势 预测'),
 
-  // 账号
   _SearchItem(label: '账号状态', section: '账号状态', path: '/settings/account', categoryName: '账号', keywords: '登录 用户 资料 退出'),
   _SearchItem(label: '服务器 API', section: '服务端设置', path: '/settings/account', categoryName: '账号', keywords: '后端 地址 服务器 根地址'),
   _SearchItem(label: '服务器密钥', section: '服务端设置', path: '/settings/account', categoryName: '账号', keywords: '密钥 签名 签名密钥'),

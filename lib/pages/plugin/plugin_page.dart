@@ -26,11 +26,9 @@ import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 import 'plugin_delete.dart';
 
-/// 插件管理页：列表、安装（URL/脚本）、启用禁用、卸载、更新。
 class PluginPage extends ConsumerStatefulWidget {
   const PluginPage({super.key, this.embedded = false});
 
-  /// 横屏嵌入 mode：由 master-detail 右侧接管，隐藏返回按钮，保留标题与插件设置/安装动作。
   final bool embedded;
 
   @override
@@ -46,8 +44,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
-  // 「是否有用户变量」的指示图标，按插件 id 缓存。预渲染策略：
-  // 进入页面首帧后即在后台批量求值插件并缓存，滑动只读取缓存。
   final Map<String, bool> _hasVars = {};
   bool _collectingVars = false;
 
@@ -55,8 +51,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   void initState() {
     super.initState();
     _loadAutoUpdatePref();
-    // 预渲染：不阻塞首帧，首帧渲染后立即在后台串行批量加载并缓存，
-    // 之后滑动/重建只读缓存，不再逐卡触发插件加载。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _ensureVarsLoaded();
     });
@@ -73,8 +67,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     if (mounted) setState(() => _autoUpdateOnStartup = enabled);
   }
 
-  /// 预渲染：后台串行批量求值各插件是否含用户变量并缓存（仅首次）。
-  /// 全部算完后统一刷新一次图标，避免预渲染过程中逐卡重建。
   Future<void> _ensureVarsLoaded() async {
     if (_collectingVars) return;
     _collectingVars = true;
@@ -90,7 +82,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
               .getUserVars(s.id);
           hasVars = vars.isNotEmpty;
         } catch (_) {
-          // 读取失败视为无变量图标
         }
         _hasVars[s.id] = hasVars;
         needRefresh = needRefresh || hasVars;
@@ -109,9 +100,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    // 竖屏悬浮顶栏（路由态）：列表铺满全屏、避让量注入列表 padding，滚动时
-    // 内容从顶栏胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由
-    // 横屏壳层顶栏承接，不参与悬浮。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -132,19 +120,13 @@ class _PluginPageState extends ConsumerState<PluginPage> {
 
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
-      // 键盘弹/收时不让 Scaffold 按 viewInsets 逐帧缩放 body：插件列表不再
-      // 每帧重排重绘，彻底消除输入法动画掉帧（键盘弹出后面板由弹窗自行上移）。
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           _listHost(
             portraitFloating,
-            // 顶栏（嵌入态=自绘纯色条，路由态=FlatTopBar）为 Stack 覆盖层：
-            // 固定模式内容统一让出同高，避免列表压在标题条底下；悬浮模式列表
-            // 铺满全屏穿透顶栏（避让量注入列表 padding）。
             NotificationListener<ScrollNotification>(
         onNotification: (notification) {
-          // 滚动停止才激活变量加载，滑动过程中不产生任何插件加载/重建
           if (notification is ScrollEndNotification) {
             _ensureVarsLoaded();
           }
@@ -171,7 +153,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      // 已安装插件标题（对标桌面端「已安装插件」区块）
                       Row(
                         children: [
                           Container(
@@ -189,7 +170,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                                 fontSize: 14, fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
-                          // 统计为次要信息：窄屏放不下两个操作按钮时让位省略。
                           Flexible(
                             child: Text(
                               tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
@@ -200,8 +180,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                             ),
                           ),
                           const Spacer(),
-                          // 全部启用/禁用（对齐桌面端 SettingsPlugins 单按钮切换）：
-                          // 全部已启用时显示「全部禁用」，否则显示「全部启用」。
                           FilledButton.tonalIcon(
                             style: FilledButton.styleFrom(
                               visualDensity: VisualDensity.compact,
@@ -259,7 +237,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      // 搜索框
                       TextField(
                         controller: _searchCtrl,
                         onChanged: (v) => setState(() => _query = v),
@@ -298,17 +275,10 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                         ),
                     ],
                   ),
-                  // 拖动代理样式与正常卡片保持一致（去掉默认拖拽阴影）
-                  // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），卡片内 InkWell
-                  // 会以 debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
                   proxyDecorator: (child, index, animation) =>
                       Material(type: MaterialType.transparency, child: child),
                   itemBuilder: (context, i) {
                     final source = filtered[i];
-                    // 点击最前方拖动图标即可拖拽；搜索过滤时禁用
-                    // ReorderableListView 不像 ListView 那样自动给子项加
-                    // RepaintBoundary：多插件时可见卡片每帧被整体重绘 → 抽帧。
-                    // 每卡隔离为独立合成层后，滑动只搬运已有图层，不重绘内容。
                     return RepaintBoundary(
                       key: ValueKey(source.id),
                       child: Padding(
@@ -329,9 +299,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
               top: 0,
               left: 0,
               right: 0,
-              // 嵌入设置横屏 master-detail 时不用毛玻璃条：与右侧其他分类的
-              // 纯色标题条同材质（同高度/字号），仅追加右侧操作按钮，避免
-              // 切到「音源」时顶部栏材质突变。
               child: widget.embedded
                   ? Container(
                       height: GlassTopBar.height(context),
@@ -384,8 +351,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       );
   }
 
-  /// 列表容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏），固定
-  /// 模式沿用外层 Padding 避让（顶栏为 Stack 覆盖层，内容让出同高）。
   Widget _listHost(bool floating, Widget child) {
     if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
@@ -394,9 +359,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     );
   }
 
-  /// 拖拽排序结束：把调整后的完整插件顺序持久化到 sortOrder。
-  /// 此时 [newIndex] 已由框架处理移除后的下标修正（无需再 -1）。
-  /// 仅在未搜索过滤时生效（把手已隐藏）。
   void _onReorder(int oldIndex, int newIndex) {
     if (_query.trim().isNotEmpty) return;
     final full =
@@ -411,7 +373,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
         .reorder(full.map((e) => e.id).toList());
   }
 
-  /// 安装插件：先选择安装方式（本地文件 / 在线链接）。
   void _showInstallSheet() {
     showSheetDialog<void>(
       context,
@@ -449,7 +410,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     );
   }
 
-  /// 本地文件安装：选择插件脚本并逐个安装。
   Future<void> _pickLocalPlugin() async {
     if (_installing) return;
     final files = await FilePicker.pickFiles(
@@ -475,7 +435,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     }
   }
 
-  /// 在线链接安装：弹出 URL 输入弹窗。
   Future<void> _showUrlInstallSheet() async {
     await showSheetDialog<void>(
       context,
@@ -604,8 +563,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       final sources = ref.read(pluginManagerProvider).sources;
       final results = await service.checkAll();
       if (!mounted) return;
-      // 把「有更新」标记回写持久化（对齐桌面端 updatePluginSource），列表据此标红。
-      // 凡能拿到检测结果的都写入，无更新源的清空旧标记，避免残留误导。
       for (final s in sources) {
         final r = results[s.id];
         await manager.setUpdateAvailable(s.id, r?.hasUpdate ?? false);
@@ -626,7 +583,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     }
   }
 
-  /// 全部启用/全部禁用（对齐桌面端 handleToggleAllPlugins）。
   Future<void> _toggleAllPlugins(bool targetEnabled) async {
     setState(() => _togglingAll = true);
     try {
@@ -649,7 +605,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   }
 }
 
-/// 订阅链接区块：展示已记录的订阅，点击重新导入，可删除。
 class _SubscriptionSection extends ConsumerWidget {
   const _SubscriptionSection({
     required this.subscriptions,
@@ -779,9 +734,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// 长按 0.3 秒才触发的拖动监听：默认 ReorderableDelayedDragStartListener 固定为
-/// 系统长按时长（约 500ms），这里显式缩短到 0.3 秒，平衡「避免滑动手感卡顿」与「拖动响应速度」。
-/// 同时在该延迟到期（可开始移动）的那一刻触发一次触觉反馈，与拖拽真正可移动的时机对齐。
 class _HoldDragStartListener extends StatefulWidget {
   const _HoldDragStartListener({required this.index, required this.child});
 
@@ -792,7 +744,6 @@ class _HoldDragStartListener extends StatefulWidget {
   State<_HoldDragStartListener> createState() => _HoldDragStartListenerState();
 }
 
-/// 把底层拖拽识别延迟固定为与触觉反馈一致的 0.3s。
 class _DelayedDragRecognizerListener extends ReorderableDelayedDragStartListener {
   const _DelayedDragRecognizerListener({
     required super.child,
@@ -831,8 +782,6 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
 
   @override
   Widget build(BuildContext context) {
-    // Listener 不参与手势竞技场，仅用于与拖拽延迟(0.3s)对齐的触觉反馈；
-    // 拖拽识别由内层延迟监听在 0.3s 时触发，二者时刻一致。
     return Listener(
       onPointerDown: _onDown,
       child: _DelayedDragRecognizerListener(
@@ -860,8 +809,6 @@ class _PluginCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
 
-    // 图标/开关按插件格式分类配色（对齐桌面端，不随主题色变化）。
-    // 落雪=绿、MusicFree=橙、BakaMusic(Toskysun)=蓝、其它=红。
     Color iconBg;
     Color iconColor;
     if (source.format == PluginFormat.lx) {
@@ -879,14 +826,12 @@ class _PluginCard extends ConsumerWidget {
       iconColor = const Color(0xFFEC4141);
     }
 
-    // 第二行文案：v{version} · 作者 · 描述（缺省时省略，与桌面端一致）
     final subText = [
       if (source.version.isNotEmpty) 'v${source.version}',
       if (source.author.isNotEmpty) source.author,
       if (source.description.isNotEmpty) source.description,
     ].join(' · ');
 
-    // 格式标签（落雪 / MusicFree / BakaMusic / 未知），与图标配色同源判定
     final tagLabel = source.format == PluginFormat.lx
         ? tr('落雪')
         : source.format == PluginFormat.musicfree
@@ -904,13 +849,11 @@ class _PluginCard extends ConsumerWidget {
       ),
       child: Stack(
         children: [
-          // 内容：左侧预留拖动图标让位
           Padding(
             padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
             child: _buildBody(context, ref, scheme, iconBg, iconColor,
                 subText, tagLabel),
           ),
-          // 拖动 UI：最前方，整条垂直居中；点击立即触发拖拽
         Positioned(
           left: 4,
           top: 0,
@@ -920,7 +863,6 @@ class _PluginCard extends ConsumerWidget {
             child: dragEnabled
                 ? _HoldDragStartListener(
                     index: index,
-                    // 长按满 1 秒才进入排布，避免一按即拖造成滑动卡顿
                     child: Icon(Icons.drag_indicator,
                         size: 34, color: scheme.outline),
                   )
@@ -933,8 +875,6 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
-  /// 插件条内容主体：竖屏两行（上=图标+名称+开关，下=详情/更新/删除）；
-  /// 横屏够长，合并为一行（图标 + 名称 + 控件 + 开关），对齐桌面端把控件直接放后面。
   Widget _buildBody(
     BuildContext context,
     WidgetRef ref,
@@ -962,7 +902,6 @@ class _PluginCard extends ConsumerWidget {
       ),
     );
 
-    // 名称 + 格式标签 / 版本·作者·描述
     final info = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1034,7 +973,6 @@ class _PluginCard extends ConsumerWidget {
       onChanged: (_) => manager.toggleEnabled(source.id),
     );
 
-    // 操作控件：详情 / 更新 / 删除
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1065,7 +1003,6 @@ class _PluginCard extends ConsumerWidget {
     final isWide =
         MediaQuery.orientationOf(context) == Orientation.landscape;
 
-    // 横屏单行：图标 + 名称 + 控件 + 开关（控件直接放后面）
     if (isWide) {
       return Row(
         children: [
@@ -1080,7 +1017,6 @@ class _PluginCard extends ConsumerWidget {
       );
     }
 
-    // 竖屏两行
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1100,7 +1036,6 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
-  /// 等宽分布的操作按钮：图标 + 文字（详情/更新/删除）。
   Widget _action(
     BuildContext context,
     IconData icon,
@@ -1145,7 +1080,6 @@ class _PluginCard extends ConsumerWidget {
       subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
     );
     final result = await service.checkPluginUpdate(source);
-    // 回写「有更新」标记，单插件检测也参与列表标红（对齐桌面端）。
     await ref.read(pluginManagerProvider.notifier)
         .setUpdateAvailable(source.id, result?.hasUpdate ?? false);
     if (!context.mounted) return;
@@ -1182,12 +1116,10 @@ class _PluginCard extends ConsumerWidget {
   }
 
   void _confirmRemove(BuildContext context, WidgetRef ref, PluginManager manager) {
-    // 已同步插件弹「删除范围」三选一（plugin_delete.dart），未同步走普通确认框
     unawaited(confirmRemovePlugin(context, ref, source));
   }
 }
 
-/// 插件详情弹窗：展示插件信息、链接与用户变量（对齐桌面端；无变量则不显示变量区）。
 class _PluginDetailSheet extends ConsumerStatefulWidget {
   const _PluginDetailSheet({required this.source});
   final PluginSource source;
@@ -1324,7 +1256,6 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              // 头部
               Row(
                 children: [
                   Container(
@@ -1368,7 +1299,6 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
               row(tr('版本'), source.version.isEmpty ? '—' : 'v${source.version}'),
               row(tr('作者'), source.author.isEmpty ? '—' : source.author),
               if (source.description.isNotEmpty) row(tr('描述'), source.description),
-              // 音源（插件链接）chips
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Row(
@@ -1407,7 +1337,6 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                   ],
                 ),
               ),
-              // 用户变量（内联展示，对齐桌面端；无变量则不显示）
               if (!_loading && _vars.isNotEmpty) ...[
                 const Divider(height: 8),
                 const SizedBox(height: 8),
@@ -1527,7 +1456,6 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
   }
 }
 
-/// 在线链接安装弹窗：输入 URL 安装（单个插件或插件集批量）。
 class _UrlInstallSheet extends StatefulWidget {
   const _UrlInstallSheet({required this.onInstallUrl});
   final Future<void> Function(String url) onInstallUrl;
@@ -1561,8 +1489,6 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 弹窗整体顶起由 showSheetDialog 的 DialogKeyboardLift 统一处理
-    // （仅被输入法遮挡才顶起恰好露出的量），这里只需固定内容布局。
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -1619,7 +1545,6 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   }
 }
 
-/// 安装方式选项卡片：图标 + 标题 + 副标题。
 class _InstallOption extends ConsumerWidget {
   const _InstallOption({
     required this.icon,
@@ -1681,5 +1606,4 @@ class _InstallOption extends ConsumerWidget {
     );
   }
 }
-
-
+

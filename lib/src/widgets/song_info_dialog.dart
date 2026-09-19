@@ -14,8 +14,6 @@ import 'predictive_dialog_route.dart';
 import 'app_toast.dart';
 import '../i18n/i18n.dart';
 
-/// 歌曲信息弹窗：查看 + 标签编辑 + 歌词编辑（对齐桌面端 SongInfoModal）。
-/// 用参与预测返回的路由承载，返回手势可跟手关闭。
 Future<void> showSongInfoDialog(BuildContext context, WidgetRef ref,
     QueueItem item) async {
   await showPredictiveDialog<void>(
@@ -51,7 +49,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
   String? _error;
   Map<String, dynamic>? _detail;
 
-  // 标签编辑表单
   late final _titleCtrl =
       TextEditingController(text: widget.item.title);
   late final _artistCtrl =
@@ -62,7 +59,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
   final _discCtrl = TextEditingController();
   final _yearCtrl = TextEditingController();
 
-  // 歌词编辑
   final _lyricsCtrl = TextEditingController();
   LyricsStorageSource _lyricsSource = LyricsStorageSource.empty;
   String? _lyricsSourcePath;
@@ -71,7 +67,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
   @override
   void initState() {
     super.initState();
-    // 无论查看/编辑都加载详情（技术信息只对本地文件有意义，在线歌曲取不到自然为空）。
     _loadDetail();
   }
 
@@ -145,7 +140,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       await saveSongLyrics(
         path: widget.item.path,
         lyrics: _lyricsCtrl.text,
-        // 空内容 + 原本无侧车路径 → 保存为内嵌
         source: _lyricsCtrl.text.trim().isEmpty &&
                 _lyricsSource == LyricsStorageSource.empty
             ? LyricsStorageSource.embedded
@@ -192,7 +186,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       };
       await saveSongInfo(
           dbPath: dbPath, path: widget.item.path, payloadJson: jsonEncode(payload));
-      // 刷新音乐库列表（歌名/歌手/专辑立即生效）
       widget.ref.read(libraryProvider.notifier).load();
       if (!mounted) return;
       setState(() {
@@ -331,7 +324,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       _row(tr('大小'), sizeText, scheme),
     ];
 
-    // 本地歌曲补充详情（流派/年份/音轨/碟号）
     final detail = _detail;
     if (detail != null) {
       final genre = detail['genre'] as String?;
@@ -348,7 +340,6 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       if (disc != null && disc.isNotEmpty) rows.add(_row(tr('碟号'), disc, scheme));
     }
 
-    // 技术信息（采样率/位深/码率/编码/封装）对齐 RwaS 技术信息页，只对本地文件展示
     if (detail != null) {
       final tech = <(String, String)>[];
       final sr = detail['sampleRate'] as num?;
@@ -519,7 +510,6 @@ Widget _row(String label, String value, ColorScheme scheme,
   );
 }
 
-/// 技术信息区块的标题分隔线。
 Widget _techHeader(ColorScheme scheme) {
   return Padding(
     padding: const EdgeInsets.only(top: 6, bottom: 2),
@@ -541,7 +531,6 @@ Widget _techHeader(ColorScheme scheme) {
   );
 }
 
-/// 采样率美化：44.1 kHz / 192 kHz / DSD(2.82 MHz) 等。
 String _fmtSampleRate(num v) {
   if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(2)} MHz';
   final k = v / 1000;

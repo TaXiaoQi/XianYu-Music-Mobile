@@ -23,10 +23,8 @@ import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import '../i18n/i18n.dart';
 
-/// 下载任务状态。
 enum DownloadStatus { waiting, downloading, done, failed }
 
-/// 单个下载任务（在线歌曲）。
 class DownloadTask {
   final String songPath;
   final String title;
@@ -85,7 +83,6 @@ class DownloadTask {
   }
 }
 
-/// 下载记录（历史，与桌面端 download_history.json 结构一致）。
 class DownloadHistoryEntry {
   final String songPath;
   final String filePath;
@@ -126,7 +123,6 @@ class DownloadHistoryEntry {
         artist: j['artist'] as String?,
       );
 
-  /// 已下载文件可直接作为本地歌曲播放。
   QueueItem toQueueItem() => QueueItem(
         path: filePath,
         title: title ?? fileName,
@@ -166,7 +162,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   final Ref _ref;
 
-  /// 并发下载调度：等待队列 + 当前活动数。
   final List<DownloadTask> _pending = [];
   int _active = 0;
 
@@ -186,9 +181,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 下载目录：优先用户设置，否则系统下载目录，最后回退应用文档目录。
-  /// iOS/ohos 沙盒无系统下载目录，固定应用文档目录下的 Downloads（iOS
-  /// Info.plist 已开启文件共享，用户可从「文件」App 访问）。
   Future<String> _downloadDir() async {
     if (Platform.isIOS || PlatformCaps.isOhos) {
       final docs = await getApplicationDocumentsDirectory();
@@ -209,16 +201,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return dir.path;
   }
 
-  /// 是否已设置自定义下载目录（「下载设置 → 下载目录」里选过路径）。
-  /// 未设置时禁止下载，避免歌曲落到无法预期的系统/应用目录。
-  /// iOS 无自定义目录概念：固定下载到应用 Documents/Downloads，视为已设置。
   bool get hasCustomDownloadDir =>
       (!Platform.isAndroid && !Platform.isIOS) ||
       (_ref.read(settingsProvider).valueOrNull?.downloadPath ?? '').isNotEmpty;
 
-  /// MV 视频下载：按命名风格生成「基名 (画质).mp4」→ 直链（含备用链依次
-  /// 重试）流式写入下载目录。对齐桌面端 MV 下载：不做音频收尾（歌词/封面/
-  /// 元数据）也不写下载历史，保存即完成，结果由调用方提示。
   Future<String> downloadMvVideo({
     required QueueItem item,
     required MvSource source,
@@ -256,14 +242,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     throw lastError ?? StateError(tr('MV 下载失败'));
   }
 
-  /// 下载前校验：①未设置自定义下载目录时提示；②Android 检查
-  /// 「所有文件访问」（MANAGE_EXTERNAL_STORAGE）状态并给出非阻断提示——
-  /// 权限申请已前移到「设置 → 下载目录」选完路径时一次性完成（连同通知
-  /// 权限），这里不再拉起申请，仅兜底检测（用户事后撤权等场景）。
-  /// 直写受限时下载会自动走 MediaStore 兼容模式（API 29+ 自有媒体条目
-  /// 免存储权限），不因未授权直接中止。返回 false 时调用方中止下载
-  /// （仅目录未设置的情况）。供各下载入口复用。
-  /// iOS/ohos：目录固定可用，无存储权限概念，直接放行。
   Future<bool> requireDownloadDir(BuildContext context) async {
     if (Platform.isIOS || PlatformCaps.isOhos) return true;
     if (!hasCustomDownloadDir) {
@@ -281,17 +259,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return true;
   }
 
-  /// 下载在线歌曲（插件音源或 lx:// 音源）。受并发上限控制，超出排队。
-  ///
-  /// [quality] 为调用方（下载音质弹窗）选定的档位；未指定时按
-  /// 设置下载音质 → 歌曲自带音质 → 320k 依次回退（设置优先，对齐桌面端
-  /// `download.quality` 作为默认音质）。
   Future<void> download(QueueItem item, {String? quality}) async {
     if (!item.isOnline) return;
-    // 未设置自定义下载目录：一律禁止下载（兜底，UI 入口已由 requireDownloadDir 提示）。
     if (!hasCustomDownloadDir) return;
-    // 直写受限时不再硬性拦截：未授予「所有文件访问」仍允许下载，
-    // Rust 直写失败后自动回退 MediaStore 兼容模式（见 _mediaStoreFallback）。
     if (state.tasks.any((t) =>
         t.songPath == item.path &&
         (t.status == DownloadStatus.waiting ||
@@ -324,13 +294,11 @@ class DownloadManager extends StateNotifier<DownloadState> {
     _drain();
   }
 
-  /// 判断某在线歌曲是否已下载：下载历史命中且对应文件仍存在即视为已下载。
   Future<bool> isAlreadyDownloaded(String songPath) async {
     final matched = state.history
         .where((h) => h.songPath == songPath && h.filePath.isNotEmpty)
         .toList()
       ..sort((a, b) => b.downloadedAt.compareTo(a.downloadedAt));
-    // 历史里任一版本的文件仍存在即可复用，否则视为未下载（允许重下）。
     for (final h in matched) {
       try {
         if (await File(h.filePath).exists()) return true;
@@ -339,7 +307,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return false;
   }
 
-  /// 按并发上限派发等待队列中的任务。
   void _drain() {
     final settings = _ref.read(settingsProvider).valueOrNull;
     final limit = (settings?.downloadConcurrency ?? 3).clamp(1, 5);
@@ -380,7 +347,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 返回 (目标路径, 实际命中的音质)。
   Future<(String, String)> _performDownload(
       DownloadTask task, AppSettings? settings) async {
     final item = QueueItem(
@@ -399,10 +365,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     final parsed = jsonDecode(songJson) as Map<String, dynamic>;
 
-    // 1. 解析直链：按音质候选链降级（与播放器一致），实际命中的音质用于
-    //    文件命名与历史记录。对齐桌面 resolveLxAudioForQuality：采用插件实际上报
-    //    档位（而非请求档），并跳过「无损声明却拿到有损直链」的静默降级档，
-    //    避免下载出「标着无损却是 320k/mp3」的假音质文件。
     var usedQuality = task.quality;
     String? url;
     Map<String, String>? urlHeaders;
@@ -415,7 +377,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
       if (tried == null) continue;
       final u = tried.url;
       final reported = tried.quality ?? q;
-      // 无损档却返回有损直链：被静默降级且无对应无损文件，跳过该档回退下一候选。
       final effective = resolveActualQuality(reported, u);
       if (effective != reported) {
         continue;
@@ -428,9 +389,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     if (url == null) throw StateError(tr('直链解析失败'));
 
-    // 下载请求头（对齐播放链路）：插件自带头 + 按域补齐防盗链头
-    // （Referer/Origin/Accept）+ B站取流会话 Cookie。此前 headersJson 恒为
-    // '{}'，B站 m4s 直链缺 Referer/Cookie 只能下到几秒预览片段或直接失败。
     final dlHeaders = await withBilibiliStreamCookie(
       url,
       normalizeMediaRequestHeaders(url, urlHeaders),
@@ -440,8 +398,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     _updateTask(task.songPath, progressPercent: 40);
 
-    // 2. 解析目标路径（命名与冲突检测在 Rust 侧统一处理；移动端不转码，
-    //    文件即直链源格式）。
     final dir = await _downloadDir();
     final destPath = await resolveDownloadFullPath(
       directory: dir,
@@ -457,10 +413,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     _updateTask(task.songPath, progressPercent: 60);
 
-    // 3. 流式下载。部分国产 ROM（sdcardfs/纯净模式沙箱）在已授予「所有文件
-    //    访问」时仍拦截对公共存储的直接路径写入——Rust 直写失败时回退
-    //    MediaStore 通道（API 29+ 自有媒体条目免存储权限）：先下到应用缓存，
-    //    在缓存上完成歌词/元数据收尾，再经 ContentResolver 落盘公共存储。
     var finalPath = destPath;
     try {
       await downloadOnlineSong(
@@ -499,8 +451,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     _updateTask(task.songPath, progressPercent: 85);
 
-    // 4. 收尾：直写成功时在最终路径收尾；回退模式下已在缓存临时文件上完成
-    //    （tag 嵌入必须发生在直接可写的文件上）。
     if (finalPath == destPath) {
       final wantLyrics = settings?.downloadLyrics ?? true;
       if (wantLyrics || (settings?.embedDownloadLyrics ?? false)) {
@@ -513,11 +463,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return (finalPath, usedQuality);
   }
 
-  /// 直写失败时的 MediaStore 回退：下载到应用缓存 → 按缓存路径收尾（歌词
-  /// 文件/封面/元数据嵌入，全部落在确定可写的缓存上）→ 经 MediaStore 落盘
-  /// 公共存储 → 迁移歌词独立文件并清理缓存。返回真实落盘路径；不可回退
-  /// （非 Android、API < 29、MediaStore 写入失败）返回 null，由调用方抛出
-  /// 原始直写错误。
   Future<String?> _mediaStoreFallback({
     required String url,
     required String dir,
@@ -542,7 +487,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
         headersJson: headersJson,
       );
 
-      // 收尾在临时文件上做：sidecar 与 tag 嵌入都写缓存，一定可写。
       final saveLyricsFile = settings?.downloadLyrics ?? true;
       final wantLyrics =
           saveLyricsFile || (settings?.embedDownloadLyrics ?? false);
@@ -559,8 +503,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
       );
       if (finalPath == null) return null;
 
-      // 歌词独立文件：非媒体文件经 MediaStore 只能进 Download/ 集合，落到
-      // Download/弦予/；tag 里已按设置嵌入歌词。
       final baseNoExt = tempPath.substring(0, tempPath.length - ext.length);
       final fmt = settings?.downloadLyricsFormat ?? 'lrc';
       final tempLyrics = File('$baseNoExt.$fmt');
@@ -573,7 +515,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
           srcPath: tempLyrics.path,
         );
       }
-      // 清理缓存临时文件（音频 + 歌词 + 封面 sidecar；封面已嵌入 tag）。
       for (final f in [File(tempPath), tempLyrics, File('$baseNoExt.cover')]) {
         try {
           if (await f.exists()) await f.delete();
@@ -585,9 +526,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 把公共存储目录映射为 MediaStore RELATIVE_PATH：仅 Music/、Download/
-  /// 前缀按原样映射（子目录含文件名部分剥除）；其余目录（含 Android/data
-  /// 等系统禁区）归入 Music/弦予，避免 insert 直接被拒。
   static String _mediaRelativePath(String dir) {
     final norm = dir.replaceAll('\\', '/');
     final m = RegExp(r'/storage/[^/]+/(Music|Download)(/.*)?$').firstMatch(norm);
@@ -598,8 +536,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return 'Music/弦予';
   }
 
-  /// 按扩展名映射 MIME（决定 MediaStore 目标集合：audio/* → Audio，
-  /// 其余 → Downloads）。
   static String _mimeFromExtension(String ext) {
     switch (ext.toLowerCase()) {
       case '.mp3':
@@ -626,7 +562,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 下载收尾：保存独立歌词文件，并按设置嵌入元数据/歌词/封面到 tag。
   Future<void> _finalizeExtras(
       QueueItem item, String filePath, Map<String, dynamic> parsed,
       AppSettings? settings) async {
@@ -640,8 +575,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
         return;
       }
 
-      // 歌词文本：独立文件保存或嵌入 tag 都需要。
-      // 歌词样式：word-by-word 优先逐字（无逐字回退逐行）；line-by-line 仅取逐行歌词。
       final wordByWord =
           (settings?.downloadLyricsStyle ?? 'word-by-word') != 'line-by-line';
       String? lyricsText;
@@ -660,10 +593,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
       final dot = filePath.lastIndexOf('.');
       final base = dot == -1 ? filePath : filePath.substring(0, dot);
-      // 歌词格式转换（对齐桌面端 downloadExtras.ts fetchLyricText）：
-      // txt 去时间标签与逐字词级标签输出纯文本；lrc 原样。
-      // **独立文件与 tag 嵌入用同一份转换后文本**（桌面端 savedLyricText
-      // 同源），避免「txt 文件 + tag 里还是带时间戳的 lrc」不一致。
       final lyricsFormat = settings?.downloadLyricsFormat ?? 'lrc';
       final convertedLyrics = _convertLyricsFormat(lyricsText ?? '', lyricsFormat);
       final request = jsonEncode({
@@ -688,18 +617,14 @@ class DownloadManager extends StateNotifier<DownloadState> {
       });
       await finalizeDownloadExtras(requestJson: request);
     } catch (_) {
-      // 收尾（歌词/封面/嵌入）失败不影响下载本身
     }
   }
 
-  /// 音质阶梯（低 → 高），与播放器/设置页档位一致（对齐桌面端 rank 排序）；候选链向下降级。
   static const List<String> _qualityLadder = [
     'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
     'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
   ];
 
-  /// 音质缺失回退策略：lower（默认）从当前档向下降级；higher 从当前档向上升级。
-  /// 对齐桌面端 download.qualityFallbackBehavior。
   static List<String> _qualityCandidates(
       String preferred, String fallbackBehavior) {
     final desc = _qualityLadder.reversed.toList();
@@ -734,7 +659,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     if (source.isEmpty) throw StateError(tr('插件未启用'));
 
     if (format == 'musicfree') {
-      // MusicFree 插件：getMediaSource + 内部音质降级映射；直链带上插件实际上报档位。
       return engine.getMusicFreeUrl(
         source.first,
         musicInfo,
@@ -746,7 +670,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
         await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
     final url = result?['url'] as String? ?? '';
     if (url.isEmpty || !RegExp(r'^https?://').hasMatch(url)) return null;
-    // 采用插件实际上报档位（type），避免请求无损却下载到降级有损而误标档位。
     final type = result?['type'];
     final reported =
         type is String && type.isNotEmpty
@@ -755,8 +678,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return ResolvedMediaUrl(url: url, quality: reported);
   }
 
-  /// [wordByWord] 为 true 时优先逐字歌词（lxlyric/yrc/qrc），无逐字回退逐行；
-  /// 为 false 时仅取标准逐行歌词（lyric 字段）。
   Future<String?> _fetchLxLyric(String source, String songInfoJson,
       {required bool wordByWord}) async {
     if (songInfoJson.isEmpty) return null;
@@ -798,11 +719,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return text.isEmpty ? null : text;
   }
 
-  /// 歌词格式转换，逐行对齐桌面端 fetchLyricText.processFormat：
-  /// - txt：剥时间标签 `[mm:ss(.xxx)]` + 逐字词级标签 `<s,e>` / `[s,e]`，
-  ///   保留其余方括号元数据（[ti:] 等），仅整体 trim——与桌面端输出逐字节
-  ///   一致（同一首歌在两端下载 txt 内容相同）。
-  /// - lrc：原样 trim。
   static String _convertLyricsFormat(String text, String format) {
     if (text.isEmpty) return text;
     if (format == 'txt') {
@@ -863,7 +779,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final totalCount = activeTasks.length;
     final doneCount = activeTasks.where((t) => t.status == DownloadStatus.done).length;
 
-    // 优先取正在下载中的任务
     DownloadTask currentTask;
     final downloadingList = activeTasks.where((t) => t.status == DownloadStatus.downloading).toList();
     if (downloadingList.isNotEmpty) {
@@ -885,7 +800,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     );
   }
 
-  /// 移除一条下载记录。
   Future<void> removeHistory(String songPath) async {
     final dataDir = await _ref.read(appDataDirProvider.future);
     final map = <String, dynamic>{};
@@ -897,15 +811,12 @@ class DownloadManager extends StateNotifier<DownloadState> {
         history: state.history.where((e) => e.songPath != songPath).toList());
   }
 
-  /// 清空下载记录（可选同时删除本地已下载的文件）。MediaStore 兼容模式下
-  /// 落盘的文件由 ContentResolver 删除兜底（仅限本应用自有条目）。
   Future<void> clearHistory({bool deleteFiles = false}) async {
     if (deleteFiles) {
       for (final entry in state.history) {
         try {
           if (entry.filePath.isNotEmpty) {
             await _deleteDownloadedFile(entry.filePath);
-            // 清理关联的 lrc 歌词和 cover 封面文件
             final dot = entry.filePath.lastIndexOf('.');
             if (dot != -1) {
               final base = entry.filePath.substring(0, dot);
@@ -921,8 +832,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     state = state.copyWith(history: const []);
   }
 
-  /// 删除单个下载产物：先直接删（正常路径）；残留时回退 MediaStore
-  /// （兼容模式下落盘的文件，在直写受限设备上 File.delete 也可能失效）。
   Future<void> _deleteDownloadedFile(String path) async {
     try {
       final f = File(path);
@@ -933,7 +842,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 清除已结束的任务（成功/失败），保留进行中与排队中。
   void clearFinishedTasks() {
     state = state.copyWith(
         tasks: state.tasks
@@ -944,7 +852,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 }
 
-/// 从完整路径中取出文件名（兼容 Windows 反斜杠与正斜杠）。
 String fileNameFromPath(String filePath) {
   final parts = filePath.split(RegExp(r'[\\/]'));
   return parts.last.isNotEmpty ? parts.last : filePath;

@@ -6,7 +6,6 @@ import '../plugin/plugin_backup_import.dart';
 import '../player/player_provider.dart';
 import 'playlist_store.dart';
 
-/// 导入歌单状态。
 class ImportedPlaylistState {
   final List<ImportedPlaylist> playlists;
   final bool loading;
@@ -24,7 +23,6 @@ class ImportedPlaylistState {
   }
 }
 
-/// 导入歌单管理器。
 class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
   PlaylistManager(this._ref) : super(const ImportedPlaylistState()) {
     refresh();
@@ -38,7 +36,6 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 保存导入结果中的歌单，返回更新后的列表。
   Future<List<ImportedPlaylist>> addFromBackup(
     PreparedPluginBackupImport prepared,
   ) async {
@@ -52,13 +49,11 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 仅保留本地：解绑云端标记（清除 cloudId），保留本地歌单。
   Future<void> detachCloud(String id) async {
     final playlists = await _store.setCloudId(id, null);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 按指定 id 顺序重排歌单（未列出的歌单保持在队尾）。
   Future<void> reorder(List<String> orderedIds) async {
     final current = state.playlists;
     final idSet = orderedIds.toSet();
@@ -93,15 +88,11 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 悬空 pluginId 运行时修复（播放解析回写）：持久化并刷新内存态，
-  /// 使后续播放直接命中新插件而无需重复重匹配。
   Future<void> healSongPlugin(String path, String pluginId) async {
     final playlists = await _store.healSongPluginId(path, pluginId);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 跨格式换源完整修复：更新 pluginId/source/format/musicInfo，
-  /// 使跨格式（LX↔MusicFree/Baka）重搜后的歌曲下次播放直接命中新插件。
   Future<void> healSongPluginFull(
     String path, {
     required String pluginId,
@@ -119,13 +110,11 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 重排歌单内歌曲顺序（按 path）。
   Future<void> reorderSongs(String id, List<String> orderedPaths) async {
     final playlists = await _store.reorderSongs(id, orderedPaths);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  /// 播放歌单（从指定索引开始）。
   Future<void> play(ImportedPlaylist playlist, int index) async {
     final items = playlist.songs.map((s) => _toQueueItem(s)).toList();
     await _ref.read(playerProvider.notifier).playQueue(items, startIndex: index);
@@ -157,8 +146,6 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
       onlineSongJson: jsonEncodeSafe(songJson),
       onlineQuality: '320k',
       source: song.source,
-      // 补全 onlineInfoJson：插件 getLyric 失败时，歌词仓库能走 Rust 内置
-      // fetchLyricFromSource 兜底（与在线搜索结果的 QueueItem 对齐）。
       onlineInfoJson: jsonEncodeSafe(song.musicInfo ?? <String, dynamic>{}),
     );
   }

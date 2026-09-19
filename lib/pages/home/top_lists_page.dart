@@ -14,9 +14,6 @@ import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 音源榜单页：插件来源切换 + 榜单网格（对齐桌面 TopLists）。
-/// [embedded]=true 时作为横屏右侧「内容」容器内嵌（无自绘顶栏，顶部让位
-/// 为 0——容器外层 FlatTopBar 已承接返回与标题）。
 class TopListsPage extends ConsumerStatefulWidget {
   const TopListsPage({super.key, this.embedded = false});
 
@@ -30,9 +27,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     with HidesShellChrome {
   List<PluginSource> _sources = const [];
   String? _selectedId;
-  /// 内容区 PageView：每音源一页，支持横滑切换（与顶栏内容 tab 同源观感）。
   PageController? _pageCtrl;
-  /// 各音源已加载的榜单缓存（横滑往返不重复请求）。
   final Map<String, List<MfSheetItem>> _boardsCache = {};
   final Set<String> _loadingIds = {};
   bool _checking = true;
@@ -94,8 +89,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     });
   }
 
-  /// 点 chip 切换音源：300ms + fastLinearToSlowEaseIn 动画翻页，
-  /// 与顶栏内容 tab 的点击切换一致。
   void _selectSource(int index) {
     final ctrl = _pageCtrl;
     if (ctrl == null || !ctrl.hasClients) return;
@@ -106,7 +99,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     );
   }
 
-  /// 横滑翻页 / 翻页动画落位：同步选中态、按需加载、chip 滚入可视区。
   void _onPageChanged(int index) {
     final s = _sources[index];
     if (s.id == _selectedId) return;
@@ -128,15 +120,10 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     final scheme = Theme.of(context).colorScheme;
     final statusBar = MediaQuery.paddingOf(context).top;
     final embedded = widget.embedded;
-    // 竖屏悬浮顶栏模式（横屏面板内嵌不参与）：顶栏自动换装玻璃胶囊组，
-    // 来源条独立悬浮于顶栏下方，榜单网格铺满全屏、滚动时从顶栏与来源条
-    // 下方穿过（穿透观感，与搜索结果页同口径）。
     final floating = !embedded &&
         (ref.watch(settingsProvider
                 .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
             true);
-    // 固定模式：来源条并入顶栏本体（bottom 底段，同材质同分割线），不再
-    // 悬在页面底色上形成「灰带」；壁纸模式下来源条与工具行拉开 8px。
     final wallpaperGap = ref.watch(wallpaperActiveProvider) ? 8.0 : 0.0;
     final chromeBottom = _sources.isEmpty
         ? null
@@ -150,8 +137,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
               ],
             ),
           );
-    // 悬浮模式网格顶部避让：顶栏胶囊列（状态栏+8+48）+ 间距10 + 来源条40
-    // + 呼吸6；固定/内嵌走原 Padding 避让结构，网格自带 8px 顶距。
     final contentTop =
         floating ? statusBar + 8 + 48 + 10 + 40 + 6 : null;
 
@@ -166,8 +151,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
               padding: EdgeInsets.only(
                   top: embedded
                       ? 0
-                      // 固定模式来源条并入顶栏底段，避让量必须含其高度（与搜索
-                      // 结果页同口径），否则首行网格被来源条盖住。
                       : GlassTopBar.height(context, bottom: chromeBottom)),
               child: Column(
                 children: [
@@ -198,7 +181,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                   onPressed: () => context.pop(),
                 ),
                 title: Text(tr('音源榜单')),
-                // 固定顶栏默认已去掉底部全局分隔线（见 GlassTopBar）。
                 bottom: floating ? null : chromeBottom,
               ),
             ),
@@ -207,9 +189,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     );
   }
 
-  /// 来源插件切换条：与搜索结果页一致，独立玻璃气泡（[FloatingSourcePill]）。
-  /// [floating]=悬浮顶栏模式（居于顶栏下方悬浮行，内边距 2）；固定模式并入
-  /// 顶栏底段（内边距 14，与工具行对齐）。
   Widget _buildSourceBar({bool floating = false}) {
     return SizedBox(
       height: 40,
@@ -233,8 +212,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     );
   }
 
-  /// [contentTop]=悬浮模式下注入网格滚动 padding.top 的顶部避让量
-  /// （内容从顶栏与来源条下方穿过）；固定/内嵌为 null，网格自带 8px 顶距。
   Widget _buildBody(ColorScheme scheme, {double? contentTop}) {
     if (_checking) {
       return Center(
@@ -262,7 +239,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     if (ctrl == null || !ctrl.hasClients && _selectedId == null) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
-    // 每音源一页：横滑直接切换，点 chip 动画翻页（见 _selectSource）。
     return PageView.builder(
       controller: ctrl,
       itemCount: _sources.length,
@@ -296,8 +272,6 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     if (boards.isEmpty) {
       return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
-    // 横屏容器内嵌：卡片对齐发现页音源榜单小尺寸（~92 宽、圆角 10、标题 12），
-    // 用 maxCrossAxisExtent 让列宽贴近发现页小卡，而非固定 3 列大卡。
     final isEmbedded = widget.embedded;
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(

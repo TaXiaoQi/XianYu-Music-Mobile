@@ -13,36 +13,18 @@ import 'song_actions_sheet.dart';
 import 'song_list_scroll_fabs.dart';
 import '../i18n/i18n.dart';
 
-/// 歌曲行起播手势装配结果，配合 [songRowPlay] 使用：
-///
-/// ```dart
-/// final g = songRowPlay(ref, onPlay: () => play(i));
-/// return g.wrap(ListTile(onTap: g.onTap, ...));
-/// ```
 class SongRowPlay {
   const SongRowPlay._(this.onTap, this.onDoubleTap);
 
-  /// 挂到行自身（ListTile.onTap）：
-  /// - 单击模式：起播回调，点击即水波纹 + 播放；
-  /// - 双击模式：空回调，单击仍有水波纹反馈（延迟约 300ms 等待双击窗口结束）。
   final GestureTapCallback? onTap;
 
-  /// 双击模式的起播回调；非 null 时 [wrap] 会把行包进双击识别器。
   final GestureTapCallback? onDoubleTap;
 
-  /// 双击模式下包裹行本体；单击模式原样返回。
   Widget wrap(Widget child) => onDoubleTap == null
       ? child
       : GestureDetector(onDoubleTap: onDoubleTap, child: child);
 }
 
-/// 按设置装配歌曲行起播手势（单击/双击播放）。
-///
-/// 起播必须挂到行自身 onTap：带 onLongPress 的 ListTile 的 InkWell 会注册
-/// 自己的 Tap 识别器，且在手势竞技场清扫中作为内层成员必胜——外层
-/// GestureDetector 的 onTap 永远被拒绝（曾表现为「点行有水波纹高亮但
-/// 不起播」）。双击模式用外层 onDoubleTap 包裹则不受影响：DoubleTap
-/// 识别器自行 hold/解析竞技场，内层竞争无法否决它。
 SongRowPlay songRowPlay(WidgetRef ref, {VoidCallback? onPlay}) {
   if (onPlay == null) return const SongRowPlay._(null, null);
   final single =
@@ -53,11 +35,6 @@ SongRowPlay songRowPlay(WidgetRef ref, {VoidCallback? onPlay}) {
       : SongRowPlay._(() {}, onPlay);
 }
 
-/// 大封面列表行：封面、标题、副标题、尾部控件的横向排布。
-///
-/// 不用 ListTile：其 leading/trailing 高度被钳制在 56px
-/// （ListTile.maxIconHeightConstraint），80px 以上的封面会被压扁且行高
-/// 不跟随封面增长；本组件行高由封面完整撑开，内边距可调。
 class CoverRow extends StatelessWidget {
   const CoverRow({
     super.key,
@@ -120,31 +97,15 @@ class CoverRow extends StatelessWidget {
   }
 }
 
-/// 通用歌曲列表：展示歌曲并支持点击播放、长按弹出操作菜单。
-///
-/// 传入 [onReorder] 时切换为可拖动排序（顶级列表，拖到边缘自动滚动），
-/// 行首出现长按把手，排序结果由调用方持久化。
-/// 传入 [enableScrollFabs] 时在右下角叠加「回到顶部 / 定位当前播放歌曲」
-/// 悬浮按钮（对齐桌面端 SongTable）。
 class SongsListView extends ConsumerStatefulWidget {
   final List<Song> songs;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
-  /// 列表内边距。全屏页可留出底部安全区，嵌在 shell 内的页面可避让底栏。
-  /// 用 [EdgeInsets]（而非 [EdgeInsetsGeometry]）以兼容
-  /// ReorderableListView.builder 的 padding 入参类型。
   final EdgeInsets? padding;
-  /// 需要高亮的关键词。非空时在标题/歌手/专辑中以主题色标出命中片段。
   final String? highlight;
-  /// 长按歌曲是否弹出操作菜单（收藏/添加到歌单/歌曲信息）。
   final bool enableActions;
-  /// 非空时启用可拖动排序；onReorderItem 的 newIndex 已随移除项调整。
   final ReorderCallback? onReorder;
-  /// 外部提供的滚动控制器（可选）；缺省时内部自建并随组件释放。
   final ScrollController? controller;
-  /// 是否叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
   final bool enableScrollFabs;
-  /// 批量选择控制器；非空且 [SongBatchController.batchMode] 为真时启用批量
-  /// 选择：行首勾选、整行点按切换选中，播放/长按菜单手势被批量手势接管。
   final SongBatchController? batch;
   const SongsListView({
     super.key,
@@ -166,9 +127,6 @@ class SongsListView extends ConsumerStatefulWidget {
 class _SongsListViewState extends ConsumerState<SongsListView> {
   late final ScrollController _controller;
   bool _ownsController = false;
-  /// 批量模式下扁平列表专用控制器。与 [_controller] 分离，避免进出批量模式
-  /// 时 ReorderableListView↔ListView 复用同一控制器导致旧 ScrollPosition 残留、
-  /// 出现「ScrollController attached to multiple scroll views」断言崩溃。
   final ScrollController _batchController = ScrollController();
 
   @override
@@ -191,9 +149,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
     if (songs.isEmpty) {
       return   Center(child: Text(tr('暂无歌曲')));
     }
-    // 批量选择控制器；非空且处于批量模式时整行点按切换选中、隐藏尾部操作。
     final batch = widget.batch;
-    // watch：设置页切换单击/双击后列表自动换模式。
     final single =
         (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
             'single';
@@ -202,12 +158,9 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
     final onPlay = widget.onPlay;
     final enableActions = widget.enableActions;
     final highlight = widget.highlight;
-    // 组装歌曲行（Builder 提供行自身 context，供飞封面取封面 RenderBox）。
-    // 批量状态在 buildContent 内每次重建时读取，保证切换选中后行与勾选态同步。
     Widget buildRow(int i, bool inBatch) {
       final s = songs[i];
       final hlColor = Theme.of(context).colorScheme.primary;
-      // 批量模式：整行点按切换选中，隐藏尾部操作与时长，行首由 wrapBatchRow 挂勾选。
       if (inBatch && batch != null) {
         final row = CoverRow(
           cover: SongCover(song: s, size: m.songCover),
@@ -318,30 +271,18 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
 
     final onReorder = widget.onReorder;
     final padding = widget.padding;
-    // 行高固定（封面 + 上下内边距），itemExtent 让 Sliver 按偏移量直接定位，
-    // 跳过逐行布局测量，长列表快速滑动更省 CPU（对齐 PiliNara 列表优化）。
     final rowExtent = m.songCover + 2 * m.vPad;
-    // 批量状态在此每次重建时读取：进出批量模式与切换选中都会触发本函数重跑。
     Widget buildContent() {
       final inBatch = batch != null && batch.batchMode;
       final Widget list;
       if (onReorder == null || inBatch) {
-        // 批量模式下禁用拖动排序（行首把手被勾选槽替代），统一走扁平列表，
-        // 且专用 [_batchController]，避免与 ReorderableListView 共用 [_controller]
-        // 导致切换模式时旧 ScrollPosition 残留引发多滚动视图断言崩溃。
         list = ListView.builder(
           controller: inBatch ? _batchController : _controller,
           padding: padding,
-          // 长列表快速滑动时按默认 250px cacheExtent 现建现画，行携带封面会卡在
-          // 进场帧而掉帧；提前约半屏（含封面预解码）让滚动只搬运已就绪图层。
           scrollCacheExtent: ScrollCacheExtent.pixels(500),
-          // 行不保留状态（封面/标题均为无状态构建），离屏即弃，省内存与重建。
           addAutomaticKeepAlives: false,
           itemExtent: rowExtent,
           itemCount: songs.length,
-          // 每行包 RepaintBoundary 隔离成独立合成层：滚动时行内的封面/文本只重绘
-          // 自身图层，可被引擎缓存复用，避免整页重绘造成掉帧（与拖拽排序路径对齐）。
-          // key 用「路径 + 下标」复合，防止同一首歌多次出现时的重复 Key 断言。
           itemBuilder: (context, i) => RepaintBoundary(
             key: ValueKey('${songs[i].path}_$i'),
             child: buildRow(i, inBatch),
@@ -352,19 +293,12 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
           scrollController: _controller,
           padding: padding,
           itemExtent: rowExtent,
-          // 顶级列表：拖到边缘时自动滚动。
           buildDefaultDragHandles: false,
-          // 拖动时被拖项作为 proxy 插入根 Overlay 展示，该层没有 Material 祖先；
-          // 行内 CoverRow 的 InkWell 会在拖起瞬间以 debugCheckHasMaterial 报错
-          // （表现「拖动就报错」）。补一层透明 Material 提供水波纹上下文。
           proxyDecorator: (child, index, animation) =>
               Material(type: MaterialType.transparency, child: child),
           itemCount: songs.length,
           onReorderItem: onReorder,
           itemBuilder: (context, i) {
-            // ReorderableListView 要求最外层带 key 才能拖拽，同时隔离合成层防抽帧。
-            // 用「路径 + 下标」复合 Key：同一首歌可多次出现（如歌单多次添加），
-            // 若仅用 path 作 key 会在相邻重复项间拖拽时触发重复 Key 断言报错。
             return RepaintBoundary(
               key: ValueKey('${songs[i].path}_$i'),
               child: Stack(
@@ -387,11 +321,8 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
         );
       }
 
-      // 批量模式下隐藏「回到顶部 / 定位播放」悬浮按钮，避免与底部批量操作栏叠压。
       Widget result = list;
       if (widget.enableScrollFabs && !inBatch) {
-        // 悬浮按钮层：右下角「回到顶部 / 定位当前播放歌曲」。
-        // bottom 放在列表底部 padding 之上，避开迷你播放条/安全区。
         result = Stack(
           children: [
             list,
@@ -409,7 +340,6 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
       return result;
     }
 
-    // 有批量控制器时监听其状态：切换选中/进出批量模式自动重建行与勾选态。
     if (batch != null) {
       return ListenableBuilder(
         listenable: batch,
@@ -426,10 +356,6 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
   }
 }
 
-/// 构建关键词高亮文本：命中片段仅改变字体颜色，不加背景色。
-///
-/// 匹配大小写不敏感，但渲染时保留原文的大小写。keyword 为空或无命中时
-/// 返回普通 Text，避免不必要的富文本开销。
 Widget highlightedText(
   String source,
   String? keyword,
@@ -446,7 +372,6 @@ Widget highlightedText(
 
   final lowerSource = source.toLowerCase();
   final lowerKw = kw.toLowerCase();
-  // 无命中时走普通文本。
   if (!lowerSource.contains(lowerKw)) {
     return Text(source,
         style: style, maxLines: maxLines, overflow: overflow);
@@ -457,7 +382,6 @@ Widget highlightedText(
   while (true) {
     final idx = lowerSource.indexOf(lowerKw, start);
     if (idx < 0) {
-      // 命中位于末尾时无剩余文本，避免追加空 span。
       if (start < source.length) {
         spans.add(TextSpan(text: source.substring(start)));
       }
@@ -466,7 +390,6 @@ Widget highlightedText(
     if (idx > start) {
       spans.add(TextSpan(text: source.substring(start, idx)));
     }
-    // 用原文切片保留大小写，仅着色。
     spans.add(TextSpan(
       text: source.substring(idx, idx + kw.length),
       style: TextStyle(color: highlightColor, fontWeight: FontWeight.w700),
@@ -486,10 +409,8 @@ class SongCover extends StatelessWidget {
 
   final Song song;
 
-  /// 封面边长；紧凑场景（如搜索结果行）传较小值。
   final double size;
 
-  /// 圆角；null 时按尺寸缩放（80→12，40→6）。
   final double? radius;
 
   @override

@@ -7,16 +7,12 @@ import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
 import 'user_agreement.dart';
 
-/// 隐私政策标题（内置版，与服务端下发无关）。
 const kPrivacyPolicyDefaultTitle = '弦予音乐隐私政策';
 
-/// 隐私政策在线版地址（官网 privacy.html）。
 const kPrivacyPolicyUrl = 'https://xianyumusic.cn/privacy.html';
 
-/// 隐私政策同意标记（SharedPreferences 键）：v1 为政策版本，政策大改时升 v2 重新征求同意。
 const kPrivacyConsentPrefKey = 'privacy_policy_agreed_v1';
 
-/// 内置隐私政策全文（与官网 privacy.html 内容同步，更新日期 2026-09-04）。
 const kPrivacyPolicyDefaultContent = '''
 更新日期：2026 年 9 月 4 日 · 生效日期：2026 年 9 月 4 日
 
@@ -64,8 +60,6 @@ const kPrivacyPolicyDefaultContent = '''
 在线版本：$kPrivacyPolicyUrl
 ''';
 
-/// 以「阅读协议」弹窗形式展示隐私政策（复用用户协议弹窗交互：
-/// 滚动到底部才可点「同意」）。返回是否已同意。
 Future<bool> showPrivacyPolicyModal({required BuildContext context}) {
   return showUserAgreementModal(
     context: context,
@@ -76,10 +70,6 @@ Future<bool> showPrivacyPolicyModal({required BuildContext context}) {
   );
 }
 
-/// 首次启动隐私政策同意门槛：
-/// 已同意过（含历史版本）直接返回 true；否则弹全局不可绕过的同意弹窗，
-/// 「不同意并退出」直接结束应用，「同意并继续」持久化标记后放行。
-/// 必须在任何启动上报（如 reportAppOpen）之前调用，确保数据采集发生在同意之后。
 Future<bool> ensurePrivacyConsent(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool(kPrivacyConsentPrefKey) ?? false) return true;

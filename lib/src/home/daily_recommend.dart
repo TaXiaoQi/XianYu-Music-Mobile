@@ -16,9 +16,6 @@ import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import '../i18n/i18n.dart';
 
-// ─── 算法 DSL 模型（与服务端 recommend.rs 对齐） ─────────────────
-
-/// 推荐策略：类型 + 权重 + 查询词 + 推荐理由，由服务器决策下发。
 class DailyRecommendStrategy {
   final String id;
   final String type;
@@ -97,18 +94,11 @@ class DailyRecommendAlgorithm {
   }
 }
 
-/// 单条推荐结果 + 命中策略。
-///
-/// 只走已启用音源插件搜索并播放（对齐桌面端日推；无可用插件时日推为空），
-/// [song] 为 [PluginSearchResult.toJson]（camelCase，musicfree 含 rawData），
-/// [pluginId]/[pluginFormat] 记录来源插件，播放走插件直链。
 class DailyRecommendItem {
   final Map<String, dynamic> song;
   final String reason;
   final String strategyId;
-  /// 来源插件 id。
   final String pluginId;
-  /// 来源插件格式：'lx' / 'musicfree'。
   final String pluginFormat;
 
   const DailyRecommendItem({
@@ -122,8 +112,6 @@ class DailyRecommendItem {
   String get title => (song['name'] as String?) ?? '';
   String get artist => (song['singer'] as String?) ?? '';
   String get album => (song['albumName'] as String?) ?? '';
-  /// 可显示封面：完整复用桌面端提取逻辑（酷我域名归一化 / 短路径 / 网易云
-  /// picId 兜底），失败再回退插件原始 img 字段。
   String? get coverUrl {
     final resolved = resolveSongCoverUrl(song);
     if (resolved != null && resolved.isNotEmpty) return resolved;
@@ -132,7 +120,6 @@ class DailyRecommendItem {
 
   int get durationMs => _intervalToMs((song['interval'] as String?) ?? '');
 
-  /// 归一化去重键：标题|第一歌手（空则不可参与去重）。
   String? get dedupKey {
     final normTitle = _normalizeText(title);
     final normArtist = _normalizeText(_firstArtist(artist));
@@ -140,7 +127,6 @@ class DailyRecommendItem {
     return '$normTitle|$normArtist';
   }
 
-  /// 构造在线播放队列项：生成带 pluginId 的 onlineSongJson，播放走插件直链。
   QueueItem toQueueItem(String quality) {
     final isMf = pluginFormat == 'musicfree';
     final src = (song['source'] as String?) ?? '';
@@ -159,11 +145,8 @@ class DailyRecommendItem {
         'musicInfo': song,
       }),
       onlineQuality: quality,
-      // LX 插件歌词兜底：走 Rust 内置各源直连歌词（与 PluginSearchService 一致）；
-      // musicfree 插件不附加，避免被当成 LX 在线歌词走 LoL 逻辑。
       source: isMf ? null : src,
       onlineInfoJson: isMf ? null : jsonEncode(song),
-      // 标记来源：播放页据此显示「不喜欢」按钮（跳过并上报负反馈）。
       fromDailyRecommend: true,
     );
   }
@@ -182,25 +165,14 @@ class DailyRecommendState {
   });
 }
 
-// ─── 常量 ────────────────────────────────────────────────────────
-
-/// 每个查询词取的搜索结果数
 const _searchLimit = 20;
-/// 并发搜索数上限
 const _searchConcurrency = 4;
-/// 候选池上限（换一批从中重新洗牌取样）
 const _maxCandidates = 90;
-/// 低于该时长（毫秒）的结果视为试听/铃声，过滤
 const _minDurationMs = 45000;
-/// 本地缓存键（换账号/跨天自动失效；v3 移除 LX 原生兜底来源）
 const _cacheKey = 'daily_recommend_v3';
 
-// ─── 工具函数（与桌面端 dailyRecommend.ts 对齐） ─────────────────
-
-/// 32 位有符号乘法（对齐 JS Math.imul 语义）
 int _imul(int a, int b) => ((a * b) & 0xFFFFFFFF).toSigned(32);
 
-/// mulberry32 确定性伪随机：同一种子同一次序，保证同一天/同批次结果一致
 double Function() _mulberry32(int seed) {
   var a = seed.toUnsigned(32);
   return () {
@@ -212,7 +184,6 @@ double Function() _mulberry32(int seed) {
   };
 }
 
-/// 归一化标题/歌手：去空白、括号后缀、分隔符，用于排除与去重匹配
 String _normalizeText(String input) {
   var s = input.toLowerCase();
   s = s.replaceAll(RegExp(r'[（(【\[][^）)】\]]*[）)】\]]'), '');
@@ -220,13 +191,11 @@ String _normalizeText(String input) {
   return s.trim();
 }
 
-/// 取第一位歌手（多歌手合唱场景）
 String _firstArtist(String artist) {
   final parts = artist.split(RegExp(r'[/、,&]'));
   return parts.isEmpty ? '' : parts.first.trim();
 }
 
-/// "MM:SS" → 毫秒；无法解析返回 0（未知时长保留，播放时再取）
 int _intervalToMs(String interval) {
   final m = RegExp(r'^(\d+):(\d+)$').firstMatch(interval.trim());
   if (m == null) return 0;
@@ -240,9 +209,6 @@ String _localDateKey() {
       '${now.day.toString().padLeft(2, '0')}';
 }
 
-// ─── 算法执行 ────────────────────────────────────────────────────
-
-/// 插件搜索任务：策略查询词在已启用插件间轮询分配（对齐桌面端 buildSearchTasks）。
 class _PluginSearchTask {
   final DailyRecommendStrategy strategy;
   final String query;
@@ -250,11 +216,8 @@ class _PluginSearchTask {
   const _PluginSearchTask(this.strategy, this.query, this.plugin);
 }
 
-/// 已收集但尚未去重的中间结果。
 typedef _Collected = ({DailyRecommendItem item, double score});
 
-/// 执行推荐算法：插件搜索 → 排除/过滤 → 打分去重 → 每日种子洗牌 → 候选池。
-/// 单个搜索失败静默跳过，无可用插件或整体无结果时返回空列表。
 Future<List<DailyRecommendItem>> _executeAlgorithm(
     DailyRecommendAlgorithm algorithm,
     PluginEngine engine,
@@ -265,15 +228,11 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
     exclusionSet.add('${_normalizeText(e.title)}|${_normalizeText(_firstArtist(e.artist))}');
   }
 
-  // 只保留「可播放」的插件（MusicFree 需实现 getMediaSource、LX 需声明 musicUrl），
-  // 对齐桌面端日推只走可播放插件；无可用插件时日推为空（页面展示空态）。
   final enabledPlugins = pluginSources.where((s) => s.enabled).toList();
   final playable = <PluginSource>[];
   for (final p in enabledPlugins) {
     if (await engine.canPlayMusic(p)) playable.add(p);
   }
-  // 活体探测：声明可播 ≠ 接口活着（服务器宕机/密钥 401 是运行时状态）。
-  // 并行跑最小链路（search 1 条 + 低档直链），死插件剔除出候选池。
   String probeKeyword = '热门音乐';
   for (final s in algorithm.strategies) {
     if (s.queries.isNotEmpty) {
@@ -291,7 +250,6 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
   if (alivePlugins.isEmpty) return const [];
   await _searchAll(engine, algorithm, alivePlugins, exclusionSet, collected);
 
-  // 打分去重：score = 策略权重 + 搜索排名，同曲多源保留最高分
   final best = <String, _Collected>{};
   for (final c in collected) {
     final key = c.item.dedupKey;
@@ -300,7 +258,6 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
     if (prev == null || c.score > prev.score) best[key] = c;
   }
 
-  // 每日种子洗牌（候选池按种子确定次序）
   final candidates = best.values.map((v) => v.item).toList();
   final rand = _mulberry32(algorithm.dailySeed);
   for (var i = candidates.length - 1; i > 0; i--) {
@@ -314,7 +271,6 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
       : candidates;
 }
 
-/// 用已启用音源插件搜索并收集候选（每个查询词轮询分配一个插件，限制并发）。
 Future<void> _searchAll(
   PluginEngine engine,
   DailyRecommendAlgorithm algorithm,
@@ -354,7 +310,6 @@ Future<void> _searchAll(
           ));
         }
       } catch (_) {
-        /* 单个插件搜索失败静默 */
       }
     }
   }
@@ -363,7 +318,6 @@ Future<void> _searchAll(
   await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
 }
 
-/// 单个插件按关键字搜索（MusicFree 走 search music，LX 逐声明音源搜索）。
 Future<List<PluginSearchResult>> _searchPlugin(
     PluginEngine engine, PluginSource plugin, String keyword) async {
   if (plugin.format == PluginFormat.musicfree) {
@@ -378,23 +332,15 @@ Future<List<PluginSearchResult>> _searchPlugin(
       merged.addAll(
           await engine.searchInPlugin(plugin, key, keyword, limit: _searchLimit));
     } catch (_) {
-      /* 单音源失败不影响 */
     }
   }
   return merged;
 }
 
-// ─── 插件活体探测 ─────────────────────────────────────────────
-// 声明级 canPlayMusic 之外的最小运行时证明：search(1 条) + 直链解析(低档)。
-// search 通只证明宿主代取/搜索接口活着（如聆澜系 search 正常但 musicUrl 401），
-// 必须完成直链解析才算「能播」。结果 TTL 缓存，日推重生成不重复探测。
-
 const Duration _aliveProbeTtl = Duration(minutes: 15);
 const Duration _aliveProbeTimeout = Duration(seconds: 4);
 final Map<String, ({bool alive, DateTime at})> _aliveProbes = {};
 
-/// 活体探测：最小链路（search 1 条 → 低档直链）验证插件接口连通且鉴权有效。
-/// 超时/异常/直链为空 → 判死；搜索通但无结果 → 视为活着（接口通，仅无数据）。
 Future<bool> _probePluginAlive(
     PluginEngine engine, PluginSource p, String keyword) async {
   final cached = _aliveProbes[p.id];
@@ -409,7 +355,6 @@ Future<bool> _probePluginAlive(
     if (hits.isEmpty) {
       alive = true;
     } else if (p.format == PluginFormat.lx) {
-      // LX：宿主代取搜索活着不代表插件本体 musicUrl 活着，直链必须实测
       final first = hits.first;
       final lxSource = first.source.isNotEmpty ? first.source : 'kw';
       final songInfo = first.rawData is Map<String, dynamic>
@@ -433,7 +378,6 @@ Future<bool> _probePluginAlive(
   return alive;
 }
 
-/// 活体探测用单条搜索（MusicFree 走 search music，LX 逐声明音源取首条）。
 Future<List<PluginSearchResult>> _probeSearchOne(
     PluginEngine engine, PluginSource p, String keyword) async {
   if (p.format == PluginFormat.musicfree) {
@@ -444,13 +388,11 @@ Future<List<PluginSearchResult>> _probeSearchOne(
       final r = await engine.searchInPlugin(p, key, keyword, limit: 1);
       if (r.isNotEmpty) return r;
     } catch (_) {
-      /* 试下一音源 */
     }
   }
   return const [];
 }
 
-/// 插件搜索结果 → 日推条目。
 DailyRecommendItem _fromPluginResult(
     PluginSource plugin, PluginSearchResult r, DailyRecommendStrategy strategy) {
   return DailyRecommendItem(
@@ -462,7 +404,6 @@ DailyRecommendItem _fromPluginResult(
   );
 }
 
-/// 通用准入过滤：标题/歌手非空、时长过短过滤、命中排除名单则丢弃。
 bool _accept(DailyRecommendItem item,
     {required int durationMs, required Set<String> exclusionSet}) {
   if (item.title.isEmpty || item.artist.isEmpty) return false;
@@ -473,7 +414,6 @@ bool _accept(DailyRecommendItem item,
   return true;
 }
 
-/// 从候选池按批次种子洗牌并截取目标数量
 List<DailyRecommendItem> _pickBatch(List<DailyRecommendItem> candidates,
     DailyRecommendAlgorithm algorithm, int batch) {
   final seed = algorithm.dailySeed + batch * 7919;
@@ -487,8 +427,6 @@ List<DailyRecommendItem> _pickBatch(List<DailyRecommendItem> candidates,
   }
   return pool.sublist(0, math.min(math.max(1, algorithm.targetCount), pool.length));
 }
-
-// ─── 当日缓存 ────────────────────────────────────────────────────
 
 class _DailyCache {
   final String ciyuanxiId;
@@ -568,7 +506,6 @@ Future<void> _saveCache(_DailyCache cache) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cacheKey, jsonEncode(cache.toJson()));
   } catch (_) {
-    /* 存储异常静默 */
   }
 }
 
@@ -579,23 +516,14 @@ Future<void> clearDailyRecommendCache() async {
   } catch (_) {}
 }
 
-// ─── 网易云缺省元数据补齐（对齐桌面 fetchWyTrackMetaByIds） ─────────
-//
-// 部分第三方网易云 MusicFree 插件（如时迁酱）在 search 结果里既不返回可用
-// artwork（weapi/search 的 album 只有 picId 无 picUrl），也就解析不出封面。
-// 这里用官方 weapi song/detail 按 ID 批量补全封面/时长，绕过插件实现差异。
-
-/// 从日推条目 song map 中取网易云纯数字 ID（musicfree 插件的 songmid 即歌曲 ID）。
 String? _wySongId(Map<String, dynamic> song) {
   final id = (song['songmid'] ?? song['songId'] ?? song['id'] ?? '').toString().trim();
   if (RegExp(r'^\d+$').hasMatch(id) && id != '0') return id;
   return null;
 }
 
-/// 网易云单曲补齐结果（封面 + 时长 ms）。
 typedef _WyTrackPatch = ({String coverUrl, int durationMs});
 
-/// weapi song/detail 批量补齐 → Map<歌曲ID, patch>；失败返回空 Map。
 Future<Map<String, _WyTrackPatch>> _fetchWyTrackMeta(List<String> ids) async {
   final result = <String, _WyTrackPatch>{};
   final all = ids.where((id) => RegExp(r'^\d+$').hasMatch(id)).toList();
@@ -648,14 +576,11 @@ Future<Map<String, _WyTrackPatch>> _fetchWyTrackMeta(List<String> ids) async {
       result[id] = (coverUrl: img, durationMs: dur);
     }
   } catch (_) {
-    // 网络/解析失败静默，保持原样
   } finally {
     client?.close();
   }
   return result;
 }
-
-// ─── Provider ────────────────────────────────────────────────────
 
 final dailyRecommendProvider =
     AsyncNotifierProvider<DailyRecommendNotifier, DailyRecommendState>(
@@ -685,25 +610,17 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       );
     }
 
-    // watch 插件列表：插件冷启动加载完成 / 登录同步装回插件 / 启停插件
-    // 都会自动重建本 provider 重算日推（修复登录后日推先于插件同步执行
-    // 导致「没有插件无法日推」且永不自愈的时序问题）。
     final pluginSources = ref.watch(pluginManagerProvider).sources;
-    // 尚无已启用插件：直接空态，不请求算法接口（无插件也执行不了搜索，
-    // 避免登录瞬间反复请求触发服务端限流；插件同步完成后上方 watch 自动重算）。
     if (!pluginSources.any((s) => s.enabled)) {
       return const DailyRecommendState(items: []);
     }
 
-    // 算法本体由服务器下发，本机执行（插件优先，无插件退回 LX → 过滤打分 → 种子洗牌）
     final data = await ref
         .read(authProvider.notifier)
         .requestAction('get_daily_recommend', {'ciyuanxi_id': ciyuanxiId});
     final algorithm = DailyRecommendAlgorithm.fromJson(data);
     final engine = await ref.read(pluginEngineProvider.future);
     final candidates = await _executeAlgorithm(algorithm, engine, pluginSources);
-    // 空候选不写缓存：空缓存会被 fromJson 拒绝而永久失效，导致之后每次
-    // 重建都重复请求算法接口（易触发限流）；保持无缓存让下次重建自然重试。
     if (candidates.isNotEmpty) {
       await _saveCache(_DailyCache(
         ciyuanxiId: ciyuanxiId,
@@ -722,12 +639,6 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
     );
   }
 
-  /// 网易云缺省封面的歌曲补齐（异步，不阻塞列表渲染，完成后再刷新）。
-  ///
-  /// 部分网易云 MusicFree 插件的搜索结果既无 picUrl 也无 duration，导致日推里
-  /// 网易云歌曲无封面。这里只挑「缺封面 + 纯数字 ID + 来自网易云 musicfree 插件」
-  /// 的条目，经官方 weapi song/detail 批量取回封面/时长，写入 `song['coverUrl']`
-  ///（`resolveSongCoverUrl` 会读取它）后重新 emit，封面对齐桌面端。
   Future<void> _backfillWyCovers(List<DailyRecommendItem> items) async {
     try {
       final engine = await ref.read(pluginEngineProvider.future);
@@ -787,11 +698,9 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
         loggedIn: cur.loggedIn,
       ));
     } catch (_) {
-      // 补齐失败不影响列表展示
     }
   }
 
-  /// 换一批：候选池当日复用，批次 +1 按批次种子重新洗牌取样。
   Future<void> refresh() async {
     final ciyuanxiId = ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '';
     if (ciyuanxiId.isEmpty) return;
@@ -817,7 +726,6 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
     ));
   }
 
-  /// 播放推荐歌曲：整批入队（在线直链播放时按需解析），失败自动跳下一首。
   Future<void> play(int index) async {
     final st = state.valueOrNull;
     if (st == null || index < 0 || index >= st.items.length) return;
@@ -831,14 +739,10 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
   }
 }
 
-// ─── 正反馈上报：收藏 / 添加到歌单 = 「喜欢这类歌」信号 ─────────────
-
-/// 收藏或添加到歌单时上报正反馈（失败静默，不阻塞主流程）。
-/// 服务端将该信号加权并入日推画像（提升相关歌手/歌曲的推荐权重）。
 Future<void> reportDailyLikeSignals(
   AuthNotifier auth,
   String ciyuanxiId, {
-  required String signalType, // favorite | playlist
+  required String signalType,
   required List<({String songName, String singer})> songs,
 }) async {
   if (ciyuanxiId.isEmpty) return;
@@ -855,6 +759,5 @@ Future<void> reportDailyLikeSignals(
       'songs': payload,
     });
   } catch (_) {
-    // 上报失败不影响收藏/加歌单主流程。
   }
 }

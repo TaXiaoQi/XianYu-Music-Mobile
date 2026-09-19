@@ -7,79 +7,58 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../lyrics/lyric_font.dart';
 
-/// 主题模式
 enum ThemeModePreference {
   system,
   light,
   dark,
 }
 
-/// 底栏/导航条显示位置（底部 / 侧边）
 enum NavBarPosition {
   bottom,
   side,
 }
 
-/// 侧边栏展开方向（向下 / 向上）
 enum SideBarExpandDirection {
   down,
   up,
 }
 
-/// 页面切换动画风格（覆盖 / 平滑）
 enum PageTransitionStyle {
-  /// 覆盖：新页从右滑入盖住旧页，旧页静止。
   cover,
 
-  /// 平滑：新旧两页平行平移，新页右滑入的同时旧页左移。
   smooth,
 }
 
-/// 性能模式：auto 自动按设备强弱判断 / full 满特效 / performance 性能优先（降级动效）。
 enum PerformanceMode {
   auto,
   full,
   performance,
 }
 
-/// 播放页样式：advanced 高级模式（默认，现代毛玻璃）/ traditional 传统模式（经典 QQ 音乐式）。
 enum PlayerStyle {
   advanced,
   traditional,
 }
 
-/// 液态玻璃效果档位：low 透亮（轻模糊 1.5+满档折射 24，折射最明显）/
-/// medium 均衡（轻模糊 2.75，默认）/ high 磨砂（糊度上限 4，折射收敛 8）。
-/// 官方 LiquidGlassTuning.kt 原始锚点 0/4/24 已于 2026-09-05 按用户观感
-/// 重排收敛为轻模糊区间（原低档全透、原中档即糊度上限），参数见
-/// glass_settings.dart 各 *_Of。
 enum LiquidGlassQuality {
   low,
   medium,
   high,
 }
 
-/// 毛玻璃（伪毛玻璃）模糊强度档位：
-/// strongest = 最强（当前默认，sigma 顶栏 16 / 播放条 10）
-/// medium = 中等（收敛模糊，减低 sigma 与铺底透明度）
-/// light = 轻度（近乎轻微磨砂，最低 sigma）。
 enum FrostedGlassLevel {
   strongest,
   medium,
   light,
 }
 
-/// 判断是否应开启「动效降级」（性能模式生效）。
-/// 自动档按 CPU 核心数粗判，单核偏弱设备自动降级；手动档直接覆盖。
 bool performancePriority(AppSettings s) => switch (s.performanceMode) {
       PerformanceMode.full => false,
       PerformanceMode.performance => true,
       PerformanceMode.auto =>
-        // 低核设备（≤4）默认走性能优先；更高核设备保留满特效。
         (Platform.numberOfProcessors <= 4),
     };
 
-/// 应用界面语言（system 跟随系统，zhCN 简体，zhTW 繁体，en 英文）。
 enum AppLanguage {
   system,
   zhCN,
@@ -87,18 +66,12 @@ enum AppLanguage {
   en,
 }
 
-/// 列表项尺寸：最小(compact) / 中等(medium，默认) / 最大(large)。
 enum ListSize {
   compact,
   medium,
   large;
 }
 
-/// 全局字体大小档位：跟随系统 / 小 / 标准 / 大 / 更大（更大档位可按需扩展）。
-///
-/// 跟随系统独立成档，直接透传系统 `textScaler`（随系统字号实时变化，保留其
-/// 非线性缩放）；其余固定档位使用应用内恒定系数（不随系统跳动）。两者互斥，
-/// 与「默认跟随系统」对齐。
 enum AppFontSize {
   system(1.0, followsSystem: true),
   small(0.9),
@@ -108,52 +81,30 @@ enum AppFontSize {
 
   const AppFontSize(this.scale, {this.followsSystem = false});
 
-  /// 应用内字号放大系数（固定档位生效，跟随系统档忽略）。
   final double scale;
 
-  /// 是否为「跟随系统」档：根级直接透传系统 textScaler。
   final bool followsSystem;
 }
 
-/// 支持的扫描格式大类（与 Rust is_ext_allowed 对应）。
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
 
-/// 已持久化的扫描格式与支持列表取并集（后补格式自动启用），未持久化时用全量默认。
 List<String> _mergeScanFormats(List<String>? saved) {
   if (saved == null) return kSupportedScanFormats;
   return {...saved, ...kSupportedScanFormats}.toList(growable: false);
 }
 
-/// 壁纸模式全局字体颜色档位：
-/// - follow：跟随主题明暗（默认）
-/// - light：亮色字体（壁纸偏暗时用）
-/// - dark：暗色字体（壁纸偏亮时用）
 enum WallpaperTextColor { follow, light, dark }
 
-/// 自定义壁纸背景（对齐桌面端 ThemeSettings.customBackground）。
-///
-/// 使用整型百分比便于 SharedPreferences 存取；渲染时再换算为 double。
 class CustomBackground {
   final bool enabled;
   final String imagePath;
-  /// 模糊度（0~40）。
   final int blur;
-  /// 图片不透明度（0~100）。
   final int opacity;
-  /// 遮罩深度（0~60，遮罩色为黑色，用于压暗背景保证前景可读）。
   final int maskAlpha;
-  /// 画面缩放（80~160，100=原比例覆盖）。
   final int scale;
-  /// 横向平移（-50~50，相对屏幕宽度百分比）。
   final int translateX;
-  /// 纵向平移（-50~50，相对屏幕高度百分比）。
   final int translateY;
-  /// 全局字体颜色档位（仅壁纸启用时生效，随壁纸一起持久化）。
   final WallpaperTextColor textMode;
-  /// 组件底色块不透明度（0~90，默认 30%；0 = 完全透明）。
-  ///
-  /// 壁纸模式下原本透明的卡片/控件改为「反色色块」：选亮色字体→深色块、
-  /// 选暗色字体→浅色块，以此保证前景可读；此值控制色块不透明度，最高 90%。
   final int widgetAlpha;
 
   const CustomBackground({
@@ -169,10 +120,8 @@ class CustomBackground {
     this.widgetAlpha = 30,
   });
 
-  /// 默认（未启用）。
   static const none = CustomBackground();
 
-  /// 是否处于可用状态（已启用且存在图片路径）。
   bool get active => enabled && imagePath.isNotEmpty;
 
   CustomBackground copyWith({
@@ -202,11 +151,10 @@ class CustomBackground {
   }
 }
 
-/// 全局设置（小而美：仅移动端必需项，key 语义与桌面端一致）。
 class AppSettings {
   const AppSettings({
     this.volume = 1.0,
-    this.playMode = 0, // 0 顺序(列表循环) 1 单曲循环 2 随机
+    this.playMode = 0,
     this.lastTab = 0,
     this.keepScreenOn = true,
     this.themeMode = ThemeModePreference.system,
@@ -273,15 +221,10 @@ class AppSettings {
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
     this.fontSize = AppFontSize.system,
-    // 分享链接有效时长（分钟）：5~24*60，默认 2 小时。
     this.shareLinkValidityMinutes = 120,
-    // 分享链接播放失败行为：pause 暂停播放 / replace 替换播放（走插件索引）。
     this.sharePlaybackFailureBehavior = 'pause',
-    // 播放页样式：traditional 传统模式（默认）/ advanced 高级模式。
     this.playerStyle = PlayerStyle.traditional,
-    // 横屏播放页顶栏/底栏无操作自动隐藏（对齐桌面版），默认开启。
     this.landscapeAutoHideChrome = true,
-    // 悬浮歌词窗（移植自 RawS-Music 外部歌词体系）。
     this.floatingLyricsEnabled = false,
     this.floatingLyricsLocked = false,
     this.floatingLyricsTextColor = 0xFFFFFFFF,
@@ -293,7 +236,6 @@ class AppSettings {
     this.floatingLyricsShowBackground = true,
     this.floatingLyricsHideWhenPaused = false,
     this.floatingLyricsHideInLandscape = false,
-    // 横屏时允许各页面使用摄像头(挖孔)区域，不再为其保留安全区。
     this.landscapeCameraArea = true,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
@@ -301,20 +243,14 @@ class AppSettings {
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
-    // 传递给腕上设备：ask=每天首次播放询问（按天隔离）；remember=记住选择（配合下方 AutoTransfer）。
     this.watchLinkTransferMode = 'ask',
     this.watchLinkAutoTransfer = false,
-    // ask 模式的按天隔离记录：最近一次询问的日期（本地 yyyy-MM-dd）与当天决定。
     this.watchLinkAskDate = '',
     this.watchLinkAskGranted = false,
-    // 云端兜底：蓝牙不可达时经服务器 WS 中继控制消息（P4）。
     this.watchLinkCloudEnabled = true,
     this.watchLinkCloudKey = '',
-    // DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。
     this.dlnaRendererEnabled = false,
-    // DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
     this.dlnaRendererName = '',
-    // 显示真实音源名：把插件用「小X」规避审查的别名还原为平台真名（网易云/酷狗/QQ 等）。
     this.showRealSourceName = false,
   });
 
@@ -327,20 +263,15 @@ class AppSettings {
   final CustomBackground customBackground;
   final bool showQualityBadges;
 
-  /// 是否显示歌曲列表右下角「回到顶部」悬浮按钮（对齐桌面端常规设置）。
-  /// 「定位当前播放歌曲」按钮不受此开关影响。
   final bool enableScrollToTopButton;
   final String onlineDefaultQuality;
   final int libraryMinDurationSeconds;
   final bool showLyricsTranslation;
 
-  /// 歌词显示罗马音（音源提供 romaji 时使用）。
   final bool showLyricsRomaji;
 
-  /// 自定义歌词字体名（FontLoader 注册后的 family，空则用系统字体）。
   final String lyricFontName;
 
-  /// 自定义歌词字体文件路径（用于卸载/重新加载）。
   final String lyricFontPath;
 
   final bool enableWordEffect;
@@ -348,243 +279,157 @@ class AppSettings {
   final String downloadQuality;
   final bool downloadLyrics;
 
-  /// 批量下载同时进行数（1-5），超出部分排队等待。
   final int downloadConcurrency;
 
-  /// 同名目标文件已存在时是否覆盖（否则自动追加序号改名）。
   final bool overwriteExisting;
 
-  /// 下载文件名样式：artist-title / title-artist / title-artist-album。
   final String downloadFileNameStyle;
 
-  /// 下载后是否把标题/歌手/专辑等元数据写入音频文件 tag。
   final bool embedDownloadMetadata;
 
-  /// 下载后是否把歌词嵌入音频文件 tag（需同时开启下载歌词）。
   final bool embedDownloadLyrics;
 
-  /// 下载后是否把封面嵌入音频文件 tag。
   final bool embedDownloadCover;
 
-  /// 下载行为：default = 直接按默认设置下载；ask = 每次下载前弹窗选音质。
   final String downloadBehavior;
 
-  /// 下载音质缺失行为：lower = 向下降级（默认）；higher = 向上升级。
   final String downloadQualityFallbackBehavior;
 
-  /// MV 默认画质：1080p / 720p / 480p 等，播放 MV 背景时优先用这个档位。
   final String onlineDefaultMvQuality;
 
-  /// MV 默认画质缺失行为（同 downloadQualityFallbackBehavior）。
   final String onlineMvQualityFallbackBehavior;
 
-  /// MV 下载画质。
   final String downloadMvQuality;
 
-  /// MV 下载画质缺失行为。
   final String downloadMvQualityFallbackBehavior;
 
-  /// 是否保留音源原始文件名（否则按文件名样式重新命名）。
   final bool keepSourceFilename;
 
-  /// 独立歌词文件格式：lrc（带时间标签）/ txt（纯文本）。
   final String downloadLyricsFormat;
 
-  /// 下载歌词样式：word-by-word（逐字优先，回退逐行）/ line-by-line（仅逐行）。
   final String downloadLyricsStyle;
 
   final String organizeRule;
   final int lyricFontSize;
   final int lyricOffsetMs;
 
-  /// 歌词水平对齐：left / center / right（横屏歌词菜单设置，对齐桌面）。
   final String lyricAlignment;
   final bool liquidGlass;
   final bool playerLiquidGlass;
 
-  /// 毛玻璃（伪毛玻璃）材质开关：关闭后玻璃表面回退为高不透明度纯色。
-  /// 自定义壁纸启用时始终强制开启，保证壁纸下的玻璃透明度可见性。
   final bool frostedGlass;
 
-  /// 毛玻璃模糊强度档位（见 [FrostedGlassLevel]，默认最强）。
   final FrostedGlassLevel frostedGlassLevel;
 
-  /// 液态玻璃效果档位（见 [LiquidGlassQuality]）。
   final LiquidGlassQuality liquidGlassQuality;
 
-  /// 性能模式：auto 自动 / full 满特效 / performance 性能优先。决定动效是否降级。
   final PerformanceMode performanceMode;
-  /// 触觉反馈力度：0=轻，1=正常，2=重。
   final int hapticStrength;
-  /// 检测更新模式：startup 启动自动检测 / never 从不检测。关于页手动检测始终可用。
   final String updateCheckMode;
-  /// 在线播放流式缓存上限（MB）。
   final int streamCacheSizeMB;
 
   final List<String> scanFormats;
 
-  /// 底栏样式：true 为悬浮毛玻璃胶囊，false 为固定式底栏。
   final bool floatingNavBar;
 
-  /// 首页与我的页搜索框悬浮显示；开启液态玻璃时同步套用玻璃材质。
   final bool floatingSearchBar;
 
-  /// 导航条位置：bottom 底部，side 侧边（选择侧边时悬浮底栏与液态玻璃关闭/禁用）。
   final NavBarPosition navBarPosition;
 
-  /// 页面切换动画风格：cover 覆盖（新页盖旧页），smooth 平滑（两页平行平移）。
-  /// 仅在竖屏生效；横屏使用 [landscapeTransitionEnabled]。
   final PageTransitionStyle pageTransitionStyle;
 
-  /// 横屏下首页/我的等主 tab 在右侧容器里的切换动效（淡进淡出），默认开启。
-  /// 与竖屏切换动画相互独立。
   final bool landscapeTransitionEnabled;
 
-  /// 侧边栏展开方向：down 向下展开，up 向上展开。仅在侧边栏模式生效。
   final SideBarExpandDirection sideBarExpandDirection;
 
-  /// USB 独占输出（AAudio exclusive，bit-perfect 直达 USB DAC）。
-  /// 仅本地音乐生效；在线歌曲与失败场景自动回退普通播放。
   final bool usbExclusiveOutput;
 
-  /// Bit-perfect 输出（PCM）：绕过响度归一化/EQ/音效/音量，按源位深整数直出。
-  /// 仅 USB 独占输出生效；开启时音量与音质 UI 置灰禁用。
   final bool bitPerfectOutput;
 
-  /// DSD 原生直出（DoP 打包，bit-perfect 直达 DSD-DAC）。
-  /// 开启后 dsf/dff 本地文件在播放态走 AAudio 独占 I24 独占流，绕过解码器与 DSP。
   final bool dsdNativePassthrough;
 
-  /// 音量平衡（ReplayGain 响度均衡）总开关。
-  /// 播放本地/缓存文件时按内置 ReplayGain 标签调整增益，使不同歌曲响度一致。
   final bool volumeBalanceEnabled;
 
-  /// 音量平衡整体增益偏移（dB，-12 ~ 6）。
   final double volumeBalanceGainOffsetDb;
 
-  /// 防削波破音保护：增益可能超出 0 dB 极限时自动压低；无峰值标签的正增益降级为不提升。
   final bool volumeBalancePreventClipping;
 
-  /// 在线歌曲起播失败时的行为：stop 停止播放（默认，对齐桌面端）/
-  /// skip 跳到下一首 / pause 暂停播放 / autoswitch 自动换源（换源失败后
-  /// 等价 pause）。仅 autoswitch 会尝试换源。
   final String onlineFailureBehavior;
 
-  /// 在线歌曲默认音质播放失败时的音质回退：
-  /// pause 严格不回退 / lower 向下降级 / higher 向上升级。
   final String onlineQualityFallbackBehavior;
 
-  /// USB 独占输出所选目标设备 ID（AAudio setDeviceId）。-1 = 系统默认设备。
   final int usbExclusiveDeviceId;
 
-  /// 歌曲播放触发方式：single 单击播放 / double 双击播放。
   final String songClickAction;
 
-  /// 是否启用安卓系统预测返回动画（Android 13+ 手势导航下生效）。
   final bool enablePredictiveBack;
 
-  /// 应用界面语言。
   final AppLanguage language;
 
-  /// 歌曲/歌手/专辑/歌单列表项尺寸。
   final ListSize listSize;
 
-  /// 全局字体大小档位（根级 textScaler 与系统缩放相乘）。
   final AppFontSize fontSize;
 
-  /// 分享链接有效时长（分钟）：分享到服务端后过期丢弃，范围 5~24*60，默认 120（2 小时）。
   final int shareLinkValidityMinutes;
 
-  /// 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走客户端插件索引换源重播）。
   final String sharePlaybackFailureBehavior;
 
-  /// 播放页样式：advanced 高级模式（现代毛玻璃）/ traditional 传统模式（经典布局）。
   final PlayerStyle playerStyle;
 
-  /// 横屏播放页顶栏/底栏无操作（3.5s）自动隐藏，触摸唤回。关闭后横屏常显。
   final bool landscapeAutoHideChrome;
 
-  /// 悬浮歌词窗总开关。
   final bool floatingLyricsEnabled;
 
-  /// 悬浮歌词窗锁定（不可拖动，通知解锁）。
   final bool floatingLyricsLocked;
 
-  /// 悬浮歌词文字颜色（ARGB）。
   final int floatingLyricsTextColor;
 
-  /// 悬浮歌词不透明度（0-100）。
   final int floatingLyricsOpacity;
 
-  /// 悬浮歌词主文字字号百分比（100 = 默认）。
   final int floatingLyricsFontScale;
 
-  /// 悬浮歌词副行（翻译/罗马音/背景）字号百分比。
   final int floatingLyricsSecondaryScale;
 
-  /// 悬浮歌词显示翻译。
   final bool floatingLyricsShowTranslation;
 
-  /// 悬浮歌词显示罗马音。
   final bool floatingLyricsShowRomanization;
 
-  /// 悬浮歌词显示背景/副歌歌词。
   final bool floatingLyricsShowBackground;
 
-  /// 暂停时隐藏悬浮歌词窗。
   final bool floatingLyricsHideWhenPaused;
 
-  /// 横屏时隐藏悬浮歌词窗。
   final bool floatingLyricsHideInLandscape;
 
-  /// 横屏时允许各页面使用摄像头(挖孔)区域：开启后页面不再为摄像头保留
-  /// 安全区，内容可铺满到短边摄像头（窗口侧仍需系统允许绘制进挖孔）。
   final bool landscapeCameraArea;
 
-  /// 悬浮歌词窗宽度占屏百分比（40-100）。
   final int floatingLyricsWidthPercent;
 
-  /// 悬浮歌词窗使用自定义歌词字体。
   final bool floatingLyricsUseLyricFont;
 
-  /// 状态栏/通知栏歌词：把播放页歌词推送到系统通知栏展示。
   final bool statusBarLyricsEnabled;
 
-  /// 悬浮歌词窗位置 X。
   final int floatingLyricsX;
 
-  /// 悬浮歌词窗位置 Y。
   final int floatingLyricsY;
 
-  /// 手表联动总开关：开启后在登录且连接手表时上报播放信息并执行手表控制命令。
   final bool watchLinkageEnabled;
 
-  /// 传递给腕上设备的确认模式：`ask`=每天首次播放询问（按天隔离）；`remember`=记住上次选择。
   final String watchLinkTransferMode;
 
-  /// 记住选择的结果：true=自动传递；false=不传递（仅 `remember` 模式生效）。
   final bool watchLinkAutoTransfer;
 
-  /// ask 模式按天隔离：最近一次询问的日期（本地 `yyyy-MM-dd`，空=从未问过）。
   final String watchLinkAskDate;
 
-  /// ask 模式按天隔离：[watchLinkAskDate] 当天的决定（true=当天传递；false=当天不传递）。
   final bool watchLinkAskGranted;
 
-  /// 云端兜底通道开关：开启后蓝牙不可达时经服务器 WS 中继与手表通信。
   final bool watchLinkCloudEnabled;
 
-  /// 云端中继配对凭据（64 位 hex 随机数；空 = 尚未生成，首次启用时懒生成）。
   final String watchLinkCloudKey;
 
-  /// DLNA 渲染器（接收端）：开启后本机作为 DLNA 设备出现在局域网，
-  /// 其它 App（如 QQ 音乐、网易云音乐）可直接投歌到本端播放。
   final bool dlnaRendererEnabled;
 
-  /// DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。
   final String dlnaRendererName;
 
-  /// 显示真实音源名：把插件用「小X」规避审查的别名还原为平台真名。
   final bool showRealSourceName;
 
   AppSettings copyWith({
@@ -832,7 +677,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   @override
   Future<AppSettings> build() async {
     final prefs = await _prefs();
-    // 启动时重新注册已保存的自定义歌词字体（fire-and-forget，失败静默）。
     final savedName = prefs.getString('lyricFontName') ?? '';
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
@@ -896,8 +740,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       updateCheckMode: prefs.getString('updateCheckMode') ?? 'startup',
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
-      // 历史持久化数据可能缺少后补的扫描格式（ape/wv/opus 等，此前无 UI 可勾选），
-      // 与支持列表取并集，保证新格式对所有用户生效（对齐桌面端全量扫描行为）。
       scanFormats: _mergeScanFormats(prefs.getStringList('scanFormats')),
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
@@ -909,7 +751,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           (prefs.getString('pageTransitionStyle') ?? 'cover') == 'smooth'
               ? PageTransitionStyle.smooth
               : PageTransitionStyle.cover,
-      // 横屏 tab 切换动效：默认开启（淡进淡出）。
       landscapeTransitionEnabled:
           prefs.getBool('landscapeTransitionEnabled') ?? true,
       sideBarExpandDirection:
@@ -925,9 +766,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
-      // 对齐桌面端默认 'stop'：自动换源不再是默认行为（'autoswitch' 仅为
-      // 显式可选项），「没选过自动换源」的用户不应默认换源；旧版独立开关
-      // 的迁移分支一并移除。
       onlineFailureBehavior: prefs.getString('onlineFailureBehavior') ?? 'stop',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
@@ -1201,11 +1039,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setWatchLinkTransferMode(String m) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: m));
   Future<void> setWatchLinkCloudEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkCloudEnabled: v));
   Future<void> setWatchLinkCloudKey(String k) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkCloudKey: k));
-  /// 弹窗勾选「默认传递」后落库：切到记住选择并写入记住的行为。
   Future<void> setWatchLinkTransferRemembered({required bool autoTransfer}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'remember', watchLinkAutoTransfer: autoTransfer));
-  /// ask 模式按天隔离：记录某天的询问决定（同天再起播不再询问，直接应用）。
   Future<void> setWatchLinkAskChoice({required String date, required bool granted}) => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkAskDate: date, watchLinkAskGranted: granted));
-  /// 设备管理：重置腕上联动授权（切回每次询问并清除当天记录，下次起播重新询问）。
   Future<void> resetWatchLinkAuthorization() => _save((state.valueOrNull ?? const AppSettings()).copyWith(watchLinkTransferMode: 'ask', watchLinkAskDate: '', watchLinkAskGranted: false));
   Future<void> setDlnaRendererEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererEnabled: v));
   Future<void> setDlnaRendererName(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dlnaRendererName: v));
@@ -1249,11 +1084,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         const AppSettings())
       .copyWith(
     liquidGlass: v,
-    // 打开液态玻璃时同步打开悬浮底栏（液态玻璃材质作用于悬浮底栏）；
-    // 关闭液态玻璃不联动，保留用户当前的底栏样式。
     floatingNavBar: v ? true : null,
-    // 液态玻璃只覆盖固定几个控件（悬浮底栏/迷你条/悬浮搜索框/侧栏面板/
-    // 播放页控制卡），与毛玻璃可共存：其余 UI 表面由毛玻璃负责，互不联动。
     playerLiquidGlass: v ? true : false,
   ));
   Future<void> setPlayerLiquidGlass(bool v) => _save((state.valueOrNull ??
@@ -1263,8 +1094,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         const AppSettings())
       .copyWith(
     frostedGlass: v,
-    // 毛玻璃与液态玻璃可共存：液态优先覆盖固定几个控件，毛玻璃补齐其余
-    // 表面；两个开关互不联动。
   ));
   Future<void> setFrostedGlassLevel(FrostedGlassLevel l) => _save(
       (state.valueOrNull ?? const AppSettings())
@@ -1287,8 +1116,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setScanFormats(List<String> v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(scanFormats: v));
   Future<void> setFloatingNavBar(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(
         floatingNavBar: v,
-        // 液态玻璃独立于底栏样式：关悬浮只影响底栏表面（固定底栏本就走毛
-        // 玻璃），迷你条/搜索框/播放页控制卡的液态玻璃保持不变。
       ));
   Future<void> setFloatingSearchBar(bool v) => _save(
       (state.valueOrNull ?? const AppSettings())
@@ -1314,13 +1141,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
 
-  /// 横屏播放页顶栏/底栏自动隐藏开关。
   Future<void> setLandscapeAutoHideChrome(bool v) =>
       _save((state.valueOrNull ?? const AppSettings())
           .copyWith(landscapeAutoHideChrome: v));
   Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
 
-  /// 状态栏/通知栏歌词开关（独立于悬浮歌词窗）。
   Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));
   Future<void> setFloatingLyricsTextColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsTextColor: v));
@@ -1337,18 +1162,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setFloatingLyricsUseLyricFont(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsUseLyricFont: v));
   Future<void> setFloatingLyricsPosition(int x, int y) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsX: x, floatingLyricsY: y));
 
-  /// 写入自定义壁纸背景。
-  ///
-  /// 壁纸模型：壁纸只是「把底色换成壁纸」——页面由 AppPageBackground 烘焙
-  /// 壁纸底色；启用壁纸时**不再联动开关毛玻璃**，所有控件底色由玻璃表面
-  /// 在壁纸激活时统一抽成极淡半透明磨砂（见 glass_settings.dart 的
-  /// `wallpaperShouldUseFrosted`），透出壁纸保证可读性。恢复默认背景时
-  /// 同样不回溯任何开关。
   Future<void> setCustomBackground(CustomBackground v) => _save(
       (state.valueOrNull ?? const AppSettings()).copyWith(
           customBackground: v));
 
-  /// 整体保存（自动同步合并后调用）。
   Future<void> saveAll(AppSettings next) => _save(next);
 }
 

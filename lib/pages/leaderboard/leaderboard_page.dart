@@ -13,9 +13,6 @@ import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 听歌排行榜：日榜/周榜/总榜切换，Top 列表 + 底部个人排名。
-/// [embedded]=true 时作为横屏右侧「内容」容器内嵌（无自绘顶栏，顶部让位
-/// 为 0——容器外层 FlatTopBar 已承接返回与标题）。
 class LeaderboardPage extends ConsumerStatefulWidget {
   const LeaderboardPage({super.key, this.embedded = false});
 
@@ -27,17 +24,12 @@ class LeaderboardPage extends ConsumerStatefulWidget {
 
 class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
     with SingleTickerProviderStateMixin {
-  // 注意：必须显式标注返回类型——无类型的 static get 在本工具链下会被推断为
-  // dynamic（strict_top_level_inference 提示），.indexed 等扩展成员随之变成
-  // 动态分发，运行时直接 NoSuchMethodError（扩展成员不会出现在实例上）。
   static List<({String value, String label})> get _periods => [
     (value: 'daily', label: tr('日榜')),
     (value: 'weekly', label: tr('周榜')),
     (value: 'total', label: tr('总榜')),
   ];
 
-  /// 日/周/总三榜：TabBarView 横滑切换 + 点 tab 动画（300ms
-  /// fastLinearToSlowEaseIn，与顶栏内容 tab 一致）。
   late final TabController _tab = TabController(length: 3, vsync: this);
 
   @override
@@ -60,8 +52,6 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 竖屏悬浮顶栏：内容铺满全屏、避让量注入顶部，页面背景从顶栏胶囊下方
-    // 穿过（与歌单/最近页同口径）；嵌入态由横屏壳层顶栏承接，不参与悬浮。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -76,7 +66,6 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
             portraitFloating,
             Column(
               children: [
-                // 周期切换（标签与选中态随横滑实时同步）
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                   child: AnimatedBuilder(
@@ -148,8 +137,6 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
       ),
     );
   }
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，页面背景穿透顶栏），
-  /// 固定模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
       return Positioned.fill(
@@ -169,7 +156,6 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
   }
 }
 
-/// 单个周期榜（日/周/总）：独立加载与缓存，TabBarView 横滑往返不重复请求。
 class _PeriodBoard extends ConsumerStatefulWidget {
   const _PeriodBoard({super.key, required this.period});
   final String period;
@@ -185,9 +171,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
   bool _error = false;
   int _requestId = 0;
 
-  /// 逐条入场控制器（桌面端同款 stagger 节奏，见 _StaggerIn）。
-  /// 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
-  /// 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
   AnimationController? _enterC;
   AnimationController get _enter => _enterC ??= AnimationController(
       vsync: this, duration: const Duration(milliseconds: _StaggerIn.totalMs));
@@ -204,7 +187,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
     super.dispose();
   }
 
-  /// 排名徽章弹性放大：行入场 +200ms，400ms back-out（对齐桌面 rankPop）。
   Animation<double> _popFor(int index) {
     final t0 = (index * _StaggerIn.staggerMs + 200) / _StaggerIn.totalMs;
     return CurvedAnimation(
@@ -224,8 +206,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
       _error = false;
     });
     try {
-      // 听歌时长上报统一走 delta 协议（listenStatsProvider 30s 节流），
-      // 排行榜页只拉取榜单数据。
       if (!mounted || requestId != _requestId) return;
       final data = await ref
           .read(accountApiProvider)
@@ -256,8 +236,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
     final loggedIn = ref.watch(authProvider).isLoggedIn;
 
     if (_loading) {
-      // 骨架行复用同一原型：prototypeItem 让 Sliver 直接按固定行高估算滚动范围，
-      // 避免首帧逐行测量再布局（对齐 PiliNara 的 prototypeItem 骨架屏）。
       final skeleton = Container(
         height: 56,
         margin: const EdgeInsets.only(bottom: 8),
@@ -299,8 +277,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
     final top = _entries.take(15).toList();
     final me = _entries.where((e) => e.isMe).firstOrNull;
 
-    // 桌面端同款：Top 列表滚动，「自己的排名/未登录」固定悬浮在底部，
-    // 不随列表滚走；入场 stagger 顺位接在最后一行之后（跟随列表加载）。
     return Column(
       children: [
         Expanded(
@@ -420,9 +396,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
   }
 }
 
-/// 桌面端排行榜同款逐条入场：每行 600ms easeOutExpo 上浮淡入
-/// （透明度 0→1、上移 20px→0、模糊 4px→0），相邻行错峰 60ms；
-/// 排名徽章的放大动画由行内 rankPop 单独承担。
 class _StaggerIn extends StatelessWidget {
   const _StaggerIn({
     required this.controller,
@@ -430,13 +403,10 @@ class _StaggerIn extends StatelessWidget {
     required this.child,
   });
 
-  /// 相邻行错峰（ms）。
   static const int staggerMs = 60;
 
-  /// 单行入场时长（ms）。
   static const int rowMs = 600;
 
-  /// 控制器总时长（ms）：覆盖最后一行入场 + 徽章弹性收尾。
   static const int totalMs = 2000;
 
   final Animation<double> controller;
@@ -466,7 +436,6 @@ class _StaggerIn extends StatelessWidget {
             child: child,
           ),
         );
-        // 入场途中的轻模糊（4px→0），结束后直出，避免常驻滤镜开销。
         if (t < 1) {
           final sigma = 4 * (1 - t);
           content = ImageFiltered(
@@ -537,7 +506,6 @@ class _LeaderboardRow extends ConsumerWidget {
   final bool isMe;
   final bool highlight;
 
-  /// 排名徽章弹性放大动画（跟随整行淡入，避免整行显示后排名“闪”出）。
   final Animation<double>? rankPop;
 
   @override
@@ -618,7 +586,6 @@ class _LeaderboardRow extends ConsumerWidget {
     );
   }
 
-  /// 排名徽章：带可选的弹性放大入场（桌面端 rankPop 同款）。
   Widget _rankBadge() {
     final badge = _RankBadge(rank: entry.rank);
     final pop = rankPop;

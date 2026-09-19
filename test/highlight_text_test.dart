@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xianyu_music_mobile/src/widgets/song_list_view.dart';
 
-/// 从 highlightedText 返回的 widget 中提取 (文本, 是否高亮) 序列。
 List<(String, bool)> _segments(Widget w) {
   if (w is Text) {
     if (w.textSpan case final InlineSpan span?) {

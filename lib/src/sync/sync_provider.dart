@@ -30,7 +30,6 @@ import '../rust/api.dart' as rust;
 import 'settings_conflict_dialog.dart';
 import '../i18n/i18n.dart';
 
-/// 上传选项配置
 class UploadConfig {
   final bool playlists;
   final bool favorites;
@@ -43,7 +42,6 @@ class UploadConfig {
     this.favorites = true,
     this.plugins = true,
     this.settings = true,
-    // 移动端已去除播放历史同步入口（对齐需求），默认不上传历史。
     this.history = false,
   });
 
@@ -80,14 +78,12 @@ class UploadConfig {
       );
 }
 
-/// 自动同步配置（与 auto_sync.dart 的 AutoSyncService 共用同一份，账号页/同步页开关均写入这里）
 class AutoSyncConfig {
   final bool enabled;
   final int syncIntervalSeconds;
   final int maxDelayMinutes;
 
   const AutoSyncConfig({
-    // 默认开启，对齐桌面端（否则用户不手动开就永远不自动上传收藏/歌单）
     this.enabled = true,
     this.syncIntervalSeconds = 3600,
     this.maxDelayMinutes = 30,
@@ -106,7 +102,6 @@ class AutoSyncConfig {
   }
 }
 
-/// 单项同步状态结果
 class SyncItemState {
   final bool syncing;
   final String? progress;
@@ -182,10 +177,6 @@ class SyncState {
 class SyncNotifier extends StateNotifier<SyncState> {
   SyncNotifier(this._ref) : super(const SyncState()) {
     _init();
-    // 登出（显式退出或会话失效）→ 重置「首次登录全量同步」标记：下次登录
-    // （含换账号登录）重新执行 syncOnLoginSuccess（云端设置下发/冲突弹窗
-    // 等），不再被设备级永久标记吞掉。应用重启后仍已登录的场景不受影响
-    // （标记还在，启动不重复全量同步）。
     _ref.listen<bool>(
       authProvider.select((s) => s.user != null),
       (prev, next) {
@@ -199,7 +190,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
   static const _autoSyncKey = 'sync_auto_config';
   static const _loginSyncKey = 'sync_login_synced';
 
-  // 首次登录同步标记：每次登录（登出后重置）做一次全量一致性同步
   bool _loginSyncCompleted = false;
   bool _loginSyncInProgress = false;
 
@@ -228,8 +218,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
-  /// 登出后重置「首次登录全量同步」标记（内存 + 持久化）：
-  /// 下次登录重新走 syncOnLoginSuccess（设置同步/冲突弹窗等）。
   Future<void> _resetLoginSyncFlag() async {
     _loginSyncCompleted = false;
     try {
@@ -244,13 +232,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     await prefs.setString(_uploadKey, jsonEncode(next.toJson()));
   }
 
-  /// 登录成功全量一致性同步（每次登录执行一次，登出重置标记）。
-  ///
-  /// - 歌单/插件做「上传后下载」双向合并，收藏做「下载后上传」（含空列表保护），
-  ///   让两端数据保持一致；
-  /// - 设置放在最后执行：云端有数据且与本地不一致时才弹出冲突菜单，
-  ///   用户按类别（设置/歌单/插件）选择保留本地或云端，选择后两端一致。
-  ///   此后自动同步以客户端为主，只上传，不再每次上下不一致就弹窗。
   Future<void> syncOnLoginSuccess(BuildContext context) async {
     if (_loginSyncCompleted || _loginSyncInProgress) return;
     _loginSyncInProgress = true;
@@ -268,14 +249,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await syncFavoritesDownload();
         await syncFavoritesUpload();
       }
-      // 累计听歌统计同步（4 规则：上传/累加合并/下发/清零），新设备登录后恢复累计时长。
       await syncListenStats();
-      // 若本次同步触发了后台清零，即时弹窗告知原因（幂等，避免与启动检查重复弹）。
       if (context.mounted) {
         await _ref.read(notificationServiceProvider).showPendingListenResetNotice(context);
       }
       if (upload.settings) {
-        // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
         if (context.mounted) {
           await syncSettings(context);
         }
@@ -300,7 +278,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
-  /// 导入本地备份文件（支持 BakaMusic / MusicFree / 洛雪及软件应用备份）
   Future<String> importLocalBackupFile() async {
     try {
       final files = await FilePicker.pickFiles(
@@ -324,7 +301,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final Map<String, dynamic> data = jsonDecode(jsonContent);
       final schema = data['schema'] as String?;
 
-      // 1. 如果是原生全量备份格式
       if (schema == 'xianyu-music.app-backup') {
         final backupData = data['data'] as Map<String, dynamic>? ?? {};
         final favorites = backupData['favorites'] as List? ?? [];
@@ -347,7 +323,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return tr('成功导入备份：包含 {n} 首收藏曲目', {'n': importedFavs});
       }
 
-      // 2. 兼容导入 BakaMusic / MusicFree / 洛雪备份文件
       final pluginSources = _ref.read(pluginManagerProvider).sources;
       final prepared = preparePluginBackupImport(jsonContent, pluginSources);
       final importedPlaylists = await _ref
@@ -366,16 +341,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   // ==================== 歌单同步 ====================
 
-  /// 桌面端同步载荷（Song 字段 + duration 毫秒），附移动端扩展字段。
   Map<String, dynamic> _songToSyncPayload(ImportedSong s) => {
         ...s.toJson(),
         'name': s.title,
         'duration': s.duration * 1000,
-        // 与桌面端 classifySyncSong 对齐：标记本地/在线，供下载端恢复来源类型。
         'syncType': _classifySyncSong(s),
       };
 
-  /// 与桌面端 classifySyncSong 对齐：按路径前缀判定本地/在线。
   static String _classifySyncSong(ImportedSong s) {
     final path = s.path;
     if (path.startsWith('lx://') ||
@@ -393,7 +365,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       path.startsWith('http://') ||
       path.startsWith('https://');
 
-  /// 取歌单内第一首在线歌曲的远程封面（http/https），无则返回空串。
   String _firstRemoteSongCover(List<ImportedSong> songs) {
     for (final s in songs) {
       final cover = s.coverUrl ?? '';
@@ -404,15 +375,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return '';
   }
 
-  /// 云端同步载荷 → 本地导入歌曲（duration 毫秒 → 秒）。
-  ///
-  /// 与桌面端 syncPayloadToSong 对齐：
-  /// - 在线歌曲（lx:// / plugin:// / http(s):// 路径，或 syncType=online /
-  ///   source_type=remote|plugin 标记）localPath 置空，避免被误判为本地歌曲
-  ///   导致在线歌曲缺少 onlineSongJson 而无法解析播放。
-  /// - 本地歌曲：桌面端载荷只有 `path`（Windows 路径）+ `syncType/source_type=local`，
-  ///   没有 `localPath` 字段，需据此识别为本地歌曲；再按元数据匹配本地曲库，
-  ///   把跨设备失效路径替换为本地真实路径。
   ImportedSong _songFromSyncPayload(
     Map<String, dynamic> j,
     Map<String, Song> byPath,
@@ -445,8 +407,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     final isCloudLocal = j['syncType'] == 'local' || j['source_type'] == 'local';
     final cloudLocalPath = (j['localPath'] as String?) ??
         (isCloudLocal ? rawPath : null);
-    // 只要路径是本地文件路径就尝试匹配本地曲库（兼容旧版云端数据
-    // 未带 syncType/source_type/localPath 标记的情况）。
     final matchPath = (cloudLocalPath != null && cloudLocalPath.isNotEmpty)
         ? cloudLocalPath
         : rawPath;
@@ -473,17 +433,14 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   static String _normMeta(String s) => s.trim().toLowerCase();
 
-  /// 把任意值规整为 `Map<String, dynamic>`，非 Map/null 返回空表。
   static Map<String, dynamic> _asMap(Object? v) =>
       v is Map ? v.cast<String, dynamic>() : const {};
 
-  /// 仅返回 http(s) 开头的远程 URL，否则 null（本地缓存路径跨设备不可用）。
   static String? _httpCover(Object? v) {
     final s = v?.toString() ?? '';
     return s.startsWith('http://') || s.startsWith('https://') ? s : null;
   }
 
-  /// 解析 lx://source/... 的音源标识，非 lx:// 返回 null。
   static String? _lxSourceOf(String path) {
     if (!path.startsWith('lx://')) return null;
     final rest = path.substring('lx://'.length);
@@ -492,7 +449,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return rest.substring(0, slash);
   }
 
-  /// 解析 lx://source/... 的歌曲 ID（合并可能的 '/'）。
   static String? _lxSongmidOf(String path) {
     if (!path.startsWith('lx://')) return null;
     final rest = path.substring('lx://'.length);
@@ -509,7 +465,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       !path.startsWith('http://') &&
       !path.startsWith('https://');
 
-  /// 构建本地曲库匹配索引：按路径精确匹配 + 按「标题|歌手」元数据匹配。
   ({Map<String, Song> byPath, Map<String, List<Song>> byMeta})
       _buildLibraryIndex() {
     final library = _ref.read(libraryProvider);
@@ -523,11 +478,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     return (byPath: byPath, byMeta: byMeta);
   }
 
-  /// 将同步的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
-  /// 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地歌曲。
-  /// 命中后由调用方把本地歌曲的专辑/封面等元数据一并带回，保证
-  /// 云端同步下来的本地歌单与本地音乐展示一致。未命中（或非本地
-  /// 路径）返回 null，调用方保留云端路径。
   Song? _matchLocalLibrarySong(
     Map<String, Song> byPath,
     Map<String, List<Song>> byMeta,
@@ -579,7 +529,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         final cloudId = p.cloudId ?? '';
         if (cloudId.isNotEmpty) {
           final localPaths = p.songs.map((s) => s.path).toSet();
-          // 「仅删本地」墓碑回填：本地已移除但云端保留的歌曲，用缓存载荷补回上传列表
           final keepMap = await PlaylistSongSyncState.cloudKeepSongs(cloudId);
           for (final entry in keepMap.entries) {
             if (!payloadSongs.any((s) => s['path'] == entry.key)) {
@@ -587,14 +536,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
                 final decoded = jsonDecode(entry.value);
                 if (decoded is Map<String, dynamic>) payloadSongs.add(decoded);
               } catch (_) {
-                // 缓存载荷损坏时忽略，云端将由下次有效上传覆盖
               }
             }
           }
-          // 重新添加回本机的 path 清除「仅删本地」墓碑（恢复正常同步）
           await PlaylistSongSyncState.pruneCloudKeepSongs(cloudId, localPaths);
-          // 「仅保留本地」墓碑：本机保留、云端已删的歌曲剔除出上传列表（防复活）；
-          // 已从本机移除的 path 自然失效（清除墓碑）
           final localOnly = await PlaylistSongSyncState.localOnlySongs(cloudId);
           if (localOnly.isNotEmpty) {
             payloadSongs = payloadSongs
@@ -603,7 +548,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             await PlaylistSongSyncState.pruneLocalOnlySongs(
                 cloudId, localPaths);
           }
-          // 「待上报删除」墓碑（删除全部）：重新添加回本机的 path 清除，其余随本次上传上报
           final pending = await PlaylistSongSyncState.pendingDeletedSongs(cloudId);
           if (pending.isNotEmpty) {
             await PlaylistSongSyncState.prunePendingDeletedSongs(
@@ -618,18 +562,13 @@ class SyncNotifier extends StateNotifier<SyncState> {
         payload.add({
           'id': p.id,
           'name': p.name,
-          // 移动端歌单无自定义封面，取歌单内第一首在线歌曲封面作为云端封面，
-          // 避免覆盖桌面端已上传的 cloudCoverUrl。
           'cloudCoverUrl': _firstRemoteSongCover(p.songs),
           'cloudId': p.cloudId,
           'songs': payloadSongs,
-          // 为 null 时不生成字段（null-aware 元素）
           'deletedSongPaths': ?deletedSongPaths,
         });
       }
       final res = await _api.fileSyncUpload(payload);
-      // 服务端回传 id_map：本地 id → 云端字符串 cloudId，写回本地，
-      // 覆盖历史缺失/数字 cloudId，保证跨设备稳定识别为"已同步"。
       final store = PlaylistStore();
       if (res.idMap.isNotEmpty) {
         for (final entry in res.idMap) {
@@ -676,7 +615,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       final toImport = <PluginBackupPlaylist>[];
       var songCount = 0;
-      // 确保本地曲库已加载，用于把跨设备失效的本地路径匹配回本地曲库。
       final library = _ref.read(libraryProvider);
       if (library.loading) {
         await _ref.read(libraryProvider.notifier).load();
@@ -685,7 +623,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       for (final pl in cloudPlaylists) {
         final cloudId = (pl['cloudId'] as String?) ?? '';
         final plName = (pl['name'] as String?) ?? tr('未命名歌单');
-        // 服务端已记录删除的歌曲 path（其他端「删除全部/仅保留本地」传播）
         final deletedPaths = ((pl['deletedSongPaths'] as List?) ?? const [])
             .whereType<String>()
             .toSet();
@@ -697,7 +634,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             : const <String>{};
         final rawSongs =
             ((pl['songs'] as List?) ?? const []).whereType<Map>().toList();
-        // 过滤：服务端已删除(D) / 本机待上报删除 / 仅删本地墓碑（云端保留但本机已移除）
         final visibleRaw = rawSongs.where((e) {
           final p = e['path'] as String?;
           if (p == null) return true;
@@ -714,11 +650,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           songs: songs,
           originalSongCount: songs.length,
           cloudId: pl['cloudId'] as String?,
-          // 来自云端即标记，确保即使历史小概率缺 cloudId 也能被识别为已同步。
           isCloud: true,
         ));
-        // 其他端传播的歌曲级删除：从本地既有歌单移除对应歌曲，
-        // 并清除服务端已确认记录的「待上报删除」墓碑
         if (deletedPaths.isNotEmpty) {
           final removePaths = <String>{};
           for (final raw in rawSongs) {
@@ -751,8 +684,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
   }
 
-  /// 其他端传播的歌曲级删除：按 cloudId（缺省回退按名称）匹配本地歌单，
-  /// 移除 [removePaths] 中的歌曲（path 含本地曲库重映射后的路径）。
   Future<void> _propagateDeletedSongsToLocal(
       String cloudId, String name, Set<String> removePaths) async {
     if (removePaths.isEmpty) return;
@@ -800,8 +731,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       final favEntries = _ref.read(favoritesProvider).entries;
       if (favEntries.isEmpty) {
-        // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏
-        // （换包名/重装后本地为空，若直接上传会把云端收藏清空）。
         state = state.copyWith(
           favoritesSync: state.favoritesSync.copyWith(
             syncing: false,
@@ -812,9 +741,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
         return;
       }
-      // 「仅保留本地」墓碑：已从云端删除、保留本机的收藏不再上传，防止复活
       final localOnly = await FavoritesSyncState.localOnlyPaths();
-      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏
       final cloudKeep = await FavoritesSyncState.cloudKeepPaths();
       final payload = favEntries.where((e) => !localOnly.contains(e.path)).map((e) {
         return {
@@ -831,13 +758,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
           'onlineInfoJson': e.onlineInfoJson,
         };
       }).toList();
-      // 收藏按键合并：删除跟踪 = 上次已同步路径 − 当前收藏，
-      // 交给服务端 merge 模式删除对应云端收藏，新增仍按键保留（跨设备互不抹掉）。
-      // 「仅删本地」墓碑的 path 云端保留，从删除跟踪中排除。
       final prefs = await SharedPreferences.getInstance();
       final currentPaths = favEntries.map((e) => e.path).toSet();
-      // 墓碑清理：不再收藏的 path 清除「仅保留本地」墓碑（取消收藏自然失效）；
-      // 重新收藏的 path 清除「仅删本地」墓碑（恢复正常同步行为）。
       await FavoritesSyncState
           .removeLocalOnlyPaths(localOnly.where((p) => !currentPaths.contains(p)));
       await FavoritesSyncState.removeCloudKeepPaths(currentPaths);
@@ -877,13 +799,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return;
       }
       final notifier = _ref.read(favoritesProvider.notifier);
-      // 确保本地曲库已加载，用于把跨设备失效的本地路径匹配回本地曲库。
       final library = _ref.read(libraryProvider);
       if (library.loading) {
         await _ref.read(libraryProvider.notifier).load();
       }
       final index = _buildLibraryIndex();
-      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏，跳过回灌防止删除回流
       final cloudKeep = await FavoritesSyncState.cloudKeepPaths();
       for (final item in favs) {
         final path = item['path'] as String?;
@@ -894,9 +814,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         final artist = (item['artist'] as String?) ?? '';
         final durationMs = (item['duration'] as num?)?.toInt() ?? 0;
 
-        // 桌面端同步下来的在线歌曲不携带 mobile 的 onlineSongJson/onlineInfoJson：
-        // 基于桌面端补充的 musicInfo（lx 歌曲信息）合成 onlineInfoJson，
-        // 使收藏的在线歌在移动端仍可解析直链播放；本地歌按元数据匹配回本地曲库。
         final musicInfo = _asMap(item['musicInfo']);
         var source = item['source'] as String?;
         var onlineInfoJson = item['onlineInfoJson'] as String?;
@@ -960,8 +877,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   // ==================== 插件同步 ====================
 
-  /// 与桌面端 pluginSync.ts 一致的反转 Base64（utf8 → base64 → 字符反转），
-  /// 避免 WAF 解码检测到原始 JS 代码。
   static String _encodeRevBase64(String s) =>
       String.fromCharCodes(base64Encode(utf8.encode(s)).codeUnits.reversed);
 
@@ -978,18 +893,15 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await _ref.read(pluginManagerProvider.notifier).refresh();
         sources = _ref.read(pluginManagerProvider).sources;
       }
-      // 「仅保留本地」墓碑过滤：已从云端删除、保留本机的插件不再上传，防止复活
       final uploadSkip = await PluginSyncState.uploadSkipIds();
       final targets =
           sources.where((p) => !uploadSkip.contains(p.id)).toList();
-      // 订阅链接列表随插件一起上传（服务端整包替换）
       final subs = _ref
           .read(pluginSubscriptionsProvider)
           .map((s) => s.toJson())
           .toList();
       if (targets.isEmpty) {
         if (subs.isNotEmpty) {
-          // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
           try {
             await _api.uploadPlugin({},
                 isFirst: true, subscriptions: subs);
@@ -1012,7 +924,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             ),
           );
         }
-        // 无插件上传（isFirst 重建云端为空）：已同步标记清空
         await PluginSyncState.setSyncedIds(const <String>[]);
         return;
       }
@@ -1042,7 +953,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
             'script': _encodeRevBase64(script),
             'scriptEncoded': true,
           };
-          // 附加 AES 加密的用户变量值（失败仅跳过变量同步，不影响插件本身上传）
           final ciyuanxiId = _api.ciyuanxiId;
           if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
             final userVars =
@@ -1060,7 +970,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
           errors.add(tr('插件 "{name}" 上传失败', {'name': p.name}));
         }
       }
-      // 上传成功的插件即云端权威副本：整集替换「已同步」标记
       await PluginSyncState.setSyncedIds(uploadedIds);
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
@@ -1085,7 +994,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       final snapshot = await _api.downloadPluginSnapshot();
 
-      // 云端订阅链接合并进本地（即使云端无插件也要合并）
       final cloudSubs = ((snapshot['subscriptions'] as List?) ?? const [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -1115,7 +1023,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final errors = <String>[];
       var installed = 0;
       final restoredIds = <String>[];
-      // 「仅删本地」墓碑：用户已从本机删除但云端保留的插件，跳过恢复防止回流
       final downloadSkip = await PluginSyncState.downloadSkipIds();
       final pluginManager = _ref.read(pluginManagerProvider.notifier);
       for (final item in items) {
@@ -1139,8 +1046,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
           continue;
         }
         try {
-          // 恢复走 Dart PluginManager（与上传/插件页/在线播放同一套存储），
-          // 自动识别 Lx/MusicFree 格式，避免写进 Rust 侧孤立索引而不可见。
           final version = (item['version'] as String?)?.trim() ?? '';
           final source = await pluginManager.installFromScript(
             script,
@@ -1148,11 +1053,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
             versionOverride: version.isEmpty ? null : version,
             sourceUrl: (item['sourceUrl'] as String?)?.trim() ?? '',
           );
-          // 云端标记停用的插件同步后保持停用
           if (item['enabled'] == false && source.enabled) {
             await pluginManager.toggleEnabled(source.id);
           }
-          // 还原 AES 加密的用户变量值（用本地安装插件 id 作为键，与上传端一致）
           final encBlock = item['userVariablesEncrypted'];
           if (encBlock is Map) {
             final ciyuanxiId = _api.ciyuanxiId;
@@ -1163,7 +1066,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
                 await _ref
                     .read(pluginUserVarValuesProvider.notifier)
                     .save(source.id, values);
-                // B站插件：Cookie 变量同步进引擎 Cookie 仓库（取流/下载用）
                 await pluginManager.syncBilibiliCookiesFromVars(
                     source.id, values);
               } else {
@@ -1178,7 +1080,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
           errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
-      // 恢复成功说明云端确有副本：并集追加「已同步」标记
       await PluginSyncState.addSyncedIds(restoredIds);
       state = state.copyWith(
         pluginSync: state.pluginSync.copyWith(
@@ -1278,11 +1179,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
   }
 
-  /// 双向同步设置：先下载云端设置比较，不一致时弹冲突弹窗按类别选择。
-  ///
-  /// 与桌面端 syncSettings 对齐：云端无数据则上传本地（首次同步）；一致则跳过；
-  /// 不一致则弹出「设置同步冲突」弹窗，让用户按类别（设置/歌单/插件）选择
-  /// 保留本地或云端。自动同步走 auto_sync 的静默合并，不弹窗。
   Future<void> syncSettings(BuildContext context) async {
     state = state.copyWith(
       settingsSync: state.settingsSync.copyWith(syncing: true, errors: []),
@@ -1298,7 +1194,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final cloudTime = meta.uploadedAt;
       final upload = _ref.read(syncProvider).uploadConfig;
 
-      // 云端无数据：直接上传本地设置（首次同步）
       if (cloud == null || cloud.isEmpty) {
         if (upload.settings) {
           await _api.uploadSettings(local);
@@ -1323,7 +1218,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return;
       }
 
-      // 本地与云端一致：跳过
       if (areSettingsEqual(local, cloud)) {
         state = state.copyWith(
           settingsSync: state.settingsSync.copyWith(
@@ -1336,7 +1230,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return;
       }
 
-      // 不一致：弹冲突弹窗，用户按类别选择保留本地或云端
       if (!context.mounted) return;
       final choices = await showSettingsConflictDialog(
         context: context,
@@ -1467,7 +1360,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         );
         return;
       }
-      // 云端按时间倒序，写回本地最近播放历史。
       final dbPath = await _ref.read(dbPathProvider.future);
       var added = 0;
       for (final item in history) {
@@ -1476,7 +1368,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
         await rust.statsAddToHistory(dbPath: dbPath, songPath: path);
         added++;
       }
-      // 刷新最近播放列表，使新写入的历史立即可见。
       await _ref.read(recentProvider.notifier).refresh();
       state = state.copyWith(
         historySync: state.historySync.copyWith(
@@ -1503,12 +1394,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   // ==================== 听歌累计统计同步 ====================
 
-  /// 听歌统计同步（旧版 4 规则快照合并：上传/累加/下发/清零）。
-  ///
-  /// 已被统一 delta 增量上报取代（report_listen_stats + stats_mode=delta）：
-  /// 各端只上报自上次成功上报后的增量，服务端合计为唯一真源，显示直接采用
-  /// 服务端回传快照。快照合并会把其他端的累计灌进本地，导致本端基线失真、
-  /// 增量重复上报，故此链路废弃；服务端重置信号改由上报响应的 reset_at 下发。
   Future<void> syncListenStats() async {
     AppLogger.instance
         .log('sync', '[听歌统计] 快照同步已废弃，听歌时长由增量上报统一维护');

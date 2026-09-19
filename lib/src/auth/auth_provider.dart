@@ -10,11 +10,9 @@ import '../rust/api.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-/// 默认后端地址与签名密钥（与桌面端一致）。
 const defaultAuthBaseUrl = 'https://api.xianyumusic.cn/api';
 const defaultAuthApiSecret = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
 
-/// 认证用户（弦予号登录）。
 class AuthUser {
   final String id;
   final String username;
@@ -66,7 +64,6 @@ class AuthState {
   final AuthUser? user;
   final bool loading;
   final String? error;
-  /// 登录态失效（token 被服务端判定无效/过期）时置 true，UI 据此弹窗并引导重新登录。
   final bool sessionExpired;
   const AuthState({
     this.user,
@@ -98,8 +95,6 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// 扫码登录：移动端「扫描到二维码」后从服务端拿到的被扫设备信息，
-/// 供确认登录页展示应用名、设备ID、位置等（对齐 QQ/微信扫码确认）。
 class TvLoginScanInfo {
   final String appName;
   final String deviceId;
@@ -128,7 +123,6 @@ class TvLoginScanInfo {
   }
 }
 
-/// 人机验证题目（内置算术题模式，与桌面端 get_captcha 一致）。
 class HumanCaptcha {
   final String captchaId;
   final String question;
@@ -146,10 +140,8 @@ class HumanCaptcha {
       );
 }
 
-/// 人机验证配置（服务端下发，与桌面端 email_get_captcha_config 一致）。
 class HumanCaptchaConfig {
   final bool enabled;
-  /// 'off' / 'turnstile' / 'hcaptcha'。
   final String provider;
   final String siteKey;
   const HumanCaptchaConfig({
@@ -158,14 +150,9 @@ class HumanCaptchaConfig {
     this.siteKey = '',
   });
 
-  /// 第三方验证组件（Turnstile/hCaptcha）是否可用。
   bool get isProviderEnabled => enabled && siteKey.isNotEmpty && provider != 'off';
 }
 
-/// 人机验证结果载荷。
-///
-/// - 算术题模式：id + 答案
-/// - 第三方模式（Turnstile/hCaptcha）：仅 providerToken，服务端用 secret 直验
 class HumanCaptchaPayload {
   final String captchaId;
   final String captchaAnswer;
@@ -178,10 +165,8 @@ class HumanCaptchaPayload {
     this.provider = '',
   });
 
-  /// 是否为第三方组件 token 模式。
   bool get isProviderToken => providerToken.isNotEmpty;
 
-  /// 并入请求体的 captcha 字段（与桌面端 withCaptcha 一致）。
   Map<String, dynamic> toBodyFields() => isProviderToken
       ? {
           'captcha_token': providerToken,
@@ -202,20 +187,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final Ref _ref;
   final Random _rand = Random();
 
-  /// 人机验证配置缓存（配置, 获取时间）。
   static (HumanCaptchaConfig, DateTime)? _captchaConfigCache;
 
-  /// 当前登录 token（仅内存持有，持久化在 Rust 侧）。
   String? _token;
 
-  /// 公开当前状态（供外部读取，避免直接访问受保护的 state）。
   AuthState get currentState => state;
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
-  /// 设备 ID（持久化，用于登录签名）。
-  /// 优先平台级稳定 ID（ANDROID_ID/Keychain UUID），卸载重装不变；
-  /// 仅当平台 ID 不可用时回退本地随机 hex（老版本行为）。
   Future<String> _deviceId() async {
     final prefs = await SharedPreferences.getInstance();
     final stable = await fetchStableDeviceId();
@@ -233,7 +212,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return id;
   }
 
-  /// 公开设备 ID（供统计上报等复用）。
   Future<String> deviceId() => _deviceId();
 
   String _randHex(int len) {
@@ -245,7 +223,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return sb.toString();
   }
 
-  /// 启动时确保默认基地址/密钥并加载已有凭证。
   Future<void> init() async {
     try {
       final dir = await _dataDir();
@@ -261,13 +238,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
       }
     } catch (_) {
-      // 无凭证或初始化失败，保持未登录。
     }
   }
 
-  /// 发送带签名的账号请求，校验 code===200 并返回 data。
-  /// 已登录时自动注入 token（供服务端 dispatch 层做用户资源属主校验）。
-  /// 响应为登录态失效（401 + 特定文案）时自动登出并标记 sessionExpired。
   Future<Map<String, dynamic>> requestAction(
       String action, Map<String, dynamic> body,
       {int? fetchTimeoutMs}) async {
@@ -295,8 +268,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return (j['data'] as Map<String, dynamic>?) ?? const {};
   }
 
-  /// 同 [requestAction]，但 data 允许为任意 JSON（数组/对象），
-  /// 供壁纸列表等返回数组的接口使用。
   Future<dynamic> requestActionList(
       String action, Map<String, dynamic> body,
       {int? fetchTimeoutMs}) async {
@@ -325,14 +296,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return j['data'];
   }
 
-  /// 服务端在硬模式下统一返回的 token 失效文案。
   static final _sessionExpiredRe =
       RegExp(r'登录状态已失效|登录已过期|登录状态与账号不匹配');
 
   bool _isSessionExpired(int code, String msg) =>
       code == 401 && _sessionExpiredRe.hasMatch(msg);
 
-  /// 登录态失效：清理本地凭证并标记 sessionExpired，UI 据此弹窗引导重新登录。
   Future<void> _handleSessionExpired() async {
     try {
       final dir = await _dataDir();
@@ -342,7 +311,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(sessionExpired: true);
   }
 
-  /// UI 在展示完会话失效弹窗后调用，清除标记。
   void consumeSessionExpired() {
     if (state.sessionExpired) {
       state = const AuthState();
@@ -365,15 +333,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = AuthState(user: user);
   }
 
-  /// 获取一次性人机验证题（算术题，purpose=auth）。
   Future<HumanCaptcha> fetchCaptcha() async {
     final data = await requestAction('get_captcha', {'purpose': 'auth'});
     return HumanCaptcha.fromJson(data);
   }
 
-  /// 获取服务端人机验证配置（10 分钟缓存，对齐桌面端 getHumanCaptchaConfig）。
-  /// 服务端启用 Turnstile/hCaptcha 时弹窗渲染第三方组件；失败时回退旧算术题。
-  /// 请求失败时保留旧缓存（若有），避免网络抖动时误降级为算术题。
   Future<HumanCaptchaConfig> fetchCaptchaConfig() async {
     final cached = _captchaConfigCache;
     if (cached != null &&
@@ -396,9 +360,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 预校验人机验证答案。答案正确返回，错误抛 AuthException。
-  /// 第三方组件 token 模式跳过（token 由服务端在真实请求中直验，对齐桌面端）。
-  /// 此接口只确认答案，不消费验证码；后续登录/注册/发码请求会再次校验并消费。
   Future<void> verifyCaptcha(HumanCaptchaPayload payload) async {
     if (payload.isProviderToken) return;
     await requestAction('verify_captcha', {
@@ -408,7 +369,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// 发送邮箱验证码（注册/找回密码等场景），需先通过人机验证。
   Future<String> sendCode(String email, String type,
       {HumanCaptchaPayload? captcha}) async {
     final data = await requestAction('send_verify_code', {
@@ -421,7 +381,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tr('验证码已发送到邮箱');
   }
 
-  /// 弦予号登录。
   Future<void> login({
     required String ciyuanxiId,
     required String password,
@@ -445,7 +404,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 邮箱验证码登录（无需密码，通过发送到注册邮箱的验证码登录）。
   Future<void> loginByEmail({
     required String email,
     required String code,
@@ -469,7 +427,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 用户注册（注册成功后自动登录）。
   Future<void> register({
     required String ciyuanxiId,
     required String nickname,
@@ -499,8 +456,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 扫码登录：移动端标记桌面端二维码「已扫描」，返回被扫设备信息供确认页展示。
-  /// 未登录时返回 null 由调用方引导先登录。
   Future<TvLoginScanInfo?> scanTvLogin(String code) async {
     final user = state.user;
     final ciyuanxiId = user?.ciyuanxiId;
@@ -522,7 +477,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return info;
   }
 
-  /// 扫码登录：移动端确认后为桌面端签发登录凭证。
   Future<void> confirmTvLogin(String code) async {
     final user = state.user;
     final ciyuanxiId = user?.ciyuanxiId;
@@ -535,18 +489,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// 设置内联错误信息（供 UI 展示本地校验错误，如两次密码不一致）。
   void setError(String message) {
     state = state.copyWith(loading: false, error: message);
   }
 
-  /// 清除内联错误（切换登录/注册页时调用）。
   void clearError() {
     if (state.error == null) return;
     state = state.copyWith(clearError: true);
   }
 
-  /// 退出登录（仅清理本地凭证）。
   Future<void> logout() async {
     try {
       final dir = await _dataDir();
@@ -556,7 +507,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState();
   }
 
-  /// 本地更新昵称（管理员改昵称通知确认后同步显示）。
   Future<void> updateNicknameLocally(String newNickname) async {
     final user = state.user;
     final token = _token;
@@ -573,11 +523,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _persistAuth(token, next);
   }
 
-  // ═══════════════════════════════════════════════════════
-  //  账号类 API（与桌面端 authService.ts 对齐）
-  // ═══════════════════════════════════════════════════════
-
-  /// 修改弦予号（每月限一次），返回新弦予号。
   Future<String> updateCiyuanxiId({
     required String oldCiyuanxiId,
     required String newCiyuanxiId,
@@ -607,7 +552,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return newId;
   }
 
-  /// 绑定邮箱（需 type='bind' 的邮箱验证码）。
   Future<String> bindEmail({
     required String ciyuanxiId,
     required String email,
@@ -637,7 +581,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return bound;
   }
 
-  /// 找回密码（重置密码）。
   Future<void> resetPassword({
     required String email,
     required String verifyCode,
@@ -652,7 +595,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// 预验证注销凭据（密码 + 邮箱验证码），不执行实际注销。
   Future<void> preVerifyDeleteAccount({
     required String verifyCode,
     required String password,
@@ -671,7 +613,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// 注销当前账号（双重验证），成功后自动登出。
   Future<void> deleteAccount({
     required String verifyCode,
     required String password,
@@ -690,7 +631,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await logout();
   }
 
-  /// 修改密码（需登录，弦予号 + 旧密码验证）。
   Future<void> changePassword({
     required String oldPassword,
     required String newPassword,
@@ -709,7 +649,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// 获取个人资料（get_user_info），成功后刷新本地用户缓存。
   Future<AuthUser?> getProfile() async {
     final user = state.user;
     if (user == null) return null;
@@ -728,7 +667,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 更新个人资料（昵称/头像）。改名走审核流程，返回是否待审核。
   Future<({AuthUser user, bool nicknamePending})> updateProfile({
     required String nickname,
     String? avatar,
@@ -762,7 +700,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return (user: nextUser, nicknamePending: nicknamePending);
   }
 
-  /// 查询改名审核状态：pending / rejected / none。
   Future<String> getNicknameStatus() async {
     final user = state.user;
     if (user == null) return 'none';
@@ -778,7 +715,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 查询改名审核状态 + 今日是否受限。
   Future<ProfileChangeLimitStatus> getNicknameChangeLimitStatus() async {
     final user = state.user;
     if (user == null) return const ProfileChangeLimitStatus();
@@ -798,7 +734,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 上传头像（base64 data URL，走审核流程，不立即生效）。
   Future<void> uploadAvatar(String avatarData) async {
     final user = state.user;
     if (user == null) throw AuthException(tr('未登录'));
@@ -808,7 +743,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }, fetchTimeoutMs: 55000);
   }
 
-  /// 查询头像审核状态：pending / rejected / none。
   Future<String> getAvatarStatus() async {
     final user = state.user;
     if (user == null) return 'none';
@@ -824,7 +758,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 查询头像审核状态 + 今日是否受限。
   Future<ProfileChangeLimitStatus> getAvatarChangeLimitStatus() async {
     final user = state.user;
     if (user == null) return const ProfileChangeLimitStatus();
@@ -844,7 +777,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// 检查当前账号/设备封禁状态。
   Future<BanStatus> checkBanStatus() async {
     final user = state.user;
     if (user == null) return const BanStatus();

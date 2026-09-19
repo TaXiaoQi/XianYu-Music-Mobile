@@ -13,15 +13,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    // DLL 路径：优先环境变量 XIANYU_DLL，否则用项目内相对路径
-    // （cwd 为项目根；另一台开发机的绝对路径不再硬编码）。
     final dllPath = Platform.environment['XIANYU_DLL'] ??
         p.join('rust', 'target', 'debug', 'xianyu_core.dll');
     await RustLib.init(externalLibrary: ExternalLibrary.open(dllPath));
   });
 
   test('qmc 解密可被 Dart 调用且 XOR 可逆', () async {
-    // 任意 8 字节 key 的 base64 作为 ekey（无 body → Map 模式）
     final key8 = Uint8List.fromList(List.generate(8, (i) => 0x40 + i));
     final ekey = base64Encode(key8);
     final data = Uint8List.fromList(List.generate(100, (i) => i % 256));
@@ -44,12 +41,11 @@ void main() {
   });
 
   test('音效 DSP 空设置时无损直通', () async {
-    // 立体声交错 PCM，1 秒 44100Hz，正弦波
     const sr = 44100;
     const ch = 2;
     final samples = <double>[];
     for (var i = 0; i < sr; i++) {
-      final v = (i % 100) / 100.0; // 0..0.99
+      final v = (i % 100) / 100.0;
       samples.add(v);
       samples.add(v);
     }
@@ -58,7 +54,7 @@ void main() {
       samples: samples,
       sampleRate: sr,
       channels: ch,
-      settingsJson: '{}', // 空设置 → 默认（全关）
+      settingsJson: '{}',
     );
 
     expect(out.length, samples.length, reason: '直通时样本数应保持不变');
@@ -78,7 +74,6 @@ void main() {
       samples.add(v);
     }
 
-    // 开启低音增强（gain 12dB）
     final settingsJson = jsonEncode({
       'bassBoost': {'enabled': true, 'gain': 12.0, 'dynamic': false},
       'pitchShift': 100.0,
@@ -96,7 +91,6 @@ void main() {
 
   test('lx 搜索返回合法 JSON 数组结构', () async {
     final result = await lxSearch(source: 'kw', keyword: '测试', limit: 3);
-    // 搜索需要网络，可能失败；若成功则必须是合法 JSON
     if (result != 'null') {
       final decoded = jsonDecode(result);
       expect(decoded, isA<List<dynamic>>(), reason: '搜索结果应为 JSON 数组');
@@ -104,7 +98,6 @@ void main() {
   });
 
   test('lx 解析直链对无效参数优雅失败而非崩溃', () async {
-    // 缺必填字段 → Rust 侧 serde 反序列化失败 → FRB 抛出异常，而非进程崩溃
     await expectLater(
       lxResolveUrl(songInfoJson: '{}', quality: '128k'),
       throwsA(anything),
@@ -133,7 +126,6 @@ void main() {
       channels: ch,
     );
 
-    // 空设置 → 直通
     await proc.setSettings(settingsJson: '{}');
     final samples = <double>[];
     for (var i = 0; i < 4410; i++) {
@@ -144,20 +136,17 @@ void main() {
     final out = await proc.processBlock(samples: samples);
     expect(out.length, samples.length, reason: '直通时样本数一致');
 
-    // 开启低音增强后有输出
     await proc.setSettings(settingsJson: jsonEncode({
       'bassBoost': {'enabled': true, 'gain': 9.0, 'dynamic': false},
     }));
     final out2 = await proc.processBlock(samples: samples);
     expect(out2.length, greaterThan(0), reason: '低音增强后仍应输出');
 
-    // effectiveSampleRate 在默认变速下应等于输入采样率
     final sr2 = await proc.effectiveSampleRate();
     expect(sr2, sr, reason: '未变速时有效采样率与输入一致');
   });
 
   test('歌词在线抓取对无效参数优雅失败', () async {
-    // 缺必填字段 → Rust 侧 serde 反序列化失败 → FRB 抛出异常
     await expectLater(
       fetchLyricFromSource(source: 'kg', songInfoJson: '{}'),
       throwsA(anything),
@@ -180,7 +169,6 @@ void main() {
       samples.add(v);
     }
 
-    // 默认关闭 → 直通
     final out1 = await eq.processBlock(samples: samples);
     expect(out1.length, samples.length, reason: '旁路时样本数不变');
     for (var i = 0; i < samples.length; i++) {
@@ -188,7 +176,6 @@ void main() {
           reason: '旁路直通应无损');
     }
 
-    // 启用 + preamp 6dB → 增益后输出幅度增大
     await eq.setSettings(settingsJson: jsonEncode({
       'enabled': true,
       'preamp': 6.0,
@@ -219,9 +206,6 @@ void main() {
     );
   });
 
-  /// 播放记忆端到端往返：完全复刻 PlayerNotifier._persistSession 构造的
-  /// camelCase JSON → 真实 save → 新数据库连接 load（模拟应用重启）。
-  /// 覆盖 open_stats_conn 的 ensure_base_schema 建表与 serde 兼容。
   test('播放会话保存-加载往返（播放记忆）', () async {
     final tmpDir =
         await Directory.systemTemp.createTemp('xianyu_session_test');
@@ -232,7 +216,6 @@ void main() {
       } catch (_) {}
     });
 
-    // 与 _persistSession 完全一致的 camelCase JSON
     final sessionJson = jsonEncode({
       'currentSongPath': 'lx://kw/12345',
       'playQueuePaths': ['lx://kw/12345', '/music/local.flac'],
@@ -267,10 +250,8 @@ void main() {
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
     });
 
-    // 保存（不应抛异常——此前 snake_case 版本会在此静默失败）
     await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
 
-    // 加载（模拟应用重启后的读取路径）
     final loaded = await loadPlaybackSession(dbPath: dbPath);
     expect(loaded, isNot(anyOf('', 'null', '{}')),
         reason: '应加载出已保存的会话数据');

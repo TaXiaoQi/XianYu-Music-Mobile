@@ -24,11 +24,8 @@ import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 下载记录修订号：保存新壁纸后自增，通知「我的下载」列表立即刷新。
-/// 「我的下载」Tab 用 keepAlive 常驻，不监听则保存后切过去仍是旧数据（找不到）。
 final ValueNotifier<int> _downloadsRevision = ValueNotifier<int>(0);
 
-/// 壁纸中心：壁纸广场 / 我的上传 / 我的下载（对齐桌面端 WallpaperGallery 三 tab）。
 class WallpaperCenterPage extends ConsumerStatefulWidget {
   const WallpaperCenterPage({super.key});
 
@@ -41,8 +38,6 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
     with TickerProviderStateMixin {
   late TabController _tab;
   bool _tabReady = false;
-  // 未登录时云端三 tab（广场/上传/下载）隐藏，仅保留自定义壁纸；
-  // 登录状态变化时重建 TabController 对齐 tab 数。
   bool? _lastLoggedIn;
 
   TabController _buildTab(bool loggedIn) =>
@@ -77,15 +72,11 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       _tabReady = true;
       _lastLoggedIn = loggedIn;
     }
-    // 竖屏悬浮顶栏：TabBarView 铺满全屏、避让量注入各 tab 滚动体 padding，
-    // 内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感）。
     final portraitFloating =
         MediaQuery.of(context).orientation != Orientation.landscape &&
             (ref.watch(settingsProvider.select(
                     (s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
                 true);
-    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
-    // + Tab 气泡原高）+ 6 呼吸；固定模式 0（沿用原 Padding 避让结构）。
     final topInset = portraitFloating
         ? MediaQuery.paddingOf(context).top +
             66 +
@@ -109,8 +100,6 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
                     _MyUploadsTab(topInset: topInset),
                     _MyDownloadsTab(topInset: topInset),
                   ],
-                  // 编辑器 tab 自带整页预览（StackFit.expand），悬浮模式下
-                  // 预览直接顶到屏幕顶，无需避让。
                   const CustomWallpaperEditor(),
                 ],
               ),
@@ -130,8 +119,6 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       ),
     );
   }
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
-  /// 固定模式沿用 Padding 避让（避让量注入各 tab 滚动体 padding）。
   Widget _tabHost(bool floating, double topInset, Widget child) {
     if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
@@ -144,14 +131,9 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
 
 }
 
-// ───────────────────────────────────────────────────────────
-// 壁纸广场
-// ───────────────────────────────────────────────────────────
-
 class _WallpaperBrowseTab extends ConsumerStatefulWidget {
   const _WallpaperBrowseTab({this.topInset = 0});
 
-  /// 悬浮模式避让量：注入网格滚动 padding.top，内容穿透顶栏；0=固定模式。
   final double topInset;
 
   @override
@@ -307,8 +289,6 @@ class _WallpaperCard extends ConsumerWidget {
                   ),
                 ),
               ),
-            // 描述直接叠加在壁纸内底部：白字 + 底部渐变保证可读，
-            // 不再单独做图片下方的描述框（壁纸模式下也天然清晰）。
             Positioned(
               left: 0,
               right: 0,
@@ -360,10 +340,6 @@ class _WallpaperCard extends ConsumerWidget {
   }
 }
 
-// ───────────────────────────────────────────────────────────
-// 壁纸全屏预览 + 保存
-// ───────────────────────────────────────────────────────────
-
 class _WallpaperPreviewPage extends ConsumerStatefulWidget {
   const _WallpaperPreviewPage({required this.wallpaper});
 
@@ -375,7 +351,6 @@ class _WallpaperPreviewPage extends ConsumerStatefulWidget {
 }
 
 class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
-  /// 已落盘的本地路径（从「我的下载」进入时预填；本页保存后回填）。
   String? _localPath;
   bool _busy = false;
   String? _result;
@@ -391,7 +366,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     }
   }
 
-  /// 确保壁纸已保存到本地（未保存则下载落盘并写入「我的下载」记录），返回本地路径。
   Future<String> _ensureLocal() async {
     if (_hasLocal) return _localPath!;
     final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
@@ -404,7 +378,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
     }
     final bytes = await consolidateBytes(res);
-    // 保存目录：应用文档目录 Wallpapers/（缓存目录会被系统清理，不可持久化）。
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
     if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -414,12 +387,11 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final file = File(p.join(dir.path, 'wallpaper_${id}_$safeName.jpg'));
     await file.writeAsBytes(bytes);
     await _recordDownload(widget.wallpaper, file.path);
-    _downloadsRevision.value++; // 通知「我的下载」列表刷新
+    _downloadsRevision.value++;
     _localPath = file.path;
     return _localPath!;
   }
 
-  /// 仅保存到本地。
   Future<void> _saveOnly() async {
     if (_busy) return;
     setState(() {
@@ -442,7 +414,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     }
   }
 
-  /// 保存到本地，并打开自定义壁纸编辑器（预加载该图，由用户调参后保存应用）。
   Future<void> _saveAndApply() async {
     if (_busy) return;
     setState(() {
@@ -463,7 +434,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     }
   }
 
-  /// 打开自定义壁纸编辑器并预加载本地壁纸（「应用壁纸」UI 入口）。
   Future<void> _apply() async {
     if (_busy) return;
     final target = _localPath;
@@ -474,7 +444,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     await _openCustomEditor(target);
   }
 
-  /// 跳转到自定义壁纸编辑器，预加载 [path] 让用户调整后应用（不做任何即时整屏应用）。
   Future<void> _openCustomEditor(String path) async {
     if (!mounted) return;
     final applied = await Navigator.of(context).push<bool?>(
@@ -485,8 +454,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     );
     if (!mounted) return;
     if (applied == true) {
-      // 已在自定义界面「保存并使用」→ 把预览页一起关掉，直接回到壁纸中心，
-      // 免去「应用后还要原路返回」。
       Navigator.of(context).pop(true);
       return;
     }
@@ -523,7 +490,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     } catch (_) {}
   }
 
-  /// 忙碌态小菊花。
   Widget _spinner({double size = 16}) => SizedBox(
         width: size,
         height: size,
@@ -581,7 +547,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
                       ),
                     ),
                   if (!hasLocal) ...[
-                    // 主操作：保存到本地并应用；次操作：仅保存。
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -604,7 +569,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
                       ),
                     ),
                   ] else ...[
-                    // 已保存：打开自定义壁纸编辑器，可调参后应用。
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -633,14 +597,9 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
   }
 }
 
-// ───────────────────────────────────────────────────────────
-// 我的上传
-// ───────────────────────────────────────────────────────────
-
 class _MyUploadsTab extends ConsumerStatefulWidget {
   const _MyUploadsTab({this.topInset = 0});
 
-  /// 悬浮模式避让量：注入网格滚动 padding.top，内容穿透顶栏；0=固定模式。
   final double topInset;
 
   @override
@@ -789,7 +748,6 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
   }
 }
 
-/// 上传壁纸底部弹层：选图 + 标题/描述/分类 → 压缩 → 上传。
 class _WallpaperUploadSheet extends ConsumerStatefulWidget {
   const _WallpaperUploadSheet();
 
@@ -827,7 +785,6 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
     } catch (_) {}
   }
 
-  /// 压缩为最大宽 1920 的 JPEG data URL（与桌面端 compressImageToDataUrl 对齐）。
   Future<String> _compressToDataUrl(XFile file) async {
     final bytes = await file.readAsBytes();
     final image = img.decodeImage(bytes);
@@ -975,14 +932,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   }
 }
 
-// ───────────────────────────────────────────────────────────
-// 我的下载
-// ───────────────────────────────────────────────────────────
-
 class _MyDownloadsTab extends StatefulWidget {
   const _MyDownloadsTab({this.topInset = 0});
 
-  /// 悬浮模式避让量：注入列表滚动 padding.top，内容穿透顶栏；0=固定模式。
   final double topInset;
 
   @override
@@ -1000,7 +952,6 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
   void initState() {
     super.initState();
     _load();
-    // 下载记录修订号变化（本页或其它入口新增壁纸）时刷新列表。
     _downloadsRevision.addListener(_load);
   }
 
@@ -1102,17 +1053,9 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
   }
 }
 
-// ───────────────────────────────────────────────────────────
-// 自定义壁纸（对齐桌面端 CustomSkinModal）
-//
-// 同时作为「壁纸中心-自定义壁纸」Tab 展示，以及「壁纸广场」预览页应用壁纸时
-// 打开的独立编辑页（传入 initialImagePath 预加载下载壁纸，由用户调参后保存）。
-// ───────────────────────────────────────────────────────────
-
 class CustomWallpaperEditor extends ConsumerStatefulWidget {
   const CustomWallpaperEditor({super.key, this.initialImagePath});
 
-  /// 预加载图片路径；为 null 时读取当前已保存的自定义背景。
   final String? initialImagePath;
 
   @override
@@ -1120,7 +1063,6 @@ class CustomWallpaperEditor extends ConsumerStatefulWidget {
       _CustomWallpaperEditorState();
 }
 
-/// 「应用壁纸」独立编辑页：带返回栏，预加载下载壁纸。
 class WallpaperCustomApplyPage extends StatelessWidget {
   const WallpaperCustomApplyPage({super.key, required this.imagePath});
 
@@ -1144,7 +1086,6 @@ class _CustomWallpaperEditorState
     super.initState();
     final ip = widget.initialImagePath;
     if (ip != null && ip.isNotEmpty && File(ip).existsSync()) {
-      // 已下载壁纸预加载：用「清晰档」起步（不整屏模糊），用户可再调。
       _draft = CustomBackground(
         imagePath: ip,
         enabled: true,
@@ -1166,7 +1107,6 @@ class _CustomWallpaperEditorState
       final dir = Directory(p.join(docs.path, 'custom_background'));
       if (!dir.existsSync()) dir.createSync(recursive: true);
       final ext = p.extension(picked.path).toLowerCase();
-      // 统一文件名，旧文件直接覆盖，避免每次选图都堆积一份。
       final target = p.join(dir.path, 'wallpaper$ext');
       await File(picked.path).copy(target);
       if (!mounted) return;
@@ -1185,8 +1125,6 @@ class _CustomWallpaperEditorState
     await ref
         .read(settingsProvider.notifier)
         .setCustomBackground(_draft.copyWith(enabled: true));
-    // 应用成功后直接关闭本编辑页（并把结果透传给预览页，让其一起关掉，
-    // 免去「应用后还要原路返回」）。
     showXianYuToastByOverlay(overlay, tr('已应用自定义壁纸'));
     if (mounted) Navigator.of(context).pop(true);
   }
@@ -1207,13 +1145,9 @@ class _CustomWallpaperEditorState
     final isDark = theme.brightness == Brightness.dark;
     final hasImage =
         _draft.imagePath.isNotEmpty && File(_draft.imagePath).existsSync();
-    // 整页预览：草稿作为整个 tab 的背景透出，控件聚合到底部圆角控制面板。
-    // 面板用略实的半透明底保证控件可读，顶部留白展示整页壁纸效果。
     final panelBg = isDark
         ? const Color(0xDE262626)
         : const Color(0xEFFFFFFF);
-    // 已选图片（面板叠在壁纸草图上）：改为透明 + 高斯模糊毛玻璃，透出壁纸
-    // 又保证控件可读，避免壁纸状态下实色底板太「压」背景难看清。
     final glassPanel = hasImage;
     final panelColor = glassPanel
         ? Colors.white.withValues(alpha: isDark ? 0.38 : 0.58)
@@ -1341,9 +1275,6 @@ class _CustomWallpaperEditorState
                         onChanged: (v) => setState(
                             () => _draft = _draft.copyWith(scale: v)),
                       ),
-                      // 组件底色块不透明度：壁纸下原本透明的卡片/控件改为
-                      // 反色色块（亮字→深色块、暗字→浅色块），可调 0~90%，
-                      // 0 = 完全透明。
                       _ParamSlider(
                         icon: Icons.invert_colors,
                         label: tr('组件底色'),
@@ -1356,7 +1287,6 @@ class _CustomWallpaperEditorState
                             () => _draft = _draft.copyWith(widgetAlpha: v)),
                       ),
                       const SizedBox(height: 4),
-                      // 全局字体颜色档位：保存并使用后随壁纸一起生效/持久化。
                       SegmentedButton<WallpaperTextColor>(
                         segments: [
                           ButtonSegment(
@@ -1402,9 +1332,6 @@ class _CustomWallpaperEditorState
   }
 }
 
-/// 底部圆角面板的伪毛玻璃包装：开启时叠一层透明 + 高斯模糊（透出壁纸草图），
-/// 关闭时原样返回子组件（保持不透明实底）。圆角与面板顶部两角对齐。
-/// 接入全局 blur 预算：滚动/转场时面板玻璃降级（drawerOrSheet 档）。
 class _FrostedSheet extends ConsumerWidget {
   const _FrostedSheet({
     required this.enabled,
@@ -1425,8 +1352,6 @@ class _FrostedSheet extends ConsumerWidget {
       budget: budget,
       type: BlurSurfaceType.drawerOrSheet,
     );
-    // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，
-    // 运动期保持玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
     return ClipRRect(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(radius),
@@ -1440,7 +1365,6 @@ class _FrostedSheet extends ConsumerWidget {
   }
 }
 
-/// 单条参数滑块：图标 + 名称 + 实时值，便于边调边看预览。
 class _ParamSlider extends StatelessWidget {
   const _ParamSlider({
     required this.icon,

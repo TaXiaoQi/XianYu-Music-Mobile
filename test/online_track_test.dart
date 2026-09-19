@@ -5,7 +5,6 @@ import 'package:xianyu_music_mobile/src/online/online_search_provider.dart';
 import 'package:xianyu_music_mobile/src/player/player_provider.dart';
 
 void main() {
-  // 取自 lx_search 真实返回结构（snake_case）。
   Map<String, dynamic> sample() => {
         'name': '晴天',
         'singer': '周杰伦',
@@ -79,19 +78,16 @@ void main() {
     test('onlineInfoJson 使用 camelCase 以匹配 Rust LxUrlSongInfo', () {
       final item = OnlineTrack.fromJson(sample()).toQueueItem();
       final info = jsonDecode(item.onlineInfoJson!) as Map<String, dynamic>;
-      // Rust 侧 #[serde(rename_all = "camelCase")]，键名必须是 camelCase。
       expect(info['songmid'], '228908');
       expect(info['source'], 'kw');
       expect(info['albumName'], '叶惠美');
       expect(info['albumId'], 1234);
       expect(info.containsKey('album_name'), isFalse);
-      // 音质映射走 _types 这个特殊 rename。
       expect(info['_types'], isA<Map>());
       expect((info['_types'] as Map)['320k'], isA<Map>());
     });
 
     test('不带在线信息的条目判定为本地', () {
-      // 对照本地曲目：library_provider 构造时不传 onlineInfoJson。
       const local = QueueItem(
         path: '/storage/music/a.flac',
         title: 'a',

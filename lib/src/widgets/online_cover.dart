@@ -7,10 +7,6 @@ import 'package:flutter/material.dart';
 import '../online/cover_proxy.dart';
 import 'fade_in.dart';
 
-/// 在线封面。
-///
-/// 需要防盗链的域名（网易云、B站、QQ、咪咕等）经 Rust 后端代理拉取，
-/// 其余直连并走磁盘缓存。加载中或失败时显示占位图标。
 class OnlineCover extends StatefulWidget {
   const OnlineCover({
     super.key,
@@ -30,7 +26,6 @@ class OnlineCover extends StatefulWidget {
 class _OnlineCoverState extends State<OnlineCover> {
   Uint8List? _bytes;
 
-  /// 已连续失败的次数，控制重试上限，避免真坏死 URL 无限请求。
   int _attempts = 0;
   Timer? _retryTimer;
 
@@ -60,13 +55,11 @@ class _OnlineCoverState extends State<OnlineCover> {
     super.dispose();
   }
 
-  /// 需要代理时异步拉取；直连场景交给 CachedNetworkImage。
   void _maybeProxy() {
     final url = widget.url;
     if (url == null || url.isEmpty) return;
     if (!CoverProxy.needsProxy(url)) return;
 
-    // 命中缓存直接同步用，避免闪一下占位。
     final hit = CoverProxy.cached(url);
     if (hit != null) {
       _bytes = hit;
@@ -85,12 +78,10 @@ class _OnlineCoverState extends State<OnlineCover> {
         setState(() => _bytes = bytes);
         return;
       }
-      // 失败：进入冷却，冷却过后重试一次，恢复被误判的封面。
       _scheduleRetryIfPossible(url);
     });
   }
 
-  /// 失败后按冷却时长定时重试；超过最大次数则停止。
   void _scheduleRetryIfPossible(String url) {
     if (_attempts >= _maxAttempts) return;
     _attempts++;
@@ -104,7 +95,6 @@ class _OnlineCoverState extends State<OnlineCover> {
   @override
   Widget build(BuildContext context) {
     final url = widget.url;
-    // 按显示尺寸解码：列表行封面很小，整张高清图解码再缩放会拖慢滚动。
     final cw = (widget.size * MediaQuery.of(context).devicePixelRatio).round();
 
     if (_bytes != null) {
@@ -123,7 +113,6 @@ class _OnlineCoverState extends State<OnlineCover> {
 
     if (url == null || url.isEmpty) return _placeholder(context);
 
-    // 需要代理但尚未就绪：显示占位，不渲染会失败的 <img>。
     if (CoverProxy.needsProxy(url)) return _placeholder(context);
 
     return _clip(CachedNetworkImage(

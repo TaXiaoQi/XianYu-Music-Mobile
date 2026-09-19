@@ -15,7 +15,6 @@ import '../i18n/i18n.dart';
 const _kBackupSchema = 'xianyu-music.app-backup';
 const _kBackupVersion = 1;
 
-/// 备份摘要（导出预览与导入确认共用）。
 class AppBackupSummary {
   final int playlistCount;
   final int totalSongs;
@@ -38,7 +37,6 @@ class AppBackupSummary {
   });
 }
 
-/// 导入结果。
 class AppBackupImportResult {
   final AppBackupSummary summary;
   final int importedPlaylists;
@@ -59,7 +57,6 @@ class AppBackupImportResult {
   });
 }
 
-/// 应用备份导出/导入（对齐桌面端 appBackup.ts；歌单/收藏/插件/设置 → JSON）。
 class AppBackupService {
   final Ref _ref;
 
@@ -67,7 +64,6 @@ class AppBackupService {
 
   // ==================== 导出 ====================
 
-  /// 生成备份 JSON 字符串（对齐桌面端 ExportBackupDialog 的内容选择）。
   Future<String> exportJson({
     bool includePlaylists = true,
     bool includeFavorites = true,
@@ -109,7 +105,6 @@ class AppBackupService {
       'createdAt': DateTime.now().toIso8601String(),
       'platform': 'mobile',
       'data': {
-        // 未选歌单时 playlists 为 null，键整体省略（与桌面端口径一致）。
         'playlists': ?playlists,
         if (includeFavorites) ...{
           'favorites': favorites,
@@ -152,7 +147,6 @@ class AppBackupService {
 
   // ==================== 解析 ====================
 
-  /// 解析并校验备份 JSON；格式不符抛出异常。
   Map<String, dynamic> parse(String content) {
     final dynamic data;
     try {
@@ -170,7 +164,6 @@ class AppBackupService {
     return data.cast<String, dynamic>();
   }
 
-  /// 计算备份摘要（导入前预览）。
   AppBackupSummary summarize(Map<String, dynamic> backup) {
     final data = (backup['data'] as Map).cast<String, dynamic>();
     final playlists = (data['playlists'] as List? ?? []);
@@ -195,7 +188,6 @@ class AppBackupService {
 
   // ==================== 导入 ====================
 
-  /// 导入备份；插件先于歌单导入以确保在线歌曲可匹配插件。
   Future<AppBackupImportResult> import(
     Map<String, dynamic> backup, {
     bool includePlaylists = true,
@@ -212,7 +204,6 @@ class AppBackupService {
     var skippedPlugins = 0;
     var settingsApplied = false;
 
-    // 1. 插件（按脚本重装，ID 相同自动去重）
     if (includePlugins) {
       final manager = _ref.read(pluginManagerProvider.notifier);
       final existing = manager.sources.map((s) => s.id).toSet();
@@ -242,7 +233,6 @@ class AppBackupService {
       }
     }
 
-    // 2. 歌单（同名合并）
     if (includePlaylists) {
       final store = PlaylistStore();
       final entries = <PluginBackupPlaylist>[];
@@ -265,7 +255,6 @@ class AppBackupService {
       }
     }
 
-    // 3. 收藏（按 path 合并保留现有）
     if (includeFavorites) {
       final store = FavoritesStore();
       final existing = await store.loadAll();
@@ -283,7 +272,6 @@ class AppBackupService {
         importedFavorites = incoming.length;
       }
 
-      // 收藏集（歌单/专辑/榜单收藏）
       final collectionStore = FavoritesCollectionStore();
       final existingCollections = await collectionStore.loadAll();
       final knownKeys = existingCollections.map((c) => c.key).toSet();
@@ -302,7 +290,6 @@ class AppBackupService {
       await _ref.read(favoritesProvider.notifier).refresh();
     }
 
-    // 4. 设置
     if (includeSettings && data['settings'] is Map) {
       try {
         final current = _ref.read(settingsProvider).valueOrNull;
@@ -373,7 +360,6 @@ class AppBackupService {
 
   // ==================== 兼容解析 ====================
 
-  /// 解析歌曲列表：优先移动端格式，兼容桌面端 Song 结构。
   List<ImportedSong> _parseSongs(dynamic raw) {
     if (raw is! List) return const [];
     return raw
@@ -383,7 +369,6 @@ class AppBackupService {
         .toList();
   }
 
-  /// 桌面端 Song（name/artist/path/plugin_id/rawData…）→ 移动端 ImportedSong 字段名。
   Map<String, dynamic> _normalizeSong(Map<String, dynamic> j) {
     if (j.containsKey('localPath') || j.containsKey('musicInfo')) return j;
     final path = j['path'] as String? ?? '';
@@ -405,7 +390,6 @@ class AppBackupService {
     };
   }
 
-  /// 解析收藏条目（兼容桌面端 Song）。
   FavoriteEntry? _parseFavorite(Map<String, dynamic> j) {
     if (j.containsKey('onlineSongJson') || j.containsKey('addedAt')) {
       final entry = FavoriteEntry.fromJson(j);
@@ -427,7 +411,6 @@ class AppBackupService {
   }
 }
 
-/// 备份导出文件名（对齐桌面端：xianyu-backup-YYYY-MM-DD.json）。
 String backupFileName() {
   final now = DateTime.now();
   final m = now.month.toString().padLeft(2, '0');
@@ -435,7 +418,6 @@ String backupFileName() {
   return 'xianyu-backup-${now.year}-$m-$d.json';
 }
 
-/// 将备份 JSON 写入文件（应用文档目录），返回文件路径。
 Future<String> writeBackupFile(String dirPath, String json) async {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) dir.createSync(recursive: true);

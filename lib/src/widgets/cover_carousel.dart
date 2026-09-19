@@ -10,7 +10,6 @@ import '../player/player_provider.dart';
 import 'cover_image.dart';
 import '../i18n/i18n.dart';
 
-/// 首页顶端轮播块：固定 2 页（第 1 页正在播放单曲，第 2 页听歌统计数据）。
 class CoverCarousel extends ConsumerStatefulWidget {
   const CoverCarousel({super.key});
 
@@ -60,11 +59,9 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
 
   @override
   Widget build(BuildContext context) {
-    // 仅订阅封面需要的信息，避免 position 每秒变化导致首页卡片重建。
     final sel =
         ref.watch(playerProvider.select((s) => (current: s.current, playing: s.isPlaying)));
 
-    // 频谱条只在正在播放时运转
     ref.listen(playerProvider, (prev, next) {
       final shouldRun = next.current != null && next.isPlaying;
       if (shouldRun && !_eq.isAnimating) {
@@ -85,14 +82,12 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
               _startTimer();
             },
             children: [
-              // 第 1 页：正在播放单曲
               _NowPlayingCard(
                 item: sel.current,
                 isPlaying: sel.playing,
                 eq: _eq,
                 onTap: () => context.push('/player'),
               ),
-              // 第 2 页：听歌数据统计
               const _StatsCard(),
             ],
           ),
@@ -104,7 +99,6 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
   }
 }
 
-/// 第 1 页：正在播放卡片。
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({
     required this.item,
@@ -139,7 +133,6 @@ class _NowPlayingCard extends StatelessWidget {
               height: double.infinity,
               radius: 0,
               icon: Icons.album,
-              // 全屏大卡：本地封面走 800px 高清提取，否则 150px 缩略图撑满整卡会糊。
               highQuality: true,
             ),
             const DecoratedBox(
@@ -191,7 +184,6 @@ class _NowPlayingCard extends StatelessWidget {
   }
 }
 
-/// 第 2 页：听歌数据统计卡片。
 class _StatsCard extends ConsumerWidget {
   const _StatsCard();
 
@@ -376,7 +368,6 @@ class _EmptyCarousel extends StatelessWidget {
   }
 }
 
-/// 红色"播放中"徽章 + 三根频谱条动效。
 class _PlayingBadge extends StatelessWidget {
   const _PlayingBadge({required this.eq, required this.isPlaying});
 

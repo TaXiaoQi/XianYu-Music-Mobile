@@ -1,17 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// 竖屏底部导航 tab 容器（PageView 实现）：手指左右拖动即可跟手切换 tab，
-/// 松手由自定义弹簧物理吸附到整页，参考 PiliNara 的首页 Tab 切换手感。
-///
-/// 竖屏专用——横屏是独立模式，主 tab 切换走 [LandscapeTabSwitcher]
-/// （out-in），两套 UI/动画/手势互不掺和。分支状态在横竖屏互换容器时由
-/// routes.dart 的分支 GlobalKey 跨容器保留。
-///
-/// 所有分支通过 keepAlive 常驻 widget 树以保留各自滚动/播放状态，离屏分支
-/// 保留但不参与绘制。双向同步：
-/// - 程序化切换（点击底栏 / 预测返回 commit）：外部 `currentIndex` 变化驱动
-///   切页动画。
-/// - 手指拖动切换：页面整页停留后通过 [onPageSettled] 回调通知外部更新当前索引。
 class PageSwitchTabView extends StatefulWidget {
   const PageSwitchTabView({
     super.key,
@@ -76,8 +64,6 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   }
 }
 
-/// keepAlive 包装：让离屏分支常驻 widget 树，保留各自的滚动位置与状态。
-/// 竖屏 PageView 与横屏切换器共用。
 class TabKeepAlivePage extends StatefulWidget {
   const TabKeepAlivePage({super.key, required this.child});
 
@@ -99,7 +85,6 @@ class _TabKeepAlivePageState extends State<TabKeepAlivePage>
   }
 }
 
-/// PageView 的弹簧吸附物理：轻微欠阻尼，松手绑住到整页且带一丝回弹。
 class _TabPageScrollPhysics extends PageScrollPhysics {
   const _TabPageScrollPhysics({super.parent});
 

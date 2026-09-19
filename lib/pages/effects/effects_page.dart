@@ -9,7 +9,6 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 音效页：EQ / 变速变调 / 混响 / 空间音效 / 高级音效。
 class EffectsPage extends ConsumerWidget {
   const EffectsPage({super.key});
 
@@ -24,16 +23,12 @@ class EffectsPage extends ConsumerWidget {
     final hasCurrent =
         ref.watch(playerProvider.select((s) => s.current != null));
 
-    // 横屏摄像头挖孔避让（参考主页侧边栏机制）：底色随根层铺满全屏、
-    // 可以透到摄像头下方；内容（列表与顶栏文字/按钮）避开挖孔区。
     final mq = MediaQuery.of(context);
     final isLandscape = mq.size.width >= mq.size.height * 1.05;
     final cutLeft = isLandscape ? mq.padding.left : 0.0;
     final cutRight = isLandscape ? mq.padding.right : 0.0;
 
     return Scaffold(
-      // 用标准页面底色（壁纸感知）：此前用全局 scaffoldBackgroundColor（透明），
-      // 从播放页等自带背景的页面切换过来时动画中会透出下层页面。
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
@@ -43,8 +38,6 @@ class EffectsPage extends ConsumerWidget {
             child: Opacity(
               opacity: locked ? 0.5 : 1.0,
               child: ListView(
-                // 顶部预留顶栏高度：静止时内容位于毛玻璃下方，上拉时内容滑入顶栏被高斯模糊。
-                // 横屏下左右额外避让摄像头挖孔区。
                 padding: EdgeInsets.only(
                     top: GlassTopBar.height(context),
                     left: 16 + cutLeft,
@@ -160,7 +153,6 @@ class EffectsPage extends ConsumerWidget {
               ),
             ),
           ),
-          // 顶栏高斯模糊毛玻璃（背景全宽铺满；内容经占位避开挖孔）。
           Positioned(
             top: 0,
             left: 0,
@@ -198,7 +190,6 @@ class EffectsPage extends ConsumerWidget {
       );
 }
 
-/// 10 段均衡器：预设横滑 + 滑块。
 class _EqSection extends ConsumerWidget {
   const _EqSection({required this.settings, required this.notifier});
   final SoundEffectSettings settings;
@@ -456,7 +447,6 @@ class _EqSection extends ConsumerWidget {
   }
 }
 
-/// 变速变调：倍速 + 变调 + 音调补偿。
 class _PitchRateSection extends ConsumerWidget {
   const _PitchRateSection({required this.settings, required this.notifier});
   final SoundEffectSettings settings;
@@ -496,7 +486,6 @@ class _PitchRateSection extends ConsumerWidget {
   }
 }
 
-/// 混响：卷积/算法预设选择 + 干湿滑杆。
 class _ReverbSection extends ConsumerWidget {
   const _ReverbSection({required this.settings, required this.notifier});
   final SoundEffectSettings settings;
@@ -561,7 +550,6 @@ class _ReverbSection extends ConsumerWidget {
   }
 }
 
-/// 空间音效：3D / 8D / 36D / 虚拟环绕（互斥）。
 class _SpatialSection extends ConsumerWidget {
   const _SpatialSection({required this.settings, required this.notifier});
   final SoundEffectSettings settings;
@@ -645,7 +633,6 @@ class _SpatialSection extends ConsumerWidget {
   }
 }
 
-/// 高级音效：可开关的各类效果。
 class _AdvancedSection extends ConsumerWidget {
   const _AdvancedSection({required this.settings, required this.notifier});
   final SoundEffectSettings settings;
@@ -931,11 +918,6 @@ class _AdvancedSection extends ConsumerWidget {
   }
 }
 
-/// 通用滑杆行：标签 + 滑杆 + 当前值。
-///
-/// 拖动期间仅本地跟手——拇指移动只在 [State] 内 `setState` 重建本行
-/// （值暂存 [draft]，hit 到 provider），松手（onChangeEnd）才提交一次。
-/// 避免每个 tick 都写 provider 触发整页 rebuild，导致音效页滑动卡顿。
 class _SliderTile extends StatefulWidget {
   const _SliderTile({
     required this.label,
@@ -952,10 +934,8 @@ class _SliderTile extends StatefulWidget {
   final double min;
   final double max;
 
-  /// 未传 [displayBuilder] 时的静态兜底文本。
   final String? display;
 
-  /// 数值实时文本（由当前拖拽值驱动）；缺省则用 [display] 或取整数值。
   final String Function(double)? displayBuilder;
   final ValueChanged<double> onChanged;
 
@@ -1005,9 +985,6 @@ class _SliderTileState extends State<_SliderTile> {
   }
 }
 
-/// 均衡器单段：上方增益数值 + 竖向滑杆 + 下方频率标签。
-///
-/// 与 [_SliderTile] 同一提交式优化：拖动只重建本段，松手才写 provider。
 class _EqBand extends StatefulWidget {
   const _EqBand({
     required this.value,

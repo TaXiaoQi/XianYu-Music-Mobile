@@ -12,8 +12,6 @@ import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 打开发现区入口：横屏改开右侧「内容」容器（不开二级路由），
-/// 竖屏照常 push 二级路由。
 void openDiscoverEntry(BuildContext context, WidgetRef ref, String route) {
   if (ref.read(isLandscapeProvider)) {
     ref.read(landscapeContentPathProvider.notifier).state = route;
@@ -22,8 +20,6 @@ void openDiscoverEntry(BuildContext context, WidgetRef ref, String route) {
   }
 }
 
-/// 首页发现区：音源榜单直接内嵌展示（原「统计/日推/音源榜单」三 tab 已拆分：
-/// 统计三格卡移到「我的」页、日推独立区块、本区块直出音源榜单）。
 class DiscoverSection extends ConsumerWidget {
   const DiscoverSection({super.key});
 
@@ -33,7 +29,6 @@ class DiscoverSection extends ConsumerWidget {
   }
 }
 
-/// 首页「每日推荐」区块：日推预览卡直接展示（原 tab 内容拆出）。
 class DailyRecommendSection extends ConsumerWidget {
   const DailyRecommendSection({super.key});
 
@@ -43,8 +38,6 @@ class DailyRecommendSection extends ConsumerWidget {
   }
 }
 
-/// 听歌统计三格卡：累计听歌 / 今日时长 / 今日首数（原首页「统计」tab 内容，
-/// 现移到「我的」页账号区与音乐库入口之间）。整卡点击打开完整听歌排行榜。
 class StatsSummaryCard extends ConsumerWidget {
   const StatsSummaryCard({super.key});
 
@@ -119,7 +112,6 @@ class StatsSummaryCard extends ConsumerWidget {
   }
 }
 
-/// 日推预览：前 3 条推荐。
 class _DailyCard extends ConsumerWidget {
   const _DailyCard();
 
@@ -131,8 +123,6 @@ class _DailyCard extends ConsumerWidget {
     if (!async.isLoading &&
         (state == null || !state.loggedIn || state.items.isEmpty)) {
       final notLoggedIn = state != null && !state.loggedIn;
-      // provider error（服务器算法下发失败/瞬时网络等）：valueOrNull 为 null，
-      // 此前会误显示「安装音源插件后生成推荐」且无重试入口。单独成态：点击重试。
       final hasError = async.hasError && state == null;
       return _CardContainer(
         onTap: hasError
@@ -220,7 +210,6 @@ class _DailyCard extends ConsumerWidget {
   }
 }
 
-/// 音源榜单预览：内嵌展示真实榜单数据（对齐桌面端首页内嵌榜单区块）。
 class _TopListsBody extends ConsumerWidget {
   const _TopListsBody();
 
@@ -344,7 +333,6 @@ class _TopListsBody extends ConsumerWidget {
   }
 }
 
-/// 发现区卡片容器：伪毛玻璃卡片，跟随全局毛玻璃开关（开→磨砂，关/低性能→纯色）。
 class _CardContainer extends ConsumerWidget {
   const _CardContainer({required this.child, this.onTap});
 

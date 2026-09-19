@@ -18,10 +18,6 @@ import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 下载管理页：进行中的下载任务 + 下载历史。
-///
-/// [embedded] 用于横屏右侧容器内嵌（壳层 [_DownloadPane]），不开二级路由：
-/// 顶栏由全局横屏顶栏承接（搜索框左侧回退按钮负责闭合容器）。
 class DownloadPage extends ConsumerWidget {
   const DownloadPage({super.key, this.embedded = false});
 
@@ -32,9 +28,6 @@ class DownloadPage extends ConsumerWidget {
     final state = ref.watch(downloadProvider);
     final notifier = ref.read(downloadProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    // 竖屏悬浮顶栏：列表铺满全屏、避让量注入列表 padding，滚动时内容从顶栏
-    // 胶囊下方穿过（穿透观感，与歌单/最近页同口径）；嵌入态由横屏壳层顶栏
-    // 承接，不参与悬浮。
     final portraitFloating = !embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -66,7 +59,6 @@ class DownloadPage extends ConsumerWidget {
                         scheme: scheme,
                       ),
               ),
-            // 内嵌模式由全局顶栏承接（搜索框左侧带回退），本页不渲染自身顶栏。
             if (!embedded)
               Positioned(
                 top: 0,
@@ -172,7 +164,6 @@ class DownloadPage extends ConsumerWidget {
 
 // ==================== 下载列表（独立订阅播放状态调底部留白） ====================
 
-/// 下载管理列表：独立订阅播放状态以调整底部留白，避免播放状态翻转波及页头。
 class _DownloadList extends ConsumerWidget {
   const _DownloadList({
     required this.state,
@@ -185,7 +176,6 @@ class _DownloadList extends ConsumerWidget {
   final DownloadManager notifier;
   final ColorScheme scheme;
 
-  /// 悬浮模式避让量：注入列表 padding.top，内容穿透顶栏；null=固定模式。
   final double? contentTop;
 
   @override
@@ -276,7 +266,6 @@ Widget _dlEmpty(BuildContext context, ColorScheme scheme) => Padding(
       ),
     );
 
-/// 进行中的下载任务。
 class _ActiveTaskTile extends StatelessWidget {
   const _ActiveTaskTile({required this.task});
   final DownloadTask task;
@@ -314,7 +303,6 @@ class _ActiveTaskTile extends StatelessWidget {
   }
 }
 
-/// 已结束的下载任务（成功/失败）。
 class _FinishedTaskTile extends StatelessWidget {
   const _FinishedTaskTile({required this.task, required this.onDismiss});
   final DownloadTask task;
@@ -349,7 +337,6 @@ class _FinishedTaskTile extends StatelessWidget {
   }
 }
 
-/// 下载记录条目。
 class _HistoryTile extends ConsumerWidget {
   const _HistoryTile({
     required this.entry,
@@ -366,11 +353,9 @@ class _HistoryTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final m = ListMetrics.ofRef(ref);
     final exists = File(entry.filePath).existsSync();
-    // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
     BuildContext? coverCtx;
     final play = exists
         ? () async {
-            // 等封面落地后再播放：播放条封面随落地同步更新。
             final ok = await launchFlyCover(
               context,
               coverContext: coverCtx,

@@ -11,7 +11,6 @@ import 'plugin_provider.dart';
 import 'plugin_subscriptions.dart';
 import '../i18n/i18n.dart';
 
-/// 插件更新检查结果。
 class PluginUpdateCheckResult {
   final bool hasUpdate;
   final String currentVersion;
@@ -28,10 +27,6 @@ class PluginUpdateCheckResult {
   });
 }
 
-/// 版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同/独立（不触发更新）。
-/// 语义：数字系列只和数字系列比（跨数字版本时后缀不参与，1.0.2-beta1 < 1.0.3）；
-/// 同数字版本下，正式版与预发布互相独立（1.0.2-beta1 与 1.0.2 互不视为更新）；
-/// 预发布之间按前缀（字母）再序号比较（beta2 > beta1）。
 int compareVersions(String a, String b) {
   final pa = _parseVersion(a);
   final pb = _parseVersion(b);
@@ -42,18 +37,13 @@ int compareVersions(String a, String b) {
     final bv = i < pb.fields.length ? pb.fields[i] : 0;
     if (av != bv) return av.compareTo(bv);
   }
-  // 主版本数字相同：正式版与预发布互相独立，视为相同（不触发更新）。
   if (pa.pre == null || pb.pre == null) return 0;
-  // 预发布之间：前缀（字母）不同按字母序（alpha < beta < rc），
-  // 同前缀比序号，避免 beta10 与 beta9 被字符串比较误判。
   if (pa.preToken != pb.preToken) {
     return pa.preToken.compareTo(pb.preToken);
   }
   return pa.preNum.compareTo(pb.preNum);
 }
 
-/// 解析版本号：数字主版本段 + 预发布段（前缀字母 + 序号）。
-/// 如 `1.0.2-beta1` → 主版本 [1,0,2]，预发布 `beta` + 1。
 class _VersionParts {
   final List<int> fields;
   final String? pre;
@@ -80,8 +70,6 @@ _VersionParts _parseVersion(String v) {
   return _VersionParts(fields, preStr, preToken, preNum);
 }
 
-/// 从 MusicFree/Baka 脚本中提取版本号（不执行脚本）。
-/// 优先匹配对象属性形式的 version（前面是 { 或 ,），取最后一个匹配。
 String? _extractMusicFreeVersion(String script) {
   final propMatches = RegExp(
           r'[{,]\s*version\s*:\s*[\x27\x22]([^\x27\x22]+)[\x27\x22]')
@@ -95,7 +83,6 @@ String? _extractMusicFreeVersion(String script) {
   return match?.group(1);
 }
 
-/// 从 MusicFree/Baka 脚本中提取 srcUrl（不执行脚本）。
 String? _extractMusicFreeSrcUrl(String script) {
   final propMatches = RegExp(
           r'[{,]\s*srcUrl\s*:\s*[\x27\x22]([^\x27\x22]+)[\x27\x22]')
@@ -109,25 +96,20 @@ String? _extractMusicFreeSrcUrl(String script) {
   return match?.group(1);
 }
 
-/// 插件更新服务：检查更新 + 执行更新。
 class PluginUpdateService {
   final PluginEngine engine;
   final PluginManager manager;
-  /// 读取已保存的订阅清单列表（对齐桌面端 getSubscriptions）。传入后更新检查
-  /// 优先按订阅清单声明的 version 比对（订阅才是权威更新依据）。
   final List<PluginSubscription> Function()? subscriptionsReader;
 
   PluginUpdateService(this.engine, this.manager,
       {this.subscriptionsReader});
 
-  /// 订阅清单按 URL 缓存（TTL 5 分钟），避免批量检查时对同一订阅重复请求。
   final Map<String, ({int at, List<({String url, String? version, String? name})> items})>
       _subCache = {};
   final Map<String, Future<({int at, List<({String url, String? version, String? name})> items})>>
       _subFetchInFlight = {};
   static const int _subCacheTtlMs = 5 * 60 * 1000;
 
-  /// 解析订阅清单内容，提取插件条目（对齐桌面端 parseSubscriptionItems）。
   List<({String url, String? version, String? name})> _parseSubscriptionItems(
       String content) {
     try {
@@ -186,7 +168,6 @@ class PluginUpdateService {
     }
   }
 
-  /// 去掉 query 后的 URL（origin + pathname），用于宽松匹配带缓存指纹的清单条目。
   String _stripUrlQuery(String u) {
     try {
       final uri = Uri.parse(u);
@@ -196,7 +177,6 @@ class PluginUpdateService {
     }
   }
 
-  /// 判断插件是否命中订阅清单条目：URL 精确 / 去 query 宽松 / 名称匹配。
   bool _matchSubscriptionItem(
     ({String url, String? version, String? name}) item,
     String filePath,
@@ -219,8 +199,6 @@ class PluginUpdateService {
     return false;
   }
 
-  /// 在已保存的订阅清单中按 sourceUrl/name 匹配插件（对齐桌面端 findSubscriptionPlugin）。
-  /// 命中即返回订阅声明的 version —— 这才是订阅型插件真正的更新依据。
   Future<({String url, String? version, String? name, String subscriptionUrl})?>
       _findSubscriptionPlugin(String filePath, String pluginName) async {
     final subs = subscriptionsReader?.call() ?? const [];
@@ -242,16 +220,12 @@ class PluginUpdateService {
     return null;
   }
 
-  /// 检查单个插件是否有可用更新。
   Future<PluginUpdateCheckResult?> checkPluginUpdate(
       PluginSource source) async {
-    // 该插件已标记"跳过版本检查"，直接不检查。
     if (await PluginPreferences.getSkipUpdateCheck(source.id)) {
       return null;
     }
 
-    // [修复] 订阅型插件优先走订阅清单：无论 musicfree 还是 lx 格式，只要它来自
-    // 订阅，清单里声明的 version 才是真正的更新依据。参考桌面端/BakaMusic。
     final subPlugin = await _findSubscriptionPlugin(
         source.sourceUrl, source.name);
     if (subPlugin != null && subPlugin.version != null) {
@@ -279,7 +253,6 @@ class PluginUpdateService {
     String? updateUrl;
 
     if (source.format == PluginFormat.musicfree) {
-      // MusicFree：脚本内 srcUrl 优先（自更新指向），来源 URL 兜底。
       final script = await engine.store.readScript(source.id);
       if (script != null) {
         updateUrl = _extractMusicFreeSrcUrl(script);
@@ -289,9 +262,6 @@ class PluginUpdateService {
         updateUrl = source.sourceUrl;
       }
     } else {
-      // [修复] LX 插件：优先用来源 URL（脚本自身托管地址）重取比对，@homepage 常
-      // 指向 GitHub 仓库/项目页（HTML），抓取解析不到版本号导致"检查无结果"。
-      // 与桌面端保持一致；本地导入（无来源 URL）才回退解析脚本里的 @homepage。
       if (source.sourceUrl.startsWith('http')) {
         updateUrl = source.sourceUrl;
       } else {
@@ -310,8 +280,6 @@ class PluginUpdateService {
     final newScript = await _fetchScript(updateUrl);
     if (newScript == null || newScript.isEmpty) return null;
 
-    // 脚本哈希对比：source.id 就是安装时脚本 SHA256 哈希。
-    // 哈希一致说明内容未变化，直接判定无更新。
     if (source.format == PluginFormat.musicfree && source.id.isNotEmpty) {
       final newHash = sha256.convert(utf8.encode(newScript)).toString();
       if (newHash == source.id) {
@@ -342,7 +310,6 @@ class PluginUpdateService {
     );
   }
 
-  /// 执行插件更新：安装新脚本并替换旧插件。
   Future<({bool success, PluginSource? newSource, String message})>
       performPluginUpdate(
           PluginSource source, PluginUpdateCheckResult checkResult) async {
@@ -355,7 +322,6 @@ class PluginUpdateService {
         fileName: checkResult.updateUrl,
         sourceUrl: checkResult.updateUrl,
       );
-      // 脚本哈希变化 → 新 ID，替换旧插件；哈希一致时 installFromScript 直接返回现有条目
       if (newSource.id != source.id) {
         await manager.remove(source.id);
       }
@@ -370,7 +336,6 @@ class PluginUpdateService {
     }
   }
 
-  /// 批量检查所有已启用插件的更新。
   Future<Map<String, PluginUpdateCheckResult>> checkAll() async {
     final results = <String, PluginUpdateCheckResult>{};
     final sources = manager.sources;
@@ -379,14 +344,11 @@ class PluginUpdateService {
         final result = await checkPluginUpdate(source);
         if (result != null) results[source.id] = result;
       } catch (_) {
-        // 单个插件检查失败不影响其他
       }
     }
     return results;
   }
 
-  /// 静默批量检查并安装可用更新（供"启动自动更新"调用）。
-  /// 跳过已标记"跳过版本检查"的插件，单个失败不中断。
   Future<int> checkAndInstallAll() async {
     var installed = 0;
     for (final source in manager.sources) {
@@ -397,7 +359,6 @@ class PluginUpdateService {
         final outcome = await performPluginUpdate(source, result);
         if (outcome.success) installed++;
       } catch (_) {
-        // 跳过失败项
       }
     }
     return installed;
@@ -422,16 +383,12 @@ class PluginUpdateService {
   }
 }
 
-/// 启动时自动更新插件（fire-and-forget，失败静默）。
-/// 仅在全局开关开启且本地存在已安装插件时执行，更新后写入日志。
 Future<void> runPluginAutoUpdateOnStartup(
     ProviderContainer container, void Function(String message)? log) async {
   try {
     if (!await PluginPreferences.getAutoUpdateOnStartup()) return;
     final engine = await container.read(pluginEngineProvider.future);
     final manager = container.read(pluginManagerProvider.notifier);
-    // pluginManagerProvider 懒加载，此处触发其创建后 sources 往往还没被异步
-    // refresh 填充；空列表会让批量检查静默跳过全部插件且无重试。先确保加载。
     if (manager.sources.isEmpty) await manager.refresh();
     final service = PluginUpdateService(
       engine,
@@ -444,6 +401,5 @@ Future<void> runPluginAutoUpdateOnStartup(
       log(tr('启动自动更新：已更新 {n} 个插件', {'n': installed}));
     }
   } catch (_) {
-    // 启动静默自动更新失败不打扰用户
   }
 }

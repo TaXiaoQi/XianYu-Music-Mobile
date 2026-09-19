@@ -4,51 +4,18 @@ import 'package:flutter/services.dart';
 import '../core/app_colors.dart';
 import 'predictive_back_transitions.dart';
 
-/// 弹窗面板不透明（#FFF/#262626 等），文字须按面板明暗用基础前景（黑/白），
-/// 不能继承自定义壁纸启用的「亮字/暗字」整体前景（否则白底白字/黑底黑字）。
-/// 壁纸分支会对页面 textTheme 全局 apply，这里为弹窗 route 统一恢复
-/// 基础 colorScheme + textTheme，覆盖所有经 showPredictiveDialog 的弹窗，
-/// 避免逐弹窗手改而遗漏。
-///
-/// [builder] 必须在恢复后的 Theme **内部**（Builder）执行：若在恢复前急切
-/// 执行，builder 里 `Theme.of(dialogContext)` 拿到的是被壁纸亮字覆盖后的
-/// 页面主题——弹窗内所有显式取色（`scheme.onSurfaceVariant` 正文/副标题、
-/// sheet 标题等）都会取到白色，白底白字不可见。
 WidgetBuilder _restoreBaseTheme(BuildContext context, WidgetBuilder builder) {
   final t = Theme.of(context);
   final dark = t.brightness == Brightness.dark;
   final scheme = dark ? darkBaseScheme : lightBaseScheme;
   final tt = dark ? darkBaseTextTheme : lightBaseTextTheme;
   if (scheme == null) return builder;
-  // Builder：把 builder 推迟到 Theme 子树内构建，Theme.of 取到基础主题。
   return (innerContext) => Theme(
         data: t.copyWith(colorScheme: scheme, textTheme: tt ?? t.textTheme),
         child: Builder(builder: builder),
       );
 }
 
-/// 让弹窗参与 Android 预测返回的自定义页面路由。
-///
-/// 原生 [DialogRoute]（showDialog 产生）不是 PageRoute，Navigator 的预测返回
-/// 接管器（_PredictiveBackGestureDetectorState）要求 `route.isCurrent &&
-/// route.popGestureEnabled` 才会返回 true——只有用
-/// [PredictiveBackPageTransitionsBuilder] 构建过渡的页面路由满足。因此普通
-/// 弹窗在预测返回手势下既无跟手行程也无法跟手，只走一次性 pop。
-///
-/// 本路由把弹窗建模为 [PageRoute]，过渡交给
-/// [PredictiveBackPageTransitionsBuilder]，让弹窗获得与二级页面一致的预测
-/// 返回「行程」：手指拖动时整屏缩放成圆角矩形跟随，松手提交即关闭弹窗。
-///
-/// 预测返回的「手指信息」（progress/swipeEdge/touchOffset）由系统经
-/// `OnBackInvokedCallback` 下发给框架，框架再通过 [TransitionRoute] 的默认
-/// 钩子把 progress 写进路由动画控制器驱动缩放。这里**不做任何自定义手势
-/// 接管、也不留兜底**，完全照抄 PiliNara/main 的做法——只提供
-/// [PredictiveBackPageTransitionsBuilder] 并保持默认钩子不变，因此同一设备上
-/// 能得到与二级页面完全一致的跟手行程。
-///
-/// 使用要点：必须经 root Navigator push（GoRouter 的预测返回只认 root
-/// Navigator）；不要包在 showDialog 里，直接调用 [Navigator.push] 或
-/// [showPredictiveDialog]。
 class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   PredictiveBackDialogRoute({
     required this.builder,
@@ -59,11 +26,8 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
 
   final WidgetBuilder builder;
 
-  /// 是否能点击遮罩关闭（桌面端「禁止关闭」语义：默认 false）。
   final bool dismissible;
 
-  /// 系统返回 / 预测返回能否关闭弹窗（Android 标准：返回关闭与点遮罩解耦，
-  /// 默认 true，即使点遮罩/下滑被禁用也能用返回关闭）。
   final bool closableByBack;
 
   @override
@@ -81,18 +45,12 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   @override
   String? get barrierLabel => dismissible ? 'Close' : null;
 
-  // 遮罩由 buildPage 自行绘制，路由层不透出 barrier。
   @override
   Color? get barrierColor => null;
 
-  // 满足预测返回接管条件：成为当前页且允许「返回关闭」时，返回手势才跟手。
-  // 预测返回手势本身交给 TransitionRoute 的默认实现即可（与 PiliNara 一致）。
   @override
   bool get popGestureEnabled => isCurrent && closableByBack;
 
-  // 弹窗与页面切换动画完全解耦：返回 false 切断框架对下层页面
-  // secondaryAnimation 的驱动，下层在覆盖/平滑模式下都保持静止，
-  // 弹窗只执行自身的居中淡进淡出（buildTransitions）。
   @override
   bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
 
@@ -105,8 +63,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scrim =
         (isDark ? Colors.black : Colors.black).withValues(alpha: isDark ? 0.54 : 0.32);
-    // 点遮罩关闭由 dismissible 控制；返回与预测返回由 closableByBack 控制。
-    // 两者独立：桌面端语义默认禁用点遮罩关闭，但 Android 返回仍能关闭弹窗。
     return PopScope(
       canPop: closableByBack,
       child: Material(
@@ -114,17 +70,11 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 半透明遮罩：dismissible 时点击关掉，否则拦截点击不穿透。
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: dismissible ? () => Navigator.of(context).pop() : null,
               child: Container(color: scrim),
             ),
-            // 弹窗路由级键盘避让：adjustResize 设备上键出时整个窗口表面会被缩小，
-            // 若直接 Center，弹窗会被顶到「缩水表面」的中央而带着背景一起上移。
-            // 这里用 DialogKeyboardLift 把弹窗钉回「无键盘时的原始全窗」中央，
-            // 仅在键盘真的会盖住底缘时才最小上移；所有 showPredictiveDialog
-            // 弹窗（含直接传 AlertDialog 的）自动获得该行为。
             Center(
               child: DialogKeyboardLift(
                 child: _restoreBaseTheme(context, builder)(context),
@@ -143,16 +93,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 关键：必须「始终」挂载 PredictiveBackGestureDetector（WidgetsBinding
-    // observer），否则手势开始时（popGestureInProgress 仍为 false）没有
-    // observer 认领预测返回，弹窗全程无跟手反馈，只能滑到系统提交阈值才
-    // 瞬间关闭——表现为「要滑很长一段才有反应」。
-    //
-    // 视觉上弹窗「只做居中淡进淡出」，与页面切换动画完全解耦：非手势的
-    // 打开/关闭（按钮、编程、点遮罩、返回键）纯淡入淡出；预测返回手势中
-    // 也**不走**官方 predictive 的整屏缩放/向边缘平移提交，而是复用同一份
-    // FadeTransition——手势期间框架把手指进度写进本路由的 animation，弹窗
-    // 与遮罩的透明度自然跟随手指淡出，松手提交淡完、取消则淡回，全程无平移。
     return PredictiveBackGestureDetector(
       route: this,
       builder:
@@ -173,7 +113,6 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   }
 }
 
-/// 打开一个支持预测返回的弹窗（root Navigator，可被返回手势跟手关闭）。
 Future<T?> showPredictiveDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -190,13 +129,6 @@ Future<T?> showPredictiveDialog<T>({
   );
 }
 
-/// 底部漂浮弹窗路由：与 [PredictiveBackDialogRoute] 使用同一套预测返回接管，
-/// 但弹窗贴在屏幕底部、从下往上覆盖，交互动效为竖直滑入/滑出。
-///
-/// 打开/关闭（按钮、编程、系统返回）与预测返回共用**同一条**竖直过渡：
-/// 动画值 0→1 时弹窗自底部滑入、遮罩淡入；1→0 时滑出。因预测返回期间框架
-/// 会把手指进度写入本路由的 `animation`，返回手势即表现为弹窗随手指下移，
-/// 与普通关闭的动作方向完全一致（「预测和普通一样」）。
 class PredictiveBackSheetRoute<T> extends PageRoute<T> {
   PredictiveBackSheetRoute({
     required this.builder,
@@ -210,7 +142,6 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
   final bool dismissible;
   final bool closableByBack;
 
-  /// 弹窗面板最大宽度；手机屏幕宽度小于该值时自然全宽，实现「从下往上覆盖」。
   final double maxWidth;
 
   @override
@@ -234,7 +165,6 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
   @override
   bool get popGestureEnabled => isCurrent && closableByBack;
 
-  // 与 PredictiveBackDialogRoute 一致：不驱动下层页面转场，下层保持静止。
   @override
   bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
 
@@ -251,8 +181,6 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
-    // 遮罩淡入淡出 + 弹窗自底部竖直滑入/滑出，全部由路由 animation 驱动；
-    // 预测返回时框架把手指进度写进 animation，同一份过渡自然跟随手指下滑。
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -291,8 +219,6 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // 过渡已内置在 buildPage，这里只需挂上预测返回接管器（WidgetsBinding
-    // observer），不做额外转场——普通与预测共用同一过渡。
     return PredictiveBackGestureDetector(
       route: this,
       builder:
@@ -306,7 +232,6 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
   }
 }
 
-/// 打开一个从底部覆盖的预测返回弹窗（root Navigator）。
 Future<T?> showPredictiveBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -325,15 +250,6 @@ Future<T?> showPredictiveBottomSheet<T>({
   );
 }
 
-/// 键盘避让「仅遮挡才顶起」包装（居中弹窗共用，挂在 [PredictiveBackDialogRoute]
-/// 的 Center 下，所有 showPredictiveDialog 弹窗自动生效）。
-///
-/// - adjustResize 设备上键盘把表面缩小，Center 会把弹窗自动顶到缩水表面的中央
-///   （这就是「离输入法很远却仍被顶起」、连背景一起上移的来源）。这里用
-///   fullH（无键全屏高）把弹窗钉回自然中央，只在键盘真的会盖住底缘时才最小上移
-///  直到露出；键盘收起后自动回到原位；
-/// - 顶起量是「键盘高度」与「弹窗内容高」的纯函数（弹窗屏幕居中推导），
-///   内容高首次布局后一次性缓存；走 [Transform]，不触发重排，键盘动画期间不掉帧。
 class DialogKeyboardLift extends StatefulWidget {
   const DialogKeyboardLift({super.key, required this.child});
 
@@ -345,7 +261,6 @@ class DialogKeyboardLift extends StatefulWidget {
 
 class _DialogKeyboardLiftState extends State<DialogKeyboardLift> {
   final GlobalKey _key = GlobalKey();
-  // 弹窗内容高（首次布局后一次性缓存；内容在弹窗展示期内不变）。
   double _dialogH = 0;
 
   @override
@@ -366,31 +281,24 @@ class _DialogKeyboardLiftState extends State<DialogKeyboardLift> {
 
   @override
   Widget build(BuildContext context) {
-    // adjustResize 设备上键盘把窗口缩小，Center 会把弹窗自动抬高。这里先用
-    // fullH（无键高全屏高）把弹窗钉回自然中央，只在键盘真的会盖住底缘时
-    // 才最小上移直到露出。该公式对「窗口会缩小」和「窗口不缩」两类设备都成立，
-    // 若不做窗口缩放的设备，下面 naturalTop == currentTop，退化为仅被遮挡才顶起。
     final mq = MediaQuery.of(context);
     final sizeH = mq.size.height;
     final keyboard = mq.viewInsets.bottom;
     double translateY = 0;
     if (keyboard > 0 && _dialogH > 0) {
-      final fullH = sizeH + keyboard; // 无键盘时的全屏高
-      final naturalTop = (fullH - _dialogH) / 2; // 自然中央（无键盘时的居中位置）
-      final currentTop = (sizeH - _dialogH) / 2; // 窗口缩小+居中后的当前位置
-      final visibleBottom = sizeH; // 可视区底缘 == 键盘顶缘
+      final fullH = sizeH + keyboard;
+      final naturalTop = (fullH - _dialogH) / 2;
+      final currentTop = (sizeH - _dialogH) / 2;
+      final visibleBottom = sizeH;
       double desiredTop = naturalTop;
       if (desiredTop + _dialogH > visibleBottom) {
         final floor = visibleBottom - _dialogH;
         desiredTop = floor < 0 ? 0.0 : floor;
       }
-      // 位移 = 目标位置 - 当前位置；正值表示向下还原，负值表示向上避让。
       translateY = desiredTop - currentTop;
     }
     return Transform.translate(
       offset: Offset(0, translateY),
-      // RepaintBoundary：把弹窗内容层缓存为一块位图层，键盘动画期间每帧只做
-      // 层位移（GPU 合成），不逐帧重新光栅化弹窗内容，避免顶起掉帧。
       child: RepaintBoundary(
         child: KeyedSubtree(key: _key, child: widget.child),
       ),

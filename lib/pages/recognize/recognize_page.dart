@@ -25,8 +25,6 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 听歌识曲页（桌面端风格）：居中麦克风圆钮 + 脉冲/旋转 / 波形条，
-/// 识别成功后展示匹配度、封面、收藏、加歌单与重新识别。
 class RecognizePage extends ConsumerStatefulWidget {
   const RecognizePage({super.key});
 
@@ -44,8 +42,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
   List<RecognizeMatch> _matches = const [];
   String? _error;
 
-  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
-  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
   AnimationController? _pulseC;
   AnimationController get _pulse =>
       _pulseC ??=
@@ -94,7 +90,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       if (!mounted) return;
       setState(() {
         _phase = _Phase.idle;
-        // 用户主动停止识别，不展示错误。
         if (e.message == tr('识别已取消')) {
           _error = null;
         } else {
@@ -112,10 +107,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   Future<void> _cancel() async {
     await _service.cancel();
-    // recordAndRecognize 会以「识别已取消」异常返回，由 _start 的 catch 处理状态。
   }
 
-  /// 把识别结果转成可播放/收藏/加歌单的队列项（LX 酷狗协议）。
   QueueItem _toQueueItem(RecognizeMatch m) {
     final musicInfo = <String, dynamic>{
       'name': m.name,
@@ -154,7 +147,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
   Future<void> _play(RecognizeMatch m) async {
     final notifier = ref.read(playerProvider.notifier);
-    // 1) 本地曲库优先：识别结果命中本地文件时直接播放，无需任何在线解析。
     final local = await _findLocalMatch(m);
     if (local != null) {
       await ref.read(libraryProvider.notifier).playList([local], 0);
@@ -164,14 +156,12 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       }
       return;
     }
-    // 2) 在线兜底：落雪音源逐源搜索同名曲目，命中且直链可解析才播放。
     if (mounted) {
       showXianYuToast(context, tr('正在搜索可播放音源…'),
           duration: const Duration(seconds: 2));
     }
     final online = await _findOnlineMatch(m);
     QueueItem? toPlay = online;
-    // 3) 最终兜底：原酷狗识别项，绑定酷狗插件后验证可播。
     toPlay ??= await _buildKgFallbackItem(m);
     if (toPlay == null) {
       if (mounted) {
@@ -201,12 +191,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     }
   }
 
-  /// 标题归一化（与播放器 _matchOnlineTitle 同口径）：去空格/标点/大小写。
   static String _normTitle(String s) => s
       .toLowerCase()
       .replaceAll(RegExp(r'[\s\-_（）()【】\[\].、，,·/\\+&]'), '');
 
-  /// 判断识别标题与候选标题是否匹配（归一化相等；长度≥3 允许互相包含）。
   static bool _titleMatches(String a, String b) {
     final na = _normTitle(a);
     final nb = _normTitle(b);
@@ -218,7 +206,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     return false;
   }
 
-  /// 歌手归一化匹配：任一方向包含即命中（识别歌手名常含「/」多歌手）。
   static bool _artistMatches(String a, String b) {
     final na = _normTitle(a);
     final nb = _normTitle(b);
@@ -226,7 +213,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     return na.contains(nb) || nb.contains(na);
   }
 
-  /// 在本地曲库中查找与识别结果同名的歌曲（歌手匹配者优先）。
   Future<Song?> _findLocalMatch(RecognizeMatch m) async {
     try {
       final dbPath = await ref.read(dbPathProvider.future);
@@ -247,7 +233,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     }
   }
 
-  /// 酷狗识别项兜底：找一个酷狗插件，绑定 pluginId 后验证可播。
   Future<QueueItem?> _buildKgFallbackItem(RecognizeMatch m) async {
     try {
       final engine = await ref.read(pluginEngineProvider.future);
@@ -305,12 +290,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     return null;
   }
 
-  /// 在落雪在线音源（酷我/网易云/酷狗/QQ/咪咕）中搜索识别结果，
-  /// 返回首个标题命中（歌手匹配者优先）且**直链可解析**的队列项；全源失败返回 null。
-  ///
-  /// 直链解析完全依赖已安装插件。返回的队列项绑定具体 pluginId，走播放器的
-  /// [_resolvePluginUrl] 路径，绕过 Rust 侧按音源 key 精确匹配（插件 sources
-  /// 可能用「酷狗」「kugou」等别名）。
   Future<QueueItem?> _findOnlineMatch(RecognizeMatch m) async {
     final keyword = m.singer.trim().isEmpty
         ? m.name.trim()
@@ -323,7 +302,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     if (enabled.isEmpty) return null;
 
     for (final src in kOnlineSources) {
-      // 找一个能服务该音源的已启用插件（别名归一化匹配）。
       final plugin = findPluginForPlatform(
         platformLabel: src.id,
         installedPlugins: enabled,
@@ -344,7 +322,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
             matches.add(raw);
           }
         }
-        // 每源最多验证前 3 个候选。
         for (final hit in matches.take(3)) {
           final item = await _buildPlayableItem(
             engine, plugin, src.id, hit,
@@ -352,13 +329,11 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
           if (item != null) return item;
         }
       } catch (_) {
-        // 该源搜索失败，继续下一源。
       }
     }
     return null;
   }
 
-  /// 用插件引擎验证候选可播，成功则返回绑定 pluginId 的队列项。
   Future<QueueItem?> _buildPlayableItem(
     PluginEngine engine,
     PluginSource plugin,
@@ -392,7 +367,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
           }
         }
       } catch (_) {
-        // 该档失败，继续下一档。
       }
     }
     return null;
@@ -443,9 +417,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     final success = _phase == _Phase.done && _matches.isNotEmpty;
 
     return Scaffold(
-      // 底色与其他二级页统一：常规模式实色（覆盖/平滑转场不透底、离屏快照
-      // 玻璃背板有内容可采样，不闪黑帧）；壁纸模式返回透明，由 AppPageBackground
-      // 在页内烘焙壁纸底色（不透明卡片），行为与原先一致。
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
@@ -535,7 +506,6 @@ class _MicView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(24, 20, 24, 32),
       children: [
-        // —— 麦克风圆钮 ——
         SizedBox(
           height: 96,
           child: Center(
@@ -545,7 +515,6 @@ class _MicView extends StatelessWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  // 脉冲环（录音中）
                   if (active && !recognizing)
                     ScaleTransition(
                       scale: Tween(begin: 0.92, end: 1.08).animate(CurvedAnimation(
@@ -597,7 +566,6 @@ class _MicView extends StatelessWidget {
           ),
         ),
 
-        // —— 波形条（录音中）——
         const SizedBox(height: 14),
         if (phase == _Phase.recording)
           const _Waveform(color: Color(0xFFEC4141))
@@ -614,7 +582,6 @@ class _MicView extends StatelessWidget {
             ),
           ),
 
-        // —— 错误提示 / 提示文案 ——
         const SizedBox(height: 16),
         if (failed && error != null)
           Padding(
@@ -645,7 +612,6 @@ class _MicView extends StatelessWidget {
           ),
         ],
 
-        // —— 失败后重新识别 ——
         if (failed && !active) ...[
           const SizedBox(height: 24),
           Center(
@@ -657,7 +623,6 @@ class _MicView extends StatelessWidget {
   }
 }
 
-/// 波形条：7 根红色竖条，模拟桌面端录音动画。
 class _Waveform extends StatefulWidget {
   const _Waveform({required this.color});
 
@@ -669,8 +634,6 @@ class _Waveform extends StatefulWidget {
 
 class _WaveformState extends State<_Waveform>
     with SingleTickerProviderStateMixin {
-  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
-  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
   AnimationController? _cC;
   AnimationController get _c =>
       _cC ??=
@@ -744,7 +707,6 @@ class _MatchListView extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
-        // 结果提示条
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -805,7 +767,6 @@ class _MatchRowState extends State<_MatchRow> {
   BuildContext? _coverCtx;
 
   Future<void> _handlePlay() async {
-    // 等封面落地后再播放：播放条封面随落地同步更新。
     final ok = await launchFlyCover(
       context,
       coverContext: _coverCtx,
@@ -826,7 +787,6 @@ class _MatchRowState extends State<_MatchRow> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          // 匹配度
           SizedBox(
             width: 56,
             child: Column(
@@ -848,7 +808,6 @@ class _MatchRowState extends State<_MatchRow> {
             ),
           ),
           const SizedBox(width: 8),
-          // 封面
           Builder(
             builder: (c) {
               _coverCtx = c;
@@ -863,7 +822,6 @@ class _MatchRowState extends State<_MatchRow> {
             },
           ),
           const SizedBox(width: 12),
-          // 歌曲信息
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -889,7 +847,6 @@ class _MatchRowState extends State<_MatchRow> {
             ),
           ),
           const SizedBox(width: 4),
-          // 操作按钮
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [

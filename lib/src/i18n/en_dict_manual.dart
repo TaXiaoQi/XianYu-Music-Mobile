@@ -1,6 +1,3 @@
-// 人工维护的英文精确词典（移动端专属文案）。
-// 键为简体中文源文案（动态值用 {name} 占位符），与 en_dict_gen.dart 合并查询。
-// 语言选项名称（简体中文/English/繁體中文）刻意不翻译，各语言显示自身名称。
 const Map<String, String> enDictManual = {
   ' · 文件缺失': ' · File missing',
   '个人中心': 'Profile',
@@ -1170,7 +1167,6 @@ const Map<String, String> enDictManual = {
   '{m}分钟': '{m} min',
   '{v} 分钟': '{v} min',
   '{v} 秒': '{v} s',
-  // ─── i18n 补全：占位符变体与新增文案 ───────────────────
   '(空)': '(empty)',
   '（跳过 {n}）': '({n} skipped)',
   '（未填写）': '(not specified)',
@@ -1369,7 +1365,6 @@ const Map<String, String> enDictManual = {
   '最多上传 {n} 张图片': 'Up to {n} images',
   '最新版本：{v}': 'Latest version: {v}',
   '昨天 {hm}': 'Yesterday {hm}',
-  // ─── 服务层同步/上传/下载消息 ───────────────────
   '成功导入备份：包含 {n} 首收藏曲目': 'Backup imported: {n} favorite songs',
   '导入成功（{note}）：共新增 {pcount} 个歌单，包含 {scount} 首歌曲': 'Import successful ({note}): {pcount} new playlists, {scount} songs',
   '文件格式不匹配或无法解析: {msg}': 'File format mismatch or unparseable: {msg}',
@@ -1430,7 +1425,6 @@ const Map<String, String> enDictManual = {
   '{label} 旧版备份，已还原 {n} 首歌曲 ID 以恢复逐字歌词': '{label} legacy backup, restored {n} song IDs for lyrics sync',
   '{label} 旧版备份': '{label} legacy backup',
   '{label} 新版备份': '{label} new backup',
-  // ─── 第二轮审查补全：远程/下载/备份/插件错误可见文案 ─────
   '插件「{name}」导入失败：{e}': 'Plugin "{name}" import failed: {e}',
   '插件实例不存在: {pluginId}': 'Plugin instance not found: {pluginId}',
   '连接失败：{e}': 'Connection failed: {e}',
@@ -1440,7 +1434,6 @@ const Map<String, String> enDictManual = {
   '同步失败：{e}': 'Sync failed: {e}',
   '下载失败：{e}': 'Download failed: {e}',
   '皮肤': 'Skin',
-  // ─── 用户协议 / 扫码登录确认 ────────────────────
   '我已阅读并同意': 'I have read and agree to the',
   '请滚动至底部': 'Scroll to the bottom to agree',
   '请先勾选同意用户协议': 'Please agree to the User Agreement first',
@@ -1489,7 +1482,6 @@ const Map<String, String> enDictManual = {
       'When enabled, this device appears as a DLNA device on the LAN. Other apps can cast songs to it.',
   '投送端看到的名字': 'Name seen by casting devices',
   '弦予音乐': 'XianYu Music',
-  // 云端同步删除范围三选一弹窗（歌单/收藏/歌单内单曲共用，对齐桌面端 SyncDeleteScopeModal）。
   '该歌单已同步到云端': 'This playlist is synced to the cloud',
   '歌单已同步到云端': 'Playlist is synced to the cloud',
   '收藏已同步到云端': 'Favorites are synced to the cloud',
@@ -1505,7 +1497,6 @@ const Map<String, String> enDictManual = {
   '云端与其他设备删除，本机保留':
       'Delete from cloud and other devices; keep on this device',
   '云端删除失败，请稍后重试': 'Cloud deletion failed. Try again later.',
-  // 插件管理页：一键全部启用/禁用（对齐桌面端 SettingsPlugins）。
   '全部启用': 'Enable all',
   '全部禁用': 'Disable all',
   '已启用 {n} 个插件': 'Enabled {n} plugins',

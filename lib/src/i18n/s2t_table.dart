@@ -1,5 +1,3 @@
-// 简繁运行期转换数据：STCharacters/TWVariants 全量字符表 + 语料命中的短语表
-// 由 tools 脚本从桌面端词典与 opencc 数据生成，请勿手工修改。
 
 const Map<String, String> s2tChars = {
   '㐷': '傌',
@@ -3885,7 +3883,6 @@ const Map<String, String> s2tChars = {
   '𱊜': '𪈼',
 };
 
-// 简体短语（STPhrases 语料命中子集），最长优先匹配
 const Map<String, String> s2tPhrases = {
   '个人': '個人',
   '个人资料': '個人資料',
@@ -4008,7 +4005,6 @@ const Map<String, String> s2tPhrases = {
   '麦克风': '麥克風',
 };
 
-// 台湾正体变体字符
 const Map<String, String> twVariantChars = {
   '僞': '偽',
   '啓': '啟',
@@ -4050,7 +4046,6 @@ const Map<String, String> twVariantChars = {
   '齶': '顎',
 };
 
-// 台湾正体短语（TWPhrases/TWVariantsPhrases 语料命中子集），键为繁体形式
 const Map<String, String> twPhrases = {
   '服務器': '伺服器',
   '交互': '互動',

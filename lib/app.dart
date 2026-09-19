@@ -20,13 +20,9 @@ import 'src/widgets/custom_background.dart';
 import 'src/widgets/liquid_wave.dart';
 import 'l10n/gen/app_localizations.dart';
 
-/// 统一消息提示样式：底部居中、圆角小胶囊（椭圆）、深底白字，替换默认铺满全宽的横条。
 const SnackBarThemeData _toastTheme = SnackBarThemeData(
-  // 浮动模式：胶囊悬浮贴底，不退化为全宽长条。
   behavior: SnackBarBehavior.floating,
-  // 固定宽度：无论屏幕多宽都是居中的紧凑小胶囊；文本过长时换行增高。
   width: 240,
-  // 大圆角构成椭圆药丸外观。
   shape: RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(60)),
   ),
@@ -36,10 +32,8 @@ const SnackBarThemeData _toastTheme = SnackBarThemeData(
     color: Colors.white,
     fontSize: 13.5,
     height: 1.3,
-    // 显式清除下划线，避免 toast 文字继承出横线。
     decoration: TextDecoration.none,
   ),
-  // 上下留白让胶囊稍离底部。
   insetPadding: EdgeInsets.symmetric(vertical: 14),
 );
 
@@ -61,11 +55,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   @override
   void initState() {
     super.initState();
-    // 系统语言变化时（跟随系统模式下）刷新界面语言。
     WidgetsBinding.instance.addObserver(this);
-    // 注意：启动统计上报（reportAppOpen）已移至首页首帧后的隐私政策同意
-    // 门槛之后执行（_runStartupAfterConsent），确保任何数据上报都发生在
-    // 用户阅读并同意隐私政策之后（应用商店审核要求）。
   }
 
   @override
@@ -82,25 +72,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     }
   }
 
-  /// 首帧后启动链路：先过首次启动隐私政策同意门槛（不同意并退出时直接结束
-  /// 应用，返回 false），同意后才执行启动统计上报与版本检查，保证任何数据
-  /// 上报（reportAppOpen / 版本检查携带设备信息）都发生在用户同意之后。
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
     final agreed = await ensurePrivacyConsent(context);
     if (!agreed || !mounted) return;
-    // 启动统计上报（原 initState 内 fire-and-forget，移至隐私同意之后）。
     ref.read(accountApiProvider).reportAppOpen();
-    // 内测门槛（被拦截则不弹更新窗）+ 服务端新版本检查。
     unawaited(runStartupVersionChecks(ref));
   }
 
-  /// 精确主题色 ColorScheme：primary/tertiary 家族直接取用户所选颜色。
-  ///
-  /// fromSeed 的 tonal palette 会把高饱和色（如红 EC4141）压成低饱和粉调
-  /// （暗色 primary ≈ #FFB4AB），导致「选红色出来粉色」。此处仅借用 fromSeed
-  /// 的中性色板（surface/outline/error），强调色家族全部精确覆盖：
-  /// - primary：亮色用原色；暗色下过暗时保色相提亮到可辨
-  /// - secondary：同色相降饱和派生，避免界面出现两种不相干的颜色
   ColorScheme _schemeWithExactAccent(
       {required Color accent, required Brightness brightness}) {
     final dark = brightness == Brightness.dark;
@@ -134,7 +112,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       onPrimary: onOf(primary),
       primaryContainer: primaryContainer,
       onPrimaryContainer: onPrimaryContainer,
-      // 亮色 inversePrimary 应等于暗色 primary（原色），反之亦然。
       inversePrimary: dark ? onPrimaryContainer : primary,
       secondary: secondary,
       onSecondary: onOf(secondary),
@@ -159,18 +136,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     _cachedPredictiveBack = predictiveBack;
     _cachedTextMode = textMode;
     final seed = Color(accent);
-    // 安卓切换特效：纯平移转场。开启预测返回时用 PredictiveBackPageTransitionsBuilder——
-    // 非手势的打开/关闭回退到 M3 FadeForwards（新页右滑入 + 旧页左移的纯平移），
-    // 手势中则整屏缩放跟手（预测返回行程）；关闭预测返回时退化为纯 FadeForwards。
     PageTransitionsTheme transitions() => PageTransitionsTheme(
           builders: {
-            // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
-            // 置为透明让下方根层背景（自定义壁纸/默认底色）自然透出，消除背景闪烁。
             TargetPlatform.android: predictiveBack
                 ? const PredictiveBackPageTransitionsBuilder(
-                    // 应用为透明 Scaffold + 根层背景（自定义壁纸/默认底色）垫底，
-                    // 转场内置的 surface 色垫片会在进出页面时闪出与背景不同的色块，
-                    // 置为透明让下方根层背景自然透出，消除背景闪烁。
                     fallbackColor: Colors.transparent,
                   )
                 : const FadeForwardsPageTransitionsBuilder(
@@ -186,10 +155,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     lightBaseScheme = lightScheme;
     final lightBase = ThemeData(
       colorScheme: lightScheme,
-      // 页面底色交给根层统一渲染（自定义壁纸/默认底色）：Scaffold 本身透明，
-      // 由各页面背景透出根层。透明不改变 colorScheme.surface（卡片/输入底色不受影响）。
       scaffoldBackgroundColor: Colors.transparent,
-      // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFFF4F4F6),
         elevation: 0,
@@ -201,13 +167,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         surfaceTintColor: Colors.transparent,
       ),
       dialogTheme: const DialogThemeData(backgroundColor: Color(0xFFFFFFFF)),
-      // 全局消息提示：底部居中的小胶囊 toast（对齐大众 toast 设计），替换默认长横条。
       snackBarTheme: _toastTheme,
       pageTransitionsTheme: lightTransitions,
       useMaterial3: true,
     );
-    // 记录原始（未 apply 壁纸前景的）textTheme，供不透明弹窗在壁纸下恢复基础明暗字。
-    // 必须在壁纸亮字/暗字覆盖【之前】记录，弹窗才拿得到基础前景。
     lightBaseTextTheme = lightBase.textTheme;
     _lightTheme = _applyWallpaperTextMode(lightBase, textMode);
     final darkScheme =
@@ -222,9 +185,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
-      // 页面底色交给根层统一渲染（自定义壁纸/默认底色），Scaffold 本身透明以透出。
       scaffoldBackgroundColor: Colors.transparent,
-      // 顶栏与页面背景同色，滚动时不变色（禁用 scrolledUnder 阴影叠加）。
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF222222),
         elevation: 0,
@@ -245,22 +206,14 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     _darkTheme = _applyWallpaperTextMode(_darkTheme!, textMode);
   }
 
-  /// 壁纸「亮色字体/暗色字体」档位的全局前景覆盖。
-  ///
-  /// 覆盖 onSurface/onSurfaceVariant 并同步 textTheme（全 App 页面文字/图标
-  /// 统一切换，复用 M3 默认 textTheme 从 onSurface 派生的链路）；容器层级
-  /// （surfaceContainer*）与文字同极性翻转，保证 ChoiceChip/卡片等显式取
-  /// 容器色的配对不失效。跟随主题档位原样返回。
   ThemeData _applyWallpaperTextMode(ThemeData base, WallpaperTextColor mode) {
     if (mode == WallpaperTextColor.follow) return base;
     final Color onSurface;
     final Color onSurfaceVariant;
     if (mode == WallpaperTextColor.light) {
-      // 壁纸亮字：文字转白，容器转暗极性（与暗色主题同明度阶梯）。
       onSurface = const Color(0xFFFFFFFF);
       onSurfaceVariant = const Color(0xB3FFFFFF);
     } else {
-      // 壁纸暗字：文字转黑，容器转亮极性。
       onSurface = const Color(0xE6000000);
       onSurfaceVariant = const Color(0x8A000000);
     }
@@ -287,14 +240,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
           containers.copyWith(onSurface: onSurface, onSurfaceVariant: onSurfaceVariant),
       textTheme:
           base.textTheme.apply(bodyColor: onSurface, displayColor: onSurface),
-      // 壁纸「亮字/暗字」档位全局覆盖 iconTheme：无显式颜色的裸图标（设置/
-      // 播放/下载/关于/反馈/悬浮歌词等绝大多数控制图标）默认取 iconTheme.color，
-      // 而 ThemeData.build 在构造时按主题明暗自固化 iconTheme（亮主题黑54、
-      // 暗主题白70），copyWith 不会随新 colorScheme 重算。
-      // 若不覆盖，这些图标会固定为「原主题极性」的半透明色——在壁纸字色反转后
-      // （如暗壁纸配亮字，文字已转白）图标仍是深色，与壁纸同色而不可见。
-      // 这里把 iconTheme 同步为 onSurface（与文字同极性、不透明），图标即与
-      // 文字一致，跟随「亮色/暗色字体」档位切换。
       iconTheme: IconThemeData(color: onSurface),
     );
   }
@@ -309,21 +254,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       ThemeModePreference.dark => ThemeMode.dark,
       ThemeModePreference.system => ThemeMode.system,
     };
-    // 壁纸「亮色字体/暗色字体」档位：仅壁纸启用时生效，经 _ensureThemes
-    // 应用到主题（onSurface/textTheme 极性翻转），不做全局前景覆盖。
     final cbActive = settings?.customBackground.active == true;
     final textMode = cbActive
         ? (settings!.customBackground.textMode)
         : WallpaperTextColor.follow;
     _ensureThemes(accent, settings?.enablePredictiveBack ?? false, textMode);
-    // 壁纸模型：壁纸只是替换根层底色（CustomBackgroundLayer），页面文字、
-    // 玻璃开关、卡片样式全部与普通模式一致，不再对主题做任何前景覆盖。
     final ThemeData theme = _lightTheme!;
     final ThemeData darkTheme = _darkTheme!;
     final cb = settings?.customBackground;
     if (cb?.active == true) {
-      // 预缓存壁纸图片：根层壁纸层复用同一 FileImage，提前解码入缓存，
-      // 启用瞬间即时显示壁纸，避免「先露原底再出壁纸」的闪烁。
       final bgPath = cb!.imagePath;
       if (bgPath.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -333,8 +272,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     }
     final language = settings?.language ?? AppLanguage.system;
     final locale = _localeFor(language);
-    // 同步全局界面语言：tr() 无 context 查表依赖该模式（系统模式按系统 locale 解析）。
-    // 必须在计算 MaterialApp key 之前完成，保证 key 与语言一致。
     I18n.setMode(_i18nModeFor(language));
     final l10nDelegates = [
       AppLocalizations.delegate,
@@ -343,31 +280,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       GlobalCupertinoLocalizations.delegate,
     ];
 
-    // 首页（真实 router）首帧渲染完成后启动后续链路
     if (init.hasValue && !_loggedHomeFirstFrame) {
       _loggedHomeFirstFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 首帧后启动链路：先过首次启动隐私政策同意门槛（不同意直接退出应用，
-        // 同意后才允许任何上报），再静默做启动版本检查：内测门槛（未授权
-        // beta 构建直接全局拦截，弹不可退出的申请弹窗并跳过更新提示）、服务端新版本。
         unawaited(_runStartupAfterConsent(ref));
       });
     }
 
-    // 冷启动「首页优先」：只在 rust 初始化【报错】时才拦下显示重试页；加载中、
-    // 成功都立刻挂起真实路由（初始 /home 首帧即渲染），不再整屏空白等待 rust。
-    // rust 在 main() 里已提前与首帧并行初始化，首页的数据访问大多走异步
-    // FutureProvider（加载态显示转圈/空态），不会因未就绪而崩溃。
-    //
-    // key 关键：语言切换会改变 locale。若仍复用同一个 MaterialApp.router 实例做
-    // 增量 locale 重建，会与 go_router 各分支 Navigator 的瞬态重建竞态，命中
-    // navigator._debugLocked 断言并报“popped the last page”（flutter#141315），
-    // 现场表现为切换语言黑屏。改用随 locale 变化的 key 强制整体重挂载：旧子树
-    //（含全部 Navigator）整体销毁、新子树（回到初始路由 /home）干净重建，不做
-    // 增量路由 reconfigure，从而彻底规避该竞态。语言切换重挂载一次开销可接受。
     return init.hasError
         ? MaterialApp(
-            // 多任务标题：debug 带「·测试」后缀，与正式版一眼区分。
             title: '${tr('弦予音乐')}${kDebugMode ? '·测试' : ''}',
             debugShowCheckedModeBanner: false,
             theme: theme,
@@ -382,8 +303,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             ),
           )
         : MaterialApp.router(
-            // key 随「解析后的界面语言」变化（覆盖系统模式下的系统语言切换），
-            // 强制整体重挂载刷新全部 tr() 文案。
             key: ValueKey('app-${I18n.mode.name}'),
             title: '${tr('弦予音乐')}${kDebugMode ? '·测试' : ''}',
             debugShowCheckedModeBanner: false,
@@ -394,22 +313,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             localizationsDelegates: l10nDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
-            // 注册根 Overlay 供「飞封面」动画使用（首帧后 Navigator 已挂载）。
             builder: (context, child) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final overlay = appNavigatorKey.currentState?.overlay;
                 if (overlay != null) FlyingCover.instance.attach(overlay);
               });
-              // 全局壁纸层：置于 Navigator 之下作兜底底色。页面壁纸由
-              // AppPageBackground 烘焙为页面自身底色（不透明卡片，转场即普通
-              // 模式整页滑动）；本层仅在页面未覆盖的透明区域（弹窗遮罩边缘、
-              // opaque=false 路由等）透出。壁纸未启用时由 ColoredBox 提供原
-              // 默认底色，视觉不变。
-              // ScrollOffsetCapture：全局捕获任意页面的竖直滚动，驱动 blur 预算
-              // 在滚动期间统一降级（覆盖主 Tab 与推入 root navigator 的二级页）。
-              // 全局字体大小档位：跟随系统档直接透传系统 textScaler（随系统
-              // 字号实时变化、保留非线性），固定档使用应用内恒定系数（不随系统
-              // 跳动）。「跟随系统」为默认档。
               final fontSize = settings?.fontSize ?? AppFontSize.system;
               final textScaler = fontSize.followsSystem
                   ? MediaQuery.textScalerOf(context)
@@ -445,7 +353,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         AppLanguage.system => _modeForSystemLocale(),
       };
 
-  /// 系统语言解析：中文按地区分简繁（TW/HK/MO → 繁体），英文 → en，其余默认简体。
   I18nMode _modeForSystemLocale() {
     final locales = WidgetsBinding.instance.platformDispatcher.locales;
     if (locales.isEmpty) return I18nMode.zhCn;

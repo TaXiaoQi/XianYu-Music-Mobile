@@ -10,10 +10,6 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/sheet_dialog.dart';
 
-/// 卸载插件确认入口（对齐桌面已同步插件删除范围弹窗）。
-///
-/// - 未同步插件（未登录或无云端副本）：普通确认框后仅卸载本地
-/// - 已同步插件：弹「删除本地/删除全部/仅保留本地」三选一
 Future<void> confirmRemovePlugin(
     BuildContext context, WidgetRef ref, PluginSource source) async {
   final api = ref.read(accountApiProvider);
@@ -110,19 +106,17 @@ Future<void> confirmRemovePlugin(
   if (!context.mounted) return;
   switch (scope) {
     case 'local':
-      // 写入「仅删本地」墓碑，下载恢复时跳过，防止删除后被同步回流
       await PluginSyncState.addDownloadSkipIds([source.id]);
       await manager.remove(source.id);
     case 'all':
       await _deleteCloud(context, ref, source.id);
       await manager.remove(source.id);
-    default: // 'cloud'：仅删云端，本机保留并写入「仅保留本地」墓碑防上传复活
+    default:
       final ok = await _deleteCloud(context, ref, source.id);
       if (ok) await PluginSyncState.addUploadSkipIds([source.id]);
   }
 }
 
-/// 删除云端插件副本；返回是否成功。失败提示但不中断后续本地动作。
 Future<bool> _deleteCloud(
     BuildContext context, WidgetRef ref, String pluginId) async {
   try {

@@ -10,15 +10,6 @@ import '../sync/playlist_song_sync_state.dart';
 import '../widgets/sheet_dialog.dart';
 import 'playlist_store.dart';
 
-/// 歌单内移除单曲的删除范围确认（对齐桌面已同步歌单删除范围弹窗与收藏删除范围弹窗）。
-///
-/// [resolvePlaylistSongDeleteScope]：歌单已同步（已登录且持有 cloudId）时
-/// 弹「删除本地/删除全部/仅保留本地」三选一；未同步或取消返回 null（调用方走原流程）。
-/// [applyPlaylistSongDeleteScope]：按范围应用删除动作，歌曲级删除经墓碑在同步时传播。
-///
-/// 歌曲身份键与收藏同步一致，按 path 匹配。
-
-/// 已同步歌单弹出删除范围选择；返回 'local' | 'all' | 'cloud'，取消或未同步返回 null。
 Future<String?> resolvePlaylistSongDeleteScope(
     BuildContext context, WidgetRef ref, ImportedPlaylist playlist,
     {required int songCount}) async {
@@ -92,10 +83,6 @@ Future<String?> resolvePlaylistSongDeleteScope(
   return scope;
 }
 
-/// 按范围应用歌单内单曲删除：
-/// - local：缓存上传载荷写「仅删本地」墓碑后执行 [onLocalRemove]（上传时回填云端保留、下载跳过回灌）
-/// - all：写「待上报删除」墓碑后执行 [onLocalRemove]（下次上传随 deletedSongPaths 上报，传播全端）
-/// - cloud：写「仅保留本地」墓碑（本机不动，上传时剔除出载荷并上报云端删除）
 Future<void> applyPlaylistSongDeleteScope(
   BuildContext context,
   WidgetRef ref,
@@ -120,18 +107,16 @@ Future<void> applyPlaylistSongDeleteScope(
       await PlaylistSongSyncState.addPendingDeletedSongs(
           cloudId, songs.map((s) => s.path));
       await onLocalRemove();
-    default: // 'cloud'
+    default:
       await PlaylistSongSyncState.addLocalOnlySongs(
           cloudId, songs.map((s) => s.path));
   }
 }
 
-/// 构造与同步上传一致的载荷（同 SyncNotifier._songToSyncPayload）。
 Map<String, dynamic> songToSyncPayload(ImportedSong s) => {
       ...s.toJson(),
       'name': s.title,
       'duration': s.duration * 1000,
-      // 与桌面端 classifySyncSong 对齐：标记本地/在线，供下载端恢复来源类型。
       'syncType': s.path.startsWith('lx://') ||
               s.path.startsWith('plugin://') ||
               s.path.startsWith('http://') ||

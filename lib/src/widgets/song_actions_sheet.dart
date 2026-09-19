@@ -12,8 +12,6 @@ import 'song_info_dialog.dart';
 import 'app_toast.dart';
 import '../i18n/i18n.dart';
 
-/// 通用歌曲操作弹层：收藏 / 添加到歌单 / 歌曲信息 / 下载。
-/// 任何来源的歌曲统一以 QueueItem 表示（本地或在线）。
 Future<void> showSongActionsSheet(
   BuildContext context, {
   required WidgetRef ref,
@@ -100,14 +98,10 @@ Future<void> showSongActionsSheet(
                 title:   Text(tr('下载')),
                 onTap: () async {
                   final dn = ref.read(downloadProvider.notifier);
-                  // 未设置自定义下载目录/无「所有文件访问」权限：禁止下载并提示（面板不关闭）。
                   if (!await dn.requireDownloadDir(ctx)) {
                     return;
                   }
-                  // await 期间面板可能已被用户下滑关闭，此时操作失效 ctx
-                  // 会触发 framework ancestor 断言崩溃。
                   if (!ctx.mounted) return;
-                  // 「每次询问我」：关闭面板后先弹音质选择，再开始下载。
                   final behavior =
                       ref.read(settingsProvider).valueOrNull?.downloadBehavior ??
                           'default';
@@ -127,7 +121,6 @@ Future<void> showSongActionsSheet(
                   }
                   Navigator.pop(ctx);
                   dn.download(item);
-                  // 面板 ctx 已随 pop 进入退出动画，toast 用外层页面 context。
                   showXianYuToast(
                     context,
                     tr('开始下载：{title}，请留意通知查看下载进度',
@@ -151,8 +144,6 @@ Future<void> showSongActionsSheet(
   );
 }
 
-/// 「每次询问我」下载音质选择：复用设置页同一套 12 档音质阶梯。
-/// 默认高亮设置的下载音质，返回 null 表示取消。
 Future<String?> _pickDownloadQuality(BuildContext ctx, WidgetRef ref) async {
   final current =
       ref.read(settingsProvider).valueOrNull?.downloadQuality ?? '320k';

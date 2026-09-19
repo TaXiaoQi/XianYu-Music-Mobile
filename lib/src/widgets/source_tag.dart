@@ -7,9 +7,6 @@ import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import '../plugin/plugin_provider.dart';
 
-/// 「小X」规避审查别名 → 平台真名映射。
-/// 插件开发者常用同音字/形近字代指真实平台以规避应用商店审查，
-/// 开启「显示真实音源名」后统一还原。
 const Map<String, String> kSourceAliasToReal = {
   '小蜗': '酷我',
   '小枸': '酷狗',
@@ -21,8 +18,6 @@ const Map<String, String> kSourceAliasToReal = {
   'K歌': '全民K歌',
 };
 
-/// 把插件名/别名中的「小X」替换为真实平台名（如「小枸音乐」→「酷狗音乐」）。
-/// 若未命中映射则原样返回。
 String resolveRealSourceName(String name) {
   for (final entry in kSourceAliasToReal.entries) {
     if (name.contains(entry.key)) {
@@ -32,20 +27,14 @@ String resolveRealSourceName(String name) {
   return name;
 }
 
-/// 来源标签最多显示的字数（对齐桌面端，与播放队列一致）。
 const int kSourceTagMaxChars = 5;
 
-/// 截断来源文案到最多 [kSourceTagMaxChars] 个字（超出加省略号）。
 String truncateSource(String label) {
   if (label.length <= kSourceTagMaxChars) return label;
   final runes = label.runes.take(kSourceTagMaxChars);
   return '${String.fromCharCodes(runes)}…';
 }
 
-/// 计算歌曲的来源标签文案。
-///
-/// 需要音源/路径识别的能力（来源 key、lx:// 路径、已装插件名），与桌面端
-/// `remoteSong.getSongSourceLabel` 行为对齐：在线歌曲显示来源名，本地歌曲显示「本地」。
 String songSourceLabel(
   WidgetRef ref, {
   required String path,
@@ -59,12 +48,8 @@ String songSourceLabel(
   final showReal = ref.watch(settingsProvider
           .select((s) => s.valueOrNull?.showRealSourceName ?? false));
 
-  // 1. 优先匹配已安装插件名：QueueItem/收藏走 onlineSongJson.pluginId，
-  //    歌单 ImportedSong 直接给插件 id。
   final pid = pluginId ?? _pluginIdFromJson(onlineSongJson);
   if (pid != null && pid.isNotEmpty) {
-    // watch 而非 read：冷启动时插件列表尚未异步加载完成会误落「在线」兜底，
-    // watch 让列表就绪后标签自动刷新为真实插件名（与日推时序修复同思路）。
     final pluginState = ref.watch(pluginManagerProvider);
     for (final p in pluginState.sources) {
       if (p.id == pid) {
@@ -73,9 +58,6 @@ String songSourceLabel(
     }
   }
 
-  // 2. 识别短 key（LX 常用音源 / 平台）。
-  //    收藏/榜单导入等场景来源 key 常只写在 onlineSongJson 里、顶层 source
-  //    为空，从 json 兜底读取，避免来源落成「在线」。
   final src = (source != null && source.trim().isNotEmpty)
       ? source
       : _jsonSource(onlineSongJson);
@@ -87,7 +69,6 @@ String songSourceLabel(
     return raw.length <= 6 ? raw.toUpperCase() : raw;
   }
 
-  // 3. 从 lx:// 协议路径兜底
   if (path.startsWith('lx://')) {
     final parts = path.substring(5).split('/');
     if (parts.isNotEmpty && parts.first.isNotEmpty) {
@@ -100,8 +81,6 @@ String songSourceLabel(
   return tr('在线');
 }
 
-/// 简短音源 key -> 显示名（与播放队列 `_formatItemSource` 一致）。
-/// [showReal] 为 true 时返回平台真名而非「小X」别名。
 String? _shortSourceName(String lower, {bool showReal = false}) {
   switch (lower) {
     case 'kw':
@@ -132,7 +111,6 @@ String? _shortSourceName(String lower, {bool showReal = false}) {
   }
 }
 
-/// 从 onlineSongJson 读取来源 key（QueueItem/收藏常把 source 只写在 json 里）。
 String? _jsonSource(String? onlineSongJson) {
   if (onlineSongJson == null || onlineSongJson.isEmpty) return null;
   try {
@@ -154,7 +132,6 @@ String? _pluginIdFromJson(String? onlineSongJson) {
   }
 }
 
-/// 歌曲来源标签：桌面端风格的小胶囊，展示来源名 / 「本地」，最多 [kSourceTagMaxChars] 字。
 class SourceTag extends ConsumerWidget {
   const SourceTag({
     super.key,

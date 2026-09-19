@@ -18,7 +18,6 @@ import 'sheet_dialog.dart';
 import 'app_toast.dart';
 import '../i18n/i18n.dart';
 
-/// 把播放队列项转成歌单曲目（本地/在线通吃）。
 ImportedSong importedSongFromQueueItem(QueueItem item) {
   Map<String, dynamic>? musicInfo;
   String? pluginId;
@@ -53,7 +52,6 @@ ImportedSong importedSongFromQueueItem(QueueItem item) {
   );
 }
 
-/// 把本地曲库歌曲转成歌单曲目。
 ImportedSong importedSongFromLocal(Song song) => ImportedSong(
       title: song.title,
       artist: song.artist,
@@ -64,7 +62,6 @@ ImportedSong importedSongFromLocal(Song song) => ImportedSong(
       path: song.path,
     );
 
-/// 「添加到歌单」底部弹层：选择已有歌单或新建。
 Future<void> showAddToPlaylistSheet(
   BuildContext context,
   WidgetRef ref,
@@ -147,7 +144,6 @@ Future<void> showAddToPlaylistSheet(
                               style: const TextStyle(fontSize: 12)),
                           onTap: () async {
                             await manager.addSongs(p.id, songs);
-                            // 正反馈：添加到歌单 = 「喜欢这类歌」，上报日推画像（失败静默）。
                             unawaited(reportDailyLikeSignals(
                               ref.read(authProvider.notifier),
                               ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
@@ -174,7 +170,6 @@ Future<void> showAddToPlaylistSheet(
   );
 }
 
-/// 名称输入弹窗（新建/重命名共用）。
 Future<String?> _promptName(BuildContext context, String title,
     {String initial = ''}) {
   final ctrl = TextEditingController(text: initial);
@@ -202,7 +197,6 @@ Future<String?> _promptName(BuildContext context, String title,
   );
 }
 
-/// 歌单操作菜单（重命名/删除）。
 Future<void> showPlaylistActionsSheet(
   BuildContext context,
   WidgetRef ref,
@@ -249,7 +243,6 @@ Future<void> showPlaylistActionsSheet(
   );
 }
 
-/// 名称弹窗导出（歌单页新建按钮复用）。
 Future<String?> promptPlaylistName(BuildContext context, String title,
         {String initial = ''}) =>
     _promptName(context, title, initial: initial);

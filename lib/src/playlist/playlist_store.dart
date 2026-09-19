@@ -5,15 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../i18n/i18n.dart';
 
-/// 导入的歌单（备份导入产生，持久化到 SharedPreferences）。
 class ImportedPlaylist {
   final String id;
   final String name;
   final List<ImportedSong> songs;
   final int importedAt;
-  /// 云端歌单 ID（三端统一为字符串稳定 ID，同步绑定）。
   final String? cloudId;
-  /// 是否来自云端（下载合并时标记；cloudId 可能因历史数据缺失，用此标记判定"已同步"）。
   final bool isCloud;
 
   ImportedPlaylist({
@@ -47,7 +44,6 @@ class ImportedPlaylist {
       );
 }
 
-/// 导入歌单的持久化存储。
 class PlaylistStore {
   static const _key = 'xianyu_imported_playlists_v1';
 
@@ -72,7 +68,6 @@ class PlaylistStore {
         _key, jsonEncode(playlists.map((p) => p.toJson()).toList()));
   }
 
-  /// 追加导入的歌单（按名称去重，同名则合并歌曲）。
   Future<List<ImportedPlaylist>> addPlaylists(
     List<PluginBackupPlaylist> playlists,
   ) async {
@@ -120,7 +115,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 绑定/清除歌单的云端 ID（同步上传写回）。
   Future<List<ImportedPlaylist>> setCloudId(String id, String? cloudId) async {
     final all = await loadAll();
     final next = cloudId == null || cloudId.isEmpty ? null : cloudId;
@@ -140,7 +134,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 新建空歌单。
   Future<List<ImportedPlaylist>> createPlaylist(String name) async {
     final all = await loadAll();
     final result = [
@@ -156,7 +149,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 重命名歌单。
   Future<List<ImportedPlaylist>> renamePlaylist(
       String id, String name) async {
     final all = await loadAll();
@@ -176,7 +168,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 向歌单添加歌曲（按 path 去重）。
   Future<List<ImportedPlaylist>> addSongsTo(
       String id, List<ImportedSong> songs) async {
     if (songs.isEmpty) return loadAll();
@@ -203,7 +194,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 从歌单移除单曲（按 path 匹配）。
   Future<List<ImportedPlaylist>> removeSong(
       String id, String path) async {
     final all = await loadAll();
@@ -222,11 +212,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 悬空 pluginId 修复：把所有引用 [path] 的在线歌曲重绑到 [pluginId]。
-  ///
-  /// 插件 id = 插件文件内容 sha256，插件更新/重装后已导入歌曲记录里的
-  /// pluginId 全部悬空（播放报「store 中无插件」）。播放解析发现悬空并按
-  /// 平台重新匹配成功后，调用此方法把新插件 id 回写，避免每次播放都重匹配。
   Future<List<ImportedPlaylist>> healSongPluginId(
       String path, String pluginId) async {
     if (path.isEmpty || pluginId.isEmpty) return loadAll();
@@ -254,9 +239,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 跨格式换源完整修复：把引用 [path] 的在线歌曲的 pluginId/source/format/musicInfo
-  /// 全部更新为跨格式重搜后的新值（同格式 healing 只需更新 pluginId，见
-  /// [healSongPluginId]）。
   Future<List<ImportedPlaylist>> healSongPluginFull(
     String path, {
     required String pluginId,
@@ -294,7 +276,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 按指定 path 顺序重排歌单内歌曲（未列出的歌曲保持在队尾）。
   Future<List<ImportedPlaylist>> reorderSongs(
       String id, List<String> orderedPaths) async {
     final all = await loadAll();

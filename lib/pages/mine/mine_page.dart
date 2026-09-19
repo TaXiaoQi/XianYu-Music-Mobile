@@ -32,10 +32,6 @@ import '../search/search_page.dart' show searchSessionProvider;
 import '../../src/responsive/landscape.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 「我的」页：搜索条 + 账号区 + 快捷入口四宫格（参考魅族音乐我的页布局）。
-///
-/// 音乐库、歌单、收藏等曲库浏览统一从快捷入口与首页网格分流进入；
-/// 设置入口位于右上角（底栏已无设置 Tab）。
 class MinePage extends ConsumerWidget {
   const MinePage({super.key});
 
@@ -44,23 +40,17 @@ class MinePage extends ConsumerWidget {
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final searchBar = PageSearchBarBottom(
-      // 我的页搜索默认引导到本地索引：进入前重置会话音源为 local，
-      // 避免沿用首页/搜索页上一次选中的在线音源（无插件时来源条即显示「本地」）。
       onTap: () {
         ref.read(searchSessionProvider.notifier).setSource('local');
         context.push('/search');
       },
       onRecognize: () => context.push('/recognize'),
     );
-    // 悬浮顶部栏（标题胶囊+搜索胶囊+玻璃按钮）由壳层统一渲染（首页/我的页共用
-    // 同一实例，不随 tab 重建）。悬浮模式下本页不再渲染标题行，仅按其几何预留
-    // 顶部避让，避免账号条飞到悬浮顶栏下方。
     final statusBar = MediaQuery.paddingOf(context).top;
     final topInset = floating
         ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
     final portrait = Scaffold(
-      // 背景交给 Shell 层统一渲染（自定义壁纸/默认底色），页面自身保持透明以透出壁纸。
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
@@ -76,7 +66,6 @@ class MinePage extends ConsumerWidget {
               SizedBox(height: 18),
               _AccountArea(),
               SizedBox(height: 22),
-              // 听歌统计依赖云端数据，未登录时整卡隐藏。
               if (ref.watch(authProvider.select((a) => a.isLoggedIn))) ...[
                 StatsSummaryCard(),
                 SizedBox(height: 22),
@@ -88,36 +77,25 @@ class MinePage extends ConsumerWidget {
               _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
-          // 顶栏（仅非悬浮模式）已上提至壳层共用：竖屏固定顶栏（标题+搜索框）
-          // 由 shell 统一渲染为常驻毛玻璃 overlay，首页/我的页切换不再重建；
-          // 悬浮模式由壳层悬浮顶栏接管。本页只按其高度预留顶部避让。
         ],
         ),
       ),
     );
 
-    // 竖屏=完整版默认布局，横屏=精简个人中心，两套 UI 完全分开（见 LandscapeGate）。
     return LandscapeGate(
       portrait: portrait,
       landscape: _buildLandscapeProfile(context, ref),
     );
   }
 
-  /// 横屏专用：精简个人中心（独立一套 UI）。参考桌面版个人中心排布——
-  /// 账号区 + 收藏/歌单/历史统计 + 快捷入口卡片。音乐库各入口已由
-  /// 横屏侧边栏承接，此处不再重复列表分区。
   Widget _buildLandscapeProfile(BuildContext context, WidgetRef ref) {
-    // 悬浮模式：壳层横屏全局顶栏独立悬浮在容器顶部，内容需预留其高度
-    // （默认模式顶栏在上方 Column 中，无需预留）。
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
-    // 听歌统计卡依赖云端数据，未登录时隐藏（与竖屏一致）。
     final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
-      // 顶部无需避让：壳层全局顶栏在内容上方 Column 中，自身处理状态栏。
       body: ListView(
         padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
         children: [
@@ -138,7 +116,6 @@ class MinePage extends ConsumerWidget {
   }
 }
 
-/// 数据统计：收藏 / 歌单 / 历史（参考桌面版个人中心，数字+标签一行排布）。
 class _StatsRow extends ConsumerWidget {
   const _StatsRow();
 
@@ -196,18 +173,14 @@ Widget _statItem(ColorScheme scheme, String value, String label) {
   );
 }
 
-/// 快捷入口卡片：账号设置 / 主题外观 / 本地音乐 / 下载（参考桌面版个人中心宫格）。
-/// 竖屏 2×2 网格；横屏 1×4 单行平铺。横屏下「账号设置」走容器内嵌、不开二级路由。
 class _QuickCards extends ConsumerWidget {
   const _QuickCards();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 下载入口依赖插件内容，无已启用插件时隐藏（与竖屏快捷入口一致）。
     final hasPlugin = ref.watch(
         pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)));
-    // 横屏专用：收藏/最近播放走侧边栏音乐库容器（1=我的收藏、2=最近播放）。
     final cards = [
       (tr('我的收藏'), tr('喜欢的音乐、歌单与专辑'), Icons.favorite_outline, 'lib-fav'),
       (tr('最近播放'), tr('最近听过的歌曲'), Icons.history_outlined, 'lib-recent'),
@@ -216,8 +189,6 @@ class _QuickCards extends ConsumerWidget {
         (tr('歌曲下载'), tr('管理下载任务'), Icons.download_outlined, '/download'),
     ];
 
-    // 横屏：收藏/最近播放/歌曲下载在右侧容器内嵌打开、本地音乐切到侧边栏
-    // 本地入口，均不开二级页。
     void open((String, String, IconData, String) c) {
       switch (c.$4) {
         case 'lib-fav':
@@ -225,7 +196,6 @@ class _QuickCards extends ConsumerWidget {
         case 'lib-recent':
           ref.read(landscapeLibraryProvider.notifier).state = 2;
         case '/library':
-          // 本地音乐：路由到侧边栏音乐库的本地入口（0=本地）。
           ref.read(landscapeLibraryProvider.notifier).state = 0;
         case '/download':
           ref.read(landscapeDownloadOpenProvider.notifier).state = true;
@@ -296,7 +266,6 @@ class _QuickCards extends ConsumerWidget {
       );
     }
 
-    // 横屏：直接平铺单行（参考桌面版），卡片均分宽度。
     return Row(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
@@ -310,7 +279,6 @@ class _QuickCards extends ConsumerWidget {
   }
 }
 
-/// 账号区：未登录时展示登录胶囊按钮（参考图布局），已登录展示头像卡片。
 class _AccountArea extends ConsumerWidget {
   const _AccountArea();
 
@@ -380,7 +348,6 @@ class _AccountArea extends ConsumerWidget {
         side: BorderSide.none,
       ),
       child: InkWell(
-        // 横屏：账号与安全在右侧容器内嵌显示，不开二级路由。
         onTap: () {
           if (isLandscape) {
             ref.read(landscapeAccountOpenProvider.notifier).state = true;
@@ -433,7 +400,6 @@ class _AccountArea extends ConsumerWidget {
                   ],
                 ),
               ),
-              // 扫码登录入口：竖屏与首页顶栏的皮肤入口位置互换；横屏保持扫码。
               IconButton(
                 onPressed: () => context.push('/scan'),
                 icon: Icon(
@@ -448,7 +414,6 @@ class _AccountArea extends ConsumerWidget {
         ),
       ),
     );
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
         context: context, ref: ref, radius: 16, child: accountCard);
   }
@@ -470,7 +435,6 @@ class _AccountArea extends ConsumerWidget {
   }
 }
 
-/// 快捷入口四宫格：喜欢 / 最近 / 本地 / 下载（参考图布局，图标带数量角标）。
 class _QuickEntries extends ConsumerWidget {
   const _QuickEntries();
 
@@ -570,7 +534,6 @@ class _QuickEntries extends ConsumerWidget {
               count: '$localCount',
               onTap: () => context.push('/library?tab=0'),
             ),
-            // 下载入口依赖插件内容，无已启用插件时隐藏。
             if (ref.watch(pluginManagerProvider
                 .select((s) => s.sources.any((p) => p.enabled))))
               entry(
@@ -583,7 +546,6 @@ class _QuickEntries extends ConsumerWidget {
         ),
       ),
     );
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
         context: context, ref: ref, radius: 16, child: entriesCard);
   }
@@ -593,7 +555,6 @@ class _QuickEntries extends ConsumerWidget {
 // 歌单 / 收藏分区（QQ 音乐样式：分区头「标题 数量」+ 右侧操作、封面式条目列表）
 // ---------------------------------------------------------------------------
 
-/// 分区头：左「标题 数量」，右操作（自建歌单带「新建」，收藏分区无）。
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title, required this.count, this.action});
 
@@ -625,8 +586,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// 内嵌滚动条中的可拖动排序卡片（shrinkWrap + NeverScrollable，供外层 ListView 使用）。
-/// 每项自带一条与封面-文字对齐的分隔线（末项除外），视觉对齐原 _CardGroup。
 class _ReorderCard extends ConsumerWidget {
   const _ReorderCard({
     required this.itemCount,
@@ -638,7 +597,6 @@ class _ReorderCard extends ConsumerWidget {
   final int itemCount;
   final ReorderCallback onReorder;
 
-  /// 每项稳定身份 Key（对应条目 id/key），供拖拽框架追踪 & 隔离合成层。
   final Key Function(int index) itemKey;
   final IndexedWidgetBuilder itemBuilder;
 
@@ -659,17 +617,11 @@ class _ReorderCard extends ConsumerWidget {
         buildDefaultDragHandles: false,
         itemCount: itemCount,
         onReorderItem: onReorder,
-        // 拖动代理样式与正常条目保持一致（去掉默认拖拽阴影）。
-        // 拖动 proxy 处于根 Overlay 下（无 Material 祖先），行内 InkWell/ListTile
-        // 会以 debugCheckHasMaterial 报错；补一层透明 Material 提供水波纹上下文。
         proxyDecorator: (child, index, animation) =>
             Material(type: MaterialType.transparency, child: child),
         itemBuilder: (ctx, i) {
           final row = itemBuilder(ctx, i);
           final isLast = i == itemCount - 1;
-          // ReorderableListView 不像 ListView 那样自动给子项加 RepaintBoundary：
-          // 多条目时可见卡片每帧被整体重绘 → 抽帧。每项隔离为独立合成层后，
-          // 滑动只搬运已有图层，不重绘内容。
           return RepaintBoundary(
             key: itemKey(i),
             child: Column(
@@ -689,13 +641,11 @@ class _ReorderCard extends ConsumerWidget {
         },
       ),
     );
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
         context: context, ref: ref, radius: 16, child: reorderCard);
   }
 }
 
-/// 自建歌单分区：头部带「+ 新建」「导入」胶囊按钮；条目封面+名称+歌曲数。
 class _MyPlaylistsSection extends ConsumerWidget {
   const _MyPlaylistsSection();
 
@@ -712,7 +662,6 @@ class _MyPlaylistsSection extends ConsumerWidget {
       }
       final ids = playlists.map((p) => p.id).toList();
       final moved = ids.removeAt(oldIndex);
-      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
       ids.insert(newIndex.clamp(0, ids.length), moved);
       manager.reorder(ids);
     }
@@ -749,7 +698,6 @@ class _MyPlaylistsSection extends ConsumerWidget {
     );
   }
 
-  /// 胶囊按钮（「新建」「导入」共用样式）。
   Widget _pillButton(BuildContext context, ColorScheme scheme, IconData icon,
       String label, VoidCallback onTap) {
     return OutlinedButton.icon(
@@ -782,7 +730,6 @@ class _MyPlaylistsSection extends ConsumerWidget {
   }
 }
 
-/// 歌单名称输入弹窗（新建/重命名共用，不显示当前值）。
 Future<String?> _promptPlaylistName(BuildContext context, String title) {
   final controller = TextEditingController();
   return showPredictiveDialog<String>(
@@ -810,8 +757,6 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
   );
 }
 
-/// 自建歌单条目：封面（取歌单第一首歌，无则占位）+ 名称 + 共N首歌。
-/// 点击进详情；右侧菜单提供重命名/删除。
 class _PlaylistRow extends ConsumerWidget {
   const _PlaylistRow({
     required this.playlist,
@@ -829,8 +774,6 @@ class _PlaylistRow extends ConsumerWidget {
     final first = playlist.songs.firstOrNull;
 
     final row = InkWell(
-      // 走 go_router 顶层路由压 root navigator，保证返回行为与 shell 一致，
-      // 否则返回会被 shell 的 canPop 逻辑误判而直接退出程序。
       onTap: () => context.push('/playlist/${playlist.id}'),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
@@ -889,13 +832,11 @@ class _PlaylistRow extends ConsumerWidget {
         ),
       ),
     );
-    // 整条即拖拽把手：长按任意处拖动排序，不再单独展示拖拽图标。
     return dragEnabled
         ? ReorderableRowDragStart(index: index, child: row)
         : row;
   }
 
-  /// 操作菜单：重命名 / 删除歌单。
   void _sheetActions(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final manager = ref.read(playlistManagerProvider.notifier);
@@ -942,12 +883,9 @@ class _PlaylistRow extends ConsumerWidget {
   }
 }
 
-/// 收藏分区（收藏歌单 / 收藏专辑）：头部无操作按钮，条目点击进在线详情。
-/// 无收藏时整个分区隐藏（对齐 QQ 音乐）。
 class _FavoriteCollectionsSection extends ConsumerWidget {
   const _FavoriteCollectionsSection({required this.kind, required this.title});
 
-  /// collection kind：playlist | album。
   final String kind;
   final String title;
 
@@ -962,7 +900,6 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
       if (newIndex < 0 || newIndex >= items.length || newIndex == oldIndex) return;
       final moved = items[oldIndex];
       final next = List.of(items)..removeAt(oldIndex);
-      // onReorderItem 的 newIndex 已随移除项调整，直接作为目标下标。
       next.insert(newIndex.clamp(0, next.length), moved);
       manager.reorderCollections(next.map((c) => c.key).toList());
     }
@@ -986,7 +923,6 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
   }
 }
 
-/// 收藏条目：在线封面 + 标题 + 来源副标题，右侧取消收藏。
 class _CollectionRow extends ConsumerWidget {
   const _CollectionRow({required this.collection, required this.index});
 

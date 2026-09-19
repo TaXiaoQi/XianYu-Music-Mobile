@@ -1,7 +1,3 @@
-// 歌曲分享弹层：分享到 QQ 好友 / QQ 空间（网页卡片）与复制分享链接。
-//
-// 分享以网页卡片落地页深链进行：接收方打开链接拉起重启并播放歌曲。
-// 打开菜单不阻塞，点击对应目标时才现场生成分享链接与封面缩略图。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -29,13 +25,11 @@ import 'share_service.dart';
 import 'system_share.dart';
 import '../i18n/i18n.dart';
 
-/// 弹出歌曲分享菜单：QQ 好友 / QQ 空间 / 复制链接。
 Future<void> showSongShareSheet(
   BuildContext context, {
   required WidgetRef ref,
   required QueueItem song,
 }) async {
-  // 提前捕获 Overlay，避免 await 后跨 async 间隙使用 BuildContext。
   final overlay = Overlay.of(context, rootOverlay: true);
 
   await showSheetDialog<void>(
@@ -54,9 +48,6 @@ Future<void> showSongShareSheet(
           ),
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 6),
-          // QQ 互联直分享（Android 与 iOS 同一入口）。iOS 需 Universal Link
-          // 域名关联（api.xianyumusic.cn/qq_conn/，见 platform_caps 注释），
-          // 未关联时 SDK 拉起 QQ 可能失败，调用方有复制链接兜底。
           if (PlatformCaps.supportsQQShare) ...[
             ListTile(
               leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),
@@ -77,7 +68,6 @@ Future<void> showSongShareSheet(
             ),
           ],
           ListTile(
-            // 与桌面端底栏分享控件（lucide Share2）同款图形：三节点分享网络图标
             leading: _customBadge(
                 context, _Share2Painter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('分享到更多应用')),
@@ -88,7 +78,6 @@ Future<void> showSongShareSheet(
             },
           ),
           ListTile(
-            // 与桌面端复制链接控件同款图形：链路图标（lucide Link）
             leading: _customBadge(
                 context, _LinkPainter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('复制分享链接')),
@@ -98,14 +87,12 @@ Future<void> showSongShareSheet(
             },
           ),
           ListTile(
-            // DLNA 投屏本就是分享的一种：投放到局域网电视/音箱，点击拉起设备弹窗。
             leading: _customBadge(
                 context, _CastPainter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('投屏到 DLNA 设备')),
             subtitle:   Text(tr('在局域网电视/音箱上播放这首歌')),
             onTap: () {
               Navigator.pop(ctx);
-              // 连接即投当前曲：分享目标与当前曲不同时，先把它起播为当前曲。
               final current = ref.read(playerProvider).current;
               if (current == null || current.path != song.path) {
                 ref.read(playerProvider.notifier).playQueue([song]);
@@ -120,9 +107,6 @@ Future<void> showSongShareSheet(
   );
 }
 
-/// QQ/QQ空间品牌徽章图标：白边圆形裁切，明暗弹窗下都清晰。
-/// [fit] 控制图标填充方式：透明去底的品牌 logo（如 QQ 企鹅）用 contain 保留整体，
-/// 满幅方形图标（如 QQ 空间）用默认 cover 裁满圆圈。
 Widget _qqBadge(String asset, {BoxFit fit = BoxFit.cover}) => Container(
       width: 34,
       height: 34,
@@ -134,9 +118,6 @@ Widget _qqBadge(String asset, {BoxFit fit = BoxFit.cover}) => Container(
       child: Image.asset(asset, width: 34, height: 34, fit: fit),
     );
 
-/// 自定义矢量图标徽章（与 QQ 徽章同尺寸同圆形裁切，背景随主题而非固定白底）。
-/// 用于「分享到更多应用」「分享到更多设备」「复制分享链接」等自绘入口，
-/// 替代 Material 默认图标的白色占位效果。
 Widget _customBadge(BuildContext context, CustomPainter painter) {
   final scheme = Theme.of(context).colorScheme;
   return Container(
@@ -151,7 +132,6 @@ Widget _customBadge(BuildContext context, CustomPainter painter) {
   );
 }
 
-/// lucide Share2：分享网络图标（三个节点两两相连），桌面端底栏分享控件同款。
 class _Share2Painter extends CustomPainter {
   _Share2Painter(this.color);
   final Color color;
@@ -179,7 +159,6 @@ class _Share2Painter extends CustomPainter {
   bool shouldRepaint(covariant _Share2Painter old) => old.color != color;
 }
 
-/// lucide Link：链路图标（两段互扣的链接环），复制分享链接专用。
 class _LinkPainter extends CustomPainter {
   _LinkPainter(this.color);
   final Color color;
@@ -220,7 +199,6 @@ class _LinkPainter extends CustomPainter {
   bool shouldRepaint(covariant _LinkPainter old) => old.color != color;
 }
 
-/// lucide Cast：投屏图标（屏幕 + 信号波纹），DLNA 投屏入口专用。
 class _CastPainter extends CustomPainter {
   _CastPainter(this.color);
   final Color color;
@@ -235,7 +213,6 @@ class _CastPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    // 屏幕外框（右下角开口，与信号波纹衔接）。
     final screen = Path()
       ..moveTo(2 * u, 8 * u)
       ..lineTo(2 * u, 6 * u)
@@ -250,7 +227,6 @@ class _CastPainter extends CustomPainter {
       ..lineTo(16 * u, 20 * u);
     canvas.drawPath(screen, stroke);
 
-    // 两层信号波纹 + 左下角圆点。
     final wave1 = Path()
       ..moveTo(2 * u, 12 * u)
       ..arcToPoint(Offset(10 * u, 20 * u),
@@ -273,7 +249,6 @@ class _CastPainter extends CustomPainter {
   bool shouldRepaint(covariant _CastPainter old) => old.color != color;
 }
 
-/// 获取（必要时生成）分享链接；失败返回空串。
 Future<String> _ensureUrl(WidgetRef ref, QueueItem song) async {
   final share = ref.read(shareServiceProvider);
   final cached = share.cached(song);
@@ -285,10 +260,6 @@ Future<String> _ensureUrl(WidgetRef ref, QueueItem song) async {
   }
 }
 
-/// 本地歌曲封面兜底解析：分享入口拿到的 QueueItem 多来自列表页早先构建，
-/// coverPath 可能尚未回写懒提取的缩略图路径（扫描期不提取封面，防拖慢启动）。
-/// 这里现场提取一次（含 SAF fd 自愈，与通知栏封面兜底同逻辑），
-/// 返回补全封面后的 song 与本地封面文件（可能为 null = 无封面）。
 Future<(QueueItem, File?)> _resolveLocalCover(
     WidgetRef ref, QueueItem song) async {
   var updated = song;
@@ -319,8 +290,6 @@ Future<(QueueItem, File?)> _resolveLocalCover(
   return (updated, file);
 }
 
-/// 分享文案：第一行「用户名邀请你去弦予音乐听《歌名》」，第二行分享链接。
-/// 未登录时第一行省略用户名。
 String _buildShareText(WidgetRef ref, QueueItem song, String url) {
   final user = ref.read(authProvider).user;
   final nickname = (user?.nickname ?? '').trim();
@@ -331,10 +300,6 @@ String _buildShareText(WidgetRef ref, QueueItem song, String url) {
   return '$firstLine\n$url';
 }
 
-/// 生成并复制分享链接。
-///
-/// 只复制裸链接：粘贴整段「邀请文案 + 链接」时，Edge 等浏览器会把
-/// 开头中文连链接一起当搜索词搜索，URL 永远不会被打开。
 Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) async {
   final (song2, _) = await _resolveLocalCover(ref, song);
   final url = await _ensureUrl(ref, song2);
@@ -347,15 +312,12 @@ Future<void> _copyLink(OverlayState overlay, WidgetRef ref, QueueItem song) asyn
   showXianYuToastByOverlay(overlay, tr('分享链接已复制'));
 }
 
-/// 分享网页卡片到指定 QQ 场景（好友 / 空间）。
 Future<void> _shareViaQQ(
   OverlayState overlay,
   WidgetRef ref,
   QueueItem song, {
   required int scene,
 }) async {
-  // 先兜底解析本地封面（懒提取 + SAF 自愈）并补全 song，再生成分享链接：
-  // 落地页 og:image 与 QQ 卡片缩略图共用这次解析结果。
   final (song2, coverFile) = await _resolveLocalCover(ref, song);
 
   final url = await _ensureUrl(ref, song2);
@@ -375,17 +337,11 @@ Future<void> _shareViaQQ(
   var coverPath = '';
   try {
     if (coverFile != null) {
-      // QQ 卡片缩略图需本地文件且不宜过大，压缩到 ≤256px JPEG 后再分享。
       coverPath = (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
     }
   } catch (_) {}
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
-  // QQ 好友场景走「音乐卡片」（QQ_SHARE_TYPE_AUDIO）：封面在左、歌名/歌手在右
-  // 的对齐卡片，避免普通网页卡片那张「歌名左上、缩略图右下」的对角样式。
-  // QQ 音乐卡片需 audio_url 才有向左对齐的封面；这里把落地页深链同时作为
-  // audio_url 与 target_url，接收方点卡片即拉起 App 播放。QQ 空间不支持音乐卡片，
-  // 仍走网页卡片。
   final useMusicCard = scene == TencentScene.kScene_QQ;
   final result = await qq.share(
     scene: scene,
@@ -407,10 +363,6 @@ Future<void> _shareViaQQ(
   }
 }
 
-/// 调用 Android 系统分享面板（ACTION_SEND）：封面图 + 「歌名 · 歌手 + 落地页链接」。
-/// 覆盖微信/钉钉/短信等任意平台；封面缺失或下载失败时退化为纯文本。
-/// 优先走原生通道（普通 startActivity，国产 ROM 才会弹自家分享面板），
-/// 通道不可用时回退 share_plus。
 Future<void> _shareToOtherApps(
   OverlayState overlay,
   WidgetRef ref,
@@ -437,7 +389,6 @@ Future<void> _shareToOtherApps(
       }
       return;
     }
-    // 通道不可用（非 Android），回退 share_plus。
     await SharePlus.instance.share(ShareParams(
       files: cover == null ? null : [XFile(cover.path)],
       text: shareText,
@@ -448,8 +399,6 @@ Future<void> _shareToOtherApps(
   }
 }
 
-/// 取封面本地文件：优先本地封面文件（coverPath），其次在线封面下载到临时目录。
-/// 拿不到返回 null（此时仅分享文本链接）。
 Future<File?> _localCoverFile(QueueItem song) async {
   final path = song.coverPath;
   if (path != null && path.isNotEmpty && !path.contains('content://')) {
@@ -473,8 +422,6 @@ Future<File?> _localCoverFile(QueueItem song) async {
   return null;
 }
 
-/// 下载在线封面到临时文件：优先走后端代理（自动补 Referer 解防盗链 + 命中缓存），
-/// 失败再直连兜底。
 Future<File?> _downloadCoverToTemp(String url) async {
   try {
     final bytes = await CoverProxy.fetch(url);
@@ -489,8 +436,6 @@ Future<File?> _downloadCoverToTemp(String url) async {
   return _downloadToTemp(url);
 }
 
-/// 压缩封面到 ≤256px JPEG（QQ 卡片缩略图规格，避免大图被 QQ 拒绝或拉取失败）。
-/// 压缩失败返回 null，调用方回退原文件。
 Future<File?> _resizeCoverForShare(File src) async {
   try {
     final decoded = img.decodeImage(await src.readAsBytes());

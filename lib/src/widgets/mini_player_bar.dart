@@ -17,19 +17,8 @@ import 'predictive_cover_return.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
 
-/// 批量操作栏当前在底部占用的高度（px）——即批量菜单作为「底栏」托起播放条所需
-/// 上移的量。批量操作栏挂载时按自身实测高度写入，卸载（批量模式退出）时归零。
-/// 壳层迷你播放条与页面内嵌播放条统一读取该值，在批量模式下把自身抬高到批量栏
-/// 之上（模拟「底栏托起播放条」，避免批量菜单被播放条挡住）。
 final batchBarLiftProvider = StateProvider<double>((ref) => 0.0);
 
-/// 播放条 / 批量操作栏等底部悬浮胶囊共用的玻璃表面（材质完全同步）：
-///
-/// - 液态玻璃开启（且非低性能）→ 走 BiliPai 液态 shader；
-/// - 液态玻璃关闭 → 退毛玻璃，模糊度跟随「顶栏/底栏悬浮」口径（与播放条一致）。
-///
-/// 底部悬浮胶囊（迷你播放条、批量操作栏）共用同一入口，避免各自实现玻璃导致
-/// 观感漂移（模糊量 / 液态配方不相统一）。
 Widget playbarGlassSurface(
   BuildContext context,
   WidgetRef ref, {
@@ -62,11 +51,9 @@ Widget playbarGlassSurface(
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
-      // 常驻实时背板：播放条可拖拽、批量栏贴底，统一保持实时采样，观感一致。
       alwaysLive: true,
       child: child,
     );
-    // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
     return liquidGlassShell(context, child: glass, radius: radius);
   }
 
@@ -85,8 +72,6 @@ Widget playbarGlassSurface(
   final border = isDark
       ? Colors.white.withValues(alpha: 0.12)
       : Colors.white.withValues(alpha: 0.40);
-  // 模糊度与播放条完全一致：顶栏/底栏切悬浮时跟随悬浮口径（毛玻璃档位缩放），
-  // 否则恒定最深（kNavSurfaceBlurSigma=16，与固定顶栏/底栏一致）。
   final navFloating =
       (ref.watch(settingsProvider.select(
               (s) => s.valueOrNull?.floatingNavBar)) ??
@@ -115,23 +100,12 @@ Widget playbarGlassSurface(
   );
 }
 
-/// 播放条拖动位置的会话级共享存储。
-///
-/// shell 播放条与各页面内嵌播放条共用一份最近拖动落定的位置，
-/// 使页面切换（一级 ⇄ 二级本地/收藏等）时播放条继承用户拖动后的位置，
-/// 而不是各自回到默认停靠位。方向/底栏形态变化时由持有方清空回默认。
 class MiniBarPositionStore {
   MiniBarPositionStore._();
 
-  /// 最近一次拖动落定的绝对位置（left/top，全屏 Stack 坐标系）；
-  /// null = 从未拖动或已按新形态重置。
   static Offset? shared;
 }
 
-/// 迷你播放条：旋转封面 + 环形进度 + 上一首/播放/下一首，支持手势拖拽与防透传点击。
-///
-/// 拖拽为内建默认行为：未传 [onPanUpdate] 等回调时自动启用「全图拖动 + 磁吸
-/// 回弹」，因此页面内嵌的播放条（二级页面）与 shell 播放条（根页面）行为一致。
 class MiniPlayerBar extends ConsumerStatefulWidget {
   const MiniPlayerBar({
     super.key,
@@ -149,25 +123,10 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
   final GestureDragEndCallback? onPanEnd;
   final VoidCallback? onPanCancel;
 
-  /// 是否注册为「飞封面」目标位置。
-  ///
-  /// shell 播放条在二级页面（被 root navigator 覆盖不可见）时传 false，
-  /// 避免与页面自己的播放条竞争目标位置；根页面与播放页（Hero 源）传 true。
   final bool registerTarget;
 
-  /// 封面 Hero 标签。
-  ///
-  /// 默认 'player-cover'：页面内嵌播放条承担「当前路由子树」的播放页转场 Hero
-  /// （Hero 源必须在栈顶页面子树中，shell 播放条在 AppShell 底层不在扫描范围）。
-  /// shell 播放条在二级页面（非播放页）时传 null 避免与页面播放条同标签冲突；
-  /// 根页面与播放页时传 'player-cover' 作为 Hero 源。
   final String? heroTag;
 
-  /// 预测返回回拨的「目标」覆盖矩形。
-  ///
-  /// 仅 shell 播放条传入：指向它回到根页后的停靠位置。shell 条在二级页面处于
-  /// 隐藏低位，直接取当前布局矩形作目标会让回拨飞行几乎不可见（只差几像素）。
-  /// 用根页停靠位（比页面条高 ~70px）才能复现普通返回里页面条 → shell 条的可见飞行。
   final Rect Function()? returnTarget;
 
   @override
@@ -178,36 +137,24 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _spin;
 
-  /// 当前旋转封面对应的歌曲 path；切歌（含手动/自动/播放结束）时据此归零重转。
   String? _lastSpinPath;
 
-  /// 封面定位锚点：供「飞封面」动画计算目标位置。
   final GlobalKey _coverKey = GlobalKey();
 
-  /// 本实例注册到 FlyingCover 的目标闭包（引用可变 [Rect]，布局更新无需重注册）。
   Rect _coverRect = Rect.zero;
   Rect Function()? _targetProvider;
 
-  /// 预测返回回拨的源/目标闭包（同为可变 [Rect] 的惰性引用）。
-  /// 页面内嵌播放条注册为「源」，shell 播放条注册为「目标」。
   Rect Function()? _returnSourceProvider;
   Rect Function()? _returnTargetProvider;
 
-  /// 内建拖拽位置（绝对坐标，null = 默认位置）。
-  ///
-  /// 页面内嵌播放条用 [Positioned] 定位自身，拖动直接改 left/top 触发重新布局，
-  /// hit test 天然跟随，避免 Transform.translate 视觉位移与命中区域错位。
   Offset? _pos;
 
-  /// 路由监听：页面内嵌播放条在播放页打开时隐藏（避免与 shell 播放条 Hero 冲突）。
   GoRouter? _router;
 
   bool get _isLandscape =>
       MediaQuery.of(context).size.width >=
       MediaQuery.of(context).size.height * 1.05;
 
-  /// 横屏复用外壳播放条的封顶宽度（min(55%屏宽, 520)）并底部居中；
-  /// 竖屏保持原「占满两侧各 18」的全宽。
   double get _barWidth {
     final w = MediaQuery.of(context).size.width;
     return _isLandscape ? math.min(w * 0.55, 520.0) : w - 36.0;
@@ -223,33 +170,25 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   double get _defaultTop {
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    // 批量模式下被批量操作栏（作底栏）托起：上移批量栏高度，避免被挡住。
     final batchLift = ref.read(batchBarLiftProvider);
     return size.height - padding.bottom - 58.0 - 12.0 - batchLift;
   }
 
-  /// 上一次所在方向（横/竖）：方向切换时绝对坐标失效，需清空本地与共享停靠位。
   bool? _lastLandscape;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 仅内建定位模式（页面播放条）需要监听路由；shell 播放条由 shell 管理。
     if (widget.onPanUpdate == null && _router == null) {
       _router = GoRouter.of(context);
       _router!.routerDelegate.addListener(_onRouteChanged);
     }
-    // 首次挂载：读取共享停靠位继承（一级页/其他二级页拖动落定后进入本页，
-    // 播放条直接出现在该位），夹进当前页面几何避免越界或压住批量栏。
     if (widget.onPanUpdate == null && _lastLandscape == null) {
       final shared = MiniBarPositionStore.shared;
       if (shared != null) {
-        // 首帧 build 前赋值即可，无需 setState。
         _pos = _clampToPageGeometry(shared);
       }
     }
-    // 方向变化：清空本地与共享停靠位回默认（shell 侧形态变化同样清共享存储，
-    // 两处幂等）。继承的共享位与本地拖拽位都按新方向作废。
     final landscape = _isLandscape;
     if (_lastLandscape != null && _lastLandscape != landscape) {
       _pos = null;
@@ -258,7 +197,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     _lastLandscape = landscape;
   }
 
-  /// 把共享停靠位夹进当前页面几何（与 [_defaultPanUpdate] 同一可拖范围）。
   Offset _clampToPageGeometry(Offset p) {
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
@@ -306,11 +244,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     super.dispose();
   }
 
-  /// 同步封面旋转：
-  /// - 切歌（path 变化，含手动/自动/播放结束跳下一首）→ 归零后，若真正在播且
-  ///   未缓冲则从头转；
-  /// - 暂停或在线解析/缓冲中（resolving）→ 停住不动；
-  /// - 真正在播 → 旋转。
   void _syncSpin({
     required bool isPlaying,
     required bool resolving,
@@ -330,24 +263,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     }
   }
 
-  /// 布局完成后把封面全局位置用于两套注册：
-  /// - FlyingCover 目标（列表封面起飞落点）仅在 [MiniPlayerBar.registerTarget] 时注册；
-  /// - 预测返回回拨源（页面内嵌条）/目标（shell 条）按定位模式自动注册。
   void _updateCoverTarget() {
     final ctx = _coverKey.currentContext;
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     _coverRect = box.localToGlobal(Offset.zero) & box.size;
-    // Positioned 定位变化会触发重新布局，localToGlobal 自动跟随，无需手动叠加偏移。
 
     final fp = _targetProvider;
     if (widget.registerTarget) {
-      // 仅当前（顶层）路由的播放条才注册为飞封面目标：平滑（平移）模式下被
-      // 覆盖的旧页与顶层新页同时在屏，且旧页整体左移 1/4。若旧页播放条在转场
-      // 中「最后注册」（last-wins），封面会飞向屏幕外左侧；覆盖模式下旧页不
-      // 位移、即使误注册也落 x=0 所以看似正常。用 ModalRoute.isCurrent 门控，
-      // 只有当前展示页的播放条是有效目标，被覆盖页在转场中即时注销。
       final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
       if (!isCurrent) {
         if (fp != null) {
@@ -355,11 +279,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           _targetProvider = null;
         }
       } else {
-        // 每次读取都实时重算封面全局矩形（不回读缓存 [_coverRect]）：二级页在
-        // 路由转场/首播挂载期间 [_coverRect] 可能在 build 后定格在入场瞬间的
-        // 错位坐标，造成「封面飞向屏幕外左侧、只有拖动播放条重建后才正确」。
-        // 读取时即时 localToGlobal 始终命中播放条当前真实位置；未及就位时回退
-        // 缓存值（由外部 waitTargetReady 兜底）。
         _targetProvider ??= () {
           final c = _coverKey.currentContext;
           final b = c?.findRenderObject() as RenderBox?;
@@ -376,16 +295,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     _syncReturnRegistration();
   }
 
-  /// 按定位模式维护预测返回的源/目标注册：
-  /// - 内部定位（页面内嵌条 `onPanUpdate == null`）→ 注册为「源」；
-  /// - 外部定位（shell 条）→ 注册为「目标」，二级页面仍存活可作回拨落点。
   void _syncReturnRegistration() {
     final internal = widget.onPanUpdate == null;
     if (internal) {
       final onPlayer =
           GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
               '/player';
-      // 播放页打开时页面条隐藏，勿再充当回拨源；否则预测返回会从错误位置起飞。
       if (onPlayer) {
         final s = _returnSourceProvider;
         if (s != null) {
@@ -407,7 +322,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     }
   }
 
-  /// 内建拖拽更新：以默认位置（left / bottom:12+安全区）为基准，用绝对坐标计算边界。
   void _defaultPanUpdate(DragUpdateDetails d) {
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
@@ -416,8 +330,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     const minLeft = 6.0;
     final maxLeft = size.width - barW - 6.0;
     final minTop = padding.top + 6.0;
-    // 页面内嵌播放条仅出现在二级页面（无底栏），可拖到更底部。
-    // 批量模式下其下方被批量操作栏占据，拖拽下限同步上移批量栏高度。
     const bottomInset = 12.0;
     final batchLift = ref.read(batchBarLiftProvider);
     final maxTop = size.height -
@@ -435,20 +347,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _defaultPanEnd(DragEndDetails d) {
-    // 距默认位置 < 60px 自动磁吸回弹。
     final current = _pos ?? Offset(_defaultLeft, _defaultTop);
     final defaultPos = Offset(_defaultLeft, _defaultTop);
     if ((current - defaultPos).distance < 60.0) {
       setState(() => _pos = null);
     }
-    // 拖动落定后写入共享存储：其他页面（一级 shell 条/其他二级页）的
-    // 播放条据此继承当前位置，保证跨页面位置连贯。
     MiniBarPositionStore.shared = _pos;
   }
 
   void _handlePanStart(DragStartDetails d) {
-    // 拖动开始即视为浮层在动：让 BiliPaiGlass 退回实时背板，避免移盖到别处时
-    // 仍 blit 旧位置的冻结背板（玻璃「没加载」）。
     setGlobalDragging(true);
     widget.onPanStart?.call(d);
   }
@@ -477,26 +384,20 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
   @override
   Widget build(BuildContext context) {
-    // 仅订阅进度环之外的字段；position 交给 _RotatingDisc 内部订阅，
-    // 避免随播放进度每帧重建整根播放条。
     final p = ref.watch(playerProvider.select((s) => (
           current: s.current,
           playing: s.isPlaying,
           duration: s.duration,
           resolving: s.resolving,
         )));
-    // 订阅批量操作栏占位：批量模式进入/退出时重定位播放条（托起/回落）。
     ref.watch(batchBarLiftProvider);
     final current = p.current;
     if (current == null) return const SizedBox.shrink();
 
-    // 布局完成后更新飞封面目标位置（封面尺寸/位置随主题与底栏变化）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _updateCoverTarget();
     });
 
-    // 封面旋转由 build 驱动（播放条已 watch current/playing/resolving，任何切歌、
-    // 缓冲状态变化必触发 rebound）：真正在播且未缓冲才转，其余停住，切歌归零。
     _syncSpin(isPlaying: p.playing, resolving: p.resolving, path: current.path);
 
     final scheme = Theme.of(context).colorScheme;
@@ -510,7 +411,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
-    // 全局 blur 预算：滚动/转场时迷你条玻璃降级（sigma 缩放 + 铺底补偿）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
     final cover = _RotatingDisc(
@@ -519,9 +419,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       duration: p.duration,
       spin: _spin,
     );
-    // 当前路由子树内只存在一个带 Hero 的播放条：根页面由 shell 播放条承担，
-    // 二级页面由页面内嵌播放条承担（shell 在二级页面传 heroTag:null 让位）。
-    // 播放页打开时页面播放条隐藏，避免与 shell 播放条同标签 Hero 冲突。
     final coverWidget = (widget.heroTag == null)
         ? cover
         : Hero(
@@ -615,11 +512,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               lowPerf: lowPerf, budget: budget),
     );
 
-    // 内建定位模式（页面内嵌播放条，未传 onPanUpdate）：自己返回 Stack + Positioned，
-    // 拖动直接改 left/top 触发重新布局，hit test 与视觉位置天然一致。
     if (widget.onPanUpdate == null) {
-      // 播放页打开时隐藏页面播放条：避免与 shell 播放条（Hero 源）同标签冲突，
-      // 同时注销飞封面目标（此时由 shell 播放条接管）。
       final isPlayerPage = GoRouter.of(context)
               .routerDelegate
               .currentConfiguration
@@ -636,8 +529,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       }
       return Stack(
         children: [
-          // 批量模式托起/回落用 AnimatedPositioned 平滑过渡（默认停靠位变化时
-          // 带 320ms 缓动）；用户拖拽时归零时长，位置实时跟手。
           AnimatedPositioned(
             duration: (_pos == null)
                 ? const Duration(milliseconds: 320)
@@ -652,23 +543,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       );
     }
 
-    // 外部定位模式（shell 播放条）：被外层 AnimatedPositioned 包裹定位。
     return bar;
   }
 
-  /// BiliPai 化液态玻璃表面：与底栏同一套参数，保证两者观感一致。
-  /// 2026-09-05 用户定案：播放条彻底摘出 BiliPaiGlass 优化体系（层管理/
-  /// 冻结/涟漪/blur 预算全不参与），改用独立极简实时表面（标准
-  /// BackdropFilter widget + 每帧重建驱动），拖动/滚动背板都实时抓取。
   Widget _liquidSurface(BuildContext context, Widget content) {
     final quality = liquidGlassQualitySetting(ref);
-    // 高度必须约束在液态表面【外层】：shell/独立两种嵌入方式（AnimatedPositioned
-    // 只给 left/top/width）都不传高度，而 LiveLiquidSurface 内部是
-    // Stack(fit: StackFit.expand)，不设外层高度时 Stack 取 constraints.biggest
-    // 得到 h=Infinity → 布局崩溃（帧管线被污染，弹窗等后续路由全部渲染失败）。
     return SizedBox(
       height: 58,
-      // 与底栏/顶栏共用 BiliPai 发光描边外壳（播放条此前漏套）。
       child: liquidGlassShell(
         context,
         radius: 999,
@@ -687,21 +568,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     );
   }
 
-  /// 伪毛玻璃表面：液态玻璃关闭时使用。
-  /// 透明 + 高斯模糊；低性能模式 → 高不透明度纯色回退（无模糊）。
-  /// [budget] 传入时按全局 blur 预算缩放 sigma、铺底透明度补偿。
   Widget _frostedSurface(BuildContext context,
       Widget content, {
       bool lowPerf = false,
       BlurBudget? budget}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 标准磨砂（跟随毛玻璃开关）；关闭毛玻璃/低性能 → 纯色。
     final solid =
         glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
-    // 壁纸模式：迷你播放条同底栏口径保持磨砂模糊（wallpaperNavGlassFill +
-    // 最深固定模糊 kNavSurfaceBlurSigma），不透明化——仅彻底关闭毛玻璃/低性能
-    // 时回退纯色。
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
@@ -713,9 +587,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
     final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    // 顶栏/底栏切悬浮时，播放条跟随「悬浮」口径（毛玻璃档位缩放：跟悬浮顶栏
-    // 胶囊一致）；否则保持恒定最深（kNavSurfaceBlurSigma=16，跟固定顶栏/底栏
-    // 一致）。保证播放条始终与当前顶栏/底栏形态的模糊量对得上。
     final navFloating =
         (ref.watch(settingsProvider.select(
                 (s) => s.valueOrNull?.floatingNavBar)) ??
@@ -739,10 +610,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        // 播放条是贴底的细长圆角窄条，cheapBackdropBlur 的 1/4 降采样再放大
-        // 采样网格与物理像素不对齐，会产生约 1~2px 水平相位偏移（观感"往右歪、
-        // 和背底没对上"）。与顶栏一致改用全分辨率高斯，按原始像素精确对齐背板；
-        // 播放条仅一条窄带，全分辨率成本可控。
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         child: surface,
       ),
@@ -750,7 +617,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 }
 
-/// 旋转封面 + 环形进度。独立订阅 position，使播放进度只重建本组件。
 class _RotatingDisc extends ConsumerWidget {
   const _RotatingDisc({
     super.key,
@@ -770,8 +636,6 @@ class _RotatingDisc extends ConsumerWidget {
         ? 0.0
         : (position / duration).clamp(0.0, 1.0);
 
-    // 旋转封面独立成 RepaintBoundary：封面每帧旋转只重绘这一小块图层，
-    // 不再 touch 到整页大边界触发全页重绘，避免播放时列表滚动双重掉帧。
     return RepaintBoundary(
       child: SizedBox(
       width: 46,
@@ -842,22 +706,6 @@ class _RingPainter extends CustomPainter {
       oldDelegate.progress != progress || oldDelegate.color != color;
 }
 
-/// 播放条专用极简实时液态玻璃（2026-09-05 用户定案：播放条摘出 BiliPaiGlass
-/// 优化体系——层管理/抓屏冻结/涟漪背板/blur 预算/全局滚动联动全不参与）。
-///
-/// 结构即两个标准 `BackdropFilter` widget（框架最基础路径，与全 App 毛玻璃
-/// 同源）：blur 在下、折射 shader 在上（BiliPai Pass1/Pass2 同序）。动画时钟
-/// 常转，每帧先写 uniform 再 setState 重建——每帧全新 build 让框架按标准
-/// 流程重新 push BackdropFilterLayer，拖动平移/页面滚动时背板都实时重抓，
-/// 不依赖任何缓存命中策略。内容 child 为同一实例传入，不被每帧重建波及。
-///
-/// 例外——转场冻结（2026-09-07）：路由转场窗口内（[globalIsTransitioning]）
-/// 停掉每帧时钟并把双层 BackdropFilter 整体替换为静态磨砂面。BackdropFilter
-/// 是 layer 级、每帧合成都会对最新背板重新采样，转场平移时背板每帧都在变，
-/// shell 条 + 页内条双实例 = 每帧四次 SaveLayer，是转场掉帧主因；静态替换后
-/// 转场窗口内该子树零重建零采样。覆盖模式旧页静止（shell 条背板不变）、页内
-/// 条随页平移（玻璃与背板相对静止），替换完全无感；平滑模式整页本就走
-/// RouteStaticSnapshot 快照，口径一致。拖拽/滚动场景不受影响，维持实时背板。
 class LiveLiquidSurface extends StatefulWidget {
   const LiveLiquidSurface({
     super.key,
@@ -882,8 +730,6 @@ class LiveLiquidSurface extends StatefulWidget {
   final double edgeAmount;
   final double saturation;
 
-  /// 径向深度放大（slot 18）。>0 时把径向内容放大成「透镜鼓起」，是水滴质感
-  /// 的关键；播放条保持默认 0（平面液态），水滴等透镜场景才传入。
   final double depthEffect;
 
   final Widget child;
@@ -894,11 +740,8 @@ class LiveLiquidSurface extends StatefulWidget {
 
 class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
-  /// FragmentProgram 进程级缓存（与 BiliPai 共享同一 asset，加载一次）。
   static Future<ui.FragmentProgram>? _programFuture;
 
-  // 惰性创建但不在 dispose 里创建（late final 在 dispose 首次访问会执行
-  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
   AnimationController? _tickC;
   AnimationController get _tick =>
       _tickC ??= AnimationController(
@@ -910,11 +753,8 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   ui.FragmentShader? _shader;
   final GlobalKey _surfaceKey = GlobalKey();
 
-  /// 转场冻结开关（true = 转场窗口内，静态磨砂面替代实时双层 BackdropFilter）。
-  /// 页内条可能在转场中挂载（二级页推入），initState 需同步一次初始状态。
   bool _frozen = false;
 
-  /// 玻璃表面屏幕物理几何（每帧从 RenderObject 实测，拖动中随位置更新）。
   double _glassDx = 0;
   double _glassDy = 0;
   double _glassW = 1;
@@ -929,8 +769,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       if (mounted) setState(() => _shader = p.fragmentShader());
     });
     _tick.addListener(_onTick);
-    // 挂载即处于转场窗口（二级页推入时页内条正是如此）：直接冻结，
-    // 从第一帧起就零采样，不经历「实时渲染 → 冻结」的浪费窗口。
     _frozen = globalIsTransitioning.value;
     if (_frozen) _tick.stop();
     globalIsTransitioning.addListener(_onTransitionChanged);
@@ -943,7 +781,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     super.dispose();
   }
 
-  /// 转场窗口边沿：进入即冻结（停时钟 + 静态磨砂面），结束恢复实时。
   void _onTransitionChanged() {
     if (!mounted) return;
     final active = globalIsTransitioning.value;
@@ -956,8 +793,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     }
   }
 
-  /// 每帧：先实测几何并写 uniform，再 setState 让 BackdropFilter 以最新
-  /// uniform 重绘。绘制发生在本帧 paint 阶段，读到的一定是刚写的值。
   void _onTick() {
     if (!mounted) return;
     _measureGeometry();
@@ -977,7 +812,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     _glassH = math.max(1.0, ro.size.height * dpr);
   }
 
-  /// uniform 槽位与 bilipai_liquid.frag 对齐（同 RenderLiquidBacking 注释表）。
   void _writeUniforms(ui.FragmentShader shader) {
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final view = View.of(context);
@@ -1012,8 +846,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     final shader = _shader;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      // 转场冻结 / shader 未就绪/不支持：静态磨砂面（回退口径一致）。
-      // 同步切换零闪变，转场窗口内该子树零重建零采样。
       return Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
@@ -1028,8 +860,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Pass1（下）：标准 BackdropFilter 真高斯模糊。sigma 小、全分辨率，
-          // 每帧新实例（轻对象，无缓存策略——播放条不参与优化）。
           Positioned.fill(
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(
@@ -1037,7 +867,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
               child: const SizedBox.expand(),
             ),
           ),
-          // Pass2（上）：折射 shader 采样模糊结果，铺底色/饱和度/高光。
           Positioned.fill(
             child: BackdropFilter(
               filter: ui.ImageFilter.shader(shader),

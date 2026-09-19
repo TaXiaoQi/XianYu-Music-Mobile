@@ -4,9 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'mini_player_bar.dart';
 import '../i18n/i18n.dart';
 
-/// 批量选择状态控制器：持有批量模式标志与选中集合（键统一用歌曲 path），
-/// 任何容器（收藏/本地音乐/歌单详情）持有一份，变更后通过 ChangeNotifier
-/// 通知列表与批量操作栏自行重建，无需容器手动 setState。
 class SongBatchController extends ChangeNotifier {
   bool _batchMode = false;
   bool get batchMode => _batchMode;
@@ -33,7 +30,6 @@ class SongBatchController extends ChangeNotifier {
 
   bool isSelected(String path) => _selected.contains(path);
 
-  /// 全选 / 取消全选：传入当前列表全部 path。
   void toggleSelectAll(Set<String> all) {
     if (all.isNotEmpty && _selected.length == all.length) {
       _selected.clear();
@@ -46,9 +42,6 @@ class SongBatchController extends ChangeNotifier {
   }
 }
 
-/// 批量模式行包装：左缩 44 + 勾选槽 + 选中淡底（几何与拖拽排序路径一致，
-/// 使普通/批量两种模式切换时行内容不错位）。[row] 的 onTap 已由调用方改为
-/// 「切换选中」，勾选位点按同样切换选中。
 Widget wrapBatchRow(
   BuildContext context, {
   required Widget row,
@@ -80,7 +73,6 @@ Widget wrapBatchRow(
   );
 }
 
-/// 歌曲批量选择行首勾选控件：批量模式下替换拖拽把手，点按整行切换选中。
 class SongBatchCheckbox extends StatelessWidget {
   const SongBatchCheckbox({
     super.key,
@@ -118,10 +110,6 @@ class SongBatchCheckbox extends StatelessWidget {
   }
 }
 
-/// 批量模式下歌曲行：左侧 44px 勾选槽 + 右侧常规行内容，点按整行切换选中。
-///
-/// 几何与拖拽排序路径一致（行左缩 44、勾选位 left:8 宽 36 垂直居中），
-/// 使普通/批量两种模式切换时行内容不错位。选中时整行叠加一层主色淡底。
 class SongBatchRow extends StatelessWidget {
   const SongBatchRow({
     super.key,
@@ -202,11 +190,6 @@ class SongBatchRow extends StatelessWidget {
   }
 }
 
-/// 批量操作底部工具栏（参考桌面端批量菜单：全选/播放/收藏/歌单/下载/移除/完成）。
-///
-/// 悬浮在内容底部，与迷你播放条共用同一玻璃表面（[playbarGlassSurface]），材质
-/// 完全同步、与底栏同图层。挂载时按自身实测高度写入 [batchBarLiftProvider]，使
-/// 播放条在批量模式下被「托起」到批量栏之上，避免被播放条挡住。
 class BatchActionBar extends ConsumerStatefulWidget {
   const BatchActionBar({
     super.key,
@@ -229,15 +212,10 @@ class BatchActionBar extends ConsumerStatefulWidget {
   final int selectedCount;
   final int totalCount;
 
-  /// 是否展示「播放」批量操作。
   final bool showPlay;
-  /// 是否展示「收藏」批量操作（收藏页等本就已是收藏的场景隐藏）。
   final bool showFavorite;
-  /// 是否展示「添加到歌单」批量操作。
   final bool showPlaylist;
-  /// 是否展示「下载」批量操作（纯本地列表无在线歌时隐藏）。
   final bool showDownload;
-  /// 是否展示「移除」批量操作（本地曲库无法安全删除文件时隐藏）。
   final bool showRemove;
 
   final VoidCallback onSelectAll;
@@ -253,7 +231,6 @@ class BatchActionBar extends ConsumerStatefulWidget {
 }
 
 class _BatchActionBarState extends ConsumerState<BatchActionBar> {
-  /// 锚定批量栏整体（含安全区），用于实测其高度以驱动播放条托起。
   final GlobalKey _rootKey = GlobalKey();
 
   @override
@@ -274,7 +251,6 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
 
   @override
   void dispose() {
-    // 批量模式退出（本栏卸载）时托起量归零，播放条回落原位。
     ref.read(batchBarLiftProvider.notifier).state = 0;
     super.dispose();
   }
@@ -422,7 +398,6 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
       ),
     );
 
-    // 与迷你播放条共用同一玻璃入口，材质完全同步（液态玻璃/毛玻璃口径一致）。
     return playbarGlassSurface(context, ref, radius: 18, child: bar);
   }
 }

@@ -3,31 +3,21 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// 手机端云端中继事件。
 class CloudLinkEvent {
   const CloudLinkEvent._(this.kind, {this.peerName = ''});
 
-  /// 手表已上线（可推送状态帧）。
   static const ready = 'ready';
 
-  /// 手表离线（连接仍在，等待手表重连）。
   static const peerLost = 'peer_lost';
 
-  /// 本连接被同 key 的新连接替换（服务端踢旧留新）。
   static const replaced = 'replaced';
 
-  /// 底层连接断开（网络故障/服务端不可达）。
   static const closed = 'closed';
 
   final String kind;
   final String peerName;
 }
 
-/// 手机端云端中继客户端（对应服务端 `/watch-relay`，role=phone）。
-///
-/// 与手表端 `XianYu-Music-Watch/lib/src/link/cloud_client.dart` 为同一协议的对端：
-/// XYW1 帧字节原样走 WS Binary；WS Text 仅承载链路控制（hello/ready/peer_lost/replaced）。
-/// 重连节奏由上层 `watch_link_provider` 控制（5s→60s 退避）。
 class WatchCloudChannel {
   WebSocket? _ws;
   StreamSubscription<dynamic>? _sub;
@@ -36,15 +26,12 @@ class WatchCloudChannel {
   final _rawCtrl = StreamController<Uint8List>.broadcast();
   final _eventCtrl = StreamController<CloudLinkEvent>.broadcast();
 
-  /// 手表经云端送来的 XYW1 帧字节流。
   Stream<Uint8List> get onRaw => _rawCtrl.stream;
 
-  /// 链路事件。
   Stream<CloudLinkEvent> get onEvent => _eventCtrl.stream;
 
   bool get isConnected => !_closed && _ws != null;
 
-  /// 连接中继服务（role=phone）。成败经 [onEvent] 回传。
   Future<void> connect({
     required String url,
     required String key,
@@ -106,7 +93,6 @@ class WatchCloudChannel {
     } catch (_) {}
   }
 
-  /// 发送 XYW1 帧字节（WS Binary）。
   Future<void> send(Uint8List bytes) async {
     final ws = _ws;
     if (ws == null || _closed) return;
@@ -115,7 +101,6 @@ class WatchCloudChannel {
     } catch (_) {}
   }
 
-  /// 关闭连接（幂等）。
   Future<void> close() async {
     _closed = true;
     await _sub?.cancel();

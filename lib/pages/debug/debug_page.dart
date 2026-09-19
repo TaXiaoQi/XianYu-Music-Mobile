@@ -17,12 +17,9 @@ import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../pages/account/account_dialogs.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 调试页：集中展示所有弹窗（对齐桌面端 SettingsDebug）。
-/// 通过「关于页」版本号连点 5 次进入。
 class DebugPage extends ConsumerWidget {
   const DebugPage({super.key});
 
-  /// 假在线歌曲，用于触发需要歌曲参数的弹窗调试。
   static QueueItem get _fakeQueueItem => QueueItem(
     path: tr('plugin://demo/测试歌曲'),
     title: tr('测试歌曲'),
@@ -296,7 +293,6 @@ class _DebugRow extends StatelessWidget {
   }
 }
 
-/// 分组圆角卡片包裹容器（与设置页一致）。
 class _CardGroup extends ConsumerWidget {
   const _CardGroup({required this.children});
   final List<Widget> children;

@@ -8,15 +8,8 @@ import '../auth/auth_provider.dart';
 import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
 
-/// 公告已读指纹存储键。
 const _announcementDismissedKey = 'announcement_dismissed_id';
 
-/// 启动通知服务：检查公告、反馈完成通知与昵称变更通知并弹窗展示。
-///
-/// 与桌面端 announcement.ts / useFeedbackNotification.ts / useNicknameChangeNotification.ts 对齐：
-/// - 公告：本地已读指纹（id + updatedAt）失效则重新弹出，关闭时上报 confirm_announcement
-/// - 反馈完成通知：未确认时弹出，关闭时上报 confirm_feedback_notification
-/// - 昵称变更通知：未确认时弹出，关闭时上报 confirm_nickname_change_notice 并同步本地昵称
 class NotificationService {
   NotificationService(this._ref);
   final Ref _ref;
@@ -26,7 +19,6 @@ class NotificationService {
   bool _checking = false;
   bool _listenResetShown = false;
 
-  /// 应用启动后调用：依次检查公告、反馈通知、昵称变更与待弹窗的清零通知，避免多个弹窗叠加。
   Future<void> checkOnStartup(BuildContext context) async {
     if (_checking) return;
     _checking = true;
@@ -54,10 +46,6 @@ class NotificationService {
     }
   }
 
-  /// 展示待处理的「听歌时长被清理」通知（原因由管理后台填写下发）。
-  ///
-  /// 幂等：已展示过或本地无待弹窗记录则直接返回；展示后清除本地待弹窗记录，
-  /// 故启动检查与登录完成两处触发也只会弹一次。复用统一通知弹窗（warning 风格）。
   Future<void> showPendingListenResetNotice(BuildContext context) async {
     if (_listenResetShown) return;
     try {
@@ -115,7 +103,6 @@ class NotificationService {
 
   String _fingerprint(Announcement ann) => '${ann.id}_${ann.updatedAt}';
 
-  /// 调试模式：展示公告弹窗（假数据，不发送服务器），对齐桌面端 simulateAnnouncement。
   Future<void> showAnnouncementForDebug(BuildContext context) async {
     final ann = Announcement(
       id: 'debug-announcement',
@@ -186,7 +173,6 @@ class NotificationService {
     return '${d.year}-${pad(d.month)}-${pad(d.day)}';
   }
 
-  /// 昵称变更通知：弹窗展示，关闭后确认已读并同步本地昵称。
   Future<void> _showNicknameChangeDialog(
       BuildContext context, NicknameChangeNotice notice) async {
     final content = tr('管理员已将您的昵称修改为「{nickname}」。\n\n', {'nickname': notice.newNickname}) +
@@ -211,7 +197,6 @@ final notificationServiceProvider = Provider<NotificationService>(
   (ref) => NotificationService(ref),
 );
 
-/// 通用通知弹窗：公告 / 反馈完成通知共用。
 class _NotificationDialog extends StatelessWidget {
   const _NotificationDialog({
     required this.title,

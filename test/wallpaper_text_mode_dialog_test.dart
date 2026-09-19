@@ -6,18 +6,15 @@ import 'package:xianyu_music_mobile/src/core/settings.dart';
 import 'package:xianyu_music_mobile/src/widgets/modern_dialog.dart';
 import 'package:xianyu_music_mobile/src/widgets/sheet_dialog.dart';
 
-/// 壁纸「亮色字体」覆盖下，弹窗标题必须保持基础明暗前景（不被污染成白字）。
 void main() {
   testWidgets('亮字覆盖下弹窗标题仍为基础前景（现代确认弹窗 + sheet 弹窗）',
       (tester) async {
-    // 1. 基础（未覆盖）主题：模拟 _ensureThemes 的 baseScheme/baseTextTheme 记录。
     final baseScheme =
         ColorScheme.fromSeed(seedColor: const Color(0xFFEC4141));
     final baseTheme = ThemeData(colorScheme: baseScheme, useMaterial3: true);
     lightBaseScheme = baseScheme;
     lightBaseTextTheme = baseTheme.textTheme;
 
-    // 2. 页面主题 = 亮字覆盖（模拟 app.dart 的全局覆盖 copyWith）。
     final pageTheme = baseTheme.copyWith(
       colorScheme:
           baseScheme.copyWith(onSurface: Colors.white, onSurfaceVariant: Colors.white.withValues(alpha: 0.72)),
@@ -67,8 +64,6 @@ void main() {
       return rp.text.style?.color ?? Colors.transparent;
     }
 
-    // 现代确认弹窗：标题无显式颜色（靠 DefaultTextStyle 继承），正文显式取
-    // scheme.onSurfaceVariant（Builder 在恢复 Theme 内执行后才不被污染）。
     await tester.tap(find.text('open-confirm'));
     await tester.pumpAndSettle();
     expect(resolvedColor('确认标题'), isNot(Colors.white),
@@ -78,7 +73,6 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
 
-    // sheet 弹窗（showSheetDialog → showPredictiveDialog）。
     await tester.tap(find.text('open-sheet'));
     await tester.pumpAndSettle();
     expect(resolvedColor('sheet标题'), isNot(Colors.white),

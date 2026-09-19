@@ -23,8 +23,6 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 导入歌单页：备份文件 / 本地文件 / 云端导入 三种方式
-/// （对齐桌面端导入歌单弹窗，独立成页不与音源页共用）。
 class PlaylistImportPage extends ConsumerStatefulWidget {
   const PlaylistImportPage({super.key});
 
@@ -35,7 +33,6 @@ class PlaylistImportPage extends ConsumerStatefulWidget {
 
 class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
     with TickerProviderStateMixin {
-  /// 云端导入依赖已启用的音源插件（搜索歌单/拉取详情），无插件时整 tab 隐藏。
   late TabController _tabCtrl = TabController(length: 3, vsync: this);
   bool _cloudTab = true;
 
@@ -49,8 +46,6 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
   Widget build(BuildContext context) {
     final hasPlugin = ref.watch(pluginManagerProvider
         .select((s) => s.sources.any((p) => p.enabled)));
-    // 插件可用性变化（异步加载完成 / 全部禁用）：重建 TabController 对齐 tab 数，
-    // 并保留当前选中位（收 tab 时钳制到有效范围）。
     if (hasPlugin != _cloudTab) {
       _cloudTab = hasPlugin;
       final prev = _tabCtrl.index;
@@ -137,7 +132,6 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
             localSongs: _localSongRefs(),
           );
         } on FormatException {
-          // .txt 可能是 JSON 备份：播放列表解析失败时回退 JSON 解析。
           if (lowerName.endsWith('.txt')) {
             prepared = preparePluginBackupImport(
                 extractBackupJsonBytes(bytes, name), sources);
@@ -166,7 +160,6 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     }
   }
 
-  /// 本地曲库歌曲引用（供 M3U/TXT 导入时把跨设备失效路径匹配回本地）。
   List<LocalSongRef> _localSongRefs() {
     final library = ref.read(libraryProvider);
     return library.songs
@@ -308,7 +301,6 @@ class _LocalFolderTab extends ConsumerStatefulWidget {
 }
 
 class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
-  /// SAF 枚举白名单（与曲库扫描一致的音频扩展名）。
   static const _audioExtensions = [
     'flac', 'mp3', 'wav', 'aac', 'm4a', 'm4b', 'mp4',
     'ogg', 'oga', 'aif', 'aiff', 'dsf', 'dff',
@@ -399,7 +391,6 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
             ));
           }
         } catch (_) {
-          // 单文件解析失败跳过
         } finally {
           await SafChannel.closeFd(fd);
         }
@@ -546,12 +537,9 @@ class _CloudImportTab extends ConsumerStatefulWidget {
 }
 
 class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
-  /// 「自动识别」下拉项占位 key。
   static const _autoKey = '__auto__';
 
-  /// 当前下拉框选中值：插件 id 或 [_autoKey]（自动识别）。
   String? _selectedPluginId;
-  /// 自动识别解析出的插件（供导入步骤复用，避免用户切换下拉后再搜索）。
   PluginSource? _resolved;
   bool _searching = false;
   bool _importing = false;
@@ -573,14 +561,12 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       .where((s) => s.enabled && s.format == PluginFormat.musicfree)
       .toList();
 
-  /// 当前下拉框选中的具体插件（自动识别或无有效选择时为 null）。
   PluginSource? get _selected {
     final id = _selectedPluginId;
     if (id == null || id.isEmpty || id == _autoKey) return null;
     return _plugins.where((s) => s.id == id).firstOrNull;
   }
 
-  /// 各平台匹配关键词（对标桌面端 parseLink 支持的网易云/QQ音乐/酷我/酷狗）。
   static Map<String, List<String>> get _platformKeywords => {
     'netease': [tr('网易云'), 'netease', 'wy'],
     'qq': [tr('qq音乐'), 'qqmusic', tr('腾讯'), 'tx', 'qq'],
@@ -588,7 +574,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     'kugou': ['kugou', tr('酷狗'), 'kg'],
   };
 
-  /// 从分享链接识别平台 key（netease/qq/kuwo/kugou），识别不出返回 null。
   String? _detectPlatformFromUrl(String input) {
     final t = input.toLowerCase();
     if (t.contains('music.163.com') ||
@@ -631,8 +616,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     final plugins = _plugins;
     var source = _selected;
     if (source == null) {
-      // 自动识别：从分享链接识别平台并匹配已安装插件。
-      // 纯歌单 ID 无法确定平台，若只装了一个插件则直接使用，否则提示选择音源。
       final canonical = _detectPlatformFromUrl(keyword);
       if (canonical != null) {
         source = _matchPluginByPlatform(canonical, plugins);
@@ -667,7 +650,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       final sheets = await catalog.searchSheets(source, keyword);
       if (!mounted) return;
       if (sheets.isEmpty) {
-        // 兜底：插件实现 importMusicItem 时，链接可能指向单曲，尝试单曲导入。
         final single = await catalog.importMusicItem(source, keyword);
         if (single != null) {
           await _importSingleSong(source, single);
@@ -687,7 +669,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   }
 
   Future<void> _importSheet(MfSheetItem sheet) async {
-    // 歌单可能来自自动识别的插件，优先按返回结果的 pluginId 定位，避免选错源。
     final plugins = _plugins;
     final sheetPlugin =
         plugins.where((p) => p.id == sheet.pluginId).firstOrNull;
@@ -701,9 +682,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         ref.read(pluginManagerProvider).sources,
       );
 
-      // 分页拉取歌单全部曲目（安全上限 50 页）。
-      // 以插件返回的 isEnd 判断是否还有下一页，避免按返回数量猜页大小（如每页 20 首）
-      // 导致提前截断丢歌；同时按 songmid|标题|歌手 去重，兼容忽略 page 参数每页返回同一批的插件。
       final songs = <ImportedSong>[];
       final seen = <String>{};
       var page = 1;
@@ -757,7 +735,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     }
   }
 
-  /// 单曲导入兜底：插件 importMusicItem 解析出的单曲直接建歌单写入。
   Future<void> _importSingleSong(
       PluginSource source, PluginSearchResult song) async {
     try {
@@ -817,7 +794,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       );
     }
 
-    // 下拉框选中值自净化：已被卸载的插件回退到自动识别。
     var selected = _selectedPluginId;
     if (selected != null &&
         selected != _autoKey &&

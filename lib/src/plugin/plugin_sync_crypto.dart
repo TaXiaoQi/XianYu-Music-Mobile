@@ -4,18 +4,10 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as enc;
 
-/// 插件用户变量 AES 加解密。
-///
-/// 与桌面端 `pluginSync.ts` 保持完全一致：
-/// - AES-256-CBC + PKCS7
-/// - 密钥 = SHA-256(弦予号)，任意端登录同一账号即可互相解密
-/// - 明文为 `Map<String,String>` 的 JSON 串
-/// - 密文块结构 `{iv, data}` 均为 Base64，服务端仅作密文存储载体不解密。
 abstract class PluginUserVarCrypto {
   static List<int> _key(String ciyuanxiId) =>
       sha256.convert(utf8.encode(ciyuanxiId)).bytes;
 
-  /// 加密用户变量；失败返回 null（调用方选择跳过，不影响插件本身上传）。
   static Map<String, dynamic>? encrypt(
       String ciyuanxiId, Map<String, String> values) {
     try {
@@ -30,7 +22,6 @@ abstract class PluginUserVarCrypto {
     }
   }
 
-  /// 解密用户变量；block 缺失或解密失败返回 null。
   static Map<String, String>? decrypt(
       String ciyuanxiId, Map<String, dynamic>? block) {
     if (block == null) return null;

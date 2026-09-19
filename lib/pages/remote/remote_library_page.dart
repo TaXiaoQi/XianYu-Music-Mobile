@@ -11,7 +11,6 @@ import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 远程音乐库管理页：WebDAV 源的添加/编辑/同步/删除与缓存管理。
 class RemoteLibraryPage extends ConsumerWidget {
   const RemoteLibraryPage({super.key});
 
@@ -148,7 +147,6 @@ class RemoteLibraryPage extends ConsumerWidget {
     );
   }
 
-  /// 添加/编辑远程源表单（居中弹窗）。
   Future<void> _showSourceEditor(BuildContext context, WidgetRef ref,
       {RemoteSourceInfo? editing}) {
     return showSheetDialog<void>(
@@ -179,7 +177,6 @@ class RemoteLibraryPage extends ConsumerWidget {
   }
 }
 
-/// 单个远程源卡片。
 class _SourceCard extends ConsumerWidget {
   const _SourceCard({required this.source});
   final RemoteSourceInfo source;
@@ -352,18 +349,15 @@ class _SourceCard extends ConsumerWidget {
     try {
       final message =
           await ref.read(remoteLibraryProvider.notifier).sync(source.id);
-      // 同步写入曲库后刷新音乐库列表。
       ref.read(libraryProvider.notifier).load();
       if (context.mounted) showXianYuToast(context, message);
     } catch (e) {
-      // 刷新以显示 lastSyncError。
       ref.read(remoteLibraryProvider.notifier).refresh();
       if (context.mounted) showXianYuToast(context, tr('同步失败：{e}', {'e': e}));
     }
   }
 }
 
-/// 添加/编辑远程源表单弹层。
 class _SourceEditorSheet extends ConsumerStatefulWidget {
   const _SourceEditorSheet({this.editing});
   final RemoteSourceInfo? editing;
@@ -399,7 +393,6 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
 
   bool get _isEditing => widget.editing != null;
 
-  /// 编辑时空密码表示沿用原密码。
   String? get _passwordForSave =>
       _isEditing && _password.text.isEmpty ? null : _password.text;
 
@@ -412,7 +405,6 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
       final service = ref.read(remoteLibraryServiceProvider);
       final rootPath = _rootPath.text.trim().isEmpty ? '/' : _rootPath.text.trim();
       if (_isEditing && _password.text.isEmpty) {
-        // 编辑态密码留空：沿用存储密码，仅测试表单中改动的连接信息。
         await service.testSavedSource(
           widget.editing!.id,
           baseUrl: _baseUrl.text,
@@ -438,10 +430,6 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
     }
   }
 
-  /// 浏览远程目录并选取根目录。
-  ///
-  /// 编辑态密码留空：沿用存储密码浏览已保存源；其余按表单连接信息浏览
-  /// （新增源未保存也能浏览）。
   Future<void> _browseRoot() async {
     final url = _baseUrl.text.trim();
     if (!RegExp(r'^https?://').hasMatch(url)) {
@@ -512,7 +500,6 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      // 键盘避让由 showSheetDialog 的 DialogKeyboardLift 统一处理，这里固定布局
       padding: EdgeInsets.zero,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -647,7 +634,6 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
   }
 }
 
-/// 远程目录浏览弹窗：逐级进入子目录，选取作为 WebDAV 根目录。
 class _RemoteDirBrowserSheet extends StatefulWidget {
   const _RemoteDirBrowserSheet({
     required this.fetcher,
@@ -693,7 +679,6 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
     }
   }
 
-  /// 上级目录：去掉末尾段；根目录的上级仍是根目录。
   String get _parentPath {
     var p = _path;
     if (p.isEmpty || p == '/') return '/';

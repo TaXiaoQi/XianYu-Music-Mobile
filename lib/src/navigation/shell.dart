@@ -47,43 +47,21 @@ import '../../pages/search/search_page.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
 
-/// 浮动底栏占据的底部高度（距底 18 + 栏高 60 + 阴影余量）。
-///
-/// 底栏是叠在内容之上的 `Positioned`，不参与布局，`SafeArea` 也无法感知。
-/// 弹窗、列表等需要避让它的地方统一引用此常量，改动底栏尺寸时只需改这里。
 const double kFloatingNavBarInset = 90;
 
-/// 横屏固定左缘侧栏宽度（文字侧边栏，参考设置页横屏左栏）。内容区整体右移避让。
-/// 拖动分割线时最大划到屏幕中部（对半）；最小可缩到「仅图标」宽
-/// （[kLandscapeRailIconWidth]），此时侧栏自动只显示居中的图标、隐藏文字。
 const double kLandscapeRailWidth = 176;
-/// 拖动分割线的最小宽度：仅图标态（icon + 内边距，容纳单个入口图标）。
 const double kLandscapeRailIconWidth = 60;
-/// 侧栏宽度低于此值（px）时切换为「仅图标」态：隐藏品牌标题与分区文字、入口只留图标。
 const double kLandscapeRailCollapseAt = 120;
 
-/// 全局横屏感知：由 AppShell 的 MediaQuery 检测写入，供各页面响应横屏布局。
-///
-/// 横屏时导航自动切换为侧边形态、无底部栏，页面底部只需为准占播放条留白，
-/// 侧边栏浮层不参与布局，故左缘由需要避让的页面自行判断。
 final isLandscapeProvider = StateProvider<bool>((ref) => false);
 
-/// 横屏侧边栏「音乐库」当前选中的入口（0本地/1收藏/2最近/3歌单），null 表示
-/// 未选中（右侧显示主 tab）。选中后右侧直接内嵌对应页面，不进入二级路由，
-/// 参考设置页横屏的 master-detail。
 final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
 
-/// 横屏音乐库 pane 的本地搜索激活状态：在音乐库 pane 内点全局搜索胶囊时置
-/// true，顶栏标题区切换为本地过滤输入框（不再打开在线搜索容器）。对齐桌面端
-/// ——音乐库页的搜索框承担本地过滤职能。
 final landscapeLibrarySearchActiveProvider =
     StateProvider<bool>((ref) => false);
 
-/// 横屏音乐库 pane 的本地过滤关键词：非空时各 pane（本地/收藏/最近/歌单）以它
-/// 作为本地过滤条件。由全局顶栏的本地过滤输入框写入，各音乐库 pane 页面读取。
 final landscapeLibraryQueryProvider = StateProvider<String>((ref) => '');
 
-/// 横屏音乐库 pane 本地过滤输入框控制器：全局顶栏持有，与各 pane 共享。
 final landscapeLibrarySearchCtrlProvider =
     Provider<TextEditingController>((ref) {
   final ctrl = TextEditingController();
@@ -91,46 +69,23 @@ final landscapeLibrarySearchCtrlProvider =
   return ctrl;
 });
 
-/// 本地过滤输入框焦点：切换为输入框后由打开方下一帧显式 requestFocus，保证
-/// 第一次点全局搜索胶囊（在音乐库 pane）输入法就弹出。
 final landscapeLibrarySearchFocusProvider = Provider<FocusNode>((ref) {
   final node = FocusNode();
   ref.onDispose(node.dispose);
   return node;
 });
 
-/// 横屏「我的」页账号与安全是否以右侧容器内嵌面板打开（不开二级路由）。
 final landscapeAccountOpenProvider = StateProvider<bool>((ref) => false);
 
-/// 横屏「我的」页歌曲下载是否以右侧容器内嵌面板打开（不开二级路由）。
 final landscapeDownloadOpenProvider = StateProvider<bool>((ref) => false);
 
-/// 横屏选中的歌单 id：右侧容器内嵌歌单详情（不开二级路由），null=未打开。
 final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 
-/// 横屏右侧「内容」容器：首页发现区竖屏二级页（统计榜单/每日推荐/音源榜单）
-/// 在横屏下的对应形态（不开二级路由），存对应路由 path，null=未打开。
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
-/// 音乐库四页（本地/收藏/最近/歌单）的共享 GlobalKey：横屏侧边栏容器
-/// （_MusicLibraryPane）与对应竖屏路由页用同一 key，翻转瞬间容器/路由在同
-/// 一帧卸载与挂载（横→竖：pane 随横屏树退役，路由页同帧挂载 retake），
-/// 框架按 key reparent，列表滚动位置/选中索引跨横竖屏保留。
-///
-/// 重复 key 的两个风险窗口已在壳层处理（见 shell.dart）：
-/// 1. 竖屏时 pane 不挂载（LandscapeTabSwitcher 离屏分支 Offstage 常驻，
-///    常驻挂载会与竖屏路由页撞 key，路由页被顶掉）；
-/// 2. 竖屏音乐库二级页翻进横屏时，pop 反向转场内路由页 element 仍挂于
-///    overlay，pane 延迟到转场结束后再挂（_deferLibPaneMount）。
 final musicLibraryPageKeys =
     List<GlobalKey>.generate(4, (_) => GlobalKey());
 
-/// 横屏右侧是否有「覆盖面板」打开（账号/下载/歌单详情/搜索/内容容器）。
-///
-/// 音乐库入口（本地/收藏/最近/歌单）与主 tab 同级：同一个主页内容切换器
-/// （LandscapeTabSwitcher，见 build 内 landscapeHome）用同一套 out-in 切换，
-/// 不属于覆盖面板。覆盖面板打开期间主页内容的切换动画由面板关闭淡出承担
-/// （suppress 硬切），避免「面板淡出 + 下层 out-in」两层动画叠加互闪。
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
       ref.watch(landscapeDownloadOpenProvider) ||
@@ -139,15 +94,8 @@ final landscapePaneOpenProvider = Provider<bool>((ref) {
       ref.watch(landscapeContentPathProvider) != null;
 });
 
-/// 横屏设置 master-detail 当前选中的分类 path（null=默认「账号」）。
-///
-/// 翻转重定向：进横屏时若停在设置分类二级路由（/settings/:category、/about）
-/// 上，先写入目标分类再 pop，揭开下层的 /settings——其横屏 master-detail
-/// 直接落在对应分类。设置页（竖屏 master-detail 分类切换）读写同一 provider。
 final landscapeSettingsCategoryProvider = StateProvider<String?>((ref) => null);
 
-/// 横屏设置 master-detail 可内嵌的分类 path 白名单（与设置页分组一致），
-/// 供翻转重定向校验目标分类，未知 path 不重定向（保持竖屏二级页）。
 const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/account',
   '/settings/general',
@@ -162,12 +110,6 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/plugin',
 };
 
-/// 分支根页面需要的底部避让高度。
-///
-/// - 悬浮式：底栏与播放条都是浮层（顶端到屏幕底部约 165px），页面留出 175px 保证末项完全露出。
-/// - 固定式：固定底栏经 `extendBody` 让内容延伸穿到其下（毛玻璃透出内容），底栏
-///   与播放条同为浮层观感，页面同样留出 175px 保证末项完全露出。
-/// - 侧边栏（含横屏自动切换）：导航移到侧边，底部仅剩浮层播放条，页面只需留出 82px。
 final navBarInsetProvider = Provider<double>((ref) {
   final landscape = ref.watch(isLandscapeProvider);
   final s = ref.watch(settingsProvider).valueOrNull;
@@ -175,25 +117,10 @@ final navBarInsetProvider = Provider<double>((ref) {
   return 175;
 });
 
-/// 请求隐藏底栏与迷你播放条的页面计数。
-///
-/// 二级页面（音源管理、扫描文件夹、歌曲列表等）不该被浮层遮挡，
-/// 进入时 +1、离开时 -1；大于 0 时 shell 隐藏浮层。
-/// 用计数而非布尔，以正确处理多层页面叠加。
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
 
-/// 侧边导航栏是否展开。
-///
-/// 默认折叠（仅在左上角显示 3 条竖线 logo 按钮），点击展开完整侧边栏。
 final sideBarExpandedProvider = StateProvider<bool>((ref) => false);
 
-/// 内嵌作用域：标记子树内的页面为「壳层内嵌面板」，不是真正的二级页面。
-///
-/// [_MusicLibraryPane]（竖屏音乐库主 tab 与横屏音乐库分支共用，IndexedStack
-/// 常驻保活全部子页）、横屏右侧覆盖面板（账号/下载/歌单详情/搜索）都属此类。
-/// 这些页面虽然复用二级页组件（内部包了 [HideShellChrome]），但它们由壳层
-/// 自己管理显隐，不能参与 navBarHiddenProvider 计数——否则壳层每次 build
-/// 都把它们批量挂载，底栏会被误判「处于二级页」而永久隐藏。
 class EmbeddedShellScope extends InheritedWidget {
   const EmbeddedShellScope({super.key, required super.child});
 
@@ -204,28 +131,18 @@ class EmbeddedShellScope extends InheritedWidget {
   bool updateShouldNotify(EmbeddedShellScope oldWidget) => false;
 }
 
-/// 让当前页面在显示期间隐藏 shell 浮层。
-///
-/// 用法：在页面 State 中混入本 mixin，无需手动管理计数。
 mixin HidesShellChrome<T extends ConsumerStatefulWidget>
     on ConsumerState<T> {
-  /// 缓存根容器：dispose 时本 State 的 ref 已不可用，
-  /// 必须提前持有容器才能可靠地把计数减回去。
   ProviderContainer? _container;
 
-  /// 是否已计入隐藏计数，避免重复增减导致计数漂移。
   bool _counted = false;
 
-  /// 是否真正计入隐藏计数。横屏内嵌容器模式（embedded）覆盖为 false：
-  /// 迷你播放条由壳层常驻承接，页面自身不再隐藏 shell 浮层。
   bool get hidesChrome => true;
 
   @override
   void initState() {
     super.initState();
-    // 延后一帧：build 期间不可修改 provider。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 内嵌面板（横竖屏音乐库分支/横屏覆盖面板）：由壳层管理显隐，不计数。
       if (!mounted || !hidesChrome) return;
       if (EmbeddedShellScope.of(context)) return;
       _container = ProviderScope.containerOf(context, listen: false);
@@ -237,15 +154,6 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
 
   @override
   void dispose() {
-    // 递减必须满足两个约束，缺一不可：
-    //
-    // 1. 不能同步改：dispose 处于 widget 树销毁流程中，直接改 provider 会触发
-    //    "Tried to modify a provider while the widget tree was building"。
-    // 2. 不能依赖本 State 的 ref：页面销毁后 ref 已失效，此前用
-    //    `notifier.mounted` 判断会恒为假，计数只增不减，
-    //    导致返回后底栏再也不出现。
-    //
-    // 因此用提前缓存的根容器，延后到下一帧执行。
     if (_counted) {
       final container = _container;
       _counted = false;
@@ -261,7 +169,6 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   }
 }
 
-/// 主外壳：浮动迷你播放器 + 液态玻璃底栏，叠加在页面内容之上。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.navigationShell});
 
@@ -279,16 +186,12 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
-    // 启动自动同步调度器（每分钟 tick，到点才同步）。
     ref.read(autoSyncProvider).start();
-    // 启动时若已登录则触发首次全量一致性同步（仅首次，本地有数据且与云端冲突才弹窗）。
-    // 显式登录/注册场景由 account_page 触发，此处覆盖重开应用自动登录的既有用户。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (ref.read(authProvider).user != null) {
         ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
       }
     });
-    // 首帧后检查公告/反馈完成通知，避免与启动动画冲突。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_notificationsChecked) return;
       _notificationsChecked = true;
@@ -303,25 +206,10 @@ class _AppShellState extends ConsumerState<AppShell> {
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
     final hiddenCount = ref.watch(navBarHiddenProvider);
-    // 只要有页面请求隐藏底栏（说明在二级页面，如音源管理/扫描文件夹/歌曲列表等）
-    // 或者 GoRouter 栈深 > 1，就 100% 处于二级页面。
     final isSubPage = hiddenCount > 0 || GoRouter.of(context).canPop();
 
-    // 动态 canPop（预测返回友好）：
-    //
-    // - 二级页面（go_router 子路由 / push 到 root navigator 的页面，root 栈深 > 1）
-    //   isSubPage=true → canPop=true，系统把手势交给 Flutter，由
-    //   PredictiveBackPageTransitionsBuilder 自绘过渡，预测返回显示真实内容预览；
-    // - 真正根节点 isSubPage=false → canPop=false，回到下方式手动分发
-    //   （切 tab / 再按一次退出等）。
-    //
-    // 关键前提：二级页面必须压在 ROOT navigator 上（routes.dart 已如此），
-    // 使 GoRouter.canPop() 如实反映"root 栈里有可弹的真实页面"；若仍压在
-    // 分支内部 Navigator，canPop 会失真并触发「返回直接回桌面」的历史 bug。
     return Listener(
       behavior: HitTestBehavior.translucent,
-      // 鼠标/外接设备的侧键「返回」（PiliNara BackDetector 同款语义），
-      // 走与系统返回一致的分发，保证桌面扩展屏/外接鼠标下体验一致。
       onPointerDown: (PointerDownEvent e) {
         if (e.buttons == kBackMouseButton) _handleBack();
       },
@@ -339,29 +227,23 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  /// 根节点返回分发：二级页弹栈 → 切回主界面 Tab → 双击退出。
-  /// 同时被系统返回与鼠标侧键触发，避免两处重复实现。
   void _handleBack() {
     final router = GoRouter.of(context);
     AppLogger.instance.log('back',
         'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}');
 
-    // 1. 二级页面（go_router 子路由或直接 push 到 root navigator 的
-    //    页面都在 root 栈上，router.canPop 均为 true）：弹栈返回。
     if (router.canPop()) {
       AppLogger.instance.log('back', '手动 pop 二级页面');
       router.pop();
       return;
     }
 
-    // 2. 已在 Branch 根页面且不在“主界面”(index != 0)，返回“主界面” Tab
     if (widget.navigationShell.currentIndex != 0) {
       AppLogger.instance.log('back', '切回主界面 tab');
       widget.navigationShell.goBranch(0);
       return;
     }
 
-    // 3. 如果已经在“主界面” Tab 根节点，提示“再按一次退出应用”
     final now = DateTime.now();
     if (_lastBackTime == null ||
         now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
@@ -372,18 +254,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       return;
     }
 
-    // 4. 2秒内再次触发系统返回，顺畅退出程序
     AppLogger.instance.log('back', 'SystemNavigator.pop 退出应用');
     SystemNavigator.pop();
   }
 }
 
-/// 外壳骨架：按设置在悬浮式与固定式底栏之间切换。
-///
-/// - 悬浮式：底栏与播放条为 `Positioned` 浮层，叠在内容之上，
-///   页面需自行留出 [kFloatingNavBarInset] 的底部间距。
-/// - 固定式：底栏与播放条参与布局（`Scaffold.bottomNavigationBar`），
-///   Scaffold 自动收缩内容区，页面无需额外避让。
 class _ShellScaffold extends ConsumerStatefulWidget {
   const _ShellScaffold({
     required this.navigationShell,
@@ -403,24 +278,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   late final GoRouter _router;
 
-  /// 当前是否处于「根级 Tab 路径」。
-  ///
-  /// 与 [GoRouter.canPop] 刻意解耦：`canPop` 读的是根 Navigator 的 `_history`，
-  /// 被退出的路由在整段反向过渡动画期间都还留在 `_history` 里（要到动画结束才
-  /// 移除、页面 dispose），因此返回途中 `canPop` 恒为 true，导致底栏在整个过渡
-  /// 中一直隐藏、动画结束才淡入，出现「先看到一级页、再看到底栏」。
-  ///
-  /// 而 GoRouter 的 `currentConfiguration` 在 pop 一开始的 `didPop` 就会同步收缩
-  /// 路由匹配（见 delegate 的 `_completeRouteMatch` → `notifyListeners`），用它判断
-  /// 路径能立刻在「一级页开始露出」的同一帧把底栏解开。这样无论用
-  /// PredictBackPageTransitionsBuilder（预测返回）还是 ZoomPageTransitionsBuilder
-  /// （关闭预测返回），返回过渡期间底栏都能随页面露出一起出现。
   bool _isRootPath = true;
 
-  /// 横屏左缘侧栏可拖动宽度（默认取基准值，拖动分割线实时更新）。
   double _railWidth = kLandscapeRailWidth;
 
-  /// 原生旋转事件订阅（旋转一开始推送屏幕方向，提前切横竖屏布局）。
   StreamSubscription<dynamic>? _rotationSub;
 
   static const _rootPaths = {'/', '/home', '/mine'};
@@ -430,18 +291,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   @override
   void initState() {
     super.initState();
-    // 横竖屏翻转重定向依赖 didChangeMetrics（应用级回调）：壳层被不透明二级
-    // 路由覆盖时 build 时机不可靠（页面只是「原地横过来」，重定向不触发），
-    // observer 与路由形态无关，任何页面上翻转都会回调。
     WidgetsBinding.instance.addObserver(this);
     _router = GoRouter.of(context);
     _isRootPath =
         _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
     _router.routerDelegate.addListener(_onRouteChanged);
-    // 订阅原生旋转事件：旋转一开始（onConfigurationChanged）即推送屏幕方向，
-    // 立刻切横竖屏布局，尽量第一帧出横屏，缩短系统旋转期间「拉伸竖屏」的停留。
-    // 尺寸判定（didChangeMetrics）保留作兜底。通道仅 Android 原生侧注册，
-    // 其他平台（ohos 等）不订阅，避免 MissingPluginException 走全局错误上报。
     if (defaultTargetPlatform == TargetPlatform.android) {
       _rotationSub = const EventChannel('xianyu/rotation/events')
           .receiveBroadcastStream()
@@ -449,7 +303,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
   }
 
-  /// 接收原生屏幕方向（1 竖 / 2 横），旋转一开始即切横竖屏布局。
   void _onRotationEvent(Object? e) {
     if (!mounted) return;
     final v = e is num ? e.toInt() : null;
@@ -459,12 +312,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     } else if (v == 2) {
       ref.read(isLandscapeProvider.notifier).state = true;
     }
-    // 其他值：交给尺寸判定兜底，这里不覆盖。
   }
 
-  /// 路由匹配变化（push/pop）时跟手更新是否处于根路径，并顺带清掉漂移的
-  /// 「隐藏底栏」计数，让底栏/播放条随返回过渡一起淡入，而不是等二级页
-  /// dispose（返回过渡结束后）再触发。
   void _onRouteChanged() {
     if (!mounted) return;
     final rootNow =
@@ -488,8 +337,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     super.dispose();
   }
 
-  /// 功能型全屏页不参与翻转重定向：旋转时应保持任务/界面继续，不能被 pop 掉
-  /// （播放页为覆盖式，旋转应保持播放界面不关闭）。
   static const Set<String> _noRotateRedirectPaths = <String>{
     '/player',
     '/scan',
@@ -498,11 +345,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     '/shareBridge',
   };
 
-  /// 取路由栈顶的实际 path（含 context.push 压入的 imperative 路由）。
-  ///
-  /// [RouteMatchList.uri] 不反映 ImperativeRouteMatch——push 的路由被排除，
-  /// 只返回壳层分支路径（如 /home），用它判断栈顶永远不命中二级页，
-  /// 必须从 matches.last 解出真实栈顶。
   static String _routerTopPath(RouteMatchList config) {
     final last = config.matches.lastOrNull;
     if (last is ImperativeRouteMatch) return last.matches.uri.path;
@@ -511,23 +353,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     return config.uri.path;
   }
 
-  /// 翻转前所在的二级页 path：进横屏被重定向时记录，转回竖屏时恢复。
   String? _rotateBackPath;
 
-  /// 上一次 didChangeMetrics 读到的物理朝向（true=横屏），null=尚未收到首帧。
-  ///
-  /// 翻转重定向以此为准而非 provider 现状：原生旋转通道（_onRotationEvent）在
-  /// 旋转一开始就把 isLandscapeProvider 置成新朝向，didChangeMetrics 到达时
-  /// state 已匹配会早退、跳过重定向——表现为「横屏音乐库容器回竖屏只到我的页、
-  /// 进不了详细页」。物理朝向翻转才做重定向，其余 metrics 触发不重定向。
   bool? _lastPhysicalLandscape;
 
-  /// 是否允许挂载横屏音乐库 pane（_MusicLibraryPane）。
-  ///
-  /// pane 与竖屏音乐库二级页（/library 等）共享 [musicLibraryPageKeys] 做
-  /// 翻转 reparent。竖屏二级页被 pop 时其反向转场（最长 300ms）内 element
-  /// 仍挂在 overlay 上，此期间 pane 同 key 挂载会重复——翻转进横屏时暂缓，
-  /// 转场结束后（400ms 兜底）再挂载。
   bool _libPaneMountable = true;
   Timer? _libPaneMountTimer;
 
@@ -540,9 +369,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     });
   }
 
-  /// 底栏/悬浮顶栏显隐动画窗口（见 [chromeGlassSettlingProvider]）：
-  /// hidden 翻转时置 true，动画结束后恢复毛玻璃。仅竖屏驱动——横屏
-  /// chrome 无淡入淡出，置 true 会让横屏搜索框等 header 表面无谓闪纯色。
   bool? _lastChromeHidden;
   Timer? _chromeSettleTimer;
 
@@ -550,7 +376,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     if (_lastChromeHidden == hidden) return;
     final first = _lastChromeHidden == null;
     _lastChromeHidden = hidden;
-    // 首帧对齐初值，不触发降级窗口。
     if (first) return;
     _chromeSettleTimer?.cancel();
     scheduleMicrotask(() {
@@ -563,26 +388,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     });
   }
 
-  /// 横竖屏翻转重定向：路由随横竖屏一起切换，两种形态互为对应容器的投影。
-  ///
-  /// 进横屏：搜索/结果页→右侧搜索容器、设置分类页→master-detail、音乐库/
-  /// 下载/账号/歌单详情竖屏页→对应横屏容器（均记录 [_rotateBackPath]）、其余
-  /// 内容二级页弹回壳层。功能型全屏页（[_noRotateRedirectPaths]）与
-  /// /settings 自身（LandscapeGate 自动切 master-detail）除外。
-  ///
-  /// 转回竖屏：横屏容器状态全部移交/丢弃，路由成为唯一事实——有记录的恢复
-  /// 原二级页；无记录的（横屏内直接点侧边栏进入的容器）映射成对应竖屏二级页
-  /// push 上栈，保证返回键可用（否则竖屏没有路由承载该容器，无法返回）。
-  ///
-  /// 挂在 [WidgetsBindingObserver.didChangeMetrics] 而非壳层 build——壳层被
-  /// 不透明二级路由覆盖时，翻转只让页面原地旋转，壳层 build 时机不可靠。
   @override
   void didChangeMetrics() {
-    // 同步读平台视图的物理尺寸——不依赖帧时机与 MediaQuery 继承链。壳层被
-    // 不透明二级路由（如 /settings）覆盖时不重建，postFrame + MediaQuery 的
-    // 读法拿不到新值，isLandscapeProvider 会卡死在旧值（LandscapeGate 永远
-    // 渲染翻转前的布局）。didChangeMetrics 本就由视图尺寸变化触发，此处读
-    // 到的即最新值。
     final view = WidgetsBinding.instance.platformDispatcher.implicitView;
     if (view == null || !mounted) return;
     final size = view.physicalSize / view.devicePixelRatio;
@@ -591,18 +398,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     if (noti.state != landscape) {
       noti.state = landscape;
     }
-    // 物理朝向翻转判定：以上一次 didChangeMetrics 读到的物理朝向为准，而非
-    // provider 现状——原生旋转通道(_onRotationEvent)可能已提前把 provider 置成
-    // 新朝向，直接按 state 早退会跳过翻转重定向（横屏容器回竖屏只停在主页、
-    // 进不了详细页）。真正翻转才跑重定向，键盘/通知栏等 metrics 触发不重定向。
     final flipped =
         _lastPhysicalLandscape != null && _lastPhysicalLandscape != landscape;
     _lastPhysicalLandscape = landscape;
     if (!flipped) return;
     if (!landscape) {
-        // 转回竖屏：路由跟着切回竖屏形态，横屏容器状态全部移交/丢弃——竖屏
-        // 路由是唯一事实（返回键 pop 即可回主页），下次进横屏再由竖屏路由
-        // 映射回对应容器。
         final lib = ref.read(landscapeLibraryProvider);
         final playlist = ref.read(landscapePlaylistOpenProvider);
         final searchOpen = ref.read(landscapeSearchOpenProvider);
@@ -623,25 +423,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         final back = _rotateBackPath;
         _rotateBackPath = null;
         closeAll();
-        // 记录仅在用户仍停留在横屏重定向形态上时有效：期间手动离开（如设置
-        // master-detail 按返回回主页、侧边栏切走）则作废——否则转回竖屏会把
-        // 用户推回早已离开的页，形成「每次翻转都被塞回设置」的死循环。
         final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
-        // 壳层根路径判定复用 _rootPaths（'/'、'/home'、'/mine'）——此前硬编码
-        // '/profile'，而「我的」分支实际路径是 '/mine'，导致从我的页进入的
-        // 本地/收藏/歌单/下载二级页转回竖屏时 onShell 恒 false、恢复 push
-        // 永不执行（只停在我的页，进不了详情页）。
         final onShell = _isRootPathOf(top);
         final onSettings = top == '/settings';
         if (onSettings && kLandscapeSettingPaths.contains(back)) {
-          // 仍在设置横屏 master-detail：恢复最后停留的分类。
           final category = ref.read(landscapeSettingsCategoryProvider);
           context.push(category ?? back!);
         } else if (onShell) {
-          // 仍在壳层（被弹回的主页/横屏容器）：按实时容器状态移交竖屏路由。
           if (lib != null) {
-            // 横屏内直接点侧边栏进入的音乐库容器 → 对应竖屏页（否则竖屏没有
-            // 路由承载，返回键无处可退）。
             const libRoutes = [
               '/library',
               '/favorites',
@@ -664,10 +453,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         return;
       }
       final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
-      // 音乐库竖屏页 ↔ 横屏侧边栏容器的双向对应（路由随横竖屏一起切换）。
       const libRoutes = ['/library', '/favorites', '/recent', '/playlists'];
       if (path == '/search' || path == '/search/result') {
-        // 搜索/结果页：右侧容器打开对应搜索页（会话共用），弹回壳层。
         _rotateBackPath = path;
         ref.read(landscapeSearchOpenProvider.notifier).state = true;
         ref.read(landscapeSearchResultsProvider.notifier).state =
@@ -676,11 +463,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           context.pop();
         }
       } else if (kLandscapeSettingPaths.contains(path)) {
-        // 设置分类二级页（/settings/:category、/settings/account、/about）：
-        // 写入目标分类后进入设置的横屏 master-detail。栈里已有 /settings
-        // （从设置导航页进入的分类页）时直接 pop 揭开——无路由替换不闪；
-        // 从我的页等入口直压的分类页下层没有 /settings，pop 会露进主页横屏
-        // 模式，故 go 重整到 [壳层, /settings]。
         _rotateBackPath = path;
         ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
         final hasSettingsBelow = _router
@@ -692,9 +474,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           context.go('/settings');
         }
       } else if (libRoutes.contains(path)) {
-        // 音乐库页（本地/收藏/最近/歌单）→ 横屏侧边栏对应容器。
-        // pop 的反向转场内路由页 element 仍挂在 overlay，与 pane 共享
-        // musicLibraryPageKeys——先暂缓 pane 挂载，转场结束后再挂。
         _rotateBackPath = path;
         _deferLibPaneMount();
         ref.read(landscapeLibraryProvider.notifier).state =
@@ -705,28 +484,24 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       } else if (path == '/home/daily' ||
           path == '/home/toplists' ||
           path == '/leaderboard') {
-        // 首页发现区内容页（每日推荐/音源榜单/统计榜单）→ 横屏内容容器。
         _rotateBackPath = path;
         ref.read(landscapeContentPathProvider.notifier).state = path;
         while (context.canPop()) {
           context.pop();
         }
       } else if (path == '/download') {
-        // 下载页 → 横屏下载面板。
         _rotateBackPath = path;
         ref.read(landscapeDownloadOpenProvider.notifier).state = true;
         while (context.canPop()) {
           context.pop();
         }
       } else if (path == '/account') {
-        // 账号页 → 横屏账号面板。
         _rotateBackPath = path;
         ref.read(landscapeAccountOpenProvider.notifier).state = true;
         while (context.canPop()) {
           context.pop();
         }
       } else if (path.startsWith('/playlist/')) {
-        // 歌单详情页 → 横屏歌单详情面板。
         _rotateBackPath = path;
         ref.read(landscapePlaylistOpenProvider.notifier).state =
             path.split('/').last;
@@ -734,8 +509,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           context.pop();
         }
       } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
-        // 其余内容二级页：统一弹回壳层，进入横屏模式（侧边栏+右侧容器）。
-        // 多级压栈（如 设置→分类→反馈）时逐层弹到根，避免露出竖屏中间页。
         _rotateBackPath = path;
         while (context.canPop()) {
           context.pop();
@@ -743,17 +516,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       }
   }
 
-  /// 迷你播放条拖拽的绝对位置 (Top & Left)
   double? _playerTop;
   double? _playerLeft;
 
-  /// 上一次见到的共享停靠位：用于识别「外部位写入」（页内条在二级页拖动落定），
-  /// 该情况下 shell 条位置变化应瞬间生效，避免返回根页时从旧位 320ms 滑过去。
   Offset? _lastSeenShared;
 
-  // 记录上一次底栏形态，用于检测「浮/固定/侧栏」切换：用户手动停靠的播放条
-  // 位置是按旧底栏几何锁定的，切到新底栏后可能压在底栏上（如贴住固定底栏后
-  // 切悬浮，条会被卡进悬浮底栏），形态变化时应回落默认停靠位重新贴合。
   bool? _lastFloating;
   bool? _lastSide;
 
@@ -763,7 +530,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final floating = ref.read(
             settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
         true;
-    // 形态检测并入横屏：竖屏↔横屏切换同样会改变底栏几何，需重置迷你条停靠位。
     final screen = MediaQuery.maybeOf(context);
     final landscape = screen == null ||
         screen.size.width >= screen.size.height * 1.05;
@@ -779,40 +545,30 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _lastFloating = floating;
     _lastSide = side;
 
-    // 横屏沉浸式全屏：一并隐藏系统状态栏与导航条，让界面满铺并越过摄像头挖孔区；
-    // 仅在地面方向变化时切换，避免反复设置系统 UI。
     if (_lastImmersive != landscape) {
       _lastImmersive = landscape;
       _applyLandscapeImmersive(landscape);
-      // 横屏不切回流：进入/退出横屏都留在当前页，不强制切回首页 tab。
     }
   }
 
-  /// 横屏进入沉浸式全屏（无系统栏），竖屏还原显示状态栏/导航栏。
   Future<void> _applyLandscapeImmersive(bool landscape) async {
     try {
       if (landscape) {
         await SystemChrome.setEnabledSystemUIMode(
             SystemUiMode.immersiveSticky);
       } else {
-        // 还原系统栏：Android 12+ 为 edge-to-edge（透明状态栏），低版本强制显示系统栏。
         await SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.manual,
           overlays: SystemUiOverlay.values,
         );
-        // 引擎 edge-to-edge 迁移（targetSdk 35+，API < 30）会在模式切换时
-        // 重涂半透明黑 scrim（0x40000000），这里重申透明状态栏。
-        // 仅声明 statusBarColor 字段，不影响引擎侧图标亮度等其余字段。
         SystemChrome.setSystemUIOverlayStyle(
           const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
         );
       }
     } catch (_) {
-      // 忽略：部分 ROM/仿真器可能不支持指定 UI 模式。
     }
   }
 
-  /// 最近一次是否已应用沉浸式全屏，避免方向未变时反复设置系统 UI。
   bool _lastImmersive = false;
 
   bool _isPlayerDragging = false;
@@ -820,20 +576,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   void _onPlayerPanStart(DragStartDetails details) {
     setState(() {
       _isPlayerDragging = true;
-      // 拖拽起点接续当前显示位：静止位以共享存储为唯一事实（显示处
-      // `_playerLeft ?? shared?.dx ?? defaultLeft`）。若不从共享位初始化本地
-      // 字段，首次拖动 update 会按默认停靠位起算——从二级页继承回来的位置
-      // 一交互就弹回底部。
       _playerLeft ??= MiniBarPositionStore.shared?.dx;
       _playerTop ??= MiniBarPositionStore.shared?.dy;
     });
-    // 通知玻璃表面退回实时背板：拖动把播放条平移到新内容上，静止冻结的
-    // 快照还是旧位置抓的背景，不退实时会「液态效果不跟随、还在原地」。
     setGlobalDragging(true);
   }
 
-  /// 播放条拖拽/停靠上界：按当前形态顶栏底部夹紧（竖屏顶栏胶囊高 40 /
-  /// 横屏全局顶栏搜索胶囊高 44，均上下各 8、再留 8px 间隙）。
   double _playerMinTop(double paddingTop, bool landscape) =>
       paddingTop + 8.0 + (landscape ? 44.0 : 40.0) + 8.0;
 
@@ -852,20 +600,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
 
-    // 拖拽边界：横屏按真实迷你条宽度在 leftBound..rightBound 间自由左右拖动；
-    // 竖屏为贴底长条，沿用旧行为（横移基本锁死、只纵向停靠）。
-    // 左右留白 12 与悬浮底栏/顶栏同列（原 18 偏宽）。
     final barW = landscape ? miniBarW : (screenSize.width - 24.0);
     final minLeft = landscape ? landscapeLeftBound : 6.0;
     final maxLeft = landscape
         ? landscapeRightBound
         : (screenSize.width - barW - 6.0);
-    // 拖拽上限：播放条不得进入顶部栏区域（拖拽位置是壳层状态，若在二级页
-    // 拖到顶部、回到首页/我的页就会压住顶栏，因此恒按顶栏底部夹紧）。
     final minTop = _playerMinTop(padding.top, landscape);
-
-    // 拖拽下限由调用方按底栏几何（悬浮 18+70 / 固定 safeBottom+64 / 二级页无底栏）
-    // 算好传入，确保常规底部栏下播放条也能拖到真正贴住底栏顶。
 
     setState(() {
       _playerLeft = (currentLeft + details.delta.dx).clamp(
@@ -887,15 +627,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     setState(() {
       _isPlayerDragging = false;
     });
-    // 拖动结束：玻璃表面在新位置重新走「静止 → 抓屏冻结」流程。
     setGlobalDragging(false);
 
-    // 完全自由停放：松手后播放条停留在拖到的位置，不再被 60px 磁吸拉回
-    // 靠近底栏的停靠位（原先「靠近底栏就会吸过去」即由此造成）。
-
-    // 落定位置写入共享存储：二级页内嵌播放条 initState 据此继承，保证
-    // 一级 ⇄ 二级页面切换时位置连贯。本地字段随后清空——静止位置以共享
-    // 存储为唯一事实，避免本页旧值掩盖其他页面写入的新位（详见显示处）。
     final l = _playerLeft;
     final t = _playerTop;
     if (l != null && t != null) {
@@ -912,16 +645,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     setGlobalDragging(false);
   }
 
-  /// 横屏右侧主 tab 容器：摄像头区域使用时抑制切口内边距。主页内容（导航组+
-  /// 音乐库组）的切换动效由 landscapeHome（LandscapeTabSwitcher out-in）负责，
-  /// 此处不再叠加。
   Widget _landscapeFadePanel({
     required bool useCameraArea,
     required EdgeInsets padding,
     required BuildContext context,
     required Widget child,
   }) {
-    // 摄像头区域使用时抑制切口内边距：壳内各页面 SafeArea 不再为挖孔留安全区。
     return useCameraArea
         ? MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -932,10 +661,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         : child;
   }
 
-  // 横屏容器（音乐库/下载/歌单详情/搜索/账号）进出场：完整 out-in（旧内容
-  // 淡出微上移缩小 → 新内容自下方淡入），关闭面板也播淡出。面板层需常驻挂载
-  // （由调用方保证），open=false 时组件内部先淡出再清空。关闭「横屏切换动画」
-  // 时保持硬切。
   Widget _landscapeSlide({
     required bool enabled,
     required bool open,
@@ -951,14 +676,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    // 使用纯硬件安全区内边距 (padding.bottom)，不受软键盘 viewInsets 干扰
     final padding = MediaQuery.of(context).padding;
     final safeBottom = padding.bottom;
 
-    // 横屏判定：宽 > 高（含大屏/平板）。检测结果回写全局 provider，供各页面
-    // 响应横屏布局；值未变化时不写，避免无谓的 provider 通知。
-    // 二级页的翻转重定向不在这里做（壳层被二级路由覆盖时 build 时机不可靠），
-    // 统一由 _ShellScaffoldState.didChangeMetrics 处理。
     final landscape = screenSize.width >= screenSize.height * 1.05;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -972,37 +692,26 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
 
-    // 横屏侧边栏「音乐库」当前选中的入口（null=显示主 tab）。
     final libSel = ref.watch(landscapeLibraryProvider);
 
-    // 横屏「我的」页账号与安全内嵌面板是否打开（不开二级路由）。
     final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
 
-    // 横屏「我的」页歌曲下载内嵌面板是否打开（不开二级路由）。
     final downloadOpen = landscape && ref.watch(landscapeDownloadOpenProvider);
 
-    // 横屏选中的歌单详情内嵌面板（不开二级路由），null=未打开。
     final playlistOpenId = landscape
         ? ref.watch(landscapePlaylistOpenProvider)
         : null;
 
-    // 横屏搜索容器（不开二级路由）：true=搜索默认页，显示结果页看 results。
     final searchOpenRaw = ref.watch(landscapeSearchOpenProvider);
     final searchResults = ref.watch(landscapeSearchResultsProvider);
     final searchOpen = landscape && searchOpenRaw;
 
-    // 横屏内容容器（不开二级路由）：统计榜单/每日推荐/音源榜单的横屏形态。
     final contentPath = landscape
         ? ref.watch(landscapeContentPathProvider)
         : null;
 
-    // 横屏右侧覆盖面板（桌面端同款「整个主页、一个选择」的钻取层）：账号 >
-    // 搜索 > 内容容器 > 歌单详情 > 下载。音乐库不在其列——它与主 tab 同级，
-    // 走 build 内 landscapeHome 统一内容切换器（同一套 out-in，不再「直接覆盖」）。
     final Widget? landPane;
     final Object? landPaneTrigger;
-    // 覆盖面板均为壳层内嵌（自身显隐由壳层管理），一律套 EmbeddedShellScope：
-    // 面板内部复用的二级页组件（搜索/下载/歌单详情/账号）不再参与底栏隐藏计数。
     if (accountOpen) {
       landPaneTrigger = 'account';
       landPane = EmbeddedShellScope(
@@ -1039,51 +748,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
     final anyPaneOpen = landPane != null;
 
-    // 音乐库 pane（本地/收藏/最近/歌单）不再让位隐藏全局顶栏：四个容器统一
-    // 继承壳层 LandscapeGlobalTopBar（返回/搜索/皮肤/设置），页内顶栏在面板
-    // 模式下让位为「全局顶栏下方的内容头」（仅保留 TabBar 与页内操作），
-    // 避免悬浮模式下与全局悬浮控件同位叠层。
     const libPaneActive = false;
 
-    // 悬浮搜索框开关：开启后首页/我的页共用同一个实例（提至壳层，不随 tab
-    // 重建，避免液态玻璃 shader 反复初始化渲染）。
     final floatingSearchBar =
         ref.watch(settingsProvider.select(
             (s) => s.valueOrNull?.floatingSearchBar ?? false));
 
-    // 横屏使用摄像头区域：开启时壳内各页面不再为摄像头挖孔保留安全区，
-    // 内容可铺满到短边摄像头（迷你条避让仍用原始 padding，不受影响）。
     final useCameraArea = landscape &&
         ref.watch(
             settingsProvider.select(
                 (s) => s.valueOrNull?.landscapeCameraArea ?? true));
 
-    // 横屏下首页/我的等主 tab 在右侧容器切换时的淡进淡出动效（独立于竖屏切换动画）。
     final landscapeFadeEnabled = landscape &&
         ref.watch(settingsProvider.select(
             (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true));
 
-    // 横屏主页统一内容切换器：侧边栏六个入口（导航组 首页/我的 + 音乐库组
-    // 本地/收藏/最近/歌单）全部同级——导航组走 children[0] 的分支容器（内部
-    // 自带 首页↔我的 out-in），音乐库四项与整个导航容器平级，由外层
-    // LandscapeTabSwitcher 用同一套 page-fade out-in 切换。此前音乐库是叠加
-    // 在主页上的覆盖面板，「首页→本地」是覆盖淡入、「最近→收藏」才是 out-in，
-    // 动画不一致且像直接盖上去。各分支 Offstage 保活，滚动状态跨切换保留。
-    // 覆盖面板打开时 suppress 硬切：切换动画由面板关闭淡出承担。
-    //
-    // 音乐库四 pane 仅横屏挂载：LandscapeTabSwitcher 的离屏分支 Offstage
-    // 常驻树中，若竖屏也挂载，pane 的共享 musicLibraryPageKeys 会与竖屏
-    // 二级路由页（/library 等，翻转 reparent 用同一 key）重复挂载，路由页
-    // 被顶掉——表现为「竖屏切二级页直接消失」。竖屏只保留分支容器。
-    // _libPaneMountable：竖屏音乐库二级页翻转进横屏时，pop 反向转场内的
-    // 路由页 element 也持同 key，pane 延迟到转场结束后再挂（_deferLibPaneMount）。
     final libPaneMountable = landscape && _libPaneMountable;
-    // 主页统一内容切换器包一层 Offstage：横屏钻取面板（账号/搜索/内容/歌单详情/
-    // 下载）打开期间把主页内容整体「收走」而不是叠在面板下方。这些面板在壁纸模式
-    // 下是半透明表面（无实色底、透出壁纸），若主页仍绘制在下方，会从面板后透出
-    // 主页的列表/文字——即用户感知的「穿透」。offstage 后下方只剩根层壁纸，面板
-    // 透出的是干净的壁纸；面板切换动画（LandscapePageFade out-in）负责覆盖开合。
-    // （音乐库四 pane 本就是同级分支，面板关闭后 parallax 回到对应分支。）
     final Widget landscapeHome = Offstage(
       offstage: anyPaneOpen,
       child: EmbeddedShellScope(
@@ -1105,29 +785,18 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       ),
     );
 
-    // 用「当前是否为根路径」而非 canPop 判断是否处于二级页：canPop 在整个返回
-    // 过渡动画期间一直为 true（被退路由动画结束才从 _history 移除），会让底栏
-    // 动画结束才出现；路径在 pop 开始时即已收缩，可让底栏随一级页露出同步淡入。
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
-    // 竖屏底栏/悬浮顶栏显隐动画窗口内强制玻璃表面纯色（防背板采样黑帧）。
     if (!landscape) _syncChromeGlassSettle(hidden);
 
     void select(int i) {
-      // 重复点击当前 tab 直接忽略：再走 goBranch 会触发一次到分支初始位置的
-      // 重路由，导致底栏重建、指示器从首页(0)重新飞向当前 tab（首页 index 0
-      // 重导航后索引不变故不飞，我的页 index 1 会飞）。
-      // widget.index / navigationShell.currentIndex 双双作为「当前选中」判定源，
-      // 任一与 i 相等都视为已在当前 tab，直接忽略，杜绝重复点击重导航乱飞。
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
-      // 切主 tab 时关闭横屏覆盖容器（参考桌面端：侧边栏导航即离开当前容器）。
       if (searchOpenRaw) closeLandscapeSearch(ref);
       ref.read(landscapeContentPathProvider.notifier).state = null;
       widget.navigationShell.goBranch(
           i, initialLocation: i == widget.navigationShell.currentIndex);
     }
 
-    // 左缘侧栏分割条：覆盖在侧栏右边界上（hit 区跨边界居中），拖动实时改宽。
     Widget buildRailDivider() => Positioned(
           left: _railWidth - 14,
           top: 0,
@@ -1136,12 +805,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           child: _ShellRailDivider(
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
-              // 摄像头侧（侧栏固定贴左）最小宽度要避开左挖孔后仍能「刚好露出图标」。
-              // 只认本朝向真实的左安全边距(padding.left)，不叠全局固定边距，否则
-              // 摄像头在左/在右两种翻转下侧栏两侧的留白不一致。
               final leftSafe = padding.left;
               setState(() {
-                // 最远划到屏幕中部（对半）；最小可缩到「左挖孔避让 + 仅图标」宽。
                 _railWidth = (_railWidth + dx)
                     .clamp(leftSafe + kLandscapeRailIconWidth, screenW * 0.5);
               });
@@ -1149,45 +814,28 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           ),
         );
 
-    // 横屏自动切换为侧边导航（复用「侧边栏模式」布局几何，隐藏底部栏）。
-    // 前提：横屏前必须先有被测量的 MediaQuery——本 State 作为壳层必然已完成首帧。
     final isSide = landscape ||
         (ref.watch(settingsProvider
                 .select((s) => s.valueOrNull?.navBarPosition)) ==
             NavBarPosition.side);
 
-    // 侧边栏模式下的展开状态（横屏走固定左缘侧栏 [_LandscapeRail]，不使用此展开态）。
     final expanded = ref.watch(sideBarExpandedProvider);
 
-    // 检测当前路由：全屏歌曲详情页 /player 时不隐藏迷你条（见下），
-    // 其余二级页由 hidden 统一处理。
     final isPlayerPage =
         GoRouterState.of(context).uri.toString() == '/player';
 
-    // 迷你条位置档位：播放页打开时保持进入前的位置（供 Hero 飞行取源/落点，
-    // 否则位置变化会打断「底栏封面飞播放页」的飞行）；其余情况沿用 hidden 下沉。
     final miniBarLow = hiddenCount > 0 || (!_isRootPath && !isPlayerPage);
 
-    // 统一播放条：横屏音乐库面板（本地/收藏/最近/歌单）以及下载/歌单详情
-    // 容器统一由外壳条承载并常驻整屏（与全局顶栏同步）；账号面板仍按原逻辑隐藏外壳条。
     final hideShellMiniBar = accountOpen;
 
-    // 迷你条宽度：竖屏占满（两侧各 12，与悬浮底栏/顶栏同列）；横屏保持限宽
-    // （55%/520），宽度不变，仅放开拖拽横移边界使其可自由拖动到整个横屏
-    // （含越到左侧栏上方）。
     final miniBarW = landscape
         ? math.min(screenSize.width * 0.55, 520.0)
         : (screenSize.width - 24.0);
 
-    // 挖孔屏避让：横屏沉浸时 `padding.left/right` 含摄像头切口，迷你条停靠须避开，
-    // 否则右缘探进挖孔会导致「底栏被摄像头遮住、显示不全」。
     final leftCutout = landscape ? padding.left : 0.0;
     final rightCutout = landscape ? padding.right : 0.0;
 
-    // 默认定位坐标（不受软键盘影响，始终保持在底部稳定避让区）
     late final double defaultLeft;
-    // 横屏可自由拖拽的左右边界：播放条占满整屏宽，仅避开左右挖孔。
-    // 竖屏为贴底长条，只做纵向停靠，横移基本不放开（沿用旧行为）。
     var landscapeLeftBound = 6.0;
     var landscapeRightBound = 30.0;
     if (landscape) {
@@ -1195,7 +843,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       landscapeRightBound = screenSize.width -
           miniBarW -
           (rightCutout > 0 ? rightCutout + 12 : 16);
-      // 横屏默认起始位置居中；若居中位越出可拖拽边界则夹紧到边界内（防退化越界）。
       defaultLeft = landscapeRightBound > landscapeLeftBound
           ? ((screenSize.width - miniBarW) / 2.0)
               .clamp(landscapeLeftBound, landscapeRightBound)
@@ -1208,21 +855,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         : (floating
             ? (miniBarLow
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                // 根页停靠：播放条底边与悬浮底栏顶(screenSize.height-18-70)贴合，
-                // 消除二者之间的缝隙。
                 : (screenSize.height - 18.0 - 70.0 - 58.0))
-            // 固定式：播放条底边与固定底栏顶(screenSize.height-safeBottom-64)贴合。
             : (screenSize.height - safeBottom - 58.0 - 64.0));
 
-    // 批量模式托起：批量操作栏（作底栏）在底部占位时，播放条整体上移到批量栏
-    // 之上（与「底栏托起播放条」一致），避免批量菜单被播放条挡住。
     final batchLift = ref.watch(batchBarLiftProvider);
     final liftedDefaultTop = defaultTop - batchLift;
 
-    // 播放条拖拽下限：与 defaultTop 停靠位一致，按底栏几何分支。
-    // 原来只按悬浮底栏参数(18 间隙+70 高)算，常规(固定式)底部栏下因缺计算
-    // safeBottom+64 导致播放条拖到底也与底栏贴近不了，这里按类型精确避让。
-    // （计算前移到显示位之前：共享停靠位回读同样要按它夹紧。）
     final dragMaxTop = () {
       final barH = 58.0;
       if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
@@ -1236,12 +874,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
     }();
 
-    // 停靠位继承：静止位置以共享存储为唯一事实（shell 条/页内条拖动落定都
-    // 写入），本地字段仅在拖拽进行中有效。横竖屏/底栏形态变化时共享位已被
-    // didChangeDependencies 清空，这里自然回落默认停靠位。
     final shared = MiniBarPositionStore.shared;
-    // 夹进壳层可停放范围：页内条无底栏可拖得更低、横移边界更宽，回根页后按
-    // 当前底栏几何夹回，避免压住底栏或越出边界。
     final shellMinLeft = landscape ? landscapeLeftBound : 6.0;
     final shellMaxLeft = landscape
         ? landscapeRightBound
@@ -1250,26 +883,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         .clamp(shellMinLeft,
             shellMaxLeft > shellMinLeft ? shellMaxLeft : shellMinLeft)
         .toDouble();
-    // 显示位置按顶栏底部夹紧：历史停靠位（上界收紧前拖到顶部）不残留压栏；
-    // 下限同步夹到当前底栏几何，页内条在二级页拖低的位回根页不压底栏。
     final minTopClamped = _playerMinTop(padding.top, landscape);
     final actualTop = (_playerTop ?? shared?.dy ?? liftedDefaultTop)
         .clamp(
             minTopClamped, math.max(minTopClamped, dragMaxTop.toDouble()))
         .toDouble();
 
-    // 外部位继承检测：共享位被其他页面（页内条）改写且非拖拽中 → 位置变化
-    // 瞬间生效（AnimatedPositioned 时长归零），返回根页时播放条直接出现在
-    // 继承位，不从旧位滑动。共享位为 null（回默认/形态重置）时保留 320ms
-    // 过渡，维持既有的「回落默认停靠位」平滑感。
     final adoptedExternal =
         shared != null && shared != _lastSeenShared && !_isPlayerDragging;
     _lastSeenShared = shared;
 
-    // 根页停靠位顶部：预测返回回拨的落点（页面条在二级页位于低位 -18，shell 条
-    // 回到根页停在 -82/-70/-12，直接取隐藏位产生的飞行只有几像素不可见）。用
-    // 根页停靠顶计算目标，才能复现「页面条封面飞回根页 shell 条」的可见飞行。
-    // 根页停靠不随 miniBarLow 下沉，恒为根页停靠位（批量模式下随批量栏托起）。
     final rootBarTop = (isSide
             ? (screenSize.height - safeBottom - 58.0 - 12.0)
             : (floating
@@ -1277,17 +900,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 : (screenSize.height - safeBottom - 58.0 - 64.0))) -
         batchLift;
 
-    // resizeToAvoidBottomInset: false — 不让键盘顶起整个壳层内容。
-    // 弹窗在 root Navigator 上，DialogKeyboardLift 已负责弹窗自身的键盘避让；
-    // 页面级输入（搜索等）在各页面内自行处理。参考 PiliNara 的 ViewInsetsSafeArea
-    // 做法：主容器不因键盘缩小，需要避让的页面/弹窗自行消费 viewInsets。
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 壳底「固定背景层」：始终不随内容平移，供透明页面透出根层壁纸/底色。
-          // （壁纸由 CustomBackgroundLayer 铺设；无壁纸时透出主题底色。
-          // 第二个 Positioned.fill 作保底底色。）
           const Positioned.fill(
             child: CustomBackgroundLayer(),
           ),
@@ -1296,41 +912,20 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               color: Theme.of(context).scaffoldBackgroundColor,
             ),
           ),
-          // 横屏时左缘固定侧栏占位，内容整体右移避让；二级页（hidden）侧栏淡出，
-          // 内容不偏移以享受全宽。播放页是推入 root navigator 的独立路由，不受此影响。
-          // 滚动检测由 app.dart 根层 ScrollOffsetCapture 统一捕获，波浪扭曲已内聚到
-          // 迷你播放条/悬浮底栏的 BiliPaiGlass 自身负责液态玻璃渲染，
-          // 无需再整页包裹 LiquidWave 离屏捕获。
-          // 页面主体：形态切换转场期间监听 orientationContentFade 整体淡出/淡入
-          //（值由常驻最顶层的 OrientationTransitionOverlay 驱动）。淡出到底透出
-          // 上方两层壁纸/主题底色——不再用纯色盖板遮罩（全屏色闪观感差）。
           ValueListenableBuilder<double>(
             valueListenable: orientationContentFade,
             builder: (context, fade, child) =>
                 Opacity(opacity: fade, child: child),
             child: Padding(
-            // 横屏：左缘固定侧栏占位，内容右移避让；开关开启时不再为右侧
-            // 摄像头挖孔预留安全区（所有页面使用摄像头区域）。
             padding: EdgeInsets.only(
-              // 横屏侧栏常驻：二级页（本地/收藏/最近/歌单）打开时也在左侧保留侧栏，
-              // 便于在音乐库入口间直接切换（参考桌面版侧边栏）。
               left: landscape ? _railWidth : 0,
               right: (landscape && !useCameraArea) ? padding.right : 0,
             ),
             child: Stack(
                     children: [
-                      // 主 tab 内容（首页/我的）：横屏下先接全局顶栏（全局继承，
-                      // 各页不再渲染自身顶栏），下方为当前页内容（切换动效在
-                      // 分支容器内，桌面版 page-fade 同款 out-in）。
                       Positioned.fill(
                         child: landscape
                             ? (floatingSearchBar
-                                // 悬浮模式：内容铺满右侧容器，横屏全局顶栏独立悬浮
-                                // 在其上方（控件独立显示），滚动内容从其下穿过。
-                                // 覆盖面板打开期间本顶栏隐藏：搜索/下载/歌单详情由
-                                // 上层「胶囊顶栏覆盖层」接管，账号/内容容器自带返回
-                                // 条——否则壁纸模式下面板透明底盖不住本顶栏（搜索框/
-                                // 右侧按钮透出叠在面板标题上）。
                                 ? Stack(
                                     children: [
                                       Positioned.fill(
@@ -1362,10 +957,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                       ),
                                     ],
                                   )
-                                // 默认模式：全局顶栏直接显示在容器顶部（普通
-                                // IconButton 控件内嵌顶栏条），内容在其下方。
-                                // 面板打开期间隐藏但保留占位（Opacity 而非移除，
-                                // 避免主页内容上下跳动），理由同上。
                                 : Column(
                                     children: [
                                       IgnorePointer(
@@ -1399,11 +990,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                 child: landscapeHome,
                               ),
                       ),
-                      // 横屏右侧覆盖面板层（账号/下载/歌单详情/搜索）：钻取
-                      // 层常驻挂载，open/trigger 驱动同一套 out-in，开/关面板
-                      // 都播桌面版 page-fade。音乐库不在此层（与主 tab 同级，
-                      // 由上方 landscapeHome 切换）；面板打开期间主页内容
-                      // suppress 硬切，切换动画由面板关闭淡出承担。
                       if (landscape)
                         Positioned.fill(
                           child: useCameraArea
@@ -1426,9 +1012,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                   child: landPane,
                                 ),
                         ),
-                      // 胶囊顶栏覆盖层：任一面板打开时叠加同一根全局顶栏（面板
-                      // 铺满全屏，顶栏浮在其上，避免缩短容器截断内嵌迷你条）；
-                      // 账号面板与内容容器自带返回条并盖住顶栏区域，不叠加。
                       if (landscape &&
                           anyPaneOpen &&
                           !accountOpen &&
@@ -1447,11 +1030,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
           ),
 
-          // 横屏固定左缘侧栏（取代底部栏/悬浮底栏）。参考桌面版侧边栏常驻：
-          // 二级页（本地/收藏/最近/歌单）打开时仍在左展示，便于在音乐库入口间切换。
-          // 播放页是覆盖全屏的独立 root 路由，侧栏在下层不可见，无需处理。
-          // 侧栏始终贴边全高：顶部「弦予音乐」logo 与右侧容器全局顶栏对齐，
-          // 不随「悬浮搜索框」开关下移（避免 logo 错位），右侧可拖动分割线常驻。
           if (landscape)
             Positioned(
               left: 0,
@@ -1466,13 +1044,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
             ),
 
-          // 左缘侧栏右侧的可拖动分割条：静置为细分隔线，拖动实时调整侧栏宽度。
           if (landscape) buildRailDivider(),
 
-          // 迷你播放条：支持全界面常驻、手势防穿透拖拽与 60px 区域磁吸吸附回弹；
-          // 二级页面进出时带有平滑上浮/下沉动画。播放页打开时【不移除】——移除会让
-          // Hero 在 push 后下一帧收集源封面时找不到迷你条，导致「打开无飞行、只有
-          // 返回有飞行」；播放页为不透明路由会盖住迷你条，留在树中无副作用。
           if (!hideShellMiniBar)
             AnimatedPositioned(
                 duration: (_isPlayerDragging || adoptedExternal)
@@ -1498,14 +1071,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                   onPanEnd: (d) =>
                       _onPlayerPanEnd(d, defaultLeft, defaultTop),
                   onPanCancel: _onPlayerPanCancel,
-                  // 二级页面（非播放页）时 shell 播放条被 root navigator 覆盖不可见，
-                  // 不注册飞封面目标，避免与页面自己的播放条竞争目标位置。
                   registerTarget: !(hiddenCount > 0 && !isPlayerPage),
-                  // Hero 源：根页面与播放页时由 shell 播放条承担；二级页面（非播放页）
-                  // 时去掉 Hero，由页面内嵌播放条承担（Hero 源必须在栈顶页面子树中）。
                   heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
-                  // 预测返回回拨落点：用根页停靠位（见上 rootBarTop），使二级页返回时
-                  // 封面飞行可见地归位到 shell 条。
                   returnTarget: () => Rect.fromLTWH(
                     actualLeft,
                     rootBarTop,
@@ -1515,7 +1082,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
 
-          // 侧边栏悬浮层（竖屏「侧边栏模式」用）
           if (isSide && !landscape)
             _SideNavRail(
               index: widget.index,
@@ -1527,10 +1093,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               onSelect: select,
             ),
 
-          // 悬浮底栏（仅在 4 个主 Tab 根页面展示，二级页面 hidden 时优雅淡出缩小隐去）
           if (!isSide && floating)
             Positioned(
-                // 左右 12：对齐 BiliPai dock 比例（≈3.5% 屏宽），18 偏宽。
                 left: 12,
                 right: 12,
                 bottom: 18,
@@ -1555,14 +1119,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
 
-          // 悬浮顶部栏（竖屏首页/我的页共用同一实例）：标题玻璃胶囊 + 搜索胶囊
-          // （长度自适应）+ 右侧玻璃小按钮（首页=皮肤、我的=设置），直接悬浮在
-          // 状态栏下方，取代页面自带的标题行；二级页/其它 tab 淡出并禁用交互。
-          // 横屏不渲染——横屏有带搜索框的全局顶栏。
           if (!landscape)
             Positioned(
               top: MediaQuery.paddingOf(context).top + 8,
-              // 与悬浮底栏同列：左右 12。
               left: 12,
               right: 12,
               child: AnimatedOpacity(
@@ -1578,7 +1137,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                       (widget.index == 0 || widget.index == 1) &&
                       !hidden),
                   child: FloatingTopBar(
-                    // 竖屏「我的」页顶栏标题用「个人中心」（底部导航栏仍是「我的」）。
                     title: widget.index == 1
                         ? Text(
                             tr('个人中心'),
@@ -1608,7 +1166,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                             ),
                           ),
                     onSearchTap: () => context.push('/search'),
-                    // 首页/我的页共用同一搜索框样式（带听歌识曲话筒入口）。
                     onRecognize: () => context.push('/recognize'),
                     actions: [
                       if (widget.index == 0)
@@ -1629,11 +1186,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
             ),
 
-          // 固定顶部栏（竖屏非悬浮模式，首页/我的页共用同一实例，与悬浮顶栏
-          // 同位上提至壳层）：毛玻璃表面（BackdropFilter）常驻，首页↔我的 tab
-          // 切换时实例不卸载重建，仅标题/动作随分支切换；搜索框扩展区也是同一
-          // 实例。二级页 hidden 时随底栏一同淡出（显隐动画窗口内强制纯色防
-          // BackdropFilter 黑帧，见 chromeGlassSettlingProvider）。
           if (!landscape && !floatingSearchBar)
             Positioned(
               top: 0,
@@ -1685,8 +1237,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                           tooltip: tr('设置'),
                           onPressed: () => context.push('/settings'),
                         ),
-                        // 与首页「皮肤」按钮保持一致的右侧留白，避免首页↔我的
-                        // 切换时右上角按钮位置左右跳变（对齐到皮肤位）。
                         const SizedBox(width: 16),
                       ],
                     ],
@@ -1698,7 +1248,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
             ),
-          // 横竖屏形态切换转场驱动器：常驻最顶层，翻转时驱动壳层内容淡出→淡入。
           const OrientationTransitionOverlay(),
         ],
       ),
@@ -1710,21 +1259,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                   index: widget.index, hidden: hidden, onSelect: select),
             )
           : null,
-      // 固定底栏走入 bottomNavigationBar 槽位时，默认 Scaffold 会把 body 高度收缩
-      // 到底栏上方，导致内容永远到不了底栏后面——固定底栏的毛玻璃只能模糊一片空白
-      // 背景，观感像「不透出的遮挡」。extendBody 让 body（整页内容）延伸到固定底栏
-      // 之下去，滚动内容得以穿过底栏、被其毛玻璃透出（与顶栏/悬浮 dock 一致）。
       extendBody: !isSide && !floating,
-        ); // 关闭 Scaffold，结束 return 语句
+        );
   }
 }
 
-/// 固定式底栏：贴底参与布局。
-///
-/// 播放条不在此处——它以悬浮胶囊形式浮在底栏上方（见 `_ShellScaffold`）。
-///
-/// 二级页面推入的是分支内部 Navigator（位于 body 内），底栏不会被其覆盖，
-/// 因此需主动收起；用 [AnimatedSize] 让高度变化平滑，避免转场跳变。
 class _FixedChrome extends StatelessWidget {
   const _FixedChrome({
     required this.index,
@@ -1749,7 +1288,6 @@ class _FixedChrome extends StatelessWidget {
   }
 }
 
-/// 固定式底栏：贴合屏幕底部，含安全区内边距。
 class _FixedNavBar extends ConsumerWidget {
   const _FixedNavBar({required this.index, required this.onSelect});
 
@@ -1759,19 +1297,14 @@ class _FixedNavBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 性能模式：一次性关闭常驻玻璃/液态玻璃，回退到高不透明度纯色（更实底色补偿模糊缺失）。
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    // 固定底栏不使用液态玻璃 shader：液态玻璃只属于悬浮底栏（floating==true）。
-    // _FixedNavBar 仅在 floating==false 时被渲染，固定底栏保持其常规圆角样式即可。
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
 
-    // 固定底栏内容（与材质设置无关，共用布局）。选择指示器与悬浮底栏一致，
-    // 统一为 BiliPai 紧凑圆形水滴，不再用铺满整格的全宽胶囊。
     final bar = SafeArea(
       top: false,
       child: SizedBox(
@@ -1786,11 +1319,6 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    // 液态玻璃仅属于悬浮底栏；固定底栏保持下方常规圆角样式，不走 shader。
-    // 伪毛玻璃（液态/未开 默认）：半透明 + BackdropFilter 高斯模糊；
-    // 低性能模式或关闭「毛玻璃」→ 高不透明度纯色回退（无模糊）。
-    // 显隐动画窗口内（二级页进出）强制纯色：BackdropFilter 在透明度动画层
-    // 内背板采样会渲染成黑帧（「返回一级时玻璃黑一下再加载」）。
     final solid = glassShouldUseSolid(ref, lowPerf: lowPerf) ||
         ref.watch(chromeGlassSettlingProvider);
     final wallpaper = wallpaperGlassActive(ref);
@@ -1804,16 +1332,10 @@ class _FixedNavBar extends ConsumerWidget {
                 : Colors.white.withValues(alpha: 0.52)));
     final glassFill =
         (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget);
-    // 固定底栏顶部不再画横向分隔线（玻璃态的分隔条 / 实色态的 border）：
-    // 迷你播放条停靠时正好落在底栏顶边，画线会在播放条底缘形成一条可见
-    // 接缝，视觉上就像"播放条贴不住底栏、中间有空"。去掉后二者无缝贴合。
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
     }
-    // 伪毛玻璃：半透明白/暗 + 高斯模糊（安卓原生磨砂质感），壁纸时更透。
-    // 固定底栏模糊度恒定最深，不跟随「毛玻璃强度」档位、不随预算缩放
-    // （见 kNavSurfaceBlurSigma）——顶/底栏观感两态一致，壁纸模式同。
     final barSigma = kNavSurfaceBlurSigma;
     return ClipRect(
       child: BackdropFilter(
@@ -1824,12 +1346,6 @@ class _FixedNavBar extends ConsumerWidget {
   }
 }
 
-/// 包装二级页面，使其显示期间隐藏 shell 浮层。
-///
-/// 供无状态页面（`ConsumerWidget` / `StatelessWidget`）使用；
-/// 有状态页面可直接混入 [HidesShellChrome]。
-///
-/// 用法：`HideShellChrome(child: Scaffold(...))`
 class HideShellChrome extends ConsumerStatefulWidget {
   const HideShellChrome({super.key, required this.child});
 
@@ -1845,11 +1361,6 @@ class _HideShellChromeState extends ConsumerState<HideShellChrome>
   Widget build(BuildContext context) => widget.child;
 }
 
-/// 底栏形态切换的果冻动画。
-///
-/// 悬浮式与固定式是两套不同的布局，直接替换会显得生硬。
-/// 这里在 [mode] 变化时播放一次「缩小 → 回弹」：先快速收缩并淡出，
-/// 再以 [Curves.elasticOut] 弹回原尺寸，制造柔软的形变感。
 class _JellySwitch extends StatefulWidget {
   const _JellySwitch({
     super.key,
@@ -1857,7 +1368,6 @@ class _JellySwitch extends StatefulWidget {
     required this.child,
   });
 
-  /// 形态标识，值变化即触发动画。
   final Object mode;
   final Widget child;
 
@@ -1869,10 +1379,8 @@ class _JellySwitchState extends State<_JellySwitch>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
-  /// 缩放曲线：0→0.5 收缩到 0.82，0.5→1 用弹性回到 1。
   late final Animation<double> _scale;
 
-  /// 收缩阶段轻微淡出，回弹时补满，避免形变显得干硬。
   late final Animation<double> _fade;
 
   @override
@@ -1881,7 +1389,7 @@ class _JellySwitchState extends State<_JellySwitch>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 620),
-      value: 1, // 首帧静止在常态，避免启动时无谓动画
+      value: 1,
     );
     _scale = TweenSequence<double>([
       TweenSequenceItem(
@@ -1911,7 +1419,6 @@ class _JellySwitchState extends State<_JellySwitch>
   @override
   void didUpdateWidget(_JellySwitch old) {
     super.didUpdateWidget(old);
-    // 仅在形态真正切换时播放，其余重建（如切 tab）不打扰。
     if (old.mode != widget.mode) {
       _ctrl.forward(from: 0);
     }
@@ -1932,7 +1439,6 @@ class _JellySwitchState extends State<_JellySwitch>
           opacity: _fade.value.clamp(0.0, 1.0),
           child: Transform.scale(
             scale: _scale.value,
-            // 以底部为支点缩放，贴着屏幕底边形变更自然。
             alignment: Alignment.bottomCenter,
             child: child,
           ),
@@ -1943,10 +1449,6 @@ class _JellySwitchState extends State<_JellySwitch>
   }
 }
 
-/// 悬浮底栏：液态玻璃或毛玻璃胶囊 + 选中态红色 + 圆点指示。
-///
-/// 液态玻璃走 shader 渲染（折射、动态光照、镜面高光），观感更接近 iOS 26；
-/// 关闭后退回 [BackdropFilter] 毛玻璃，开销更低。
 class _LiquidNavBar extends ConsumerStatefulWidget {
   const _LiquidNavBar({required this.index, required this.onSelect});
 
@@ -1958,9 +1460,6 @@ class _LiquidNavBar extends ConsumerStatefulWidget {
 }
 
 class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
-  /// 显隐动画窗口（[chromeGlassSettlingProvider]）复位后多保持一帧纯色：先让
-  /// 背后的页面完成一次合成，再放 BackdropFilter 采样，否则「切回首页」那一帧
-  /// BackdropFilter 背板还没就绪会只显示半透明色块底、毛玻璃才出现。
   bool _holdSolid = false;
   bool _lastSettling = false;
 
@@ -1970,7 +1469,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     if (settling != _lastSettling) {
       final prior = _lastSettling;
       _lastSettling = settling;
-      // settling 由 true 复位 false：先顶住一帧纯色，下一帧再切毛玻璃。
       if (prior && !settling) {
         _holdSolid = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1994,22 +1492,10 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
-    // 全局 blur 预算：滚动/转场时悬浮底栏玻璃降级。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    // 显隐动画窗口内（二级页进出）强制纯色铺底：BackdropFilter/液态 shader
-    // 在透明度/缩放动画层内背板采样会渲染成黑帧（「玻璃黑一下再加载」）。
-    // 复位后按 [_holdSolid] 再顶住一帧，规避切回时的色块底。
 
-    // 指示器随玻璃档位分流：液态玻璃（全档真液态 shader）→ BiliPai 折射
-    // 透镜水滴；毛玻璃/纯色 → 主题色淡红大胶囊（铺满整格）。
-    // 水平留 10px：滑动指示条与最左/最右 tab 让开，避免顶到玻璃圆角边界。
     final realLiquid = liquid;
-    // 水滴按档增强（官方 LiquidGlassTuning：折射/边带/色差三组随档衰减）。
     final dropletQuality = liquidGlassQualitySetting(ref);
-    // 玻璃外壳由 _SlidingNavBottom 自组装（水滴画在玻璃之上不被裁剪，
-    // 按住胀大可鼓出底栏边缘）。BiliPai 常驻永不卸载：显隐动画窗口内仅把
-    // 铺底换不透明（[effectiveSettling]），cheapBackdropBlur/shader 背板持续
-    // 合成，切回时不再「重建滤镜→首帧黑」。
     final tabs = _SlidingNavBottom(
       index: index,
       lens: realLiquid,
@@ -2027,11 +1513,8 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     );
 
     if (liquid) {
-      // 液态玻璃全档走真 shader（BiliPai 三档：低/中=轻模糊区间，高=磨砂
-      // 上限 4dp），常驻渲染；显隐动画窗口内铺底换不透明，背板持续合成。
       return tabs;
     }
-    // 毛玻璃/纯色：显隐动画窗口内滤镜常驻 + 不透明铺底（keepFilter）。
     return _frostedGlass(context, ref, tabs,
         lowPerf: lowPerf,
         budget: budget,
@@ -2039,10 +1522,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         keepFilter: effectiveSettling);
   }
 
-  /// BiliPai 化液态玻璃：实时背景采样 + 滚动波浪扭曲 + 色差 + 轻量模糊，胶囊形状。
-  /// [solid]=true（[chromeGlassSettlingProvider] 显隐动画窗口）时不卸载 shader，
-  /// 只把铺底换成不透明，让 BackdropFilter 常驻、背板持续合成，切回时不再
-  /// 「重建滤镜→首帧黑」。
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs,
       {bool solid = false}) {
     final quality = liquidGlassQualitySetting(ref);
@@ -2052,9 +1531,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       radius: 30,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
-      // 液态玻璃三档模糊（2026-09-05 用户定案重排）：低 1.5 轻透微磨 /
-      // 中 2.75 均衡 / 高 4 磨砂上限。走全分辨率模糊（cheapBackdropBlur
-      // 自适应降采样），与 BiliPai 真高斯观感一致。
       blurSigma: surfaceBlurSigma(
         base: bilipaiBackdropBlurOf(quality),
         budget: budget,
@@ -2069,18 +1545,9 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       saturation: bilipaiSaturationOf(quality),
       child: tabs,
     );
-    // 对齐 BiliPai FloatingDockChrome：液态玻璃外壳「勾边/阴影分开处理」
-    //（深色白描边 / 浅色黑色投影），纯色背景下容器可见性不靠折射/扫光兜底。
     return liquidGlassShell(context, child: glass, radius: 30);
   }
 
-  /// 伪毛玻璃：液态玻璃关闭时的默认样式。
-  ///
-  /// 规则：标准半透明磨砂（跟随毛玻璃开关）；低性能 → 高不透明度纯色。
-  /// [forceSolid] 且 [keepFilter]（[chromeGlassSettlingProvider] 显隐窗口）时
-  /// 不卸载 BackdropFilter，只把铺底换不透明：滤镜常驻、背板持续合成，避免
-  /// 切回时「重建滤镜→首帧黑」。真正的低性能/关玻璃纯色偏好（非 forceSolid）
-  /// 仍走无滤镜纯色，与显隐无关、静态稳定。
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
       {bool lowPerf = false,
       BlurBudget? budget,
@@ -2094,15 +1561,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            // 壁纸模式下底栏保持极淡磨砂（wallpaperNavGlassFill），与固定底栏/
-            // 顶栏一致，避免全透明让悬浮 dock 在壁纸下滑走时「直接不可见」。
             ? wallpaperNavGlassFill(context)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
     final fill =
         (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    // 底栏（悬浮液态 dock）模糊度同样恒定最深，壁纸/常规一致（kNavSurfaceBlurSigma）。
     final sigma = kNavSurfaceBlurSigma;
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
@@ -2121,7 +1585,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
-        // 降采样模糊 filter，按 (sigma, downscale) 全局缓存复用。
         filter: cheapBackdropBlur(sigma),
         child: capsule,
       ),
@@ -2129,9 +1592,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   }
 }
 
-/// 左缘侧栏分割条：覆盖在侧栏右边界，静置为一条细分隔线，拖动实时回调更新宽度。
-///
-/// hit 命中区可跨边界一段，避免手指落在边界正中间难以点中。
 class _ShellRailDivider extends StatelessWidget {
   const _ShellRailDivider({required this.onDragUpdate});
 
@@ -2157,10 +1617,6 @@ class _ShellRailDivider extends StatelessWidget {
   }
 }
 
-/// 横屏固定左缘侧栏：玻璃竖条 + 顶部三线 logo + 4 个主 Tab 竖排。
-///
-/// 横屏时取代底部/悬浮底栏，贴合屏幕左缘（内容区已右移避让）。
-/// 选中态用淡红色胶囊 + 主题色图标/文字，竖排布局充分利用横屏高度。
 class _LandscapeRail extends ConsumerWidget {
   const _LandscapeRail({
     required this.index,
@@ -2173,16 +1629,13 @@ class _LandscapeRail extends ConsumerWidget {
   final ValueChanged<int> onSelect;
   final double railWidth;
 
-  /// 悬浮顶部栏模式：侧栏以玻璃胶囊卡悬浮（不贴边全高、不画分隔线）。
   final bool floating;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 窄宽（用户把分割线拖到图标态）时隐藏品牌/分区/文字，仅居中显示图标。
     final collapsed = railWidth < kLandscapeRailCollapseAt;
 
-    // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的入口，直接内嵌右侧显示。
     final primary = bottomNavItems;
     final library = [
       (tr('本地音乐'), Icons.library_music_outlined),
@@ -2210,8 +1663,6 @@ class _LandscapeRail extends ConsumerWidget {
     final content = Column(
       children: [
         SizedBox(height: floating ? 14 : 20),
-        // 顶部品牌标题（横屏时首页顶栏的「弦予音乐」标题移来这里，取代原三条竖线图标）。
-        // 图标态下隐藏，仅保留顶部留白。
         if (!collapsed)
           Padding(
           padding: const EdgeInsets.only(bottom: 6),
@@ -2235,7 +1686,6 @@ class _LandscapeRail extends ConsumerWidget {
             ),
           ),
         ),
-        // 主导航 = 主 tab（首页/我的）；音乐库 = 从「我的」抽出的二级入口。
         Expanded(
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
@@ -2262,7 +1712,6 @@ class _LandscapeRail extends ConsumerWidget {
                   collapsed: collapsed,
                   selected: libSel == j,
                   onTap: () {
-                    // 切换音乐库入口时关闭横屏搜索容器（不遮挡新容器）。
                     closeLandscapeSearch(ref);
                     ref.read(landscapeLibraryProvider.notifier).state = j;
                   },
@@ -2273,9 +1722,6 @@ class _LandscapeRail extends ConsumerWidget {
       ],
     );
 
-    // 悬浮顶部栏模式：侧边栏用玻璃容器包裹成悬浮胶囊卡（与竖屏悬浮底栏同一
-    // 套悬浮容器思路，玻璃口径同 FloatingGlassSurface：液态/伪液态/毛玻璃/低
-    // 性能纯色），不再贴边全高、不画分隔线。
     if (floating) {
       return FloatingGlassSurface(radius: 18, child: content);
     }
@@ -2286,8 +1732,6 @@ class _LandscapeRail extends ConsumerWidget {
         width: railWidth,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            // 与设置页侧边栏一致：不单独绘制底色（继承外壳默认背景），
-            // 仅保留右侧一条细分隔线。
             border: Border(
               right: BorderSide(
                 color: scheme.onSurface.withValues(alpha: 0.08),
@@ -2300,7 +1744,6 @@ class _LandscapeRail extends ConsumerWidget {
     );
   }
 
-  /// 横屏侧栏单个入口（图标 + 文字，选中淡红胶囊）。图标态（[collapsed]）只居中图标。
   Widget _railItem(
     BuildContext context, {
     required IconData icon,
@@ -2360,10 +1803,6 @@ class _LandscapeRail extends ConsumerWidget {
   }
 }
 
-/// 横屏「音乐库」页面：按序号展示 本地/收藏/最近/歌单 中对应的一页，
-/// 与主 tab 同级（主页统一内容切换器 landscapeHome 的一个分支），铺满右侧
-/// 容器（迷你条等按全屏底定位），顶栏由壳层基座统一提供，与首页/我的同一根
-/// 顶栏。四页实例常驻（外层 Offstage 保活），切换不重建、保留各页状态。
 class _MusicLibraryPane extends StatelessWidget {
   const _MusicLibraryPane({required this.index});
 
@@ -2371,11 +1810,6 @@ class _MusicLibraryPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 每个 pane 只持有自己对应的一页：四页共享 musicLibraryPageKeys 与竖屏
-    // 路由页做翻转 reparent，若像旧结构那样每个 pane 内嵌完整 IndexedStack
-    // （含全部四页），横屏四 pane 常驻挂载会让每个 key 同时存在 4 份，
-    // GlobalKey 归属错乱（表现为「切收藏显示歌单」）。页间切换/保活由外层
-    // LandscapeTabSwitcher 的 Offstage 分支承担。
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: KeyedSubtree(
@@ -2391,8 +1825,6 @@ class _MusicLibraryPane extends StatelessWidget {
   }
 }
 
-/// 横屏「我的」账号与安全：右侧容器内嵌账号页，不开二级路由。
-/// 复用 [AccountPage.embedded]，自带「账号与安全」顶栏 + 返回闭合面板。
 class _AccountPane extends StatelessWidget {
   const _AccountPane({required this.onBack});
 
@@ -2404,8 +1836,6 @@ class _AccountPane extends StatelessWidget {
   }
 }
 
-/// 横屏「我的」下载管理：右侧容器内嵌下载页，不开二级路由。
-/// 复用 [DownloadPage.embedded]，顶栏由全局横屏顶栏承接并隐藏自身顶栏。
 class _DownloadPane extends StatelessWidget {
   const _DownloadPane();
 
@@ -2415,8 +1845,6 @@ class _DownloadPane extends StatelessWidget {
   }
 }
 
-/// 横屏选中的歌单详情：右侧容器内嵌歌单详情页，不开二级路由。
-/// 复用 [PlaylistDetailPage.embedded]，顶栏由全局横屏顶栏承接并隐藏自身顶栏。
 class _PlaylistDetailPane extends StatelessWidget {
   const _PlaylistDetailPane({required this.playlistId});
 
@@ -2428,35 +1856,25 @@ class _PlaylistDetailPane extends StatelessWidget {
   }
 }
 
-/// 横屏搜索容器：右侧容器内嵌搜索默认页（历史+热搜）或结果页，不开二级路由。
-/// 输入框由全局横屏顶栏承接（搜索胶囊点击打开本容器），提交后切到结果页。
 class _SearchPane extends ConsumerWidget {
   const _SearchPane({required this.showResults});
 
-  /// true=搜索结果页（SearchResultPage.embedded），false=搜索默认页。
   final bool showResults;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 悬浮顶部栏模式下应用悬浮观感：内容铺满全高，滚动时从悬浮玻璃控件
-    // 下方穿过（与首页/我的页一致）；默认模式保持静态避让顶栏高度。
     final floatingBar = ref.watch(settingsProvider
         .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     if (!showResults) {
-      // 页面底色用 appScaffoldBackground（与其他容器一致）。注意不能用
-      // Theme.scaffoldBackgroundColor——全局主题为透明（底色由根层渲染），
-      // 透明容器会直接透出下方主 tab 内容。
       if (floatingBar) {
         return ColoredBox(
           color: appScaffoldBackground(context, ref),
           child: SearchIdleView(
             onSearch: (q) => submitLandscapeSearch(ref, q),
-            // 初始内容位于悬浮控件下方，滚动时穿透到其背后。
             topPadding: GlassTopBar.height(context),
           ),
         );
       }
-      // 内容下移避让全局顶栏（顶栏以浮层形式盖在容器上方）。
       return ColoredBox(
         color: appScaffoldBackground(context, ref),
         child: Padding(
@@ -2470,10 +1888,6 @@ class _SearchPane extends ConsumerWidget {
   }
 }
 
-/// 横屏右侧「内容」容器：首页发现区竖屏二级页（统计榜单/每日推荐/音源榜单）
-/// 的横屏形态，不开二级路由。自带 FlatTopBar 返回条（同账号面板盖住全局顶栏
-/// 区域，故全局顶栏覆盖层排除本容器），页面用 embedded 形态（无自绘顶栏、
-/// 无自带迷你条——外壳迷你条照常显示）。
 class _ContentPane extends StatelessWidget {
   const _ContentPane({required this.path, required this.onBack});
 
@@ -2506,16 +1920,6 @@ class _ContentPane extends StatelessWidget {
   }
 }
 
-
-/// 底栏滑动指示器：BiliPai 水滴样式。
-///
-/// 切换时水滴从旧 tab 飞向新 tab（260ms easeOutCubic）：
-/// - 飞行中按速度拉伸（BiliPai `resolveBottomBarIndicatorLayerTransform`：
-///   v = items/s ÷ 10，scaleX = 1/(1−v·0.75)、scaleY = 1−v·0.5，clamp ±0.18），
-///   起步最快拉得最长、到站前收拢；
-/// - 落点回弹（`resolveBottomBarSettleReboundTransform`：前 20% 压扁
-///   scaleX −3.5% / scaleY +2.8%，之后阻尼正弦波 scaleX +8.5% 摆动 260ms）；
-/// - 水滴经过的图标按覆盖度放大（coverage = 1−|i−pos|，最高 1.2×）。
 class _SlidingNavBottom extends StatefulWidget {
   const _SlidingNavBottom({
     required this.index,
@@ -2530,22 +1934,12 @@ class _SlidingNavBottom extends StatefulWidget {
   final int index;
   final ValueChanged<int> onSelect;
 
-  /// 真液态玻璃时用 BiliPai 折射透镜水滴；否则用主题色大胶囊选中指示器
-  /// （铺满整格的淡红底，与固定底栏观感一致）。
   final bool lens;
 
-  /// BiliPai 水滴指示器按档位增强（官方 LiquidGlassTuning indicatorLensBoost /
-  /// indicatorEdgeWarpBoost / indicatorChromaticAberration），由 _LiquidNavBar
-  /// 按当前液态档位传入。
   final double lensBoost;
   final double edgeBoost;
   final double dropletChroma;
 
-  /// 真液态时由状态内部组装玻璃外壳：水滴画在玻璃**之上**（外层 Stack 兄弟
-  /// 节点），不被玻璃的 clipPath 裁剪——按住胀大可以超出底栏边缘（BiliPai
-  /// dock 同款：56dp 水滴胀到 73dp，鼓出 64dp 栏外仍可见）。
-  /// null = 旧结构：整个 widget（含水滴）嵌进外部玻璃/纯色容器内（毛玻璃
-  /// 回退、显隐动画窗口纯色态）。
   final Widget Function(Widget content)? glassBuilder;
 
   @override
@@ -2554,28 +1948,15 @@ class _SlidingNavBottom extends StatefulWidget {
 
 class _SlidingNavBottomState extends State<_SlidingNavBottom>
     with TickerProviderStateMixin {
-  // 位置切换动画对齐 BiliPai DampedDragAnimation：单一欠阻尼弹簧
-  // spring(dampingRatio=0.62, stiffness=420) 收敛到目标 tab，自带轻微
-  // overshoot 后回正，替代旧「tween 匀速飞行 + _rebound 落点回弹」双段——
-  // 那套是匀速到站再补一个独立回弹，物理感不如弹簧天然收敛。
-  // 惰性字段不在 dispose 里创建（late final 在 dispose 首次访问会执行
-  // 初始化器，createTicker 于失活元素上抛异常中断 finalizeTree）。
   AnimationController? _pressC;
   AnimationController get _press => _pressC ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 150),
   );
 
-  // 位置切换动画（BiliPai DampedDragAnimation 语义）：由 [_move] 承载
-  // `SpringSimulation(spring(0.62, 420))` 欠阻尼收敛到目标 tab，自带轻微
-  // overshoot 回正；拖动时 DIRECT 直跟手指（snapTo）。用 Flutter 内置
-  // Simulation 而非手写欧拉积分，保证切换必然有逐帧动画。
   AnimationController? _moveC;
   AnimationController get _move => _moveC ??= AnimationController(vsync: this);
 
-  // 独立 scaleX/scaleY 弹簧的每帧驱动器（对齐 BiliPai DampedDragAnimation 的
-  // 独立 Animatable + spring 回弹）。区别于把积分放在 build：这里由真实 Ticker
-  // 每帧驱动二阶欠阻尼振荡，拖动连贯、松手后仍持续回弹直至自然收敛。
   Ticker? _springTickerC;
   Ticker get _springTicker => _springTickerC ??= createTicker(_onSpringTick);
   Duration _springLast = Duration.zero;
@@ -2592,10 +1973,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _springLast = elapsed;
     final dt = (rawDt < 0 || rawDt > 0.05) ? 0.016 : rawDt;
 
-    // —— 独立 scaleX/scaleY（BiliPai motionSpec.indicator）——
-    // 仅【真正拖动】时才由归一速度 vn 驱动形变；非拖拽强制归 0 保持正圆。
-    // deformationScaleXDelta=0.40、scaleYCompression=0.54，
-    // scaleSpring dampingRatio=0.46 / stiffness=620 → sDamp=0.46·2·√620。
     final vn = _dragging ? (_dragVel.abs() / 4.0).clamp(0.0, 1.0) : 0.0;
     const defX = 0.40, compY = 0.54;
     final tX = _dragging ? vn * defX : 0.0;
@@ -2616,13 +1993,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     if (mounted) setState(() {});
   }
 
-  /// 水滴起止位置由位置弹簧 [_move] 承载（SpringSimulation 收敛，改向也连贯）。
-
-  // —— 按住拖动（BiliPai drag-to-switch）——
   bool _dragging = false;
   double _dragPos = 0;
-  double _dragVel = 0; // tabs/s（带符号）
-  // BiliPai 独立 scaleX/scaleY spring（0=正圆，sx 拖拽速度驱动拉长、sy 反相压扁）
+  double _dragVel = 0;
   double _sxPos = 0, _sxSpd = 0;
   double _syPos = 0, _sySpd = 0;
   Duration? _lastDragTime;
@@ -2637,12 +2010,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   void didUpdateWidget(covariant _SlidingNavBottom oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.index != oldWidget.index && !_dragging) {
-      // 切换：SpringSimulation 欠阻尼收敛（spring 0.62/420，轻微 overshoot
-      // 回正）从当前视觉位置[_move.value]飞到新 tab——BiliPai 语义。
       _move.animateWith(
         SpringSimulation(
           const SpringDescription(
-              mass: 1, stiffness: 420, damping: 25.4 /* 0.62·2·√420 */),
+              mass: 1, stiffness: 420, damping: 25.4),
           _move.value,
           widget.index.toDouble(),
           0,
@@ -2662,34 +2033,19 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   @override
   Widget build(BuildContext context) {
     final items = bottomNavItems;
-    // 三个控制器任一走帧都要重绘（水滴飞行/落点回弹/按住放大）。
     return AnimatedBuilder(
-      // Ticker 每帧已 setState，AnimatedBuilder 只需跟位置弹簧 _move 与按住 _press。
       animation: Listenable.merge([_move, _press]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
-        // 玻璃外壳自组装（overlay 水滴）时高度自定 70（BiliPai dock 高）；
-        // 嵌入外部容器时由容器给高度（固定 70）。
         final overlayDroplet = widget.lens && widget.glassBuilder != null;
         final maxW = constraints.maxWidth;
         final maxH = overlayDroplet
             ? 70.0
             : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
         final tabW = (maxW - 20) / items.length;
-        // 透镜水滴静止直径 0.8×栏高（BiliPai 56/64 同比例），完整罩住
-        // 图标+文字。按住再胀 ~30%——水滴画在玻璃外层（overlay），胀出
-        // 底栏边缘也可见，不再被玻璃 clip 吃掉放大效果。
         final dropH = (maxH * 0.8).clamp(54.0, 60.0);
         final pos = _dragging ? _dragPos : _move.value;
 
-        // —— 透镜档案（BiliPai resolveLiquidLensProfile DEFAULT 配方）——
-        // 静止 shouldRefract=false（官方测试锁定：idle 折射量=0，纯 passthrough）；
-        // 拖动有折射下限 dragProgressFloor=0.18（近零速度也折射），速度线性
-        // 满档于 lensVelocityRangePxPerSecond=2600px/s；
-        // 非拖动的指针滑动阈值 movingVelocityThreshold=45px/s、满档除数
-        // speedProgressDivisor=1400px/s。此处速度源：拖动=指针实时速度
-        // （tabs/s×tabW→px/s）；按住不动=按压进度 pressG 驱动（等价 BiliPai
-        // dock 按住预览的 panelOffset 效果）。
         final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
         final dragMf = _dragging
             ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
@@ -2699,66 +2055,31 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final pressG = Curves.easeOut.transform(_press.value);
         final mf = math.max(pressG, dragMf);
 
-        // —— 圆形态变（BiliPai 架构：独立 scaleX/scaleY 由 Ticker 每帧 spring 驱动）——
-        // 拉伸状态 _sxPos/_syPos 由 [_springTicker] 在帧回调 [_onSpringTick] 里做
-        // 二阶欠阻尼振荡（拖拽速度驱动 + spring 阻尼回弹），build 只消费结果；
-        // 拖动即启动 ticker，它每帧推进并在松手后继续振荡回弹直至收敛停掉。
         if (_dragging && !_springTicker.isActive) _ensureTicker();
 
         double k = 1 + dragMf * 0.22 + pressG * 0.55;
         if (!overlayDroplet) {
-          // 嵌入玻璃内部时按住胀大被玻璃裁剪，上限钳到栏高防硬切边。
           k = math.min(k, maxH / dropH);
         }
-        // 独立 scaleX/scaleY（BiliPai）：只有【真正拖动】时才允许非等比 —— 沿水平
-        // 轻微拉长(sx>1)而垂直略压扁(sy<1)，模拟左右拉伸；【按下/静止】
-        // （非 _dragging）强制 stretch=0，保持正圆，不会一按就成椭圆。
-        // 不再做独立的落点回弹放大——位置弹簧本身欠阻尼收敛自带轻微 overshoot
-        // 回正（BiliPai spring 语义），无需再叠一个 _rebound 波形。
         final stretchX = _dragging ? _sxPos : 0.0;
         final stretchY = _dragging ? _syPos : 0.0;
         final sx = k * (1 + stretchX);
-        final sy = k * (1 + stretchY); // _syPos 为负 → 压扁，轻微不对称
+        final sy = k * (1 + stretchY);
 
-        // 真液态：圆形折射透镜水滴，参数按 BiliPai 指示器透镜等比缩放
-        //（MIUIX 上游：56dp 水滴 = 10dp 折射带 + 14dp 最大位移）。
-        // 折射量由透镜档案 mf 驱动（拖动速度 + 按压），再乘官方按档增强
-        // indicatorLensBoost（1.35/1.0/0.78）与 indicatorEdgeWarpBoost
-        // （1.40/1.0/0.82）：静止 mf=0 纯 passthrough（BiliPai 同款），
-        // 拖动/按住水滴「活」起来，图标被连贯地「熔」进边缘。
-        // depthEffect=1 让中心内容也「鼓起」，水滴压到内容上立刻有
-        // 放大镜观感。
-        // 静止 = 静态指示器，交互 = 水滴（BiliPai 对齐）；
-        // 水滴底座纯透明，存在感来自折射 + specular 扫光 + 图标缩放。
-        // 非液态：铺满整格的主题色淡红大胶囊（恢复通用选中指示样式）。
         final d = dropH;
-        final bool scaledIndicator = overlayDroplet; // 尺寸已含形变，无需 Transform
-        // 对齐 BiliPai：只有交互（按住预览 / 拖动）时水滴才是「活」的折射透镜，
-        // 静止纯静态指示器。
+        final bool scaledIndicator = overlayDroplet;
         final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
         Widget indicator;
         if (widget.lens && dropletOn) {
           final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
           final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          // 对齐 RwaS-Music「液态水滴」的肉体与边缘三层：
-          //  · 纯色 body 始终与底栏反色相向——亮底黑10% / 暗底白10%（水滴在
-          //    任何底色上都有反色反差，保证纯色可靠见）。之前暗底用黑色填充，
-          //    深底上比底栏还暗→纯色可见性差，是其「状态栏可见性差」的根因。
-          //  · Edge：Highlight 顶部高光 + InnerShadow 内阴影环界定内边界 +
-          //    Shadow 底部投影托起水滴，刻意撑起「水滴边缘」，否则透明折射在
-          //    纯色底上无从辨认。
           final press = pressG.clamp(0.0, 1.0);
-          // 水滴本体：透明折射透镜 + 无 blur 的清晰边缘（顶缘高光弧 +
-          // 细内阴影环界定圆形边界）。不用弥漫 blur/外投影，避免水滴糊成雾团。
           indicator = ClipOval(
             clipBehavior: Clip.antiAlias,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // 折射透镜面（标准 BackdropFilter，播放条同款可靠路径，拖动时
-                // 背板实时重抓）。按住放大成水滴时底座纯透明，无实色底色，
-                // 存在感全靠折射 + specular 扫光 + 图标缩放体现。
                 LiveLiquidSurface(
                   radius: scaledIndicator ? d * sy / 2 : d / 2,
                   refract: amount,
@@ -2771,7 +2092,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                   depthEffect: 1.2,
                   child: const SizedBox.expand(),
                 ),
-                // 顶缘高光弧 + 细内阴影环（清晰界定水滴圆形边界，无 blur）。
                 CustomPaint(
                   painter: _DropletEdgePainter(press, isDark),
                 ),
@@ -2779,12 +2099,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             ),
           );
         } else {
-          // 静止指示器（对齐 RwaS-Music 的 LiquidBottomTabs）：
-          // 水滴本体不在「静止=近透明、按住才反色」两段切换，而是常驻反色填充：
-          // 亮底黑 10% / 暗底白 10%（RwaS `Color.Black/White.copy(alpha=0.10f)`）。
-          // 这样纯色底栏下静止时也有稳定反差，可读性不再靠折射/描边兜底。
-          //  - 液态模式：反色 10% 常驻 body（按住/拖动才在此之上叠 lens+边缘）
-          //  - 非液态：主题色淡红大胶囊（铺满整格，本应用自有样式）
           final isDark = Theme.of(context).brightness == Brightness.dark;
           indicator = DecoratedBox(
             decoration: BoxDecoration(
@@ -2802,14 +2116,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           );
         }
 
-        // 水滴=圆形；主题色胶囊=铺满整格（左右各让 4px）。
         final indicatorW = widget.lens ? d : (tabW - 8);
 
         final tabRow = Center(
           child: Padding(
-            // 与指示器同一坐标系（左右各让 10px）：让每个 Expanded 恰好分到
-            // tabW，tab 中心 = 10+(i+0.5)·tabW，与水滴中心严格重合（Row 全宽
-            // 时 Expanded 分到 maxW/n，会错位）。
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2819,15 +2129,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     child: _NavTab(
                       item: items[i],
                       selected: i == widget.index,
-                      // 水滴覆盖度：经过的图标放大，选中项常驻 1.2×
-                      //（仅透镜水滴模式，胶囊模式图标不缩放）。
                       iconScale: widget.lens
                           ? 1 +
                               0.2 *
                                   (1 - (i - pos).abs()).clamp(0.0, 1.0)
                           : 1.0,
                       onTap: () => widget.onSelect(i),
-                      // 液态模式水滴即按压反馈，不再叠 InkWell 点击亮色。
                       suppressSplash: widget.lens,
                     ),
                   ),
@@ -2837,9 +2144,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         );
 
         final gestures = Listener(
-          // 指针按下：水滴立刻滑向手指并胀大（不等拖动 slop，BiliPai/RwaS
-          // 按住预览）；抬起/取消回缩。松手后的选中由 InkWell onTap 或
-          // 拖动结算接管。仅透镜水滴模式生效，主题色胶囊走经典点按行为。
           onPointerDown:
               widget.lens ? (e) => _onPointerDown(e, tabW, items.length) : null,
           onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
@@ -2853,10 +2157,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
             child: Stack(
               children: [
-                // tab 内容在前（画在底层）：水滴（BackdropFilter）必须画在
-                // 图标/文字之上，其 backdrop 才包含 tab 内容——Halcyon 同款
-                // （combinedBackdrop 录制 tab 层），水滴压过去时图标/文字
-                // 本身被扭向水滴中心；若水滴在下，折射的只是空的栏背景。
                 tabRow,
                 if (!overlayDroplet)
                   Positioned(
@@ -2867,8 +2167,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     child: IgnorePointer(
                       child: Transform(
                         alignment: Alignment.center,
-                        // 非等比 sxsy + 按速度方向的 shear：左右拖动形态不同，
-                        // 水滴向拖拽方向「倾倒」（右边拖右倾、左边拖左倾）。
                         transform: Matrix4.diagonal3Values(sx, sy, 1)
                           ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
                         child: indicator,
@@ -2881,9 +2179,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         );
 
         if (overlayDroplet) {
-          // 水滴画在玻璃之上（外层 Stack 兄弟节点，clipBehavior: none）：
-          // 不被玻璃 clipPath 裁剪，按住胀大可鼓出底栏边缘；BackdropFilter
-          // 的背板 = 玻璃+tab 内容（鼓出栏外的部分还能折射页面背景）。
           final w = indicatorW * sx;
           final h = dropH * sy;
           final cx = 10 + pos * tabW + tabW / 2;
@@ -2897,7 +2192,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                 width: w,
                 height: h,
                 child: IgnorePointer(
-                // 按速度方向 shear：水滴随拖动向拖拽侧「倾倒」，左右形态不同。
                 child: Transform(
                   alignment: Alignment.center,
                   transform: Matrix4.identity()
@@ -2915,8 +2209,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     );
   }
 
-  /// 指针按下/抬起驱动水滴放大（不等拖动 slop，纯按住也有反馈）。
-  /// 拖动中抬起由 [_commitDragTarget] 统一收尾，此处跳过避免二次 reverse。
   void _setPressed(bool down) {
     if (down) {
       _press.forward(from: 0);
@@ -2925,18 +2217,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     }
   }
 
-  /// 按住预览：仅在原地胀大（不滑向手指、不走 _move 飞行动画）。切到别的
-  /// tab 的完整飞行由 onTap→goBranch→didUpdateWidget 驱动，若这里也 forward
-  /// 会和正式切换飞行互相抢跑：动画被二次 reset 打断成「半程」，且停留点当前
-  /// tab 时会从上次残留位置滑一小段（用户感知的「半程乱飞」）。
   void _onPointerDown(PointerDownEvent e, double tabW, int count) {
     _setPressed(true);
   }
 
-  /// 指针被系统取消（未触发 onTap 也未走拖动结算）：立即终止飞行并归位到
-  /// 真实选中 tab（[widget.index]）。若不中断动画，按下时「按住预览」滑出去的
-  /// 水滴会滞留在别的 tab 上，页面却还在当前 tab——再点当前 tab 又会从滞留位
-  /// 飞回来，造成「指示器脱同步」（指示器在哪儿就在哪儿）。
   void _onPressCancel() {
     if (_dragging) return;
     _press.reverse();
@@ -2948,7 +2232,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _dragging = true;
     _dragVel = 0;
     _lastDragTime = d.sourceTimeStamp;
-    // 水滴中心跟随手指：pos = (x − 10 − tabW/2) / tabW（DIRECT 直跟）。
     _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
         .clamp(0.0, count - 1.0);
     _move.stop();
@@ -2962,7 +2245,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     final prev = _dragPos;
     _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
         .clamp(0.0, count - 1.0);
-    // DIRECT 跟手：位置直接等于手指（BiliPai snapTo 语义），速度另测。
     _move.stop();
     _move.value = _dragPos;
     final ts = d.sourceTimeStamp;
@@ -2976,7 +2258,6 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   }
 
   void _onDragEnd(DragEndDetails d, double tabW, int maxIndex) {
-    // 按速度投影（BiliPai 手势甩动同款）：位置 + 速度×提前量，吸附最近 tab。
     final vTab = d.velocity.pixelsPerSecond.dx / tabW;
     final projected = (_dragPos + vTab * 0.12).clamp(0.0, maxIndex.toDouble());
     _commitDragTarget(
@@ -2990,11 +2271,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   void _commitDragTarget(double target) {
     _dragging = false;
     _press.reverse();
-    // 从当前手指位置[_move.value]弹簧收敛到目标 tab（欠阻尼 overshoot 回正）。
     _move.animateWith(
       SpringSimulation(
         const SpringDescription(
-            mass: 1, stiffness: 420, damping: 25.4 /* 0.62·2·√420 */),
+            mass: 1, stiffness: 420, damping: 25.4),
         _move.value,
         target,
         _dragVel,
@@ -3023,8 +2303,6 @@ class _NavTab extends StatelessWidget {
   final VoidCallback onTap;
   final double iconScale;
 
-  /// 液态玻璃模式下关闭 InkWell 涟漪/高亮（水滴本体即是按压反馈，splash
-  /// 会在背景叠出一圈「点击亮色」）。
   final bool suppressSplash;
 
   @override
@@ -3035,8 +2313,6 @@ class _NavTab extends StatelessWidget {
         ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     final tab = Container(
-      // 撑满整格（Row stretch 已决定全高）：让点击/触摸区域等于整个 tab 格，
-      // 而不是只有中央图标+文字一小条（否则上下大片留白不可点）。
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -3058,9 +2334,6 @@ class _NavTab extends StatelessWidget {
         ],
       ),
     );
-    // 液态模式彻底不用 InkWell（水滴即按压反馈）：InkWell 的 highlight/splash
-    // 会在按住时给整格叠一层「长指示器」式的底色高亮，且 highlight 在按住期间
-    // 持续显示。改 GestureDetector 从根上杜绝任何 Material 点击高亮。
     if (suppressSplash) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -3076,7 +2349,6 @@ class _NavTab extends StatelessWidget {
   }
 }
 
-/// 三条竖线 Logo 图标（音乐感动态竖波纹）。
 class _ThreeBarsIcon extends StatelessWidget {
   const _ThreeBarsIcon({required this.color});
 
@@ -3123,12 +2395,6 @@ class _ThreeBarsIcon extends StatelessWidget {
   }
 }
 
-/// 侧边导航栏悬浮面板：支持拖动三条竖线按钮更改悬浮位置，避免遮挡内容。
-///
-/// 完全采用 [Positioned] 悬浮定位，不挤压或占据主内容画面；
-/// 支持手势拖动，微小移动识别为点击切换展开/折叠状态；
-/// 支持基于设置（向下/向上展开）与屏幕空间溢出自动反转；
-/// 二级页面（[hidden]）时优雅淡出，不阻挡页面返回。
 class _SideNavRail extends ConsumerStatefulWidget {
   const _SideNavRail({
     required this.index,
@@ -3153,14 +2419,11 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
   late final AnimationController _animCtrl;
   late final Animation<double> _curvedAnim;
 
-  /// 悬浮面板的相对位置（Top 与 Left）
   double? _top;
   double? _left;
 
-  /// 拖动过程中的移动总距离，用于区分点按（Tap）与拖拽（Drag）
   double _dragDistance = 0;
 
-  /// 是否正处于手势拖拽中
   bool _isDragging = false;
 
   @override
@@ -3216,7 +2479,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
 
     final panelW = widget.expanded ? 84.0 : 52.0;
 
-    // 拖动下限不低于顶栏下方 12px，防止拖到顶栏背后被遮挡。
     final minTop = topBarBottom + 12.0;
     final maxTop = screenSize.height - padding.bottom - 52.0 - 12.0;
     final minLeft = 8.0;
@@ -3244,7 +2506,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
       });
     }
     setGlobalDragging(false);
-    // 移动距离极小（< 6 像素）判定为轻触点击
     if (_dragDistance < 6) {
       widget.onToggleExpand();
     }
@@ -3264,16 +2525,11 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
 
-    // 顶栏底边（含 8px 玻璃阴影安全冗余）：
-    // 悬浮顶栏：padding.top+52；固定顶栏：padding.top+114（含 58px 搜索框）。
-    // 侧边栏默认落在顶栏下方 24px，拖动下限不低于顶栏下方 12px，
-    // 避免被顶栏（Stack 中渲染顺序更靠后、z-index 更高）遮挡。
     final floatingSearchBar = ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     final topBarBottom =
         floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
     final safeMinTop = topBarBottom + 12.0;
-    // 渲染时强制把 _top 限制在顶栏下方，防止历史拖动的旧 state 把按钮留在顶栏区。
     final currentTop =
         (_top ?? (topBarBottom + 24.0)).clamp(safeMinTop, double.infinity);
     final left = _left ?? 12.0;
@@ -3281,7 +2537,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 获取用户在设置中的首选展开方向与液态玻璃设置
     final preferredDir = ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
         SideBarExpandDirection.down;
@@ -3294,22 +2549,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
-    // 全局 blur 预算：滚动/转场时侧栏面板玻璃降级（drawerOrSheet 档）。
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
-    // 展开面板预估高度 (用于方向判断)：
-    // logo 按钮 52 + 4 个 Tab（各约 66）+ 分割线/间距 ≈ 330。
-    // 取偏大值确保向上展开时顶部不会越入顶栏区域。
     const double approxExpandedH = 330.0;
 
-    // 检测向下与向上展开是否能够被屏幕完整包裹
     final bool canFitDown =
         (currentTop + approxExpandedH) <= (screenSize.height - padding.bottom - 8.0);
     final bool canFitUp =
         (currentTop + 52.0 - approxExpandedH) >= (topBarBottom + 12.0);
-    // topBarBottom 在上方 build 中已含 8px 安全冗余，此处复用同一值。
 
-    // 智能决策实际展开方向
     SideBarExpandDirection effectiveDir = preferredDir;
     if (preferredDir == SideBarExpandDirection.down) {
       if (!canFitDown &&
@@ -3329,10 +2577,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
       animation: _curvedAnim,
       builder: (context, child) {
         final progress = _curvedAnim.value;
-        // 折叠态 52px（原 48 偏小不易发现），展开态 84px。
         final panelWidth = lerpDouble(52.0, 84.0, progress)!;
 
-        // 3条竖线 Logo 按钮组件（随 progress 旋转与变色）
         final logoButton = GestureDetector(
           onPanStart: _onPanStart,
           onPanUpdate: (d) => _onPanUpdate(d, screenSize, padding),
@@ -3357,7 +2603,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           ),
         );
 
-        // 4个 Tab 导航按钮组件（随着 progress 顺畅展开与淡入）
         final navItems = [
           for (var i = 0; i < bottomNavItems.length; i++)
             _SideNavTab(
@@ -3428,7 +2673,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
 
         Widget panelWidget;
         if (liquid) {
-          // BiliPai 液态玻璃面板（全档真 shader）：与底栏/迷你播放条同一套观感。
           final quality = liquidGlassQualitySetting(ref);
           panelWidget = BiliPaiGlass(
             radius: 24,
@@ -3447,7 +2691,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             child: SizedBox(width: panelWidth, child: panelBody),
           );
         } else if (lowPerf) {
-          // 性能模式：更高不透明度纯色补偿模糊缺失，省去 BackdropFilter。
           panelWidget = Container(
             width: panelWidth,
             decoration: BoxDecoration(
@@ -3505,9 +2748,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             ),
             child: panelBody,
           );
-          // 降采样模糊（cheapBackdropBlur）：模糊工作量降为 1/16，
-          // 运动期保持玻璃恒定（RwaS 口径），sigma 按预算档位缩放。
-          // 壁纸模式 sigma=0、fill=全透明：不铺模糊直接透出壁纸。
           panelWidget = panelSigma <= 0
               ? panelBox
               : ClipRRect(
@@ -3519,9 +2759,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 );
         }
 
-        // 折叠态（progress 低）时强制叠加一层不透明背景，避免液态玻璃/毛玻璃
-        // 在浅色壁纸或高亮度背景下几乎看不见，导致用户找不到导航入口。
-        // 展开后背景层淡出，让位给玻璃材质本身的观感。
         final collapsedHintAlpha = (1.0 - progress).clamp(0.0, 1.0);
         if (collapsedHintAlpha > 0.01) {
           panelWidget = Stack(
@@ -3559,7 +2796,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
   }
 }
 
-/// 侧边导航栏条目：图标 + 标题竖排，选中态主色胶囊高亮。
 class _SideNavTab extends StatelessWidget {
   const _SideNavTab({
     required this.item,
@@ -3614,9 +2850,6 @@ class _SideNavTab extends StatelessWidget {
   }
 }
 
-/// 水滴「边缘处理」的清晰版：仅一道极淡的内阴影环界定圆形边界，
-/// 无 blur、无顶部高光弧（白弧在暗色下形似加载进度条，已移除）。
-/// 随按压(progress)渐显。
 class _DropletEdgePainter extends CustomPainter {
   const _DropletEdgePainter(this.progress, this.isDark);
 
@@ -3632,12 +2865,6 @@ class _DropletEdgePainter extends CustomPainter {
     final ry = size.height / 2;
     if (rx <= 0 || ry <= 0) return;
 
-    // 描边对齐 bilipai indicator 的 innerShadow / BloomStroke 高光：紧贴水滴
-    // 外缘的 crisp 白边。bilipai 玻璃边缘的高光始终是白色（不分深/浅色），
-    // 浅色模式下也是白边而非黑边。用【椭圆】(rx/ry) 而非正圆，让描边严格
-    // 贴合 sx/sy 拉伸后的水滴轮廓（拖动时水滴变椭圆，描边随之变椭圆）。
-    // 半径取 0.96（≈clip 边缘，留微隙防 anticircular 裁断）。刻意【不用
-    // blur】——blur 会把细描边羽化成一圈宽灰雾。浅色黑/白色统一为白边。
     final edge = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(rx, ry) * 0.03
@@ -3656,4 +2883,4 @@ class _DropletEdgePainter extends CustomPainter {
   bool shouldRepaint(_DropletEdgePainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
-
+

@@ -18,9 +18,6 @@ import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 每日推荐页：日期徽章 + 播放全部/换一批 + 推荐歌曲列表。
-/// [embedded]=true 时作为横屏右侧「内容」容器内嵌（无自绘顶栏、无自带迷你
-/// 条，顶部让位为 0——容器外层 FlatTopBar 已承接返回与标题）。
 class DailyRecommendPage extends ConsumerStatefulWidget {
   const DailyRecommendPage({super.key, this.embedded = false});
 
@@ -36,10 +33,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 只依赖推荐数据；播放状态由 _BottomPlayBar 单独订阅，避免翻转时整页重建
     final async = ref.watch(dailyRecommendProvider);
-    // 竖屏悬浮顶栏：内容铺满全屏、避让量注入顶部，页面背景从顶栏胶囊下方
-    // 穿过（与歌单/最近页同口径）；嵌入态由横屏壳层顶栏承接，不参与悬浮。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -109,20 +103,13 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                 title:   Text(tr('每日推荐')),
               ),
             ),
-          // 播放条显隐收敛为独立组件，播放状态变化不影响上方整页重建；
-          // 内嵌形态由外壳迷你条承载，不再自带。
           if (!widget.embedded) const _BottomPlayBar(),
         ],
       ),
     );
   }
-  /// 内容容器：悬浮模式铺满全屏（[SizedBox.expand]，页面背景穿透顶栏），
-  /// 固定模式沿用外层 Padding 避让（嵌入态顶部让位为 0）。
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
-      // 必须用非定位（非 Positioned）的全尺寸子项撑起外层 body Stack：
-      // Positioned.fill 使 Stack 只剩定位子项而坍缩成 0×0（悬浮顶栏开启白屏）。
-      // SizedBox.expand 视觉等同，但不破坏 Stack 自适应尺寸。
       return SizedBox.expand(
         child: RepaintBoundary(
           child: Padding(
@@ -140,8 +127,6 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
   }
 }
 
-/// 底部播放条：仅当有歌曲时占位显示。独立订阅播放状态，
-/// 避免播放状态翻转时触发整页（Header/列表）重建。
 class _BottomPlayBar extends ConsumerWidget {
   const _BottomPlayBar();
 
@@ -238,7 +223,6 @@ class _Header extends ConsumerWidget {
   }
 }
 
-/// 日推歌曲列表：行高固定，右下角叠加「回到顶部 / 定位当前播放歌曲」悬浮按钮。
 class _RecommendList extends ConsumerStatefulWidget {
   const _RecommendList({required this.state});
 
@@ -274,7 +258,6 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
     final state = widget.state;
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final m = ListMetrics.ofRef(ref);
-    // 行高固定（封面 + 上下内边距），悬浮按钮按此推算行位置。
     final rowExtent = 46.0 + 2 * m.vPad;
     final quality =
         ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
@@ -291,12 +274,10 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
             final item = state.items[i];
             return Builder(
               builder: (rowContext) {
-            // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
             BuildContext? coverCtx;
             final g = songRowPlay(
               ref,
               onPlay: () async {
-                // 等封面落地后再播放：播放条封面随落地同步更新。
                 final ok = await launchFlyCover(
                   rowContext,
                   coverContext: coverCtx,
@@ -308,7 +289,6 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                 if (ok) ref.read(dailyRecommendProvider.notifier).play(i);
               },
             );
-            // 长按与「更多」图标共用同一操作菜单。
             void openActions() {
               final quality = ref
                       .read(settingsProvider)
@@ -400,7 +380,6 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
         );
         },
         ),
-        // 右下角「回到顶部 / 定位当前播放歌曲」悬浮按钮。
         SongListScrollFabs(
           controller: _scroll,
           paths: [

@@ -32,7 +32,6 @@ import '../../src/library/saf_channel.dart';
 import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 
-/// 设置分类。对应桌面版导航分类中在移动端可用的分组。
 enum SettingsCategory {
   general,
   appearance,
@@ -66,15 +65,10 @@ enum SettingsCategory {
   };
 }
 
-/// 设置页背景底色（浅白，与纯白卡片区分）。
-///
-/// 亮色：淡灰白 #F4F4F6，暗色：#222。
 Color settingsSurfaceBg(BuildContext context) => appSurfaceBg(context);
 
-/// 设置卡片纯白底色。
 Color settingsCardColor(BuildContext context) => appCardColor(context);
 
-/// 设置详情页：浅白底 + 纯白卡片，展示单个分类下的全部设置项。
 class SettingsCategoryPage extends ConsumerStatefulWidget {
   const SettingsCategoryPage({
     super.key,
@@ -84,7 +78,6 @@ class SettingsCategoryPage extends ConsumerStatefulWidget {
 
   final SettingsCategory category;
 
-  /// 嵌入态：用于横屏 master-detail 右侧，去掉顶栏仅渲染设置体。
   final bool embedded;
 
   @override
@@ -102,7 +95,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     if (widget.embedded) {
-      // 嵌入态：仅渲染设置体，顶栏/背景交由上层（横屏 master-detail 右侧）负责。
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: _buildItems(
@@ -123,8 +115,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            // 不要用 RepaintBoundary 包住列表：会隔离毛玻璃卡片与壁纸，
-            // BackdropFilter 够不到壁纸只能退薄色片，回弹露出壁纸原色。
             child: ListView(
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -147,9 +137,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              // 设置页内容从顶栏高度之下才开始，下方是纯色底色：
-              // 扁平背板，跳过全屏 BackdropFilter，消除切页卡顿（视觉不变）。
-              // 设置类页面不参与悬浮顶栏（forceDocked），保持固定条。
               flatBackdrop: true,
               forceDocked: true,
               leading: const BackButton(),
@@ -222,7 +209,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 检测更新为 Android 自更新专属（iOS 由 App Store 托管，自动检查已跳过）。
       if (PlatformCaps.supportsInAppUpdate) ...[
         _sectionHeader(context, tr('检测更新')),
         _CardGroup(
@@ -250,7 +236,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 腕上联动已独立成设置导航一级分类（/settings/watch）。
       _sectionHeader(context, tr('列表显示')),
       _CardGroup(
         children: [
@@ -269,7 +254,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ];
   }
 
-  /// 腕上联动分类详情：原「常规」下的腕上联动分组独立成页。
   List<Widget> _watch(
     BuildContext context,
     WidgetRef ref,
@@ -297,7 +281,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ];
   }
 
-  /// 腕上联动开关：副标题实时展示已连接手表名（未连接/关闭时给说明文案）。
   Widget _watchLinkageTile(
     BuildContext context,
     WidgetRef ref,
@@ -321,7 +304,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 云端兜底通道开关：蓝牙不可用时经服务器中继保持手表连接。
   Widget _watchCloudTile(
     BuildContext context,
     AppSettings? s,
@@ -341,7 +323,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 传递给腕上设备的确认策略入口（每次询问 / 自动传递 / 不传递）。
   Widget _watchTransferTile(
     BuildContext context,
     WidgetRef ref,
@@ -365,7 +346,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return tr('每次询问');
   }
 
-  /// 设备管理：联动状态详情行（蓝牙 + 云端通道实时状态）。
   Widget _watchLinkStatusTile(
     BuildContext context,
     WidgetRef ref,
@@ -391,7 +371,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 设备管理：手动断开当前手表（蓝牙踢下线 + 云端暂离），手表可随时重连。
   Widget _watchDisconnectTile(
     BuildContext context,
     WidgetRef ref,
@@ -422,7 +401,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 设备管理：手机端主动发起配对（反向连接手表，手表端弹确认）。
   Widget _watchConnectTile(
     BuildContext context,
     WidgetRef ref,
@@ -443,7 +421,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 打开设备选择弹窗：加载已配对蓝牙设备，选后发起反向连接。
   Future<void> _pickWatchToConnect(
     BuildContext context,
     WidgetRef ref,
@@ -490,7 +467,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
-  /// 设备管理：重置联动授权（记住的选择/当天决定 → 恢复每次询问）。
   Widget _watchResetAuthTile(
     BuildContext context,
     AppSettings? s,
@@ -615,7 +591,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 材质：毛玻璃（伪毛玻璃）与液态玻璃是两种独立材质，默认交给玻璃表面渲染。
       _sectionHeader(context, tr('材质')),
       _CardGroup(
         children: [
@@ -624,14 +599,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.blur_on_outlined,
             title: tr('毛玻璃材质'),
             subtitle: tr('顶栏、底栏与播放条透明磨砂质感，关闭时回退纯色'),
-            // 毛玻璃默认关闭；关闭后回退为高不透明度纯色。壁纸模式行为一致
-            // （壁纸只是替换底色，不改变玻璃开关）。
             value: s?.frostedGlass ?? false,
             onChanged: (v) => n.setFrostedGlass(v),
           ),
-          // 毛玻璃强度调节：毛玻璃开启时才显示。
-          // 与液态玻璃共存：液态只覆盖固定几个控件，其余表面由毛玻璃负责，
-          // 因此液态玻璃开启时此入口仍然可见、可调。
           if (s?.frostedGlass ?? false)
             _tile(
               context,
@@ -652,10 +622,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             title: tr('液态玻璃'),
             subtitle: tr(
                 '开启时自动切换到悬浮式底栏；底栏、迷你条、搜索框与播放页控制卡优先液态，其余表面由毛玻璃补齐'),
-            // 液态玻璃开关始终可点，不再因悬浮底栏关闭而强制置灰/归假：
-            // 打开时由 setLiquidGlass 联动打开悬浮底栏。
-            // 液态与毛玻璃可共存：液态优先覆盖固定几个控件，毛玻璃补齐
-            // 其余表面；两个开关互不联动，开启顺序无关。
             value: s?.liquidGlass ?? false,
             onChanged: (v) => n.setLiquidGlass(v),
           ),
@@ -675,7 +641,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             ),
         ],
       ),
-      // 导航栏与底栏样式：由「常规」页迁入外观。
       _sectionHeader(context, tr('导航栏与底栏')),
       _CardGroup(
         children: [
@@ -748,7 +713,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             ),
         ],
       ),
-      // 播放页样式：高级模式（现代毛玻璃）/ 传统模式（经典布局）。
       _sectionHeader(context, tr('播放页')),
       _CardGroup(
         children: [
@@ -763,7 +727,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             }),
             onTap: () => _pickPlayerStyle(context, ref, s),
           ),
-          // 横屏自动隐藏：无操作收起横屏播放页顶栏/底栏，触摸唤回；关闭后恒常显。
           _switchTile(
             context,
             icon: Icons.flip_outlined,
@@ -772,7 +735,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.landscapeAutoHideChrome ?? true,
             onChanged: (v) => n.setLandscapeAutoHideChrome(v),
           ),
-          // 播放页液态玻璃：仅高级模式（玻璃材质卡片）下可用。
           if ((s?.playerStyle ?? PlayerStyle.advanced) == PlayerStyle.advanced)
             _switchTile(
               context,
@@ -833,8 +795,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 悬浮歌词窗依赖 Android 悬浮窗 overlay（iOS 无全局悬浮窗 API）：
-      // 不支持的平台整段隐藏（入口与下方全部子设置项）。
       if (PlatformCaps.supportsFloatingLyrics) ...[
       _sectionHeader(context, tr('悬浮歌词')),
       _CardGroup(
@@ -847,7 +807,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.floatingLyricsEnabled ?? false,
             onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
           ),
-          // 以下设置项始终显示，未开启时置灰（与 RwaS 一致）。
           _tile(
             context,
             icon: Icons.palette_outlined,
@@ -967,8 +926,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ],
       ),
       ],
-      // 状态栏歌词依赖 Android 通知栏自定义文本（iOS 无等价能力，
-      // 二期可评估 Live Activity 锁屏歌词）：不支持的平台整段隐藏。
       if (PlatformCaps.supportsStatusBarLyrics) ...[
       _sectionHeader(context, tr('状态栏歌词')),
       _CardGroup(
@@ -1118,7 +1075,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // DLNA 渲染器（接收端），与桌面端「高级设置 → DLNA 渲染器」对齐。
       _sectionHeader(context, tr('DLNA 渲染器')),
       _CardGroup(
         children: [
@@ -1158,7 +1114,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 分享链接设置，与桌面端「播放 → 在线播放」下的分享设置对齐。
       _sectionHeader(context, tr('分享')),
       _CardGroup(
         children: [
@@ -1181,7 +1136,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ];
   }
 
-  /// 编辑渲染器对外展示名（保存后运行中幂等重建）。
   Future<void> _editDlnaRendererName(BuildContext context, WidgetRef ref) async {
     final s = ref.read(settingsProvider).valueOrNull;
     final name = await showModernInputDialog(
@@ -1209,8 +1163,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       _sectionHeader(context, tr('下载')),
       _CardGroup(
         children: [
-          // 下载路径：Android 专属（iOS 固定下载到应用 Documents/Downloads，
-          // 经「文件」App 访问，无自定义目录概念）。
           if (PlatformCaps.supportsCustomDownloadDir)
             _tile(
               context,
@@ -1228,7 +1180,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: Text(s?.downloadQuality ?? '320k'),
             onTap: () => _pickQuality(context, ref, s, isOnline: false),
           ),
-          // ── MV 画质 ──
           _tile(
             context,
             icon: Icons.movie_outlined,
@@ -1314,7 +1265,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 
   // ---- 高级设置 ----
-  // 应用备份（歌单/收藏/插件/设置导出与导入）按需求从原「同步与备份」页上移至此。
   List<Widget> _advanced(
     BuildContext context,
     AppSettings? s,
@@ -1338,11 +1288,9 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         ],
       ),
-      // 工具已独立成设置导航一级分类（/settings/tools）。
     ];
   }
 
-  /// 工具分类详情：原「高级设置」下的工具分组独立成页。
   List<Widget> _tools(BuildContext context) {
     return [
       _sectionHeader(context, tr('工具')),
@@ -1399,7 +1347,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     ),
   );
 
-  // 自绘行布局：响应壁纸模式与主题字体继承。
   Widget _tile(
     BuildContext context, {
     required IconData icon,
@@ -1408,8 +1355,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     VoidCallback? onTap,
     String? subtitle,
     bool enabled = true,
-    // chevron 仅用于「进入更多」（二级页/弹窗选择）；开关等行内直接生效的
-    // 条目不画，避免「点了会进详情」的歧义。
     bool showChevron = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -1428,8 +1373,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     return InkWell(
       onTap: enabled ? onTap : null,
       child: Padding(
-        // 紧凑行（6+48+6=60px），与设置导航页 dense 两行 ListTile 行高一致，
-        // 保证两级设置页条目视觉统一。
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 48),
@@ -1445,8 +1388,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                     children: [
                       Text(
                         title,
-                        // 与设置导航页 ListTile 标题统一字号 15（bodyLarge 为 16，
-                        // 显式收敛到 15，保证两级设置页行标题一致）。
                         style: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
                           color: titleColor,
                           fontSize: 15,
@@ -1456,7 +1397,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          // 与设置导航页副标题一致：bodySmall（12px）。
                           style: (textTheme.bodySmall ?? const TextStyle())
                               .copyWith(color: subtitleColor),
                         ),
@@ -1470,8 +1410,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    // 具体设置值统一为次要小字（同导航页副标题 bodySmall），
-                    // 不与标题抢层级。
                     child: DefaultTextStyle(
                       style: (textTheme.bodySmall ?? const TextStyle())
                           .copyWith(color: subtitleColor),
@@ -1630,7 +1568,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         );
         if (go == true) {
           await FloatingLyricsController.openPermissionSettings();
-          // 授权返回后由系统回调，这里先置为开启（控制器会在权限就绪时显示）。
           await n.setFloatingLyricsEnabled(true);
         }
         return;
@@ -1672,7 +1609,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
               ),
             ),
           ),
-        // 自定义颜色入口：已选自定义色时显示该色，否则显示「+」。
         GestureDetector(
           onTap: enabled ? () => _pickFloatingLyricsColor(context, ref, s) : null,
           child: Container(
@@ -1761,8 +1697,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 歌词同步偏移（参考桌面版 lyricsSyncOffset）：正=歌词更晚、负=更早，
-  /// 范围 -100~100ms、步进 5ms，纯滑块 + ± 按钮交互。
   Widget _lyricsSyncOffsetSlider(AppSettings? s, SettingsNotifier n) {
     final v = (s?.lyricOffsetMs ?? 0).toDouble();
     return _StepperSliderRow(
@@ -1832,7 +1766,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 水平位置微调：-100~100 映射到原生可拖范围（物理像素），与原生 clamp 一致。
   Widget _floatingLyricsXSlider(
     BuildContext context,
     AppSettings? s,
@@ -1874,7 +1807,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  /// 垂直位置微调：0~100 映射到状态栏下到屏幕底的可拖范围（物理像素）。
   Widget _floatingLyricsYSlider(
     BuildContext context,
     AppSettings? s,
@@ -2756,9 +2688,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             return;
           }
           await ref.read(settingsProvider.notifier).setDownloadPath(path);
-          // 设置下载地址时一次性申请下载所需全部权限（原先拖到点下载才申请）：
-          // 「所有文件访问」用于自选目录直写，「通知」用于下载进度通知。
-          // 恢复默认目录不申请——默认路径走 MediaStore 兼容写入，无需该权限。
           if (Platform.isAndroid) {
             var manage = await Permission.manageExternalStorage.request();
             if (manage.isPermanentlyDenied) await openAppSettings();
@@ -2818,8 +2747,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
   }
 }
 
-/// 带 -/+ 步进按钮的滑块行：左「−」右「＋」，中间为滑块，右侧显示当前值，
-/// 便于对悬浮歌词位置等连续值做精细微调。
 class _StepperSliderRow extends StatelessWidget {
   const _StepperSliderRow({
     required this.slider,
@@ -2896,7 +2823,6 @@ class _StepperSliderRow extends StatelessWidget {
   }
 }
 
-/// 分组圆角卡片包裹容器（纯白卡片）。
 class _CardGroup extends ConsumerWidget {
   const _CardGroup({required this.children});
   final List<Widget> children;
@@ -2920,7 +2846,6 @@ class _CardGroup extends ConsumerWidget {
       }
     }
 
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
       context: context,
       ref: ref,
@@ -2951,9 +2876,6 @@ class _ColorDot extends StatelessWidget {
   }
 }
 
-/// 颜色选择弹层：预设色网格 + 自定义 HSV 调色盘。
-/// 预设点击即选中关闭；自定义区支持 SV 二维取色板、色相条与 Hex 输入。
-/// 主题色与悬浮歌词颜色共用，通过 [title]/[presets] 区分。
 class _AccentColorSheet extends StatefulWidget {
   const _AccentColorSheet({
     required this.current,
@@ -2975,7 +2897,6 @@ class _AccentColorSheet extends StatefulWidget {
     0xFFEC4899: tr('蔷薇'),
   };
 
-  /// 与 RawS-Music DesktopLyricService.QUICK_COLORS 一致的歌词颜色预设。
   static Map<int, String> get lyricPresets => <int, String>{
     0xFFFFFFFF: tr('纯白'),
     0xFFBFBFBF: tr('银灰'),
@@ -3050,7 +2971,6 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
           children: [
             Text(tr(widget.title), style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
-            // 预设网格（学桌面端：色块 + 名称，四列两行）
             GridView.count(
               crossAxisCount: 4,
               shrinkWrap: true,
@@ -3180,7 +3100,6 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
   }
 }
 
-/// HSV 调色盘：饱和度/明度二维取色板 + 色相条，均支持拖拽与点击取色。
 class _HsvPicker extends StatelessWidget {
   const _HsvPicker({required this.hsv, required this.onChanged});
   final HSVColor hsv;
@@ -3198,7 +3117,6 @@ class _HsvPicker extends StatelessWidget {
     final thumbColor = Colors.white;
     return Column(
       children: [
-        // SV 二维取色板：横向白色→纯色，纵向透明→黑色
         LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, 150);
@@ -3253,7 +3171,6 @@ class _HsvPicker extends StatelessWidget {
           },
         ),
         const SizedBox(height: 14),
-        // 色相条
         LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
@@ -3307,7 +3224,6 @@ class _HsvPicker extends StatelessWidget {
   }
 }
 
-/// SV 取色板底色：左白右纯色线性渐变叠加上黑下透明线性渐变。
 class _SvBoxPainter extends CustomPainter {
   _SvBoxPainter({required this.baseColor});
   final Color baseColor;
@@ -3331,7 +3247,6 @@ class _SvBoxPainter extends CustomPainter {
   bool shouldRepaint(_SvBoxPainter old) => old.baseColor != baseColor;
 }
 
-/// 色相彩虹条。
 class _HueRainbow extends StatelessWidget {
   const _HueRainbow();
 
@@ -3363,7 +3278,6 @@ class _Choice {
   const _Choice(this.label, this.value, {this.subtitle});
 }
 
-/// 常规 → 存储空间：与桌面端 SettingsGeneral 对齐的在线播放流式缓存管理。
 class _StorageSettingsGroup extends ConsumerStatefulWidget {
   const _StorageSettingsGroup();
 
@@ -3396,7 +3310,6 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
         _maxBytes = m.toInt();
       });
     } catch (_) {
-      // 后端未就绪时静默。
     }
   }
 
@@ -3508,7 +3421,6 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
   }
 }
 
-/// 高级设置 → 日志：导出全部/错误日志并分享、一键清理。
 class _LogGroup extends ConsumerStatefulWidget {
   const _LogGroup();
 
@@ -3523,7 +3435,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  /// 导出日志（全部或仅错误）并调起系统分享。
   Future<void> _export({required bool onlyErrors}) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -3556,7 +3467,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
 
   Future<void> _clearLogs() async {
     if (_busy) return;
-    // 无日志时直接忽略，避免弹出无意义的确认框。
     if (ref.read(applicationLogsProvider).isEmpty) {
       _toast(tr('暂无日志'));
       return;
@@ -3609,7 +3519,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
         _action(
           context,
           icon: Icons.description_outlined,
-          // 数字常显（含 0）：一眼观察日志系统是否在写入。
           title: tr('导出全部日志（{n} 条）', {'n': logs.length}),
           onTap: _busy ? () {} : () => _export(onlyErrors: false),
         ),
@@ -3617,7 +3526,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
           context,
           icon: Icons.error_outline,
           title: tr('导出错误日志（{n} 条）', {'n': errorCount}),
-          // 无错误日志时置灰不可点。
           onTap: errorCount == 0 || _busy
               ? null
               : () => _export(onlyErrors: true),
@@ -3633,7 +3541,6 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
   }
 }
 
-/// 高级设置 → 应用备份：歌单/收藏/插件/设置导出与导入为 JSON。
 class _AppBackupGroup extends ConsumerStatefulWidget {
   const _AppBackupGroup();
 
@@ -3648,10 +3555,8 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  /// 导出应用备份：先选导出内容，再选目标文件夹写入。
   Future<void> _exportBackup() async {
     if (_busy) return;
-    // 1. 选择导出内容（对齐桌面端 ExportBackupDialog，默认全选）。
     final selection = await _pickExportSelection();
     if (selection == null || !mounted) return;
 
@@ -3665,7 +3570,6 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
         includeSettings: selection.$4,
       );
 
-      // 2. Android 每次经 SAF 指定导出文件夹；其他平台回退系统分享。
       if (SafChannel.isSupported) {
         final treeUri = await SafChannel.chooseFolderTree(persist: false);
         if (treeUri == null || !mounted) return;
@@ -3699,7 +3603,6 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     }
   }
 
-  /// 导出内容选择弹窗，返回 null 表示取消。
   Future<(bool, bool, bool, bool)?> _pickExportSelection() {
     var playlists = true;
     var favorites = true;
@@ -3745,7 +3648,6 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     );
   }
 
-  /// 选择备份文件 → 预览摘要 → 选择导入内容 → 执行。
   Future<void> _importBackup() async {
     if (_busy) return;
     try {
@@ -3825,7 +3727,6 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     }
   }
 
-  /// 导入确认对话框：摘要 + 导入内容勾选，返回 null 表示取消。
   Future<(bool, bool, bool, bool)?> _confirmBackupImport(
       AppBackupSummary summary) {
     var playlists = true;

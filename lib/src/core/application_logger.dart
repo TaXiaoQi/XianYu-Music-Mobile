@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../i18n/i18n.dart';
 
-/// 日志级别（与桌面端 applicationLogger 对齐）。
 enum LogLevel {
   debug('debug'),
   info('info'),
@@ -20,7 +19,6 @@ enum LogLevel {
   final String value;
 }
 
-/// 一条应用日志（与桌面端 ApplicationLogEntry 对齐）。
 class AppLogEntry {
   final String id;
   final int timestamp;
@@ -66,17 +64,9 @@ class AppLogEntry {
   }
 }
 
-/// 通用应用日志最大保留量：全部日志最近 200 条，错误日志最近 10 条。
 const int kMaxAppLogEntries = 200;
 const int kMaxAppErrorEntries = 10;
 
-/// 通用应用日志管理（对齐桌面端 applicationLogger.ts）。
-///
-/// 与专用于「问题诊断」的 [AppLogger] 不同，本日志系统：
-/// - 分级别（debug/info/warn/error）与分类（category）记录；
-/// - 常驻内存 + 持久化到本地文件，重启仍可追溯；
-/// - 按量保留（200 全部 / 10 错误），可导出「全部日志」或「错误日志」，
-///   供意见反馈页勾选随反馈一并上传。
 class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   ApplicationLogManager._() : super(const []);
 
@@ -85,11 +75,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   Timer? _persistDebounce;
   int _seq = 0;
 
-  /// 待批量 flush 的新日志条目。
   final List<AppLogEntry> _pending = [];
   bool _flushScheduled = false;
 
-  /// 记录前加载历史（异步），避免阻塞首帧。
   void bootstrap() {
     unawaited(_restore());
   }
@@ -105,20 +93,10 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       category: category,
       message: message,
     ));
-    // 双写控制台：调试时 logcat/IDE 控制台同样可见（release 下 debugPrint
-    // 为空操作，日志系统照常工作）。引擎侧 JS 日志也经此统一出口。
     debugPrint('[AppLog:${level.value}] [$category] $message');
     _flushLater();
   }
 
-  /// 把待写日志合并成一次 state 更新。
-  ///
-  /// 注意：绝不能同步发生在 build/draw 阶段。异常上报链路（FlutterError.onError
-  /// → AppLog.error → log → 换 state）正是由 build 期抛错触发；若在此同步通知
-  /// StateNotifier 的监听者，监听者 widget 会在 buildScope 期间重建并再次抛
-  /// "setState() called during build"，经 onError 再一次 log，形成无限递归，
-  /// 每帧都无法结束 → 程序在跑（解码线程正常）但触控/画面被冻死。
-  /// 这里把换 state 延后到当前事件栈跑完（microtask）再统一 flush，中断该循环。
   void _flushLater() {
     if (_flushScheduled) return;
     _flushScheduled = true;
@@ -127,14 +105,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
 
   void _flush() {
     _flushScheduled = false;
-    // 注意：不能因 `!mounted` 就丢弃本次 flush——本单例在启动期（尚无任何
-    // UI 订阅 applicationLogsProvider 时）就记日志，此时 mounted=false，
-    // 若在此 return，启动/运行期日志会一直卡在 [_pending]，既不上屏也不落盘，
-    // 用户打开日志页看到的就是「没有日志」。真正的防递归靠 microtask 延后
-    // 换 state + onError 的 reportingError 抑制，与是否有监听者无关。
     if (_pending.isEmpty) return;
-    // 必须拷贝：_pending.clear() 会清空同一 List 对象，若直接持引用，
-    // 清空后 entries 也跟着变空，日志永远进不了 state。
     final entries = List<AppLogEntry>.of(_pending);
     _pending.clear();
     state = _retain([...state, ...entries]);
@@ -146,7 +117,6 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   void warn(String category, String m) => log(LogLevel.warn, category, m);
   void error(String category, String m) => log(LogLevel.error, category, m);
 
-  /// 按量保留：全部最近 200 条；错误日志额外只留最近 10 条。
   static List<AppLogEntry> _retain(List<AppLogEntry> source) {
     var result = source.length > kMaxAppLogEntries
         ? source.sublist(source.length - kMaxAppLogEntries)
@@ -196,11 +166,8 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
           .whereType<AppLogEntry>()
           .toList();
       if (entries.isEmpty) return;
-      // 同样不因 `!mounted` 跳过恢复：启动期 bootstrap 时通常尚无 UI 订阅，
-      // 否则上次会话的日志永远加载不回来（恢复只填充 state，无副作用）。
       state = _retain(entries);
-    } catch (e) {
-      // 恢复失败静默：日志只是辅助信息，不影响应用运行。
+    } catch (_) {
     }
   }
 
@@ -211,12 +178,10 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
         jsonEncode(state.map((e) => e.toJson()).toList()),
         flush: true,
       );
-    } catch (e) {
-      // 写盘失败静默，日志不应影响主流程。
+    } catch (_) {
     }
   }
 
-  /// 导出日志文本（对齐桌面端 formatApplicationLogExport）。
   String formatExport({required bool onlyErrors}) {
     final selected = onlyErrors
         ? state.where((e) => e.level == LogLevel.error).toList()
@@ -248,7 +213,6 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   }
 }
 
-/// 便捷门面：无需 Riverpod 即可在任何地方记录日志。
 class AppLog {
   static ApplicationLogManager get manager => ApplicationLogManager.instance;
 
@@ -262,13 +226,10 @@ class AppLog {
       ApplicationLogManager.instance.error(category, m);
 }
 
-/// 全局应用日志入口（UI 依赖注入用，驱动反馈页可用日志数量刷新）。
 final applicationLogsProvider =
     StateNotifierProvider<ApplicationLogManager, List<AppLogEntry>>(
         (ref) => ApplicationLogManager.instance);
 
-/// 路由观察者：把 push/pop 等导航事件记入通用应用日志。
-/// 与 AppLogger 的诊断观察者并存，本观察者专供日志系统（不受「问题诊断」开关影响）。
 class AppLogRouteObserver extends NavigatorObserver {
   String _name(Route<dynamic>? route) =>
       route?.settings.name ?? route.runtimeType.toString();
@@ -295,7 +256,6 @@ class AppLogRouteObserver extends NavigatorObserver {
   }
 }
 
-/// 生命周期观察者：应用前后台切换记入通用应用日志。
 class AppLogLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -303,13 +263,6 @@ class AppLogLifecycleObserver with WidgetsBindingObserver {
   }
 }
 
-/// 预测返回手势观察者（常开打点）：记录系统预测返回事件是否送达应用。
-///
-/// 框架派发规则：start 广播给所有 observer；update/commit/cancel 只派发给
-/// **认领了手势**的 observer（见 WidgetsBinding._backGestureObservers）。
-/// 本观察者恒返回 false 只旁观、不认领，因此只会收到 start——够用于判定
-/// 「系统是否下发事件」；进度类证据由认领方 PredictiveBackGestureDetector
-/// 打点（update/commit/cancel）。
 class AppLogBackGestureObserver with WidgetsBindingObserver {
   static bool _pulledNativeStatus = false;
 
@@ -318,8 +271,6 @@ class AppLogBackGestureObserver with WidgetsBindingObserver {
     AppLog.debug('backgesture',
         'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
         'progress=${backEvent.progress.toStringAsFixed(3)}');
-    // 热启动场景 main 未重跑、init 的 pull 没发过——首支手势时补拉一次
-    // 原生注册结果，保证任何启动路径下「注册状态」必然进日志。
     if (!_pulledNativeStatus) {
       _pulledNativeStatus = true;
       BackGestureNativeBridge.pull();
@@ -328,24 +279,11 @@ class AppLogBackGestureObserver with WidgetsBindingObserver {
   }
 }
 
-/// 原生预测返回观察者桥：MainActivity 以「系统导航观察者」优先级旁听系统
-/// 预测返回事件，把每帧 BackEvent 原文（progress/touch/swipeEdge）经
-/// xianyu/backgesture 通道推进来打点。它与引擎送达 Dart 的值分属两条链路：
-/// 日志中 native 值正常而引擎 claim/update 值恒 0 → 引擎转发链问题；
-/// native 值同样恒 0 → ROM 对本应用门控（PiliNara 可用即证明 ROM 会按应用
-/// 差异化下发，可继续查包名/签名门控差异）。同一 [AppLog] 分组，一轮构建
-/// 即可逐帧对比。未收到任何 native 打点即原生未注册（API < 34）。
 class BackGestureNativeBridge {
   BackGestureNativeBridge._();
 
   static const MethodChannel _channel = MethodChannel('xianyu/backgesture');
 
-  /// 启动时调用一次：挂上通道接收，并主动拉取注册结果。热启动（进程未死
-  /// 切回）main 不重跑，所以 [AppLogBackGestureObserver] 还会在首支手势时
-  /// 兜底再 pull 一次。
-  ///
-  /// 「有 registered 无事件」= ROM 不给观察者优先级下发；「native skip」=
-  /// 设备 API < 34；「pull failed」= 原生侧没有本通道（APK 未含改动）。
   static void init() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'event') {
@@ -355,12 +293,10 @@ class BackGestureNativeBridge {
     pull();
   }
 
-  /// 向原生拉取注册结果（拉取后原生清空，幂等可重复调）。
   static void pull() {
     _channel.invokeMethod<String>('pull').then((status) {
       if (status != null) AppLog.debug('backgesture', status);
     }).catchError((Object e) {
-      // 不静默：MissingPluginException = 原生侧无本通道（构建未含改动）。
       AppLog.debug('backgesture', 'pull failed: $e');
     });
   }

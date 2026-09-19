@@ -7,7 +7,6 @@ import '../i18n/i18n.dart';
 import 'predictive_dialog_route.dart';
 import 'privacy_policy.dart';
 
-/// 用户协议（对齐桌面端 Auth.vue 的 defaultAgreementContent）。
 const kUserAgreementDefaultContent = '''一、协议范围
 本协议适用于弦予音乐客户端账号系统及相关云端同步、资料管理、统计上报、风控安全服务。用户注册、登录或继续使用账号功能，即表示已阅读并同意本协议。
 
@@ -31,7 +30,6 @@ const kUserAgreementDefaultContent = '''一、协议范围
 
 const kUserAgreementDefaultTitle = '弦予音乐用户协议';
 
-/// 拉取用户协议（服务端下发），失败回退默认内容。
 Future<UserAgreement> fetchUserAgreement(WidgetRef ref) async {
   try {
     final a = await ref.read(accountApiProvider).getUserAgreement();
@@ -47,10 +45,6 @@ Future<UserAgreement> fetchUserAgreement(WidgetRef ref) async {
   }
 }
 
-/// 用户协议勾选行：点击勾选时弹出协议详情，需滚动到底部并点「同意」后才算勾选。
-///
-/// 状态由父级通过 [initialAgreed] 传入、[onChanged] 回调同步，组件内部仅管理
-/// 协议内容的加载与弹窗交互。对齐桌面端：未滚动到底不允许同意。
 class UserAgreementCheckbox extends ConsumerStatefulWidget {
   const UserAgreementCheckbox({
     super.key,
@@ -98,7 +92,6 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
   }
 
   Future<void> _openPrivacyModal() async {
-    // 与用户协议一致：滚动到底部并点「同意」后视为同意（同时勾选上行）。
     final ok = await showPrivacyPolicyModal(context: context);
     if (!mounted) return;
     if (ok) _setAgreed(true);
@@ -167,7 +160,6 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
   }
 }
 
-/// 协议详情弹窗：滚动到底部才可「同意」。回调返回是否已同意。
 Future<bool> showUserAgreementModal({
   required BuildContext context,
   required UserAgreement agreement,

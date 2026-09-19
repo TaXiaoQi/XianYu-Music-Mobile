@@ -8,14 +8,12 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
-/// /song-list 路由参数（loader 为闭包，经 GoRouter extra 传递，无序列化需求）。
 class SongListArgs {
   const SongListArgs({required this.title, required this.loader});
   final String title;
   final Future<List<Song>> Function() loader;
 }
 
-/// 歌曲列表详情页：用于歌手/专辑/文件夹的下钻浏览。
 class SongListPage extends ConsumerWidget {
   final String title;
   final Future<List<Song>> Function() loader;
@@ -23,9 +21,6 @@ class SongListPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 竖屏悬浮顶栏：顶栏自动换装玻璃胶囊组，列表铺满全屏、滚动时从顶栏
-    // 下方穿过（穿透观感）；固定模式沿用原 Padding 避让结构。
-    // 不隐藏壳层播放条：详情容器继承常驻迷你播放条（与歌单详情一致）。
     final floating = MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
                 .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
@@ -55,8 +50,6 @@ class SongListPage extends ConsumerWidget {
     );
   }
 
-  /// 列表主体。[contentTop]=悬浮模式避让量（注入列表 padding.top，内容
-  /// 穿透顶栏）；null=固定模式，列表用默认 padding（MediaQuery 安全区）。
   Widget _body(WidgetRef ref, {double? contentTop}) {
     return FutureBuilder<List<Song>>(
       future: loader(),

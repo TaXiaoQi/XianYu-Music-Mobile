@@ -1,8 +1,3 @@
-// 星海 LX 插件 + 真实 lx_backup.lxmc 在移动端 Rust 引擎上的端到端回归。
-//
-// 运行：flutter test test/lx_x_backup_import_test.dart
-// 依赖：rust/target/debug/xianyu_core.dll（XIANYU_DLL 可覆盖）与本机样例文件，
-// 缺失时自动跳过，不影响 CI。
 import 'dart:io';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'

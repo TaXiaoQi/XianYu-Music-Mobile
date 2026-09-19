@@ -22,25 +22,11 @@ import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
 import '../i18n/i18n.dart';
 
-/// xianyu:// 深链处理。
-///
-/// Android 端由 MainActivity 通过 MethodChannel('xianyu/deeplink') 把 intent 的
-/// xianyu://song?... 深链透传到这里：解析歌名/歌手/时长/封面后，先弹「分享预览窗」
-/// （封面/歌名/歌手/来源 + 播放/下一首播放/取消），用户点「播放」才进入播放，
-/// 点「下一首播放」插入当前曲目之后（不自动起播）。播放/插队优先在本地曲库按
-/// 「标题|歌手」(±5s 时长容差) 匹配——命中直接用本地文件；未命中再按来源走在线
-/// 搜索定位。最后（仅播放）跳转播放页（push 而非 go，保证能返回首页）。
-/// 这样落地页点「在弦予音乐中打开」就能拉起 App 并播放分享曲。
-///
-/// 防重复：`_busy` 保证同一时刻只处理一枚深链；`_openPlayerOnce` 保证播放页
-/// 不重复压栈，杜绝「卡出 2 个播放器页面」。
 class XianYuDeepLink {
   static const MethodChannel _channel = MethodChannel('xianyu/deeplink');
 
   static bool _initialized = false;
 
-  /// 同一时刻只处理一枚深链：防止冷/热启同链被二次派发时重复弹分享预览窗、
-  /// 重复压栈播放页（表现为「卡出 2 个播放器页面」）。
   static bool _busy = false;
 
   static void init(ProviderContainer container, GoRouter router) {
@@ -57,7 +43,6 @@ class XianYuDeepLink {
       return null;
     });
 
-    // 冷启动：创建时可能已有一枚深链暂存在原生侧，主动取一次。
     _channel
         .invokeMethod<String>('getInitialDeepLink')
         .then((raw) {
@@ -73,7 +58,6 @@ class XianYuDeepLink {
     GoRouter router,
     String raw,
   ) async {
-    // 播放控制深链最优先：不受 _busy 分享链拦截（小组件/锁屏按钮命令不能丢）。
     final playUri = Uri.tryParse(raw);
     if (playUri != null && playUri.host == 'play') {
       final action = playUri.path.replaceFirst('/', '');
@@ -102,8 +86,6 @@ class XianYuDeepLink {
     }
   }
 
-  /// 等待导航上下文就绪（冷启动深链可能早于首帧路由挂载到达）。
-  /// 最长等 2s（20×100ms），超时返回 null 交由调用方记日志放弃。
   static Future<BuildContext?> _waitNavigatorContext() async {
     for (var i = 0; i < 20; i++) {
       final ctx = appNavigatorKey.currentContext;
@@ -119,12 +101,8 @@ class XianYuDeepLink {
     String raw,
   ) async {
     try {
-      // 组件/内部跳转链接：xianyu://open?target=xxx → 直接路由到对应页面。
-      // 目前支持 recognize（桌面组件右上识曲钮）。
       final openUri = Uri.tryParse(raw);
       if (openUri != null && openUri.host == 'open') {
-        // 系统文件管理器/分享面板把本地音频文件交给本应用打开：原生侧已把
-        // content/file URI 物化为真实路径并封装成 target=file，这里直接播本地文件。
         if (openUri.queryParameters['target'] == 'file') {
           final file = openUri.queryParameters['file'] ?? '';
           final name = openUri.queryParameters['name'] ?? '';
@@ -133,9 +111,6 @@ class XianYuDeepLink {
           }
           return;
         }
-        // 系统文件管理器/浏览器「打开」.js 插件脚本：原生侧已把 content/file URI
-        // 物化为真实路径并封装成 target=plugin，这里读取内容走现有安装管线
-        // （与插件页「选择本地脚本」导入同源）。
         if (openUri.queryParameters['target'] == 'plugin') {
           final file = openUri.queryParameters['file'] ?? '';
           final name = openUri.queryParameters['name'] ?? '';
@@ -151,7 +126,6 @@ class XianYuDeepLink {
           return;
         }
         if (target == 'share') {
-          // 打开当前歌曲分享菜单（经瞬时桥接页提供 WidgetRef）。
           if (router.routerDelegate.currentConfiguration.uri.toString() !=
               '/shareBridge') {
             router.push('/shareBridge');
@@ -171,7 +145,6 @@ class XianYuDeepLink {
       final durationSec = int.tryParse(p['duration'] ?? '') ?? 0;
       final cover = p['cover'] ?? '';
 
-      // 等待引擎与本地曲库就绪后再判定来源（本地命中显示「本地音乐」）
       final ready = await _ensureReady(container);
       if (!ready) {
         AppLogger.instance.log('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
@@ -180,22 +153,17 @@ class XianYuDeepLink {
       final localSong = _tryLocalMatch(container, name, artist, durationSec);
       final isLocalShare = source == 'local' || source.isEmpty;
 
-      // 分享预览窗：不同形态渲染不同按钮
       final ctx = await _waitNavigatorContext();
       if (ctx == null) {
         AppLogger.instance.log('deeplink', '等待导航上下文超时，跳过分享预览窗');
         return;
       }
-      // 根 Navigator 自身的 context 上 Overlay.of 必抛（Overlay 在 Navigator
-      // 内部、不在祖先链上 → No Overlay widget found），改经 NavigatorState
-      // 拿根 Overlay。
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay == null) {
         AppLogger.instance.log('deeplink', '根 Overlay 未就绪，跳过分享预览窗');
         return;
       }
 
-      // 本地命中 → 现有「本地方案」：播放 / 下一首播放 / 取消
       if (localSong != null) {
         final action = await showShareLinkPreviewDialog(
           context: ctx,
@@ -216,8 +184,6 @@ class XianYuDeepLink {
         return;
       }
 
-      // 本地音乐分享（source 为 local 或空）且本地库没有 → 在线预判：
-      // 在线可播放 → 「取消 + 本地无音源，前往在线播放」；在线也没有 → 「取消 + 前往导入音源」
       if (isLocalShare) {
         final online = await _searchOnlineShare(
             container, name, artist, source, durationSec);
@@ -256,10 +222,8 @@ class XianYuDeepLink {
         return;
       }
 
-      // 在线音源/插件来源分享：按 source 标签判断本地是否能播该音源，三态展示
       final ability = _resolveShareAbility(container, source);
 
-      // A：本地有能播该 source 的插件 → 原样「播放 / 下一首播放 / 取消」
       if (ability.specified) {
         final action = await showShareLinkPreviewDialog(
           context: ctx,
@@ -279,7 +243,6 @@ class XianYuDeepLink {
         return;
       }
 
-      // B：无对应标签音源但本地有其他音源插件 → 「取消 / 无指定音源，前往在线播放」（用其他可用源在线播放）
       if (ability.any) {
         final action = await showShareLinkPreviewDialog(
           context: ctx,
@@ -296,7 +259,6 @@ class XianYuDeepLink {
         return;
       }
 
-      // C：本地完全没有音源插件 → 「取消 / 前往导入音源」
       final action = await showShareLinkPreviewDialog(
         context: ctx,
         name: name,
@@ -309,8 +271,6 @@ class XianYuDeepLink {
       if (action == ShareLinkPreviewAction.import) router.push('/plugin');
     } catch (e, st) {
       AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
-      // console 可见：内存诊断缓冲需要导出才能看到，静默吞掉会让这类
-      // 「弹窗不出现」问题无法定位（2026-09-04 No Overlay widget found 教训）。
       AppLog.error('deeplink', '深链处理异常: $e');
     }
   }
@@ -330,8 +290,6 @@ class XianYuDeepLink {
     };
   }
 
-  /// 按深链 source 匹配本地已启用插件：插件 id/名/声明平台（sources，如 kw）
-  /// 均可命中。新格式深链携带平台 key（跨设备稳定），旧链接可能携带插件 sha256。
   static PluginSource? _matchPlugin(
     ProviderContainer container,
     String source,
@@ -346,8 +304,6 @@ class XianYuDeepLink {
     return null;
   }
 
-  /// 分享来源展示名：本地 → 本地音乐；lx 音源/插件平台 key → 平台名；
-  /// 插件 sha256（旧链接）→ 已装插件名；其余原样展示。
   static String _sourceLabel(ProviderContainer container, String source) {
     if (source == 'local') return tr('本地音乐');
     for (final s in kOnlineSources) {
@@ -359,8 +315,6 @@ class XianYuDeepLink {
     return tr('在线搜索');
   }
 
-  /// 等待 Rust 引擎就绪并确保本地曲库已加载（空曲库时主动加载一次）。
-  /// 返回 false 表示引擎初始化失败，后续播放无法进行。
   static Future<bool> _ensureReady(ProviderContainer container) async {
     try {
       await container.read(rustInitProvider.future);
@@ -371,7 +325,6 @@ class XianYuDeepLink {
       try {
         await container.read(libraryProvider.notifier).load();
       } catch (_) {
-        // 曲库加载失败不阻塞分享播放，走在线搜索兜底
       }
     }
     return true;
@@ -387,7 +340,6 @@ class XianYuDeepLink {
     Song? localSong,
   ) async {
     try {
-      // 本地匹配命中：直接播放本地文件，避免在线搜索/解析失败导致「分享曲打不开」。
       if (localSong != null) {
         AppLogger.instance.log('deeplink', '本地匹配命中分享曲: ${localSong.path}');
         final playerNotifier = container.read(playerProvider.notifier);
@@ -404,8 +356,6 @@ class XianYuDeepLink {
       }
 
       final searchNotifier = container.read(onlineSearchProvider.notifier);
-      // 分享来源命中本地插件（id/名/平台）→ 直接用该插件搜索播放，命中率
-      // 最高（歌曲本就来自该插件平台）；插件无结果再走 lx 音源兜底。
       final matchedPlugin = _matchPlugin(container, source);
       if (matchedPlugin != null) {
         final item = await _searchViaPlugin(
@@ -427,12 +377,9 @@ class XianYuDeepLink {
         }
       }
 
-      // 来源感知：分享链接带音源 key（kw/wy/kg/tx/mg）时优先用该音源搜索，
-      // 命中率更高；'local' 或未知来源则回到默认音源。
       final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
       await searchNotifier.setSource(src);
 
-      // 用「歌名 + 歌手」搜索提高命中率；空歌手则仅歌名。
       final keyword = artist.isEmpty ? name : '$name $artist';
       try {
         await searchNotifier.search(keyword);
@@ -448,9 +395,6 @@ class XianYuDeepLink {
           _bestMatch([for (final t in results) (t.title, t.artist)], name, artist);
       final track = results[index];
       final playerNotifier = container.read(playerProvider.notifier);
-      // 浅层播放分享曲：只入队最佳匹配这一首（不连播整个搜索结果）。
-      // 播放失败行为由 player 侧按「分享链接播放失败行为」设置处理：
-      // pause → 停止并显示错误；replace → 走插件索引换源重播。
       try {
         await playerNotifier.playQueue(
           [track.toQueueItem()],
@@ -463,13 +407,10 @@ class XianYuDeepLink {
         _openPlayerOnce(router);
       }
     } catch (e, st) {
-      // 兜底：任何未预期的异常都记录日志，避免变成未捕获异步错误导致整页报错。
       AppLogger.instance.log('deeplink', '分享深链处理异常: $e\n$st');
     }
   }
 
-  /// 「下一首播放」：解析分享歌曲并插入到当前曲目之后，不自动起播、不打开播放页。
-  /// 解析顺序与播放一致：本地曲库匹配 → 在线搜索最佳匹配。
   static Future<void> _playNext(
     ProviderContainer container,
     OverlayState overlay,
@@ -481,7 +422,6 @@ class XianYuDeepLink {
   ) async {
     try {
       final playerNotifier = container.read(playerProvider.notifier);
-      // 本地匹配命中：直接插队，避免在线搜索/解析失败。
       if (localSong != null) {
         AppLogger.instance.log('deeplink', '本地匹配命中分享曲(下一首): ${localSong.path}');
         await playerNotifier.playNextShare(localSong.toQueueItem());
@@ -489,7 +429,6 @@ class XianYuDeepLink {
         return;
       }
 
-      // 分享来源命中本地插件（id/名/平台）→ 优先用该插件搜索，插队不解析失败。
       final matchedPlugin = _matchPlugin(container, source);
       if (matchedPlugin != null) {
         final item =
@@ -501,7 +440,6 @@ class XianYuDeepLink {
         }
       }
 
-      // 来源感知：带音源 key（kw/wy/kg/tx/mg）优先用该音源搜索。
       final searchNotifier = container.read(onlineSearchProvider.notifier);
       final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
       await searchNotifier.setSource(src);
@@ -528,7 +466,6 @@ class XianYuDeepLink {
     }
   }
 
-  /// 「播放」跳转播放页：仅当播放页不在栈顶时才压入，避免重复压栈成 2 个播放页。
   static void _openPlayerOnce(GoRouter router) {
     if (router.routerDelegate.currentConfiguration.uri.toString() == '/player') {
       return;
@@ -536,9 +473,6 @@ class XianYuDeepLink {
     router.push('/player');
   }
 
-  /// 导入系统「打开」进来的 .js 插件脚本（文件路径由原生侧物化到缓存目录）。
-  /// 走与插件页本地导入一致的 [PluginManager.installFromScript] 管线
-  /// （自动识别 LX/MusicFree 格式并加载验证），成功后 toast 并跳转插件页。
   static Future<void> _importOpenedPlugin(
     ProviderContainer container,
     GoRouter router,
@@ -547,8 +481,6 @@ class XianYuDeepLink {
   ) async {
     AppLogger.instance.log('deeplink', '系统打开插件脚本: $filePath');
     try {
-      // 读字节再容忍解码（allowMalformed）：LX 插件脚本中文注释常用 GBK 保存，
-      // readAsString 的严格 UTF-8 会抛 FormatException（与插件页本地导入同源）。
       final bytes = await File(filePath).readAsBytes();
       final script = utf8.decode(bytes, allowMalformed: true);
       final fileName = rawName.trim().isNotEmpty
@@ -557,12 +489,6 @@ class XianYuDeepLink {
       final source = await container
           .read(pluginManagerProvider.notifier)
           .installFromScript(script, fileName: fileName);
-      // 等导航就绪后再提示（冷启动深链可能早于首帧路由挂载到达）。
-      // 不能把根 Navigator 的 context 传给 showXianYuToast：Overlay 在
-      // Navigator 内部、不在其祖先链上，Overlay.of 必抛「No Overlay widget
-      // found」——异常发生在 installFromScript 完成之后，会被下方 catch
-      // 误报成「插件导入失败」（插件实际已装好可用）。与 catch 路径一致，
-      // 经 NavigatorState 拿根 Overlay。
       await _waitNavigatorContext();
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
@@ -576,8 +502,6 @@ class XianYuDeepLink {
       AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
-        // toast 带上具体原因 + 堆栈首帧：「Null check operator」这类系统
-        // 异常的 toString() 不含位置信息，堆栈首帧是定位源文件的唯一线索。
         final where = st
             .toString()
             .split('\n')
@@ -588,8 +512,6 @@ class XianYuDeepLink {
     }
   }
 
-  /// 播放系统打开/分享进来的本地音频文件。文件路径由原生侧物化到缓存目录，
-  /// 标题取文件原名的去扩展名部分（artist/album 置空）。直接浅层入队单曲并跳播放页。
   static Future<void> _playOpenedFile(
     ProviderContainer container,
     GoRouter router,
@@ -621,8 +543,6 @@ class XianYuDeepLink {
     }
   }
 
-  /// 本地分享且本地无音源时在线定位：先 lx 在线音源（来源感知，默认 kw），
-  /// 无结果再遍历所有已启用音源插件搜索。返回可播放 [QueueItem] 或 null（在线也没有）。
   static Future<QueueItem?> _searchOnlineShare(
     ProviderContainer container,
     String name,
@@ -632,14 +552,12 @@ class XianYuDeepLink {
   ) async {
     final keyword = artist.isEmpty ? name : '$name $artist';
 
-    // 1. lx 在线音源搜索
     final searchNotifier = container.read(onlineSearchProvider.notifier);
     final src = kOnlineSources.any((s) => s.id == source) ? source : 'kw';
     try {
       await searchNotifier.setSource(src);
       await searchNotifier.search(keyword);
     } catch (_) {
-      // 音源搜索失败不阻塞插件搜索
     }
     final results = container.read(onlineSearchProvider).results;
     if (results.isNotEmpty) {
@@ -648,7 +566,6 @@ class XianYuDeepLink {
           .toQueueItem();
     }
 
-    // 2. 音源插件搜索
     try {
       final manager = container.read(pluginManagerProvider);
       final engine = await container.read(pluginEngineProvider.future);
@@ -658,12 +575,10 @@ class XianYuDeepLink {
         if (items.isNotEmpty) return service.toQueueItem(ps, items.first);
       }
     } catch (_) {
-      // 插件未装/搜索异常视为在线无结果
     }
     return null;
   }
 
-  /// 播放一个已解析好的在线 [QueueItem]（开关分享播放标记，浅层入队单曲并跳播放页）。
   static Future<void> _playOnlineOnce(
     ProviderContainer container,
     GoRouter router,
@@ -683,9 +598,6 @@ class XianYuDeepLink {
     }
   }
 
-  /// 按分享携带的 source 标签判定本地能否播放该音源：
-  /// - specified：存在能处理该 source 的已启用插件（插件名/id 匹配，或插件声明的 sources 含该 source）
-  /// - any：存在任意已启用插件（可作为其他可用源）。无任何插件时两者皆 false。
   static ({bool specified, bool any}) _resolveShareAbility(
     ProviderContainer container,
     String source,
@@ -708,7 +620,6 @@ class XianYuDeepLink {
     return (specified: specified, any: true);
   }
 
-  /// 用指定插件按「歌名+歌手」搜索并返回最佳匹配的可播放条目；无结果/异常返回 null。
   static Future<QueueItem?> _searchViaPlugin(
     ProviderContainer container,
     PluginSource plugin,
@@ -735,7 +646,6 @@ class XianYuDeepLink {
     return null;
   }
 
-  /// 无指定音源时用其他可用源在线播放（lx + 全部已启用插件兜底）。
   static Future<void> _playFallback(
     ProviderContainer container,
     GoRouter router,
@@ -750,8 +660,6 @@ class XianYuDeepLink {
     await _playOnlineOnce(container, router, online);
   }
 
-  /// 优先最接近的歌名，再叠加歌手匹配；都无则默认第一条。
-  /// 行元组为 (标题, 歌手)，供 lx OnlineTrack 与插件 PluginSearchResult 共用。
   static int _bestMatch(
     List<(String, String)> results,
     String name,
@@ -782,10 +690,6 @@ class XianYuDeepLink {
     return best;
   }
 
-  /// 在本地曲库中按「标题|歌手」（±5s 时长容差）匹配分享歌曲。
-  /// 命中则返回本地 Song，直接播放本地文件，避免在线搜索/解析失败。
-  /// 匹配规则与 sync_provider._resolveLocalPath 保持一致：
-  /// 唯一命中直接采用；多候选时用时长消歧（±5s）。
   static Song? _tryLocalMatch(
     ProviderContainer container,
     String name,

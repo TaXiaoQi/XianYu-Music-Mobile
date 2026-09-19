@@ -12,7 +12,6 @@ import '../../src/library/library_provider.dart';
 import '../../src/rust/api.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 批量重命名页面：按标签模板重命名本地音乐文件（对齐桌面端工具箱重命名）。
 class BatchRenamePage extends ConsumerStatefulWidget {
   const BatchRenamePage({super.key});
 
@@ -97,7 +96,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
   Future<void> _apply() async {
     final valid = _validItems;
     if (valid.isEmpty || _applying) return;
-    // 二次确认：文件重命名不可撤销
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -129,7 +127,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
               })
           .toList();
       final count = await applyRename(operationsJson: jsonEncode(ops));
-      // 重命名后刷新该文件夹歌曲（数据库路径同步）
       final dbPath = await ref.read(dbPathProvider.future);
       await refreshFolderSongs(dbPath: dbPath, folderPath: _folder!);
       await ref.read(libraryProvider.notifier).load();
@@ -165,7 +162,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 文件夹选择
           Text(tr('目标文件夹'),
               style: TextStyle(
                   fontSize: 13,
@@ -195,7 +191,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
             ),
           const SizedBox(height: 16),
 
-          // 模板
           Text(tr('命名模板'),
               style: TextStyle(
                   fontSize: 13,
@@ -244,7 +239,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           ),
           const SizedBox(height: 12),
 
-          // 附加选项
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -267,7 +261,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
           ),
           const SizedBox(height: 8),
 
-          // 操作按钮
           Row(
             children: [
               Expanded(
@@ -311,7 +304,6 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
                   style: TextStyle(color: scheme.error, fontSize: 12)),
             ),
 
-          // 预览列表
           if (_hasScanned) ...[
             const SizedBox(height: 16),
             Text(

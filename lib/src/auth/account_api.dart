@@ -6,10 +6,8 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-/// 应用版本（与 pubspec.yaml version 保持一致）。
 const appVersion = '1.0.2';
 
-/// 热搜条目（get_hot_search）。
 class HotSearchItem {
   final String keyword;
   final int count;
@@ -21,10 +19,6 @@ class HotSearchItem {
       );
 }
 
-/// 账号 API 服务：公告/关于/版本/协议/热搜/反馈/排行榜/统计上报。
-///
-/// 复用 [AuthNotifier.requestAction]（自动注入 token + 会话失效处理），
-/// 与桌面端 authService.ts / usageStats.ts / announcement.ts / leaderboardService.ts 对齐。
 class AccountApi {
   AccountApi(this._ref);
   final Ref _ref;
@@ -39,10 +33,7 @@ class AccountApi {
   String? get _ciyuanxiId =>
       _auth.currentState.user?.ciyuanxiId ?? _auth.currentState.user?.id;
 
-  /// 当前账号弦予号（供插件同步用户变量派生 AES 密钥）
   String? get ciyuanxiId => _ciyuanxiId;
-
-  // ─── 公告 ───────────────────────────────────────────────
 
   Future<Announcement?> fetchAnnouncement() async {
     try {
@@ -71,11 +62,8 @@ class AccountApi {
     }, fetchTimeoutMs: 15000);
   }
 
-  // ─── 关于页配置 ─────────────────────────────────────────
-
   Future<AboutConfig> fetchAboutConfig() async {
     try {
-      // platform=mobile：服务端据此把开源地址换成本仓库、参考项目换成桌面端仓库
       final data =
           await _action('get_about_config', {'platform': 'mobile'}, fetchTimeoutMs: 8000);
       return AboutConfig.fromJson(data);
@@ -84,14 +72,7 @@ class AccountApi {
     }
   }
 
-  // ─── 版本更新 ───────────────────────────────────────────
-
-  /// 获取服务端最新版本信息。
-  /// 返回 null 表示服务端未发布版本（正常情况，非错误）；
-  /// 请求失败（网络/签名/超时）时抛异常，由调用方区分提示。
-  /// 兼容旧服务器把空结果序列化为数组的情况。
   Future<LatestVersion?> fetchServerUpdate() async {
-    // 携带设备ID：服务端据此判断是否下发测试版（内测名单设备专属）
     final data = await _auth.requestActionList('get_latest_version', {
       'platform': 'mobile',
       'device_id': await _auth.deviceId(),
@@ -100,8 +81,6 @@ class AccountApi {
     return LatestVersion.fromJson(Map<String, dynamic>.from(data));
   }
 
-  /// 内测资格检查：返回 (是否在名单, 是否有待审核的内测申请)。
-  /// 请求失败/响应异常返回 (true, false) → fail-open 放行。
   Future<(bool, bool)> checkBetaAccess() async {
     final data = await _auth.requestActionList('check_beta_access', {
       'device_id': await _auth.deviceId(),
@@ -112,14 +91,10 @@ class AccountApi {
     return (allowed, pending);
   }
 
-  // ─── 用户协议 ───────────────────────────────────────────
-
   Future<UserAgreement> getUserAgreement() async {
     final data = await _action('get_user_agreement', {});
     return UserAgreement.fromJson(data);
   }
-
-  // ─── 热搜 ───────────────────────────────────────────────
 
   Future<List<HotSearchItem>> fetchHotSearch({int limit = 10}) async {
     try {
@@ -134,8 +109,6 @@ class AccountApi {
       return const [];
     }
   }
-
-  // ─── 反馈 ───────────────────────────────────────────────
 
   Future<int> submitFeedback({
     required String title,
@@ -195,7 +168,6 @@ class AccountApi {
     return (data['id'] as num?)?.toInt() ?? 0;
   }
 
-  /// 获取未确认的反馈完成通知列表。
   Future<List<FeedbackNotification>> getMyFeedbackNotifications() async {
     final user = _auth.currentState.user;
     final ciyuanxiId = user?.ciyuanxiId?.trim();
@@ -215,7 +187,6 @@ class AccountApi {
     }
   }
 
-  /// 确认反馈完成通知已读，避免重复弹出。
   Future<void> confirmFeedbackNotification(int id) async {
     final user = _auth.currentState.user;
     final ciyuanxiId = user?.ciyuanxiId?.trim() ?? '';
@@ -225,13 +196,9 @@ class AccountApi {
         'ciyuanxi_id': ciyuanxiId,
       }, fetchTimeoutMs: 15000);
     } catch (_) {
-      // 确认失败静默，下次启动仍会弹出。
     }
   }
 
-  // ─── 昵称变更通知 ───────────────────────────────────────
-
-  /// 获取未确认的昵称变更通知（管理员修改昵称后）。
   Future<List<NicknameChangeNotice>> getNicknameChangeNotices() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) return const [];
@@ -249,7 +216,6 @@ class AccountApi {
     }
   }
 
-  /// 确认昵称变更通知已读，避免重复弹出。
   Future<void> confirmNicknameChangeNotice(int id) async {
     final ciyuanxiId = _ciyuanxiId ?? '';
     if (id <= 0) return;
@@ -259,13 +225,9 @@ class AccountApi {
         'ciyuanxi_id': ciyuanxiId,
       }, fetchTimeoutMs: 15000);
     } catch (_) {
-      // 确认失败静默，下次启动仍会弹出。
     }
   }
 
-  // ─── 设置同步 ───────────────────────────────────────────
-
-  /// 上传本地设置到云端（排除设备相关字段）。
   Future<void> uploadSettings(AppSettings settings) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -278,18 +240,9 @@ class AccountApi {
     }, fetchTimeoutMs: 20000);
   }
 
-  /// 从云端下载设置（跨平台取最新快照，见 [downloadSettingsCrossPlatform]）。
   Future<Map<String, dynamic>?> downloadSettings() async =>
       (await downloadSettingsCrossPlatform()).settings;
 
-  /// 跨平台取最新云端设置快照。
-  ///
-  /// 服务端按平台分文件存储（settings_desktop.json / settings_mobile.json），
-  /// 各端只写自己的文件、下载只读自己的——跨平台设置同步在服务端契约上
-  /// 不通（移动端永远看不到桌面端快照；首次上传后移动端文件又被自己的
-  /// 旧数据占住，「下载/登录同步」全变空转）。这里并发拉两端快照，按快照
-  /// 时间取更新的一份：桌面端是主配置端（打平/解析失败优先桌面），
-  /// 多手机互传时移动端快照更新则用移动端。
   Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
       downloadSettingsCrossPlatform() async {
     final results = await Future.wait([
@@ -310,8 +263,6 @@ class AccountApi {
     return own;
   }
 
-  /// 拉取指定平台快照（时间优先取 `timestamp` unix 秒，回退解析
-  /// `uploaded_at` 字符串；服务端存的是 UTC 去时区格式，两端同格式可比较）。
   Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
       _downloadSettingsSnapshot(String platform) async {
     final ciyuanxiId = _ciyuanxiId;
@@ -326,7 +277,6 @@ class AccountApi {
     DateTime? uploadedAt;
     final ts = data['timestamp'];
     if (ts is num && ts > 0) {
-      // 解析为本地时间：快照间比较两端一致，冲突弹窗直接展示也是用户本地钟。
       uploadedAt = DateTime.fromMillisecondsSinceEpoch((ts * 1000).round());
     } else {
       final uploadedAtStr = data['uploaded_at'];
@@ -340,9 +290,6 @@ class AccountApi {
     );
   }
 
-  // ─── 服务器负载（自动同步用） ───────────────────────────
-
-  /// 查询服务器负载状态；失败返回 null。
   Future<ServerLoadStatus?> getServerLoad() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) return null;
@@ -356,11 +303,6 @@ class AccountApi {
     }
   }
 
-  // ─── 收藏同步 ───────────────────────────────────────────
-
-  /// 上传收藏歌曲到云端。
-  /// [deletePaths] 非空时走服务端合并（merge: true）：逐条按 path upsert +
-  /// 删除 delete_paths，保留云端其他收藏（跨设备按键合并且可传播本机删除）。
   Future<int> uploadFavorites(
     List<Map<String, dynamic>> favorites, {
     List<String> deletePaths = const [],
@@ -378,7 +320,6 @@ class AccountApi {
     return (data['song_count'] as num?)?.toInt() ?? 0;
   }
 
-  /// 从云端下载收藏歌曲。
   Future<List<Map<String, dynamic>>> downloadFavorites() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -392,11 +333,6 @@ class AccountApi {
         .toList();
   }
 
-  // ─── 听歌统计同步 ───────────────────────────────────────
-
-  // ─── 播放历史同步 ───────────────────────────────────────
-
-  /// 上传播放历史到云端。
   Future<int> uploadHistory(List<Map<String, dynamic>> history) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -409,7 +345,6 @@ class AccountApi {
     return (data['history_count'] as num?)?.toInt() ?? 0;
   }
 
-  /// 从云端下载播放历史。
   Future<List<Map<String, dynamic>>> downloadHistory() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -423,9 +358,6 @@ class AccountApi {
         .toList();
   }
 
-  // ─── 歌单同步 ───────────────────────────────────────────
-
-  /// 删除云端歌单（按云端字符串 cloudId 从文件存储快照删除）。
   Future<void> deleteCloudPlaylist(String playlistId) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -437,7 +369,6 @@ class AccountApi {
     }, fetchTimeoutMs: 15000);
   }
 
-  /// 歌单分片上传（start → chunk×N → finish）。
   Future<({int playlistCount, int songTotal, List<Map<String, dynamic>> idMap})>
       fileSyncUpload(List<Map<String, dynamic>> playlists) async {
     final ciyuanxiId = _ciyuanxiId;
@@ -484,7 +415,6 @@ class AccountApi {
     );
   }
 
-  /// 从云端下载完整歌单数据。
   Future<Map<String, dynamic>?> fileSyncDownload() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -495,9 +425,6 @@ class AccountApi {
     return data.isEmpty ? null : data;
   }
 
-  // ─── 插件同步 ───────────────────────────────────────────
-
-  /// 上传单个插件到云端（subscriptions 随每个请求整包替换云端订阅列表）。
   Future<void> uploadPlugin(
     Map<String, dynamic> plugin, {
     bool isFirst = false,
@@ -515,7 +442,6 @@ class AccountApi {
     }, fetchTimeoutMs: 60000);
   }
 
-  /// 从云端下载插件同步快照（含 plugins 与 subscriptions）。
   Future<Map<String, dynamic>> downloadPluginSnapshot() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -525,7 +451,6 @@ class AccountApi {
         fetchTimeoutMs: 15000);
   }
 
-  /// 按 id 从云端删除插件（「删除全部 / 仅保留本地」的云端落盘操作）。
   Future<void> deleteCloudPlugins(List<String> pluginIds) async {
     if (pluginIds.isEmpty) return;
     final ciyuanxiId = _ciyuanxiId;
@@ -538,10 +463,6 @@ class AccountApi {
     }, fetchTimeoutMs: 15000);
   }
 
-  // ─── 壁纸中心 ───────────────────────────────────────────
-
-  /// 壁纸列表原始字段映射（camelCase 优先、snake_case 兜底，
-  /// 与桌面端 WallpaperGallery 容错逻辑一致）。
   static Map<String, dynamic> normalizeWallpaper(Map<dynamic, dynamic> w) => {
         'id': (w['id'] as num?)?.toInt() ?? 0,
         'title': (w['title'] as String?) ?? '',
@@ -565,7 +486,6 @@ class AccountApi {
         'createdAt': (w['createdAt'] ?? w['created_at'] ?? '') as String,
       };
 
-  /// 获取移动端壁纸广场列表（无需登录）。
   Future<List<Map<String, dynamic>>> fetchWallpapers() async {
     final data = await _auth.requestActionList(
         'list_wallpapers', {'platform': 'mobile'},
@@ -577,7 +497,6 @@ class AccountApi {
         .toList();
   }
 
-  /// 获取当前登录用户的上传列表（含审核状态）。
   Future<List<Map<String, dynamic>>> fetchMyWallpapers() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -594,7 +513,6 @@ class AccountApi {
         .toList();
   }
 
-  /// 上传壁纸（imageData 为 data URL base64 JPEG）。
   Future<void> uploadWallpaper({
     required String title,
     required String description,
@@ -616,10 +534,6 @@ class AccountApi {
     }, fetchTimeoutMs: 90000);
   }
 
-  // ─── 排行榜 ─────────────────────────────────────────────
-
-  /// 获取排行榜。听歌时长上报已统一走 delta 协议（listenStatsProvider），
-  /// 此处只拉取榜单数据。
   Future<LeaderboardData> fetchLeaderboard({
     int limit = 50,
     String period = 'total',
@@ -633,11 +547,6 @@ class AccountApi {
     return LeaderboardData.fromJson(data);
   }
 
-  // ─── 听歌统计增量上报 ───────────────────────────────────
-
-  /// 增量上报听歌时长（stats_mode=delta，与桌面/腕上端统一协议）：
-  /// 只上报自上次成功上报后的增量，服务端合计后回传账号累计/今日/本周真源值。
-  /// 服务端存在待处理重置信号时返回 {resetAt: 时间戳}。
   Future<Map<String, dynamic>> reportListenStatsDelta({
     required int deltaTotal,
     required int deltaDaily,
@@ -663,12 +572,9 @@ class AccountApi {
         'weekly': (data['server_weekly_duration'] as num?)?.toInt() ?? 0,
       };
     } catch (_) {
-      // 上报失败保留本地增量基线，下轮重试。
       return const {};
     }
   }
-
-  // ─── 统计上报（fire-and-forget） ────────────────────────
 
   Future<void> reportAppOpen() async {
     final info = await _deviceInfo();
@@ -746,7 +652,6 @@ class AccountApi {
       'app_version': appVersion,
       'os_version': dev.osVersion,
       'device_model': dev.model,
-      // 设备市场名（如「小米16」）：后台设备管理展示名优先用它，无则回退型号
       'device_name': dev.marketName,
       'device_brand': dev.brand,
       'device_manufacturer': dev.manufacturer,
@@ -757,14 +662,12 @@ class AccountApi {
     try {
       await _action(action, body);
     } catch (_) {
-      // 上报失败静默。
     }
   }
 }
 
 final accountApiProvider = Provider<AccountApi>((ref) => AccountApi(ref));
 
-/// 设置同步序列化：排除设备相关字段（下载路径），与桌面端 settingsSync.ts 对齐。
 Map<String, dynamic> settingsToSyncMap(AppSettings s) => {
       'volume': s.volume,
       'playMode': s.playMode,
@@ -781,16 +684,6 @@ Map<String, dynamic> settingsToSyncMap(AppSettings s) => {
       'organizeRule': s.organizeRule,
     };
 
-/// 云端快照归一化：桌面端嵌套全量快照与移动端扁平快照 → 「移动端同步键 →
-/// 本地类型值」的扁平映射。
-///
-/// 服务端按平台分文件存快照：桌面端是完整嵌套 AppSettings（theme.mode /
-/// theme.accentColor / audio.onlineDefaultQuality / lyrics.enableWordEffect /
-/// download.quality…），移动端才是扁平 13 键——此前按扁平键直取，桌面快照
-/// 几乎全 miss，「下载/登录同步」即使拉到桌面数据也空转。归一化规则：移动端
-/// 扁平键优先，缺失时回退桌面嵌套路径；桌面端没有的字段（volume/playMode/
-/// keepScreenOn/showLyricsTranslation/downloadLyrics 属播放态或移动端特有）
-/// 不产出，合并/比较时视为「保留本地」。
 Map<String, Object?> normalizeCloudSettingsMap(Map<String, dynamic> cloud) {
   Object? pick(String flatKey, [String? nestedPath]) {
     final flat = cloud[flatKey];
@@ -852,7 +745,6 @@ Map<String, Object?> normalizeCloudSettingsMap(Map<String, dynamic> cloud) {
   };
 }
 
-/// 将云端设置映射合并回本地 AppSettings（缺失字段保留本地值）。
 AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
   final m = normalizeCloudSettingsMap(cloud);
   final themeIdx = m['themeMode'] as int?;
@@ -879,10 +771,6 @@ AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
   );
 }
 
-/// 比较本地设置与云端设置是否一致（排除设备相关字段，与桌面端 areSettingsEqual 对齐）。
-///
-/// 仅比较同步字段（settingsToSyncMap 的键集合）；先经 [normalizeCloudSettingsMap]
-/// 归一化（兼容桌面嵌套快照），云端缺字段/类型不合视为与本地一致（本地保留）。
 bool areSettingsEqual(AppSettings local, Map<String, dynamic> cloud) {
   final localMap = settingsToSyncMap(local);
   final m = normalizeCloudSettingsMap(cloud);

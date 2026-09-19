@@ -19,23 +19,17 @@ import '../navigation/routes.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
-/// 最近一次「启动自动弹升级窗」的日期。默认当日只自动弹一次，避免每次冷启动打扰。
 const _lastPromptKey = 'app_update_last_prompt_date';
 
-/// 商店托管安装（F-Droid / Google Play 等）时禁用 APK 内自更新：
-/// F-Droid 政策要求绕过其更新需显式 opt-in，Play 政策直接禁止；
-/// 官网直发（侧载，installer 为 null）保持现状。结果缓存。
 Future<bool> _isStoreInstall() async {
   final source = await fetchInstallerSource();
   if (source == null) return false;
   return source == 'com.android.vending' || source.contains('fdroid');
 }
 
-/// 服务端版本是否比本地新。
 bool hasNewVersion(LatestVersion latest) =>
     compareVersions(latest.version, appVersion) > 0;
 
-/// 解析主版本段与预发布段（如 `1.0.1-beta7` → 主版本 [1,0,1]，预发布 `beta` + 7）。
 ({List<int> fields, String? pre, int preNum}) _parseVersion(String raw) {
   var s = raw.trim();
   if (s.isEmpty) return (fields: const [], pre: null, preNum: 0);
@@ -53,9 +47,6 @@ bool hasNewVersion(LatestVersion latest) =>
   return (fields: fields, pre: preStr, preNum: preNum);
 }
 
-/// 版本号比较（支持 `-betaN`/`-alphaN` 等预发布后缀）：
-/// 主版本数字逐段比较，相等时正式版 > 预发布版；
-/// 预发布之间按前缀（字母）再数字比较，避免 `beta7` 与 `beta6` 被判为相等。
 int compareVersions(String a, String b) {
   final pa = _parseVersion(a);
   final pb = _parseVersion(b);
@@ -67,7 +58,6 @@ int compareVersions(String a, String b) {
     final bv = i < pb.fields.length ? pb.fields[i] : 0;
     if (av != bv) return av > bv ? 1 : -1;
   }
-  // 主版本数字相同：正式版与预发布互相独立（beta 与正式版互不触发更新）。
   if (pa.pre == null || pb.pre == null) return 0;
   final preA = pa.pre;
   final preB = pb.pre;
@@ -81,7 +71,6 @@ int compareVersions(String a, String b) {
   return 0;
 }
 
-/// 通用升级弹窗：展示版本号与更新说明，提供「暂不更新 / 去下载」。
 Future<void> showUpdateDialog(BuildContext context, LatestVersion latest) {
   return showPredictiveDialog<void>(
     context: context,
@@ -121,7 +110,6 @@ Future<void> showUpdateDialog(BuildContext context, LatestVersion latest) {
   );
 }
 
-/// 用系统浏览器打开外部链接（下载 APK 等）。
 Future<void> openExternalUrl(BuildContext context, String url) async {
   if (url.isEmpty) {
     _toast(context, tr('无法打开链接'));
@@ -140,8 +128,6 @@ Future<void> openExternalUrl(BuildContext context, String url) async {
   }
 }
 
-/// 把服务端返回的相对下载链接（如 `/uploads/packages/...`）拼成可打开的绝对地址。
-/// 服务端 `download_url` 通常为站点内相对路径，需补全域名后才能被浏览器/Rust 下载。
 String absoluteDownloadUrl(String url) {
   if (url.isEmpty) return '';
   if (RegExp(r'^https?://', caseSensitive: false).hasMatch(url)) return url;
@@ -149,7 +135,6 @@ String absoluteDownloadUrl(String url) {
   if (base == null || base.host.isEmpty) return url;
   final origin = '${base.scheme}://${base.host}'
       '${base.hasPort ? ':${base.port}' : ''}';
-  // 默认 server 的 API 前缀为 /api，而静态文件 /uploads 挂在站点根下，需去掉前缀。
   var root = base.path;
   if (root.endsWith('/api')) {
     root = root.substring(0, root.length - '/api'.length);
@@ -157,10 +142,6 @@ String absoluteDownloadUrl(String url) {
   return '$origin$root$url';
 }
 
-/// 手动检查更新（如「关于」页按钮）：
-/// [silent] 为 true 时静默，不弹任何提示；否则出错/无新版本时用 toast 提示。
-/// iOS 由 App Store 托管更新、ohos 首版无应用市场分发，均不做应用内自更新
-/// （入口已隐藏，此处兜底）。
 Future<void> checkAppUpdate(
   BuildContext context,
   WidgetRef ref, {
@@ -178,7 +159,6 @@ Future<void> checkAppUpdate(
     }
     return;
   }
-  // 商店安装版不提供应用内自更新，明示用户走商店渠道
   if (await _isStoreInstall()) {
     if (!silent && context.mounted) {
       _toast(context, tr('商店安装版请在安装渠道（商店）内更新'));
@@ -196,7 +176,6 @@ Future<void> checkAppUpdate(
   }
   if (!context.mounted) return;
   if (latest == null) {
-    // 服务端未发布任何版本，视作已是最新而非错误。
     if (!silent && context.mounted) {
       _toast(context, tr('当前已是最新版本（{v}）', {'v': appVersion}));
     }
@@ -209,9 +188,6 @@ Future<void> checkAppUpdate(
   }
 }
 
-/// 启动自动检查：静默。仅当设置开启「启动检测」且当日未弹过时，弹出升级窗。
-/// 商店托管安装（F-Droid/Play）时直接跳过，不请求、不弹窗。
-/// iOS 由 App Store 托管更新、ohos 无自更新渠道，直接跳过。
 Future<void> maybePromptStartupUpdate(WidgetRef ref) async {
   if (Platform.isIOS || PlatformCaps.isOhos) return;
   if (await _isStoreInstall()) return;
@@ -237,19 +213,12 @@ Future<void> maybePromptStartupUpdate(WidgetRef ref) async {
   await showUpdateDialog(ctx, latest);
 }
 
-/// 内测门槛判定：本地版本号预发布段以 beta 开头即为内测构建。
 bool get isBetaBuild {
   final pre = (_parseVersion(appVersion).pre ?? '').toLowerCase();
   return pre.startsWith('beta');
 }
 
-/// 内测版开屏门槛：beta 构建且设备不在内测名单 → 弹全局不可退出弹窗。
-/// 先查资格，不在名单时再看有无待审核的内测申请：
-/// 有 → 弹「审核中」弹窗（仅退出软件）；无 → 弹「申请资格」弹窗。
-/// 返回 true 表示已拦截（调用方跳过后续启动检查）；网络失败 fail-open 放行。
 Future<bool> maybeGateBetaAccess(WidgetRef ref) async {
-  // run/dev/profile 等非正式构建不做内测锁检测，仅正式 release 构建才拦截
-  // 未授权设备（与桌面端一致，便于开发/调试直接进入）。
   if (!kReleaseMode) return false;
   if (!isBetaBuild) return false;
   (bool, bool) access;
@@ -266,17 +235,11 @@ Future<bool> maybeGateBetaAccess(WidgetRef ref) async {
   return true;
 }
 
-/// 启动版本检查统一入口：先做内测门槛（被拦截则不再弹更新窗），再做更新提示。
 Future<void> runStartupVersionChecks(WidgetRef ref) async {
   final gated = await maybeGateBetaAccess(ref);
   if (!gated) await maybePromptStartupUpdate(ref);
 }
 
-/// 内测资格拦截弹窗：全局不可退出（遮罩不可点、系统返回被 PopScope 拦截），
-/// 仅「退出软件」与「申请资格」两个出口；申请页关闭后弹窗仍在最前。
-///
-/// [pending] 为 true：设备已有待审核的内测申请，改为「审核中」提示，
-/// 仅「退出软件」一个按钮，不再提供申请入口。
 Future<void> showBetaGateDialog(BuildContext context, {required bool pending}) {
   return showDialog<void>(
     context: context,
@@ -300,7 +263,6 @@ Future<void> showBetaGateDialog(BuildContext context, {required bool pending}) {
           if (!pending)
             FilledButton(
               onPressed: () {
-                // 跳转反馈页内测申请 tab；返回后本弹窗仍覆盖全局，无法绕过。
                 GoRouter.of(ctx).push('/feedback?tab=1');
               },
               child: Text(tr('申请资格')),

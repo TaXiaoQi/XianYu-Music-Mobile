@@ -29,7 +29,6 @@ import '../../src/i18n/i18n.dart';
 
 enum OnlineDetailType { artist, album, playlist, toplist }
 
-/// 在线详情页参数（经路由 extra 传递）。
 class OnlineDetailArgs {
   final OnlineDetailType type;
   final String pluginId;
@@ -48,7 +47,6 @@ class OnlineDetailArgs {
   });
 }
 
-/// 在线详情页：歌手（歌曲/专辑/简介）、专辑、歌单、榜单详情。
 class OnlineDetailPage extends ConsumerStatefulWidget {
   const OnlineDetailPage({super.key, required this.args});
 
@@ -71,13 +69,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   PluginCatalogService? _catalog;
   PluginSearchService? _searchService;
   PluginSource? _source;
-  /// LX 歌单来源音源 key（raw['_lxSource']，非 null 时歌单曲目走宿主代取）。
   String? _lxSource;
   late final TabController? _tab;
   int _activeTab = 0;
-  /// 歌曲列表滚动控制器，供「回到顶部 / 定位当前播放歌曲」悬浮按钮使用。
   final ScrollController _songScroll = ScrollController();
-  /// 封面补齐任务版本：翻页/切页后自增使旧任务作废（对齐桌面 lxCoverFetchVersion）。
   int _coverFetchVersion = 0;
 
   @override
@@ -124,7 +119,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         : null;
     await _loadSongs(reset: true);
     if (widget.args.type == OnlineDetailType.artist) {
-      // 专辑预取：列表页点进歌手默认在歌曲 tab，专辑后台备好切 tab 即显。
       await _loadAlbums();
     }
   }
@@ -147,7 +141,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final raw = widget.args.raw;
     final List<PluginSearchResult> list;
     if (_lxSource != null) {
-      // LX 引擎详情（歌手/专辑/歌单）：全部宿主代取（对齐桌面 loadLxData）。
       list = await _loadLxSongs(raw, page: page, reset: reset);
       if (!mounted) return;
       setState(() {
@@ -157,9 +150,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         } else {
           _songs = [..._songs, ...list];
         }
-        // 歌手/专辑走宿主搜索无分页（一次拉满即到底）；歌单按页数判断。
         if (widget.args.type != OnlineDetailType.playlist) _isEnd = true;
-        // 不足一页视为到底（多数接口一页 30~100）。
         if (list.length < 30) _isEnd = true;
         _page = page;
         _loadingMore = false;
@@ -191,20 +182,13 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       } else {
         _songs = [..._songs, ...list];
       }
-      // 不足一页视为到底（多数插件一页 30~100）。
       if (list.length < 30) _isEnd = true;
       _page = page;
       _loadingMore = false;
     });
-    // 后台补齐缺失封面（不等接口，封面就绪即局部刷新）。
     _backfillCovers();
   }
 
-  /// LX 引擎详情歌曲加载（对齐桌面端 loadLxData）：
-  /// - 歌手：用歌手名搜索（移动端 lxSearch 无分页，一次拉满）；
-  /// - 专辑：优先专辑 ID 直连原生接口（仅 tx 有 Rust 桥），空则回退
-  ///   专辑名搜索 + 按专辑名过滤（过滤后仍空则直接用搜索结果）；
-  /// - 歌单：宿主代取各源原生歌单曲目接口（kw/kg/tx/wy/mg）。
   Future<List<PluginSearchResult>> _loadLxSongs(
     Map<String, dynamic> raw, {
     required int page,
@@ -218,8 +202,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             limit: 60);
       case OnlineDetailType.album:
         var results = <PluginSearchResult>[];
-        // 优先专辑 ID 直连原生专辑接口（kw/kg/tx/wy/mg，对齐桌面 lxGetAlbumSongs）。
-        // tx 取 albumMid（字母数字），其余源取 albumId（纯数字）。
         final albumId =
             (raw['albumMid'] ?? raw['albumId'] ?? '').toString();
         if (albumId.isNotEmpty) {
@@ -245,7 +227,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                 '[lxAlbumSongs] $lxKey album=$albumId EXCEPTION: $e\n$st');
           }
         }
-        // 回退：直连为空（ID 无效、接口失败或风控），专辑名搜索 + 按专辑名过滤。
         if (results.isEmpty && reset) {
           final searchResult = await lxHostSearchFallback(
               source, lxKey, widget.args.title, limit: 60);
@@ -256,7 +237,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                 albumNorm.contains(nameNorm) ||
                 nameNorm.contains(albumNorm);
           }).toList();
-          // 精确过滤后仍为空，放宽直接用搜索结果（对齐桌面）。
           if (results.isEmpty) results = searchResult;
         }
         return results;
@@ -269,7 +249,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
   }
 
-  /// LX 歌手专辑：搜索歌手名后从结果派生专辑（对齐桌面 deriveLxAlbumResults）。
   Future<List<MfAlbumItem>> _deriveLxAlbums() async {
     final source = _source!;
     final songs = await lxHostSearchFallback(
@@ -282,7 +261,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       final key = '${s.source}:$id';
       final existing = map[key];
       if (existing != null) {
-        // 封面回退：已有条目缺封面时用本曲封面补齐。
         if ((existing.coverUrl == null || existing.coverUrl!.isEmpty) &&
             (s.img != null && s.img!.isNotEmpty)) {
           map[key] = MfAlbumItem(
@@ -316,9 +294,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     return map.values.toList();
   }
 
-  /// 后台补齐缺失封面的歌曲（对齐桌面 fetchMissingLxCovers）：
-  /// MF 榜单/歌单/歌手/专辑曲目常不带封面字段，用宿主 lx_cover 接口按插件平台
-  /// 异步补齐，小并发 + 版本守卫（翻页/切页后作废旧任务），封面就绪即刷新。
   void _backfillCovers() {
     final source = _source;
     if (source == null) return;
@@ -336,7 +311,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     Future<void> worker() async {
       while (cursor < pending.length) {
         final idx = pending[cursor++];
-        // 翻页/切页后版本作废：立即停止，避免继续发无谓请求。
         if (version != _coverFetchVersion || !mounted) return;
         final r = _songs[idx];
         final cover = await fetchLxCoverForSong(source, r);
@@ -358,7 +332,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     if (catalog == null || source == null) return;
     final List<MfAlbumItem> albums;
     if (_lxSource != null) {
-      // LX 歌手专辑：搜索歌手名后从结果派生（对齐桌面 lxCatalogSearch album 分支）。
       albums = await _deriveLxAlbums();
     } else {
       albums = await catalog.getArtistAlbums(source, widget.args.raw);
@@ -372,7 +345,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final source = _source;
     if (catalog == null || source == null) return;
     if (_lxSource != null) {
-      // LX 无歌手简介接口（对齐桌面），直接置空显示「暂无简介」。
       if (!mounted) return;
       setState(() {
         _intro = '';
@@ -392,7 +364,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   QueueItem _queueItemOf(PluginSearchResult r) {
     final source = _source!;
-    // LX 来源（歌单曲目）走 `lx://{source}/{songmid}` 队列项，播放用插件 musicUrl。
     if (_lxSource != null && _searchService != null) {
       return _searchService!.toQueueItem(source, r);
     }
@@ -493,13 +464,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                   },
                   isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
                       '${a.type.name}:${a.pluginId}:${a.title}'),
-                  // 榜单不参与收藏（对齐桌面端：榜单详情隐藏收藏按钮）。
                   onToggleFavorite:
                       isArtist || a.type == OnlineDetailType.toplist
                           ? null
                           : () => _toggleCollectionFavorite(),
                 ),
-                // 歌手 tab 位于头像下方（参考桌面端 ArtistDetailHeader）。
                 if (artistTab != null) ...[
                   const SizedBox(height: 2),
                   artistTab,
@@ -592,10 +561,8 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           final isFav = item != null && favorites.contains(item.path);
           return Builder(
             builder: (rowContext) {
-              // 捕获封面自身 context：飞封面直接取封面 RenderBox 的全局矩形，与列表封面像素级一致。
               BuildContext? coverCtx;
               final g = songRowPlay(ref, onPlay: () async {
-                // 等封面落地后再播放：播放条封面随落地同步更新。
                 final ok = await launchFlyCover(
                   rowContext,
                   coverContext: coverCtx,
@@ -667,7 +634,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         },
         ),
         ),
-        // 右下角「回到顶部 / 定位当前播放歌曲」悬浮按钮。
         SongListScrollFabs(
           controller: _songScroll,
           paths: [for (final r in _songs) _queueItemOf(r).path],

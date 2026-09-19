@@ -19,14 +19,11 @@ import '../../src/widgets/flat_top_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 意见反馈页：提交反馈 + 我的反馈列表。
 class FeedbackPage extends ConsumerStatefulWidget {
   const FeedbackPage({super.key, this.embedded = false, this.initialTab = 0});
 
-  /// 横屏嵌入 mode：隐藏自带标题栏，仅保留 TabBar 以切换「提交/我的」反馈。
   final bool embedded;
 
-  /// 初始 tab：0=提交反馈，1=申请内测，2=我的反馈（内测门槛弹窗跳转用）。
   final int initialTab;
 
   @override
@@ -39,15 +36,13 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   final _contentCtrl = TextEditingController();
   final _betaCtrl = TextEditingController();
 
-  // 提交反馈
-  String _feedbackType = 'problem'; // problem / suggestion
+  String _feedbackType = 'problem';
   final List<String> _images = [];
   bool _submitting = false;
   bool _compressing = false;
   bool _attachAllLogs = false;
   bool _attachErrorLogs = false;
 
-  // 我的反馈
   List<FeedbackItem> _myFeedback = const [];
   bool _loadingFeedback = false;
 
@@ -66,7 +61,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         _loadMyFeedback();
       }
     });
-    // 直接落到「我的反馈」tab 时主动拉取（listener 不触发 initialIndex 变更）。
     if (widget.initialTab == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _myFeedback.isEmpty && !_loadingFeedback) {
@@ -117,8 +111,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     }
   }
 
-  /// 压缩图片：长边 ≤1600px、JPEG 质量 85%（与桌面端 1600/0.82 对齐），
-  /// 小图不放大；服务端最终按 1600/82 重存。
   Future<String> _compressImage(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) throw FormatException(tr('无法解析图片'));
@@ -150,7 +142,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final api = ref.read(accountApiProvider);
     final title = _feedbackType == 'suggestion' ? tr('功能建议') : tr('问题反馈');
     final isProblem = _feedbackType == 'problem';
-    // 勾选后格式化本地应用日志（仅问题反馈附带日志）。
     final errorLogs = isProblem && _attachErrorLogs
         ? ApplicationLogManager.instance.formatExport(onlyErrors: true)
         : null;
@@ -168,7 +159,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         images: _feedbackType == 'suggestion' ? [..._images] : null,
       );
       if (!mounted) return;
-      // 收起键盘进入非输入状态，用完成弹窗替代小提示，避免输入法一直停留。
       FocusScope.of(context).unfocus();
       await _showDoneDialog(tr('反馈已提交，感谢您的支持'));
       if (!mounted) return;
@@ -184,8 +174,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     }
   }
 
-  /// 内测申请提交：与反馈共用 submit_feedback 框架，仅类型为 beta。
-  /// 同一设备存在待审核申请时服务端会拒绝（防刷屏），弹窗提示审核中。
   Future<void> _submitBeta() async {
     if (_submitting) return;
     final reason = _betaCtrl.text.trim();
@@ -213,7 +201,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     } catch (e) {
       if (!mounted) return;
       final msg = e is AuthException ? e.message : tr('提交失败');
-      // 重复申请被拒（服务端 429）：弹窗明示「审核中」，比小提示更显眼。
       if (msg.contains('正在审核')) {
         await _showDoneDialog(msg);
       } else {
@@ -224,7 +211,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     }
   }
 
-  /// 完成弹窗（提交成功/申请审核中），单「确定」按钮。
   Future<void> _showDoneDialog(String msg) {
     return showDialog<void>(
       context: context,
@@ -267,9 +253,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
-    // 竖屏悬浮顶栏（路由态）：TabBarView 铺满全屏、避让量注入各 tab 滚动体
-    // padding，内容从顶栏胶囊与 Tab 气泡下方穿过（穿透观感）；嵌入态由横屏
-    // 壳层顶栏承接，不参与悬浮。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -283,8 +266,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         Tab(text: tr('我的反馈')),
       ],
     );
-    // 悬浮模式内容避让量：顶栏实际总高（状态栏 + 8 顶距 + 48 标题行 + 10 间距
-    // + Tab 气泡原高）+ 6 呼吸；固定/嵌入模式 0（沿用原 Padding 避让结构）。
     final topInset = portraitFloating
         ? MediaQuery.paddingOf(context).top +
             66 +
@@ -298,8 +279,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         children: [
           _tabHost(
             portraitFloating,
-            // 嵌入态（横屏 master-detail）：外层已渲染统一标题条并避开状态栏，
-            // TabBar 直接顶在其下，不再补状态栏高度。
             widget.embedded
                 ? tabBar.preferredSize.height
                 : GlassTopBar.height(context, bottom: tabBar),
@@ -314,8 +293,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ),
             ),
           ),
-          // 嵌入态（横屏 master-detail 右侧）：标题「意见反馈」由外层统一标题
-          // 条承担并避开状态栏，此处仅保留 TabBar 切换条，直接顶在标题条之下。
           if (widget.embedded)
             Positioned(
               top: 0,
@@ -328,7 +305,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               top: 0,
               left: 0,
               right: 0,
-              // 竖屏路由：与横屏嵌入统一纯色平面顶栏（标题条 + TabBar）。
               child: FlatTopBar(
                 leading: const BackButton(),
                 title: tr('意见反馈'),
@@ -341,8 +317,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  /// 内容容器：悬浮模式铺满全屏（[Positioned.fill]，内容穿透顶栏与 Tab 气泡），
-  /// 固定模式沿用 Padding 避让（避让量由调用方按嵌入态计算）。
   Widget _tabHost(bool floating, double dockedTop, Widget child) {
     if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
@@ -367,7 +341,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 反馈类型
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -433,13 +406,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  /// 申请内测 tab：复用反馈提交样式，仅填写申请理由。
   Widget _buildBetaTab(BuildContext context, {double topInset = 0}) {
     final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authProvider);
     if (!auth.isLoggedIn) {
-      // 内测锁场景：弹窗锁住全局时用户只能在本页完成登录，
-      // 按钮直接转去账号页；push 返回仍落回本页（登录态自动刷新）。
       return _emptyHint(
         icon: Icons.lock_outline,
         text: tr('登录后即可申请内测'),
@@ -452,7 +422,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 说明卡片
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -513,7 +482,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  /// 问题反馈的日志勾选区：仅在有日志时展示对应勾选项，避免上传无用日志。
   Widget _buildLogOptions(
       BuildContext context, ColorScheme scheme, List<AppLogEntry> logs) {
     final errorLogs = logs.where((e) => e.level == LogLevel.error).toList();
@@ -541,7 +509,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ],
             ),
           ),
-          // 全部日志
           CheckboxListTile(
             dense: true,
             value: _attachAllLogs,
@@ -553,7 +520,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 Icon(Icons.description_outlined, size: 20, color: scheme.primary),
             onChanged: (v) => setState(() => _attachAllLogs = v ?? false),
           ),
-          // 错误日志（仅在存在错误日志时显示）
           if (errorLogs.isNotEmpty)
             CheckboxListTile(
               dense: true,
@@ -737,7 +703,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   }
 }
 
-/// 反馈类型徽章。
 class _TypeBadge extends StatelessWidget {
   const _TypeBadge({required this.label});
   final String label;
@@ -756,7 +721,6 @@ class _TypeBadge extends StatelessWidget {
   }
 }
 
-/// 反馈状态徽章。
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
   final String status;
@@ -778,7 +742,6 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// 我的反馈列表卡片。
 class _FeedbackCard extends ConsumerWidget {
   const _FeedbackCard({required this.item, required this.onTap});
   final FeedbackItem item;
@@ -868,7 +831,6 @@ class _FeedbackCard extends ConsumerWidget {
   }
 }
 
-/// 反馈详情弹窗：展示完整内容、处理说明、完成图片。
 class _FeedbackDetailDialog extends StatelessWidget {
   const _FeedbackDetailDialog({required this.item});
   final FeedbackItem item;

@@ -2,14 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-/// 当前正在展示的 toast 路由（同一时刻只保留一个，新 toast 直接替换旧的）。
 OverlayEntry? _currentToast;
 
-/// 全局提示（toast）：底部居中的小胶囊，宽度随提示文本收缩（带最大宽度约束），
-/// 显示过程为「淡入 → 停留 → 淡出」。
-///
-/// 走 root Overlay，可覆盖在普通页面、弹窗、底部面板之上。
-/// 替代原先基于 SnackBar 的提示（SnackBar 宽度固定、动画为滑入而非纯淡入淡出）。
 void showXianYuToast(
   BuildContext context,
   String message, {
@@ -19,10 +13,6 @@ void showXianYuToast(
       duration: duration);
 }
 
-/// 用已捕获的 [OverlayState] 展示 toast。
-///
-/// 适用于 await 之后可能跨 async 间隙使用 BuildContext 的场景：提前拿到
-/// OverlayState（不随页面销毁而失效），避免「use context after async gap」。
 void showXianYuToastByOverlay(
   OverlayState overlay,
   String message, {
@@ -36,7 +26,6 @@ void _showToast(
   String message, {
   required Duration duration,
 }) {
-  // 新消息到来时先移除旧 toast（瞬时替换，不叠加堆积）。
   final previous = _currentToast;
   _currentToast = null;
   if (previous != null && previous.mounted) previous.remove();
@@ -65,7 +54,6 @@ class _XianYuToast extends StatefulWidget {
 
   final String message;
 
-  /// 文本完整停留（不含淡入淡出）的时长。
   final Duration duration;
 
   final VoidCallback onDismissed;
@@ -91,7 +79,6 @@ class _XianYuToastState extends State<_XianYuToast>
   void _fadeIn() async {
     await _controller.forward();
     if (!mounted) return;
-    // 淡入完成后停留 [widget.duration]，再淡出并移除自身。
     _hideTimer = Timer(widget.duration, () {
       if (!mounted) return;
       _controller.reverse().then((_) {
@@ -111,7 +98,6 @@ class _XianYuToastState extends State<_XianYuToast>
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    // 悬停于底部安全区上方，水平居中，宽度随文本收缩（上限 85% 屏宽）。
     return Positioned(
       width: media.size.width,
       left: 0,
@@ -151,8 +137,6 @@ class _XianYuToastState extends State<_XianYuToast>
                     color: Colors.white,
                     fontSize: 13.5,
                     height: 1.3,
-                    // 显式清除下划线：不指定时可能继承外层默认样式，
-                    // 导致文字下方出现双黄线。
                     decoration: TextDecoration.none,
                   ),
                 ),

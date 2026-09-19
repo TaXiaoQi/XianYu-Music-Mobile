@@ -18,10 +18,6 @@ import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 账号认证页：未登录时展示登录/注册，已登录时展示个人资料。
-///
-/// [embedded] 用于横屏右侧容器内嵌（壳层 [_AccountPane]），不开二级路由：
-/// 顶栏返回键改为触发 [onBack] 闭合内嵌面板，不进导航栈。
 class AccountPage extends ConsumerStatefulWidget {
   const AccountPage({super.key, this.embedded = false, this.onBack});
 
@@ -43,16 +39,13 @@ class _AccountPageState extends ConsumerState<AccountPage>
   final _codeCtrl = TextEditingController();
   bool _obscure = true;
   int _countdown = 0;
-  // 登录/注册前须勾选同意用户协议（对齐桌面端，服务端下发协议内容）。
   bool _agreed = false;
-  // 登录页登录方式：false=密码登录，true=邮箱验证码登录。
   bool _loginByEmail = false;
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
-    // 切换登录/注册时清空内联错误，避免旧错误残留。
     _tab.addListener(() {
       if (_tab.indexIsChanging) {
         ref.read(authProvider.notifier).clearError();
@@ -89,14 +82,12 @@ class _AccountPageState extends ConsumerState<AccountPage>
       _toast(tr('请输入正确的邮箱'));
       return;
     }
-    // 发送验证码前先过人机验证。
     final captcha = await _requestHumanCaptcha(
       title: tr('发送验证码前验证'),
       description: tr('完成验证后将向邮箱发送验证码。'),
     );
     if (captcha == null || !mounted) return;
     final notifier = ref.read(authProvider.notifier);
-    // 登录页的「邮箱登录」走 type='login'（服务端校验该邮箱已注册）；注册走 register。
     final isEmailLogin = _tab.index == 0 && _loginByEmail;
     try {
       final msg = await notifier
@@ -120,20 +111,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final notifier = ref.read(authProvider.notifier);
     final isLogin = _tab.index == 0;
 
-    // 未勾选协议禁止提交（对齐桌面端 onSubmit）；提示需点名《隐私政策》，
-    // 对齐应用商店「注册登录界面明确提示用户阅读隐私政策」的审核措辞。
     if (!_agreed) {
       notifier.setError(tr('请先阅读并同意《用户协议》和《隐私政策》'));
       return;
     }
 
-    // 注册时先做本地密码一致性校验，避免无谓的人机验证。
     if (!isLogin && _passwordCtrl.text != _confirmCtrl.text) {
       notifier.setError(tr('两次输入的密码不一致'));
       return;
     }
 
-    // 登录/注册前先过人机验证。
     final captcha = await _requestHumanCaptcha(
       title: isLogin ? tr('登录前验证') : tr('注册前验证'),
       description: isLogin ? tr('完成验证后将继续登录当前账号。') : tr('完成验证后将继续创建账号。'),
@@ -165,15 +152,11 @@ class _AccountPageState extends ConsumerState<AccountPage>
       );
     }
 
-    // 登录/注册成功后首次全量同步一次（仅首次，本地有数据且与云端冲突才弹窗口），
-    // 之后两端一致；后续自动同步以客户端为主，只上传新增数据。
     if (mounted && ref.read(authProvider).user != null) {
       await ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
     }
-    // 错误已通过 authProvider.error 反映到内联错误条，无需再弹 SnackBar。
   }
 
-  /// 弹出人机验证弹窗，返回验证通过的 payload；取消返回 null。
   Future<HumanCaptchaPayload?> _requestHumanCaptcha({
     required String title,
     required String description,
@@ -189,15 +172,12 @@ class _AccountPageState extends ConsumerState<AccountPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
-    // 会话失效：弹窗提示并回到登录态。
     if (auth.sessionExpired) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _showSessionExpiredDialog();
       });
     }
-    // 竖屏悬浮顶栏：内容在胶囊下方留 6px 呼吸，环境背景从顶栏下方穿过
-    // （嵌入态由横屏壳层顶栏承接，不参与悬浮）。
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         (ref.watch(settingsProvider
@@ -258,7 +238,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
             child:   Text(tr('确认')),
           ),
           FilledButton(
-            // 本页即账号页，关闭弹窗后自动回到登录表单。
             onPressed: () => Navigator.pop(ctx),
             child:   Text(tr('登录')),
           ),
@@ -295,7 +274,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
     final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
-        // 品牌头部
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
           child: Column(
@@ -329,7 +307,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
             ],
           ),
         ),
-        // 分段式 Tab
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Container(
@@ -420,7 +397,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
     );
   }
 
-  /// 登录方式切换：密码登录 / 邮箱验证码。
   Widget _loginMethodToggle(ColorScheme scheme) {
     Widget item(String label, bool selected, VoidCallback onTap) {
       return Expanded(
@@ -522,7 +498,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
     );
   }
 
-  /// 内联错误条：登录/注册失败时在提交按钮上方显示，不会一闪而过。
   Widget _errorBanner(BuildContext context, AuthState auth) {
     final scheme = Theme.of(context).colorScheme;
     final error = auth.error;
@@ -592,7 +567,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
     );
   }
 
-  /// 柔和圆角输入框：无描边、浅填充，聚焦时才用主题色描边（对齐「我的」页样式）。
   OutlineInputBorder _inputBorder() {
     return OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
@@ -620,7 +594,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
   }
 }
 
-/// 已登录资料视图：英雄头图 + 毛玻璃分组，头像/昵称可编辑，含账号管理入口。
 class _ProfileView extends ConsumerStatefulWidget {
   const _ProfileView({required this.user, required this.onLogout});
   final AuthUser user;
@@ -634,7 +607,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
   AuthNotifier get _notifier => ref.read(authProvider.notifier);
 
   bool _avatarUploading = false;
-  String _avatarStatus = 'none'; // pending / rejected / none
+  String _avatarStatus = 'none';
   String _nicknameStatus = 'none';
   bool _refreshingStatus = false;
 
@@ -644,7 +617,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     _refreshStatus();
   }
 
-  /// 查询头像/昵称审核状态；任一审核通过时重新拉取用户信息。
   Future<void> _refreshStatus() async {
     if (_refreshingStatus) return;
     setState(() => _refreshingStatus = true);
@@ -660,13 +632,11 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         await _notifier.getProfile();
       }
     } catch (_) {
-      // 查询失败静默，保持当前状态。
     } finally {
       if (mounted) setState(() => _refreshingStatus = false);
     }
   }
 
-  /// 点击头像：先检测剩余机会 → 弹前置确认 → 选图 → 压缩 → 上传（走审核流程）。
   Future<void> _pickAvatar() async {
     final limit = await _notifier.getAvatarChangeLimitStatus();
     if (!mounted) return;
@@ -717,7 +687,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     }
   }
 
-  /// 压缩头像：256px 宽度、JPEG 质量 75%（与桌面端一致），输出 base64 data URL。
   Future<String> _compressAvatar(Uint8List bytes) async {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) throw AuthException(tr('无法解析图片'));
@@ -726,7 +695,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
-  /// 点击昵称：先检测剩余机会 → 弹前置确认 → 弹修改昵称弹窗（走审核流程）。
   Future<void> _editNickname() async {
     final limit = await _notifier.getNicknameChangeLimitStatus();
     if (!mounted) return;
@@ -762,7 +730,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
-  /// 邮箱中省略格式化（用户名超过4个字符时，保留前2位和后2位，中间用***代替）
   static String _formatEmail(String email) {
     if (email.isEmpty) return tr('未绑定');
     final parts = email.split('@');
@@ -797,7 +764,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        // 1. 英雄头图卡片（头像可点击上传、昵称可点击修改）
         _ProfileHeaderCard(
           user: user,
           onCopy: _copy,
@@ -805,7 +771,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
           onAvatarTap: _avatarUploading ? null : _pickAvatar,
           onNicknameTap: _editNickname,
         ),
-        // 头像/昵称审核状态
         _StatusBadge(
           status: _avatarStatus,
           pendingText: tr('头像审核中'),
@@ -823,7 +788,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
 
         const SizedBox(height: 24),
 
-        // 2. 「基本信息」分组卡片
         _sectionTitle(context, tr('基本信息')),
         _GlassCard(
           children: [
@@ -852,7 +816,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
 
         const SizedBox(height: 24),
 
-        // 3. 「账号安全与隐私」分组卡片
         _sectionTitle(context, tr('账号安全与隐私')),
         _GlassCard(
           children: [
@@ -906,7 +869,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
 
         const SizedBox(height: 28),
 
-        // 4. 警示型毛玻璃退出登录卡片
         Container(
           decoration: BoxDecoration(
             color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
@@ -973,7 +935,6 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
   }
 }
 
-/// 审核状态小徽章（pending/rejected 时显示，可点击刷新）。
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({
     required this.status,
@@ -1037,8 +998,6 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// 英雄头图区：大尺寸头像 + 2px 渐变描边 + 弥散光影 + 身份胶囊。
-/// 头像可点击上传（带相机角标），昵称可点击修改。
 class _ProfileHeaderCard extends ConsumerWidget {
   const _ProfileHeaderCard({
     required this.user,
@@ -1067,7 +1026,6 @@ class _ProfileHeaderCard extends ConsumerWidget {
       ),
       child: Column(
         children: [
-          // 大尺寸头像与弥散光环（可点击上传）
           GestureDetector(
             onTap: onAvatarTap,
             child: Stack(
@@ -1100,7 +1058,6 @@ class _ProfileHeaderCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
-          // 昵称（可点击修改）
           InkWell(
             onTap: onNicknameTap,
             borderRadius: BorderRadius.circular(8),
@@ -1129,7 +1086,6 @@ class _ProfileHeaderCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
-          // 身份胶囊
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1204,7 +1160,6 @@ class _ProfileHeaderCard extends ConsumerWidget {
   }
 }
 
-/// 头像：支持网络图片 / 首字符兜底 + 弥散光影与 2px 描边。
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.user});
   final AuthUser user;
@@ -1274,7 +1229,6 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// 全高透毛玻璃分组卡片。
 class _GlassCard extends ConsumerWidget {
   const _GlassCard({required this.children});
   final List<Widget> children;
@@ -1310,7 +1264,6 @@ class _GlassCard extends ConsumerWidget {
   }
 }
 
-/// 毛玻璃列表条目：软色图标框 + 标题/副标题 + 尾部动作。
 class _GlassTile extends StatelessWidget {
   const _GlassTile({
     required this.icon,
@@ -1339,7 +1292,6 @@ class _GlassTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            // 图标软背景框
             Container(
               width: 36,
               height: 36,
@@ -1350,7 +1302,6 @@ class _GlassTile extends StatelessWidget {
               child: Icon(icon, size: 19, color: scheme.primary),
             ),
             const SizedBox(width: 14),
-            // 左侧标题区（单行防折行）
             if (subtitle != null)
               Expanded(
                 child: Column(
@@ -1390,7 +1341,6 @@ class _GlassTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
             ],
-            // 右侧 Value 值区（完整展示邮箱等文本）
             if (value != null && value!.isNotEmpty) ...[
               if (subtitle == null) const Spacer(),
               Flexible(
@@ -1414,16 +1364,14 @@ class _GlassTile extends StatelessWidget {
   }
 }
 
-/// 沉浸氛围背景。
 class _AmbientBackground extends ConsumerWidget {
   const _AmbientBackground();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return IgnorePointer(
-      // 跟随页面底色：壁纸模式下透明透出壁纸，常规模式保持统一页面底色。
       child: Container(color: appScaffoldBackground(context, ref)),
     );
   }
 }
-
+

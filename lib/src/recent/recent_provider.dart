@@ -9,7 +9,6 @@ import '../online/online_meta_store.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
 
-/// 最近播放记录项。
 class RecentEntry {
   final String songPath;
   final int playedAt;
@@ -57,7 +56,6 @@ class RecentManager extends StateNotifier<RecentState> {
           .where((p) => p.isNotEmpty)
           .toList();
 
-      // 本地歌曲：批量查询曲库元数据。
       final localPaths = paths.where((p) => !_isOnline(p)).toList();
       final songMap = <String, Song>{};
       if (localPaths.isNotEmpty) {
@@ -71,7 +69,6 @@ class RecentManager extends StateNotifier<RecentState> {
         } catch (_) {}
       }
 
-      // 在线歌曲：优先从持久化元数据池还原（播放时写入），其次收藏。
       final onlinePaths = paths.where(_isOnline).toList();
       final onlineMeta = onlinePaths.isEmpty
           ? <String, QueueItem>{}
@@ -123,7 +120,6 @@ class RecentManager extends StateNotifier<RecentState> {
   bool _isOnline(String path) =>
       path.startsWith('lx://') || path.startsWith('plugin://');
 
-  /// 播放全部（或从指定索引开始）。
   Future<void> play(int index) async {
     final items = state.entries
         .map((e) => e.toQueueItem())
@@ -138,7 +134,6 @@ class RecentManager extends StateNotifier<RecentState> {
       final dbPath = await _ref.read(dbPathProvider.future);
       await statsRemoveFromRecentHistory(
           dbPath: dbPath, songPaths: [songPath]);
-      // 同步清理元数据池（对齐桌面端：仍被收藏引用时保留，收藏有独立存储不受影响）。
       final isFav = _ref.read(favoritesProvider).entries
           .any((f) => f.path == songPath);
       if (!isFav) {
@@ -152,7 +147,6 @@ class RecentManager extends StateNotifier<RecentState> {
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
       await statsClearRecentHistory(dbPath: dbPath);
-      // 同步清空在线元数据池（收藏条目有独立存储，不受影响）。
       await _ref.read(onlineMetaStoreProvider).clear();
     } catch (_) {}
     await refresh();

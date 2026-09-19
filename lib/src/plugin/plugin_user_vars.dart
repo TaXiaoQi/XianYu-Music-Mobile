@@ -6,11 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 
-/// 插件用户变量定义（与桌面端 PluginUserVariable / MusicFree IPlugin.IUserVariable 一致）。
 class PluginUserVar {
   final String name;
   final String? title;
-  final String type; // text | password | select
+  final String type;
   final String? defaultValue;
   final List<String> options;
   final String? description;
@@ -31,8 +30,6 @@ class PluginUserVar {
   bool get isPassword => type == 'password';
   bool get isSelect => type == 'select' && options.isNotEmpty;
 
-  /// 兼容 MusicFree（name/title/defaultValue）与 Baka（key/label/default）两种约定。
-  /// key 优先作为变量键（Baka 约定），name 其次（MF 约定）；name≠key 时 name 作为显示名。
   static List<PluginUserVar> normalize(dynamic raw) {
     List<dynamic> list;
     if (raw is List) {
@@ -103,8 +100,6 @@ class PluginUserVar {
   }
 }
 
-/// 用户变量值持久化：SharedPreferences，按插件 ID 存储。
-/// 键与桌面端 localStorage 规则对齐（`plugin_user_vars.<pluginId>`）。
 class PluginUserVarStore {
   static const _prefix = 'plugin_user_vars.';
 
@@ -126,18 +121,15 @@ class PluginUserVarStore {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('$_prefix$pluginId', jsonEncode(values));
     } catch (_) {
-      // 忽略写入失败
     }
   }
 }
 
-/// 用户变量值缓存（StateNotifier，供引擎懒加载时同步读取）。
 class PluginUserVarValuesNotifier extends StateNotifier<Map<String, Map<String, String>>> {
   PluginUserVarValuesNotifier() : super({});
 
   final store = PluginUserVarStore();
 
-  /// 读取插件的用户变量值（首次访问时从磁盘加载并缓存）。
   Future<Map<String, String>> valuesOf(String pluginId) async {
     final cached = state[pluginId];
     if (cached != null) return cached;
@@ -146,7 +138,6 @@ class PluginUserVarValuesNotifier extends StateNotifier<Map<String, Map<String, 
     return values;
   }
 
-  /// 同步读取缓存值（引擎懒加载回调使用，无缓存时返回空）。
   Map<String, String> cachedValuesOf(String pluginId) => state[pluginId] ?? {};
 
   Future<void> save(String pluginId, Map<String, String> values) async {
@@ -159,7 +150,6 @@ final pluginUserVarValuesProvider =
     StateNotifierProvider<PluginUserVarValuesNotifier, Map<String, Map<String, String>>>(
         (ref) => PluginUserVarValuesNotifier());
 
-/// 获取插件的用户变量定义（触发插件加载以读取 metadata.userVariables）。
 Future<List<PluginUserVar>> getPluginUserVars(PluginEngine engine, PluginSource source) async {
   if (source.format != PluginFormat.musicfree) return const [];
   final metadata = await engine.ensureLoaded(source);

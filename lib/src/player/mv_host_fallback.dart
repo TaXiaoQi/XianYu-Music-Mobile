@@ -1,10 +1,3 @@
-/// 宿主侧 MV 兜底解析：对齐桌面端 useBilibiliVideoBackground 的
-/// resolveKugouMvSource（m.kugou.com 换 MP4 流）与 resolveBilibiliVideoSource
-/// （api.bilibili.com 换 DASH 视频流）。
-///
-/// 用途：所属插件没实现 `getMvSource`（旧版酷狗/B 站插件只有歌曲解析）或
-/// 解析失败时，用歌曲自带的 mvHash / BV / AV 直接从宿主补齐视频源，避免
-/// 把"插件接口不存在"误报成"此歌曲无 MV"。
 library;
 
 import 'dart:convert';
@@ -12,7 +5,6 @@ import 'dart:io';
 
 import 'mv_source.dart';
 
-/// 取多个候选字符串里的第一个非空（用于字段名不一的兼容取值）。
 String _firstString(List<dynamic Function()> getters) {
   for (final g in getters) {
     final v = g();
@@ -21,7 +13,6 @@ String _firstString(List<dynamic Function()> getters) {
   return '';
 }
 
-/// 把任意 JSON 节点转成 String→dynamic 映射；非 Map 返回 null（避免到处 cast）。
 Map<String, dynamic>? _strMap(dynamic v) {
   if (v is! Map) return null;
   return Map<String, dynamic>.from(v);
@@ -37,7 +28,6 @@ Map<String, dynamic>? _firstStrMapWhere(
   return null;
 }
 
-/// 通用 GET → JSON（失败/非 2xx/解析失败返回 null，不抛异常）。
 Future<Map<String, dynamic>?> _httpGetJson(
   String url,
   Map<String, String> headers,
@@ -58,12 +48,8 @@ Future<Map<String, dynamic>?> _httpGetJson(
   }
 }
 
-// ─── 酷狗兜底 ────────────────────────────────────────────────────────
-
 final RegExp _kugouPattern = RegExp(r'kugou|酷狗', caseSensitive: false);
 
-/// 歌曲是否疑似酷狗来源（按 source / platform / pluginId 关键词识别，
-/// 对齐桌面端 isKugouPluginSong 的 path[2]/plugin_id/platform/source 判断）。
 bool isKugouSong(Map<String, dynamic> song) {
   final identity = [
     song['source'],
@@ -76,7 +62,6 @@ bool isKugouSong(Map<String, dynamic> song) {
   return _kugouPattern.hasMatch(identity);
 }
 
-/// 提取酷狗 MV hash：仅接受 32 位十六进制（对齐桌面端 extractKugouMvHash）。
 String? extractKugouMvHash(Map<String, dynamic> song) {
   final mvValue = song['mvHash'] ?? song['mv'] ?? song['mvdata'];
   String hash = '';
@@ -91,7 +76,6 @@ String? extractKugouMvHash(Map<String, dynamic> song) {
 }
 
 const List<(String, String, int)> _kugouLevels = [
-  // key, quality, height
   ('le', '480P', 480),
   ('sd', '720P', 720),
   ('hd', '1080P', 1080),
@@ -111,8 +95,6 @@ int _streamSize(Map<String, dynamic> stream) {
   return v is num ? v.toInt() : 0;
 }
 
-/// 酷狗 MV 宿主兜底：m.kugou.com/app/i/mv.php 无需签名，
-/// 用歌曲自带 mvHash 直接换取 MP4 流。
 Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36';
@@ -136,7 +118,6 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   }
   if (raw.isEmpty) return null;
 
-  // 按画质档去重（hd/sq 同为 1080P 保留体积更大的一档）
   final byQuality = <String, (int, Map<String, dynamic>)>{};
   for (final (key, height, stream) in raw) {
     final q = _kugouLevelQuality(key);
@@ -161,7 +142,7 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   }
   if (selected == null) {
     for (final e in entries) {
-      if (e.$2.$1 <= target) selected = e; // 保留最高一档（≤ 目标）
+      if (e.$2.$1 <= target) selected = e;
     }
   }
   selected ??= entries.first;
@@ -214,13 +195,9 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   );
 }
 
-// ─── B 站兜底 ────────────────────────────────────────────────────────
-
 final RegExp _bilibiliPattern =
     RegExp(r'bilibili|哔哩哔哩|哔哩|b站', caseSensitive: false);
 
-/// 歌曲是否疑似 B 站来源：带 bvid/aid 必真，否则按关键词识别
-/// （对齐桌面端 isBilibiliPluginSong 的 BV/AV + 身份关键词判断）。
 bool isBilibiliSong(Map<String, dynamic> song) {
   if ((song['bvid']?.toString() ?? '').isNotEmpty ||
       (song['aid']?.toString() ?? '').isNotEmpty) {
@@ -239,7 +216,6 @@ bool isBilibiliSong(Map<String, dynamic> song) {
   return _bilibiliPattern.hasMatch(identity);
 }
 
-/// 提取 B 站 BV/AV/CID（对齐桌面端 extractBilibiliIdentity 的候选拼串取号）。
 Map<String, String> extractBilibiliIdentity(Map<String, dynamic> song) {
   String bvid = song['bvid']?.toString() ?? '';
   String aid = song['aid']?.toString() ?? '';
@@ -255,7 +231,7 @@ Map<String, String> extractBilibiliIdentity(Map<String, dynamic> song) {
     aid = avMatch?.group(1) ?? '';
   }
   if (aid.isEmpty && bvid.isEmpty && RegExp(r'^\d+$').hasMatch(id)) {
-    aid = id; // 纯数字 id 兜底当作 av 号（仅当无 bvid 时）
+    aid = id;
   }
   if (aid.isNotEmpty && aid.toLowerCase().startsWith('av')) {
     aid = aid.substring(2);
@@ -285,11 +261,9 @@ int _biliQualityId(String quality) {
   for (final p in _biliQualityPresets) {
     if (p.key == quality) return p.qn;
   }
-  return 64; // 默认 720P
+  return 64;
 }
 
-/// B 站宿主兜底：用歌曲自带的 BV/AV 号查 view 拿 CID，再走 playurl 取 DASH 视频流。
-/// B 站 DASH 视频流无音轨，移动端视频静音仅作画面、音频仍由播放器放歌，正好匹配。
 Future<MvSource?> resolveBilibiliVideoSource(
   Map<String, dynamic> song,
   String quality,
@@ -410,8 +384,6 @@ Future<MvSource?> resolveBilibiliVideoSource(
   );
 }
 
-/// 组合调度入口：插件 getMvSource 全链路失败后调用。
-/// 按来源识别走酷狗（mvHash）或 B 站（BV/AV）宿主解析，返回 null 表示都不适用。
 Future<MvSource?> resolveHostMvFallback({
   required Map<String, dynamic> song,
   required String quality,

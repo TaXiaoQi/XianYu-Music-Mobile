@@ -10,38 +10,24 @@ import 'plugin_host_fallback.dart';
 import 'plugin_store.dart';
 import 'baka_plugin_manager.dart';
 
-/// 插件引擎编排层：负责插件加载/调用/生命周期，LX 请求封装。
-///
-/// 沙箱执行全部在 Rust 侧（rquickjs/QuickJS），本层仅做：
-/// - 通过 FRB 把加载/调用路由到后端引擎
-/// - 解析 LX 脚本头信息 / 格式检测
-/// - LX request 协议封装（musicUrl / lyric / pic）
-/// - 插件实例懒加载与并发初始化锁
 class PluginEngine {
   final String dataDir;
   final PluginStore store;
 
-  /// 用户变量值提供器：懒加载 MusicFree 插件时按插件 ID 取已保存的值。
   Future<Map<String, String>> Function(String pluginId)? userVarsProvider;
 
-  /// 已就绪的插件 ID 集合（沙箱实例存在）。
   final Set<String> _ready = {};
 
-  /// 并发初始化锁：同一插件的并发加载共享同一个 Future。
   final Map<String, Future<Map<String, dynamic>?>> _ensureLock = {};
 
-  /// 已加载插件的元数据缓存。
   final Map<String, Map<String, dynamic>> _metadata = {};
 
-  /// 插件 ID 别名（旧存储 ID → 实际 hash ID）。
   final Map<String, String> _aliases = {};
 
-  /// LX 直链缓存（对齐原 Rust URL_CACHE：TTL 10 分钟）。
   static const Duration _lxUrlCacheTtl = Duration(minutes: 10);
   final Map<String, ({String url, String type, Map<String, String>? headers, DateTime expiresAt})>
       _lxUrlCache = {};
 
-  /// 同 (音源, 歌曲, 音质) 并发解析去重：多路请求共享同一个 Future。
   final Map<String, Future<Map<String, dynamic>?>> _lxUrlInflight = {};
 
   static const int _requestTimeout = 30000;
@@ -50,8 +36,6 @@ class PluginEngine {
 
   PluginEngine(this.dataDir, this.store);
 
-  /// Baka/Toskysun 系列插件独立管理器（对齐桌面 bakaPluginManager 架构拆分）：
-  /// 识别锚点、声明档读取与原生键媒体解析收拢于此，MF 主路径保持纯净。
   late final BakaPluginManager bakaManager = BakaPluginManager(this);
 
   String _resolveId(String pluginId) => _aliases[pluginId] ?? pluginId;
@@ -69,11 +53,9 @@ class PluginEngine {
 
   // ==================== 脚本格式检测 / 头信息解析 ====================
 
-  /// 检测脚本是否为 LX 格式（与桌面端 isLxPluginScript 对齐）。
   bool isLxPluginScript(String script) {
     final trimmed = script.trim();
 
-    // MusicFree 格式特征（优先级最高）
     final hasMusicFreeExport = RegExp(r'\bmodule\.exports\s*[.=]').hasMatch(trimmed) ||
         RegExp(r'\bexports\s*\.\s*default\s*=').hasMatch(trimmed);
     final hasMusicFreePlatform = RegExp(r"""\bplatform\s*[=:]\s*['"]""").hasMatch(trimmed);
@@ -84,7 +66,6 @@ class PluginEngine {
       return false;
     }
 
-    // LX 格式特征
     if (RegExp(r'\blx\s*\.\s*(on|send)\s*\(').hasMatch(trimmed)) return true;
     if (RegExp(r'EVENT_NAMES\s*\.\s*request').hasMatch(trimmed)) return true;
     if (RegExp(r"""globalThis\s*\[\s*['"]lx['"]\s*]""").hasMatch(trimmed)) return true;
@@ -105,7 +86,6 @@ class PluginEngine {
     return false;
   }
 
-  /// 解析 LX 脚本头注释（@name/@version/@author/@description/@homepage）。
   Map<String, String> parseLxScriptInfo(String script) {
     final match = RegExp(r'^/\*[\S|\s]+?\*/').firstMatch(script);
     final result = <String, String>{};
@@ -122,7 +102,6 @@ class PluginEngine {
 
   // ==================== 加载 ====================
 
-  /// 加载 LX 插件，返回 initInfo（sources 等）；失败返回 null。
   Future<Map<String, dynamic>?> loadLx(
     String pluginId,
     String script, {
@@ -152,7 +131,6 @@ class PluginEngine {
     return result.metadata;
   }
 
-  /// 加载 MusicFree 插件，返回元数据；失败返回 null。
   Future<Map<String, dynamic>?> loadMusicFree(
     String pluginId,
     String script, {
@@ -183,7 +161,6 @@ class PluginEngine {
     return result.metadata;
   }
 
-  /// 调用插件方法（MusicFree 用 method 名；LX 固定 method='request'）。
   Future<dynamic> call(
     String pluginId,
     String method,
@@ -196,7 +173,6 @@ class PluginEngine {
       throw PluginEngineException(
           tr('插件实例不存在: {pluginId}', {'pluginId': pluginId}));
     }
-    // 鉴权熔断：密钥失效插件的请求直接本地失败，不打源站（防封 IP）
     if (method == 'request' && isAuthBanned(sandboxId)) {
       throw PluginEngineException(
           tr('音源鉴权失效已临时熔断（5 分钟后自动重试）: {pluginId}',
@@ -222,7 +198,6 @@ class PluginEngine {
     return result.data;
   }
 
-  /// 确保插件实例已加载（懒加载：从 store 读取脚本并加载）。
   Future<Map<String, dynamic>?> ensureLoaded(PluginSource source) async {
     if (!source.enabled) return null;
     final id = _resolveId(source.id);
@@ -260,7 +235,6 @@ class PluginEngine {
             '${source.name}(${source.id}) 加载成功 (${isLx ? 'lx' : 'musicfree'})');
       }
       if (info != null && info['id'] != null && info['id'] != source.id) {
-        // 重新加载得到的 hash 与存储 ID 不一致时注册别名
         final newId = info['id'].toString();
         if (_ready.contains(newId)) {
           linkAlias(source.id, newId);
@@ -275,11 +249,6 @@ class PluginEngine {
 
   // ==================== 可播放能力 ====================
 
-  /// 判断插件是否具备可播能力，供日推等聚合场景在收录歌曲前过滤，
-  /// 避免把「能搜到但无法播放」的插件歌曲混入列表（对齐桌面端日推只走可播放插件）。
-  /// - MusicFree：需实现 `getMediaSource`（元数据 `_availableMethods` 含该键）。
-  /// - LX：需声明至少一个 `music` 音源且在 `actions` 中含 `musicUrl`。
-  /// 加载失败或无对应方法一律视为不可播。
   Future<bool> canPlayMusic(PluginSource source) async {
     if (!source.enabled) return false;
     try {
@@ -304,10 +273,6 @@ class PluginEngine {
   }
 
   // ==================== 鉴权失效熔断 ====================
-  // 插件 API 密钥失效（401/API密钥不存在或已被禁用）时重试毫无意义，
-  // 且批量播放（专辑页"播放所有"）会对同一死 API 连环扫射上百请求，
-  // 导致源站封 IP。按插件粒度熔断：连续 2 次鉴权错误 → 5 分钟内所有
-  // 请求直接本地失败（零 HTTP），到期自动恢复重试。
   static final Map<String, DateTime> _authBannedUntil = {};
   static final Map<String, int> _authFailStreak = {};
   static const Duration _authBanTtl = Duration(minutes: 5);
@@ -339,11 +304,8 @@ class PluginEngine {
 
   // ==================== LX 请求协议 ====================
 
-  /// 内部音质键 → LX 插件音质串（对齐桌面端 qualityKeyToLxQuality）：
-  /// LX 体系没有 96k/mgg 概念，mgg 取最低标准档 128k；其余档位同名直传。
   static String lxQualityKeyFor(String q) => q == 'mgg' ? '128k' : q;
 
-  /// 向 LX 插件发送请求（source/action/info 协议）。
   Future<dynamic> lxRequest(
     PluginSource source,
     String action,
@@ -395,13 +357,11 @@ class PluginEngine {
 
   // ==================== MusicFree 播放直链 ====================
 
-  /// 音质阶梯（低 → 高，对应 12 档 rank）。第 5 档（flac）起为无损。
   static const List<String> _qualityLadder = [
     'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
     'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
   ];
 
-  /// 常见插件音质别名 → 统一 12 档键（对齐桌面 normalizeQualityKey）。
   static const Map<String, String> _qualityAliases = {
     '96k': 'mgg', 'ogg96': 'mgg', 'mgg': 'mgg',
     '128': '128k', '128k': '128k',
@@ -424,28 +384,18 @@ class PluginEngine {
     return _qualityLadder.contains(normalized) ? normalized : _qualityAliases[normalized];
   }
 
-  /// 归一化插件音质声明到统一 12 档键（对齐桌面 normalizeQualityKey）。
   static String? normalizeQualityKey(dynamic raw) => _normalizeQualityKey(raw);
 
-  /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）。
   static String _qualityKeyToPluginString(String q) => q == 'mgg' ? '96k' : q;
 
-  /// 12 档音质阶梯（低 → 高）公开只读（供 Baka 管理器/探测层复用）。
   static const List<String> qualityLadder = _qualityLadder;
 
-  /// 内部键 → Baka 插件原生音质串（mgg 在插件侧为 96k）公开包装。
   static String qualityKeyToPluginString(String q) =>
       _qualityKeyToPluginString(q);
 
   static bool _isLossless(String q) =>
       _qualityLadder.indexOf(q) >= _qualityLadder.indexOf('flac');
 
-  /// 内部键 → MusicFree 四级键（对齐桌面 qualityKeyToMfQuality）。
-  ///
-  /// 原版 MusicFree 插件 getMediaSource 的入参是四级键 low/standard/high/super
-  /// （约相当于 128k / 320k / FLAC / 超高），插件内部 QUALITY_MAPPING 只认这 4 个键。
-  /// 映射规则：mgg/128k/192k → low；320k → standard；flac → high；其余无损 → super。
-  /// 注意 _qualityLadder 为 0 基索引（320k 在 index 3），对应桌面 rank 需 +1。
   static String _qualityKeyToMfQuality(String q) {
     final rank = _qualityLadder.indexOf(q);
     if (rank < 0) return 'standard';
@@ -455,21 +405,10 @@ class PluginEngine {
     return 'low';
   }
 
-  /// 内部键 → MusicFree 四级键公开包装（供探测层按四级键分组代表档）。
   static String qualityKeyToMfQuality(String q) => _qualityKeyToMfQuality(q);
 
-  /// MusicFree 四级键顺序（低 → 高），对齐桌面 MF_QUALITY_ORDER。
   static const List<String> _mfQualityOrder = ['low', 'standard', 'high', 'super'];
 
-  /// 构建 MusicFree 音质候选（对齐桌面 runPluginGetMusicInfo 的 MF 四级键主路径）。
-  ///
-  /// 原版 MusicFree 插件 getMediaSource 的入参是四级键 low/standard/high/super，
-  /// 插件内部 QUALITY_MAPPING 只认这 4 个键（supportedQualities 声明仅用于展示）。
-  /// 若按声明值直传原生键，128k/flac 等在插件 QUALITY_MAPPING 里查不到映射，
-  /// 会全部回退到默认档（如 320k），导致音质列表塌缩成只有一档。
-  ///
-  /// 主路径统一用 _qualityKeyToMfQuality 映射到四级键，按官方 asc 顺序
-  /// （首选 → 更高 → 更低）逐级尝试；pause 时仅尝试首选档。
   static List<String> _musicFreeQualityCandidates(
     String preferred,
     String fallback,
@@ -488,11 +427,6 @@ class PluginEngine {
     return order;
   }
 
-  /// 构建 MusicFree 原生键候选（对齐桌面 buildNativePluginQualityPairs）。
-  ///
-  /// 仅当四级键全部报「不支持音质」时作为兜底补试；部分 QQ/MusicFree 插件
-  /// 实际接收 flac/320k/128k/super 等原生键。按降级方向生成候选，无损档
-  /// 额外补充 'super'（部分插件把无损档称作 super）。
   static List<String> _musicFreeNativeCandidates(
     String preferred,
     String fallback,
@@ -530,28 +464,17 @@ class PluginEngine {
     }
 
     if (declaredKeys.isNotEmpty) {
-      // 候选为插件串（mgg→96k），需先归一化再与声明键比对。
       final filtered = candidates.where((c) {
         final norm = _normalizeQualityKey(c);
         return norm != null && declaredKeys.contains(norm);
       }).toList();
       if (filtered.isNotEmpty) return filtered;
     }
-    // 声明键无一匹配时退回候选链首档，避免完全空候选。
     return candidates.take(1).toList();
   }
 
-  /// 是否 Baka 系列插件：委托独立管理器（锚点顺序与缓存语义见
-  /// [BakaPluginManager.isBakaPlugin]，对齐桌面 BakaPluginManager.isBakaPlugin）。
   bool isBakaPlugin(String pluginId) => bakaManager.isBakaPlugin(pluginId);
 
-  /// 解析 MusicFree 插件播放直链。
-  ///
-  /// 与桌面端 pluginGetMusicInfo 对齐：主路径传 MF 四级键（low/standard/high/super），
-  /// 四级键全部报「不支持音质」时兜底补试原生键；参考包内同时带 url/headers。
-  /// Baka 系列插件在入口转交独立管理器（对齐桌面 pluginEngineMedia 分发：
-  /// BakaMusic API 向下兼容 MF，但播放音质应优先使用 Baka 原生键）。
-  /// musicItem 会补齐 platform=插件名（对齐 resetMediaItem）。
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
     Map<String, dynamic> songInfo, {
@@ -569,8 +492,6 @@ class PluginEngine {
       }
     }
 
-    // 优先透传搜索返回的原始条目（对齐桌面 getMediaSource(item.rawData, pluginName)），
-    // 仅补充 platform 与常见字段别名，避免丢 title/artist/id 导致解析失败。
     final raw = songInfo['rawData'];
     final musicItem = raw is Map<String, dynamic>
         ? Map<String, dynamic>.from(raw)
@@ -578,7 +499,6 @@ class PluginEngine {
     if (musicItem['platform'] == null) {
       musicItem['platform'] = source.name;
     }
-    // 字段别名兜底：插件常读 title/artist/id，归一化字段可能在 raw 之外。
     if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
       musicItem['title'] = songInfo['name'];
     }
@@ -594,8 +514,6 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
-    // Baka 系列插件转交独立管理器：12 档原生键主路径 + legacy 逐档回退 +
-    // 在途去重/结果缓存（对齐桌面 pluginEngineMedia 分发 + bakaPluginManagerMedia）。
     if (bakaManager.isBakaPlugin(source.id)) {
       return bakaManager.getMediaSource(
         source,
@@ -606,9 +524,6 @@ class PluginEngine {
       );
     }
 
-    // 主路径：MF 四级键按 asc 顺序尝试；记录是否出现「不支持音质」错误。
-    // 单档 = 1 次调用（降级由调用方候选链逐档负责），失败延迟重试 1 次
-    // （对齐桌面 pluginEngineMedia 每档重试语义，吸收插件网络抖动）。
     final tryQs = _musicFreeQualityCandidates(preferred, fallback, declaredKeys);
     var unsupportedQuality = false;
     for (final q in tryQs) {
@@ -619,11 +534,9 @@ class PluginEngine {
       } catch (e) {
         final msg = e is PluginEngineException ? e.message : e.toString();
         if (isUnsupportedQualityError(msg)) unsupportedQuality = true;
-        // 单档失败继续下一档
       }
     }
 
-    // 兜底：四级键全部报「不支持音质」时补试原生键，避免可播放歌曲被误判。
     if (unsupportedQuality) {
       final tried = tryQs.toSet();
       for (final q in _musicFreeNativeCandidates(preferred, fallback, declaredKeys)) {
@@ -634,15 +547,12 @@ class PluginEngine {
           final url = extractMfPlayableUrl(response, requestedKey: q);
           if (url != null) return url;
         } catch (_) {
-          // 单档失败继续下一档
         }
       }
     }
     return null;
   }
 
-  /// 单档 getMediaSource 调用 + 失败延迟重试 1 次（对齐桌面每档重试）。
-  /// 「不支持音质」属确定性失败，直接抛出不重试；空结果由调用方按下一档处理。
   Future<dynamic> _callGetMediaSourceWithRetry(
       String pluginId, Map<String, dynamic> musicItem, String q) async {
     try {
@@ -655,21 +565,12 @@ class PluginEngine {
     }
   }
 
-  /// 从插件 getMediaSource 返回中提取可播放直链（公开：Baka 管理器复用）。
   static ResolvedMediaUrl? extractMfPlayableUrl(
     dynamic response, {
     String? requestedKey,
   }) {
     if (response == null) return null;
-    // QQ 60 秒试听链（RS02 前缀）不是可用播放源：走免费公共中转的 QQ 插件游客
-    // 模板恒返试听且各音质档同一文件。若照常返回用户只能听到 60 秒还误以为歌
-    // 就这「那么短」。拒收并继续下一音质档，全档失败由起播失败行为透出（对齐桌面
-    // bakaPluginManagerMedia 的 shouldAcceptMediaResult）。
     bool notQqTrial(String url) => !isQqTrialMediaUrl(url);
-    // 采用插件实际返回的档位（quality/type/actualQuality），对齐桌面端
-    // `actualQuality = normalizeQualityKey(result.quality) ?? inferActualQualityFromMediaUrl`。
-    // 插件把 flac 请求降级为 320k 时会如实报告，丢掉它会导致音质菜单/体积探测虚高，
-    // 出现「假音质」。归一化失败则回落到请求档，由下游无损扩展名校验兜底。
     final requestedNorm =
         requestedKey == null ? null : _normalizeQualityKey(requestedKey);
     if (response is String) {
@@ -695,8 +596,6 @@ class PluginEngine {
           reported = _normalizeQualityKey(qField);
         }
         final h = obj['headers'];
-        // 加密源密钥（QMC2 ekey/cek）透传：仅下载链路消费，在线播放端
-        // ExoPlayer 无法实时解密，交由下载端 Rust QMC2 解密。
         final ekey = (obj['ekey'] ?? obj['cek']) as String?;
         return ResolvedMediaUrl(
           url: url,
@@ -709,7 +608,6 @@ class PluginEngine {
     return null;
   }
 
-  /// 解析歌曲播放直链。
   Future<Map<String, dynamic>?> getMusicUrl(
     PluginSource source,
     String sourceKey,
@@ -723,7 +621,6 @@ class PluginEngine {
     });
     if (response == null) return null;
 
-    // 兼容对象返回 { url, type, headers, ... } 与纯字符串
     String? url;
     String type = quality;
     Map<String, String>? headers;
@@ -755,9 +652,6 @@ class PluginEngine {
 
   // ==================== LX 直链解析编排 ====================
 
-  /// 解析歌曲缓存键 ID（对齐原 Rust resolve_song_id）：
-  /// kw/tx/wy → songmid；kg → _types[lxQuality].hash → hash → songmid；
-  /// mg → copyrightId → songmid。
   String _lxCacheSongId(Map<String, dynamic> songInfo, String quality) {
     final songmid = songInfo['songmid']?.toString() ?? '';
     switch (songInfo['source']?.toString() ?? '') {
@@ -778,11 +672,6 @@ class PluginEngine {
     }
   }
 
-  /// LX 直链解析统一入口（对齐桌面端 lxUrlResolver：编排层驱动插件引擎）。
-  ///
-  /// 从 PluginStore 定位启用且声明支持该音源的 LX 插件（无匹配时回退第一个
-  /// 启用的 LX 插件），单音质解析。命中缓存（10 分钟）直接返回；同歌同档位
-  /// 的并发请求共享同一次解析。歌曲级错误（无版权/下架）向上抛出由调用方决策。
   Future<Map<String, dynamic>?> resolveLxUrl(
     Map<String, dynamic> songInfo,
     String quality,
@@ -820,8 +709,6 @@ class PluginEngine {
     String quality,
     String cacheKey,
   ) async {
-    // 插件定位：优先 sources 包含该音源的启用插件，回退第一个启用的 LX 插件
-    // （与桌面端 findLxPluginForSource 一致）。
     final sources = await store.loadSources();
     final lxPlugins = sources
         .where((p) => p.enabled && p.format == PluginFormat.lx)
@@ -834,8 +721,6 @@ class PluginEngine {
     final result = await getMusicUrl(plugin, source, songInfo, quality);
     final url = result?['url'] as String?;
     if (result == null || url == null || url.isEmpty) return null;
-    // 容量上限（对齐原 Rust URL_CACHE_MAX_ENTRIES=500）：先清过期项，
-    // 仍超限时按插入顺序淘汰（Dart LinkedHashMap 保序）。
     if (_lxUrlCache.length >= 500) {
       final now = DateTime.now();
       _lxUrlCache.removeWhere((_, e) => e.expiresAt.isBefore(now));
@@ -852,10 +737,6 @@ class PluginEngine {
     return result;
   }
 
-  /// 获取歌词（返回原始字段，由调用方解析）。
-  ///
-  /// 按插件格式分发：LX 插件走 request/lyric 协议；MusicFree 插件调用它
-  /// 自身的 getLyric(musicInfo) 方法（对齐桌面端 pluginGetLyric 对 MF 的取词路径）。
   Future<Map<String, dynamic>?> getLyric(
     PluginSource source,
     String sourceKey,
@@ -873,10 +754,6 @@ class PluginEngine {
     return _normalizeLyricResponse(response);
   }
 
-  /// 获取 MusicFree 插件歌词：调用插件的 getLyric(musicInfo) 方法。
-  ///
-  /// 与 getMediaSource 同构：优先透传搜索返回的原始条目 rawData，仅补充
-  /// platform 与常见字段别名，避免丢 title/artist/id 导致解析失败。
   Future<Map<String, dynamic>?> getMusicFreeLyric(
     PluginSource source,
     Map<String, dynamic> songInfo,
@@ -914,7 +791,6 @@ class PluginEngine {
     }
   }
 
-  /// 统一把插件 lyric 返回归一化为歌词字段（缺失为 null；纯文本视为逐行歌词）。
   Map<String, dynamic>? _normalizeLyricResponse(dynamic response) {
     if (response == null) return null;
     if (response is String) {
@@ -958,7 +834,6 @@ class PluginEngine {
     };
   }
 
-  /// 获取封面 URL。
   Future<String?> getPic(
     PluginSource source,
     String sourceKey,
@@ -979,11 +854,6 @@ class PluginEngine {
 
   // ==================== 搜索 ====================
 
-  /// 在单个 LX 插件中搜索（source 为插件内音源 key，如 'kw'）。
-  ///
-  /// 与桌面端一致：LX 插件不实现 search（仅 musicUrl/lyric/pic），歌曲搜索
-  /// 全部由宿主落雪签名接口（lxSearch）代取，按插件声明的音源 key 分发到
-  /// kw/kg/tx/wy/mg 对应平台；播放仍走插件自身 musicUrl。宿主失败返回空数组。
   Future<List<PluginSearchResult>> searchInPlugin(
     PluginSource source,
     String sourceKey,
@@ -1003,7 +873,6 @@ class PluginEngine {
     try {
       await frb.pluginEngineDestroy(dataDir: dataDir, pluginId: id);
     } catch (_) {
-      // 忽略销毁失败
     }
   }
 
@@ -1014,7 +883,6 @@ class PluginEngine {
     try {
       await frb.pluginEngineDestroyAll(dataDir: dataDir);
     } catch (_) {
-      // 忽略
     }
   }
 
@@ -1022,8 +890,6 @@ class PluginEngine {
 
   void _emitLogs(List<EngineLog> logs) {
     for (final entry in logs) {
-      // 引擎侧 JS console 日志统一接入应用日志系统（错误/警告常驻可导出，
-      // 调试级进入 200 条环形缓冲），同时经 AppLog 双写控制台。
       switch (entry.level) {
         case 'error':
           AppLog.error('plugin', '[plugin:js] ${entry.message}');
@@ -1055,7 +921,6 @@ class PluginEngine {
   }
 }
 
-/// 插件引擎异常。
 class PluginEngineException implements Exception {
   final String message;
   PluginEngineException(this.message);
@@ -1064,12 +929,10 @@ class PluginEngineException implements Exception {
   String toString() => message;
 }
 
-/// 歌曲级错误：歌曲本身不可用（不存在/版权/VIP），换音质无法解决。
 class LxSongLevelError extends PluginEngineException {
   LxSongLevelError(super.message);
 }
 
-/// 检测错误消息是否为歌曲级错误。
 bool isSongLevelError(String message) {
   const patterns = [
     r'歌曲不存在',
@@ -1091,10 +954,6 @@ bool isSongLevelError(String message) {
   return false;
 }
 
-/// 检测错误消息是否为「不支持音质」类错误（对齐桌面 isUnsupportedQualityError）。
-///
-/// 部分插件只认原生音质键，收到 MF 四级键（low/standard/high/super）时报此错；
-/// 检测到后由 getMusicFreeUrl 兜底补试原生键。
 bool isUnsupportedQualityError(String message) {
   return RegExp(
     r'不支持.*音质|音质.*不支持|quality.*not\s+support|not\s+support.*quality',

@@ -12,7 +12,6 @@ import '../library/library_provider.dart';
 import '../rust/api.dart' as frb;
 import '../i18n/i18n.dart';
 
-/// WebDAV 远程源配置（与 Rust RemoteSource 一致，不含密码）。
 class RemoteSourceInfo {
   final String id;
   final String name;
@@ -48,7 +47,6 @@ class RemoteSourceInfo {
         lastSyncError: j['lastSyncError'] as String?,
       );
 
-  /// 上次同步时间文案（相对时间）。
   String get lastSyncText {
     final ts = lastSyncAt;
     if (ts == null || ts <= 0) return tr('从未同步');
@@ -62,7 +60,6 @@ class RemoteSourceInfo {
   }
 }
 
-/// 远程音频缓存用量。
 class RemoteCacheUsageInfo {
   final int bytes;
   final int files;
@@ -87,7 +84,6 @@ class RemoteCacheUsageInfo {
   }
 }
 
-/// 同步结果。
 class RemoteSyncResultInfo {
   final String sourceId;
   final int indexedFiles;
@@ -109,7 +105,6 @@ class RemoteSyncResultInfo {
       );
 }
 
-/// 远程目录条目（WebDAV PROPFIND 解析结果）。
 class RemoteDirEntryInfo {
   final String name;
   final String remotePath;
@@ -131,7 +126,6 @@ class RemoteDirEntryInfo {
       );
 }
 
-/// APE/WV 转码结果：`path` = 可播放文件路径，`decodedNow` = 本次是否实际解码。
 class TranscodeResultInfo {
   final String path;
   final bool decodedNow;
@@ -144,15 +138,12 @@ class TranscodeResultInfo {
       );
 }
 
-/// 远程源管理服务：封装 Rust WebDAV 远程源 API。
 class RemoteLibraryService {
   final Ref _ref;
   RemoteLibraryService(this._ref);
 
   Future<String> _dbPath() => _ref.read(dbPathProvider.future);
 
-  /// 远程音频缓存根目录（系统缓存目录下 remote-audio，LRU 上限 2GB）。
-  /// 提前创建目录，避免 Rust 侧 read_dir 报「目录不存在」。
   Future<String> _cacheRoot() async {
     final base = await getTemporaryDirectory();
     final root = p.join(base.path, 'remote-audio');
@@ -169,7 +160,6 @@ class RemoteLibraryService {
         .toList();
   }
 
-  /// 保存（新增或编辑）远程源。编辑时密码留空表示沿用原密码。
   Future<RemoteSourceInfo> saveSource({
     String? id,
     required String name,
@@ -197,7 +187,6 @@ class RemoteLibraryService {
     await frb.removeRemoteSource(dbPath: await _dbPath(), sourceId: sourceId);
   }
 
-  /// 测试连接（PROPFIND 根目录）。失败抛异常。
   Future<void> testConnection({
     String? id,
     required String name,
@@ -218,7 +207,6 @@ class RemoteLibraryService {
     await frb.webdavTestConnection(sourceJson: jsonEncode(input));
   }
 
-  /// 测试已保存远程源的连接：密码留空时沿用存储密码，仅叠加表单覆盖项。
   Future<void> testSavedSource(
     String sourceId, {
     required String baseUrl,
@@ -237,7 +225,6 @@ class RemoteLibraryService {
     );
   }
 
-  /// 同步远程源：扫描远程目录并写入音乐库。
   Future<RemoteSyncResultInfo> syncSource(String sourceId) async {
     final json = await frb.syncRemoteSource(
       dbPath: await _dbPath(),
@@ -260,7 +247,6 @@ class RemoteLibraryService {
         (jsonDecode(json) as Map).cast<String, dynamic>());
   }
 
-  /// 解析远程歌曲播放来源：已缓存返回本地路径，否则返回带认证的直链。
   Future<RemotePlaybackPlan> playbackSource(String remoteUri) async {
     final dbPath = await _dbPath();
     final json =
@@ -277,7 +263,6 @@ class RemoteLibraryService {
     );
   }
 
-  /// 预缓存远程歌曲（下载进远程缓存，已缓存则立即返回）。
   Future<void> precacheRemote(String remoteUri) async {
     await frb.precacheRemoteSong(
       dbPath: await _dbPath(),
@@ -286,7 +271,6 @@ class RemoteLibraryService {
     );
   }
 
-  /// 浏览已保存源的远程目录（列出目录与文件）。
   Future<List<RemoteDirEntryInfo>> listDirectory(
       String sourceId, String path) async {
     final json = await frb.listRemoteDirectory(
@@ -301,7 +285,6 @@ class RemoteLibraryService {
         .toList();
   }
 
-  /// 按表单连接信息浏览远程目录（新增源未保存时也可浏览）。
   Future<List<RemoteDirEntryInfo>> browseDirectory({
     required String baseUrl,
     String? username,
@@ -326,7 +309,6 @@ class RemoteLibraryService {
         .toList();
   }
 
-  /// APE/WV 转码缓存：返回可播放路径（远程源自动先下载缓存）。
   Future<TranscodeResultInfo> transcodeToWav(String srcPath) async {
     final json = await frb.transcodeAudioToWav(
       dbPath: await _dbPath(),
@@ -338,11 +320,8 @@ class RemoteLibraryService {
   }
 }
 
-/// 远程歌曲播放计划。
 class RemotePlaybackPlan {
-  /// 已缓存文件的本地路径（非空时直接本地播放）。
   final String? cachedPath;
-  /// 远程直链（未缓存时流式播放）。
   final String url;
   final String? username;
   final String? password;
@@ -368,7 +347,6 @@ class RemotePlaybackPlan {
 
   bool get isCached => cachedPath != null && cachedPath!.isNotEmpty;
 
-  /// Basic Auth 请求头（有凭据时）。
   Map<String, String>? get headers {
     if (username == null || username!.isEmpty) return null;
     final token = base64Encode(utf8.encode('$username:$password'));
@@ -380,12 +358,10 @@ final remoteLibraryServiceProvider = Provider<RemoteLibraryService>(
   (ref) => RemoteLibraryService(ref),
 );
 
-/// 远程源列表 + 缓存用量状态。
 class RemoteLibraryState {
   final List<RemoteSourceInfo> sources;
   final RemoteCacheUsageInfo cacheUsage;
   final bool loading;
-  /// 正在同步的远程源 id。
   final String? syncingSourceId;
   const RemoteLibraryState({
     this.sources = const [],
@@ -420,20 +396,17 @@ class RemoteLibraryNotifier extends StateNotifier<RemoteLibraryState> {
     state = state.copyWith(loading: true);
     try {
       final sources = await _service.listSources();
-      // 缓存用量查询失败不影响源列表展示。
       var usage = state.cacheUsage;
       try {
         usage = await _service.cacheUsage();
       } catch (_) {}
       state = state.copyWith(sources: sources, cacheUsage: usage);
     } catch (_) {
-      // 列表加载失败保持旧数据
     } finally {
       state = state.copyWith(loading: false);
     }
   }
 
-  /// 同步远程源并刷新状态，返回结果文案。
   Future<String> sync(String sourceId) async {
     state = state.copyWith(syncingSourceId: sourceId);
     try {
@@ -461,10 +434,6 @@ final remoteLibraryProvider =
   (ref) => RemoteLibraryNotifier(ref.read(remoteLibraryServiceProvider)),
 );
 
-/// WebDAV 源 24h 自动同步（对齐桌面端 playerLifecycle 的 remoteAutoSyncTimer）。
-///
-/// 启动即检查一次，此后每小时轮询；每个源距上次自动同步超过 24h 才静默执行，
-/// 时间戳按源独立存于 SharedPreferences（`xianyu_remote_auto_sync_at:<id>`）。
 class RemoteAutoSyncService {
   static const _interval = Duration(hours: 24);
   static const _keyPrefix = 'xianyu_remote_auto_sync_at:';
@@ -493,7 +462,6 @@ class RemoteAutoSyncService {
         final last = prefs.getInt('$_keyPrefix${source.id}') ?? 0;
         if (now - last < _interval.inMilliseconds) continue;
         try {
-          // 手动同步进行中则顺延到下一轮询，避免同时扫描同一源。
           if (_ref.read(remoteLibraryProvider).syncingSourceId != null) break;
           await _ref.read(remoteLibraryServiceProvider).syncSource(source.id);
           await prefs.setInt('$_keyPrefix${source.id}',
@@ -505,7 +473,6 @@ class RemoteAutoSyncService {
       _running = false;
     }
     if (synced) {
-      // 静默刷新远程源列表（同步时间/错误）与曲库条目。
       _ref.read(remoteLibraryProvider.notifier).refresh();
       _ref.read(libraryProvider.notifier).load();
     }

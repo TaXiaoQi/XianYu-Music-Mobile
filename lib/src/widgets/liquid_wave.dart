@@ -5,13 +5,8 @@ import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 
 import 'blur_budget.dart';
 
-/// 全局竖直滚动偏移：由 [ScrollOffsetCapture] 在滚动时更新，
-/// 供液态波浪 shader 采样（滚动作为波浪相位，驱动玻璃区域波纹流动）。
 final ValueNotifier<double> globalScrollOffset = ValueNotifier<double>(0);
 
-/// 捕获子树内的竖直滚动偏移，写入 [globalScrollOffset]。
-///
-/// 滚动期间每帧更新（滚动停止即停止派发，值保留在最后位置）。
 class ScrollOffsetCapture extends StatelessWidget {
   const ScrollOffsetCapture({super.key, required this.child});
 
@@ -33,12 +28,6 @@ class ScrollOffsetCapture extends StatelessWidget {
   }
 }
 
-/// 滚动驱动的液态波浪扭曲：把内容渲染进离屏边界，用 FragmentShader 对
-/// [rects] 玻璃区域施加波浪折射 + 色差，其余区域原样采样后整体画回。
-///
-/// 只在滚动时（[globalScrollOffset] 变化）触发离屏采样，静止时冻结，
-/// 符合"纯滑动不更新、交互才激活"的性能原则。配合玻璃表面自身的
-/// `BackdropFilter`，玻璃区域呈现"模糊 + 液态波浪"效果。
 class LiquidWave extends StatefulWidget {
   const LiquidWave({
     super.key,
@@ -49,19 +38,14 @@ class LiquidWave extends StatefulWidget {
     this.chroma = 0.3,
   });
 
-  /// 页面内容（整页，滚动列表所在）。
   final Widget child;
 
-  /// 玻璃区域矩形（逻辑像素，相对 child 左上角），最多 3 个。
   final List<Rect> rects;
 
-  /// 是否启用波浪扭曲（不启用则原样透传 child，零开销）。
   final bool enabled;
 
-  /// 折射强度：控制波浪位移幅度。
   final double refract;
 
-  /// 色差强度：控制 RGB 通道分离幅度。
   final double chroma;
 
   @override
@@ -98,7 +82,6 @@ class _LiquidWaveState extends State<LiquidWave> {
       setState(() => _shader = program.fragmentShader());
       WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
     } catch (_) {
-      // shader 加载失败：退回原内容（保持 [enabled] 时的行为降级）。
     }
   }
 
@@ -174,15 +157,11 @@ class _WavePainter extends CustomPainter {
     final image = bg;
     if (image == null || size.width <= 0 || size.height <= 0) return;
 
-    // 矩形按物理像素传递（与 FlutterFragCoord 单位一致）。
     double rx(int i) => i >= rects.length ? 0 : rects[i].left * dpr;
     double ry(int i) => i >= rects.length ? 0 : rects[i].top * dpr;
     double rz(int i) => i >= rects.length ? 0 : rects[i].right * dpr;
     double rw(int i) => i >= rects.length ? 0 : rects[i].bottom * dpr;
 
-    // setFloat 索引按 shader 中 uniform 声明顺序分配（忽略 sampler）：
-    // uSize(0,1) uResolution(2,3) uScrollOffset(4) uRect0(5-8) uRect1(9-12)
-    // uRect2(13-16) uRefract(17) uChroma(18)
     shader
       ..setImageSampler(0, image)
       ..setFloat(0, size.width)

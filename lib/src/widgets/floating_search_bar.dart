@@ -9,18 +9,11 @@ import 'blur_budget.dart';
 import 'glass_settings.dart';
 import 'page_search_bar.dart';
 
-/// 首页/我的页「悬浮搜索框」：独立悬浮胶囊，固定悬浮在顶栏下方，不随内容滚动。
-///
-/// 材质跟随全局玻璃设置：
-/// - 液态玻璃开启 → 中/高档走 [AdaptiveGlass]（shader 折射 + 高光，与底栏/迷你条
-///   同一套参数），低档走伪液态毛玻璃（不跑 shader）；
-/// - 液态玻璃关闭 → 毛玻璃（透明磨砂）/ 纯色回退，口径同底栏 `_frostedGlass`。
 class FloatingSearchBar extends ConsumerWidget {
   const FloatingSearchBar({super.key, required this.onTap, this.onRecognize});
 
   final VoidCallback onTap;
 
-  /// 听歌识曲入口（可选：首页带话筒，我的页不带）。
   final VoidCallback? onRecognize;
 
   @override
@@ -51,7 +44,6 @@ class FloatingSearchBar extends ConsumerWidget {
                   ),
                 ),
               ),
-              // 听歌识曲依赖插件播放识别结果，无已启用插件时隐藏入口。
               if (onRecognize != null &&
                   ref.watch(pluginManagerProvider
                       .select((s) => s.sources.any((p) => p.enabled)))) ...[
@@ -80,21 +72,15 @@ class FloatingSearchBar extends ConsumerWidget {
       ),
     );
 
-    // 材质外壳统一走 [FloatingGlassSurface]（与横屏搜索输入框同口径）。
     return FloatingGlassSurface(child: content);
   }
 }
 
-/// 悬浮玻璃表面容器：与 [FloatingSearchBar] 完全同一套材质口径（液态 shader /
-/// 伪液态毛玻璃 / 毛玻璃 / 纯色回退，BlurSurfaceType.header），供搜索胶囊与
-/// 横屏顶栏搜索输入框等 44 高胶囊控件复用，保证形态切换（点击进搜索）时
-/// 材质连续不跳变。
 class FloatingGlassSurface extends ConsumerWidget {
   const FloatingGlassSurface({super.key, required this.child, this.radius = 22});
 
   final Widget child;
 
-  /// 视觉圆角：44 高胶囊用 22（半高）。
   final double radius;
 
   @override
@@ -104,19 +90,13 @@ class FloatingGlassSurface extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    // 显隐动画窗口内（[chromeGlassSettlingProvider]）切全不透明铺底、滤镜常驻，
-    // 让 BackdropFilter/shader 背板持续合成且被不透明底遮住，切回时不再黑帧。
     final settling = ref.watch(chromeGlassSettlingProvider);
-    // 壁纸模式不再排除液态玻璃：悬浮顶栏与播放条同口径（playbarGlassSurface
-    // 的液态条件也不排除壁纸），BiliPaiGlass 半透明铺底（alpha 0.40~0.50）
-    // 本就透出壁纸，可读性由底色保证。仅低性能模式回退毛玻璃/纯色。
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
             !lowPerf;
 
     if (liquid) {
-      // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
@@ -137,11 +117,8 @@ class FloatingGlassSurface extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: child,
       );
-      // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
       return liquidGlassShell(context, child: glass, radius: radius);
     }
-    // 液态玻璃关闭：毛玻璃/纯色回退，复用伪液态表面口径（透明底 + 淡模糊）。
-    // 搜索胶囊是毛玻璃表面，模糊强度跟随毛玻璃档位（frostedBlurScale）。
     return pseudoLiquidSurface(
       context: context,
       ref: ref,
@@ -157,9 +134,6 @@ class FloatingGlassSurface extends ConsumerWidget {
   }
 }
 
-/// BiliPai 风格小液态玻璃胶囊/圆钮：跟随全局玻璃设置（液态 shader / 伪液态
-/// 毛玻璃 / 毛玻璃 / 纯色），材质口径与 [FloatingSearchBar] 完全一致。
-/// 用于顶栏标题、图标按钮等小控件的玻璃包裹（BiliPai 首页顶部按钮观感）。
 class BiliPaiPill extends ConsumerWidget {
   const BiliPaiPill({
     super.key,
@@ -172,20 +146,12 @@ class BiliPaiPill extends ConsumerWidget {
 
   final Widget child;
 
-  /// 为 null 时不可点（无涟漪，等同 disabled）。
   final VoidCallback? onTap;
 
-  /// 视觉圆角：40px 高胶囊/圆钮用 20（半高），搜索胶囊 44 高用 22。
   final double radius;
 
-  /// 常驻实时渲染（不抓屏冻结）。用于会平移盖到不同内容上的小胶囊
-  /// （来源插件条等）——冻结快照在平移中必然错位，拖拽信号桥在真机
-  /// 上不可靠，直接同迷你播放条口径常驻实时（面积小，成本可控）。
   final bool alwaysLive;
 
-  /// 背板恒定逐帧重抓（见 [BiliPaiGlass.freshBackdrop]）：实时路径每帧
-  /// 新建 blur filter 实例并画微扰像素，强制引擎逐帧重抓背板，不依赖
-  /// 全局拖拽标志。须与 [alwaysLive] 同开（不冻结才有实时路径可谈）。
   final bool freshBackdrop;
 
   @override
@@ -195,11 +161,7 @@ class BiliPaiPill extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    // 显隐动画窗口内（[chromeGlassSettlingProvider]）切全不透明铺底、滤镜常驻，
-    // 防 BackdropFilter/shader 背板采样黑帧（与 [FloatingGlassSurface] 同口径）。
     final settling = ref.watch(chromeGlassSettlingProvider);
-    // 壁纸模式不再排除液态玻璃：与 FloatingGlassSurface / 播放条同口径，
-    // BiliPaiGlass 半透明铺底本就透出壁纸。仅低性能模式回退毛玻璃/纯色。
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -216,7 +178,6 @@ class BiliPaiPill extends ConsumerWidget {
     );
 
     if (liquid) {
-      // 液态玻璃全档走真 shader（BiliPai 三档配方），低档不再用伪液态充数。
       final quality = liquidGlassQualitySetting(ref);
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
@@ -239,7 +200,6 @@ class BiliPaiPill extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: content,
       );
-      // BiliPai 液态玻璃外壳「勾边/阴影分开处理」：深色白描边/浅色黑色投影。
       return liquidGlassShell(context, child: glass, radius: radius);
     }
     return pseudoLiquidSurface(
@@ -257,9 +217,6 @@ class BiliPaiPill extends ConsumerWidget {
   }
 }
 
-/// 独立来源气泡：每个音源来源一个玻璃胶囊（BiliPai 材质），选中用轻量红底+红字
-/// 替换原 ChoiceChip 底色。用于搜索页/榜单页的来源切换条——拆开成独立气泡，
-/// 不再用一个大 [FloatingTabPill] 包裹全部来源。
 class FloatingSourcePill extends ConsumerWidget {
   const FloatingSourcePill({
     super.key,
@@ -271,12 +228,10 @@ class FloatingSourcePill extends ConsumerWidget {
 
   final String name;
 
-  /// 当前是否选中。
   final bool selected;
 
   final VoidCallback onTap;
 
-  /// 胶囊高度（默认 40，整高 circular radius=height/2）。
   final double height;
 
   @override
@@ -286,11 +241,6 @@ class FloatingSourcePill extends ConsumerWidget {
     return BiliPaiPill(
       onTap: onTap,
       radius: radius,
-      // 常驻实时 + 背板恒定逐帧重抓（同迷你播放条拖拽口径）：胶囊随横向
-      // 拖动平移盖到不同内容上，冻结/引擎缓存快照必然错位——每帧新建
-      // filter 实例 + 微扰像素强制引擎逐帧重抓背板，拖动/惯性/静止折射恒
-      // 实时跟随，不依赖滚动信号桥（真机上该信号不可靠，表现为拖动中不
-      // 刷新、松手才刷新）。
       alwaysLive: true,
       freshBackdrop: true,
       child: Container(
@@ -307,7 +257,6 @@ class FloatingSourcePill extends ConsumerWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            // 选中红字，未选中跟随主题次要色。
             color: selected
                 ? scheme.primary
                 : scheme.onSurfaceVariant,
@@ -318,7 +267,6 @@ class FloatingSourcePill extends ConsumerWidget {
   }
 }
 
-/// 40×40 圆形玻璃图标按钮（[BiliPaiPill] 包裹），BiliPai 首页顶部按钮观感。
 class BiliPaiIconButton extends StatelessWidget {
   const BiliPaiIconButton({
     super.key,
@@ -337,8 +285,6 @@ class BiliPaiIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // IconTheme 包裹：内置 Icon 用显式 color/size；iconChild（如自定义 SkinIcon）
-    // 不传 color 时也能从 IconTheme 继承按钮标准色与尺寸。
     final iconWidget = SizedBox(
       width: 40,
       height: 40,
@@ -363,8 +309,6 @@ class BiliPaiIconButton extends StatelessWidget {
   }
 }
 
-/// 竖屏悬浮顶部栏（首页/我的页共用）：[标题玻璃胶囊] [搜索胶囊·自适应宽]
-/// [右侧玻璃小按钮]。直接悬浮在状态栏下方，取代页面自带的 GlassTopBar 标题行。
 class FloatingTopBar extends StatelessWidget {
   const FloatingTopBar({
     super.key,
@@ -374,15 +318,12 @@ class FloatingTopBar extends StatelessWidget {
     this.actions = const [],
   });
 
-  /// 标题内容（由调用方传入已带样式文本，胶囊内左对齐垂直居中）。
   final Widget title;
 
   final VoidCallback onSearchTap;
 
-  /// 听歌识曲入口（可选：首页带话筒）。
   final VoidCallback? onRecognize;
 
-  /// 右侧 [BiliPaiIconButton] 列表。
   final List<Widget> actions;
 
   @override
@@ -415,9 +356,6 @@ class FloatingTopBar extends StatelessWidget {
   }
 }
 
-/// 悬浮搜索输入框胶囊：与 [FloatingTopBar] 同材质口径的 44 高玻璃胶囊，内嵌
-/// 一个 [TextField]。供搜索页 / 搜索结果页 / 本地页的悬浮顶栏复用（替代固定
-/// GlassTopBar 内的实色搜索框）。
 class FloatingGlassSearchField extends ConsumerWidget {
   const FloatingGlassSearchField({
     super.key,
@@ -438,7 +376,6 @@ class FloatingGlassSearchField extends ConsumerWidget {
   final bool readOnly;
   final bool autofocus;
 
-  /// 直接使用 [TextField.isDense] 语义，作为朴素输入框（非整页搜索框）时关闭。
   final bool isDense;
 
   final ValueChanged<String>? onChanged;
@@ -463,8 +400,6 @@ class FloatingGlassSearchField extends ConsumerWidget {
             fontSize: 14.5,
             color: scheme.onSurface,
           ),
-          // 字段被高 44 的前缀图标/清除按钮撑高后，dense 输入框默认顶部对齐，
-          // 文字会偏上；显式居中让键入文字与 hint 都垂直居中。
           textAlignVertical: TextAlignVertical.center,
           cursorColor: scheme.primary,
           onChanged: onChanged,
@@ -498,14 +433,11 @@ class FloatingGlassSearchField extends ConsumerWidget {
   }
 }
 
-/// 悬浮 Tab 气泡：把下方切换 Tab（[child]，通常为 [TabBar]）原位置用小气泡
-/// 包围起来，观感与首页/我的页悬浮顶栏一致（玻璃胶囊 + 描边 + 圆角）。
 class FloatingTabPill extends StatelessWidget {
   const FloatingTabPill({super.key, required this.child, this.height = 48});
 
   final Widget child;
 
-  /// 气泡高度：默认 48 容纳 46 高 TabBar（含底部指示器留白）。
   final double height;
 
   @override
@@ -516,8 +448,6 @@ class FloatingTabPill extends StatelessWidget {
         height: height,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-          // 覆盖 TabBar 底部默认分隔线：气泡内只需指示器/文字，去掉那条
-          // 既多余又和玻璃底冲突的横线（仅影响悬浮气泡，不改非悬浮形态）。
           child: Theme(
             data: Theme.of(context).copyWith(
               tabBarTheme: TabBarThemeData(
@@ -532,10 +462,6 @@ class FloatingTabPill extends StatelessWidget {
   }
 }
 
-/// 二级页（搜索页/搜索结果页/本地页）共用的悬浮顶栏：一列——
-/// 第一行 [返回玻璃钮] + [搜索胶囊(自适应宽)] + [右侧玻璃钮]；
-/// 可选第二行 [悬浮 Tab 气泡]。整列悬浮在状态栏下方，取代页面固定 GlassTopBar。
-/// 仅竖屏悬浮顶栏模式渲染。
 class FloatingSearchTopBar extends StatelessWidget {
   const FloatingSearchTopBar({
     super.key,
@@ -546,19 +472,14 @@ class FloatingSearchTopBar extends StatelessWidget {
     this.bottomPill,
   });
 
-  /// 搜索输入/展示胶囊（[FloatingGlassSearchField] 或自定义）。
   final Widget field;
 
-  /// 可选返回按钮；null 则不渲染（如面板模式无返回）。
   final VoidCallback? onBack;
 
-  /// 可选右侧玻璃按钮（搜索按钮/文件夹按钮等）。
   final Widget? action;
 
-  /// 可选第二行悬浮 Tab 气泡。
   final Widget? tabPill;
 
-  /// 可选第三行悬浮气泡（如搜索结果页/榜单页的音源来源切换条）。
   final Widget? bottomPill;
 
   @override
@@ -593,11 +514,6 @@ class FloatingSearchTopBar extends StatelessWidget {
   }
 }
 
-/// 二级页悬浮顶栏通用骨架（竖屏悬浮顶栏模式）：[返回玻璃钮] + [标题胶囊] +
-/// 右侧玻璃钮，可选底部附加条（搜索胶囊 / Tab 气泡）。供 [GlassTopBar] /
-/// [FlatTopBar] 在悬浮模式下整条换装复用——总高度与固定形态逐像素一致
-/// （状态栏 + kToolbarHeight + bottom.preferredSize.height），页面内容顶部
-/// 避让零改动。
 Widget floatingChromeBar(
   BuildContext context, {
   Widget? leading,
@@ -607,7 +523,6 @@ Widget floatingChromeBar(
 }) {
   final statusBar = MediaQuery.paddingOf(context).top;
   final bottomH = bottom?.preferredSize.height ?? 0;
-  // 返回钮 + 间距（leading 为 null 时为空，避免集合内 if 判空展开触发 lint）。
   final lead = leading == null
       ? const <Widget>[]
       : [
@@ -616,8 +531,6 @@ Widget floatingChromeBar(
         ];
   Widget? bottomRow;
   if (bottom is PageSearchBarBottom) {
-    // 搜索胶囊行：44 高胶囊撑满宽度（与壳层悬浮顶栏搜索胶囊同口径），
-    // 在原 band 高度内垂直居中，总高不变。
     bottomRow = SizedBox(
       height: bottomH,
       child: Align(
@@ -629,7 +542,6 @@ Widget floatingChromeBar(
       ),
     );
   } else if (bottom != null) {
-    // TabBar 等附加条：悬浮 Tab 气泡原高包裹（收藏/反馈/榜单等页同款）。
     bottomRow = FloatingTabPill(height: bottomH, child: bottom);
   }
   return RepaintBoundary(
@@ -639,8 +551,6 @@ Widget floatingChromeBar(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 标题行：上浮 8 + 行高 48 = kToolbarHeight(56)，与固定形态总高逐像素
-          // 一致；40/44 高胶囊在行内垂直居中。
           SizedBox(
             height: kToolbarHeight - 8,
             child: Row(
@@ -682,9 +592,6 @@ Widget floatingChromeBar(
   );
 }
 
-/// 把固定顶栏的 leading/action 控件换装为玻璃圆钮（与壳层悬浮顶栏 40×40
-/// 观感一致）：BackButton/IconButton 重建为 [BiliPaiIconButton]（保留原
-/// 图标/tooltip/回调），其余自定义控件玻璃胶囊原样包裹（不强制尺寸防溢出）。
 Widget _chromeGlassAction(BuildContext context, Widget w) {
   if (w is BackButton) {
     return BiliPaiIconButton(

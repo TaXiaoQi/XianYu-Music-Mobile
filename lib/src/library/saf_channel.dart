@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 
 import '../rust/api.dart';
 
-/// SAF 选中的音频文件条目（由 Android 侧递归枚举得到）。
 class SafAudioFile {
   final String docId;
   final String name;
@@ -26,7 +25,6 @@ class SafAudioFile {
       );
 }
 
-/// MediaStore 聚合出的音频目录（path 为真实绝对路径，可直接入库扫描）。
 class MediaFolderInfo {
   final String path;
   final int count;
@@ -38,24 +36,16 @@ class MediaFolderInfo {
       );
 }
 
-/// Android 存储访问框架（SAF）桥接：用户选目录树 → 递归枚举音频 → fd 打开。
 class SafChannel {
   static const _channel = MethodChannel('xianyu/saf');
 
   static bool get isSupported => Platform.isAndroid;
 
-  /// 当前设备的 Android API level（非 Android 返回 0）。
-  /// 存储权限按版本细分申请时使用（13+ 为 READ_MEDIA_AUDIO，以下为
-  /// READ_EXTERNAL_STORAGE）。
   static Future<int> androidSdkInt() async {
     if (!isSupported) return 0;
     return await _channel.invokeMethod<int>('getSdkInt') ?? 0;
   }
 
-  /// 让用户选择目录树，返回 `content://…/tree/…` URI（取消返回 null）。
-  ///
-  /// [persist] 为 false 时不持久化授权（一次性导出等场景）：活动结果的
-  /// 临时授权足以支撑当次写入，避免反复挑选不同目录耗尽系统持久化名额。
   static Future<String?> chooseFolderTree({bool persist = true}) async {
     if (!isSupported) return null;
     final raw = await _channel.invokeMethod<String>('chooseFolderTree', {
@@ -69,7 +59,6 @@ class SafChannel {
     await _channel.invokeMethod('persistPermission', {'uri': treeUri});
   }
 
-  /// 该目录的授权是否仍在系统持久化名单中（重启后依然有效的前提）。
   static Future<bool> isTreePersisted(String treeUri) async {
     if (!isSupported) return false;
     return await _channel.invokeMethod<bool>('isTreePersisted',
@@ -77,8 +66,6 @@ class SafChannel {
         false;
   }
 
-  /// 目录当前是否真正可读（持久化名单命中 + 根节点探测成功）。
-  /// 清除数据 / 系统撤销授权 / SD 卡拔出都会返回 false。
   static Future<bool> isTreeAvailable(String treeUri) async {
     if (!isSupported) return false;
     return await _channel.invokeMethod<bool>('isTreeAvailable',
@@ -86,13 +73,11 @@ class SafChannel {
         false;
   }
 
-  /// 释放目录的持久化授权（移除扫描目录时调用，避免耗尽系统名额）。
   static Future<void> releasePermission(String treeUri) async {
     if (!isSupported) return;
     await _channel.invokeMethod('releasePermission', {'uri': treeUri});
   }
 
-  /// tree URI 的用户可读名（如 `内部存储/Music`）。
   static Future<String> friendlyTreeName(String treeUri) async {
     if (!isSupported) return treeUri;
     return await _channel.invokeMethod<String>('friendlyTreeName',
@@ -100,10 +85,6 @@ class SafChannel {
         treeUri;
   }
 
-  /// 经 MediaStore 枚举设备上包含音频的真实目录（需已授予音乐读取权限）。
-  ///
-  /// 音乐权限只授一次即可全局枚举，应用内目录选择器以此构建目录树，
-  /// 添加目录不再弹系统 SAF 授权框。
   static Future<List<MediaFolderInfo>> listMediaAudioFolders() async {
     if (!isSupported) return const [];
     final raw =
@@ -113,7 +94,6 @@ class SafChannel {
         .toList();
   }
 
-  /// 递归枚举 tree 下白名单扩展名的音频文件。
   static Future<List<SafAudioFile>> listAudioTree(
     String treeUri,
     List<String> extensions,
@@ -131,7 +111,6 @@ class SafChannel {
         .toList();
   }
 
-  /// 打开 tree 下的某 document，返回其 fd（需 finally 调用 [closeFd]）。
   static Future<int> openFd(String treeUri, String docId) async {
     if (!isSupported) return -1;
     return await _channel
@@ -139,8 +118,6 @@ class SafChannel {
         -1;
   }
 
-  /// 在 tree 目录下创建文本文件并写入内容（需当次会话对该 tree 持有写授权）。
-  /// 返回创建后的文档 docId（同名文件由系统文档提供器自动追加 "(1)" 后缀）。
   static Future<String> createTreeFile(
     String treeUri,
     String fileName,
@@ -160,7 +137,6 @@ class SafChannel {
     await _channel.invokeMethod('closeFd', {'fd': fd});
   }
 
-  /// 把 tree 下某 document 的内容复制到应用内部目录，返回真实文件路径。
   static Future<String> copyTreeDocToInternal(
     String treeUri,
     String docId,
@@ -175,12 +151,9 @@ class SafChannel {
         '';
   }
 
-  /// SAF 歌曲播放副本缓存：content 路径 → 本地真实文件（LRU，保留最近
-  /// [_maxPlaybackCopies] 份，切回最近播过的歌无需重新复制）。
   static final Map<String, String> _playbackCopies = {};
   static const _maxPlaybackCopies = 3;
 
-  /// 扫描前清空物化副本缓存目录的残留文件（兼容旧版本整库物化的遗留）。
   static void clearScannedCopiesRoot(String tempRoot) {
     final dir = Directory(tempRoot);
     if (!dir.existsSync()) return;
@@ -191,8 +164,6 @@ class SafChannel {
     } catch (_) {}
   }
 
-  /// 把 `{treeUri}/document/{docId}` 形式的歌曲路径物化为可被 just_audio
-  /// 直接播放的本地真实文件（content URI 播放不可靠）。非 SAF 路径原样返回。
   static Future<String> ensureLocalPlaybackCopy(
     String songPath,
     String tempRoot,
@@ -201,7 +172,6 @@ class SafChannel {
 
     final cached = _playbackCopies.remove(songPath);
     if (cached != null && File(cached).existsSync()) {
-      // 命中：移回 LRU 尾部（最近使用）。
       _playbackCopies[songPath] = cached;
       return cached;
     }
@@ -214,7 +184,6 @@ class SafChannel {
 
     final dir = Directory(tempRoot);
     if (!dir.existsSync()) dir.createSync(recursive: true);
-    // 本会话首次物化：清理上次会话遗留的副本文件，避免跨会话累积占盘。
     if (_playbackCopies.isEmpty) {
       try {
         for (final e in dir.listSync()) {
@@ -223,10 +192,9 @@ class SafChannel {
       } catch (_) {}
     }
     final copied = await copyTreeDocToInternal(treeUri, docId, dir.path);
-    if (copied.isEmpty) return songPath; // 复制失败，回退直接以 content 播放。
+    if (copied.isEmpty) return songPath;
 
     _playbackCopies[songPath] = copied;
-    // LRU 淘汰：超出保留份数时删除最旧的副本文件。
     while (_playbackCopies.length > _maxPlaybackCopies) {
       final oldestKey = _playbackCopies.keys.first;
       final oldest = _playbackCopies.remove(oldestKey);
@@ -240,8 +208,6 @@ class SafChannel {
     return copied;
   }
 
-  /// 封面自愈：列表/播放页发现某 SAF 歌曲无缓存封面时，重新打开 fd 提取
-  /// 内嵌封面并写入封面缓存，返回缩略图路径（无封面/失败返回空串）。
   static Future<String> extractCoverToCache(
     String songPath,
     String cacheRoot,
@@ -268,28 +234,20 @@ class SafChannel {
     }
   }
 
-  /// tree URI 的根 documentId（如 `primary:Music`），用于入库匹配。
   static String treeRootDocId(String treeUri) {
     final uri = Uri.parse(treeUri);
     final seg = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
     return Uri.decodeComponent(seg);
   }
 
-  /// 目录根的文档类访问路径：`{treeUri}/document/{rootDocId}`。
-  /// 作为文件夹树根节点 path，可被 descendent 路径匹配命中其下全部歌曲。
   static String treeRootPath(String treeUri) =>
       '$treeUri/document/${treeRootDocId(treeUri)}';
 
-  /// 把某文档合成可访问、可匹配的歌曲 path：`{treeUri}/document/{docId}`。
-  /// 该 path 以 `content://` 开头（SAF 场景可被 just_audio 直接播放），
-  /// docId 部分是未编码的 `primary:Volume/相对/路径`，可被斜杠路径匹配。
   static String songPath(String treeUri, String docId) =>
       '$treeUri/document/$docId';
 
-  /// 判断某条路径是否 SAF 文档类路径（song.path / 文件夹根节点）。
   static bool isSafPath(String pathOrUri) => pathOrUri.startsWith('content://');
 
-  /// 判断某条扫描目录是否 SAF tree。
   static bool isSafTree(String pathOrUri) =>
       isSupported && pathOrUri.startsWith('content://');
 }

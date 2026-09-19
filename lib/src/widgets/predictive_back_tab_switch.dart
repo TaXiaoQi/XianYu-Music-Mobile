@@ -7,7 +7,6 @@ import '../core/app_logger.dart';
 import '../core/settings.dart';
 import '../navigation/landscape_tab_switcher.dart';
 import '../navigation/page_switch_tab_view.dart';
-// 横竖屏判定、覆盖面板与音乐库选中状态来自 shell.dart（独立横屏模式的状态源）。
 import '../navigation/shell.dart'
     show
         isLandscapeProvider,
@@ -15,19 +14,6 @@ import '../navigation/shell.dart'
         landscapeLibraryProvider;
 import 'predictive_back_transitions.dart';
 
-/// 竖屏两个根 Tab 之间的「预测返回」。
-///
-/// 在「我的」根 tab 上做系统边缘返回手势时，跟手预览首页分支并从下方露出，
-/// 「我的」分支按预测返回行程缩放/位移/淡出（复用播放页同款
-/// [PredictiveBackSharedElementPageTransition]）；提交（松手确认返回）时
-/// `goBranch(0)` 切回首页，取消时原路还原。与二级页的预测返回体验统一。
-///
-/// 横屏是独立模式：直接渲染 [LandscapeTabSwitcher]（独立 out-in 切换器），
-/// 不挂 PageView、不认领预测返回手势，路由/动画/手势与竖屏完全分开。
-///
-/// 仅当：竖屏、非二级页（无 pop 路由）、不在首页分支、且全局预测返回开关
-/// 开启时认领手势。其余情况（首页双击退出 / 二级页 pop / 关闭预测返回）
-/// 保持原行为，由 shell 的 PopScope + _handleBack 手动分发兜底。
 class PredictiveBackTabContainer extends ConsumerStatefulWidget {
   const PredictiveBackTabContainer({
     super.key,
@@ -48,14 +34,11 @@ class PredictiveBackTabContainer extends ConsumerStatefulWidget {
 class _PredictiveBackTabContainerState
     extends ConsumerState<PredictiveBackTabContainer>
     with WidgetsBindingObserver, TickerProviderStateMixin {
-  /// 页面转场动画值：1 = 完全显示，0 = 完全隐藏（与路由 animation 同语义）。
   late final AnimationController _ctrl;
   PredictiveBackPhase _phase = PredictiveBackPhase.idle;
   PredictiveBackEvent? _startBackEvent;
   PredictiveBackEvent? _currentBackEvent;
 
-  /// 手势开始时所在分支（即退出分支），commit 后 currentIndex 已变为 0，
-  /// 但退出动画仍需它，故在认领时锁定。
   int _exitIndex = 1;
 
   static const _commitDuration = Duration(milliseconds: 400);
@@ -63,8 +46,6 @@ class _PredictiveBackTabContainerState
 
   bool get _inTransition => _phase != PredictiveBackPhase.idle;
 
-  /// 手指拖动切换整页停留后回调：把当前索引同步给 GoRouter 底栏，
-  /// 并让 `currentIndex` 变化去驱动收藏/底栏高亮等派生 UI。
   void _onPageSettled(int index) {
     if (index == widget.currentIndex) return;
     widget.navigationShell.goBranch(
@@ -89,7 +70,6 @@ class _PredictiveBackTabContainerState
 
   bool _shouldClaim(PredictiveBackEvent backEvent) {
     if (backEvent.isButtonEvent) return false;
-    // 横屏独立模式：不认领预测返回（shell 的手动分发兜底处理返回）。
     if (ref.read(isLandscapeProvider)) return false;
     if (widget.children.length < 2) return false;
     if (widget.currentIndex == 0) return false;
@@ -99,11 +79,6 @@ class _PredictiveBackTabContainerState
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    // 荣耀等 OEM 系统会在同一次返回手势内重复派发 onBackStarted：框架每收到
-    // 一次 startBackGesture 都会清空 _backGestureObservers 再重新收集，若行程中
-    // 这里返回 false，observer 列表变空，后续 updateBackGestureProgress 会被框架
-    // 直接丢弃——表现为「触控返回不传滑动数值、无法预测返回」。因此行程中
-    // 无条件重新认领（不重置行程），保住 observer 让进度持续送达。
     if (_phase == PredictiveBackPhase.start || _phase == PredictiveBackPhase.update) {
       AppLogger.instance.log('backgesture', 'tab 重复 start 重新认领 progress=${backEvent.progress.toStringAsFixed(3)}');
       return true;
@@ -138,9 +113,6 @@ class _PredictiveBackTabContainerState
     setState(() => _phase = PredictiveBackPhase.commit);
     _startBackEvent = null;
     _currentBackEvent = null;
-    // 切回首页 tab。此时仍处于 overlay 模式（commit 动画期间），由
-    // PredictiveBackSharedElementPageTransition 负责「我的」缩放+下移+淡出收尾；
-    // 动画结束后切回 AnimatedBranchContainer 正常路径，首页无缝衔接。
     widget.navigationShell.goBranch(0);
     _ctrl.animateTo(0.0, duration: _commitDuration).whenComplete(() {
       if (mounted) setState(() => _phase = PredictiveBackPhase.idle);
@@ -161,12 +133,6 @@ class _PredictiveBackTabContainerState
 
   @override
   Widget build(BuildContext context) {
-    // 横屏独立模式：独立 out-in 切换器（无 PageView/预测返回）。
-    // suppress 三种情况硬切（切换动画由别处承担，或本容器当前不可见）：
-    // - 覆盖面板（账号/搜索/下载/歌单详情）打开：面板关闭淡出即切换动画；
-    // - 音乐库入口选中：本容器在外层主页切换器（shell landscapeHome）中处于
-    //   隐藏分支，切 tab 硬跳、由外层 out-in 承担可见动画，避免嵌套双重淡入
-    //   （音乐库→首页时外层 out-in 揭开内层，内层再自己 out-in 会叠两层）。
     if (ref.watch(isLandscapeProvider)) {
       return LandscapeTabSwitcher(
         currentIndex: widget.currentIndex,
@@ -189,7 +155,6 @@ class _PredictiveBackTabContainerState
         : (widget.children.isEmpty
             ? const SizedBox.shrink()
             : widget.children.last);
-    // 首页分支作为「上一屏」静态垫底；忽略指针，预览期间不可交互。
     final home = widget.children.isEmpty ? null : widget.children[0];
     return Stack(
       children: [

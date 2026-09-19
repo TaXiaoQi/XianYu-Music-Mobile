@@ -1,10 +1,3 @@
-/// 备份容器文件解析：从 ZIP / lxmc(gzip) 等压缩容器中提取 JSON 备份文本。
-///
-/// 与桌面端 zipReader.ts + preparePluginBackupFileContent 对齐：
-/// - `.json`/`.txt`：直接按 UTF-8 明文读取
-/// - `.zip`：解析 PKZIP，优先取其中的 `.json` 文件，其次 `.lxmc`（gzip），
-///   再尝试按内容识别无扩展名的 JSON，最后兜底取唯一文件
-/// - `.lxmc`：洛雪音乐备份，gzip 压缩的 JSON，解压后读取
 library;
 
 import 'dart:convert';
@@ -12,7 +5,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../i18n/i18n.dart';
 
-/// 按扩展名/魔数从字节中提取备份 JSON 文本。扩展名未知时自动探测。
 String extractBackupJsonBytes(List<int> rawBytes, String fileName) {
   final bytes = Uint8List.fromList(rawBytes);
   final lowerExt = _extensionOf(fileName);
@@ -31,13 +23,11 @@ String extractBackupJsonBytes(List<int> rawBytes, String fileName) {
   return utf8.decode(bytes);
 }
 
-/// 从本地文件读取并解压出备份 JSON 文本。
 Future<String> extractBackupJsonFromFile(String path) async {
   final bytes = await File(path).readAsBytes();
   return extractBackupJsonBytes(bytes, path);
 }
 
-/// 从 URL 拉取的字节中解压出备份 JSON 文本。
 String extractBackupJsonFromUrlBytes(List<int> bytes, String url) =>
     extractBackupJsonBytes(bytes, _extNameFromUrl(url));
 
@@ -115,7 +105,6 @@ Map<String, List<int>> _parseZip(Uint8List data) {
   var totalEntries = _u16(data, eocdOffset + 10);
   var cdOffset = _u32(data, eocdOffset + 16);
 
-  // ZIP64：EOCD 字段为 0xFFFF/0xFFFFFFFF 时从 ZIP64 EOCD 读取。
   if (totalEntries == 0xFFFF || cdOffset == 0xFFFFFFFF) {
     if (eocdOffset >= 20 &&
         _u32(data, eocdOffset - 20) == _zip64EocdLocatorSignature) {
@@ -147,7 +136,6 @@ Map<String, List<int>> _parseZip(Uint8List data) {
     final nameBytes = data.sublist(offset + 46, offset + 46 + filenameLength);
     final name = utf8.decode(nameBytes, allowMalformed: true);
 
-    // 解析 ZIP64 扩展字段（extra field ID = 0x0001）。
     if (compressedSize == 0xFFFFFFFF || localHeaderOffset == 0xFFFFFFFF) {
       var extraOffset = offset + 46 + filenameLength;
       final extraEnd = extraOffset + extraFieldLength;
@@ -211,25 +199,21 @@ String _extractJsonFromZip(Uint8List data) {
   final entries = _parseZip(data);
   final files = entries.keys.where((f) => !f.endsWith('/')).toList();
 
-  // 1. 优先取 .json 文件。
   for (final name in entries.keys) {
     if (name.toLowerCase().endsWith('.json')) {
       return utf8.decode(entries[name]!);
     }
   }
 
-  // 2. 取 .lxmc 文件（gzip 压缩的 JSON，如洛雪备份打包进 ZIP）。
   for (final name in entries.keys) {
     if (name.toLowerCase().endsWith('.lxmc')) {
       try {
         return utf8.decode(_gunzip(entries[name]!));
       } catch (_) {
-        // 解压失败继续尝试其他文件。
       }
     }
   }
 
-  // 3. 内容检测：任何以 { 或 [ 开头的文件（可能是无扩展名的 JSON）。
   for (final fileData in entries.values) {
     final text = utf8.decode(fileData, allowMalformed: true);
     final trimmed = text.trimLeft();
@@ -238,12 +222,10 @@ String _extractJsonFromZip(Uint8List data) {
     }
   }
 
-  // 4. 只有一个文件时，无论扩展名都按 JSON 返回。
   if (files.length == 1) {
     return utf8.decode(entries[files.first]!);
   }
 
-  // 5. 友好错误，列出文件帮助排查。
   final fileList = files.isNotEmpty ? files.map((f) => '"$f"').join(', ') : tr('(空)');
   throw FormatException('ZIP 中未找到可识别的备份文件。包含: $fileList');
 }

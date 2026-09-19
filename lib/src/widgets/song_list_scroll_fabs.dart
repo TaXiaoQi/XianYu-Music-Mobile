@@ -9,13 +9,6 @@ import '../i18n/i18n.dart';
 import 'bilipai_glass.dart';
 import 'glass_settings.dart';
 
-/// 歌曲列表悬浮按钮层：右下角「回到顶部」+「定位当前播放歌曲」两个圆形 FAB，
-/// 行为对齐桌面端 SongTable（滚过一屏行高才出现回到顶部；当前歌不在视口内时
-/// 显示定位钮，点击平滑滚动到该行）。
-///
-/// [rowTopOf] 返回指定歌曲行在列表内容坐标系中的顶部偏移（已含顶部 padding
-/// 与分组表头），用于「定位播放」的目标位置与「当前行是否在视口内」的判定；
-/// [itemExtent] 为每行固定高度。
 class SongListScrollFabs extends ConsumerWidget {
   const SongListScrollFabs({
     super.key,
@@ -29,26 +22,20 @@ class SongListScrollFabs extends ConsumerWidget {
 
   final ScrollController controller;
 
-  /// 列表内各条目对应的歌曲路径，用于匹配当前播放歌曲。
   final List<String> paths;
 
-  /// 歌曲下标 → 该行在内容坐标系中的 top 偏移。
   final double Function(int songIndex) rowTopOf;
 
-  /// 每行固定高度（itemExtent）。
   final double itemExtent;
 
-  /// 距容器底部 / 右侧偏移。
   final double bottom;
   final double right;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final current = ref.watch(playerProvider.select((s) => s.current));
-    // 「回到顶部」受常规设置开关控制（对齐桌面端 enableScrollToTopButton）。
     final enableScrollToTop = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.enableScrollToTopButton ?? true));
-    // 壁纸模式：悬浮钮套用底栏同款磨砂（wallpaperNavGlassFill + 最深固定模糊）。
     final wallpaper = wallpaperGlassActive(ref);
     final currentIndex = current == null || current.path.isEmpty
         ? -1
@@ -59,16 +46,11 @@ class SongListScrollFabs extends ConsumerWidget {
       builder: (context, _) {
         final hasClients = controller.hasClients;
         final offset = hasClients ? controller.offset : 0.0;
-        // 首帧时 controller 已 attach 但 viewport 尺寸尚未经 layout 应用
-        //（_viewportDimension 仍为 null），必须用 hasViewportDimension 兜底，
-        // 否则直接读 viewportDimension 会触发 "Null check operator used on a null value"。
         final hasViewport =
             hasClients && controller.position.hasViewportDimension;
         final viewportH = hasViewport ? controller.position.viewportDimension : 0.0;
-        // 滚过一屏行高才显示「回到顶部」（且开关开启）。
         final showTop =
             enableScrollToTop && hasClients && offset > itemExtent;
-        // 当前歌在本列表内且不在视口内才显示「定位播放」。
         var showLocate = false;
         if (currentIndex >= 0 && hasClients && viewportH > 0) {
           final rowTop = rowTopOf(currentIndex);
@@ -126,7 +108,6 @@ class SongListScrollFabs extends ConsumerWidget {
   }
 }
 
-/// 固定槽位内的显隐动画：按钮以淡入 + 缩放出现/消失，位置不随显隐跳动。
 class _Slot extends StatelessWidget {
   const _Slot({required this.visible, required this.child});
 
@@ -152,11 +133,6 @@ class _Slot extends StatelessWidget {
   }
 }
 
-/// 圆形悬浮钮：毛玻璃底 + 细边框 + 投影（对齐桌面端 backdrop-blur 观感）。
-///
-/// 壁纸模式下与迷你播放条/悬浮底栏同口径：底用 [wallpaperNavGlassFill] 半透明
-/// 磨砂、模糊用固定最深 [kNavSurfaceBlurSigma]，并去掉投影（避免半透明胶囊上
-/// 投影透成黑色块），仅靠描边 + 模糊维持浮层层次。
 class _ScrollFab extends ConsumerWidget {
   const _ScrollFab({
     required this.wallpaper,
@@ -165,7 +141,6 @@ class _ScrollFab extends ConsumerWidget {
     required this.onTap,
   });
 
-  /// 是否处于壁纸模式（由外层 [SongListScrollFabs] 根据设置计算传入）。
   final bool wallpaper;
 
   final IconData icon;
@@ -180,8 +155,6 @@ class _ScrollFab extends ConsumerWidget {
     final Widget iconWidget =
         Icon(icon, size: 20, color: scheme.onSurfaceVariant);
 
-    // 液态玻璃开启（且非低性能）→ 与迷你播放条/悬浮底栏同口径，用 BiliPai
-    // 液态 shader；否则维持现有圆形毛玻璃/实色圆钮，避免打扰常规观感。
     final lowPerf = ref.watch(
         settingsProvider.select((s) => performancePriority(s.valueOrNull ?? const AppSettings())));
     final liquid = (ref.watch(settingsProvider.select(
@@ -189,7 +162,6 @@ class _ScrollFab extends ConsumerWidget {
         true) &&
         !lowPerf;
 
-    // 内层按钮单位：透明底（玻璃/磨砂底色由外层承载），仅保留触点与点击反馈。
     Widget button(Widget child) => Material(
           color: Colors.transparent,
           shape: const CircleBorder(),
@@ -221,7 +193,6 @@ class _ScrollFab extends ConsumerWidget {
           ),
         ),
       );
-      // BiliPai 液态外壳勾边（与迷你播放条/悬浮底栏同款）。
       surface = liquidGlassShell(context, child: surface, radius: 20);
     } else {
       surface = ClipOval(

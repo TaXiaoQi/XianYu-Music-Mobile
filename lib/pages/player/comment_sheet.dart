@@ -8,11 +8,9 @@ import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 歌曲评论弹层：分页加载 + 点赞/最新排序 + 二级评论展开。
 class CommentSheet extends ConsumerStatefulWidget {
   const CommentSheet({super.key, required this.songJson});
 
-  /// 播放队列项的 onlineSongJson（含 pluginId/musicInfo）。
   final String? songJson;
 
   @override
@@ -27,7 +25,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
   bool _loadingMore = false;
   String? _error;
   bool _unsupported = false;
-  int _sortMode = 0; // 0 最多赞 1 最新
+  int _sortMode = 0;
   final Set<String> _expandedReplies = {};
   final _scroll = ScrollController();
 
@@ -103,7 +101,6 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
           _comments = result.items;
           _expandedReplies.clear();
         } else {
-          // 按内容去重，个别插件每页重复返回
           final seen = _comments
               .map((c) => '${c.id}|${c.nickName}|${c.comment}')
               .toSet();
@@ -155,7 +152,6 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
 
   String _fmtTime(int? ts) {
     if (ts == null || ts <= 0) return '';
-    // 秒级时间戳转毫秒
     final ms = ts < 100000000000 ? ts * 1000 : ts;
     final diff = DateTime.now().millisecondsSinceEpoch - ms;
     if (diff < 60000) return tr('刚刚');
@@ -185,7 +181,6 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 标题 + 排序切换
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
               child: Row(
@@ -452,7 +447,6 @@ class _CommentTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // 二级评论展开：AnimatedSize 平滑过渡
                   AnimatedSize(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,

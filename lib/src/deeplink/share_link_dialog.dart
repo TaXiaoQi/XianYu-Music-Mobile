@@ -5,18 +5,10 @@ import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
-/// 分享预览弹窗的用户动作。
 enum ShareLinkPreviewAction { play, playNext, cancel, import }
 
-/// 分享预览弹窗形态：本地命中 / 本地无音源但可在线播放 / 需导入音源。
 enum ShareLinkDialogMode { local, online, import }
 
-/// 分享链接预览弹窗：封面 / 歌名 / 歌手 / 来源（插件或本地）+ 按形态渲染按钮。
-///
-/// mode=local：播放 / 下一首播放 / 取消；online：主按钮 / 取消；import：「前往导入音源」/ 取消。
-/// online 主按钮文案由 [onlineActionLabel] 指定（缺省「本地无音源，前往在线播放」）。
-/// 复用统一弹窗卡片样式（ModernDialogCard），压在 root Navigator 上；
-/// 用户点按返回对应动作，返回手势/系统返回视作取消。
 Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
   required BuildContext context,
   required String name,

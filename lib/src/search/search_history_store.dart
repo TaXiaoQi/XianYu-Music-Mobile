@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 本地搜索历史持久化。
 class SearchHistoryStore {
   static const _key = 'xianyu_search_history_v1';
   static const int maxItems = 10;
@@ -18,7 +17,6 @@ class SearchHistoryStore {
   }
 }
 
-/// 搜索历史状态（最新在前，去重，最多 [SearchHistoryStore.maxItems] 条）。
 class SearchHistoryNotifier extends StateNotifier<List<String>> {
   SearchHistoryNotifier() : super(const []) {
     _init();

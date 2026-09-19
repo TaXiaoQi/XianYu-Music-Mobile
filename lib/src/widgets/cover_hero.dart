@@ -4,10 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'cover_image.dart';
 
-/// Hero 飞行中的封面：从迷你播放栏封面过渡到播放页大封面。
-///
-/// 飞行期间封面保持静态（不随底栏旋转），圆角从 [fromRadius] 插值到
-/// [toRadius]——参考桌面端 CSS transition 与 RwaS 的 Overlay 圆角插值。
 class CoverHeroShuttle extends StatelessWidget {
   const CoverHeroShuttle({
     super.key,
@@ -25,15 +21,10 @@ class CoverHeroShuttle extends StatelessWidget {
   final double fromRadius;
   final double toRadius;
 
-  /// 飞行中保持高清单像素：目标详情页大封面用 800px 高清，飞行中若退化为
-  /// 150px 缩略图会在放大到全屏时变糊、落地瞬间清晰导致跳变。缺省开启，
-  /// 与目标封面同质解码，实现像素级无缝衔接（RwaS 共享封面同款保留清晰度）。
   final bool highQuality;
 
   @override
   Widget build(BuildContext context) {
-    // 飞行封面收敛为独立合成层：路由滑动/下层重绘不会反复栅格化它，
-    // 消除飞行过程中因父层重建引发的闪烁（RwaS freezeBitmapUpdates 等价物）。
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: animation,
@@ -54,13 +45,6 @@ class CoverHeroShuttle extends StatelessWidget {
   }
 }
 
-/// 播放页 Hero 飞行中的封面：在 [CoverHeroShuttle] 基础上叠加目标大封面的
-/// 描边与投影，且描边/投影透明度随飞行进度从 0 渐变到 1。
-///
-/// 播放页大封面（_BigCover/_TraditionalCover）自带 1px 描边 + 投影，而普通
-/// [CoverHeroShuttle] 只渲染纯封面，飞行结束瞬间会被「带描边+阴影」的目标
-/// 封面替换，产生「形变嵌入」的跳变。本组件让飞行中的封面始终与目标封面
-/// 同构（描边/阴影淡入），结束时像素级无缝衔接，参考桌面端 CSS transition。
 class PlayerCoverShuttle extends StatelessWidget {
   const PlayerCoverShuttle({
     super.key,
@@ -81,21 +65,16 @@ class PlayerCoverShuttle extends StatelessWidget {
   final double fromRadius;
   final double toRadius;
 
-  /// 目标封面描边颜色（含透明度，如 white 0.18）。
   final Color borderColor;
 
-  /// 目标封面投影；null 时不渲染投影。
   final BoxShadow? shadow;
 
-  /// 占位渐变（无封面图时的回退），与目标封面一致。
   final List<Color>? gradient;
 
-  /// 飞行中保持高清，与目标大封面（800px）同质解码，避免放大全屏时变糊。
   final bool highQuality;
 
   @override
   Widget build(BuildContext context) {
-    // 独立合成层：与 CoverHeroShuttle 同款，避免路由滑动/下层重绘反复栅格化飞行封面。
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: animation,
@@ -106,7 +85,6 @@ class PlayerCoverShuttle extends StatelessWidget {
           final sh = shadow;
           return Container(
           decoration: BoxDecoration(
-            // 描边在封面外缘 1px：目标封面外层圆角 = 内层 + 1。
             borderRadius: BorderRadius.circular(radius + 1),
             border: Border.all(
               color: borderColor.withValues(alpha: borderColor.a * t),

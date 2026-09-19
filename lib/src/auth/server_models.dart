@@ -1,8 +1,6 @@
-/// 服务端接口数据模型（与桌面端 authService.ts / usageStats.ts 对齐）。
 library;
 import '../i18n/i18n.dart';
 
-/// 公告（get_announcement 返回的单条公告）。
 class Announcement {
   final String id;
   final String title;
@@ -35,7 +33,6 @@ class Announcement {
       );
 }
 
-/// 关于页致谢名单成员：名字 + 主页链接。
 class AcknowledgementItem {
   final String name;
   final String url;
@@ -48,7 +45,6 @@ class AcknowledgementItem {
       );
 }
 
-/// 关于页配置（get_about_config）。只下发链接，按钮显示文字由客户端按语言本地化。
 class AboutConfig {
   final String officialSiteUrl;
   final bool updateEnabled;
@@ -82,7 +78,6 @@ class AboutConfig {
       );
 }
 
-/// 最新版本信息（get_latest_version）。
 class LatestVersion {
   final int id;
   final String appName;
@@ -115,7 +110,6 @@ class LatestVersion {
       );
 }
 
-/// 用户协议（get_user_agreement）。
 class UserAgreement {
   final String title;
   final String content;
@@ -127,7 +121,6 @@ class UserAgreement {
       );
 }
 
-/// 排行榜条目（get_leaderboard）。
 class LeaderboardEntry {
   final int rank;
   final String username;
@@ -157,7 +150,6 @@ class LeaderboardEntry {
       );
 }
 
-/// 排行榜数据。
 class LeaderboardData {
   final List<LeaderboardEntry> leaderboard;
   final LeaderboardEntry? me;
@@ -183,7 +175,6 @@ class LeaderboardData {
       );
 }
 
-/// 反馈条目（list_my_feedback）。
 class FeedbackItem {
   final int id;
   final String title;
@@ -247,7 +238,6 @@ class FeedbackItem {
       );
 }
 
-/// 反馈处理通知（get_my_feedback_notifications）。
 class FeedbackNotification {
   final int id;
   final String title;
@@ -292,7 +282,6 @@ class FeedbackNotification {
       );
 }
 
-/// 昵称变更通知（get_nickname_change_notices）。
 class NicknameChangeNotice {
   final int id;
   final String oldNickname;
@@ -320,7 +309,6 @@ class NicknameChangeNotice {
       );
 }
 
-/// 封禁检查结果（check_ban_status）。
 class BanStatus {
   final bool banned;
   final String type;
@@ -334,9 +322,8 @@ class BanStatus {
       );
 }
 
-/// 昵称/头像变更审核状态 + 今日变更限制（get_nickname_status / get_avatar_status）。
 class ProfileChangeLimitStatus {
-  final String status; // pending / rejected / none
+  final String status;
   final bool todayBlocked;
   final String blockMessage;
   const ProfileChangeLimitStatus({
@@ -346,7 +333,6 @@ class ProfileChangeLimitStatus {
   });
 }
 
-/// 服务器负载状态（get_server_load，自动同步用）。
 class ServerLoadStatus {
   final bool rateLimited;
   final int activeSyncCount;

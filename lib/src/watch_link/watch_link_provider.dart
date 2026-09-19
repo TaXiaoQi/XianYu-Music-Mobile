@@ -24,20 +24,8 @@ import 'cloud_channel.dart';
 import 'protocol.dart';
 import 'watch_link_channel.dart';
 
-/// 云端中继默认地址（服务端 `/watch-relay`，与手表端默认一致）。
 const String kWatchCloudRelayUrl = 'wss://api.xianyumusic.cn/watch-relay';
 
-/// 手表联动编排层（手机端）。
-///
-/// 职责：
-/// - 按设置 `watchLinkageEnabled` 启停 RFCOMM 服务端（权限缺失时先申请）；
-/// - 播放状态变化 → 推送 state / now_playing / position（进度 1s 节流）；
-/// - 手表 cmd → 转调 PlayerNotifier（播放暂停/上下首/喜欢/切模式/seek）；
-/// - 握手：收到手表 hello 后回 hello 并立即推 now_playing+state 快照；
-///   收到 ping 回 pong（保活由手表侧发起，手机只被动应答）。
-///
-/// 与腕上端 `XianYu-Music-Watch/lib/src/link/link_provider.dart` 为同一协议的
-/// 对端实现，消息方向约定见 protocol.dart 头注释。
 class WatchLinkController {
   WatchLinkController(this._container);
 
@@ -46,67 +34,50 @@ class WatchLinkController {
   final WatchCloudChannel _cloud = WatchCloudChannel();
   FrameDecoder _decoder = FrameDecoder();
 
-  /// 云通道独立解码器（与蓝牙字节流隔离，防半包串流）。
   final FrameDecoder _cloudDecoder = FrameDecoder();
   final int Function() _nextSeq = makeSeqGenerator();
 
   final List<StreamSubscription<dynamic>> _subs = [];
   final List<ProviderSubscription<dynamic>> _providerSubs = [];
 
-  /// 服务端是否已 start（Kotlin 侧幂等，这里只做去重与状态记忆）。
   bool _running = false;
   bool _connected = false;
   String _connectedName = '';
 
   // ---- 云端兜底通道状态 ----
 
-  /// 云通道应保持运行（联动开 + 云兜底开）。
   bool _cloudRunning = false;
 
-  /// 手表当前是否经云端在线。
   bool _cloudWatchOnline = false;
 
-  /// 手表经 hello 上报的名字（控制命令来源展示用）。
   String _cloudWatchName = '';
 
   Timer? _cloudReconnect;
   Duration _cloudBackoff = const Duration(seconds: 5);
 
-  /// 当前播放会话是否已获准推送（起播经确认/记住选择后置 true，暂停或停止后清空）。
   bool _transferActive = false;
 
-  /// 当前播放会话是否已拒绝（弹窗被关闭未回答时置 true：本会话不再询问、
-  /// 不推送；暂停或停止后清空，与 [_transferActive] 同生命周期）。
   bool _sessionDenied = false;
 
-  /// 进行中的授权弹窗（单飞：门控/握手同时触发复用同一次弹窗）。
   Future<void>? _askInFlight;
 
-  /// 当前已连接的手表名（调试/设置页展示用）。
   String get connectedName => _connectedName;
 
-  /// 当前已推送歌曲 key（切歌检测）。
   String? _songKey;
 
-  /// 联动封面 base64 缓存（key = 本地封面文件路径，上限 16 条防膨胀）。
   final Map<String, String> _coverDataCache = {};
 
-  /// 已推送歌词的歌曲 id（同曲只发一次；快照推送时置空强制重发）。
   String? _lyricSentSongId;
 
-  /// 已完成预载推送的歌曲路径集合（接下来五首批量预载；同一首只推一次；
-  /// 重连后清空重推，手表可能刚启动丢了落盘缓存；超限整体清空防膨胀）。
   final Set<String> _precachedPaths = {};
   bool _lastPlaying = false;
   LinkPlayMode _lastMode = LinkPlayMode.order;
   bool _lastLiked = false;
   DateTime _lastPosPush = DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// 挂载全部监听（main 启动时调用一次）。
   void init() {
     if (!PlatformCaps.isAndroid) return;
     _channel.bind();
-    // 起播门控：有腕上设备且 ask 模式当天未决时，先弹授权确认再放行起播。
     beforePlayGate = _playGate;
     _subs.add(_channel.onRaw.listen(_onRaw));
     _subs.add(_channel.onConnection.listen(_onConnection));
@@ -114,7 +85,6 @@ class WatchLinkController {
     _subs.add(_cloud.onRaw.listen(_onCloudRaw));
     _subs.add(_cloud.onEvent.listen(_onCloudEvent));
 
-    // 设置开关驱动启停；首次读取按当前值应用。
     _providerSubs.add(_container.listen<AsyncValue<AppSettings>>(
       settingsProvider,
       (prev, next) {
@@ -124,19 +94,16 @@ class WatchLinkController {
       fireImmediately: true,
     ));
 
-    // 播放状态变化 → 增量推送。
     _providerSubs.add(_container.listen<PlaybackState>(
       playerProvider,
       (_, st) => _onPlayback(st),
     ));
 
-    // 收藏变化 → 喜欢状态推送（liked 不经过 playerProvider）。
     _providerSubs.add(_container.listen<FavoritesState>(
       favoritesProvider,
       (_, _) => _pushState(),
     ));
 
-    // 设置变化（含表冠调回的音量）→ state 推送（帧很小，低频可接受）。
     _providerSubs.add(_container.listen<AsyncValue<AppSettings>>(
       settingsProvider,
       (prev, next) {
@@ -160,7 +127,6 @@ class WatchLinkController {
 
   // ---- 开关与权限 ----
 
-  /// 按设置应用联动启停（蓝牙服务 + 云端兜底通道）。
   void _applyLinkSettings(AppSettings s) {
     _applyEnabled(s.watchLinkageEnabled);
     _applyCloud(
@@ -182,7 +148,6 @@ class WatchLinkController {
       await _channel.start();
       _running = true;
     } else {
-      // 结果经 onPermission 回调继续。
       await _channel.requestPermission();
     }
   }
@@ -196,7 +161,6 @@ class WatchLinkController {
 
   // ---- 云端兜底通道（P4） ----
 
-  /// 按设置启停云通道（幂等）：断线 5s→60s 指数退避重连。
   Future<void> _applyCloud(bool desired) async {
     if (!desired) {
       _cloudRunning = false;
@@ -212,7 +176,6 @@ class WatchLinkController {
     if (_cloudRunning && key.isNotEmpty) _connectCloud();
   }
 
-  /// 读取云端凭据，空则懒生成 32 字节随机 hex（仅生成一次并落库）。
   Future<String> _ensureCloudKey() async {
     final s = _container.read(settingsProvider).valueOrNull;
     final existing = s?.watchLinkCloudKey ?? '';
@@ -255,7 +218,6 @@ class WatchLinkController {
         _cloudWatchOnline = false;
         _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
         if (_cloudRunning) {
-          // 断线退避重连（ready 时复位）。
           _cloudReconnect?.cancel();
           _cloudReconnect = Timer(_cloudBackoff, () {
             _cloudBackoff = _cloudBackoff * 2 > const Duration(seconds: 60)
@@ -273,20 +235,16 @@ class WatchLinkController {
     _connected = evt.connected;
     _connectedName = evt.name;
     _container.read(watchLinkConnectedNameProvider.notifier).state = evt.name;
-    _songKey = null; // 重连后由 hello 重新推快照。
-    _precachedPaths.clear(); // 重连后重推预载（手表可能刚启动丢了缓存）。
-    // 连接切换：丢弃旧连接残留的分片会话与半包缓冲。
+    _songKey = null;
+    _precachedPaths.clear();
     _decoder = FrameDecoder();
   }
 
   // ---- 设备管理（设置页） ----
 
-  /// 已配对蓝牙设备列表（手机端主动连接手表的选择列表）。
   Future<List<WatchBondedDevice>> loadPairedDevices() =>
       _channel.pairedDevices();
 
-  /// 手机端主动连接手表（反向配对）：连入手表侧服务端，手表端弹
-  /// 「允许/拒绝」确认。返回 false 表示缺蓝牙权限（已代为发起授权）。
   Future<bool> connectToWatch(String address) async {
     if (_connected) return true;
     if (!await _channel.hasPermission()) {
@@ -297,8 +255,6 @@ class WatchLinkController {
     return true;
   }
 
-  /// 手动断开当前手表：蓝牙踢下线（服务端继续监听，手表可重连）+ 云端通道
-  /// 暂离（3s 后自动重连中继）。授权与绑定状态不变。
   Future<void> disconnectWatch() async {
     await _channel.disconnect();
     if (_cloudRunning) {
@@ -320,7 +276,6 @@ class WatchLinkController {
     switch (msg.type) {
       case LinkMsgType.hello:
         if (fromCloud) {
-          // 云端握手：手表经中继上线，回 hello + 快照（同通道回帧）。
           _cloudWatchName = (msg.payload['name'] as String?) ?? '';
           _send(LinkMessage.hello(
             ver: kLinkProtocolVersion,
@@ -330,7 +285,6 @@ class WatchLinkController {
           _pushSnapshot(cloud: true);
           _maybeAskOnHandshake();
         } else {
-          // 蓝牙握手：回 hello + 立即推快照，并下发云端兜底绑定凭据。
           _send(LinkMessage.hello(
             ver: kLinkProtocolVersion,
             role: 'phone',
@@ -345,7 +299,6 @@ class WatchLinkController {
           't': msg.payload['t'],
         }), cloud: fromCloud);
       case LinkMsgType.bye:
-        // 手表主动告别，等 Kotlin 上报断连。
         break;
       case LinkMsgType.cmd:
         _onCmd(msg);
@@ -354,7 +307,6 @@ class WatchLinkController {
     }
   }
 
-  /// 蓝牙握手后向手表下发云端兜底凭据（联动开 + 云兜底开 + 凭据已生成）。
   void _maybePushCloudBind() {
     final s = _container.read(settingsProvider).valueOrNull;
     if (s?.watchLinkCloudEnabled != true) return;
@@ -383,14 +335,12 @@ class WatchLinkController {
         final pos = arg is Map ? (arg['pos'] as num?)?.toDouble() : null;
         if (pos != null) await notifier.seek(pos);
       case LinkCmdAction.volume:
-        // 表冠调音量：arg {v: 0..1}，写设置即联动播放引擎（volumeProvider 链）。
         final arg = msg.payload['arg'];
         final v = arg is Map ? (arg['v'] as num?)?.toDouble() : null;
         if (v != null) {
           await _container
               .read(settingsProvider.notifier)
               .setVolume(v.clamp(0.0, 1.0));
-          // 回推 state：手表 UI 音量与手机实际音量保持同源。
           _pushState();
         }
       default:
@@ -398,8 +348,6 @@ class WatchLinkController {
     }
   }
 
-  /// 「不喜欢」日推歌（手表 cmd）：上报负反馈后跳过下一首（同移动端播放页）。
-  /// 未登录仅跳过不上报，上报失败不阻断跳歌。
   Future<void> _dislikeAndSkip() async {
     final item = _container.read(playerProvider).current;
     if (item == null) return;
@@ -422,11 +370,6 @@ class WatchLinkController {
 
   // ---- 状态推送 ----
 
-  /// 增量推送：切歌 → now_playing + state；其余状态变化 → state；进度 1s 节流。
-  ///
-  /// 传递确认门控（对齐高德「投到腕上」）：每次播放会话起播先评估
-  /// 是否获准推送——`ask` 模式弹窗询问，`remember` 模式按记住的选择
-  /// 直接放行或拒绝；未获准的会话不推任何帧（含切歌/进度/状态）。
   void _onPlayback(PlaybackState st) {
     if (!_connected && !_cloudWatchOnline) return;
     final item = st.current;
@@ -440,7 +383,6 @@ class WatchLinkController {
     _songKey = key;
 
     if (isPlaying && !wasPlaying) {
-      // 起播：已获准的会话恢复直接全量同步；否则走确认评估。
       if (_transferActive) {
         _pushSnapshot();
       } else {
@@ -449,12 +391,7 @@ class WatchLinkController {
       return;
     }
     if (!isPlaying && wasPlaying && _transferActive) {
-      // 暂停/停止：先同步状态给手表，再关闭本次会话授权（下次起播重新确认）。
       _pushState();
-      // 在线歌切歌常以「暂停 + current 已变」的合并状态出现（解析流 URL
-      // 期间）：这里也要推新歌帧组，手表立即跟随手机 UI；否则要等起播
-      // 快照才更新，解析慢时手表停留旧歌数秒。手机有数据却"没传递"的
-      // 根因即此。
       if (key != prevKey && item != null) {
         _pushNowPlayingBlock(st, item);
       }
@@ -462,11 +399,8 @@ class WatchLinkController {
       _sessionDenied = false;
       return;
     }
-    // 未获准的会话不推任何帧（内部状态已同步，防重复判定）。
     if (!_transferActive) return;
 
-    // 切歌检测：与上一帧的 key 比较（prevKey 先于赋值捕获，自动接续
-    // isPlaying 不翻转时也能推 now_playing）。
     if (key != prevKey) {
       if (item != null) _pushNowPlayingBlock(st, item);
       return;
@@ -488,8 +422,6 @@ class WatchLinkController {
     }
   }
 
-  /// 切歌帧组：now_playing + 封面补发 + state + position 重置 + 歌词 +
-  /// 预缓存。切歌检测与暂停分支共用以保证任意时序都立即推新歌。
   void _pushNowPlayingBlock(PlaybackState st, QueueItem item) {
     _send(LinkMessage.nowPlaying(
       id: item.path,
@@ -513,11 +445,6 @@ class WatchLinkController {
     _maybePrecacheNext();
   }
 
-  /// 播放会话起播：按设置评估是否推送。
-  ///
-  /// `remember` 模式按记住的选择直接放行或拒绝；`ask` 模式按天隔离——
-  /// 当天已有决定（弹窗选过）则静默应用。起播前的弹窗询问由 [_playGate]
-  /// 在 play() 内完成（先弹窗后起播），这里只兜底漏网场景。
   void _onPlaybackStart() {
     final s = _container.read(settingsProvider).valueOrNull;
     final mode = s?.watchLinkTransferMode ?? 'ask';
@@ -526,41 +453,32 @@ class WatchLinkController {
         _transferActive = true;
         _pushSnapshot();
       }
-      // 记住「不传递」：本次会话不推，也不弹窗。
       return;
     }
-    // ask 模式：当天决定直接应用；会话已拒绝（弹窗被关）不再问；其余兜底弹窗。
     switch (_dayGrantOf(s)) {
       case true:
         _transferActive = true;
         _pushSnapshot();
       case false:
-        break; // 今天已拒绝：不推也不弹。
+        break;
       case null:
         if (_needsAsk(s)) _askTransfer();
     }
   }
 
-  /// 本地日期 `yyyy-MM-dd`（按天隔离的 key，跨天重置询问）。
   String _today() {
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
   }
 
-  /// ask 模式今天的决定：null=今天还没问过（可弹窗）；true/false=今天已授准/拒绝。
   bool? _dayGrantOf(AppSettings? s) {
     if (s == null || s.watchLinkAskDate != _today()) return null;
     return s.watchLinkAskGranted;
   }
 
-  /// 是否需要弹窗询问：会话未决（未授准也未拒绝）且今天还没问过。
   bool _needsAsk(AppSettings? s) =>
       !_transferActive && !_sessionDenied && _dayGrantOf(s) == null;
 
-  /// 起播门控（player_provider 的 beforePlayGate 钩子）：任意 play() 真正出声
-  /// 前调用。腕上设备在线且 ask 模式当天未决时，先弹授权确认再放行——
-  /// 保证「优先弹窗、后进播放」；其余情况直通。无论作何选择（含关闭），
-  /// 播放都放行，弹窗只决定是否向腕上推送。
   Future<void> _playGate() async {
     if (!_connected && !_cloudWatchOnline) return;
     final s = _container.read(settingsProvider).valueOrNull;
@@ -569,16 +487,9 @@ class WatchLinkController {
     await _askTransfer();
   }
 
-  /// 授权弹窗（三选一）：
-  /// - 允许该设备：永久记住（升级为 remember+自动传递，不再询问）；
-  /// - 允许本次：仅当前播放会话推送，会话结束（暂停/停止）后下次再问；
-  /// - 不允许：按天隔离落库，当天不再询问、不推送，跨天重置。
-  /// 点外部/返回键关闭视为未回答：本会话不再问也不推，不落库。
-  /// 单飞：门控与握手同时触发时复用同一次弹窗，防叠加。
   Future<void> _askTransfer() async {
     if (_askInFlight != null) return _askInFlight;
     final context = appNavigatorKey.currentContext;
-    // 无导航宿主（如首帧前）：不弹窗也不传递，保守降级。
     if (context == null || !context.mounted) return;
     final task = _doAskTransfer();
     _askInFlight = task;
@@ -601,28 +512,23 @@ class WatchLinkController {
     );
     switch (result) {
       case 'device':
-        // 允许该设备：永久记住（含后续跨天），本会话立即生效。
         await _container
             .read(settingsProvider.notifier)
             .setWatchLinkTransferRemembered(autoTransfer: true);
         _transferActive = true;
         _pushSnapshot();
       case 'once':
-        // 允许本次：仅当前播放会话，不落库。
         _transferActive = true;
         _pushSnapshot();
       case 'never':
-        // 不允许：按天隔离落库，当天静默不推不问。
         await _container
             .read(settingsProvider.notifier)
             .setWatchLinkAskChoice(date: _today(), granted: false);
       default:
-        // 关闭未回答：本会话不再询问、不推送。
         _sessionDenied = true;
     }
   }
 
-  /// 独立 state 推送（收藏变化等触发）。未获准的播放会话不推。
   void _pushState() {
     if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
     final st = _container.read(playerProvider);
@@ -638,12 +544,6 @@ class WatchLinkController {
     ));
   }
 
-  /// 全量快照（握手后立即同步当前播放现场）。
-  ///
-  /// 授权门（堵住「弹窗未决手表先收到数据」的泄漏）：任何路径推送快照前
-  /// 必须通过 [_snapshotAllowed]——remember 记住传递、ask 当天已授准、或
-  /// 本次会话已获准（[_transferActive]）三者其一；其余情况整个链路不推
-  /// 任何帧（含握手快照）。
   void _pushSnapshot({bool cloud = false}) {
     if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
     final st = _container.read(playerProvider);
@@ -673,13 +573,11 @@ class WatchLinkController {
     _lastPosPush = DateTime.now();
     _send(LinkMessage.position(pos: st.position, duration: st.duration),
         cloud: cloud);
-    // 握手快照强制重发歌词（手表可能在切歌瞬间掉线错过上一条）。
     _lyricSentSongId = null;
     _maybePushLyric(cloud: cloud);
     _maybePrecacheNext(cloud: cloud);
   }
 
-  /// 快照授权门：remember 记住传递 / ask 当天已授准 / 会话已获准。
   bool _snapshotAllowed() {
     final s = _container.read(settingsProvider).valueOrNull;
     final mode = s?.watchLinkTransferMode ?? 'ask';
@@ -687,9 +585,6 @@ class WatchLinkController {
     return _transferActive || _dayGrantOf(s) == true;
   }
 
-  /// 握手后补询问：连接瞬间已在播放（起播门控早已错过）且当天未询问过时
-  /// 立即弹确认，否则手表要静默到下一次起播才被询问。快照推送本身已被
-  /// [_snapshotAllowed] 拦住，这里只负责把弹窗时机提前到连接时刻。
   void _maybeAskOnHandshake() {
     final st = _container.read(playerProvider);
     if (!st.isPlaying) return;
@@ -699,10 +594,6 @@ class WatchLinkController {
     _askTransfer();
   }
 
-  /// 异步推送当前歌歌词（结构化 payload JSON，帧层自动分片）。
-  ///
-  /// 同曲只发一次（快照时由调用方置空强制重发）；歌词获取失败静默跳过，
-  /// 手表端显示「暂无歌词」。发送前复检链路与会话授权，防止异步窗口内状态失效。
   Future<void> _maybePushLyric({bool cloud = false}) async {
     if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
     final item = _container.read(playerProvider).current;
@@ -720,15 +611,6 @@ class WatchLinkController {
 
   // ---- 接下来五首批量预载（联动预缓存） ----
 
-  /// 预载推送：复用在线预缓存管线，把队列接下来可预知的至多五首（在线歌
-  /// 与本地歌一视同仁）的封面字节与歌词 payload 提前推给手表（precache
-  /// 帧，手表静默落盘/缓存不改 UI）。真正切歌的 now_playing 到达时手表
-  /// 直接命中本地缓存——快速连切不再卡加载/丢封面。
-  ///
-  /// 定位与播放器预缓存同款：顺序/列表循环环形取 5 首；随机模式仅预知栈
-  /// 顶；单曲循环无下一首。同一首只预载一次（集合去重，超 64 清空防膨胀）；
-  /// 逐首串行推送（封面编码本身耗时，天然错峰不挤兑当前会话帧）；推送前/
-  /// 发送前复检链路与会话授权（未获准零推送）。
   void _maybePrecacheNext({bool cloud = false}) {
     if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
     final upcoming =
@@ -739,14 +621,13 @@ class WatchLinkController {
         .toList(growable: false);
     if (todo.isEmpty) return;
     if (_precachedPaths.length > 64) _precachedPaths.clear();
-    // 延迟 3s：让当前歌的 now_playing/封面/歌词帧先走完链路，避免挤兑带宽。
     Future.delayed(const Duration(seconds: 3), () async {
       for (final next in todo) {
         if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
         if (_precachedPaths.contains(next.path)) continue;
         _precachedPaths.add(next.path);
         if (_container.read(playerProvider).current?.path == next.path) {
-          continue; // 期间已切到这首歌，切歌推送自带全量数据。
+          continue;
         }
         String? coverData;
         try {
@@ -769,14 +650,11 @@ class WatchLinkController {
           coverData: coverData,
           lyricPayload: lyricPayload,
         ), cloud: cloud, low: true);
-        // 逐首间隔：给实时帧和链路喘息窗口，预缓存全程低调背景化。
         await Future.delayed(const Duration(milliseconds: 800));
       }
     });
   }
 
-  /// 下一首封面字节：在线歌走代理缓存（在线预缓存已播种，未命中兜底拉
-  /// 一次），本地歌走联动封面解析链（与通知栏封面同源，含内嵌封面兜底）。
   Future<Uint8List?> _nextCoverBytes(QueueItem item) async {
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty && !url.startsWith('lx://')) {
@@ -800,12 +678,8 @@ class WatchLinkController {
     }
   }
 
-  /// 当前音量（0..1，与手机播放引擎同源）。
   double _volumeOf() => _container.read(volumeProvider);
 
-  /// 封面：本地歌曲给文件路径。在线歌曲一律不发 URL——防盗链/需代理的
-  /// 源手表直连拉不到，统一由 coverData 帧推送手机端已取到的字节（手表
-  /// 零网络请求）；预缓存命中时切歌瞬间封面已在手表本机。
   String? _coverOf(QueueItem? item) {
     if (item == null) return null;
     final path = item.coverPath;
@@ -818,19 +692,10 @@ class WatchLinkController {
     return null;
   }
 
-  /// 异步补发封面（512px JPEG base64，帧层自动分片）。
-  ///
-  /// 本地歌：优先 coverPath；常见无封面字段（内嵌封面走缩略图链路），
-  /// 这里复用播放器的缩略图解析兜底。在线歌：走代理字节链（与在线预
-  /// 缓存同源）取字节后编码推送——防盗链/需代理的封面手表直连 URL 必
-  /// 失败（NetworkImage 无 Referer 也不经代理），是在线歌联动丢封面的
-  /// 根因；cover 字段（URL）仍随 now_playing 发出，能直连的源可先显示，
-  /// coverData 到达后手表落盘覆盖为文件路径。结果按路径/URL 缓存。
   Future<void> _maybePushCoverData(QueueItem? item, {bool cloud = false}) async {
     if (item == null) return;
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty) {
-      // 在线歌：代理缓存字节（在线预缓存已播种，未命中兜底拉一次）。
       if (url.startsWith('lx://')) return;
       final cached = _coverDataCache[url];
       if (cached != null) {
@@ -858,7 +723,7 @@ class WatchLinkController {
       final resolved = await _container
           .read(playerProvider.notifier)
           .resolveLinkCoverPath(item);
-      if (resolved == null) return; // 无封面：手表保持默认底色
+      if (resolved == null) return;
       path = resolved;
       item = item.copyWith(coverPath: resolved);
     }
@@ -877,11 +742,10 @@ class WatchLinkController {
     }).catchError((_) {});
   }
 
-  /// 发送带 coverData 的 now_playing（复检链路/授权/切歌）。
   void _sendCoverData(QueueItem item, String data, {bool cloud = false}) {
     if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
     final st = _container.read(playerProvider);
-    if (st.current?.path != item.path) return; // 编码期间已切歌
+    if (st.current?.path != item.path) return;
     _send(LinkMessage.nowPlaying(
       id: item.path,
       title: item.title,
@@ -896,21 +760,12 @@ class WatchLinkController {
 
   // ---- 帧发送队列（背压） ----
 
-  /// 实时帧（state/now_playing/position/lyric 等当前会话数据）。
-  final List<(Uint8List, bool)> _txQueue = []; // (frame, useCloud)
+  final List<(Uint8List, bool)> _txQueue = [];
 
-  /// 预缓存帧：低优先级，只在实时队列为空时逐帧放行——预缓存一次最多
-  /// 五首封面+歌词（数百片 4KB 分片），蓝牙吞吐有限，不排队会挤兑实时
-  /// 帧并塞爆通道（曾致双端卡死）。
   final List<(Uint8List, bool)> _txLowQueue = [];
 
   bool _txDraining = false;
 
-  /// 发送消息：显式 [cloud]=true 走云端；否则蓝牙优先、蓝牙未连且手表
-  /// 云在线时走云。[low]=true 进低优先级队列（预缓存）。
-  ///
-  /// 帧 encode 后入队，由单一 worker 逐帧 await 写链路（Kotlin 侧一帧写
-  /// 完才回 result）——上一帧没写完不发下一帧，通道永不灌爆。
   void _send(LinkMessage msg, {bool cloud = false, bool low = false}) {
     final useCloud = cloud || (!_connected && _cloudWatchOnline);
     try {
@@ -920,12 +775,9 @@ class WatchLinkController {
       }
       _drainTx();
     } catch (_) {
-      // 发送失败静默：断连由读线程统一上报。
     }
   }
 
-  /// 单 worker 排空发送队列：优先发完实时帧，实时为空时放行一帧预缓存
-  /// 再回头检查（预缓存不阻塞实时）。断连即清空两队列。
   Future<void> _drainTx() async {
     if (_txDraining) return;
     _txDraining = true;
@@ -955,21 +807,16 @@ class WatchLinkController {
   }
 }
 
-/// 手表联动控制器 provider：首次读取时创建（监听由 main 显式 init）。
 final watchLinkControllerProvider = Provider<WatchLinkController>((ref) {
   final controller = WatchLinkController(ref.container);
   ref.onDispose(controller.dispose);
   return controller;
 });
 
-/// 当前已连接的手表名（设置页副标题展示，连接变化实时刷新）。
 final watchLinkConnectedNameProvider = StateProvider<String>((ref) => '');
 
-/// 云端通道是否在线（ready 后 true；断开/关闭时 false），设置页设备管理展示用。
 final watchLinkCloudOnlineProvider = StateProvider<bool>((ref) => false);
 
-/// 隔离池内编码联动封面：读文件 → 解码 → 512px 等比缩放 → JPEG(78) → base64。
-/// image 包解码较重，避免卡主线程；失败返回 null（静默无封面）。
 Future<String?> _encodeLinkCoverData(String path) async {
   try {
     final f = File(path);
@@ -980,7 +827,6 @@ Future<String?> _encodeLinkCoverData(String path) async {
   }
 }
 
-/// 字节版联动封面编码（预缓存的代理封面字节走同一管线）。
 Future<String?> _encodeLinkCoverBytes(List<int> raw) async {
   try {
     final decoded = img.decodeImage(Uint8List.fromList(raw));
@@ -997,8 +843,6 @@ Future<String?> _encodeLinkCoverBytes(List<int> raw) async {
   }
 }
 
-/// 传递授权弹窗（三选一）：允许该设备 / 允许本次 / 不允许。
-/// 返回 `'device'` / `'once'` / `'never'`；点外部或系统返回关闭返回 null。
 class _TransferConfirmDialog extends StatelessWidget {
   const _TransferConfirmDialog({required this.watchName});
 
@@ -1051,7 +895,6 @@ class _TransferConfirmDialog extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            // 三选一：主推「允许该设备」，其次「允许本次」，弱化「不允许」。
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(

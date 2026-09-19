@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../i18n/i18n.dart';
 
-/// 枚举到的输出音频设备。id 与 AAudio `setDeviceId` 一致，可传入独占播放。
 class AudioOutputDevice {
   final int id;
   final String name;
@@ -35,11 +34,9 @@ class AudioOutputDevice {
             .toList(),
       );
 
-  /// 展示名称，如「USB 设备 · USB DAC (44100Hz)」
   String get displayName => '$type · $name';
 }
 
-/// 仅 Android 提供平台通道枚举输出设备；其余平台返回空列表。
 Future<List<AudioOutputDevice>> listOutputDevices() async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {

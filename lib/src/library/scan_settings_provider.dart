@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db_path.dart';
 import '../rust/api.dart';
 
-/// 扫描目录项（复用 SQLite library_folders）。
 class ScanFolder {
   final String path;
   final int songCount;
@@ -17,7 +16,6 @@ class ScanFolder {
       );
 }
 
-/// 扫描目录列表（读 SQLite）。增删后调用 refresh 刷新。
 class ScanFoldersNotifier extends AsyncNotifier<List<ScanFolder>> {
   @override
   Future<List<ScanFolder>> build() => _load();
@@ -31,21 +29,18 @@ class ScanFoldersNotifier extends AsyncNotifier<List<ScanFolder>> {
     return list;
   }
 
-  /// 添加扫描目录。
   Future<void> addFolder(String path) async {
     final dbPath = await ref.read(dbPathProvider.future);
     await addLibraryFolder(dbPath: dbPath, path: path);
     state = AsyncData(await _load());
   }
 
-  /// 移除扫描目录。
   Future<void> removeFolder(String path) async {
     final dbPath = await ref.read(dbPathProvider.future);
     await removeLibraryFolder(dbPath: dbPath, path: path);
     state = AsyncData(await _load());
   }
 
-  /// 手动刷新。
   Future<void> refresh() async {
     state = AsyncData(await _load());
   }

@@ -6,11 +6,6 @@ import '../../src/player/player_provider.dart';
 import '../../src/share/share_sheet.dart';
 import '../../src/widgets/app_toast.dart';
 
-/// 桌面组件「分享」钮的桥接页。
-///
-/// 深链处理器只持有 [ProviderContainer]，而分享弹窗 [showSongShareSheet] 需要
-/// [WidgetRef]，因此借一个瞬时页面，在其 initState 弹出当前歌曲的分享菜单，
-/// 菜单关闭后自动返回（pop），用户几乎感知不到它存在。
 class SongShareBridgePage extends ConsumerStatefulWidget {
   const SongShareBridgePage({super.key});
 

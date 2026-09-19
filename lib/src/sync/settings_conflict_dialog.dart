@@ -4,10 +4,8 @@ import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
-/// 冲突解决方向：保留本地 / 保留云端。
 enum SyncDirection { local, cloud }
 
-/// 按类别的同步选择（设置/歌单/插件）。
 class SyncCategoryChoices {
   final SyncDirection settings;
   final SyncDirection playlists;
@@ -32,17 +30,11 @@ class SyncCategoryChoices {
   }
 }
 
-/// 展示设置同步冲突弹窗（两段式：先整体选择方向，再按类别精细调整）。
-///
-/// 与桌面端 SettingsConflictDialog 对齐：第一弹窗展示本地/云端时间并让用户
-/// 选择整体保留方向；第二弹窗按类别（设置/歌单/插件）分别选择保留本地或云端。
-/// 返回 null 表示用户取消。
 Future<SyncCategoryChoices?> showSettingsConflictDialog({
   required BuildContext context,
   required DateTime localTime,
   required DateTime cloudTime,
 }) async {
-  // 先取 root Navigator，避免跨 async 使用 BuildContext。
   final navigator = Navigator.of(context, rootNavigator: true);
   final direction = await navigator.push<SyncDirection>(
     PredictiveBackDialogRoute<SyncDirection>(
@@ -65,7 +57,6 @@ String _formatTime(DateTime t) {
   return '${t.year}-${pad(t.month)}-${pad(t.day)} ${pad(t.hour)}:${pad(t.minute)}';
 }
 
-/// 第一弹窗：整体冲突选择（保留本地 / 保留云端 / 取消）。
 class _ConflictOverallDialog extends StatelessWidget {
   const _ConflictOverallDialog({
     required this.localTime,
@@ -188,7 +179,6 @@ class _ConflictOverallDialog extends StatelessWidget {
   }
 }
 
-/// 时间信息行（本地/云端）。
 class _TimeRow extends StatelessWidget {
   const _TimeRow({
     required this.icon,
@@ -235,7 +225,6 @@ class _TimeRow extends StatelessWidget {
   }
 }
 
-/// 第二弹窗：按类别精细调整（设置/歌单/插件各自选择本地或云端）。
 class _ConflictCategoryDialog extends StatefulWidget {
   const _ConflictCategoryDialog({required this.initialDirection});
 
@@ -362,7 +351,6 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
   }
 }
 
-/// 类别行：图标 + 名称 + 描述 + 本地/云端切换。
 class _CategoryRow extends StatelessWidget {
   const _CategoryRow({
     required this.icon,
@@ -430,7 +418,6 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
-/// 本地/云端二选一切换（软色胶囊高亮，对齐移动端选择控件风格）。
 class _DirectionToggle extends StatelessWidget {
   const _DirectionToggle({
     required this.direction,

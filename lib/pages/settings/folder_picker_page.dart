@@ -9,7 +9,6 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 目录树节点（由 MediaStore 音频路径聚合构建）。
 class _PathNode {
   final String path;
   final String name;
@@ -19,11 +18,6 @@ class _PathNode {
   _PathNode(this.path, this.name, this.directCount);
 }
 
-/// 应用内音乐目录选择页（Android）。
-///
-/// 数据来自 MediaStore 聚合的真实目录：音乐权限授予一次后，添加目录在
-/// 应用内勾选即可，不再每次弹系统 SAF 授权框；真实路径直接交给 Rust
-/// 路径式扫描（SAF 系统选择器仅作 DSD / USB 等特殊目录的兜底入口）。
 class FolderPickerPage extends ConsumerStatefulWidget {
   const FolderPickerPage({super.key});
 
@@ -67,8 +61,6 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     }
   }
 
-  /// 系统选择器兜底：任意目录自由选择（含空目录 / SD 卡 / USB）。
-  /// 应用内列表只聚合「含音频的真实目录」，想扫没歌的新目录只能走这里。
   Future<void> _browseAllViaSaf() async {
     if (_adding) return;
     setState(() => _adding = true);
@@ -86,7 +78,6 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     }
   }
 
-  /// 由扁平目录列表构建目录树，并折叠单链前缀（/storage/emulated/0 一类）。
   List<_PathNode> _buildTree(List<MediaFolderInfo> folders) {
     final root = _PathNode('', '', 0);
     for (final f in folders) {
@@ -136,7 +127,6 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     }
   }
 
-  /// 已选目录中剔除被祖先覆盖的子目录（选了 Music 就无需再选 Music/子目录）。
   List<String> get _keptSelection {
     final sorted = _selected.toList()..sort();
     final kept = <String>[];
@@ -161,8 +151,6 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
       for (final p in kept) {
         await folders.addFolder(p);
       }
-      // 只注册扫描目录，立即返回；不在这里触发全库扫描（否则会一直卡在
-      // 选择页等扫完）。歌曲扫描改由文件夹页/顶栏手动触发。
       if (!mounted) return;
       Navigator.of(context).pop(kept.length);
     } catch (e) {

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xianyu_music_mobile/src/navigation/shell.dart';
 
-/// 用于验证 HidesShellChrome 生命周期的最小页面。
 class _Probe extends ConsumerStatefulWidget {
   const _Probe();
 
@@ -17,7 +16,6 @@ class _ProbeState extends ConsumerState<_Probe> with HidesShellChrome {
 }
 
 void main() {
-  /// 读取当前隐藏计数。
   int count(WidgetTester tester) {
     final ctx = tester.element(find.byType(Navigator).first);
     return ProviderScope.containerOf(ctx, listen: false)
@@ -41,14 +39,12 @@ void main() {
     );
     expect(count(tester), 0, reason: '初始应为 0');
 
-    // 推入二级页面
     Navigator.of(navContext).push(
       MaterialPageRoute(builder: (_) => const _Probe()),
     );
     await tester.pumpAndSettle();
     expect(count(tester), 1, reason: '进入后应为 1');
 
-    // 返回
     Navigator.of(navContext).pop();
     await tester.pumpAndSettle();
     expect(count(tester), 0, reason: '退出后必须归零，否则底栏永久消失');
@@ -120,5 +116,4 @@ void main() {
     expect(count(tester), 0);
   });
 
-  // navBarInsetProvider 的两种模式在 nav_bar_switch_test.dart 中覆盖。
 }

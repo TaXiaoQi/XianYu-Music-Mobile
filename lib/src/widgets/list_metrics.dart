@@ -3,14 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
 
-/// 列表大小对应的中文名（外观设置弹窗展示）。
 String listSizeLabel(ListSize v) => switch (v) {
       ListSize.compact => tr('最小'),
       ListSize.medium => tr('中等'),
       ListSize.large => tr('最大'),
     };
 
-/// 歌曲/歌手/专辑/歌单列表项的统一尺度。
 class ListMetrics {
   final double songCover;
   final double artistCover;
@@ -30,9 +28,7 @@ class ListMetrics {
     required this.vPad,
   });
 
-  /// 手/歌手列表等非圆形圆角曲与专辑共用 songRadius；圆形头像半径外部计算。
   static ListMetrics of(ListSize size) => switch (size) {
-        // 最小 = 早期紧凑样式。
         ListSize.compact => const ListMetrics(
             songCover: 44,
             artistCover: 48,
@@ -42,7 +38,6 @@ class ListMetrics {
             subtitleSize: 12,
             vPad: 6,
           ),
-        // 中等 = 最小与最大之间的折中。
         ListSize.medium => const ListMetrics(
             songCover: 58,
             artistCover: 68,
@@ -52,7 +47,6 @@ class ListMetrics {
             subtitleSize: 12.5,
             vPad: 7,
           ),
-        // 最大 = 当前本地库大图样式。
         ListSize.large => const ListMetrics(
             songCover: 80,
             artistCover: 88,
@@ -64,7 +58,6 @@ class ListMetrics {
           ),
       };
 
-  /// 从设置读取当前列表大小并映射为一组尺度。
   static ListMetrics ofRef(WidgetRef ref) => ListMetrics.of(
         ref.watch(settingsProvider
             .select((s) => s.valueOrNull?.listSize ?? ListSize.medium)),

@@ -10,9 +10,6 @@ import 'modern_dialog.dart';
 import 'predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
-/// DLNA 设备弹窗：扫描局域网渲染器 → 连接 → 投屏态显示设备与断开。
-///
-/// 连接即投：若当前有正在播放/已暂停的歌曲，连接后立即把当前曲投到设备。
 Future<void> showDlnaDeviceDialog(BuildContext context, WidgetRef ref) async {
   await showPredictiveDialog<void>(
     context: context,
@@ -36,7 +33,6 @@ class _DlnaDeviceDialogState extends ConsumerState<_DlnaDeviceDialog> {
   @override
   void initState() {
     super.initState();
-    // 弹窗打开即扫描一次（若未在投屏态）。
     final cast = ref.read(dlnaCastProvider);
     if (!cast.isCasting) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
@@ -60,13 +56,10 @@ class _DlnaDeviceDialogState extends ConsumerState<_DlnaDeviceDialog> {
     }
   }
 
-  /// 连接设备：连接成功后若当前有歌曲，立即投当前曲（播放中则保持进度续播）。
   Future<void> _connect(Map<String, dynamic> dev) async {
     final udn = dev['udn'] as String? ?? '';
     setState(() => _connectingUdn = udn);
-    // await 期间弹窗可能被下滑/手势关闭，提前捕获 OverlayState 防 ctx 失效崩溃。
     final overlay = Overlay.of(context, rootOverlay: true);
-    // 连接前快照：connect() 会静默本地引擎，之后进度以快照为准。
     final st = ref.read(playerProvider);
     final current = st.current;
     final wasPlaying = st.isPlaying;

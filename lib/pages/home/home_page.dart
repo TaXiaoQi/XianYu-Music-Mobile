@@ -16,9 +16,6 @@ import '../../src/widgets/page_search_bar.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 首页：顶栏（标题+搜索框）/ 封面轮播 / 发现 / 听过最多。
-///
-/// 顶栏为毛玻璃固定条，扩展至搜索框下；设置入口在「我的」页右上角菜单。
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
@@ -30,17 +27,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final ref = this.ref;
-    // 竖屏 / 横屏两套完全分开：横屏顶栏改横向（搜索框 + 扫码齐平一行）、
-    // 「弦予音乐」标题移入左侧侧栏、去掉封面卡片直接以「发现」起步。
     return useLandscape(ref)
         ? _buildLandscape(context, ref)
         : _buildPortrait(context, ref);
   }
 
-  /// 「发现」（音源榜单）与「每日推荐」两个区块：无任何已启用插件时整体
-  /// 隐藏（连同区块标题与「查看全部」入口），避免新装应用首页堆两块「去安装
-  /// 插件」占位卡；插件列表为异步加载，加载完成前同样按无插件隐藏，完成后
-  /// watch 自动重建出现，不闪占位。
   List<Widget> _discoverBlocks(BuildContext context, WidgetRef ref) {
     final hasEnabledPlugin = ref.watch(pluginManagerProvider
         .select((s) => s.sources.any((p) => p.enabled)));
@@ -63,7 +54,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     ];
   }
 
-  /// 竖屏：原默认布局（封面轮播 + 发现 + 听过最多，标题 + 底部搜索框顶栏）。
   Widget _buildPortrait(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
@@ -71,8 +61,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       onTap: () => context.push('/search'),
       onRecognize: () => context.push('/recognize'),
     );
-    // 悬浮顶部栏（标题胶囊+搜索胶囊+玻璃按钮）由壳层统一渲染在状态栏下方，
-    // 悬浮模式下本页不再渲染自己的标题行。
     final statusBar = MediaQuery.paddingOf(context).top;
     final topInset = floating
         ? statusBar + 8 + 44 + 14
@@ -82,8 +70,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       body: Stack(
         children: [
           const _AmbientBackground(),
-          // 内容主体：顶部避让扩展后的顶栏（标题行+搜索框）。
-          // RepaintBoundary 隔离内部重绘，避免列表重排波及背景层。
           RepaintBoundary(
             child: ListView(
             padding: EdgeInsets.fromLTRB(
@@ -99,20 +85,12 @@ class _HomePageState extends ConsumerState<HomePage> {
             ],
             ),
           ),
-          // 顶栏（仅非悬浮模式）已上提至壳层共用：竖屏固定顶栏（标题+搜索框）
-          // 由 shell 统一渲染为常驻毛玻璃 overlay，首页/我的页切换不再重建；
-          // 悬浮模式由壳层悬浮顶栏接管。本页只按其高度预留顶部避让。
         ],
       ),
     );
   }
 
-  /// 横屏：独立一套 UI。去掉封面轮播卡片、直接以「发现」起步。
-  /// 顶栏由壳层统一提供（全局继承），本页不再渲染自身顶栏。
   Widget _buildLandscape(BuildContext context, WidgetRef ref) {
-    // 悬浮模式：壳层横屏全局顶栏独立悬浮在容器顶部（控件独立显示），
-    // 内容需预留其高度，滚动时才能从悬浮控件下方穿过（默认模式顶栏在
-    // 上方 Column 中，无需预留）。
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
@@ -120,8 +98,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       body: Stack(
         children: [
           const _AmbientBackground(),
-          // 内容主体：顶部无需再避让顶栏（壳层全局顶栏在上方 Column 中），
-          // 直接以「发现」起步，仅留少量呼吸间距。
           ListView(
             padding: EdgeInsets.fromLTRB(
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
@@ -144,7 +120,6 @@ class _SectionHeader extends StatelessWidget {
 
   final String title;
 
-  /// 标题行右侧动作（如「查看全部」入口）。
   final Widget? action;
 
   @override
@@ -163,7 +138,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// 「查看全部」入口：横屏开右侧内容容器，竖屏 push 二级路由。
 Widget _viewAllAction(BuildContext context, WidgetRef ref, String route) {
   final scheme = Theme.of(context).colorScheme;
   return InkWell(

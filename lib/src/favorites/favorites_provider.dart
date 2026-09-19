@@ -8,7 +8,6 @@ import '../auth/auth_provider.dart';
 import '../home/daily_recommend.dart';
 import '../player/player_provider.dart';
 
-/// 收藏歌曲（本地或在线）。
 class FavoriteEntry {
   final String path;
   final String title;
@@ -81,10 +80,9 @@ class FavoriteEntry {
       );
 }
 
-/// 收藏的歌单/专辑（收藏集，非单曲；榜单不参与收藏）。
 class FavoriteCollection {
   final String key;
-  final String kind; // playlist | album（榜单不参与收藏）
+  final String kind;
   final String pluginId;
   final String title;
   final String subtitle;
@@ -127,7 +125,6 @@ class FavoriteCollection {
       );
 }
 
-/// 收藏存储（SharedPreferences 持久化，支持本地与在线歌曲）。
 class FavoritesStore {
   static const _key = 'xianyu_favorites_v1';
 
@@ -179,7 +176,6 @@ class FavoritesState {
       collections.any((c) => c.key == key);
 }
 
-/// 收藏集的持久化存储。
 class FavoritesCollectionStore {
   static const _key = 'xianyu_favorite_collections_v1';
 
@@ -213,24 +209,18 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
   final Ref _ref;
   final FavoritesStore _store = FavoritesStore();
   final FavoritesCollectionStore _collectionStore = FavoritesCollectionStore();
-  /// 整表写入串行队列：先更新内存 state，再按调用顺序落盘。
-  /// 避免并发收藏/取消收藏时，后发起的调用基于旧快照整表写回，
-  /// 覆盖先前的收藏导致列表只剩一首（丢失更新）。
   Future<void> _persistQueue = Future<void>.value();
 
   Future<void> _persist(List<FavoriteEntry> entries) {
     final task = _persistQueue.then((_) => _store.saveAll(entries));
-    // 单次写盘失败不中断队列，保证后续写入仍能执行。
     _persistQueue = task.then<void>((_) {}, onError: (Object _) {});
     return task;
   }
 
   Future<void> refresh() async {
-    // 等待在途写盘完成后再读盘，避免读到旧快照把内存 state 回退。
     await _persistQueue;
     final entries = await _store.loadAll();
     final loaded = await _collectionStore.loadAll();
-    // 榜单不参与收藏（对齐桌面端）：清理历史遗留的榜单收藏，避免僵尸数据。
     final collections = loaded.where((c) => c.kind != 'toplist').toList();
     if (collections.length != loaded.length) {
       await _collectionStore.saveAll(collections);
@@ -270,11 +260,8 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
     final entries = [entry, ...state.entries];
-    // 先同步更新内存 state，再异步落盘：连续快速收藏时，
-    // 后续调用能读到包含本次收藏的最新列表，不会基于旧快照覆盖。
     state = FavoritesState(entries: entries, loading: false);
     await _persist(entries);
-    // 正反馈：收藏 = 「喜欢这类歌」，上报日推画像（失败静默，不阻塞收藏）。
     unawaited(reportDailyLikeSignals(
       _ref.read(authProvider.notifier),
       _ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
@@ -283,8 +270,6 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     ));
   }
 
-  /// 批量添加到收藏。相比循环调用 [add]，此方法一次性读取/写回，
-  /// 避免多次 async [add] 并发读取同一 state 导致后写覆盖前写（只剩最后一首）。
   Future<void> addAll(List<QueueItem> items) async {
     if (items.isEmpty) return;
     final existing = state.entries;
@@ -329,7 +314,6 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     await _persist(entries);
   }
 
-  /// 按指定 path 顺序重排收藏歌曲（未列出的歌曲保持在队尾）。
   Future<void> reorderEntries(List<String> orderedPaths) async {
     final current = state.entries;
     final pathSet = orderedPaths.toSet();
@@ -353,9 +337,8 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     await _persist(const []);
   }
 
-  /// 收藏/取消收藏整张歌单或专辑。
   Future<void> toggleCollection({
-    required String kind, // playlist | album
+    required String kind,
     required String pluginId,
     required String title,
     String subtitle = '',
@@ -385,7 +368,6 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     state = state.copyWith(collections: next);
   }
 
-  /// 按指定 key 顺序重排收藏集（未列出的收藏保持在队尾）。
   Future<void> reorderCollections(List<String> orderedKeys) async {
     final current = state.collections;
     final keySet = orderedKeys.toSet();
@@ -400,7 +382,6 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     state = state.copyWith(collections: result);
   }
 
-  /// 播放收藏（从指定索引开始）。
   Future<void> play(int index) async {
     final entries = state.entries;
     if (entries.isEmpty) return;

@@ -1,5 +1,3 @@
-// 英文精确词典（自动命中桌面端 english.ts 的部分）
-// 由 tools 脚本从桌面端词典与 opencc 数据生成，请勿手工修改。
 
 const Map<String, String> enDictGen = {
   '6-20 位，支持纯数字、纯字母或组合': '6–20 characters; letters, numbers, or both',

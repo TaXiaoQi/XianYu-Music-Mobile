@@ -27,14 +27,9 @@ import '../../src/widgets/letter_index_song_list.dart';
 import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 本地曲库：全部 / 歌手 / 专辑（从「我的」页进入的二级页面）。
-///
-/// 歌单与收藏入口已分流到「我的」页；本页专注本地曲库浏览。
-/// 「文件夹」页已独立为 [LibraryFolderPage]（顶部搜索框右侧「+」进入）。
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key, this.initialTab = 0});
 
-  /// 初始 Tab：0 全部 / 1 歌手 / 2 专辑。
   final int initialTab;
 
   @override
@@ -45,28 +40,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
-  /// 整页搜索：从标题栏输入，跨整个本地页（任意 Tab）过滤歌曲。
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
-  /// 最近一次离线程搜索结果；null 表示正在计算或暂无输入。
   List<Song>? _searchResult;
   Timer? _searchDebounce;
   int _searchReq = 0;
 
-  /// —— 全部歌曲 Tab 的排序/去重/批量/统计状态。
-  /// 提升到页面层（而非 _AllSongsTab 内部）：横屏音乐库 pane 页头「右侧操作区」
-  /// 要把排序/批量/统计与 TabBar 并列，这些控件需在页面层持有状态并下发给 Tab。
-  /// 竖屏二级页台词不变，状态同样由此处持有、_AllSongsTab 通过参数读取。
   _SongSort _sort = _SongSort.none;
   bool _hideDuplicates = false;
 
-  /// 最近一次离线程排序/过滤结果；null 表示尚未计算，直接展示库原始顺序。
   List<Song>? _result;
   Timer? _debounce;
   int _req = 0;
 
-  /// 全部歌曲批量选择控制器（页头入口 + 列表 + 底部批量操作栏共用）。
   final SongBatchController _batch = SongBatchController();
 
   @override
@@ -75,8 +62,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     _tab = TabController(length: 3, vsync: this);
     _tab.index = widget.initialTab.clamp(0, 2);
     _tab.addListener(_onTabChanged);
-    // 批量模式关闭即复位播放条托起量：绑定「批量真正退出」事件而非批量栏
-    // 卸载，避免卸载时序差异导致批量栏收起后播放条仍悬空、无法拖回。
     _batch.addListener(_onBatchChanged);
   }
 
@@ -87,8 +72,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   }
 
   void _onTabChanged() {
-    // 排序/批量/统计仅对「全部(歌曲)」Tab 有意义；切 Tab 时刷新
-    // 页头右侧操作区显隐与底部批量栏收起状态。
     if (!_tab.indexIsChanging) {
       setState(() {});
     }
@@ -106,7 +89,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     super.dispose();
   }
 
-  /// 查询/排序/去重任一变化后立即刷新界面，并防抖调度一次离线程重算。
   void _onCriteriaChanged() {
     setState(() {});
     _debounce?.cancel();
@@ -124,7 +106,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     setState(() => _result = out);
   }
 
-  /// 打开排序选择弹窗（统一弹窗风格），选中项主色勾选强调、轻量选中态。
   Future<void> _openSortMenu(BuildContext context) async {
     final v = await showSheetDialog<_SongSort>(
       context,
@@ -154,7 +135,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           ],
         ),
       ),
-      // 选项列表较轻，收窄成窄面板、纵向拉长的风格。
       maxWidth: 240,
     );
     if (v != null) {
@@ -215,14 +195,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     return '$m 分钟';
   }
 
-  /// 全部歌曲右侧操作区（横屏音乐库 pane 页头用）：文件夹 + 排序/去重/批量/统计。
-  /// 参考桌面端 LocalMusicHeader——标题/功能放左侧，操作按钮集中放右侧。
   Widget _buildSongsActions(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final inBatch = _batch.batchMode;
-    // 让按钮在有 TabBar 时仍显紧凑：仅保留图标按钮。
-    // 文件夹扫描依赖 Android SAF/MediaStore；OHOS 走沙盒库+文件导入，
-    // iOS 沙盒不可行：隐藏入口。
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -262,8 +237,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           onPressed: () => inBatch ? _batch.exit() : _batch.enter(),
         ),
         const SizedBox(width: 2),
-        // 排序入口：默认排序时显示「排序」图标，选中后显示当前排序标签。
-        // 放在最右与 TabBar 右侧隔开，对齐桌面端 SortModeButton 的位置。
         InkWell(
           onTap: () => _openSortMenu(context),
           borderRadius: BorderRadius.circular(8),
@@ -291,7 +264,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     _searchDebounce = Timer(const Duration(milliseconds: 160), _runSearch);
   }
 
-  /// 在后台 isolate 过滤「标题/歌手/专辑」，避免逐键在 UI 线程对全量歌曲卡顿。
   Future<void> _runSearch() async {
     final gen = ++_searchReq;
     final q = _query;
@@ -359,7 +331,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     );
   }
 
-  /// 整页搜索结果列表（跨 Tab 生效），带关键词高亮。
   Widget _buildSearchResults(double topInset) {
     final result = _searchResult;
     if (result == null) {
@@ -385,17 +356,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    // 悬浮形态（行 + Tab 气泡）横竖屏通用：竖屏二级页与横屏音乐库 pane 都
-    // 由本页自绘悬浮顶栏（横屏 pane 激活时壳层全局顶栏已让位隐藏）。
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final statusBar = MediaQuery.paddingOf(context).top;
-    // 横屏音乐库 pane（侧边栏激活本地页）：无返回键、无页内迷你条。
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
 
-    // 横屏 pane 内：全局顶栏搜索承担本地过滤。把全局关键词同步进页内既有
-    // _query/_searchResult（离线程 isolate 过滤管线），并回填 _searchCtrl 文本
-    // 使横竖屏翻转后窗口状态一致。竖屏二级页仍用页内自带搜索框（_searchCtrl）。
     if (inMusicPane) {
       ref.listen(landscapeLibraryQueryProvider, (prev, next) {
         if (_searchCtrl.text != next) _searchCtrl.text = next;
@@ -403,7 +368,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       });
     }
 
-    // 大数量压缩显示，避免均分 Tab 宽度不足时文字被截断。
     String fmt(int n) => n >= 10000
         ? '${(n / 10000).toStringAsFixed(n >= 100000 ? 0 : 1)}万'
         : '$n';
@@ -417,8 +381,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         Tab(text: '专辑 ${fmt(lib.albums.length)}'),
       ],
     );
-    // 横屏音乐库 pane 专用 TabBar：isScrollable + start 对齐让 Tab「缩小到
-    // 左侧」，右侧让位给文件夹/排序/批量/统计操作区（参考桌面端布局）。
     final paneTabBar = TabBar(
       controller: _tab,
       isScrollable: true,
@@ -432,20 +394,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       ],
     );
 
-    // 横屏音乐库 pane 模式：本页不再渲染完整顶栏（返回/皮肤/设置/搜索入口由
-    // 壳层 LandscapeGlobalTopBar 统一继承），页内仅保留「内容头」作为页面特有
-    // 控件（TabBar 靠左 + 文件夹/排序/批量/统计靠右），位于全局顶栏下方。
-    // 悬浮模式：全局顶栏独立悬浮在右侧容器顶部（高度≈statusBar+60），内容头
-    // 需下移到其下方（paneTop=statusBar+66）；固定（覆盖）模式全局顶栏在壳层
-    // Column 上层，内容直接从其下方开始（paneTop=0）。
     final paneTop = (inMusicPane && floating) ? statusBar + 66 : 0.0;
 
-    // 页内内容头（悬浮胶囊 / 固定细分条）。悬浮模式用与首页同款的玻璃胶囊行；
-    // 固定（覆盖）模式用带细分隔线的紧凑条，保持与全局顶栏一致的常规观感。
     final Widget header;
     final double headerTop;
     if (inMusicPane) {
-      // 横屏 pane 不再渲染本地搜索框——搜索职能由全局顶栏承接。
       headerTop = paneTop;
       header = _buildPaneHeader(context, paneTabBar, floating);
     } else if (floating) {
@@ -459,7 +412,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           onClear: _clearSearch,
           hint: tr('搜索歌曲、歌手、专辑'),
         ),
-        // Android SAF 扫描 / OHOS 沙盒库+导入 / iOS 隐藏。
         action: PlatformCaps.showsLibraryAddEntry
             ? BiliPaiIconButton(
                 icon: Icons.add,
@@ -476,8 +428,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         titleSpacing: 4,
         title: _buildSearchField(context),
         actions: [
-          // 文件夹页入口（已从 Tab 独立为二级页）。
-          // Android SAF 扫描 / OHOS 沙盒库+导入 / iOS 隐藏。
           if (PlatformCaps.showsLibraryAddEntry)
             IconButton(
               tooltip: tr('文件夹'),
@@ -489,10 +439,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       );
     }
 
-    // 顶栏下方的内容初始避让量：悬浮=整列高度；固定=GlassTopBar（含 TabBar）。
-    // 内容铺满全屏，避让量注入列表 padding.top——滚动时内容从顶栏下方穿过
-    //（与首页一致的悬浮穿透观感），而非被 Padding 压在顶栏下。
-    // pane 模式下还需额外让出全局顶栏高度（paneTop）+ 页内内容头高度。
     final topInset = inMusicPane
         ? paneTop + (floating ? 10 : 4) + _kPaneHeaderHeight + 8
         : (floating
@@ -501,8 +447,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
     return HideShellChrome(
       child: PopScope(
-        // 批量模式下返回先退出批量（复位播放条/选择态），再次返回才离开页面，
-        // 避免误入批量后一键 pop 整页。
         canPop: !_batch.batchMode,
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop) _batch.exit();
@@ -543,15 +487,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                   _AlbumsTab(topInset: topInset),
                 ],
               ),
-            // 顶栏层：悬浮/固定/pane 三种形态统一在此铺位。
-            // 横屏 pane 内无路由可弹，返回钮由全局顶栏承接（页内头不含返回键）。
             Positioned(
               top: headerTop,
               left: (inMusicPane || floating) && floating ? 12 : 0,
               right: (inMusicPane || floating) && floating ? 12 : 0,
               child: header,
             ),
-            // 统一播放条由外壳承载：横屏面板模式下不渲染页内嵌条。
             if (!inMusicPane && lib.songs.isNotEmpty)
               const MiniPlayerBar(),
           ],
@@ -562,10 +503,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     );
   }
 
-  /// 横屏音乐库 pane 的内容头：TabBar 缩小靠左，右侧放文件夹 + 排序/去重/
-  /// 批量/统计（参考桌面端 LocalMusicHeader 布局）。不再含本地搜索框——搜索
-  /// 已由全局顶栏承接。悬浮模式用玻璃胶囊行，固定（覆盖）模式用细分隔线的
-  /// 紧凑条，均位于全局顶栏下方。
   Widget _buildPaneHeader(BuildContext context, Widget tabBar, bool floating) {
     final scheme = Theme.of(context).colorScheme;
     final content = SizedBox(
@@ -609,7 +546,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   }
 }
 
-/// 横屏音乐库 pane 内容头高度（TabBar 与右侧操作区并排的单行高度）。
 const double _kPaneHeaderHeight = 48.0;
 
 class _ErrorView extends StatelessWidget {
@@ -636,9 +572,6 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-/// 离线程执行的「过滤 + 去重 + 排序」（compute 回调，须为顶层函数）。
-///
-/// 每次按键若在 UI 线程对全库做 toLowerCase 会卡顿，故整体搬进后台 isolate。
 List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
   final (songs, query, sortIdx, hideDuplicates) = args;
   List<Song> result = songs;
@@ -688,11 +621,6 @@ String _songSortLabel(_SongSort s) => switch (s) {
       _SongSort.addedAt => tr('按添加时间'),
     };
 
-/// 全部歌曲。
-///
-/// 排序/去重/批量/统计状态统一由 [LibraryPage]（_LibraryPageState）持有，
-/// 经本 widget 参数共享——横屏音乐库 pane 页头右侧操作区与竖屏二级页都
-/// 作用在同一份数据上，避免「页头按钮」与「列表批量勾选」各持一份互不联动。
 class _AllSongsTab extends ConsumerStatefulWidget {
   const _AllSongsTab({
     required this.topInset,
@@ -706,19 +634,15 @@ class _AllSongsTab extends ConsumerStatefulWidget {
     required this.onShowStats,
   });
 
-  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
   final double topInset;
 
   final _SongSort sort;
   final bool hideDuplicates;
 
-  /// 最近一次离线程排序/过滤结果；null 表示直接展示库原始顺序。
   final List<Song>? result;
 
-  /// 批量选择控制器（页头入口 + 列表 + 底部批量操作栏共用）。
   final SongBatchController batch;
 
-  /// 横屏音乐库 pane：页头已含排序/批量/统计，隐藏 Tab 内自绘工具栏。
   final bool inPane;
 
   final VoidCallback onToggleDedup;
@@ -730,7 +654,6 @@ class _AllSongsTab extends ConsumerStatefulWidget {
 }
 
 class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
-  /// 批量播放：选中歌曲入队并起播。
   Future<void> _batchPlay(List<Song> songs) async {
     final sel =
         songs.where((s) => widget.batch.selected.contains(s.path)).toList();
@@ -740,7 +663,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
     widget.batch.exit();
   }
 
-  /// 批量添加到我的收藏（对齐桌面端「添加至我喜欢」）。
   Future<void> _batchAddToFavorites(List<Song> songs) async {
     final sel =
         songs.where((s) => widget.batch.selected.contains(s.path)).toList();
@@ -752,7 +674,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
     widget.batch.exit();
   }
 
-  /// 批量添加到歌单（对齐桌面端批量「添加到歌单」）。
   Future<void> _batchAddToPlaylist(List<Song> songs) async {
     final sel =
         songs.where((s) => widget.batch.selected.contains(s.path)).toList();
@@ -778,14 +699,11 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
             MediaQuery.of(context).padding.bottom +
             (inBatch ? 140 : 0);
 
-        // 列表顶距：pane 模式页头已含操作（无 Tab 内工具栏），列表紧跟页头；
-        // 竖屏二级页在列表上方仍有一行自绘工具栏，需额外避让其高度。
         final topPad = widget.topInset + (widget.inPane ? 8 : 54);
 
         final list = songs.isEmpty
             ? Center(child: Text(tr('没有匹配的歌曲')))
             : widget.sort == _SongSort.none
-                // 默认排序：支持长按把手拖动排序（顶级列表，拖到边缘自动滚动）。
                 ? SongsListView(
                     songs: songs,
                     enableScrollFabs: true,
@@ -801,7 +719,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                       }
                       final paths = [for (final s in songs) s.path];
                       final moved = paths.removeAt(oldIndex);
-                      // onReorderItem 的 newIndex 已随移除项调整。
                       paths.insert(newIndex.clamp(0, paths.length), moved);
                       ref
                           .read(libraryProvider.notifier)
@@ -810,7 +727,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   )
                 : LetterIndexSongList(
                     songs: songs,
-                    // 仅按字母序字段排序时才启用 A-Z 索引条；默认/添加时间无意义。
                     indexField: switch (widget.sort) {
                       _SongSort.title => (Song s) => s.title,
                       _SongSort.artist => (Song s) => s.artist,
@@ -827,8 +743,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         return Stack(
           children: [
             Positioned.fill(child: list),
-            // 竖屏二级页的工具栏：排序 / 去重 / 统计 / 批量（悬浮吸顶层）。
-            // 横屏 pane 页头已提供同样操作，此处不再重复绘制。
             if (!widget.inPane)
               Positioned(
                 top: widget.topInset,
@@ -911,7 +825,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   ),
                 ),
               ),
-            // 批量操作栏：悬浮在内容底部（避开播放条/安全区）。
             if (inBatch)
               Positioned(
                 left: 0,
@@ -941,7 +854,6 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   }
 }
 
-/// 排序弹窗里的单选项：选中项左侧主色勾选标记（轻量选中态）。
 class _SortItem extends StatelessWidget {
   const _SortItem({
     required this.label,
@@ -1009,11 +921,9 @@ class _StatRow extends StatelessWidget {
   }
 }
 
-/// 歌手目录。
 class _ArtistsTab extends ConsumerWidget {
   const _ArtistsTab({required this.topInset});
 
-  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
   final double topInset;
 
   @override
@@ -1027,7 +937,6 @@ class _ArtistsTab extends ConsumerWidget {
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
-      // 行高固定（封面 + 上下内边距），itemExtent 跳过逐行测量，长列表滚动更省。
       itemExtent: m.artistCover + 2 * m.vPad,
       addAutomaticKeepAlives: false,
       itemCount: artists.length,
@@ -1035,7 +944,6 @@ class _ArtistsTab extends ConsumerWidget {
         final a = artists[i];
         final scheme = Theme.of(context).colorScheme;
         return RepaintBoundary(
-          // key 用歌手名，滚动时该行图层可缓存复用，避免整页重绘。
           key: ValueKey('artist_${a.name}'),
           child: CoverRow(
           cover: CoverImage(
@@ -1072,7 +980,6 @@ class _ArtistsTab extends ConsumerWidget {
   }
 }
 
-/// 歌手无封面时的字母头像占位。
 Widget _letterAvatar(BuildContext context, String name, ColorScheme scheme) {
   return DecoratedBox(
     decoration: BoxDecoration(
@@ -1088,11 +995,9 @@ Widget _letterAvatar(BuildContext context, String name, ColorScheme scheme) {
   );
 }
 
-/// 专辑目录。
 class _AlbumsTab extends ConsumerWidget {
   const _AlbumsTab({required this.topInset});
 
-  /// 顶栏避让量：列表 padding.top，滚动时内容穿透顶栏。
   final double topInset;
 
   @override
@@ -1106,7 +1011,6 @@ class _AlbumsTab extends ConsumerWidget {
         bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
-      // 行高固定（封面 + 上下内边距），itemExtent 跳过逐行测量，长列表滚动更省。
       itemExtent: m.songCover + 2 * m.vPad,
       addAutomaticKeepAlives: false,
       itemCount: albums.length,

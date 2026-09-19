@@ -11,13 +11,6 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 
-/// 扫码登录：扫描桌面端登录页二维码，确认后在该桌面端完成登录。
-///
-/// 扫描到二维码后暂停相机，走「标记已扫描 → 弹窗确认 → 服务端签发凭证」流程；
-/// 未登录时引导先登录账号。
-///
-/// 相机链路使用 camera（CameraX）+ zxing2（纯 Dart ZXing 移植）替代 MLKit，
-/// 去掉 mobile_scanner 的 barhopper 原生库与条码模型，APK 约减 2~3MB。
 class ScanPage extends ConsumerStatefulWidget {
   const ScanPage({super.key});
 
@@ -38,7 +31,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
   @override
   void initState() {
     super.initState();
-    // 已登录才初始化相机；登录态变化时跟随启停（未登录不触发相机权限弹窗）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(authProvider).user != null) _initCamera();
     });
@@ -105,13 +97,11 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     } catch (_) {}
   }
 
-  /// 从扫码结果中解析登录 code（桌面端二维码内容）。
   String? _extractCode(String? raw) {
     if (raw == null) return null;
     final t = raw.trim();
     const prefix = 'xianyumusic://tvlogin/';
     final source = t.startsWith(prefix) ? t.substring(prefix.length).trim() : t;
-    // 服务端 random_hex(16) 实际生成 32 位 hex，兼容 16/32 位。
     if (!RegExp(r'^[0-9a-fA-F]{16,32}$').hasMatch(source)) return null;
     return source.toLowerCase();
   }
@@ -125,7 +115,7 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     }
     _lastDecodeAt = now;
     try {
-      final plane = image.planes.first; // Y 平面即亮度
+      final plane = image.planes.first;
       final source = _YPlaneLuminanceSource(
         plane.bytes,
         image.width,
@@ -137,8 +127,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       if (code == null || code == _lastCode) return;
       _lastCode = code;
       _handleCode(code);
-    } on ReaderException {
-      // 非二维码 / 校验失败帧，忽略继续扫。
     } catch (_) {}
   }
 
@@ -202,7 +190,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     final notifier = ref.read(authProvider.notifier);
     final user = ref.read(authProvider).user;
 
-    // 未登录：引导去登录。
     if (user == null) {
       final go = await showPredictiveDialog<bool>(
         context: context,
@@ -233,7 +220,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       return;
     }
 
-    // 标记已扫描，拿到被扫桌面端信息。
     TvLoginScanInfo? info;
     String? scanError;
     try {
@@ -265,7 +251,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       return;
     }
 
-    // 进入确认登录页（展示设备信息 + 同意协议 + 确认）。
     final confirmed = await context.push<bool>('/tv-login-confirm', extra: {
       'code': code,
       'info': info,
@@ -280,7 +265,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
       return;
     }
 
-    // 确认成功：桌面端已登录，提示后返回。
     await showPredictiveDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -313,7 +297,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    // 未登录时不启动相机，改为登录引导，杜绝「未登录也可调用扫码框」。
     final loggedIn = user != null;
     return Scaffold(
       backgroundColor: Colors.black,
@@ -328,7 +311,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
                         ? _genericErrorView(context)
                         : _cameraPreview(context),
           ),
-          // 顶部栏
           Positioned(
             top: 0,
             left: 0,
@@ -367,10 +349,8 @@ class _ScanPageState extends ConsumerState<ScanPage> {
               ),
             ),
           ),
-          // 取景框遮罩
           if (loggedIn)
             Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _ScanMaskPainter()))),
-          // 底部提示
           if (loggedIn)
             Positioned(
               left: 0,
@@ -402,7 +382,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     );
   }
 
-  /// 全屏相机预览：按 CameraPreview 内部的宽高比先撑出预览盒，再 cover 铺满屏幕。
   Widget _cameraPreview(BuildContext context) {
     final c = _controller;
     if (c == null || !c.value.isInitialized) {
@@ -424,7 +403,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     );
   }
 
-  /// 未登录引导：禁止扫码，提示先登录账号。
   Widget _loginRequiredView(BuildContext context) {
     return Container(
       color: Colors.black,
@@ -488,7 +466,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
               final ok = await _confirm(tr('重新授权'), tr('前往系统设置开启相机权限？'), ok: tr('去设置'));
               if (!mounted) return;
               if (ok) {
-                // 打开系统设置；返回后尝试重跑相机
                 await openAppSettings();
                 if (mounted) await _resume();
               }
@@ -500,7 +477,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
     );
   }
 
-  /// 非权限类相机错误（初始化失败等）。
   Widget _genericErrorView(BuildContext context) {
     return Container(
       color: Colors.black,
@@ -541,8 +517,6 @@ class _ScanPageState extends ConsumerState<ScanPage> {
   }
 }
 
-/// YUV Y 平面亮度源：直接把 camera 帧的 Y 平面字节按行步长映射为亮度，
-/// 免去 YUV→RGB 转换，供 zxing2 二值化与解码。
 class _YPlaneLuminanceSource extends LuminanceSource {
   final Int8List _data;
   final int _rowStride;
@@ -577,7 +551,6 @@ class _YPlaneLuminanceSource extends LuminanceSource {
   }
 }
 
-/// 取景框遮罩：四周压暗、中央留透明方形扫码区，四角画红色高亮框。
 class _ScanMaskPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -591,7 +564,6 @@ class _ScanMaskPainter extends CustomPainter {
     );
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(22));
 
-    // 四周压暗（减去中央取景区）。
     canvas.drawPath(
       Path.combine(
         PathOperation.difference,
@@ -601,7 +573,6 @@ class _ScanMaskPainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: 0.55),
     );
 
-    // 四角高亮框。
     final paint = Paint()
       ..color = const Color(0xFFEC4141)
       ..strokeWidth = 4
@@ -612,11 +583,9 @@ class _ScanMaskPainter extends CustomPainter {
       final right = c.dx >= centerX;
       final bottom = c.dy >= centerY;
       final p = Path();
-      // 横边
       p
         ..moveTo(right ? c.dx - cornerLen : c.dx, c.dy)
         ..lineTo(right ? c.dx : c.dx + cornerLen, c.dy);
-      // 竖边
       p
         ..moveTo(c.dx, bottom ? c.dy - cornerLen : c.dy)
         ..lineTo(c.dx, bottom ? c.dy : c.dy + cornerLen);

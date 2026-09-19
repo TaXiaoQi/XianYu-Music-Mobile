@@ -16,14 +16,6 @@ import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 账号设置页：从「设置」页进入，参考桌面端 SettingsAccount。
-///
-/// 包含：
-/// - 账号状态（登录信息 + 跳转「账号与安全」管理入口）
-/// - 服务端设置（服务器 API / 密钥，自建后端时填写）
-/// - 上传（选择同步到云端的数据类型）
-/// - 手动同步（歌单/收藏/插件/设置 上传与下载）
-/// - 自动同步（定时增量同步开关与间隔）
 class AccountSettingsPage extends ConsumerStatefulWidget {
   const AccountSettingsPage({super.key, this.embedded = false});
 
@@ -60,10 +52,8 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 仅订阅 user 字段：loading/error/sessionExpired 等变化不重建整页。
     final user = ref.watch(authProvider.select((s) => s.user));
 
-    // 设置体与顶栏解耦：全屏页与横屏嵌入态（[widget.embedded]）共用同一列表内容。
     final items = <Widget>[
       _sectionTitle(context, tr('账号状态')),
       _AccountStatusCard(
@@ -91,7 +81,6 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     ];
 
     if (widget.embedded) {
-      // 横屏 master-detail 嵌入态：无顶栏/背景，仅渲染设置体。
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: items,
@@ -145,7 +134,6 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
   }
 }
 
-/// 账号状态卡片：登录时展示头像/昵称/弦予号与「账号与安全」入口，未登录展示登录引导。
 class _AccountStatusCard extends ConsumerWidget {
   const _AccountStatusCard({
     required this.user,
@@ -274,10 +262,6 @@ class _AccountStatusCard extends ConsumerWidget {
   }
 }
 
-/// 服务端设置卡片：服务器 API + 密钥输入框 + 保存/恢复默认。
-///
-/// 状态（输入框、密钥可见性、脏状态）全部内聚在本卡片内，输入时只重建
-/// 本卡片，不触发整页重建。
 class _ServerConfigCard extends ConsumerStatefulWidget {
   const _ServerConfigCard();
 
@@ -318,7 +302,6 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
     if (mounted) setState(() {});
   }
 
-  /// 读取 auth 目录下已保存的服务器配置（base_url / api_secret）。
   Future<void> _loadServerConfig() async {
     final dir = await ref.read(appDataDirProvider.future);
     String baseUrl = defaultAuthBaseUrl;
@@ -332,11 +315,9 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
       final secretFile = File('$dir/auth/api_secret.txt');
       if (await secretFile.exists()) {
         final c = (await secretFile.readAsString()).trim();
-        // 文件里存的是默认密钥时视为「未自定义」，输入框留空。
         if (c.isNotEmpty && c != defaultAuthApiSecret) secret = c;
       }
     } catch (_) {
-      // 读取失败沿用默认值。
     }
     if (!mounted) return;
     setState(() {
@@ -514,13 +495,11 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
   }
 }
 
-/// 上传配置卡片：选择同步到云端的数据类型。
 class _UploadConfigCard extends ConsumerWidget {
   const _UploadConfigCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 仅订阅 uploadConfig：同步状态变化不重建本卡。
     final config = ref.watch(syncProvider.select((s) => s.uploadConfig));
     final notifier = ref.read(syncProvider.notifier);
 
@@ -559,13 +538,11 @@ class _UploadConfigCard extends ConsumerWidget {
   }
 }
 
-/// 手动同步卡片：歌单/收藏/插件/设置的上传与下载。
 class _ManualSyncCard extends ConsumerWidget {
   const _ManualSyncCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 仅订阅 4 个同步条目状态：uploadConfig/autoSyncConfig 变化不重建本卡。
     final sync = ref.watch(syncProvider.select((s) => (
           s.playlistSync,
           s.favoritesSync,
@@ -606,13 +583,11 @@ class _ManualSyncCard extends ConsumerWidget {
   }
 }
 
-/// 自动同步卡片：启用开关 + 同步间隔 + 繁忙延后上限。
 class _AutoSyncCard extends ConsumerWidget {
   const _AutoSyncCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 仅订阅 autoSyncConfig：同步状态变化不重建本卡。
     final config = ref.watch(syncProvider.select((s) => s.autoSyncConfig));
     final notifier = ref.read(syncProvider.notifier);
 
@@ -650,7 +625,6 @@ class _AutoSyncCard extends ConsumerWidget {
   }
 }
 
-/// 全高透毛玻璃分组卡片。
 class _GlassCard extends ConsumerWidget {
   const _GlassCard({required this.children});
   final List<Widget> children;
@@ -675,7 +649,6 @@ class _GlassCard extends ConsumerWidget {
       }
     }
 
-    // 毛玻璃表面：跟随全局开关，与顶栏底栏一致。
     return frostedCardSurface(
       context: context,
       ref: ref,
@@ -685,7 +658,6 @@ class _GlassCard extends ConsumerWidget {
   }
 }
 
-/// 手动同步条目：标题 + 上次同步摘要 + 上传/下载按钮（可选「同步」双向按钮）。
 class _SyncActionTile extends StatelessWidget {
   const _SyncActionTile({
     required this.title,
@@ -700,7 +672,6 @@ class _SyncActionTile extends StatelessWidget {
   final VoidCallback onUpload;
   final VoidCallback onDownload;
 
-  /// 双向同步（带冲突检测与弹窗），仅「设置」条目提供。
   final VoidCallback? onSync;
 
   @override
@@ -786,7 +757,6 @@ class _SyncActionTile extends StatelessWidget {
   }
 }
 
-/// 开关条目。
 class _SwitchTile extends StatelessWidget {
   const _SwitchTile({
     required this.title,
@@ -811,7 +781,6 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
-/// 下拉选择条目（自动同步：同步间隔 / 繁忙延后上限）。
 class _DropdownTile extends StatelessWidget {
   const _DropdownTile({
     required this.title,

@@ -15,22 +15,6 @@ import '../online/cover_proxy.dart';
 import '../rust/api.dart';
 import 'player_provider.dart';
 
-/// iOS 桌面小组件（WidgetKit）+ Live Activity（锁屏/灵动岛歌词）桥。
-///
-/// 数据流：Flutter 监听 [playerProvider]，把 歌名/歌手/播放态/进度/当前歌词行
-/// 与封面本地路径经 MethodChannel('xianyu/ios_widget') 推给原生 IosWidgetPlugin；
-/// 原生写入 App Group（`group.cc.xymusic.mobile`）状态 JSON 与封面文件，驱动
-/// WidgetKit 小组件重载与 Live Activity 启动/更新。
-///
-/// 反向控制两条链路（均汇入 [_handleAction]）：
-/// - Live Activity 按钮（LiveActivityIntent，iOS 17+）：系统在主 App 进程执行，
-///   经原生 `command` 方法即时到达；
-/// - 桌面小组件按钮（AppIntent，extension 进程）：经 Darwin 通知 `onCommand`
-///   到达；App 未运行时命令落 pending 文件，由 init 时 `takePendingCommand` 消费。
-///
-/// 与 Android [PlayerWidgetController] 的差异：签名去重不含 position（iOS 进度
-/// 由 timerInterval 视图自走，仅歌词行/播放态/切歌变化才推送，规避 Live Activity
-/// 更新预算限制）；逐字歌词行级节流 ≥1s。
 class IosWidgetController {
   IosWidgetController(this._container);
 
@@ -74,7 +58,6 @@ class IosWidgetController {
     return null;
   }
 
-  /// 冷启动被 LiveActivityIntent 唤醒时命令落了 pending 文件：启动消费一次。
   Future<void> _consumePendingCommand() async {
     try {
       final pending = await _channel.invokeMethod<String>('takePendingCommand');
@@ -101,7 +84,6 @@ class IosWidgetController {
   Future<void> _onPlayback(PlaybackState s) async {
     final item = s.current;
     if (item == null) {
-      // 队列清空：清组件状态并结束 Live Activity。
       if (_prevPath != null) {
         _prevPath = null;
         _lastSignature = null;
@@ -127,7 +109,7 @@ class IosWidgetController {
     final token = ++_lyricToken;
     try {
       final lines = await _container.read(lyricsRepositoryProvider).fetchLyrics(item);
-      if (_disposed || token != _lyricToken) return; // 已切歌，丢弃过期结果。
+      if (_disposed || token != _lyricToken) return;
       _lyrics = lines;
     } catch (_) {
       if (_disposed || token != _lyricToken) return;
@@ -142,7 +124,6 @@ class IosWidgetController {
     return line?.text;
   }
 
-  /// 签名去重：仅 歌名|歌手|播放态|歌词行 参与——position 不参与（UI 自走时钟）。
   void _applyState(PlaybackState s) {
     if (_disposed || _coverLoading) return;
     final item = s.current;
@@ -154,7 +135,6 @@ class IosWidgetController {
     _pushState(s, lyric);
   }
 
-  /// 歌词行级节流 ≥1s：逐字歌词短行连续切换时避免高频 update 触发系统限流。
   Future<void> _pushState(PlaybackState s, String lyric) async {
     final now = DateTime.now();
     final elapsed = now.difference(_lastLyricPushAt);
@@ -174,7 +154,6 @@ class IosWidgetController {
       return;
     }
     _lastLyricPushAt = now;
-    // 封面仅在变化时携带：原生沿用现有 coverRev，避免重复拷贝 IO。
     final coverToSend = _lastCover != _lastSentCover ? _lastCover : null;
     _lastSentCover = _lastCover;
     try {
@@ -199,7 +178,7 @@ class IosWidgetController {
 
   Future<void> _loadCover(QueueItem item) async {
     final t = ++_coverToken;
-    _coverLoading = true; // 封面就绪前暂缓推送
+    _coverLoading = true;
     final path = await _coverPath(item);
     if (_disposed || t != _coverToken) return;
     _coverLoading = false;
@@ -218,7 +197,6 @@ class IosWidgetController {
           path = await getSongCover(dbPath: dbPath, cacheRoot: cacheRoot, path: item.path);
         }
       }
-      // 在线歌：封面 URL 经代理取字节落盘为本地文件（Rust getSongCover 不吃 HTTP）。
       if (path.isEmpty) {
         final url = item.coverUrl ?? '';
         if (url.isNotEmpty) {
@@ -231,8 +209,6 @@ class IosWidgetController {
     }
   }
 
-  /// 在线封面：按 URL md5 在 cover_cache 查已有文件（重播同歌直接复用），
-  /// 否则经 [CoverProxy] 取字节落盘。
   Future<String?> _downloadOnlineCover(String cacheRoot, String url) async {
     final digest = md5.convert(utf8.encode(url)).toString();
     try {
@@ -265,7 +241,6 @@ class IosWidgetController {
     }
   }
 
-  /// 按图片字节魔数推断扩展名；无法识别返回 null。
   String? _imageExt(Uint8List b) {
     if (b.length < 12) return null;
     if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return '.jpg';
@@ -279,7 +254,6 @@ class IosWidgetController {
   }
 }
 
-/// iOS 小组件 / Live Activity 桥 provider：监听由 main 显式 init。
 final iosWidgetControllerProvider = Provider<IosWidgetController>((ref) {
   final controller = IosWidgetController(ref.container);
   ref.onDispose(controller.dispose);

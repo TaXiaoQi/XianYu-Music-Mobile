@@ -8,10 +8,6 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
 
-/// 弹出人机验证弹窗，返回验证通过的 payload；取消返回 null。
-///
-/// 服务端启用 Turnstile/hCaptcha 时渲染第三方组件（WebView）；
-/// 未启用时回退旧算术题（与桌面端 HumanCaptchaModal 一致）。
 Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
   BuildContext context, {
   required AuthNotifier notifier,
@@ -29,9 +25,6 @@ Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
   );
 }
 
-/// 人机验证弹窗。
-/// 加载服务端配置 → 第三方组件（Turnstile/hCaptcha）或内置算术题 →
-/// 验证通过后返回 [HumanCaptchaPayload]。
 class HumanCaptchaDialog extends StatefulWidget {
   const HumanCaptchaDialog({
     super.key,
@@ -74,7 +67,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
       _webViewEpoch++;
     });
     try {
-      // 先取服务端配置：启用第三方组件则渲染 WebView，否则回退算术题。
       final cfg = await widget.notifier.fetchCaptchaConfig();
       if (!mounted) return;
       if (cfg.isProviderEnabled) {
@@ -102,7 +94,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
     }
   }
 
-  /// 第三方组件回调：拿到 token 直接返回 payload（服务端直验，无需预校验）。
   void _onProviderMessage(String raw) {
     if (!mounted || _verifying) return;
     String token = '';
@@ -149,7 +140,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
         _verifying = false;
         _error = e is AuthException ? e.message : tr('人机验证失败，请重试');
       });
-      // 验证失败后自动换一题（旧题可能已失效）。
       _refresh();
     }
   }
@@ -204,8 +194,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
     );
   }
 
-  // ─── 第三方组件（Turnstile / hCaptcha，WebView 渲染）──────────────
-
   Widget _buildProviderBody(BuildContext context, ColorScheme scheme) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -248,8 +236,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
       ],
     );
   }
-
-  // ─── 内置算术题模式 ──────────────────────────────────────────────
 
   TextEditingController? _answerCtrl;
 
@@ -320,10 +306,6 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
   }
 }
 
-/// Turnstile / hCaptcha WebView 容器。
-///
-/// 加载本地 HTML（显式渲染第三方组件），通过 `FlutterCaptcha` JS 通道回调 token：
-/// 成功 `{"token": "..."}`，过期/失败 `{"token": ""}`。
 class _ProviderCaptchaWebView extends StatefulWidget {
   const _ProviderCaptchaWebView({
     super.key,
@@ -392,7 +374,6 @@ class _ProviderCaptchaWebViewState extends State<_ProviderCaptchaWebView> {
 
   @override
   Widget build(BuildContext context) {
-    // WebView 渲染为透明背景；加载完成前不遮挡（组件自行呈现 checkbox）。
     return IgnorePointer(
       ignoring: !_pageLoaded,
       child: Stack(

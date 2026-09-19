@@ -17,13 +17,6 @@ import '../online/cover_proxy.dart';
 import '../rust/api.dart';
 import 'player_provider.dart';
 
-/// Android 桌面播放小组件桥。
-///
-/// 数据流：Flutter 持有播放状态，随歌曲/播放/模式变化与周期心跳，把
-/// 歌名/歌手/播放态/进度/循环模式/封面本地缩略图路径写入 SharedPreferences，
-/// 再经原生通道触发 AppWidget 刷新（AppWidgetProvider 读取 prefs 渲染）。
-/// 小组件按钮经 AppWidgetProvider 调同一 MethodChannel
-/// （'xianyu/player_widget'）回调本类，由本类驱动播放器控制。
 class PlayerWidgetController {
   PlayerWidgetController(this._container);
 
@@ -39,22 +32,19 @@ class PlayerWidgetController {
   String? _prevPath;
   List<LyricLine> _lyrics = const [];
   int _lyricToken = 0;
-  ///// 封面切换方向：+1=下一首（新封面自右滑入），-1=上一首（新封面自左滑入）。
   int _coverDir = 1;
-  bool _coverLoading = false; // 封面异步加载中：暂缓推送，避免先行空占位导致音符闪烁
-  int _coverToken = 0;      // 封面异步并发令牌（切歌/重载即递增，丢弃过期结果）
-  int _lastCoverTryAt = 0;  // 上次封面兜底尝试的时间戳（10s 节流）
+  bool _coverLoading = false;
+  int _coverToken = 0;
+  int _lastCoverTryAt = 0;
 
   void init() {
     _channel.setMethodCallHandler(_onControl);
     _playerSub = _container.listen(playerProvider, (_, next) => _onPlayback(next));
-    // 收藏变更也要刷新组件图标（播放状态可能未变）。
     _container.listen(favoritesProvider, (_, _) {
       if (_disposed) return;
       final item = _container.read(playerProvider).current;
       if (item != null) _applyState(_container.read(playerProvider));
     });
-    // 桌面歌词开关变化 → 刷新组件图标。
     _container.listen(settingsProvider, (_, _) {
       if (_disposed) return;
       final s = _container.read(playerProvider);
@@ -65,11 +55,7 @@ class PlayerWidgetController {
       final s = _container.read(playerProvider);
       final item = s.current;
       if (item == null) return;
-      // 封面加载中：本周期完全不推、不重试，待封面就绪后由 _loadCover 一次性带封面到位，
-      // 避免心跳夹带空点位推、把就绪封面盖成黑色占位。
       if (_coverLoading) return;
-      // 封面缺失/上次加载失败时周期性兜底重试（10s 节流），避免「间歇无封面」长期停留，
-      // 本地懒生成或在线下载成功后自动补推真实封面。
       if ((_lastCover ?? '').isEmpty) {
         if (DateTime.now().millisecondsSinceEpoch - _lastCoverTryAt >= 10000) {
           _loadCover(item);
@@ -116,7 +102,6 @@ class PlayerWidgetController {
     final item = s.current;
     final songChanged = item != null && item.path != _prevPath;
     if (songChanged) {
-      // 用队列序判定方向（上一首/下一首），供封面「左右平移」动效匹配导航方向。
       final prevIdx = s.queue.indexWhere((q) => q.path == _prevPath);
       final newIdx = s.queue.indexWhere((q) => q.path == item.path);
       _coverDir = (prevIdx >= 0 && newIdx < prevIdx) ? -1 : 1;
@@ -135,7 +120,7 @@ class PlayerWidgetController {
       return;
     }
     final lines = await _container.read(lyricsRepositoryProvider).fetchLyrics(item);
-    if (_disposed || token != _lyricToken) return; // 已切歌/销毁，丢弃过期结果。
+    if (_disposed || token != _lyricToken) return;
     _lyrics = lines;
     _applyState(_container.read(playerProvider));
   }
@@ -147,8 +132,6 @@ class PlayerWidgetController {
   }
 
   void _applyState(PlaybackState s) {
-    // 封面异步加载中暂缓推送：封面就绪后再一次性带封面更新，避免先推空占位
-    // 造成组件间歇性「封面消失变音符」。若封面确实拿不到，_loadCover 兜底仍会推送。
     if (_coverLoading) return;
     final item = s.current;
     final fav = item != null && _container.read(favoritesProvider).contains(item.path);
@@ -165,10 +148,10 @@ class PlayerWidgetController {
   Future<void> _loadCover(QueueItem? item) async {
     if (item == null || _disposed) return;
     final t = ++_coverToken;
-    _coverLoading = true; // 封面就绪前暂缓推送
+    _coverLoading = true;
     _lastCoverTryAt = DateTime.now().millisecondsSinceEpoch;
     final path = await _coverPath(item);
-    if (_disposed || t != _coverToken) return; // 期间又切歌/重启加载，丢弃过期结果。
+    if (_disposed || t != _coverToken) return;
     _coverLoading = false;
     _lastCover = path;
     _pushState(_container.read(playerProvider), path);
@@ -178,7 +161,6 @@ class PlayerWidgetController {
     try {
       final dbPath = await _container.read(dbPathProvider.future);
       final cacheRoot = await _container.read(coverCacheRootProvider.future);
-      // 组件用高清封面（与播放详情页同源 800px），低清缩略图在大尺寸组件上会糊。
       var p = await getSongCover(
           dbPath: dbPath, cacheRoot: cacheRoot, path: item.path);
       if (p.isEmpty && SafChannel.isSafPath(item.path)) {
@@ -188,8 +170,6 @@ class PlayerWidgetController {
               dbPath: dbPath, cacheRoot: cacheRoot, path: item.path);
         }
       }
-      // 在线歌：封面 URL 经代理取字节落盘为 cover_cache 本地文件，供组件 decodeFile
-      // （Rust 的 getSongCover 只处理本地文件/remote://，无法直接吃 HTTP URL）。
       if (p.isEmpty) {
         final url = item.coverUrl ?? '';
         if (url.isNotEmpty) {
@@ -202,8 +182,6 @@ class PlayerWidgetController {
     }
   }
 
-  /// 在线封面：按 URL 的 md5 在 cover_cache 里查已有文件（重播同歌直接复用），
-  /// 否则经 [CoverProxy] 取字节并按魔数推断扩展名落盘，返回本地文件路径。
   Future<String?> _downloadOnlineCover(String cacheRoot, String url) async {
     final digest = md5.convert(utf8.encode(url)).toString();
     try {
@@ -221,7 +199,6 @@ class PlayerWidgetController {
     }
   }
 
-  /// 在 cover_cache 里按 `{digest}_widget*` 前缀找已落盘的在线封面文件。
   String? _findCoverFile(String cacheRoot, String digest) {
     try {
       final dir = Directory(cacheRoot);
@@ -237,7 +214,6 @@ class PlayerWidgetController {
     }
   }
 
-  /// 按图片字节魔数推断扩展名，供落盘组件封面文件；无法识别返回 null。
   String? _imageExt(Uint8List b) {
     if (b.length < 12) return null;
     if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return '.jpg';
@@ -276,7 +252,6 @@ class PlayerWidgetController {
       'coverDir': _coverDir,
     });
     try {
-      // 状态经原生通道落盘到确定性 key(player_widget/state)，再触发组件刷新。
       await _channel.invokeMethod('setState', {'json': json});
     } catch (_) {}
     try {
@@ -285,7 +260,6 @@ class PlayerWidgetController {
   }
 }
 
-/// 桌面播放小组件桥 provider：监听由 main 显式 init。
 final playerWidgetControllerProvider = Provider<PlayerWidgetController>((ref) {
   final controller = PlayerWidgetController(ref.container);
   ref.onDispose(controller.dispose);

@@ -9,11 +9,6 @@ import '../widgets/sheet_dialog.dart';
 import 'playlist_provider.dart';
 import 'playlist_store.dart';
 
-/// 删除歌单确认入口（对齐桌面已同步歌单删除范围弹窗）。
-///
-/// - 未同步歌单：普通确认框后仅删本地
-/// - 已同步歌单（isCloud 或持有 cloudId，对齐桌面 isCloudOrigin）：
-///   弹「删除本地/删除全部/仅保留本地」三选一
 Future<void> confirmRemovePlaylist(
     BuildContext context, WidgetRef ref, ImportedPlaylist playlist) async {
   final hasCloud = playlist.isCloud || (playlist.cloudId ?? '').isNotEmpty;
@@ -110,13 +105,12 @@ Future<void> confirmRemovePlaylist(
     case 'all':
       if (cloudId.isNotEmpty) await _deleteCloud(context, ref, cloudId);
       await manager.remove(playlist.id);
-    default: // 'cloud'：仅删云端，本机保留并解绑云端标记
+    default:
       if (cloudId.isNotEmpty) await _deleteCloud(context, ref, cloudId);
       await manager.detachCloud(playlist.id);
   }
 }
 
-/// 删除云端副本；失败提示但不中断后续本地动作。
 Future<void> _deleteCloud(
     BuildContext context, WidgetRef ref, String cloudId) async {
   try {
