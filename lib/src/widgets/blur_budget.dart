@@ -25,8 +25,18 @@ void setTabSwitching(bool value) {
 
 final ValueNotifier<bool> globalIsDragging = ValueNotifier(false);
 
+Timer? _dragReleaseTimer;
+
 void setGlobalDragging(bool value) {
+  if (value) _dragReleaseTimer?.cancel();
   globalIsDragging.value = value;
+}
+
+void releaseGlobalDragging() {
+  _dragReleaseTimer?.cancel();
+  _dragReleaseTimer = Timer(const Duration(milliseconds: 400), () {
+    globalIsDragging.value = false;
+  });
 }
 
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);

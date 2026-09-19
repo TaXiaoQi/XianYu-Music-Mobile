@@ -369,7 +369,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _handlePanEnd(DragEndDetails d) {
-    setGlobalDragging(false);
+    releaseGlobalDragging();
     if (widget.onPanEnd != null) {
       widget.onPanEnd!(d);
     } else {
@@ -378,7 +378,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _handlePanCancel() {
-    setGlobalDragging(false);
+    releaseGlobalDragging();
     widget.onPanCancel?.call();
   }
 
@@ -550,20 +550,41 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final quality = liquidGlassQualitySetting(ref);
     return SizedBox(
       height: 58,
-      child: liquidGlassShell(
-        context,
-        radius: 999,
-        child: LiveLiquidSurface(
-          radius: 29,
-          refract: bilipaiRefractOf(quality),
-          chroma: bilipaiChromaOf(quality),
-          blurSigma: bilipaiBackdropBlurOf(quality),
-          backgroundColor: bilipaiSurfaceTint(context, ref, quality),
-          specular: bilipaiSpecularOf(quality),
-          edgeAmount: bilipaiEdgeOf(quality),
-          saturation: bilipaiSaturationOf(quality),
-          child: content,
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Impeller 的 BackdropFilter backdrop 快照按层 bounds 裁剪缓存，
+          // 失效条件是「backdrop 内容变化」。拖拽移层时页面静止，快照不
+          // 失效，玻璃折射便冻结在旧位置。此点位于玻璃 z 序之下、随拖拽
+          // 移动，每帧改写 backdrop 内容强制重采样，实现拖拽实时折射。
+          ValueListenableBuilder<bool>(
+            valueListenable: globalIsDragging,
+            builder: (context, dragging, _) => dragging
+                ? const Positioned(
+                    left: 2,
+                    top: 2,
+                    width: 1,
+                    height: 1,
+                    child: ColoredBox(color: Color(0x02000000)),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          liquidGlassShell(
+            context,
+            radius: 999,
+            child: LiveLiquidSurface(
+              radius: 29,
+              refract: bilipaiRefractOf(quality),
+              chroma: bilipaiChromaOf(quality),
+              blurSigma: bilipaiBackdropBlurOf(quality),
+              backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+              specular: bilipaiSpecularOf(quality),
+              edgeAmount: bilipaiEdgeOf(quality),
+              saturation: bilipaiSaturationOf(quality),
+              child: content,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -844,14 +865,19 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      return Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF),
-          borderRadius: BorderRadius.circular(widget.radius),
+      // 转场/降级期用同款 blur + 液态底色的毛玻璃过渡，避免
+      // 「实心色块 ↔ 液态玻璃」来回硬切产生闪跳。
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(
+              sigmaX: widget.blurSigma, sigmaY: widget.blurSigma),
+          child: ColoredBox(
+            color: widget.backgroundColor,
+            child: widget.child,
+          ),
         ),
-        child: widget.child,
       );
     }
     return ClipRRect(
