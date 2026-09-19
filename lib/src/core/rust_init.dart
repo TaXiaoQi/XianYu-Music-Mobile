@@ -19,7 +19,6 @@ import 'application_logger.dart';
 final rustInitProvider = FutureProvider<void>((ref) async {
   final sw = Stopwatch()..start();
   AppLog.info('startup', 'Rust 初始化开始');
-  debugPrint('[startup] rust init begin');
   try {
     final knownPlatform = !kIsWeb &&
         (Platform.isAndroid ||
@@ -38,5 +37,4 @@ final rustInitProvider = FutureProvider<void>((ref) async {
     rethrow;
   }
   AppLog.info('startup', 'Rust 初始化完成 ${sw.elapsedMilliseconds}ms');
-  debugPrint('[startup] rust init done in ${sw.elapsedMilliseconds}ms');
 });

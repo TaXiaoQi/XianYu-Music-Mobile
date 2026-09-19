@@ -28,9 +28,7 @@ fn bind_multicast_socket() -> std::io::Result<Socket> {
     // 加入 SSDP 组播组：不加入则内核不会把控制点的 M-SEARCH 组播报文投递给本 socket
     // （Windows 上尤其如此），DMR 将无法被主动搜索发现。加入失败不致命：仍可发 alive
     // 广播、应答单播 M-SEARCH，仅主动搜索路径不可用。
-    if let Err(e) = sock.join_multicast_v4(&SSDP_MULTICAST_V4, &Ipv4Addr::UNSPECIFIED) {
-        eprintln!("[dlna] join SSDP multicast group failed: {e}");
-    }
+    let _ = sock.join_multicast_v4(&SSDP_MULTICAST_V4, &Ipv4Addr::UNSPECIFIED);
     Ok(sock)
 }
 

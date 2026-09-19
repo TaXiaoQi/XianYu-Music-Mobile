@@ -517,13 +517,12 @@ pub fn start_streaming_download(
             // [CENC] 复用已完成缓存：若文件仍是加密态且提供了 cek，就地解密。
             // 解密失败则移除缓存，走全新下载。
             if let Some(cek_str) = cek {
-                if let Err(e) = decrypt_cenc_file(&entry.path, cek_str) {
+                if let Err(_) = decrypt_cenc_file(&entry.path, cek_str) {
                     let failed = mgr.entries.remove(&hash);
                     if let Some(failed) = failed {
                         let _ = std::fs::remove_file(&failed.path);
                         mgr.current_size = mgr.current_size.saturating_sub(failed.size);
                     }
-                    eprintln!("[CENC] 复用缓存解密失败，重新下载: {}", e);
                 }
             }
             // 重新查找（可能已被移除）

@@ -646,11 +646,6 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         ref.read(settingsProvider).valueOrNull?.showRealSourceName ?? false;
     // 按用户拖拽排序展示（插件管理页顺序），未排序项用安装顺序兜底
     final enabled = sortPluginSources(plugins.where((p) => p.enabled).toList());
-    debugPrint('[searchSources] enabled plugins=${enabled.length}');
-    for (final p in enabled) {
-      debugPrint('[searchSources]   plugin=${p.name} format=${p.format} '
-          'sources=${p.sources.toList()} id=${p.id}');
-    }
     final items = <_SourceItem>[];
     for (final p in enabled) {
       final pName = showReal ? resolveRealSourceName(p.name) : p.name;
@@ -1406,20 +1401,16 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   }
 
   void _play(int index) {
-    debugPrint('[search] _play called index=$index');
     FocusScope.of(context).unfocus();
     final e = _results[index];
     if (e.isLocal) {
-      debugPrint('[search] _play local song');
       ref.read(libraryProvider.notifier).playList([e.localSong!], 0);
       return;
     }
     final engine = ref.read(pluginEngineProvider).valueOrNull;
-    debugPrint('[search] _play engine=${engine == null ? 'NULL' : 'ok'}');
     if (engine == null) return;
     final service = PluginSearchService(engine, _plugins());
     final item = service.toQueueItem(e.pluginSource!, e.pluginResult!);
-    debugPrint('[search] _play item=${item.title} path=${item.path}');
     ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
   }
 
@@ -1608,7 +1599,6 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             ),
             onLongPress: () => _openActions(i),
             onTap: () async {
-                debugPrint('[search] online row onTap i=$i');
                 try {
                   // 先就位再飞：同本地行——先同步取源矩形，再起播挂载播放条
                   // 目标位，最后从源矩形起飞。
@@ -1621,8 +1611,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     networkUrl: r.img,
                     radius: m.songRadius,
                   );
-                } catch (e, st) {
-                  debugPrint('[search] launchFlyCover ERROR: $e\n$st');
+                } catch (e) {
+                  // 飞封面失败不影响播放本身。
                 }
               },
             );

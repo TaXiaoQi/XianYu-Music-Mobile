@@ -148,9 +148,7 @@ async fn bind_and_serve(
                 }
             }
         });
-        if let Err(e) = server.await {
-            eprintln!("[dlna] http server exited: {e}");
-        }
+        let _ = server.await;
     });
 
     Ok((port, shutdown_tx))

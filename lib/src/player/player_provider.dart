@@ -2914,7 +2914,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _ref.invalidate(listenStatsProvider);
         _ref.invalidate(mostPlayedProvider);
       } catch (e) {
-        debugPrint('[stats] record_play 失败: $e');
+        // 统计落库失败不影响播放主流程。
       }
     });
   }
@@ -2935,16 +2935,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// 仅当「起播失败行为」为 autoswitch（或分享链接 replace 的 force）时生效。
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {
     final settings = _ref.read(settingsProvider).valueOrNull;
-    debugPrint('[autoSwitch] 进入换源 title="${item.title}" '
-        'behavior=${settings?.onlineFailureBehavior} force=$force '
-        'settingsLoaded=${settings != null}');
     // 同曲防抖：错误事件与 stall 兜底可能 37ms 内先后到达，双路重复换源
     // 会让候选插件被串行白跑两轮（日志曾见同一首歌进入重试两次）。
     final now = DateTime.now();
     if (_lastAutoSwitchAt != null &&
         _lastAutoSwitchPath == item.path &&
         now.difference(_lastAutoSwitchAt!) < const Duration(milliseconds: 800)) {
-      debugPrint('[autoSwitch] 防抖拦截(800ms 内同曲重复触发) "${item.title}"');
       return false;
     }
     _lastAutoSwitchAt = now;
@@ -3107,8 +3103,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final format = songJson['format'] as String? ?? 'lx';
       final sourceKey = songJson['source'] as String? ?? '';
       final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
-      debugPrint('[switchViaSibling] 进入重试 pluginId=$pluginId '
-          'format=$format sourceKey="$sourceKey" title="${item.title}"');
       if (pluginId == null || pluginId.isEmpty) return false;
       // 失效错误可能来自已切走后的旧歌，仅对仍在前台的当前项做重试。
       if (state.current?.path != item.path) return false;
@@ -3128,8 +3122,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         itemPath: item.path,
         engine: engine,
       );
-      debugPrint('[switchViaSibling] 同格式回退结果: '
-          '${hit == null ? "未命中" : hit.url}');
 
       // 2) 跨格式同平台（LX ↔ MusicFree）。
       if (hit == null) {
@@ -3253,8 +3245,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final healedCross =
               await _crossFormatHeal(pluginId, format, sourceKey, musicInfo, sources, engine);
           if (healedCross == null) {
-            debugPrint('[playPlugin] store 中无插件 $pluginId'
-                '（source=$sourceKey）且无可重匹配插件');
             return null;
           }
           source = [healedCross.$1];
@@ -3291,8 +3281,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 ));
           }
         } else {
-          debugPrint('[playPlugin] pluginId 悬空已重匹配: '
-              '${healed.id.substring(0, 8)}… (${healed.name})');
           source = [healed];
           if (itemPath.isNotEmpty) {
             unawaited(_ref
@@ -3326,17 +3314,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final reportedQuality = reportedRaw is String
               ? PluginEngine.normalizeQualityKey(reportedRaw)
               : null;
-          debugPrint('[playPlugin] ${source.first.name} '
-              'musicUrl($sourceKey/$quality) 命中 type=${result['type']} '
-              'reported=${reportedQuality ?? quality}');
           resolved = ResolvedMediaUrl(
             url: url!,
             headers: h is Map ? h.cast<String, String>() : null,
             quality: reportedQuality ?? quality,
           );
         } else {
-          debugPrint('[playPlugin] ${source.first.name} '
-              'musicUrl($sourceKey/$quality) 未命中: $url');
+          // 未命中：交给下方同平台音源回退兜底。
         }
       }
       if (resolved != null) return resolved;
@@ -3353,7 +3337,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         engine: engine,
       );
     } catch (e) {
-      debugPrint('[playPlugin] 解析异常($quality): $e');
       return null;
     }
   }
@@ -3417,8 +3400,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final lxSupported =
               plugin.sources.isEmpty || plugin.sources.contains(lxKey);
           if (lxKey.isEmpty || !lxSupported) {
-            debugPrint('[playPlugin] 音源回退跳过(LX 平台不可知): '
-                '${plugin.name} platform="$platformLabel" lxKey="$lxKey"');
             continue;
           }
           final result =
@@ -3435,10 +3416,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               : null;
         }
         if (hit == null) {
-          debugPrint('[playPlugin] 音源回退未命中: ${plugin.name} ($quality)');
           continue;
         }
-        debugPrint('[playPlugin] 音源回退命中: ${plugin.name} ($quality)');
         if (itemPath.isNotEmpty) {
           unawaited(_ref
               .read(playlistManagerProvider.notifier)
@@ -3448,7 +3427,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       return null;
     } catch (e) {
-      debugPrint('[playPlugin] 同平台回退异常($quality): $e');
       return null;
     }
   }
@@ -3546,11 +3524,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (_crossFormatHealCache.length > 64) {
         _crossFormatHealCache.remove(_crossFormatHealCache.keys.first);
       }
-      debugPrint('[playPlugin] 跨格式换源命中: '
-          '${cross.name}(${cross.format.value}) <- $format song "$title"');
       return (cross, newSongJson);
     } catch (e) {
-      debugPrint('[playPlugin] 跨格式换源异常: $e');
       return null;
     }
   }
@@ -3645,7 +3620,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         // RecentManager 构造时 refresh 才会更新。
         _ref.invalidate(recentProvider);
       } catch (e) {
-        debugPrint('[stats] 最近播放写入失败: $e');
+        // 最近播放写入失败不影响播放主流程。
       }
     });
   }
@@ -4235,7 +4210,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
     } catch (e) {
       AppLogger.instance.log('session', '播放会话保存失败: $e');
-      debugPrint('播放会话保存失败: $e');
     }
   }
 

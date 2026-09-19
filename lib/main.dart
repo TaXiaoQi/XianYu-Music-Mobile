@@ -101,7 +101,6 @@ Future<void> main() async {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     final ms = t0.elapsedMilliseconds;
     AppLog.info('startup', '首帧渲染完成 ${ms}ms（从 main 起算）');
-    debugPrint('[startup] first frame rendered in ${ms}ms (from main)');
   });
 
   // 后台初始化系统 MediaSession / 控制中心音频服务，不阻塞首帧。

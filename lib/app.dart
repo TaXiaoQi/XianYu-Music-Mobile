@@ -343,11 +343,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       GlobalCupertinoLocalizations.delegate,
     ];
 
-    // 首页（真实 router）首个帧渲染完成埋点
+    // 首页（真实 router）首帧渲染完成后启动后续链路
     if (init.hasValue && !_loggedHomeFirstFrame) {
       _loggedHomeFirstFrame = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        debugPrint('[startup] home first frame rendered');
         // 首帧后启动链路：先过首次启动隐私政策同意门槛（不同意直接退出应用，
         // 同意后才允许任何上报），再静默做启动版本检查：内测门槛（未授权
         // beta 构建直接全局拦截，弹不可退出的申请弹窗并跳过更新提示）、服务端新版本。

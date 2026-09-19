@@ -606,7 +606,6 @@ class _ShellRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    debugPrint('[dbg-t] _ShellRoute buildPage');
     return Semantics(
       scopesRoute: true,
       explicitChildNodes: true,
@@ -621,10 +620,6 @@ class _ShellRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    debugPrint(
-      '[dbg-t] _ShellRoute buildTransitions entryOpaque='
-      '${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
-    );
     // 平滑：定制版 FadeForwards（见 _SmoothFadeForwards）。转场时实时
     // 读取设置，改「切换动画」后立即生效。
     if (_isSmooth(context)) {
@@ -863,15 +858,6 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   @override
   void install() {
     super.install();
-    // [dbg-wallpaper-cover-vanish] 关联插桩：completed = Overlay 置 opaque、
-    // 下层路由停止绘制。若 completed 提前于视觉滑入结束，旧页即会「直接消失」。
-    controller?.addStatusListener((status) {
-      debugPrint(
-        '[dbg-t] _CoverRoute(${settings.name}) status=$status '
-        'value=${controller?.value.toStringAsFixed(3)} '
-        'entryOpaque=${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
-      );
-    });
     overlayEntries.first.opaque = opaque;
   }
 
@@ -1143,19 +1129,6 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
 
   @override
   bool get popGestureEnabled => isCurrent && predictiveBack;
-
-  @override
-  void install() {
-    super.install();
-    // [dbg-wallpaper-cover-vanish] 关联插桩（同 _CoverRoute）。
-    controller?.addStatusListener((status) {
-      debugPrint(
-        '[dbg-t] _CoverBackRoute(${settings.name}) status=$status '
-        'value=${controller?.value.toStringAsFixed(3)} '
-        'entryOpaque=${overlayEntries.isNotEmpty ? overlayEntries.first.opaque : '?'}',
-      );
-    });
-  }
 
   @override
   bool get opaque => true;

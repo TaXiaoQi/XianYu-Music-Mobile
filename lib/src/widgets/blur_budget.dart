@@ -61,18 +61,11 @@ void markTransitionActivity() {
 class TransitionTracker extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    // [dbg-wallpaper-cover-vanish] 关联插桩：转场事件与 provider 写入时序。
-    debugPrint(
-      '[dbg-t] didPush ${route.runtimeType} name=${route.settings.name}',
-    );
     markTransitionActivity();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    debugPrint(
-      '[dbg-t] didPop ${route.runtimeType} name=${route.settings.name}',
-    );
     markTransitionActivity();
   }
 
@@ -85,10 +78,9 @@ class TransitionTracker extends NavigatorObserver {
 /// flutter_riverpod 2.6.1 已移除旧版 ValueNotifierProvider，这里用更底层的
 /// NotifierProvider + 监听器复刻等价的「跟随外部 ValueNotifier」语义。
 class _ValueNotifierState extends Notifier<bool> {
-  _ValueNotifierState(this._source, this._label);
+  _ValueNotifierState(this._source);
 
   final ValueNotifier<bool> _source;
-  final String _label;
   late final VoidCallback _listener;
   var _disposed = false;
 
@@ -101,11 +93,8 @@ class _ValueNotifierState extends Notifier<bool> {
     // 只剩根层壁纸。故延迟到本次构建/帧结束后再同步 state。
     _listener = () {
       final value = _source.value;
-      // [dbg-wallpaper-cover-vanish] 关联插桩。
-      debugPrint('[dbg-t] notifier[$_label] <- $value');
       scheduleMicrotask(() {
         if (_disposed) return;
-        debugPrint('[dbg-t] notifier[$_label] apply microtask -> $value');
         state = value;
       });
     };
@@ -120,11 +109,11 @@ class _ValueNotifierState extends Notifier<bool> {
 
 final isScrollingProvider =
     NotifierProvider<_ValueNotifierState, bool>(
-      () => _ValueNotifierState(globalIsScrolling, 'scrolling'),
+      () => _ValueNotifierState(globalIsScrolling),
     );
 final isTransitioningProvider =
     NotifierProvider<_ValueNotifierState, bool>(
-      () => _ValueNotifierState(globalIsTransitioning, 'transitioning'),
+      () => _ValueNotifierState(globalIsTransitioning),
     );
 
 /// 玻璃表面类型（决定基础模糊预算与降级优先级）。

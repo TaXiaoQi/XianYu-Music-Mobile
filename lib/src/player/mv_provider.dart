@@ -14,7 +14,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
@@ -433,7 +432,7 @@ class MvNotifier extends StateNotifier<MvState> {
           if (parsed.url.isNotEmpty) return parsed;
         }
       } catch (e) {
-        debugPrint('[MV] direct call $sourceId no getMvSource: $e');
+        // 直连失败属预期（旧插件无 getMvSource），继续走关键词匹配。
       }
 
       // 关键词匹配：把 sourceId（及 plugin.name）当关键词匹配已安装 MF 插件。
@@ -447,22 +446,21 @@ class MvNotifier extends StateNotifier<MvState> {
           }
         }
       }
-      for (final (pluginId, name) in candidates) {
+      for (final (pluginId, _) in candidates) {
         try {
           final raw = await engine.call(pluginId, 'getMvSource', args);
           if (raw is Map<String, dynamic> && raw.isNotEmpty) {
             final parsed = MvSource.fromJson(raw);
             if (parsed.url.isNotEmpty) {
-              debugPrint('[MV] MF hit via $name($pluginId)');
               return parsed;
             }
           }
         } catch (e) {
-          debugPrint('[MV] call $name($pluginId) getMvSource failed: $e');
+          // 单个候选插件失败不影响其余候选，继续尝试。
         }
       }
-    } catch (e, st) {
-      debugPrint('[MV] resolve error: $e\n$st');
+    } catch (e) {
+      // 插件链路整体失败，继续走宿主兜底。
     }
 
     // 宿主兜底：插件 getMvSource 全链路失败后，用酷狗 mvHash / B 站 BV·AV
@@ -470,7 +468,6 @@ class MvNotifier extends StateNotifier<MvState> {
     // 避免旧版插件只有歌曲解析没有 MV 接口时误报"此歌曲无 MV"。
     final host = await resolveHostMvFallback(song: song, quality: quality);
     if (host != null) {
-      debugPrint('[MV] host fallback hit url=${host.url} q=$quality');
       return host;
     }
     return null;

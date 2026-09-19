@@ -1621,15 +1621,10 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                     .unwrap_or("")
                     .to_string();
                 if !lyric_field.trim().is_empty() {
-                    match qrc_decrypt(lyric_field.trim()) {
-                        Ok(decrypted) => {
-                            let parsed = tx_parse(&decrypted, "", "");
-                            lyric = parsed.lyric;
-                            lxlyric = parsed.lxlyric;
-                        }
-                        Err(e) => {
-                            eprintln!("[lyric_fetcher] tx musicu lyric 解密失败 err={}", e);
-                        }
+                    if let Ok(decrypted) = qrc_decrypt(lyric_field.trim()) {
+                        let parsed = tx_parse(&decrypted, "", "");
+                        lyric = parsed.lyric;
+                        lxlyric = parsed.lxlyric;
                     }
                 }
                 if !trans_field.trim().is_empty() {
@@ -1647,11 +1642,6 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                 }
             }
         }
-    } else {
-        eprintln!(
-            "[lyric_fetcher] tx musicu 失败 status={}",
-            resp.status
-        );
     }
 
     // Fallback to old API

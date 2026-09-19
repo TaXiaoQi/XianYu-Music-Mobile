@@ -418,7 +418,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
       // 无损档却返回有损直链：被静默降级且无对应无损文件，跳过该档回退下一候选。
       final effective = resolveActualQuality(reported, u);
       if (effective != reported) {
-        debugPrint('[download] $q 被静默降级为有损直链，跳过：$u');
         continue;
       }
       url = u;

@@ -1119,8 +1119,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       // 重导航后索引不变故不飞，我的页 index 1 会飞）。
       // widget.index / navigationShell.currentIndex 双双作为「当前选中」判定源，
       // 任一与 i 相等都视为已在当前 tab，直接忽略，杜绝重复点击重导航乱飞。
-      debugPrint(
-          '[nav-select] i=$i current=${widget.navigationShell.currentIndex} widget=${widget.index}');
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       // 切主 tab 时关闭横屏覆盖容器（参考桌面端：侧边栏导航即离开当前容器）。
       if (searchOpenRaw) closeLandscapeSearch(ref);
