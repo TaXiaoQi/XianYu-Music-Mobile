@@ -123,7 +123,12 @@ $ArchMap = @{
 }
 
 # linker wrapper dir must be space-free (cargo passes it through cc chains)
-$ToolchainDir = 'D:\xianyu-ohos-toolchain'
+# 包装脚本由本脚本自动生成：XIANYU_OHOS_TOOLCHAIN 优先，默认仓库旁 .tools\ohos-toolchain
+$ToolchainDir = if ($env:XIANYU_OHOS_TOOLCHAIN) {
+    $env:XIANYU_OHOS_TOOLCHAIN
+} else {
+    Join-Path (Join-Path (Split-Path -Parent $ProjectRoot) '.tools') 'ohos-toolchain'
+}
 New-Item -ItemType Directory -Force -Path $ToolchainDir | Out-Null
 
 $failed = @()

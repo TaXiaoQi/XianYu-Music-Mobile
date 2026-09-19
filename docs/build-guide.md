@@ -25,7 +25,7 @@ Gradle 的 `preBuild` 前会执行 `scripts/gradle-rust-hook.ps1`，按 Rust 源
 - 编译输出记录于 `build/rust-hook.log`，失败时自动打印尾部
 - 环境变量 `XIANMU_SKIP_RUST=1` 可临时跳过钩子
 - Rust 改动不会热重载，重编后需 `R` 热重启或重新 Run
-- Windows 中文用户名路径会导致 NDK 链接失败；钩子已自动使用 ASCII 工具链拷贝（`D:\ascii-env\`）
+- Windows 中文用户名路径会导致 NDK 链接失败；钩子已自动使用 ASCII 工具链拷贝（`D:\XianYu-Music\.tools\ascii-env\`）
 
 ## 步骤 1：打开项目并装插件
 

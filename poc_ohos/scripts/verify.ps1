@@ -19,7 +19,7 @@ if ($ProjectRoot -match ' ') {
     $ProjectRoot = $PocPath
 }
 
-# 1. Load Flutter-OH env (sets PUB_CACHE=D:\pub-cache, mirrors, DevEco tools)
+# 1. Load Flutter-OH env (sets PUB_CACHE=D:\XianYu-Music\.tools\pub-cache, mirrors, DevEco tools)
 . (Join-Path $PSScriptRoot 'env-ohos.ps1')
 
 # gitcode LFS server is missing some objects (e.g. audio_session example/ files);

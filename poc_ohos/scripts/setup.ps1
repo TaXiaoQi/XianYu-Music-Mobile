@@ -1,4 +1,4 @@
-# setup.ps1 - 装配鸿蒙 PoC 壳工程
+﻿# setup.ps1 - 装配鸿蒙 PoC 壳工程
 #
 # 前置：已安装 Flutter-OH（flutter --version 含 ohos 字样）
 # 步骤：
@@ -20,7 +20,12 @@ Write-Host "== 鸿蒙 PoC 装配 =="
 # ---- 1. Flutter-OH 检查 ----
 # FLUTTER_OHOS_AUTO
 # 当前 PATH 里的 flutter 不是鸿蒙分支时，自动优先使用本地 Flutter-OH
-$ohosFlutter = 'D:\flutter-ohos\bin'
+# Flutter-OH 定位：FLUTTER_OHOS_HOME → 仓库旁 .tools\flutter-ohos-344\bin
+$ohosFlutter = if ($env:FLUTTER_OHOS_HOME) {
+    Join-Path $env:FLUTTER_OHOS_HOME 'bin'
+} else {
+    Join-Path (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) '.tools') 'flutter-ohos-344\bin'
+}
 if (Test-Path (Join-Path $ohosFlutter 'flutter.bat')) {
     $env:PATH = '$ohosFlutter;' + $env:PATH
     $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'

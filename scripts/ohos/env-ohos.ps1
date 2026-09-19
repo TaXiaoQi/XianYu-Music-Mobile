@@ -3,12 +3,20 @@
 # Usage: . ./scripts/ohos/env-ohos.ps1   (note the leading dot: dot-source)
 #
 # Optional env overrides:
-#   FLUTTER_OHOS_HOME   Flutter-OH install dir  (default D:\flutter-ohos)
+#   FLUTTER_OHOS_HOME   Flutter-OH install dir  (default: sibling .tools\flutter-ohos-344)
 #   DEVECO_SDK_HOME     DevEco SDK root        (default C:\Program Files\Huawei\DevEco Studio\sdk)
-#   PUB_CACHE_OVERRIDE  Pub cache dir          (default D:\pub-cache)
+#   PUB_CACHE_OVERRIDE  Pub cache dir          (default: sibling .tools\pub-cache)
 
-$FlutterOhos = if ($env:FLUTTER_OHOS_HOME) { $env:FLUTTER_OHOS_HOME } else { 'D:\flutter-ohos-344' }
-if (-not (Test-Path (Join-Path $FlutterOhos 'bin\flutter.bat'))) {
+# Flutter-OH 定位：FLUTTER_OHOS_HOME → 仓库旁 .tools\flutter-ohos-344 → .tools\flutter-ohos
+$FlutterOhos = $env:FLUTTER_OHOS_HOME
+if (-not $FlutterOhos) {
+    $xymTools = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) '.tools'
+    foreach ($cand in @('flutter-ohos-344', 'flutter-ohos')) {
+        $p = Join-Path $xymTools $cand
+        if (Test-Path (Join-Path $p 'bin\flutter.bat')) { $FlutterOhos = $p; break }
+    }
+}
+if (-not $FlutterOhos -or -not (Test-Path (Join-Path $FlutterOhos 'bin\flutter.bat'))) {
     throw "Flutter-OH not found: $FlutterOhos (set FLUTTER_OHOS_HOME after install)"
 }
 $env:PATH = "$(Join-Path $FlutterOhos 'bin');$env:PATH"
@@ -29,7 +37,7 @@ $env:FLUTTER_STORAGE_BASE_URL = 'https://storage.flutter-io.cn'
 # flutter-hvigor-plugin computes plugin srcPath via path.relative;
 # across drives (D: project -> C: cache) it yields an absolute path
 # and hvigor fails with "The srcPath is not a relative path".
-$env:PUB_CACHE = if ($env:PUB_CACHE_OVERRIDE) { $env:PUB_CACHE_OVERRIDE } else { 'D:\pub-cache' }
+$env:PUB_CACHE = if ($env:PUB_CACHE_OVERRIDE) { $env:PUB_CACHE_OVERRIDE } else { Join-Path $xymTools 'pub-cache' }
 
 # Silence flutter doctor upstream warning (session-only)
 $env:FLUTTER_GIT_URL = 'https://atomgit.com/CPF-Flutter/flutter_flutter.git'

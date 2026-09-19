@@ -42,8 +42,16 @@ if (-not (Test-Path $cargoBin)) {
     $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
     if ($cargoCmd) { $cargoBin = Split-Path $cargoCmd.Source -Parent }
 }
-$asciiNdk   = "D:\ascii-env\ndk-copy"
-$asciiRustc = "D:\ascii-env\rust-tc-real\bin\rustc.exe"
+# ASCII 工具链拷贝（Windows 中文用户名路径会导致 NDK 链接失败时使用）：
+# XIANYU_ASCII_TOOLS 环境变量优先，默认取仓库旁 .tools\ascii-env（相对仓库推导，
+# 无绝对路径依赖）；均不存在时走下方默认 NDK 回退，ASCII 用户名机器无需拷贝。
+$asciiBase = if ($env:XIANYU_ASCII_TOOLS) {
+    $env:XIANYU_ASCII_TOOLS
+} else {
+    Join-Path (Join-Path (Split-Path -Parent $realSource) '.tools') 'ascii-env'
+}
+$asciiNdk   = Join-Path $asciiBase 'ndk-copy'
+$asciiRustc = Join-Path $asciiBase 'rust-tc-real\bin\rustc.exe'
 $env:ANDROID_HOME     = "$env:LOCALAPPDATA\Android\Sdk"
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 if (Test-Path $asciiNdk) {
