@@ -505,24 +505,29 @@ class _PluginPageState extends ConsumerState<PluginPage> {
 
   Future<void> _installUrl(String url) async {
     if (url.trim().isEmpty) return;
+    final progress = showXianYuProgressToast(context, tr('正在导入插件...'));
     setState(() => _installing = true);
     try {
-      final result =
-          await ref.read(pluginManagerProvider.notifier).installFromUrl(url);
+      final result = await ref
+          .read(pluginManagerProvider.notifier)
+          .installFromUrl(
+            url,
+            onProgress: (msg, p) => progress.update(msg, progress: p),
+          );
       if (!mounted) return;
       if (result.success) {
         final summary = result.failCount > 0
             ? tr('成功 {ok} 个，失败 {fail} 个', {'ok': result.names.length, 'fail': result.failCount})
             : tr('成功 {ok} 个：{names}', {'ok': result.names.length, 'names': result.names.join('、')});
-        showXianYuToast(context, tr('插件安装完成，{summary}', {'summary': summary}));
+        progress.complete(tr('插件安装完成，{summary}', {'summary': summary}));
       } else {
         final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
-        showXianYuToast(context, tr('所有插件安装失败{detail}', {'detail': detail}));
+        progress.fail(tr('所有插件安装失败{detail}', {'detail': detail}));
       }
     } catch (e) {
       if (!mounted) return;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      showXianYuToast(context, tr('安装失败：{msg}', {'msg': msg}));
+      progress.fail(tr('安装失败：{msg}', {'msg': msg}));
     } finally {
       if (mounted) setState(() => _installing = false);
     }

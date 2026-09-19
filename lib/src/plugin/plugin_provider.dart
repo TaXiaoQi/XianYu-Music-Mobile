@@ -182,7 +182,11 @@ class PluginManager extends StateNotifier<PluginListState> {
     return source;
   }
 
-  Future<PluginInstallResult> installFromUrl(String url) async {
+  Future<PluginInstallResult> installFromUrl(
+    String url, {
+    void Function(String message, double? progress)? onProgress,
+  }) async {
+    onProgress?.call(tr('正在获取插件脚本...'), null);
     final script = await _fetchScript(url);
     if (script == null || script.isEmpty) {
       throw PluginEngineException(tr('无法获取插件脚本，请检查 URL 与网络'));
@@ -190,7 +194,7 @@ class PluginManager extends StateNotifier<PluginListState> {
 
     final batch = _parsePluginList(script);
     if (batch != null && batch.isNotEmpty) {
-      final result = await _installBatch(batch);
+      final result = await _installBatch(batch, onProgress: onProgress);
       if (result.success) {
         await _recordSubscription(url);
       }
@@ -240,12 +244,20 @@ class PluginManager extends StateNotifier<PluginListState> {
   }
 
   Future<PluginInstallResult> _installBatch(
-      List<Map<String, dynamic>> items) async {
+    List<Map<String, dynamic>> items, {
+    void Function(String message, double? progress)? onProgress,
+  }) async {
     final names = <String>[];
     final errors = <String>[];
-    for (final item in items) {
+    final total = items.length;
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
       final url = item['url'].toString();
       final label = (item['name'] ?? url).toString();
+      onProgress?.call(
+        tr('正在导入 {label} ({i}/{total})', {'label': label, 'i': i + 1, 'total': total}),
+        i / total,
+      );
       try {
         final script = await _fetchScript(url);
         if (script == null || script.isEmpty) {
