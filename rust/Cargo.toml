@@ -59,6 +59,9 @@ wavicle = { version = "0.1", default-features = false, features = ["decode"] }
 # 纯 Rust FLAC 编码（用于 audio_convert 无损格式互转，无需 FFmpeg）
 flacenc = "0.5"
 rusty_mp3 = "0.7"
+# 本地搜索归一化：NFKC/NFKD（全角半角、变音符）+ 繁转简（对齐 BakaMusic search-matcher）
+unicode-normalization = "0.1"
+fast2s = "0.3"
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"

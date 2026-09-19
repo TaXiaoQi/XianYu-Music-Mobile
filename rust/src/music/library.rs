@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use unicode_normalization::UnicodeNormalization;
 
 #[derive(Deserialize, Clone, Copy, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -286,42 +287,82 @@ fn load_cached_songs_by_paths(
     Ok(songs)
 }
 
-/// 搜索本地音乐库（标题/艺术家/专辑/路径），返回 Song 对象（非仅路径）
+/// 搜索归一化（对齐 BakaMusic search-matcher）：NFKC 全角→半角、转小写、
+/// NFKD 去变音符（é→e）、繁转简（周杰倫↔周杰伦 双向兼容）。
+fn normalize_search_value(s: &str) -> String {
+    let nfkc: String = s.chars().nfkc().collect();
+    let no_accent: String = nfkc
+        .to_lowercase()
+        .chars()
+        .nfkd()
+        .filter(|c| !('\u{0300}'..='\u{036f}').contains(c))
+        .collect();
+    fast2s::convert(&no_accent)
+}
+
+/// 离散搜索：旧实现整串 `LIKE %query%`，要求连续子串全对上，「周杰伦 晴天」
+/// 这种跨歌手/歌名字段的词组搜不到。改为分词 AND 匹配：
+/// - 查询按空格拆词，每个词命中任一归一化字段即算（跨字段、顺序无关）
+/// - 词也可命中字段去空格后的串（「tinyme」命中「Tiny Me」）
+/// - 整串连写命中的歌排前面（强匹配），散词全中的排后面
 fn search_cached_songs(
     conn: &Connection,
     query: &str,
     limit: usize,
 ) -> Result<Vec<LibrarySong>, String> {
-    let lower_query = query.trim().to_lowercase();
-    if lower_query.is_empty() {
+    let normalized_query = normalize_search_value(query);
+    let tokens: Vec<&str> = normalized_query.split_whitespace().collect();
+    if tokens.is_empty() {
         return Ok(Vec::new());
     }
-    let like = format!("%{}%", lower_query);
-    let sql = format!(
-        "SELECT {} FROM songs WHERE (
-            LOWER(COALESCE(songs.title, '')) LIKE ?
-            OR LOWER(COALESCE(songs.artist, '')) LIKE ?
-            OR LOWER(COALESCE(songs.album, '')) LIKE ?
-            OR LOWER(COALESCE(songs.album_artist, '')) LIKE ?
-            OR LOWER(COALESCE(songs.path, '')) LIKE ?
-            OR EXISTS (
-                SELECT 1 FROM song_artists
-                JOIN artists ON artists.id = song_artists.artist_id
-                WHERE song_artists.song_id = songs.id
-                  AND LOWER(artists.name) LIKE ?
-            )
-        ) LIMIT ?",
-        SONG_SELECT_COLUMNS
-    );
+    let whole = normalized_query.replace(' ', "");
+
+    // 被搜字段组：title/artist/album/album_artist/path + 冗余歌手名列，全部归一化
+    let haystacks = |song: &LibrarySong| -> Vec<String> {
+        let mut v = vec![
+            normalize_search_value(&song.title),
+            normalize_search_value(&song.artist),
+            normalize_search_value(&song.album),
+            normalize_search_value(&song.album_artist),
+            normalize_search_value(&song.path),
+        ];
+        for name in song.artist_names.iter().chain(&song.effective_artist_names) {
+            v.push(normalize_search_value(name));
+        }
+        v
+    };
+    let contains = |hs: &[String], needle: &str| -> bool {
+        needle.is_empty()
+            || hs
+                .iter()
+                .any(|v| v.contains(needle) || v.replace(' ', "").contains(needle))
+    };
+
+    let sql = format!("SELECT {} FROM songs", SONG_SELECT_COLUMNS);
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(
-            rusqlite::params![like, like, like, like, like, like, limit as i64],
-            parse_song_from_row,
-        )
+        .query_map([], parse_song_from_row)
         .map_err(|e| e.to_string())?;
-    let songs: Vec<LibrarySong> = rows.filter_map(|row| row.ok()).collect();
-    Ok(songs)
+
+    let mut strong: Vec<LibrarySong> = Vec::new();
+    let mut weak: Vec<LibrarySong> = Vec::new();
+    for row in rows.filter_map(|row| row.ok()) {
+        let song = row;
+        let hs = haystacks(&song);
+        if !tokens.iter().all(|t| contains(&hs, t)) {
+            continue;
+        }
+        if contains(&hs, &whole) {
+            strong.push(song);
+        } else {
+            weak.push(song);
+        }
+        if strong.len() + weak.len() >= limit {
+            break;
+        }
+    }
+    strong.append(&mut weak);
+    Ok(strong)
 }
 
 pub fn get_library_folders(conn: &Connection) -> Result<Vec<LibraryFolder>, String> {

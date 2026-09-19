@@ -1,6 +1,12 @@
 [target.aarch64-linux-android]
 linker = "C:/AndroidSdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android24-clang.cmd"
 ar = "C:/AndroidSdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+# 16KB 页对齐（Android 15+ 16KB 内核页设备兼容检查；llvm lld 显式对齐
+# LOAD 段到 16KB，消掉系统「Android 应用兼容性」弹窗对本库的告警）。
+rustflags = [
+    "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "link-arg=-Wl,-z,common-page-size=16384",
+]
 
 [env]
 # Let cc build-scripts (e.g. ring, image codecs) locate the NDK clang via ASCII junction.
