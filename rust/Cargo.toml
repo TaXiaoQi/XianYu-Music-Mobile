@@ -35,6 +35,7 @@ flate2 = "1"
 aes = "0.8"
 cbc = "0.1"
 sha2 = "0.10"
+hmac = "0.12"
 num-bigint = "0.4"
 # 兜底模块签名校验（服务端私钥签发 → 客户端内嵌公钥验签）
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
