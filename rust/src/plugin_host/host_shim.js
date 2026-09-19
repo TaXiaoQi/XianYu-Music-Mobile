@@ -969,7 +969,12 @@
     browser: false,
   };
 
-  // ==================== Node http/https shim（animemusic/1 插件使用）====================
+  // ==================== Node http/https shim（animemusic/1 专用适配）====================
+  // 仅 animemusic/1 插件使用（musicfree 插件走 fetch/axios）。按该类插件源码的实际用法实现：
+  //   https.request({protocol,hostname,port,path,method,headers}, cb)
+  // 关键时序：cb(res) 同步返回后（插件已注册完全部流监听器），下一拍统一发出 data → end，
+  // 与监听器注册顺序彻底解耦，杜绝「end 先于注册被消费」导致的请求永久挂起。
+  // 请求头剔除 accept-encoding：shim 不做解压，服务端将返回明文体，插件 gunzip 分支永不触发。
 
   function makeHttpModule(isHttps) {
     function buildRequestConfig(urlInput, options) {
@@ -1014,6 +1019,11 @@
         }
       }
       if (!host) throw new Error('http: 缺少主机地址');
+      // 剔除压缩协商头：shim 不解压，服务端将返回明文体
+      for (var aek in headers) {
+        var ael = aek.toLowerCase();
+        if (ael === 'accept-encoding' || ael === 'accept-charset') delete headers[aek];
+      }
       return {
         method: String(method).toUpperCase(),
         headers: headers,
@@ -1094,7 +1104,7 @@
           var encoding = null;
 
           function emitR(event, arg) {
-            var ls = rListeners[event] || [];
+            var ls = (rListeners[event] || []).slice();
             for (var i = 0; i < ls.length; i++) {
               try { ls[i](arg); } catch (e) { G.console.error('http shim: 响应监听器异常 ' + e); }
             }
@@ -1106,7 +1116,10 @@
             headers: respHeaders,
             rawHeaders: [],
             httpVersion: '1.1',
-            on: function (event, fn) { (rListeners[event] = rListeners[event] || []).push(fn); pump(); return response; },
+            on: function (event, fn) {
+              (rListeners[event] = rListeners[event] || []).push(fn);
+              return response;
+            },
             setEncoding: function (enc) { encoding = enc; return response; },
             destroy: function () { return response; },
             pause: function () { return response; },
@@ -1115,8 +1128,11 @@
           response.once = response.on;
           response.addListener = response.on;
 
-          function pump() {
-            if (!rEmitted.response) return;
+          // 关键时序：emit('response') 期间 cb(res) 同步执行完，插件此时已注册完
+          // data/end/error 全部监听器；下一拍统一发 data → end，顺序无关、不会挂起
+          emit('response', response);
+          setTimeout(function () {
+            if (destroyed) return;
             if (!rEmitted.data) {
               rEmitted.data = true;
               var chunk = dataBuf;
@@ -1129,12 +1145,7 @@
               rEmitted.end = true;
               emitR('end');
             }
-          }
-
-          rEmitted.response = true;
-          emitR('response', response);
-          if (callback) { /* callback 已通过 on('response') 注册 */ }
-          pump();
+          }, 0);
         }).catch(function (e) {
           var err = e instanceof Error ? e : new Error(String(e && e.message || e));
           if (listeners.error && listeners.error.length > 0) emit('error', err);
@@ -1665,11 +1676,19 @@
       : (animeMeta && animeMeta.platform ? [animeMeta.platform] : null);
     mfInstance = isAnime ? makeAnimeAdapter(instance, animeMeta) : instance;
 
+    // anime 插件的方法枚举仍基于原始实例（只有 call）：
+    // 桌面端 TS 侧靠 availableMethods 区分路由，若把适配器的
+    // search/getMediaSource 暴露出去，anime 插件会被误当 musicfree 插件
+    // 走通用搜索路径，与 animePluginEngine 双重适配导致搜索异常
     var sourceInstance = mfInstance;
     var availableMethods = [];
+    var methodEnumTarget = isAnime ? instance : sourceInstance;
     for (var i = 0; i < MF_ALL_METHOD_NAMES.length; i++) {
       var m = MF_ALL_METHOD_NAMES[i];
-      if (typeof sourceInstance[m] === 'function') availableMethods.push(m);
+      if (typeof methodEnumTarget[m] === 'function') availableMethods.push(m);
+    }
+    if (isAnime && typeof instance.call === 'function' && availableMethods.indexOf('call') < 0) {
+      availableMethods.push('call');
     }
 
     return JSON.stringify({
