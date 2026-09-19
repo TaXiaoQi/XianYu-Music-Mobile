@@ -143,7 +143,11 @@ Future<void> showAddToPlaylistSheet(
                           subtitle: Text(tr('{n} 首', {'n': p.songs.length}),
                               style: const TextStyle(fontSize: 12)),
                           onTap: () async {
-                            await manager.addSongs(p.id, songs);
+                            // 在本软件内手动添加的歌曲打上标记，不参与导入歌单的源端更新循环
+                            final marked = songs
+                                .map((s) => s.copyWith(addedInApp: true))
+                                .toList();
+                            await manager.addSongs(p.id, marked);
                             unawaited(reportDailyLikeSignals(
                               ref.read(authProvider.notifier),
                               ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',

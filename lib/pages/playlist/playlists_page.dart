@@ -16,6 +16,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/playlist/playlist_delete.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_song_delete.dart';
+import '../../src/playlist/playlist_source_update.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
@@ -453,6 +454,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   Timer? _debounce;
+  bool _updating = false;
 
   @override
   void initState() {
@@ -565,6 +567,16 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     );
   }
 
+  Future<void> _updateFromSource(ImportedPlaylist playlist) async {
+    if (_updating) return;
+    setState(() => _updating = true);
+    try {
+      await updatePlaylistFromSource(context, ref, playlist);
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(playlistManagerProvider);
@@ -631,6 +643,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
                     onPlayAll: playlist.songs.isEmpty
                         ? null
                         : () => manager.play(playlist, 0),
+                    onUpdate: playlist.hasSource
+                        ? () => _updateFromSource(playlist)
+                        : null,
+                    updating: _updating,
                     favoriteLabel: tr('收藏整张歌单'),
                     isFavorite:
                         favState.isCollectionFavorite(_collectionKey(playlist)),
@@ -733,6 +749,8 @@ class _AlbumHeader extends StatelessWidget {
     required this.song,
     required this.count,
     required this.onPlayAll,
+    this.onUpdate,
+    this.updating = false,
     this.favoriteLabel,
     this.isFavorite = false,
     this.onToggleFavorite,
@@ -743,6 +761,8 @@ class _AlbumHeader extends StatelessWidget {
   final ImportedSong? song;
   final int count;
   final VoidCallback? onPlayAll;
+  final VoidCallback? onUpdate;
+  final bool updating;
   final String? favoriteLabel;
   final bool isFavorite;
   final VoidCallback? onToggleFavorite;
@@ -809,6 +829,27 @@ class _AlbumHeader extends StatelessWidget {
                         minimumSize: const Size(0, 34),
                       ),
                     ),
+                    if (onUpdate != null) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: tr('从源端更新'),
+                        child: IconButton.filledTonal(
+                          onPressed: updating ? null : onUpdate,
+                          icon: updating
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : Icon(Icons.sync,
+                                  size: 18, color: scheme.primary),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(38, 34),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (onToggleFavorite != null) ...[
                       const SizedBox(width: 8),
                       Tooltip(

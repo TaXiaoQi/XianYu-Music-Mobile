@@ -12,6 +12,10 @@ class ImportedPlaylist {
   final int importedAt;
   final String? cloudId;
   final bool isCloud;
+  // 来源信息：用于从源端（插件歌单）更新
+  final String? sourcePluginId;
+  final String? sourceUrl;
+  final Map<String, dynamic>? sourceRaw;
 
   ImportedPlaylist({
     required this.id,
@@ -20,7 +24,15 @@ class ImportedPlaylist {
     required this.importedAt,
     this.cloudId,
     this.isCloud = false,
+    this.sourcePluginId,
+    this.sourceUrl,
+    this.sourceRaw,
   });
+
+  bool get hasSource =>
+      (sourcePluginId ?? '').isNotEmpty ||
+      (sourceUrl ?? '').isNotEmpty ||
+      (sourceRaw ?? const {}).isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -29,6 +41,9 @@ class ImportedPlaylist {
         'importedAt': importedAt,
         if (cloudId != null) 'cloudId': cloudId,
         if (isCloud) 'isCloud': true,
+        if (sourcePluginId != null) 'sourcePluginId': sourcePluginId,
+        if (sourceUrl != null) 'sourceUrl': sourceUrl,
+        if (sourceRaw != null) 'sourceRaw': sourceRaw,
       };
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
@@ -41,6 +56,31 @@ class ImportedPlaylist {
         importedAt: (j['importedAt'] as num?)?.toInt() ?? 0,
         cloudId: j['cloudId'] as String?,
         isCloud: j['isCloud'] == true,
+        sourcePluginId: j['sourcePluginId'] as String?,
+        sourceUrl: j['sourceUrl'] as String?,
+        sourceRaw:
+            j['sourceRaw'] is Map ? (j['sourceRaw'] as Map).cast<String, dynamic>() : null,
+      );
+
+  ImportedPlaylist copyWith({
+    String? name,
+    List<ImportedSong>? songs,
+    String? cloudId,
+    bool? isCloud,
+    String? sourcePluginId,
+    String? sourceUrl,
+    Map<String, dynamic>? sourceRaw,
+  }) =>
+      ImportedPlaylist(
+        id: id,
+        name: name ?? this.name,
+        songs: songs ?? this.songs,
+        importedAt: importedAt,
+        cloudId: cloudId ?? this.cloudId,
+        isCloud: isCloud ?? this.isCloud,
+        sourcePluginId: sourcePluginId ?? this.sourcePluginId,
+        sourceUrl: sourceUrl ?? this.sourceUrl,
+        sourceRaw: sourceRaw ?? this.sourceRaw,
       );
 }
 
@@ -78,21 +118,21 @@ class PlaylistStore {
       final existingIndex = result.indexWhere((p) => p.name == pl.name);
       if (existingIndex >= 0) {
         final existing = result[existingIndex];
-        final merged = <String, ImportedSong>{};
-        for (final s in existing.songs) {
-          merged[s.path] = s;
-        }
-        for (final s in pl.songs) {
-          merged[s.path] = s;
-        }
-        result[existingIndex] = ImportedPlaylist(
-          id: existing.id,
-          name: existing.name,
-          songs: merged.values.toList(),
-          importedAt: existing.importedAt,
-          cloudId: existing.cloudId ?? pl.cloudId,
-          isCloud: existing.isCloud || pl.isCloud,
-        );
+      final merged = <String, ImportedSong>{};
+      for (final s in existing.songs) {
+        merged[s.path] = s;
+      }
+      for (final s in pl.songs) {
+        merged[s.path] = s;
+      }
+      result[existingIndex] = existing.copyWith(
+        songs: merged.values.toList(),
+        cloudId: existing.cloudId ?? pl.cloudId,
+        isCloud: existing.isCloud || pl.isCloud,
+        sourcePluginId: existing.sourcePluginId ?? pl.sourcePluginId,
+        sourceUrl: existing.sourceUrl ?? pl.sourceUrl,
+        sourceRaw: existing.sourceRaw ?? pl.sourceRaw,
+      );
       } else {
         result.add(ImportedPlaylist(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -101,6 +141,9 @@ class PlaylistStore {
           importedAt: DateTime.now().millisecondsSinceEpoch,
           cloudId: pl.cloudId,
           isCloud: pl.isCloud,
+          sourcePluginId: pl.sourcePluginId,
+          sourceUrl: pl.sourceUrl,
+          sourceRaw: pl.sourceRaw,
         ));
       }
     }
@@ -127,6 +170,9 @@ class PlaylistStore {
                 importedAt: p.importedAt,
                 cloudId: next,
                 isCloud: p.isCloud,
+                sourcePluginId: p.sourcePluginId,
+                sourceUrl: p.sourceUrl,
+                sourceRaw: p.sourceRaw,
               )
             : p)
         .toList();
@@ -153,16 +199,7 @@ class PlaylistStore {
       String id, String name) async {
     final all = await loadAll();
     final result = all
-        .map((p) => p.id == id
-            ? ImportedPlaylist(
-                id: p.id,
-                name: name,
-                songs: p.songs,
-                importedAt: p.importedAt,
-                cloudId: p.cloudId,
-                isCloud: p.isCloud,
-              )
-            : p)
+        .map((p) => p.id == id ? p.copyWith(name: name) : p)
         .toList();
     await saveAll(result);
     return result;
@@ -181,14 +218,7 @@ class PlaylistStore {
       for (final s in songs) {
         merged[s.path] = s;
       }
-      return ImportedPlaylist(
-        id: p.id,
-        name: p.name,
-        songs: merged.values.toList(),
-        importedAt: p.importedAt,
-        cloudId: p.cloudId,
-        isCloud: p.isCloud,
-      );
+      return p.copyWith(songs: merged.values.toList());
     }).toList();
     await saveAll(result);
     return result;
@@ -199,14 +229,7 @@ class PlaylistStore {
     final all = await loadAll();
     final result = all.map((p) {
       if (p.id != id) return p;
-      return ImportedPlaylist(
-        id: p.id,
-        name: p.name,
-        songs: p.songs.where((s) => s.path != path).toList(),
-        importedAt: p.importedAt,
-        cloudId: p.cloudId,
-        isCloud: p.isCloud,
-      );
+      return p.copyWith(songs: p.songs.where((s) => s.path != path).toList());
     }).toList();
     await saveAll(result);
     return result;
@@ -226,14 +249,7 @@ class PlaylistStore {
       }).toList();
       if (!touched) return p;
       changed = true;
-      return ImportedPlaylist(
-        id: p.id,
-        name: p.name,
-        songs: songs,
-        importedAt: p.importedAt,
-        cloudId: p.cloudId,
-        isCloud: p.isCloud,
-      );
+      return p.copyWith(songs: songs);
     }).toList();
     if (changed) await saveAll(result);
     return result;
@@ -263,14 +279,7 @@ class PlaylistStore {
       }).toList();
       if (!touched) return p;
       changed = true;
-      return ImportedPlaylist(
-        id: p.id,
-        name: p.name,
-        songs: songs,
-        importedAt: p.importedAt,
-        cloudId: p.cloudId,
-        isCloud: p.isCloud,
-      );
+      return p.copyWith(songs: songs);
     }).toList();
     if (changed) await saveAll(result);
     return result;
@@ -289,15 +298,71 @@ class PlaylistStore {
         for (final s in p.songs)
           if (!pathSet.contains(s.path)) s,
       ];
+      return p.copyWith(songs: next);
+    }).toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 记录歌单来源（插件 id + 用户输入的链接/ID + 源端条目原始数据）
+  Future<List<ImportedPlaylist>> setSource(
+    String id, {
+    required String sourcePluginId,
+    String? sourceUrl,
+    Map<String, dynamic>? sourceRaw,
+  }) async {
+    final all = await loadAll();
+    final result = all.map((p) {
+      if (p.id != id) return p;
       return ImportedPlaylist(
         id: p.id,
         name: p.name,
-        songs: next,
+        songs: p.songs,
         importedAt: p.importedAt,
         cloudId: p.cloudId,
         isCloud: p.isCloud,
+        sourcePluginId: sourcePluginId,
+        sourceUrl: sourceUrl,
+        sourceRaw: sourceRaw,
       );
     }).toList();
+    await saveAll(result);
+    return result;
+  }
+
+  /// 应用源端同步：
+  /// - 仅增加：追加本地缺失的源端歌曲；
+  /// - 完全同步：在仅增加的基础上，删除本地「非本软件添加」且源端已不存在的歌曲。
+  Future<List<ImportedPlaylist>> applySourceSync(
+    String id, {
+    required List<ImportedSong> sourceSongs,
+    required bool fullSync,
+  }) async {
+    final all = await loadAll();
+    final index = all.indexWhere((p) => p.id == id);
+    if (index < 0) return all;
+    final p = all[index];
+    final localKeys = p.songs.map((s) => s.path).toSet();
+    final additions =
+        sourceSongs.where((s) => !localKeys.contains(s.path)).toList();
+    var nextSongs = [...p.songs, ...additions];
+    if (fullSync) {
+      final sourceKeys = sourceSongs.map((s) => s.path).toSet();
+      nextSongs = p.songs
+          .where((s) => s.addedInApp || sourceKeys.contains(s.path))
+          .toList();
+      final keptKeys = nextSongs.map((s) => s.path).toSet();
+      nextSongs = [
+        ...nextSongs,
+        ...sourceSongs.where((s) => !keptKeys.contains(s.path)),
+      ];
+    }
+    if (nextSongs.length == p.songs.length &&
+        nextSongs.every((s) => localKeys.contains(s.path))) {
+      return all;
+    }
+    final result = [...all];
+    result[index] = p.copyWith(songs: nextSongs);
     await saveAll(result);
     return result;
   }

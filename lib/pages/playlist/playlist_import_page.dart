@@ -725,6 +725,20 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         return;
       }
       await manager.addSongs(created.last.id, songs);
+      // 记录来源，供后续「从源端更新」使用
+      final keyword = _keywordCtrl.text.trim();
+      final isUrlImport = sheet.raw['_importedTracks'] != null;
+      Map<String, dynamic>? sourceRaw;
+      if (!isUrlImport && sheet.raw.isNotEmpty) {
+        sourceRaw = Map<String, dynamic>.from(sheet.raw)
+          ..remove('_importedTracks');
+      }
+      await manager.setSource(
+        created.last.id,
+        sourcePluginId: source.id,
+        sourceUrl: keyword,
+        sourceRaw: sourceRaw,
+      );
       if (!mounted) return;
       _toast(tr('已导入「{name}」，共 {n} 首歌曲', {'name': name, 'n': songs.length}));
     } catch (e) {

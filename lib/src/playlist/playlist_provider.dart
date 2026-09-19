@@ -83,6 +83,34 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
+  Future<void> setSource(
+    String id, {
+    required String sourcePluginId,
+    String? sourceUrl,
+    Map<String, dynamic>? sourceRaw,
+  }) async {
+    final playlists = await _store.setSource(
+      id,
+      sourcePluginId: sourcePluginId,
+      sourceUrl: sourceUrl,
+      sourceRaw: sourceRaw,
+    );
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
+  Future<void> applySourceSync(
+    String id, {
+    required List<ImportedSong> sourceSongs,
+    required bool fullSync,
+  }) async {
+    final playlists = await _store.applySourceSync(
+      id,
+      sourceSongs: sourceSongs,
+      fullSync: fullSync,
+    );
+    state = ImportedPlaylistState(playlists: playlists, loading: false);
+  }
+
   Future<void> removeSong(String id, String path) async {
     final playlists = await _store.removeSong(id, path);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
