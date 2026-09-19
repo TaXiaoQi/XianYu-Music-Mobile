@@ -20,7 +20,6 @@
 //! 状态（混响/延迟/包络）在单次 `process_block` 调用内保持。
 
 pub mod channel;
-pub mod convolver;
 pub mod dsp;
 pub mod dynamics;
 pub mod modulation;

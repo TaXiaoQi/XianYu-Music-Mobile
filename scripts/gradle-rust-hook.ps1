@@ -171,7 +171,7 @@ if ($needSo) {
     New-Item -ItemType Directory -Force -Path $dst | Out-Null
     Copy-Item $src -Destination $dst -Force
     Get-ChildItem (Join-Path $realSource "android\app\src\main\jniLibs") -Recurse -Filter "*.so" |
-        Where-Object { $_.Directory.Name -ne "arm64-v8a" -or $_.Name -ne "libxianyu_core.so" } |
+        Where-Object { $_.Directory.Name -ne "arm64-v8a" } |
         Remove-Item -Force
 }
 

@@ -359,7 +359,6 @@ impl DlnaCore {
     }
 
     /// 长轮询下一条 DMR 指令（超时返回 None；移动端 FRB 用）。
-    #[allow(dead_code)]
     pub async fn dmr_next_command(&self, timeout_ms: u64) -> Option<DmrCommand> {
         let mut guard = self.dmr_rx.lock().await;
         let rx = guard.as_mut()?;

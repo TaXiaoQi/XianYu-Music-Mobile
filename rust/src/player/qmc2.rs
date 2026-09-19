@@ -546,7 +546,6 @@ impl<R: Read + Seek + Send + Sync> symphonia::core::io::MediaSource
 
 /// Check if a downloaded file has a QTag or V1 footer with an embedded ekey.
 /// Returns the extracted base64-encoded ekey if found.
-#[allow(dead_code)]
 pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
     if data.len() < 8 {
         return None;

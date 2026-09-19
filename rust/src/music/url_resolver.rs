@@ -400,13 +400,11 @@ pub async fn get_lx_cover_url(song_info: &LxUrlSongInfo) -> Option<String> {
 // ==================== FRB 包装层调用的辅助命令 ====================
 
 /// 获取 LX 音源封面 URL（由 api 层包装后暴露给 Dart）
-#[allow(dead_code)]
 pub async fn get_lx_cover(song_info: LxUrlSongInfo) -> Result<Option<String>, String> {
     Ok(get_lx_cover_url(&song_info).await)
 }
 
 /// 清除 URL 缓存（由 api 层包装后暴露给 Dart）
-#[allow(dead_code)]
 pub async fn clear_lx_url_cache() -> Result<(), String> {
     let mut cache = url_cache().write().await;
     cache.clear();

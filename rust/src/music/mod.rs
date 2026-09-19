@@ -10,7 +10,6 @@ pub mod lx_catalog;
 pub mod scanner;
 pub mod auth;
 pub mod palette;
-pub mod sidebar;
 pub mod library;
 pub mod covers;
 pub mod files;

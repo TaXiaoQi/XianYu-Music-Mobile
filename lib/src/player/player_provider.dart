@@ -45,25 +45,14 @@ import 'online_quality_probe.dart';
 import 'online_precache.dart';
 import '../i18n/i18n.dart';
 
-/// 全局系统控制中心 AudioHandler 句柄
 XianYuAudioHandler? audioHandler;
 
-/// 直链体积缓存（url → 字节）：音质/下载弹窗重复打开不重复探测。
-/// 直链带过期参数会变化，超上限直接清空重建，避免无界增长。
 final Map<String, int> _qualitySizeByUrl = {};
 
-/// 已预热过体积的歌曲探测 key：避免切歌后台预热对同一首歌重复起跑全档解析。
-/// 有上限，防止长期运行无限增长。
 final Set<String> _prewarmKeys = {};
 
-/// 最近创建的播放控制器（playerProvider 为全局单例）。
-///
-/// AudioService.init 是后台异步初始化，PlayerNotifier 构造时 audioHandler
-/// 可能仍为 null 导致 bindNotifier 落空（控制中心按键全部失效）；
-/// 此处留存全局引用，init 完成后在 main 中补绑。
 PlayerNotifier? activePlayerNotifier;
 
-/// 系统控制中心（MediaSession / Notification）与 Flutter 播放状态的双向桥梁
 class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler {
   PlayerNotifier? _notifier;
 
@@ -71,36 +60,19 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     _notifier = notifier;
   }
 
-  /// 广播更新当前系统的 MediaItem（系统控制中心卡片：标题/歌手/专辑/封面/时长）
   void syncMediaItem(QueueItem item, double durationSecs) {
     _lastSyncItem = item;
     _lastSyncDuration = durationSecs;
     mediaItem.add(_buildMediaItem(item, durationSecs, _artUriFor(item)));
-    // 在线封面异步落盘，成功后补推一次本地 file:// 封面（见 _materializeOnlineArt）。
     unawaited(_materializeOnlineArt(item));
   }
 
-  /// 最近一次广播的歌曲与时长（封面落盘完成后补推用）。
   QueueItem? _lastSyncItem;
   double _lastSyncDuration = 0;
 
-  /// 在线封面落盘缓存（url → 本地文件路径）。
   final Map<String, String> _artFileCache = {};
-  /// 正在落盘的 url，防并发重复写。
   final Set<String> _artMaterializing = {};
 
-  /// 计算系统卡片封面 URI。
-  ///
-  /// 鸿蒙 4.2 及更早版本的「媒体播控中心」运行在安卓兼容层，不会联网加载
-  /// https 远程封面 URI（华为系统服务不做网络请求），加载失败会导致播控
-  /// 卡片无封面甚至表现异常；故已落盘的在线封面一律用本地 file:// URI，
-  /// 未落盘前先用 https 兜底，落盘完成后补推本地封面。
-  ///
-  /// 本地路径一律 existsSync 校验：库表 cover_thumb_path / 在线封面落盘缓存
-  /// 都可能因系统清缓存、重装等失效成死路径，系统加载失败只会静默黑封面
-  /// （应用内播放页高清提取不走此路径，重新提取即正常，表现为「应用内有
-  /// 封面、通知栏没有」）；死路径在这里拦下，交由 _resolveNotificationCover
-  /// 兜底链重新提取自愈。
   Uri? _artUriFor(QueueItem item) {
     final url = item.coverUrl;
     if (url != null && url.isNotEmpty) {
@@ -128,24 +100,18 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
       album: item.album.isEmpty ? tr('弦予音乐') : item.album,
       title: item.title,
       artist: item.artist.isEmpty ? tr('未知歌手') : item.artist,
-      // 时长无效（在线歌起播瞬间尚未探测到时长）时不下发 0：
-      // METADATA_KEY_DURATION=0 在鸿蒙播控中心会被判定无效元数据，卡片不显示。
       duration:
           durationSecs > 0 ? Duration(milliseconds: (durationSecs * 1000).round()) : null,
       artUri: artUri,
     );
   }
 
-  /// 在线封面经 CoverProxy 取回字节后写入临时目录，artUri 换成本地文件。
-  /// 只在 Android 生效（iOS 控制中心可加载网络图，桌面端无此桥接）。
   Future<void> _materializeOnlineArt(QueueItem item) async {
     if (!Platform.isAndroid) return;
     final url = item.coverUrl;
     if (url == null || url.isEmpty) return;
     final cached = _artFileCache[url];
     if (cached != null) {
-      // 落盘文件可能被系统清缓存清掉：失效则移除记录重新落盘，
-      // 否则补推的 file:// 是死路径，兼容层播控卡片拿不到封面。
       if (File(cached).existsSync()) return;
       _artFileCache.remove(url);
     }
@@ -158,20 +124,17 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
       final file = File('${dir.path}/media_art_$key.jpg');
       await file.writeAsBytes(bytes, flush: true);
       _artFileCache[url] = file.path;
-      // 仍是当前这首歌时补推一次，让播控卡片尽快换成本地封面。
       if (_lastSyncItem?.path == item.path) {
         mediaItem.add(
           _buildMediaItem(item, _lastSyncDuration, Uri.file(file.path)),
         );
       }
     } catch (_) {
-      // 落盘失败静默：保留 https artUri 兜底。
     } finally {
       _artMaterializing.remove(url);
     }
   }
 
-  /// 广播更新系统的 PlaybackState（播放状态/进度/控制动作/循环模式）
   void syncPlaybackState({
     required bool isPlaying,
     required double positionSecs,
@@ -186,9 +149,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           if (isPlaying) as_pkg.MediaControl.pause else as_pkg.MediaControl.play,
           as_pkg.MediaControl.skipToNext,
           as_pkg.MediaControl(
-            // 0.18.x 的 androidIcon 必须带 "drawable/" 前缀：
-            // Android 端 getResourceId 按 "/" split 后取 parts[1]，
-            // 缺前缀会抛 ArrayIndexOutOfBoundsException 导致整个媒体卡片不显示。
             androidIcon: isFavorite
                 ? 'drawable/ic_notif_favorite_filled'
                 : 'drawable/ic_notif_favorite',
@@ -208,10 +168,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           as_pkg.MediaAction.seekForward,
           as_pkg.MediaAction.seekBackward,
         },
-        // 紧凑视图（锁屏/折叠态）仍只显示 上一首/播放/下一首。
-        // 注意：华为 EMUI 上 setShowActionsInCompactView 引用非 0 起始索引
-        // 会抛 IndexOutOfBoundsException: Index: 3, Size: 3，故把三个基础
-        // 控制排到 [0,1,2] 并让紧凑视图引用 0 起始索引。
         androidCompactActionIndices: const [0, 1, 2],
         processingState: as_pkg.AudioProcessingState.ready,
         playing: isPlaying,
@@ -222,22 +178,18 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     );
   }
 
-  /// 播放顺序(0 列表循环 / 1 单曲循环 / 2 随机)对应的控制中心图标。
-  /// 注意 androidIcon 必须带 "drawable/" 前缀（见上）。
   String _playModeIcon(int mode) => switch (mode) {
         1 => 'drawable/ic_notif_mode_repeat_one',
         2 => 'drawable/ic_notif_mode_shuffle',
         _ => 'drawable/ic_notif_mode_repeat',
       };
 
-  /// 播放顺序对应的控制中心无障碍标签。
   String _playModeLabel(int mode) => switch (mode) {
         1 => tr('单曲循环'),
         2 => tr('随机播放'),
         _ => tr('列表循环'),
       };
 
-  /// 控制中心自定义按键（收藏 / 播放顺序）。
   @override
   Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
     switch (name) {
@@ -264,31 +216,22 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   Future<void> seek(Duration position) =>
       _notifier?.seek(position.inMilliseconds / 1000.0) ?? Future.value();
 
-  /// 用户划掉通知/停止服务：只暂停，不得在暂停态误触发播放。
   @override
   Future<void> stop() => _notifier?.pauseFromSystem() ?? Future.value();
 }
 
-/// 播放中的单曲信息（小而美：仅保留 UI 需要的最小字段）。
 class QueueItem {
   final String path;
   final String title;
   final String artist;
   final String album;
   final int durationMs;
-  /// 在线歌曲信息 JSON（LX 直链解析用）；本地歌曲为空。
   final String? onlineSongJson;
-  /// 在线歌曲音质（如 320k / flac）。
   final String? onlineQuality;
-  /// 在线歌曲封面 URL（在线歌曲优先展示，本地歌曲为空）。
   final String? coverUrl;
-  /// 本地歌曲封面缩略图文件路径（通知栏/锁屏封面，file:// URI 用）。
   final String? coverPath;
-  /// 在线歌曲音源 key（如 kw/kg/tx/wy），用于歌词抓取。
   final String? source;
-  /// 在线歌曲信息 JSON（歌词抓取用，LyricSongInfo 格式）。
   final String? onlineInfoJson;
-  /// 来自每日推荐队列：播放页据此显示「不喜欢」按钮（跳过并上报负反馈）。
   final bool fromDailyRecommend;
   const QueueItem({
     required this.path,
@@ -325,7 +268,6 @@ class QueueItem {
         fromDailyRecommend: fromDailyRecommend,
       );
 
-  /// 复制并更新在线音质（音质切换后写回队列项，切歌/重播沿用该档）。
   QueueItem copyWithQuality(String quality) => QueueItem(
         path: path,
         title: title,
@@ -341,8 +283,6 @@ class QueueItem {
         fromDailyRecommend: fromDailyRecommend,
       );
 
-  /// 复制并更新在线音源信息（跨格式换源后回写 pluginId/source/musicInfo，
-  /// 使歌词加载等下游也能拿到新插件信息）。
   QueueItem copyWithOnlineSource({
     String? onlineSongJson,
     String? source,
@@ -371,20 +311,13 @@ class PlaybackState {
   final bool isPlaying;
   final double position;
   final double duration;
-  final int playMode; // 0 顺序(列表循环) 1 单曲循环 2 随机
-  /// 在线歌曲直链解析中（UI 播放键显示加载态）。
+  final int playMode;
   final bool resolving;
-  /// 当前播放错误信息（在线歌曲解析/播放失败时展示）。
   final String? error;
-  /// USB 独占输出（AAudio exclusive）播放中：EQ/音效 DSP 走 Rust 管线。
   final bool usbExclusive;
-  /// 共享 DSP 管线（AAudio shared + 系统混音器）播放中：普通模式效果链走 Rust。
   final bool dspActive;
-  /// 当前在线歌曲实际播放音质（降级校验后）。
   final String? currentQuality;
-  /// 当前在线歌曲已探测到的真实可用档位（高 → 低，不含虚高档）。
   final List<String> availableQualities;
-  /// 当前在线歌曲是否仍在后台探测可用档位（音质菜单可显示加载态）。
   final bool qualityMenuProbing;
   const PlaybackState({
     this.current,
@@ -441,13 +374,9 @@ class PlaybackState {
 
 const Object _noChange = Object();
 
-/// 起播前门控（由腕上联动注入，见 WatchLinkController）：在任意 play() 真正
-/// 出声前等待确认流程完成（如授权弹窗），保证「先弹窗、后起播」。置 null 直通。
 typedef BeforePlayGate = Future<void> Function();
 BeforePlayGate? beforePlayGate;
 
-/// 覆写 play() 的 AudioPlayer：所有起播路径（播放按钮/点歌/上下首/系统媒体
-/// 会话/手表命令）都汇聚于 play()，在此统一挂门；暂停/seek 不经过。
 class _GatedAudioPlayer extends AudioPlayer {
   _GatedAudioPlayer() : super(handleInterruptions: false);
 
@@ -463,7 +392,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     with WidgetsBindingObserver {
   PlayerNotifier(this._ref) : super(const PlaybackState()) {
     WidgetsBinding.instance.addObserver(this);
-    // AudioService.init 后台异步完成：先全局注册，init 完成后由 main 补绑。
     activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
     _init();
@@ -471,7 +399,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   final Ref _ref;
   final AudioPlayer _player = _GatedAudioPlayer();
-  /// 当前在线歌曲的共享探针 key，切歌时用于失效上一首的探测。
   String? _activeProbeKey;
   final Random _rand = Random();
   StreamSubscription<Duration?>? _posSub;
@@ -480,76 +407,43 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<ProcessingState>? _procSub;
   StreamSubscription<dynamic>? _errSub;
   StreamSubscription<dynamic>? _interruptionSub;
-  // 音频中断（来电/瞬断）期间被我们暂停，中断结束需自动恢复
   bool _interruptedByInterruption = false;
   Timer? _listenTimer;
-  /// 听歌时长结算的最近进度位：结算按 position 增量而非墙钟——播放器死亡/
-  /// 中段卡死时 position 不推进，即使 isPlaying 状态失真也不会虚计时长。
   double _lastStatPos = -1;
-  /// 播放错误处理互斥：错误风暴（换源探测失败链）时只处理一次。
   bool _playbackErrorHandling = false;
-  // 自然播完衔接互斥：completed 事件在解析直链的长窗口内可能重复到达，
-  // 无防护会并发两次 _playAt 导致跳两首/状态互相覆盖。
   bool _onTrackEndBusy = false;
   Timer? _exclusiveTimer;
   Timer? _sfxSyncTimer;
-  /// 共享 DSP 管线本会话是否可用（AAudio 初始化失败后置 false，全部回退 ExoPlayer）。
   bool _dspAvailable = true;
-  /// 管线中途退出（解码失败等）后的下一次起播跳过管线，防「退出→重播→退出」环。
   bool _dspSkipNextStart = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
-  // 在线歌曲连续失败跳过计数（防环）。
   int _skipDepth = 0;
-  // [播放结束双通道兜底] 对齐桌面端：rAF 进度超限（evaluateStallAutoNext 同源）。
-  // 每 500ms 检查一次进度，completed 事件丢失或播放器静默死亡时仍能自动衔接。
   Timer? _stallTimer;
   double _stallLastPos = -1;
   int _stallTicks = 0;
-  // 失败在线音源记录（key → 失败时间，10 分钟过期）：同源队列歌曲批量快速跳过，
-  // 对齐桌面端 knownFailedPluginPrefixes + recentOnlineFailurePaths。
   final Map<String, DateTime> _failedOnlineSources = {};
 
-  /// 起播流水线代际号：清空队列/队列删空等「重置」操作递增，_playAt 在每个
-  /// await 边界后校验，不一致即放弃后续起播——否则清空队列时在途的
-  /// `_playAt`（在线解析/换管线/加载源）会把 current 写回 state 并重新
-  /// `_player.play()`，表现为「清了还在响、队列复活、播放页不退出」。
   int _playEpoch = 0;
-  // 自动换源上下文：同一首歌的失败音源集；歌曲切换时被 _switchCtxKey 重建。
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
-  // 同曲防抖：错误事件与 stall 兜底可能几乎同时触发换源，短窗口内只放行一次。
   DateTime? _lastAutoSwitchAt;
   String? _lastAutoSwitchPath;
-  // 跨格式换源缓存：悬空 pluginId 同格式无匹配时，跨格式（LX↔MusicFree/Baka）
-  // 重搜得到的新 songJson，按原 pluginId+标题 缓存，避免逐档音质重复搜索。
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
-  // 分享链接深链触发的播放：失败行为按「分享链接播放失败行为」设置决定（replace 才允许插件换源重播）。
   bool _shareLinkPlayback = false;
-  /// 会话级临时音质覆盖（音质菜单显式选择时写入，对齐桌面端 sessionQualityOverride）。
-  /// 播放时优先级：_sessionQualityOverride > 设置的 onlineDefaultQuality > 歌曲自带档位。
-  /// 新播放会话（playQueue/清空队列）时清空，手动切歌保留。
   String? _sessionQualityOverride;
 
   double? _restoredOnlinePending;
-  // SAF 本地歌曲恢复会话时的待恢复进度：点击播放时再物化文件并从该位置续播。
   double? _restoredLocalPending;
   DateTime? _trackStartTime;
-  /// 本次播放会话尚未写入数据库的累计听歌声长（秒），对标桌面端 flushPlaySession。
   double _accumulatedTime = 0;
-  /// 当前这一首歌的首播是否已计入播放次数（后续增量刷写只加时长不加次数）。
   bool _currentPlayCountRecorded = false;
-  /// 通知栏封面路径缓存（歌曲 path → 缩略图路径；空串 = 无封面）。
   final Map<String, String> _notifCoverCache = {};
-  /// 进行中的封面解析（path → future），防并发重复查询并支持首推前 await。
   final Map<String, Future<String>> _notifCoverPending = {};
-  /// 已发起封面预加载的歌曲 path（避免同歌重复预热；满额清首保活）。
   final Set<String> _preloadedCovers = {};
-  /// 进程内是否已请求过通知权限（Android 13+ 媒体通知必需）。
   bool _notifPermissionAsked = false;
 
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
-  /// 上一首已预缓存的远程歌曲路径（去重，防止每个进度 tick 重复触发）。
   String? _lastPrecachedRemotePath;
 
   @override
@@ -564,12 +458,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _posSub = _player.positionStream.listen((p) {
       final pos = p.inMilliseconds / 1000.0;
       state = state.copyWith(position: pos);
-      // 不推送系统媒体会话：Android 通知栏进度按 PlaybackState 的
-      // position+speed 外推，无需逐 tick 下发。这里曾每 200ms 同步一次，
-      // 导致 audio_service 以 ~5 次/秒重发通知，触发系统通知限流
-      // （logcat: Package enqueue rate is 5.0x Shedding）——切歌时的
-      // 元数据更新被成批丢弃，表现为「通知栏封面/标题切歌不刷新、
-      // 暂停后才更新」（暂停即洪水停止、限流解除）。
       _persistPositionDebounced();
       _maybePrecacheNextRemote(pos);
     });
@@ -578,13 +466,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
     });
-    // 自管音频中断（关闭 just_audio 内置 handleInterruptions 的定制版）：
-    // ROM 会把「同进程第二个解码器（MV 视频）激活」误报为永久焦点丢失
-    // (unknown)——内置逻辑遇 loss 必停，用户点播放即被压停。定制规则：
-    //   - duck：忽略（不做音量让路）
-    //   - pause（来电/瞬断）：照常暂停，中断结束自动恢复
-    //   - unknown（永久丢失）：MV 激活时忽略（ROM 对视频解码器的焦点回收，
-    //     不是真的被打断）；非 MV 时照常暂停（其他 app 抢焦点场景）
     AudioSession.instance.then((session) {
       _interruptionSub = session.interruptionEventStream.listen((event) async {
         if (!event.begin) {
@@ -608,8 +489,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
       if (playing != state.isPlaying) {
-        // 暂停取证：所有暂停（我们代码/系统媒体会话/just_audio 焦点中断）
-        // 都在此汇聚，栈首帧可直接指认发起方
         if (!playing) {
           final st = StackTrace.current
               .toString()
@@ -625,47 +504,32 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _syncToSystemMediaSession();
       }
     });
-    // 自然播完的权威信号：just_audio 在源播完时把 processingState 置为
-    // completed（playing 字段不保证翻转），据此自动衔接到队列下一首。
-    // 手动暂停是 paused 而非 completed，不会误触发，故无需 _manualPause 门控。
     _procSub = _player.processingStateStream.listen((ps) {
       if (ps == ProcessingState.completed) {
         _onTrackEnd();
       }
     });
-    // 播放中途错误（直链中途失效/网络断/解码失败）：just_audio 通过
-    // playbackEventStream 的 onError 上报。此前无人监听 → 播放器已死但
-    // UI 仍停在 isPlaying=true。统一路由：在线歌先尝试换源，失败透出错误。
     _errSub = _player.playbackEventStream.listen(
       (_) {},
       onError: (Object e, StackTrace st) {
         _onPlaybackError(e);
       },
     );
-    // 播放中每 15 秒把当前会话的听歌时长增量刷写进数据库（首页统计/排行榜共用），
-    // 避免长时间连续播放时统计迟迟不落库。
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (state.isPlaying) {
         _flushPlayStats();
       }
     });
-    // [播放结束双通道兜底] 每 500ms 检查进度超限/停滞（对齐桌面端
-    // rAF 到点检测 + evaluateStallAutoNext 停滞判定），防止 completed
-    // 事件丢失或播放器静默死亡时卡在最后一秒不切歌。
     _stallTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       _checkStalledProgress();
     });
-    // 音效变速变调即时生效（just_audio 原生支持 speed/pitch）。
     _ref.listen(soundEffectProvider.select((s) => s.settings), (_, s) {
       _applyEffectSpeedPitch(s);
       _syncExclusiveEffects(s);
     });
-    // 收藏在应用内变化时刷新通知栏「收藏」图标。
     _ref.listen(favoritesProvider, (_, _) {
       _syncToSystemMediaSession();
     });
-    // 音量即时同步：普通播放直接作用于 just_audio 实例（表冠/外部改设置时
-    // 否则永不生效）；独占/共享 DSP 管线另有专属音量链路。
     _ref.listen(volumeProvider, (_, v) {
       try {
         _player.setVolume(_effectiveVolume());
@@ -676,22 +540,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         } catch (_) {}
       }
     });
-    // 独占输出开关切换时，正在播放的本地曲目无缝切换管线。
     _ref.listen(
       settingsProvider.select((s) => s.valueOrNull?.usbExclusiveOutput ?? false),
       (prev, next) {
         if (prev != next) _onExclusiveSettingChanged(next);
       },
     );
-    // 输出设备切换时，正在使用独占/共享 DSP 管线的本地曲目在当前位置
-    // 无缝重建管线，让新设备立即生效（对齐桌面端切换输出设备行为）。
     _ref.listen(
       settingsProvider.select((s) => s.valueOrNull?.usbExclusiveDeviceId ?? -1),
       (prev, next) {
         if (prev != next) _onOutputDeviceChanged();
       },
     );
-    // 音量平衡（ReplayGain）设置变化：重算当前曲目增益并即时应用。
     _ref.listen(
       settingsProvider.select((s) => (
             s.valueOrNull?.volumeBalanceEnabled ?? false,
@@ -705,13 +565,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _restoreSession();
   }
 
-  /// 独占输出开关切换：当前本地曲目从当前位置无缝换管线。
   Future<void> _onExclusiveSettingChanged(bool enabled) async {
     final item = state.current;
     if (item == null || item.isOnline || _isRemotePath(item.path)) return;
     final pos = state.position;
     final playing = state.isPlaying;
-    // SAF content:// 先物化为本地真实文件，独占管线无法消费树文档 URI。
     var target = item.path;
     if (SafChannel.isSafPath(target)) {
       final tmp = await getTemporaryDirectory();
@@ -732,7 +590,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } else {
       if (!state.usbExclusive) return;
       await _stopExclusive();
-      // 关闭独占：优先无缝切到共享 DSP 管线（效果链继续生效），失败回退 ExoPlayer。
       final ok =
           await _tryStartDspPipeline(target, startAtSecs: pos, isPlaying: playing);
       if (ok) {
@@ -755,20 +612,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
-      } catch (_) {}
+      } catch (e) {
+        AppLogger.instance
+            .log('exclusive', '关闭 USB 独占后恢复普通播放失败: $e');
+        state = state.copyWith(isPlaying: false);
+        _syncToSystemMediaSession();
+      }
     }
   }
 
-  /// 输出设备变更：独占/共享 DSP 管线正在使用时，在当前位置无缝重建管线，
-  /// 让新设备立即生效；仅 ExoPlayer 在播时不打断（设备选择在下次起播生效）。
-  /// 新设备上管线启动失败时回退 ExoPlayer 续播，避免静音。
   Future<void> _onOutputDeviceChanged() async {
     if (!state.usbExclusive && !state.dspActive) return;
     final item = state.current;
     if (item == null || item.isOnline || _isRemotePath(item.path)) return;
     final pos = state.position;
     final playing = state.isPlaying;
-    // SAF content:// 先物化为本地真实文件，独占/共享管线无法消费树文档 URI。
     var target = item.path;
     if (SafChannel.isSafPath(target)) {
       final tmp = await getTemporaryDirectory();
@@ -794,7 +652,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
       return;
     }
-    // 新设备/新管线上启动失败：回退 ExoPlayer 从当前位置续播。
     try {
       await _updateRgGain(target);
       await _setLocalSource(target);
@@ -810,7 +667,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {}
   }
 
-  /// 启动 USB 独占播放（AAudio exclusive + Rust DSP 管线）。失败返回 false。
   Future<bool> _tryStartExclusive(
     String path, {
     required double startAtSecs,
@@ -828,7 +684,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         startTimeSecs: startAtSecs,
         isPlaying: isPlaying,
         volumeBalanceGain: bitPerfect ? 1.0 : _effectiveBalanceGain(),
-        // Bit-perfect 直出时 EQ/音效被旁通，避免传空让 DAC 保持原生。
         equalizerSettingsJson: bitPerfect ? '' : jsonEncode(sfx.toEqualizerRustJson()),
         soundEffectSettingsJson: bitPerfect ? '' : jsonEncode(sfx.toRustJson()),
         bitPerfect: bitPerfect,
@@ -846,16 +701,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 启动共享 DSP 管线播放（AAudio shared + 系统混音器）。
-  /// 全效果链（EQ/混响/空间音效/变速变调/响度平衡）在 Rust 侧生效。
-  /// 失败返回 false，调用方回退 ExoPlayer。
   Future<bool> _tryStartDspPipeline(
     String path, {
     required double startAtSecs,
     required bool isPlaying,
   }) async {
     if (!_dspAvailable) return false;
-    // 管线中断后的首次重播跳过 DSP（防退出环），正常切歌后自动恢复尝试。
     if (_dspSkipNextStart) {
       _dspSkipNextStart = false;
       return false;
@@ -865,8 +716,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final settings = _ref.read(settingsProvider).valueOrNull;
       final deviceName = await startUsbExclusivePlayback(
         path: path,
-        // 共享 DSP 管线同样输出到「输出设备」所选设备（-1 = 系统默认，
-        // 对齐桌面端共享模式可选输出设备）。
         deviceId: settings?.usbExclusiveDeviceId ?? -1,
         volume: _ref.read(volumeProvider),
         startTimeSecs: startAtSecs,
@@ -885,8 +734,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return true;
     } catch (e) {
       state = state.copyWith(dspActive: false);
-      // AAudio 库加载失败（API < 26，错误信息含 libaaudio）属于会话级不可用，
-      // 避免每首歌都空等超时；网络超时/流创建失败仅单次回退，不禁用会话。
       final msg = e.toString();
       if (msg.contains('libaaudio')) {
         _dspAvailable = false;
@@ -896,7 +743,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 停止独占/共享 DSP 管线并释放设备。
   Future<void> _stopExclusive() async {
     _stopExclusivePolling();
     try {
@@ -907,7 +753,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 独占播放轮询：同步进度、检测自然播完。
   void _startExclusivePolling() {
     _stopExclusivePolling();
     _exclusiveTimer = Timer.periodic(
@@ -931,15 +776,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _maybePrecacheNextRemote(pos);
       final infoStr = await getUsbExclusiveDeviceInfo();
       final info = jsonDecode(infoStr) as Map<String, dynamic>;
-      // DSP 管线的解码器总时长比元数据更准，覆盖 ExoPlayer 阶段的缓存值。
       final engineDur = (info['durationSecs'] as num?)?.toDouble() ?? 0.0;
       if (engineDur > 0) {
         state = state.copyWith(duration: engineDur);
       }
       final dur = state.duration;
-      // 管线工作线程退出检测：设备断开/解码失败/自然放完。
-      // 用进度区分「自然放完」与「中断」——近末尾按自然结束衔接下一曲，
-      // 进度远离末尾才是中断，回退普通播放续播当前曲。
       if (info['active'] != true) {
         if (dur > 0 && pos >= dur - 0.3) {
           await _onExclusiveTrackEnd();
@@ -954,19 +795,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {}
   }
 
-  /// 管线中断（设备断开/解码失败）：释放管线并在普通播放继续当前曲目。
   Future<void> _onExclusiveDisconnect() async {
     final cur = state.current;
     _flushPlayStats();
     if (cur != null) _reportBehavior(cur, 'usb_disconnect', 0);
     await _stopExclusive();
-    // 下一轮起播跳过管线，防「退出→重播→退出」环；正常切歌后自动恢复尝试。
     _dspSkipNextStart = true;
     if (cur == null) return;
     await _playAt(state.queueIndex);
   }
 
-  /// 独占播放自然结束：释放设备后按播放模式衔接。
   Future<void> _onExclusiveTrackEnd() async {
     final ended = state.current;
     if (ended != null) _reportBehavior(ended, 'complete', 0);
@@ -985,7 +823,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _playAt(next);
   }
 
-  /// EQ/音效设置变化时同步到 DSP 管线（独占/共享，50ms 防抖）。
   void _syncExclusiveEffects(SoundEffectSettings s) {
     if (!state.usbExclusive && !state.dspActive) return;
     _sfxSyncTimer?.cancel();
@@ -999,31 +836,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
   }
 
-  /// 将音效的倍速/变调应用到 just_audio。
-  /// DSP 管线（独占/共享）播放时由 Rust 侧处理变速变调，跳过。
   Future<void> _applyEffectSpeedPitch(SoundEffectSettings s) async {
     if (state.usbExclusive || state.dspActive) return;
     try {
       final rate = s.playbackRate.clamp(50.0, 200.0) / 100.0;
       await _player.setSpeed(rate);
       if (s.preservesPitch) {
-        // 保持音调：仅变速，音调不变。
         await _player.setPitch(1.0);
       } else {
         final pitch = s.pitchShift.clamp(50.0, 200.0) / 100.0;
         await _player.setPitch(pitch);
       }
     } catch (_) {
-      // 平台不支持 setPitch 时静默忽略。
     }
   }
 
-  /// 同步更新 Android/iOS 系统控制中心与通知栏
   void _syncToSystemMediaSession() {
     final cur = state.current;
     if (cur != null) {
-      // 本地歌曲无可用封面字段（coverUrl 为空、coverPath 为空或死路径）时，
-      // 用已解析的通知栏封面缓存兜底。
       var item = cur;
       if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
         final cp = cur.coverPath;
@@ -1049,13 +879,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 通知栏/锁屏封面兜底：本地歌曲播放时查曲库缩略图（含 SAF 自愈），
-  /// 结果缓存（空串 = 无封面，同样缓存防重复查询）。
-  /// 支持并发去重：同曲重复调用会等待进行中的那次解析（首推前 await 依赖此语义）。
   Future<void> _resolveNotificationCover(QueueItem item) async {
     if (item.isOnline) return;
-    // coverUrl/coverPath 齐备且真实存在时无需兜底；coverPath 为死路径
-    // （缓存被清等）时继续走下方缩略图提取，让通知封面自愈。
     if (item.coverUrl?.isNotEmpty == true) return;
     final cp = item.coverPath;
     if (cp != null && cp.isNotEmpty && !cp.startsWith('http')) {
@@ -1076,9 +901,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 联动预缓存用：接下来可预知的至多 [count] 首。顺序/列表循环按队列
-  /// 环形取 count 首；随机模式仅预知栈顶 1 首（后续顺序未定）；单曲循环
-  /// 无下一首返回空。
   List<QueueItem> peekUpcomingItems(int count) {
     final n = state.queue.length;
     if (n == 0 || count <= 0 || state.playMode == 1) return const [];
@@ -1096,8 +918,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
   }
 
-  /// 联动封面兜底：解析本地歌封面缩略图（与通知栏封面同一缓存链路，
-  /// 含 SAF 自愈），返回真实存在的缩略图路径；在线歌或无封面返回 null。
   Future<String?> resolveLinkCoverPath(QueueItem item) async {
     if (item.isOnline || item.coverUrl?.isNotEmpty == true) return null;
     try {
@@ -1110,7 +930,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return File(p).existsSync() ? p : null;
   }
 
-  /// 实际解析并写缓存，返回解析出的缩略图路径（可能为空串）。
   Future<String> _resolveNotificationCoverInner(QueueItem item) async {
     if (_notifCoverCache.containsKey(item.path)) {
       return _notifCoverCache[item.path] ?? '';
@@ -1125,7 +944,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         path: item.path,
       );
       if (p.isEmpty && SafChannel.isSafPath(item.path)) {
-        // SAF 歌曲缓存未命中时经 fd 自愈提取一次（顺带回写数据库）。
         final healed =
             await SafChannel.extractCoverToCache(item.path, cacheRoot);
         if (healed.isNotEmpty) {
@@ -1149,21 +967,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 预加载播放队列封面（后台异步，不阻塞起播）。
-  ///
-  /// 目标：切歌/切歌封面动画时，下一首封面多数已解码/落盘，避免新封面从占位
-  /// 渐显的等待。只预热当前之后若干首 + 随机模式下若干随机候选：
-  ///   - 在线封面：防盗链域名（bili/网易/腾讯/酷我 CDN 等）经 [CoverProxy.fetch]
-  ///     预先拉取到内存缓存（CoverImage._maybeProxy 可直接命中渲染）；
-  ///   - 本地封面：经 [getSongCoverThumbnail] 预热缩略图到磁盘缓存（diff.rs 按
-  ///     mtime+size 短路的既成缓存，后续 CoverImage 再次提取立刻返回）。
-  /// 同歌只预热一次（_preloadedCovers 去重，满额清首保活）。
   void _preloadQueueCovers() {
     final targets = <QueueItem>{};
     for (var k = 1; k <= 6 && state.queueIndex + k < state.queue.length; k++) {
       targets.add(state.queue[state.queueIndex + k]);
     }
-    // 随机模式：额外预取若干随机候选，增大切歌即命中的概率。
     if (state.playMode == 2 && state.queue.length > 1) {
       for (var i = 0; i < 3; i++) {
         final idx = _rand.nextInt(state.queue.length);
@@ -1197,7 +1005,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         path: item.path,
       );
     } catch (_) {
-      // 预载失败静默：封面另有占位兜底，不影响起播。
     }
   }
 
@@ -1270,9 +1077,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         playMode: mode,
       );
 
-      // 会话恢复同样在首推前解析本地封面（库内按 path 查询极快）：
-      // 首包即带封面，避免起播后补推的第二次 artwork 更新被
-      // Android 12+ SystemUI 竞态丢弃（重启后封面空白直到暂停刷新）。
       if (!currentItem.isOnline && currentItem.coverUrl?.isNotEmpty != true) {
         try {
           await _resolveNotificationCover(currentItem);
@@ -1290,8 +1094,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           await seek(pos);
           await _player.setVolume(_effectiveVolume());
         } else if (SafChannel.isSafPath(currentItem.path)) {
-          // SAF 歌曲不做启动预载（大文件复制会拖慢启动，且 setFilePath 无法
-          // 消费 content://）；记录待恢复进度，点击播放时再物化并续播。
           _restoredLocalPending = pos;
         } else {
           await _updateRgGain(currentItem.path);
@@ -1304,7 +1106,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
           if (!restored) {
             var path = currentItem.path;
-            // 会话恢复的转码类格式（APE/WV/AIFF/QMC）：先转码/解密再预载。
             if (_isTranscodePath(path)) {
               try {
                 path =
@@ -1314,7 +1115,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 AppLogger.instance.log('session', '转码预载失败: $e');
               }
             }
-            // 共享 DSP 管线暂停态预载（对齐独占恢复），失败回退 ExoPlayer 预载。
             restored = await _tryStartDspPipeline(path,
                 startAtSecs: pos, isPlaying: false);
             if (!restored) {
@@ -1345,9 +1145,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  /// 防抖持久化进度（每 5 秒一次），供重启恢复。在线歌同样持久化：
-  /// 会话存的是歌曲 meta + 位置，恢复时在线歌经 _restoredOnlinePending
-  /// 重新解析直链续播（直链过期不影响），清空感全部来自这里被排除。
   void _persistPositionDebounced() {
     final current = state.current;
     if (current == null) return;
@@ -1373,7 +1170,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
   }
 
-  /// 进程内只请求一次通知权限（用户拒绝后下次冷启动播放时再问，标准做法）。
   Future<void> _ensureNotificationPermission() async {
     if (_notifPermissionAsked) return;
     _notifPermissionAsked = true;
@@ -1399,7 +1195,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       await _playAt(startIndex);
     } catch (e, st) {
-      // 手势调用点不 await 异步错误，此处兜底捕获避免整链静默中断。
       AppLog.error('play', 'playQueue 异常: $e\n$st');
       state = state.copyWith(isPlaying: false, resolving: false);
     }
@@ -1407,26 +1202,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _playAt(int index, {double startAtSecs = 0}) async {
     if (index < 0 || index >= state.queue.length) return;
-    // 自增代际号：任何新的起播（自然衔接/手动切歌/失败跳曲递归）都会令
-    // 更早的在途起播在下一个 await 边界放弃，防止并发起播互相踩踏
-    //（快速连点下一首、播完自动衔接与手动切换竞争等场景）。
     _playEpoch++;
     final epoch = _playEpoch;
 
     AppLog.info('play', '_playAt index=$index path=${state.queue[index].path}');
-    // 首次播放时申请通知权限（Android 13+ 未授权则媒体通知被系统静默拦截）。
     unawaited(_ensureNotificationPermission());
     _flushPlayStats();
-    // 新曲目首播计数重置：后续增量刷写只加时长、不再累加播放次数。
     _currentPlayCountRecorded = false;
     _accumulatedTime = 0;
 
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
     final item = state.queue[index];
-    // [失败音源快速跳过] 该曲所属音源短时间内已因播放失败被批量标记（对齐
-    // 桌面端 knownFailedPluginPrefixes）：不再走完整的解析/换源流程，直接跳到
-    // 队列下一首，避免整个同源队列逐首承受 12s+ 的解析超时。
     if (item.isOnline &&
         _skipDepth < state.queue.length &&
         _isOnlineSourceFailed(item)) {
@@ -1437,7 +1224,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _playAt(next);
         return;
       }
-      // 队列里已无可播放歌曲：立即停止并提示，不卡加载态也不反复跳歌。
       _skipDepth = 0;
       state = state.copyWith(
         queueIndex: index,
@@ -1450,18 +1236,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _showPlaybackToast(tr('该音源的歌曲均无法播放，已停止'));
       return;
     }
-    // 切到不同歌曲时失效上一首的共享探针，避免残留探测与串歌缓存。
     final prev = state.current;
     if (_activeProbeKey != null && (prev == null || prev.path != item.path)) {
       onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
       _activeProbeKey = null;
     }
-    // 本地歌曲在首推前先按本地逻辑解析库内缩略图封面。本地曲库页的
-    // Song 原生携带 coverPath 首包即带封面；收藏/歌单/最近播放等入口
-    // 转换的条目不携带，若不带封面首推，起播后补推的第二次 artwork
-    // 更新会被 Android 12+ 的 SystemUI 竞态丢弃（封面停留在上一首、
-    // 直到暂停刷新）。库内按 path 查询极快，等解析完再首推，对所有
-    // 播放入口对齐本地曲库页行为。
     if (!item.isOnline && item.coverUrl?.isNotEmpty != true) {
       try {
         await _resolveNotificationCover(item);
@@ -1480,8 +1259,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
     _precacheNextCover();
     try {
-        // [DLNA 投屏] 投屏中：解析当前曲并投到电视，本地引擎保持静默，
-        // 队列/历史/统计等尾部逻辑与普通播放共用。
         if (_ref.read(dlnaCastProvider).isCasting) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
@@ -1490,8 +1267,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         } else if (item.isOnline) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
-          // 切歌即停上一首：在线解析（插件直链/探测，最长 12s+）期间
-          // 不得让上一首继续出声，否则新歌封面/歌名已就位而旧歌还在响。
           try {
             await _player.stop();
           } catch (_) {}
@@ -1509,8 +1284,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           await _playRemote(item);
           if (epoch != _playEpoch) return;
         } else {
-        // SAF content:// 路径先物化为本地真实文件，独占/音量平衡/普通播放统一
-        // 使用真实路径（Rust/ExoPlayer 均无法直接消费树文档 URI）。
         var target = item.path;
         if (SafChannel.isSafPath(target)) {
           final tmp = await getTemporaryDirectory();
@@ -1520,8 +1293,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _updateRgGain(target);
         final s = _ref.read(settingsProvider).valueOrNull;
         final isDsd = _isDsdPath(target);
-        // QMC/AIFF 在独占管线（Rust symphonia + QMC 解密）内有原生支持，
-        // 仍可 Bit-perfect 独占；APE/WV 无独占解码器，始终走转码缓存。
         final exclusiveCapable =
             !_isTranscodePath(target) || _isNativeExclusiveFormat(target);
         final useExclusive = exclusiveCapable &&
@@ -1550,9 +1321,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             target = result.path;
             await _updateRgGain(target);
           }
-          // 普通模式默认走共享 DSP 管线（AAudio shared + 系统混音器），
-          // 全效果链（EQ/混响/空间音效/变速变调/响度平衡）在 Rust 侧生效；
-          // 失败（API<26/流创建失败等）自动回退 ExoPlayer。
           started = await _tryStartDspPipeline(target,
               startAtSecs: startAtSecs, isPlaying: true);
           if (epoch != _playEpoch) {
@@ -1579,30 +1347,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _recordRecentPlay(item);
       _recordHistory(item);
       _trackStartTime = DateTime.now();
-      // 本地封面已在首推前解析（见 _playAt 顶部），首包即带封面；
-      // 此处仅随起播完成常规补推一次元数据（在线歌曲解析期间的
-      // 音质/封面信息更新依赖这次同步）。
       _syncToSystemMediaSession();
-      // 预热队列后续歌曲封面，使切歌/封面动画时下一首封面多数已就绪。
       unawaited(Future(() => _preloadQueueCovers()));
     } catch (e) {
-      // 队列已被清空/删空：放弃失败处理（换源/跳过/错误透出），不再改写 state。
       if (epoch != _playEpoch) {
         _shareLinkPlayback = false;
         return;
       }
       state = state.copyWith(isPlaying: false, resolving: false);
-      // 新歌加载失败：先停掉正在响的上一首，避免「点了新歌没反应但旧歌还在响」。
-      // 换源/跳过分支随后会自行重新起播，此处停止对它们无影响。
       try {
         await _stopExclusive();
       } catch (_) {}
       try {
         await _player.stop();
       } catch (_) {}
-      // 在线歌曲：先尝试自动切换其他音源，避免直接跳过/停止。
-      // 分享链接触发的播放按「分享链接播放失败行为」设置：pause 不换源（直接透出错误暂停），
-      // replace 才允许走插件索引换源重播。
       if (item.isOnline && _skipDepth < state.queue.length) {
         final allowSwitch = !_shareLinkPlayback
             ? true
@@ -1620,7 +1378,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
         }
       }
-      // 在线歌曲失败处理（防环：跳过数不超过队列长度）。
       if (item.isOnline && _skipDepth < state.queue.length) {
         final behavior = _ref
                 .read(settingsProvider)
@@ -1628,8 +1385,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 ?.onlineFailureBehavior ??
             'skip';
         if (behavior == 'skip') {
-          // 批量标记该曲音源为失败：后续同源队列歌曲走 _playAt 顶部的快速跳过，
-          // 不再逐首承受解析超时（对齐桌面端 knownFailedPluginPrefixes）。
           _markOnlineSourceFailed(item);
           _skipDepth++;
           final next = _pickNextIndex();
@@ -1639,7 +1394,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
         }
       }
-      // 无下一首可跳（或 stop 行为）时透出错误信息。
       if (item.isOnline) {
         final msg = e is PluginEngineException
             ? e.message
@@ -1647,7 +1401,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(error: msg);
         _showPlaybackToast(tr('在线播放失败：{e}', {'e': e.toString()}));
       } else {
-        // 本地歌曲失败同样透出：静默失败会让用户以为「点击没反应」。
         AppLog.error('play', '本地播放失败 path=${item.path} error=$e');
         state = state.copyWith(
             error: e is PluginEngineException
@@ -1656,12 +1409,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _syncToSystemMediaSession();
     }
-    // 一次起播尝试结束即清掉分享链路标记，避免泄漏影响后续非分享链接播放。
     _shareLinkPlayback = false;
     if (!item.isOnline) _persistSession();
   }
 
-  /// 在线歌曲：解析直链后播放。失败抛异常由调用方处理。
   Future<void> _playOnline(QueueItem item) async {
     final json = item.onlineSongJson;
     AppLog.info('play', '[playOnline] ${item.title} path=${item.path} '
@@ -1670,8 +1421,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final songJson = jsonDecode(json) as Map<String, dynamic>;
       final s0 = _ref.read(settingsProvider).valueOrNull;
       final fb0 = s0?.onlineQualityFallbackBehavior ?? 'lower';
-      // 会话覆盖 > 设置的在线默认音质 > 歌曲自带档位（对齐桌面端
-      // sessionQualityOverride > audio.onlineDefaultQuality；设置优先于歌曲预设）。
       final preferred = _sessionQualityOverride ??
           s0?.onlineDefaultQuality ??
           item.onlineQuality ??
@@ -1681,15 +1430,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'source=${songJson['source']} format=${songJson['format']} '
           'preferred=$preferred candidates=$candidates');
 
-      // 共享探测：同歌一轮，起播优先、档位菜单/下载复用。
       final key = _songProbeKey(songJson, item);
       final probe = onlineQualityProbeRegistry.ensure(
           key, _buildResolveCallback(songJson, item));
       _activeProbeKey = key;
 
-      // 仅保留兜底安全网（45s）：单档失败由各自的 8s 超时收敛，候选链并行
-      // + 串行推进。旧版 12s 总限时会在首选档卡满 8s 后只剩 4s 给其余候选，
-      // 回退链未走完即报失败——失败率显著高于桌面端（桌面端整轮探测无总限时）。
       final start = await probe
           .startBest(preferred, candidates)
           .timeout(const Duration(seconds: 45), onTimeout: () => null);
@@ -1697,7 +1442,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
           'available=${probe.availableQualities} probing=${probe.probing}');
       if (start != null) {
-        // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
         await _startOnlineUrl(start.url,
             headers: start.headers, item: item, ekey: start.ekey);
@@ -1708,12 +1452,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       throw StateError(tr('直链解析失败'));
     }
-    // onlineInfoJson：走 LX 直链解析（在线搜索音源）。
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError(tr('无法获取播放链接'));
-    // 预取直链播种：LX 起播不走共享探针，把已解析直链注入注册表供
-    // 菜单/下载/体积探测直接复用，避免预热阶段重复解析起播档
-    // （对齐桌面 seedSharedProbeUrl）。
     final infoJson = item.onlineInfoJson;
     if (infoJson != null && infoJson.isNotEmpty) {
       try {
@@ -1723,7 +1463,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             seedKey, url.quality ?? '320k', url.url,
             headers: url.headers, ekey: url.ekey);
       } catch (_) {
-        // 播种失败不影响播放。
       }
     }
     state = state.copyWith(
@@ -1735,11 +1474,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     unawaited(_prewarmOnlineSizes(item));
   }
 
-  /// 切歌/起播后台预热（对齐桌面 ensureFooterQualityInfo）：
-  /// 播放开始时在后台补齐当前在线歌各档位直链，并并行探测文件体积写入
-  /// 全局按直链缓存，使稍后打开音质/下载弹窗时体积多数已在手，减少冷探测
-  /// 延迟。不触碰菜单 UI 状态；失败时移除待办 key 以便后续重试。同一首歌只
-  /// 预热一次（见 _prewarmKeys），避免重复起跑全档解析。
   Future<void> _prewarmOnlineSizes(QueueItem item) async {
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return;
@@ -1754,12 +1488,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (_prewarmKeys.length > 16) _prewarmKeys.remove(_prewarmKeys.first);
     try {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
-      // 用 ensure 而非 peek：LX 起播播种的探针（空解析回调）在此挂上真实
-      // 解析回调并补探测；失败冷却/运行中/已有成果的探针原样复用。
       final probe = onlineQualityProbeRegistry.ensure(
           key, _buildResolveCallback(songJson, item));
-      // 1) 声明档就后台解析（填充 probe.resolved 供 qualitySizes 读取）；
-      //    无声明时探常用无损档 + 320k/128k 兜底档。
       final declared = await _declaredQualities(songJson);
       final targets = declared.isNotEmpty
           ? kQualityLadder.reversed.where(declared.contains).toList()
@@ -1768,15 +1498,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               .toList();
       await Future.wait(targets.map(probe.probe).toList())
           .timeout(const Duration(seconds: 30));
-      // 2) 读已解析直链并并行探体积，写入全局 _qualitySizeByUrl（按直链去重）。
       await qualitySizes();
     } catch (_) {
-      // 预热失败不阻塞播放，移除 key 允许后续重试。
       _prewarmKeys.remove(key);
     }
   }
 
-  /// 歌曲级探测 key：隔离不同歌曲且共享同一首歌的多路调用。
   String _songProbeKey(Map<String, dynamic> songJson, QueueItem item) {
     final pid = songJson['pluginId'];
     final src = songJson['source'];
@@ -1787,12 +1514,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return 'lx:$src:${mid ?? item.title}';
   }
 
-  /// 获取当前歌曲的声明音质（对齐桌面 getOnlineAvailableQualities）：
-  /// - 插件歌：优先读 musicInfo._types（LX 插件搜索结果带真实音质档），
-  ///   其次读插件元数据 supportedQualities（MusicFree 新式插件声明），
-  ///   都没有时按桌面 pluginGetSupportedQualities 兜底为 128k/320k/flac。
-  /// - 落雪在线搜索歌：读顶层 _types。
-  /// 无声明返回空列表。
   Future<List<String>> _declaredQualities(Map<String, dynamic> songJson) async {
     final out = <String>{};
     final pid = songJson['pluginId'];
@@ -1823,8 +1544,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         } catch (_) {}
       }
       if (out.isEmpty) {
-        // 对齐桌面 pluginGetSupportedQualities 兜底：原版 MusicFree 插件
-        // 只暴露 standard/high/lossless 三档，映射为代表音质。
         out.addAll(const {'128k', '320k', 'flac'});
       }
     } else {
@@ -1841,8 +1560,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return result;
   }
 
-  /// 构造单档解析回调：插件音源逐档优先，同档插件失败立即用 LX 兜底；
-  /// 纯 LX 音源直接走 LX 单档解析。
   Future<ResolvedMediaUrl?> Function(String) _buildResolveCallback(
       Map<String, dynamic> songJson, QueueItem item) {
     final hasPlugin = songJson.containsKey('pluginId');
@@ -1865,7 +1582,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     };
   }
 
-  /// 单档 LX 直链解析（插件引擎编排，含缓存/并发去重）。单档限时 8s。
   Future<ResolvedMediaUrl?> _lxResolveQuality(
       String songInfoJson, String quality) async {
     try {
@@ -1890,7 +1606,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 把探针的最新可用档位同步到 UI 状态（音质按钮/菜单）。
   void _refreshQualityMenuState(SongQualityProbe probe) {
     state = state.copyWith(
       availableQualities: probe.availableQualities,
@@ -1898,11 +1613,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
   }
 
-  /// 切换当前在线歌曲播放音质：复用共享探针，命中即重播。
   Future<bool> switchQuality(String quality) async {
     final item = state.current;
     if (item == null || !item.isOnline) return false;
-    // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return false;
     try {
@@ -1918,7 +1631,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return false;
       }
       await _startUrl(res.url, headers: res.headers);
-      // 把所选音质写回队列项，切歌/重播沿用该档（对齐桌面端会话级覆盖）。
       _sessionQualityOverride = res.quality;
       final updated = item.copyWithQuality(res.quality);
       state = state.copyWith(
@@ -1938,25 +1650,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 获取当前在线歌曲的真实可用档位（触发无损档全量探测，供音质菜单展示）。
-  ///
-  /// 复用共享探针做受控并发探测与降级校验，返回按高 → 低排序的可用档。
   Future<List<String>> qualityOptions() =>
       _probeQualityOptions(forDownload: false);
 
-  /// 获取当前在线歌曲的可下载档位（触发无损档 + 320k 全量探测，供下载弹窗展示）。
-  ///
-  /// 与 [qualityOptions] 共用同一轮共享探针（探测传递），额外包含 320k
-  /// 这一常用下载档，返回按高 → 低排序的可用档。
   Future<List<String>> downloadQualityOptions() =>
       _probeQualityOptions(forDownload: true);
 
-  /// 当前歌曲各已解析档位的实测体积：展示档 → 体积信息。
-  ///
-  /// 对齐桌面端弹窗的「扩展名 · 体积」：复用共享探针已解析出的直链，逐条做
-  /// Range 体积探测（Rust `probe_url_size`），结果按直链缓存，弹窗重复打开不
-  /// 重复请求；直链探测失败（防盗链/签名过期/无 Range）时回退到插件/落雪搜索
-  /// 元数据里上报的体积（Baka `qualities.size` 语义），保证 FLAC+ 档位也有体积。
   Future<Map<String, QualitySizeInfo>> qualitySizes() async {
     final item = state.current;
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
@@ -1967,11 +1666,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final probe = onlineQualityProbeRegistry.peek(key);
       if (probe == null) return const {};
 
-      // 对齐桌面端「展示的档位必有体积」：信任模式（Baka）下声明档全量进菜单，
-      // 但只实测过最高档，其余档位没有直链 → 体积探测读不到。这里对菜单中
-      // 缺直链的档位补一次解析，再统一探体积（probe 内建并发去重/槽位，失败
-      // 返回 null 不抛错，单档失败不影响其他档）。have 按请求档判断，降级解析
-      // 出的结果已属该档，不重复探测。
       final shown = state.availableQualities;
       if (shown.isNotEmpty) {
         final have = {
@@ -1989,11 +1683,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (entries.isEmpty) return const {};
       final metaSizes = _metadataQualitySizes(songJson);
       final out = <String, QualitySizeInfo>{};
-      // 体积表按键对齐菜单展示档（shown）而非实际解析档：Baka 信任模式下菜单
-      // 展示声明档，请求 hires 实际返回 flac24bit 时若按实际档做键，sizes['hires']
-      // 恒为空，UI 取不到体积（对齐桌面 footerQualitySizes 按展示档为键）。
-      // 再并入已解析档的请求键：预热（_prewarmOnlineSizes）先于菜单时 shown 偏窄，
-      // 并集保证预热广度，弹窗打开时各档体积多数已在手。
       final keys = <String>[
         ...shown,
         for (final r in entries)
@@ -2019,7 +1708,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               continue;
             }
           } catch (_) {
-            // 单条直链体积探测失败回退元数据体积（服务器不支持 Range 等）。
           }
         }
         final meta = metaSizes[q];
@@ -2034,8 +1722,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 展示档 → 解析结果：优先按请求档匹配（降级解析的直链也挂回请求档），
-  /// 其次按实际档匹配（LX/预热的常规路径）。
   QualityProbeResult? _entryForShown(
       List<QualityProbeResult> entries, String q) {
     for (final r in entries) {
@@ -2047,9 +1733,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
-  /// 从插件/落雪搜索元数据读取各档位体积（对齐 BakaMusic `qualities.size`
-  /// 语义，免网络探测）：依次扫描 musicInfo.rawData.qualities、
-  /// musicInfo.qualities / 顶层 qualities / _types（lx_types）逐档 size。
   Map<String, int> _metadataQualitySizes(Map<String, dynamic> songJson) {
     final out = <String, int>{};
     void scan(dynamic raw) {
@@ -2082,7 +1765,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return out;
   }
 
-  /// 解析体积文本（"23.5MB"/"1.2GB"/"320K"/数字字节）为字节数；无法解析返回 null。
   static int? _parseQualitySize(dynamic size) {
     if (size is num) return size > 0 ? size.toInt() : null;
     if (size is! String) return null;
@@ -2113,7 +1795,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<List<String>> _probeQualityOptions(
       {required bool forDownload}) async {
     final item = state.current;
-    // 插件歌走 onlineSongJson，落雪在线搜索歌走 onlineInfoJson，二者都要支持。
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
     AppLog.debug('quality', '[quality] _probeQualityOptions item=${item?.title} '
         'onlineSongJson=${item?.onlineSongJson?.isNotEmpty ?? false} '
@@ -2127,13 +1808,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _activeProbeKey = key;
       state = state.copyWith(qualityMenuProbing: true);
 
-      // 探测目标：优先用源声明的音质（对齐桌面 probeDownloadableQualities，
-      // 插件只声明支持哪些档，探测声明之外无意义）；无声明时回退
-      // 无损 + 320k（常用档）+ 128k 兜底档。
       final declared = await _declaredQualities(songJson);
       if (declared.isNotEmpty) {
-        // 对齐桌面 getOnlineAvailableQualities：菜单直接展示源声明音质，
-        // 探测仅作后台校验/降级修正，不再阻塞菜单展示（避免探测慢/挂起导致空态）。
         final base = kQualityLadder.reversed.where(declared.contains).toList();
         AppLog.debug('quality', '[quality] declared non-empty base=$base');
         state = state.copyWith(
@@ -2144,7 +1820,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return base;
       }
 
-      // 无声明（如落雪在线搜索无 _types）：探测常用档位后展示。
       final targets = kQualityLadder.reversed
           .where((q) => isLosslessQuality(q) || q == '320k' || q == '128k')
           .toList();
@@ -2156,7 +1831,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
       AppLog.info('quality', '[quality] probe done opts=$ordered');
-      // 整轮探测全空 → 标记失败冷却，短窗口内重开菜单不再反复请求音源。
       if (ordered.isEmpty) probe.markFailed();
       state = state.copyWith(
         availableQualities: ordered,
@@ -2170,18 +1844,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 后台探测可用档位：成功档位并入 [base]，供切换/下载复用。
-  /// 探测失败/超时不影响已展示的声明音质。
   Future<void> _probeInBackground(
     SongQualityProbe probe,
     List<String> targets,
     List<String> base,
   ) async {
     try {
-      // Baka 插件「信任模式」快径（对齐桌面 probeDownloadableQualities）：声明档位
-      // 值得信任时只实测最高档一次——若最高档在实际档与请求档一致（未降级），声明档
-      // 即全部视为可用，不再逐档串行发 track_v2 网络请求。既大幅缩短起播/菜单耗时，
-      // 又保住完整 12 档菜单，避免逐档探测慢导致菜单残缺。最高档被降级时回退逐档。
       if (await _tryBakaTrustProbe(probe, targets, base)) {
         state = state.copyWith(
           availableQualities: probe.availableQualities,
@@ -2190,14 +1858,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return;
       }
 
-      // 区分在线源类型：Baka 插件 reported 原生键可信，逐档实测塌缩到真实档；
-      // LX 在线（无 pluginId）reported 键同样可信，维持逐档实测；MF 插件走分组。
       if (await _currentIsPluginSong()) {
-        // MF 插件：reported 是四级键语义（super 档同时服务全部无损档），逐档实测
-        // 会因 reported 档低于请求档把声明档整体塌缩成实际档（如 hires→flac），
-        // 造成「音质探测不全」。对齐桌面 runPluginGetMusicInfo 的 tryPairs 代表档
-        // 语义 + 「声明档为 UI 展示与回退上界」：按四级键分组，每组只实测代表档
-        // （组内最高档）一次，组任一成功 → 组内全部声明档保留，组失败 → 整组移除。
         final groups = <String, List<String>>{};
         for (final q in targets) {
           groups
@@ -2211,11 +1872,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             final res =
                 await probe.probe(rep).timeout(const Duration(seconds: 15));
             if (res != null && res.url.isNotEmpty) {
-              // 组成功：整组声明档信任为可用（写回探针保持各消费方一致）。
               probe.trustDeclared(grp);
             }
           } catch (_) {
-            // 组失败：整组声明档不信任，菜单自动去除该组。
           }
         }));
       } else {
@@ -2228,7 +1887,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (opts.isEmpty) opts.addAll(base);
       final ordered =
           kQualityLadder.reversed.where(opts.contains).toList();
-      // 整轮探测全空 → 标记失败冷却，短窗口内不再反复请求音源。
       if (ordered.isEmpty) probe.markFailed();
       state = state.copyWith(
         availableQualities: ordered,
@@ -2239,7 +1897,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 当前歌曲是否 MusicFree 插件在线曲（区别于 LX 在线与本地）。
   Future<bool> _currentIsPluginSong() async {
     final item = state.current;
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
@@ -2253,8 +1910,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// Baka 信任模式探测：只实测声明中的最高档，未降级即信任全部声明档位。
-  /// 非 Baka 插件 / 无声明 / 最高档失败或被降级时返回 false，交由逐档探测。
   Future<bool> _tryBakaTrustProbe(
     SongQualityProbe probe,
     List<String> targets,
@@ -2275,33 +1930,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final engine = _ref.read(pluginEngineProvider).valueOrNull;
     if (engine == null || !engine.isBakaPlugin(pluginId)) return false;
 
-    // 只探测声明中的最高档（对齐桌面取声明档位上限作快径）。
     final top = targets.reduce((a, b) =>
         kQualityLadder.indexOf(a) > kQualityLadder.indexOf(b) ? a : b);
     final res = await probe.probe(top).timeout(const Duration(seconds: 10));
     if (res == null || res.url.isEmpty) return false;
     if (res.quality != top) {
-      // 最高档被降级（如咪咕把 hires/atmos 全降为 flac24bit）：不信任声明，
-      // 回退逐档让各档塌缩到真实档位，避免菜单虚高档位。
       AppLog.info('quality', '[quality] Baka 最高档 $top 实际返回 ${res.quality}，回退逐档实测');
       return false;
     }
-    // 未降级：信任声明档位，直接以声明列表作为可用档位（完整 12 档保留）。
-    // 写回探针而非 state，使 _refreshQualityMenuState/切换等后续读取一致，避免被覆盖。
     probe.trustDeclared(base);
     final ordered = probe.availableQualities;
     AppLog.info('quality', '[quality] Baka 信任模式命中，声明档全量可用 $ordered');
     return true;
   }
 
-  /// 音质阶梯（低 → 高），与设置页可选档位一致（对齐桌面端 rank 排序）。
   static const List<String> _qualityLadder = [
     'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
     'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
   ];
 
-  /// 音质候选链（对齐桌面端 resolveOnlinePlayQuality）。
-  /// - [preferred] 首选音质，[fallback] 回退行为：pause 严格不回退（仅首选）/ lower 向下降级 / higher 向上升级。
   static List<String> _qualityCandidates(
     String preferred, [
     String fallback = 'lower',
@@ -2321,7 +1968,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
     }
-    // pause：严格只试首选一次，失败交给起播失败行为处理。
     if (fallback == 'pause') return result.isNotEmpty ? result : [preferred];
     if (result.isEmpty && avail.isNotEmpty) result.add(avail.first);
     return result;
@@ -2332,8 +1978,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   static bool _isRemotePath(String path) => path.startsWith('remote://');
 
-  /// ExoPlayer 不支持的格式：APE/WV/AIFF 需转码为 WAV 缓存，
-  /// QMC 加密（mflac/mgg/qmc* 等）需解密为内部格式，播放前先走转码缓存。
   static bool _isTranscodePath(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.ape') ||
@@ -2348,8 +1992,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     ].any(lower.endsWith);
   }
 
-  /// 独占管线（Rust AAudio + symphonia / QMC 解密）原生支持的格式：
-  /// DSD / AIFF / QMC 加密文件可直接独占直出；APE/WV 不在其中。
   static bool _isNativeExclusiveFormat(String path) {
     final lower = path.toLowerCase();
     if (_isDsdPath(lower)) return true;
@@ -2360,7 +2002,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     ].any(lower.endsWith);
   }
 
-  /// 是否为 DSD 容器文件（dsf/dff/dsd），走原生 DoP 直出。
   static bool _isDsdPath(String path) {
     final lower = path.toLowerCase();
     return lower.endsWith('.dsf') ||
@@ -2370,23 +2011,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   // ==================== 音量平衡（ReplayGain 响度均衡） ====================
 
-  /// 当前曲目 ReplayGain 线性增益（1.0 = 不调整）。切歌/设置变化时重算。
   double _rgGain = 1.0;
 
-  /// 普通管线（just_audio）实际音量 = 用户音量 × ReplayGain 增益。
   double _effectiveVolume() =>
       (_ref.read(volumeProvider) * _effectiveBalanceGain()).clamp(0.0, 4.0);
 
-  /// 当前应生效的音量平衡增益（设置关闭或在线歌曲为 1.0）。
   double _effectiveBalanceGain() {
     final s = _ref.read(settingsProvider).valueOrNull;
     return (s?.volumeBalanceEnabled ?? false) ? _rgGain : 1.0;
   }
 
-  /// 计算并更新当前曲目的 ReplayGain 增益。
-  /// 本地文件 / 远程缓存文件读标签；无标签或读取失败重置 1.0。
-  /// 加载本地曲目音源：SAF 的 `content://` 页先物化为本地真实文件再交给
-  /// just_audio 播放（content 树文档 URI 播放不可靠），普通路径直接走文件。
   Future<Duration?> _setLocalSource(String path) async {
     var target = path;
     if (path.startsWith('content://')) {
@@ -2395,7 +2029,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           path, p.join(tmp.path, 'saf_playback'));
     }
     if (target.startsWith('content://')) {
-      // 物化失败时回退直接以 content URI 交给 just_audio。
       return _player.setUrl(target);
     }
     return _player.setFilePath(target);
@@ -2421,8 +2054,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 音量平衡设置变化：重算当前曲目增益并按当前管线即时应用
-  /// （独占管线平滑渐变不中断；普通管线直接调整音量）。
   Future<void> _onVolumeBalanceSettingChanged() async {
     final item = state.current;
     if (item == null) return;
@@ -2449,13 +2080,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// WebDAV 远程歌曲：缓存命中则本地播放，否则带 Basic Auth 流式播放。
-  /// 远程 DSD 强制走 USB 独占 DoP 管线；APE/WV 先转码为 WAV 缓存。
   Future<void> _playRemote(QueueItem item) async {
     final service = RemoteLibraryService(_ref);
 
-    // 远程 DSD：ExoPlayer 无 DSD 解码，与本地 DSD 一致走 USB 独占 DoP 直出。
-    // 先整文件下载进远程缓存，再把缓存路径交给独占管线。
     if (_isDsdPath(item.path)) {
       final s = _ref.read(settingsProvider).valueOrNull;
       if (!(s?.usbExclusiveOutput ?? false) ||
@@ -2479,7 +2106,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
 
-    // APE/WV：转码为 WAV 后按本地文件播放（远程源自动先下载进缓存）。
     if (_isTranscodePath(item.path)) {
       final result = await service.transcodeToWav(item.path);
       try {
@@ -2510,11 +2136,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
   }
 
-  /// 下一首封面预取：起播即后台预取队列后续最多 3 首的封面（本地高清
-  /// 路径 / 在线封面字节或磁盘缓存）写入 CoverImage 静态缓存，切歌时
-  /// 播放页大封面同步命中，不闪默认音符占位。定位与 [_maybePrecacheNextRemote]
-  /// 同款：顺序/列表循环自 index+1 起向前 3 首；随机模式仅在已压入
-  /// _shuffleFuture 时可预知（自栈顶向前 3 项）；单曲循环无下一首。
   void _precacheNextCover() {
     final n = state.queue.length;
     if (n == 0 || state.playMode == 1) return;
@@ -2536,7 +2157,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       ];
     }
     if (targets.isEmpty) return;
-    // 快照队列条目：await 期间队列可能被改动，避免索引错位。
     final items = [for (final i in targets) state.queue[i]];
     unawaited(Future(() async {
       try {
@@ -2554,9 +2174,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }));
   }
 
-  /// WebDAV 下一首预缓存（对齐桌面端）：当前远程歌曲进度过 60% 时，
-  /// 预下载队列下一首的远程文件。顺序/列表循环取 index+1；随机模式仅在
-  /// 已压入 _shuffleFuture 时可预知；单曲循环无下一首。
   void _maybePrecacheNextRemote(double pos) {
     final cur = state.current;
     if (cur == null || cur.isOnline || !_isRemotePath(cur.path)) return;
@@ -2591,7 +2208,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }));
   }
 
-  /// 会话恢复时预载远程歌曲，返回缓存文件路径（未缓存返回 null）。
   Future<String?> _preloadRemote(QueueItem item) async {
     try {
       final service = RemoteLibraryService(_ref);
@@ -2604,13 +2220,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
-  // —— 在线歌曲预缓存协作（online_precache.dart 调用）——
-
-  /// 歌曲级探测 key（与起播/音质菜单/下载共用一套注册表）。
   String precacheProbeKey(Map<String, dynamic> songJson, QueueItem item) =>
       _songProbeKey(songJson, item);
 
-  /// 确保歌曲级共享探针存在（预取探测结果与起播链路共享，播种直链）。
   SongQualityProbe precacheProbeEnsure(
     Map<String, dynamic> songJson,
     QueueItem item,
@@ -2621,17 +2233,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _buildResolveCallback(songJson, item),
       );
 
-  /// 按播放设置的在线默认音质 + 回退策略推导候选链（与起播一致）。
   List<String> precacheCandidates(String preferred, String fallback) =>
       _qualityCandidates(preferred, fallback);
 
-  /// 本首在线歌起播成功后触发 next-5 预缓存
-  /// （音质直链播种 / 封面 / 歌词 / 15 秒片头，切歌秒开）。
   void _triggerOnlinePrecache(QueueItem item) {
     try {
       if (!item.isOnline) return;
       final s = _ref.read(settingsProvider).valueOrNull;
-      // 播放优先级：会话覆盖 > 设置的在线默认音质 > 歌曲自带档位。
       final preferred = _sessionQualityOverride ??
           s?.onlineDefaultQuality ??
           item.onlineQuality ??
@@ -2648,16 +2256,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         fallback: fb,
       );
     } catch (_) {
-      // 预缓存失败不影响播放。
     }
   }
 
   Future<void> _startUrl(String url, {Map<String, String>? headers}) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
-    // 合并插件 headers 与按域名补齐的防盗链头（Referer/Origin/Accept）。
     final h = normalizeMediaRequestHeaders(clean, headers);
-    // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
@@ -2666,12 +2271,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.play();
   }
 
-  /// 在线直链专用起播：加载完成后校验实际时长与搜索元数据声明时长。
-  ///
-  /// 部分失效直链会返回 200 但内容为空/极短（防盗链页、CDN 下架后的兜底音频），
-  /// ExoPlayer 能正常加载甚至"播完"，但全程无声——用户看到的是"进度条在走
-  /// 却没声音"。与声明时长严重不符（实际 <5s 且声明 ≥30s）时抛错，走统一的
-  /// 换源/跳过/报错失败路径，而不是静默播一段空音频。
   Future<void> _startOnlineUrl(
     String url, {
     Map<String, String>? headers,
@@ -2685,29 +2284,20 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       normalizeMediaRequestHeaders(clean, headers),
       dataDir: _ref.read(appDataDirProvider.future),
     );
-    // 加密源（QMC2 ekey/cek）：ExoPlayer/共享 DSP 管线都无法实时解密，先经
-    // Rust 流式下载+解密成明文临时文件，再按本地文件起播（对齐桌面携带 ekey
-    // 解密播放的语义；代价是首播需完整下载到明文，播放前短暂加载）。
     if (ekey != null && ekey.isNotEmpty) {
       await _startEncryptedFile(clean, h, item, ekey);
       return;
     }
-    // 片头预取命中 → 本地回环代理起播（头部字节零网络等待）；未命中原直链。
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
-    // 在线歌曲优先走共享 DSP 管线（音效全链生效）：经本地代理转发（代理注入
-    // 插件请求头），Rust 侧 HTTP Range 流式解码。失败（死链/超时/流创建失败）
-    // 回退 ExoPlayer 原路径。
     final proxyUrl = AudioProxyServer.instance.proxyUrlFor(clean);
     if (proxyUrl != null) {
-      // 先停掉 ExoPlayer 残留音源（上一首可能仍在其上出声），避免双声重叠。
       try {
         await _player.stop();
       } catch (_) {}
       final ok = await _tryStartDspPipeline(proxyUrl,
           startAtSecs: 0, isPlaying: true);
       if (ok) {
-        // 本首起播成功：预取队列后续 ≤5 首在线歌的直链/封面/歌词/15 秒片头。
         _triggerOnlinePrecache(item);
         return;
       }
@@ -2723,12 +2313,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
-    // 本首起播成功：预取队列后续 ≤5 首在线歌的直链/封面/歌词/15 秒片头。
     _triggerOnlinePrecache(item);
   }
 
-  /// 加密源（QMC2 ekey）起播：下载+解密成明文临时文件后按本地文件播放。
-  /// 缓存按直链 hash 落盘，命中复用避免重复下载；超出上限按时间淘汰最旧的。
   Future<void> _startEncryptedFile(
     String url,
     Map<String, String>? headers,
@@ -2748,8 +2335,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   static const int _decryptCacheMax = 48;
   final Map<String, String> _decryptPathCache = {};
 
-  /// 把加密直链流式下载并经 Rust QMC2 解密为明文临时文件，返回明文路径。
-  /// 同一直链只下/解一次；文件已存在（上次解密残留）直接复用。
   Future<String> _decryptUrlToTemp(
     String url,
     Map<String, String>? headers,
@@ -2763,7 +2348,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final dir = Directory(p.join((await getTemporaryDirectory()).path,
         'xianyu_decrypt'));
     if (!dir.existsSync()) await dir.create(recursive: true);
-    // 上限淘汰：超出时删最旧文件，避免临时区无限膨胀。
     final list = dir
         .listSync(followLinks: false)
         .whereType<File>()
@@ -2777,7 +2361,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final dest = p.join(dir.path,
         'dec_${sha256.convert(utf8.encode(url)).toString().substring(0, 24)}.tmp');
     if (File(dest).existsSync()) {
-      // 同名残留（非空）直接复用；空文件删除重下。
       try {
         final f = File(dest);
         if (f.lengthSync() > 0) {
@@ -2787,7 +2370,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         f.deleteSync();
       } catch (_) {}
     }
-    // Rust 端 QMC2 解密：流式下载 + ekey 解出明文，返回最终路径（可能改名）。
     final plainPath = await downloadOnlineSong(
       url: url,
       destPath: dest,
@@ -2795,7 +2377,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       headersJson: jsonEncode(headers ?? <String, String>{}),
     );
     _decryptPathCache[url] = plainPath;
-    // 淘汰缓存表，防单 song 切换内存无界累积。
     if (_decryptPathCache.length > _decryptCacheMax) {
       final key0 = _decryptPathCache.keys.first;
       _decryptPathCache.remove(key0);
@@ -2803,8 +2384,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return plainPath;
   }
 
-  /// 按候选音质依次调用插件引擎解析 LX 直链（含缓存/并发去重），
-  /// 返回首个合法 http(s) 直链。整体限时 45s，避免多档串行超时拖垮加载态。
   Future<ResolvedMediaUrl?> _tryLxResolve(
       String songInfoJson, List<String> candidates) async {
     try {
@@ -2836,17 +2415,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
-  /// 累计并落库本次会话的听歌时长（对标桌面端 flushPlaySession）。
-  ///
-  /// `_accumulatedTime` 累计上一段已停止播放的时间；`_trackStartTime` 追踪当前
-  /// 连续播放段的起点。达到阈值才写入数据库，避免频繁落库；同一首歌只有首帧
-  /// 计入播放次数，后续增量只加时长（countAsPlay=false）。
   void _flushPlayStats() {
     final item = state.current;
     if (item == null) return;
-    // 按进度增量结算（对齐桌面端防虚增语义）：只有 position 真实推进的时长
-    // 才计入。播放器死亡/中段卡死时 position 不动、增量恒为 0，即使 isPlaying
-    // 状态失真（stall 兜底只覆盖近末尾，中段死亡不触发）也不会虚计听歌时长。
     double currentSession = 0;
     final pos = state.position;
     if (_trackStartTime != null && state.isPlaying && pos > 0) {
@@ -2854,8 +2425,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (delta > 0) {
         final wallSec =
             DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
-        // 超出墙钟的跳变（seek 向前/换歌重置）不计，下个周期恢复正常累计；
-        // 倒退（seek 向后/新歌从 0 起）同样计 0，宁少勿虚。
         if (delta <= wallSec + 2) currentSession = delta;
       }
     }
@@ -2876,7 +2445,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } else {
       _accumulatedTime = totalDuration;
     }
-    // 置位新起点：若仍在播放，从此刻继续累计；否则等待下次 resume 重建起点。
     _trackStartTime = state.isPlaying ? DateTime.now() : null;
   }
 
@@ -2909,12 +2477,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'countAsPlay': countAsPlay,
         });
         await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
-        // 首页「统计」卡片与「常听排行」读取的都是数据库，落库后需使其重新求值，
-        // 否则播放再久，界面上的统计数据都停留在首次加载的值。
         _ref.invalidate(listenStatsProvider);
         _ref.invalidate(mostPlayedProvider);
-      } catch (e) {
-        // 统计落库失败不影响播放主流程。
+      } catch (_) {
       }
     });
   }
@@ -2930,13 +2495,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return _tryLxResolve(infoJson, _qualityCandidates(preferred, fb));
   }
 
-  /// 在线歌曲起播失败时自动切换到其他落雪音源（同一首歌、另一平台）。
-  /// 通过公共音源搜索同名曲目并解析直链播放；返回 true 表示已换源成功。
-  /// 仅当「起播失败行为」为 autoswitch（或分享链接 replace 的 force）时生效。
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {
     final settings = _ref.read(settingsProvider).valueOrNull;
-    // 同曲防抖：错误事件与 stall 兜底可能 37ms 内先后到达，双路重复换源
-    // 会让候选插件被串行白跑两轮（日志曾见同一首歌进入重试两次）。
     final now = DateTime.now();
     if (_lastAutoSwitchAt != null &&
         _lastAutoSwitchPath == item.path &&
@@ -2945,7 +2505,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     _lastAutoSwitchAt = now;
     _lastAutoSwitchPath = item.path;
-    // 分享链接「替换播放」走插件索引换源时允许绕过通用开关（force=true）。
     if ((settings?.onlineFailureBehavior ?? 'stop') != 'autoswitch' &&
         !force) {
       return false;
@@ -2960,7 +2519,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return false;
     }
 
-    // 换源上下文按歌曲（标题+歌手）隔离，避免残留到下一首。
     final key = '${item.title}|${item.artist}';
     if (_switchCtxKey != key) {
       _switchCtxKey = key;
@@ -2968,18 +2526,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     if (item.title.trim().isEmpty) return false;
 
-    // —— 阶段一：同平台插件重试（先于跨平台搜索）。
-    // 已解析出的直链可能本身就是死链（第三方代理 403/过期），此时同平台的
-    // 其他启用插件重新解析同一首歌命中率最高、成本最低。MusicFree 图源歌曲
-    // 常缺 source 字段，旧逻辑在此直接 return，导致自动换源整体失效——
-    // 该场景由本阶段兜住，不再依赖 curSource。
     if (await _switchViaSiblingPlatform(item)) return true;
 
     final curSource = (info['source'] as String?) ?? item.source;
     var curKey = (curSource == null || curSource.isEmpty) ? '' : curSource;
     if (curKey.isEmpty) {
-      // MusicFree 图源歌曲常缺顶层 source：从 musicInfo 的平台字段归一化为
-      // LX key（如「网易云音乐」→ wy），跨平台搜索循环需要它做失败隔离。
       final mj = info['musicInfo'];
       var label = mj is Map<String, dynamic>
           ? (mj['platform'] ?? mj['source'])?.toString() ?? ''
@@ -3002,10 +2553,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final preferred = settings?.onlineDefaultQuality ?? '320k';
     final sourceLabels = {for (final s in kOnlineSources) s.id: s.label};
 
-    // —— 阶段二：跨平台换源（Rust 统一搜索匹配，与桌面端 find_alternative_lx_source
-    // 同一套逻辑：按优先级串行搜索 kw > tx > wy > kg > mg，标题归一化相等/互相包含
-    // + 歌手交集 + 时长 ±5s 辅助匹配，并排除已失败音源）。候选音源解析失败时
-    // 加入失败集合并重新查询，直到无平台可用。
     while (true) {
       final String rawJson;
       try {
@@ -3035,7 +2582,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           infoJson.isEmpty) {
         break;
       }
-      // 直链解析走归一化的 onlineInfoJson（含 KG 分档 hash 等），与正常起播一致。
       final url = await _tryLxResolve(
         infoJson,
         _qualityCandidates(preferred, fb),
@@ -3044,7 +2590,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _failedSources.add(srcId);
         continue;
       }
-      // 更新当前队列项为该音源，再播放。
       final idx = state.queueIndex;
       final queue = [...state.queue];
       if (idx >= 0 && idx < queue.length) queue[idx] = newItem;
@@ -3059,7 +2604,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
       _syncToSystemMediaSession();
       try {
-        // 直链已就绪，立即结束加载态；流的加载/缓冲由播放器内部处理。
         state = state.copyWith(resolving: false);
         await _startOnlineUrl(url.url,
             headers: url.headers, item: newItem, ekey: url.ekey);
@@ -3069,8 +2613,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _skipDepth = 0;
       state = state.copyWith(resolving: false, error: null);
-      // 换源成功等同于一次全新起播：重置首播计数并记录最近播放/历史，
-      // 否则换源曲目不进最近播放、播放次数也会漏记。
       _currentPlayCountRecorded = false;
       _accumulatedTime = 0;
       _recordRecentPlay(newItem);
@@ -3085,13 +2627,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return false;
   }
 
-  /// 播放失败后的同平台插件重试：按当前歌的 pluginId/format 在同平台其他
-  /// 启用插件上重新解析直链。先试同格式兄弟插件（musicInfo 结构互通），
-  /// 再试跨格式（LX ↔ MusicFree，需在目标插件上重搜获取兼容 musicInfo）。
-  ///
-  /// 歌曲「身份」不变（不换音源平台、不改搜索匹配），仅更换解析插件，
-  /// 因此直接以原队列项起播；跨格式命中时回写 pluginId/musicInfo 使歌词
-  /// 等后续加载跟随新插件。返回 true 表示已切换并起播。
   Future<bool> _switchViaSiblingPlatform(QueueItem item) async {
     ResolvedMediaUrl? hit;
     Map<String, dynamic>? healedJson;
@@ -3104,7 +2639,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final sourceKey = songJson['source'] as String? ?? '';
       final musicInfo = songJson['musicInfo'] as Map<String, dynamic>? ?? {};
       if (pluginId == null || pluginId.isEmpty) return false;
-      // 失效错误可能来自已切走后的旧歌，仅对仍在前台的当前项做重试。
       if (state.current?.path != item.path) return false;
 
       final engine = await _ref.read(pluginEngineProvider.future);
@@ -3112,7 +2646,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ??
               '320k';
 
-      // 1) 同格式兄弟插件。
       hit = await _resolveViaSiblingPlugin(
         failedId: pluginId,
         format: format,
@@ -3123,7 +2656,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         engine: engine,
       );
 
-      // 2) 跨格式同平台（LX ↔ MusicFree）。
       if (hit == null) {
         final sources = await engine.store.loadSources();
         final healed = await _crossFormatHeal(
@@ -3160,7 +2692,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       if (hit == null) return false;
 
-      // 跨格式命中：回写新插件信息到当前项与队列，歌词/后续播放跟随新插件。
       if (healedJson != null) {
         _applyCrossFormatHealToState(
           itemPath: item.path,
@@ -3182,7 +2713,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _startOnlineUrl(hit.url,
           headers: hit.headers, item: item, ekey: hit.ekey);
       state = state.copyWith(resolving: false, error: null);
-      // 换源成功等同一次全新起播（对齐跨平台换源分支的记账逻辑）。
       _currentPlayCountRecorded = false;
       _accumulatedTime = 0;
       _recordRecentPlay(item);
@@ -3197,7 +2727,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 标题归一化匹配（去空格/标点/大小写后比较；长度≥3 允许互相包含）。
   static bool _matchOnlineTitle(String a, String b) {
     String norm(String s) => s
         .toLowerCase()
@@ -3211,7 +2740,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return false;
   }
 
-  /// 通过插件引擎解析播放直链。
   Future<ResolvedMediaUrl?> _resolvePluginUrl(
       Map<String, dynamic> songJson, String quality,
       {String itemPath = ''}) async {
@@ -3224,40 +2752,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
-      // 旧导入记录的 musicInfo 可能仍携带来源 App 的临时代理直链（如
-      // BakaMusic 备份的 share.*.cn/url/...）：解析前剥离，强制插件按歌曲
-      // id 重新解析，存量导入无需删除重导（对齐 BakaMusic 播放语义）。
       final staleUrl = musicInfo['url'];
       if (staleUrl is String && staleUrl.startsWith('http')) {
         musicInfo.remove('url');
       }
       var source = sources.where((s) => s.id == pluginId).toList();
       if (source.isEmpty) {
-        // 悬空 pluginId（插件 id = 文件内容 sha256，插件更新/重装后旧记录全部
-        // 失配）：按平台在已装插件中重新匹配同格式插件，命中则回写歌单记录，
-        // 避免「插件一更新，备份导入的歌单全失效，只能删除重导」。
         final healed =
             _findHealedPlugin(sources, format, sourceKey, musicInfo);
         if (healed == null) {
-          // 同格式无匹配：跨格式（LX ↔ MusicFree/Baka）兜底，按同一平台
-          // （网易云/QQ/酷我…）在已装任意格式插件中重搜歌曲，获得兼容格式的
-          // musicInfo 后播放——歌单里的歌只要根源平台一致就能播。
           final healedCross =
               await _crossFormatHeal(pluginId, format, sourceKey, musicInfo, sources, engine);
           if (healedCross == null) {
             return null;
           }
           source = [healedCross.$1];
-          // 跨格式命中后，format/sourceKey/musicInfo 切换为新插件对应的值。
           final newFormat = healedCross.$2['format'] as String? ?? format;
           final newSource = healedCross.$2['source'] as String? ?? sourceKey;
           final newMusicInfo = healedCross.$2['musicInfo'] as Map<String, dynamic>? ?? musicInfo;
           format = newFormat;
           sourceKey = newSource;
           musicInfo = newMusicInfo;
-          // 把新插件信息回写到当前播放项，使歌词加载（读 onlineSongJson 的
-          // pluginId/source/musicInfo）也能命中新插件，否则歌词拿到悬空 pluginId
-          // 会静默返回空。
           final newOnlineSongJson = jsonEncode(healedCross.$2);
           final newOnlineInfoJson = jsonEncode(newMusicInfo);
           _applyCrossFormatHealToState(
@@ -3268,8 +2783,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             newOnlineInfoJson: newOnlineInfoJson,
           );
           if (itemPath.isNotEmpty) {
-            // 跨格式必须完整回写 pluginId+format+source+musicInfo，
-            // 否则下次播放命中新 pluginId 但仍用旧格式 musicInfo 会失败。
             unawaited(_ref
                 .read(playlistManagerProvider.notifier)
                 .healSongPluginFull(
@@ -3292,9 +2805,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       ResolvedMediaUrl? resolved;
       if (format == 'musicfree') {
-        // MusicFree 插件：单档只调一次 getMediaSource（对齐桌面 tryPairs 语义），
-        // 音质降级由外层候选链逐档负责。单档内部级联会把一次探测放大成
-        // 4-8 次串行插件请求，极易击穿起播总超时导致「直链解析失败」。
         resolved = await engine.getMusicFreeUrl(
           source.first,
           musicInfo,
@@ -3307,9 +2817,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final url = result?['url'] as String?;
         if (result != null && _isPlayableUrl(url)) {
           final h = result['headers'];
-          // 采用插件实际返回的 type（可能被静默降级）作为报告音质，对齐桌面端
-          // `reportedQuality = musicInfo?.actualQuality ?? q`：请求 flac 但插件仅
-          // 解锁到 320k 时，用它避免 UI 虚高显示无损（音质与体积对不上的「假音质」）。
           final reportedRaw = result['type'];
           final reportedQuality = reportedRaw is String
               ? PluginEngine.normalizeQualityKey(reportedRaw)
@@ -3320,13 +2827,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             quality: reportedQuality ?? quality,
           );
         } else {
-          // 未命中：交给下方同平台音源回退兜底。
         }
       }
       if (resolved != null) return resolved;
-      // 同平台音源回退（自动换源 · 插件级）：所属插件解析失败（接口失效/
-      // 付费墙/死链）时，依次尝试其他启用插件，命中即回写歌单记录
-      // （与悬空 pluginId heal 同语义），避免整条播放链卡死在单个失效音源。
       return await _resolveViaSiblingPlugin(
         failedId: source.first.id,
         format: format,
@@ -3341,12 +2844,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 从歌曲 songJson 推导平台标签。
-  ///
-  /// LX 歌用 source code（wy/tx/...）；MusicFree 歌的 musicInfo 平台字段
-  /// 有两个来源：引擎调用时注入的 `platform`（插件名，如「网易云音乐」）与
-  /// PluginSearchResult.toJson 写入的 `source`（榜单/搜索导入的歌只有它）。
-  /// 旧逻辑只认 `platform`，榜单导入的歌平台被推断为空，同平台回退 0 候选。
   String _songPlatformLabel(
     String format,
     String sourceKey,
@@ -3357,11 +2854,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return v?.toString() ?? '';
   }
 
-  /// 同平台换源回退：按平台匹配度依次尝试其他启用插件（同格式）。
-  ///
-  /// 跨格式（LX ↔ MusicFree）不在此处处理——`_buildResolveCallback` 的
-  /// LX 兜底链（_lxResolveQuality → Rust url_resolver，读插件索引）已覆盖。
-  /// 单档最多尝试 3 个候选插件，避免全失效时串行超时拖垮起播总预算。
   Future<ResolvedMediaUrl?> _resolveViaSiblingPlugin({
     required String failedId,
     required String format,
@@ -3392,10 +2884,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             fallback: 'pause',
           );
         } else {
-          // LX 候选：MusicFree 歌的 sourceKey 常为空/异格式 key，直接复用
-          // 会以 source= 空调用插件（必然 403/参数错误）。改由平台标签推导
-          // LX source code（如 QQ音乐 → tx）；推导不出则跳过该候选
-          //（严格版：不用 _lxSourceKeyForPlatform 的兜底盲猜，避免错源浪费调用）。
           final lxKey = lxSourceKeyForPlatform(platformLabel);
           final lxSupported =
               plugin.sources.isEmpty || plugin.sources.contains(lxKey);
@@ -3431,9 +2919,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 悬空 pluginId 重匹配：LX 歌按 source code（wy/tx/...），
-  /// MusicFree 歌按平台名（musicInfo.platform 优先，其次 source），
-  /// 在已装同格式插件中找能服务该平台的插件。
   PluginSource? _findHealedPlugin(
     List<PluginSource> sources,
     String format,
@@ -3450,11 +2935,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
   }
 
-  /// 跨格式换源：悬空 pluginId 同格式无匹配时，按同一平台（网易云/QQ/酷我…）
-  /// 在已装任意格式插件（LX ↔ MusicFree/Baka）中重搜歌曲，返回 (新插件, 新 songJson)。
-  ///
-  /// 不同格式的 musicInfo 结构不互通，因此必须在目标插件上重新搜索以获得兼容
-  /// 的 musicInfo。结果按原 pluginId+标题缓存，避免逐档音质重复搜索。
   Future<(PluginSource, Map<String, dynamic>)?> _crossFormatHeal(
     String pluginId,
     String format,
@@ -3467,12 +2947,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final platformLabel = _songPlatformLabel(format, sourceKey, musicInfo);
     if (platformLabel.trim().isEmpty) return null;
 
-    // 标题/歌手用于跨插件搜索（兼容 LX 的 name/singer 与 MF 的 title/artist）。
     final title = (musicInfo['name'] ?? musicInfo['title'] ?? '').toString().trim();
     final artist = (musicInfo['singer'] ?? musicInfo['artist'] ?? '').toString().trim();
     if (title.isEmpty) return null;
 
-    // 缓存命中：同一首歌逐档音质复用已重搜的 songJson。
     final cacheKey = '$pluginId|$title|$artist';
     final cached = _crossFormatHealCache[cacheKey];
     if (cached != null) {
@@ -3488,8 +2966,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       allowCrossFormat: true,
     );
     if (cross == null) return null;
-    // 跨格式才需要重搜；若命中的恰好是同格式插件，直接返回（同格式 healing
-    // 在上层已试过不会走到这，但防御一下）。
     if (cross.format == pluginFormat) return null;
 
     final keyword = artist.isEmpty ? title : '$title $artist';
@@ -3500,7 +2976,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final results = await catalog.searchMusic(cross, keyword, limit: 10);
         match = _pickBestSearchMatch(results, title, artist);
       } else {
-        // LX 插件：按平台对应的 sourceKey 搜索（如 wy/tx/kw/kg/mg）。
         final lxKey = _lxSourceKeyForPlatform(platformLabel, cross);
         final results = await engine.searchInPlugin(cross, lxKey, keyword, limit: 10);
         match = _pickBestSearchMatch(results, title, artist);
@@ -3520,7 +2995,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               'musicInfo': match.toJson(),
             };
       _crossFormatHealCache[cacheKey] = newSongJson;
-      // 缓存上限防止长尾占用。
       if (_crossFormatHealCache.length > 64) {
         _crossFormatHealCache.remove(_crossFormatHealCache.keys.first);
       }
@@ -3530,8 +3004,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 把跨格式换源后的新插件信息回写到当前播放项与队列中对应项，
-  /// 使歌词加载（读 onlineSongJson 的 pluginId/source/musicInfo）也能命中新插件。
   void _applyCrossFormatHealToState({
     required String itemPath,
     required String pluginId,
@@ -3540,7 +3012,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required String newOnlineInfoJson,
   }) {
     final cur = state.current;
-    // 当前项已是新 pluginId 则跳过（避免重复写）。
     if (cur != null && cur.path == itemPath) {
       final curOnline = cur.onlineSongJson;
       if (curOnline != null && curOnline.contains('"pluginId":"$pluginId"')) {
@@ -3565,7 +3036,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     state = state.copyWith(current: updated, queue: queue);
   }
 
-  /// 在跨插件搜索结果中挑出与目标歌曲最匹配的一条（标题归一化匹配优先）。
   PluginSearchResult? _pickBestSearchMatch(
     List<PluginSearchResult> results,
     String title,
@@ -3575,12 +3045,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     for (final r in results) {
       if (_matchOnlineTitle(title, r.name)) return r;
     }
-    // 无标题精确匹配时退化为第一条（搜索词已含标题+歌手，通常第一条即可）。
     return results.first;
   }
 
-  /// 根据平台标签解析出 LX 插件的 sourceKey（wy/tx/kw/kg/mg）。
-  /// 优先用插件自身声明的 sources 中匹配平台的那个，否则用平台别名表的 lxSource。
   String _lxSourceKeyForPlatform(String platformLabel, PluginSource plugin) {
     final lxKey = lxSourceKeyForPlatform(platformLabel);
     for (final s in plugin.sources) {
@@ -3589,7 +3056,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return lxKey.isNotEmpty ? lxKey : (plugin.sources.isNotEmpty ? plugin.sources.first : 'default');
   }
 
-  /// 播放行为上报（fire-and-forget，失败静默）。
   void _reportBehavior(QueueItem item, String action, int listenDuration) {
     final hash = md5.convert(utf8.encode('${item.title}|${item.artist}|local')).toString();
     _ref.read(accountApiProvider).reportUserBehavior(
@@ -3604,35 +3070,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         );
   }
 
-  /// 记录最近播放（写入 SQLite 播放历史，fire-and-forget）。
   void _recordRecentPlay(QueueItem item) {
     Future(() async {
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
-        // 在线歌曲（lx://、plugin://）不在本地曲库中，历史只存路径无法反查。
-        // 对齐桌面端：把完整元数据写入持久化池，最近播放列表据此还原展示。
         if (item.isOnline) {
           await _ref.read(onlineMetaStoreProvider).put(item);
         }
-        // 使最近播放角标/列表实时刷新：invalidate 在下次 watch 时让 provider
-        // 重建并从 DB 重读（对齐首页统计的实时刷新模式），否则要等重启后
-        // RecentManager 构造时 refresh 才会更新。
         _ref.invalidate(recentProvider);
-      } catch (e) {
-        // 最近播放写入失败不影响播放主流程。
+      } catch (_) {
       }
     });
   }
 
-  /// 从队列移除指定歌曲（当前播放曲移除后自动切下一首）。
   Future<void> removeFromQueue(int index) async {
     final queue = [...state.queue];
     if (index < 0 || index >= queue.length) return;
     final wasCurrent = index == state.queueIndex;
     queue.removeAt(index);
     if (queue.isEmpty) {
-      // 队列删空等同重置：递增代际号让在途起播放弃，防止复活。
       _playEpoch++;
       await _stopExclusive();
       await _player.stop();
@@ -3652,12 +3109,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 清空播放队列并停止播放（对齐桌面端 clearQueue）。
-  ///
-  /// 停掉独占/普通两条播放管线、失效共享探针、清空当前曲——
-  /// 播放详情页/迷你条随 current 为空自动收起，用于从「无法加载的坏歌」中脱身。
   Future<void> clearQueue() async {
-    // 先递增代际号：让所有在途起播流水线在下一个 await 边界放弃。
     _playEpoch++;
     if (_activeProbeKey != null) {
       try {
@@ -3674,7 +3126,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     state = const PlaybackState();
   }
 
-  /// 将队列中 [oldIndex] 的歌曲移动到 [newIndex]。
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
     if (oldIndex < 0 || oldIndex >= state.queue.length) return;
     if (newIndex < 0 || newIndex >= state.queue.length) return;
@@ -3692,14 +3143,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     state = state.copyWith(queue: queue, queueIndex: qi);
   }
 
-  /// 播放队列中指定歌曲。
   Future<void> playQueueItem(int index) async {
     if (index < 0 || index >= state.queue.length) return;
     await _playAt(index);
   }
 
-  /// 将 [item] 插入到当前曲目的下一首播放（不中断当前播放、不自动起播）。
-  /// 队列为空时作为待播队列唯一一首置入（仍不起播），供后续手动播放。
   Future<void> playNextShare(QueueItem item) async {
     final queue = [...state.queue];
     final qi = state.queueIndex;
@@ -3714,11 +3162,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     final insertAt = (qi + 1).clamp(0, queue.length);
     queue.insert(insertAt, item);
-    // 插入在当前曲目之后，queueIndex 无需变化。
     state = state.copyWith(queue: queue, queueIndex: qi);
   }
 
-  /// 系统控制中心「收藏」键：切换当前歌曲收藏并刷新通知栏图标。
   Future<void> toggleFavoriteFromSystem() async {
     final item = state.current;
     if (item == null) return;
@@ -3726,13 +3172,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
   }
 
-  /// 系统控制中心「播放」键：仅暂停中生效（复用 toggle 的全部分支逻辑）。
   Future<void> resumeFromSystem() async {
     if (state.isPlaying) return;
     await toggle();
   }
 
-  /// 系统控制中心「暂停 / 停止」键：仅播放中生效。
   Future<void> pauseFromSystem() async {
     if (!state.isPlaying) return;
     final st =
@@ -3741,20 +3185,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await toggle();
   }
 
-  /// 最近一次用户主动暂停的时刻（toggle 暂停分支更新）。
-  /// MV 守卫用它区分「用户暂停」与「ROM 音频策略压制」。
   DateTime _lastUserPauseAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime get lastUserPauseAt => _lastUserPauseAt;
 
-  /// MV 守卫的恢复入口：直接 native play（gate 放行），绕过 toggle 语义
-  /// （不改变用户的暂停意图记忆）。
   Future<void> resumeAfterMvPause() async {
     AppLog.warn('playgate', 'resume after mv focus-fight pause');
     await _player.play();
   }
 
-  /// MV 激活标志：MV 视频解码器会诱发 ROM 误报「永久焦点丢失」，激活
-  /// 期间 unknown 类中断由 mv_notifier 置位忽略（非 MV 场景照常暂停）。
   bool mvSuppressFocusLoss = false;
 
   Future<void> toggle() async {
@@ -3763,7 +3201,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         StackTrace.current.toString().split('\n').take(3).join(' <- ');
     AppLog.info('playgate',
         'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} $st');
-    // [DLNA 投屏] 投屏中：播放/暂停遥控电视而非本地引擎。
     if (_ref.read(dlnaCastProvider).isCasting) {
       final cast = _ref.read(dlnaCastProvider.notifier);
       if (state.isPlaying) {
@@ -3778,7 +3215,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _syncToSystemMediaSession();
       return;
     }
-    // DSP 管线（独占/共享）：seek(pos, isPlaying) 即暂停/恢复。
     if (state.usbExclusive || state.dspActive) {
       if (state.isPlaying) {
         _flushPlayStats();
@@ -3823,7 +3259,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   Future<void> seek(double secs) async {
-    // [DLNA 投屏] 投屏中：进度条拖动遥控电视端 seek。
     if (_ref.read(dlnaCastProvider).isCasting) {
       await _ref.read(dlnaCastProvider.notifier).castSeek(secs);
       state = state.copyWith(position: secs);
@@ -3873,26 +3308,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _shuffleHistory.clear();
     _shuffleFuture.clear();
     await _ref.read(settingsProvider.notifier).setPlayMode(next);
-    // 控制中心右侧「播放顺序」图标需要随模式刷新。
     _syncToSystemMediaSession();
   }
 
-  /// 播放错误提示（对齐桌面 showToast）。
-  ///
-  /// 播放链路常跨 async 间隙运行，无稳定页面 context，因此用 root Overlay 展示
-  ///（appNavigatorKey.currentState.overlay），后台播放/切歌期间同样生效。
   void _showPlaybackToast(String message) {
     final overlay = appNavigatorKey.currentState?.overlay;
     if (overlay == null) return;
     showXianYuToastByOverlay(overlay, message);
   }
 
-  /// 播放器中途错误（playbackEventStream onError）统一处理。
-  ///
-  /// 换源/切歌期间主动 stop/setUrl 一般不产生错误事件；真实错误（直链中途
-  /// 失效、网络断、解码失败）到达时：先把 isPlaying 拉回真实值，在线歌尝试
-  /// 自动换源（_autoSwitchSource 自带按 title|artist 隔离的失败源防环），
-  /// 换源失败透出错误。切歌后到达的旧源错误直接丢弃。
   Future<void> _onPlaybackError(Object e) async {
     if (_playbackErrorHandling) return;
     final item = state.current;
@@ -3910,11 +3334,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             'skip';
         final switched = await _autoSwitchSource(item);
         if (switched) return;
-        // 未启用自动换源时 _autoSwitchSource 在设置门处直接返回 false，
-        // 此处不得出现「换源无果」文案；按所选失败行为处理（对齐桌面端）。
         if (state.current?.path != item.path) return;
         if (behavior == 'skip') {
-          // 批量标记该曲音源为失败，后续同源队列歌曲快速跳过。
           _markOnlineSourceFailed(item);
           _skipDepth++;
           final next = _pickNextIndex();
@@ -3944,8 +3365,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 在线流异常完成（实际时长远短于声明时长）的失败路由：
-  /// 换源 → 按在线失败行为跳过 → 停止并透出错误。对齐 _playAt 的 catch 分支。
   Future<void> _handleBrokenOnlineStream(QueueItem item) async {
     if (_playbackErrorHandling) return;
     _playbackErrorHandling = true;
@@ -3960,7 +3379,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (switched) return;
       if (state.current?.path != item.path) return;
       if (behavior == 'skip') {
-        // 批量标记该曲音源为失败（对齐桌面端 knownFailedPluginPrefixes）。
         _markOnlineSourceFailed(item);
         _skipDepth++;
         final next = _pickNextIndex();
@@ -3969,7 +3387,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           return;
         }
       }
-      // 仅当确实启用了自动换源（尝试过但无果）才在文案中提换源。
       final msg = behavior == 'autoswitch'
           ? tr('在线音源已失效，未能自动换源')
           : tr('在线音源已失效');
@@ -3985,11 +3402,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 进度停滞/超限兜底检测（对齐桌面端 playbackTiming.evaluateStallAutoNext）：
-  /// - 进度超限：position 已到 duration 末端 0.3s 内仍未收到 completed → 自动衔接；
-  /// - 进度停滞：position 连续多轮（本地≈2s/在线≈6s，在线放宽以容忍缓冲）
-  ///   不前进，且已接近末尾（差 ≤3s）或时长未知 → 判定自然播完，自动衔接。
-  /// 独占/DSP 管线有自己的 250ms 轮询结束检测（_pollExclusive），此处跳过。
   void _checkStalledProgress() {
     if (state.usbExclusive || state.dspActive) return;
     if (!state.isPlaying ||
@@ -4003,7 +3415,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final item = state.current;
     if (item == null) return;
     final pos = state.position;
-    // 进度推进/回退 ≥0.05s（或刚起播）视为正常，清零停滞计数。
     if (pos <= 0 || _stallLastPos < 0 || (pos - _stallLastPos).abs() >= 0.05) {
       _stallLastPos = pos;
       _stallTicks = 0;
@@ -4011,7 +3422,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _stallTicks++;
     }
     final dur = state.duration;
-    // 进度超限兜底：到点未收到 completed（结束事件丢失/播放器静默死亡）。
     if (dur > 0 && pos >= dur - 0.3) {
       _resetStallTracking();
       AppLog.warn('play',
@@ -4019,7 +3429,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       unawaited(_onTrackEnd());
       return;
     }
-    // 停滞兜底：中段缓冲因「远离末尾」不触发，只有近末尾/未知时长才判定结束。
     final unknownDur = dur <= 0;
     final nearEnd = dur > 0 && pos >= dur - 3;
     final required = item.isOnline ? 12 : 4;
@@ -4037,8 +3446,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _stallTicks = 0;
   }
 
-  /// 在线歌曲的音源批量标记 key：插件歌取 pluginId（对齐桌面 `plugin://<id>/` 前缀），
-  /// 落雪音源歌取 source（kw/kg/tx/wy…）。无法识别返回 null（不参与批量标记）。
   String? _onlineSourceKey(QueueItem item) {
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json != null && json.isNotEmpty) {
@@ -4088,11 +3495,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _onTrackEndInner() async {
     final ended = state.current;
-    // [在线流异常完成] 失效直链可能返回极短/空音频：ExoPlayer 正常走到
-    // completed，但实际时长与搜索元数据声明时长严重不符（几秒"播完"一首
-    // 几分钟的歌、全程无声）。这不算自然播完——否则会立刻跳到队列下一首，
-    // 混排队列里表现就是"拉一下时间轴跳去播放本地音乐"。按起播失败处理：
-    // 先尝试换源，再按在线失败行为（跳过/停止）兜底。
     if (ended != null &&
         ended.isOnline &&
         !_playbackErrorHandling &&
@@ -4253,7 +3655,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   // ---------------- DLNA 投屏支持 ----------------
 
-  /// DLNA 连接/投屏开始时静默本地引擎（不经 cast 门控，直接暂停本地播放器）。
   Future<void> pauseLocalEngine() async {
     _flushPlayStats();
     try {
@@ -4266,22 +3667,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
   }
 
-  /// DLNA 投屏进度回填（castProvider 1s 轮询驱动）：本地引擎静默期间
-  /// 播放页/播放条进度以电视实测为准。
   void syncCastPosition(double pos, double dur, bool playing) {
     if (state.current == null) return;
     state = state.copyWith(
       position: pos < 0 ? 0 : pos,
-      // 电视端实测时长回填（部分在线歌 duration 声明缺失/为 0）。
       duration: dur > 0.5 ? dur : null,
       isPlaying: playing,
     );
   }
 
-  /// DMR 接收：他端投放的 http(s) 直链本地起播。
-  ///
-  /// 建临时 QueueItem 展示（不记历史/不计统计），走插件同款
-  /// `_startUrl` 直链流式缓存分支（天然兼容防盗链头补齐）。
   Future<void> playExternalUri({
     required String uri,
     required String title,
@@ -4333,7 +3727,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// DLNA 投屏媒体解析：在线→直链+防盗链头；远程→缓存/直链；本地→SAF 物化。
   Future<CastMediaResolution?> resolveForCast(QueueItem item) async {
     if (item.isOnline) {
       final json = item.onlineSongJson;
@@ -4383,7 +3776,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
     }
     if (_isRemotePath(item.path)) {
-      // 远程库：优先已缓存文件（投本地 token）；未缓存投远程直链（带认证头）。
       final plan = await RemoteLibraryService(_ref).playbackSource(item.path);
       if (plan.isCached) {
         return CastMediaResolution(
@@ -4396,7 +3788,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         isRemote: true,
       );
     }
-    // 本地文件：SAF content:// 先物化为真实路径（与普通播放同源）。
     var target = item.path;
     if (SafChannel.isSafPath(target)) {
       final tmp = await getTemporaryDirectory();
@@ -4407,7 +3798,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return CastMediaResolution(url: target, headers: const {}, isRemote: false);
   }
 
-  /// 投屏中起播（_playAt cast 分支）：解析→投递→置播放态。
   Future<void> _castFollowPlay(QueueItem item, int epoch) async {
     state = state.copyWith(resolving: item.isOnline);
     final media = await resolveForCast(item);
@@ -4451,12 +3841,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 }
 
-/// DLNA 投屏媒体解析结果：远程直链（含防盗链头）或本地文件路径。
 class CastMediaResolution {
   final String url;
   final Map<String, String> headers;
 
-  /// true = 远程直链（走 token 代理）；false = 本地文件路径。
   final bool isRemote;
   const CastMediaResolution({
     required this.url,
@@ -4465,7 +3853,6 @@ class CastMediaResolution {
   });
 }
 
-/// 音量（与设置联动）。
 final volumeProvider = Provider<double>((ref) {
   return ref.watch(settingsProvider.select((s) => s.valueOrNull?.volume)) ?? 1.0;
 });
