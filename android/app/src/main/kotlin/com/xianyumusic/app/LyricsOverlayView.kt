@@ -64,6 +64,9 @@ class LyricsOverlayView(context: Context) : View(context) {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
 
+    // 跑马灯状态池：槽 0=主歌词，1..n=副行；文本超宽时循环滚动替代省略号。
+    private val marqueeStates = Array(8) { MarqueeState() }
+
     init {
         setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
@@ -161,12 +164,13 @@ class LyricsOverlayView(context: Context) : View(context) {
 
         basePaint.color = withAlpha(textColor, opacity * 0.38f)
         highlightPaint.color = withAlpha(textColor, opacity)
-        val clippedText = ellipsize(originalText, basePaint, maxWidth)
-        val x = (width - basePaint.measureText(clippedText)) / 2f
-        canvas.drawText(clippedText, x, baseline, basePaint)
+        // 超宽不省略，改走跑马灯；暂停时冻结滚动时间避免跳变。
+        val now = if (playing) SystemClock.elapsedRealtime() else anchorRealtimeMs
+        val x = marqueeX(originalText, basePaint, maxWidth, 0, "main", line.startMs, now)
+        val textWidth = basePaint.measureText(originalText)
+        canvas.drawText(originalText, x, baseline, basePaint)
         val progress = wordProgress(line.words, line, positionMs)
         val wordLift = activeWordLift(line.words, positionMs)
-        val textWidth = basePaint.measureText(clippedText)
         canvas.save()
         canvas.clipRect(
             x,
@@ -174,15 +178,16 @@ class LyricsOverlayView(context: Context) : View(context) {
             x + textWidth * progress,
             baseline + basePaint.fontMetrics.bottom,
         )
-        canvas.drawText(clippedText, x, baseline - wordLift, highlightPaint)
+        canvas.drawText(originalText, x, baseline - wordLift, highlightPaint)
         canvas.restore()
 
         secondaryPaint.color = withAlpha(textColor, opacity * 0.72f)
-        lines.forEach { (secondary, _) ->
+        lines.forEachIndexed { index, (secondary, _) ->
             baseline += secondaryHeight
-            val display = ellipsize(secondary, secondaryPaint, maxWidth)
-            val secondaryX = (width - secondaryPaint.measureText(display)) / 2f
-            canvas.drawText(display, secondaryX, baseline, secondaryPaint)
+            val secondaryX = marqueeX(
+                secondary, secondaryPaint, maxWidth, index + 1, "sec$index", line.startMs, now
+            )
+            canvas.drawText(secondary, secondaryX, baseline, secondaryPaint)
         }
     }
 
@@ -198,12 +203,30 @@ class LyricsOverlayView(context: Context) : View(context) {
         )
     }
 
-    private fun ellipsize(text: String, paint: Paint, maxWidth: Int): String {
-        if (paint.measureText(text) <= maxWidth) return text
-        val ellipsis = "\u2026"
-        var end = text.length
-        while (end > 0 && paint.measureText(text.substring(0, end) + ellipsis) > maxWidth) end--
-        return text.substring(0, end) + ellipsis
+    /**
+     * 超宽文本跑马灯横向坐标：放得下时居中；放不下时从左边距起，
+     * 起点停留 → 匀速左移至尾部可见 → 终点停留 → 循环。
+     */
+    private fun marqueeX(
+        text: String,
+        paint: Paint,
+        maxWidth: Int,
+        slot: Int,
+        keyPrefix: String,
+        lineStartMs: Long,
+        now: Long,
+    ): Float {
+        val textWidth = paint.measureText(text)
+        val travel = textWidth - maxWidth
+        if (travel <= 0f) return (width - textWidth) / 2f
+        val state = marqueeStates[slot.coerceIn(0, marqueeStates.lastIndex)]
+        val progress = state.progress(
+            "$keyPrefix:$lineStartMs:$text",
+            travel,
+            now,
+            dp(MARQUEE_SPEED_DP) / 1000f,
+        )
+        return dp(10) - travel * progress
     }
 
     private fun wordProgress(words: List<LyricWordData>, line: LyricLineData, positionMs: Long): Float {
@@ -272,4 +295,32 @@ class LyricsOverlayView(context: Context) : View(context) {
 
     private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+}
+
+/** 跑马灯循环参数：起点/终点停留毫秒数与滚动速度（dp/s）。 */
+private const val MARQUEE_HOLD_START_MS = 600f
+private const val MARQUEE_HOLD_END_MS = 900f
+private const val MARQUEE_SPEED_DP = 30
+
+/** 单条超宽文本的跑马灯状态（换行/换词通过 key 重置计时，Long 取模避免 Float 精度损失）。 */
+private class MarqueeState {
+    var key: String? = null
+    var startRealtime = 0L
+
+    /** 返回 0..1 的滚动进度：起点停留 → 匀速滚动 → 终点停留 → 循环。 */
+    fun progress(key: String, travel: Float, now: Long, speedPxPerMs: Float): Float {
+        if (key != this.key) {
+            this.key = key
+            startRealtime = now
+        }
+        if (travel <= 0f) return 0f
+        val scrollMs = (travel / speedPxPerMs).toLong().coerceAtLeast(1L)
+        val cycleMs = scrollMs + MARQUEE_HOLD_START_MS.toLong() + MARQUEE_HOLD_END_MS.toLong()
+        val t = ((now - startRealtime) % cycleMs).toFloat()
+        return when {
+            t < MARQUEE_HOLD_START_MS -> 0f
+            t < MARQUEE_HOLD_START_MS + scrollMs -> (t - MARQUEE_HOLD_START_MS) / scrollMs
+            else -> 1f
+        }
+    }
 }

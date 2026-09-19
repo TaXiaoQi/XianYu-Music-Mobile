@@ -4672,6 +4672,22 @@ String _cleanLyricText(String raw) {
   return text.trim();
 }
 
+/// 逐字文本清理：与 [_cleanLyricText] 类似但不 trim，
+/// 单词首尾的空格是英语逐字歌词的单词间隔，trim 掉会导致单词连在一起。
+String _cleanLyricWordText(String raw) {
+  if (raw.isEmpty) return '';
+
+  String text = raw.replaceAll('\u200b', '').replaceAll('\u2063', '');
+
+  text = text.replaceAll(RegExp(r'\(\d+,\d+(?:,\d+)?\)'), '');
+
+  text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
+
+  text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+
+  return text;
+}
+
 List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
   final map = jsonDecode(jsonStr) as Map<String, dynamic>;
   final rawLines =
@@ -4719,7 +4735,7 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
       if (rawWords != null && rawWords.isNotEmpty) {
         for (final w in rawWords) {
           if (w is Map<String, dynamic>) {
-            final wText = _cleanLyricText((w['text'] as String?) ?? '');
+            final wText = _cleanLyricWordText((w['text'] as String?) ?? '');
             final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
             final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
             if (wText.isNotEmpty) {

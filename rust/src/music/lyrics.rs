@@ -381,6 +381,36 @@ fn sanitize_word_text(text: &str) -> String {
     text.replace(['\u{200b}', '\u{2063}'], "")
 }
 
+/// 相邻两词是否处于拉丁文词边界（仅按 ASCII 判断，中文/日文等文本不受影响）。
+fn latin_word_gap_needed(left: &str, right: &str) -> bool {
+    let Some(last) = left.chars().next_back() else {
+        return false;
+    };
+    let Some(first) = right.chars().next() else {
+        return false;
+    };
+    let left_ok =
+        last.is_ascii_alphanumeric() || matches!(last, ',' | '.' | '!' | '?' | '%' | ')');
+    let right_ok = first.is_ascii_alphanumeric() || matches!(first, '(');
+    left_ok && right_ok
+}
+
+/// 拉丁文逐词源缺少单词间隔（词内无空格且间隔词被丢弃）时，
+/// 在相邻两词之间补一个空格，避免英语等歌词单词连在一起。
+fn insert_latin_word_gaps(words: &mut [ParsedWord]) {
+    if words.len() < 2 {
+        return;
+    }
+    for index in 1..words.len() {
+        let (left, right) = (&words[index - 1].text, &words[index].text);
+        let needs_gap =
+            !left.ends_with(' ') && !right.starts_with(' ') && latin_word_gap_needed(left, right);
+        if needs_gap {
+            words[index - 1].text.push(' ');
+        }
+    }
+}
+
 // ==================== 演唱者/和声标注（移植自桌面端 BakaMusic 体系） ====================
 static CREDIT_LINE_RE: OnceLock<Regex> = OnceLock::new();
 static NON_SPEAKER_LABEL_RE: OnceLock<Regex> = OnceLock::new();
@@ -801,6 +831,11 @@ fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
         if text.trim().is_empty() {
             continue;
         }
+        insert_latin_word_gaps(&mut words);
+        text = words
+            .iter()
+            .map(|word| word.text.as_str())
+            .collect::<String>();
 
         let end_ms = line
             .get("x")
@@ -1275,23 +1310,14 @@ fn prepare_amll_line(
         })
         .collect::<Vec<_>>();
     words.sort_by(|left, right| left.start_ms.cmp(&right.start_ms));
+    insert_latin_word_gaps(&mut words);
 
-    let raw_text = if !line.words.is_empty() {
-        sanitize_line_text(
-            &line
-                .words
-                .iter()
-                .map(|word| word.word.as_ref())
-                .collect::<String>(),
-        )
-    } else {
-        sanitize_line_text(
-            &words
-                .iter()
-                .map(|word| word.text.clone())
-                .collect::<String>(),
-        )
-    };
+    let raw_text = sanitize_line_text(
+        &words
+            .iter()
+            .map(|word| word.text.as_str())
+            .collect::<String>(),
+    );
     let (explicit_role, text) = detect_explicit_role(&raw_text);
     let translated_text = sanitize_line_text(line.translated_lyric.as_ref());
     let roman_text = sanitize_line_text(line.roman_lyric.as_ref());
@@ -1369,7 +1395,7 @@ fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<Par
         return None;
     }
 
-    let words = markers
+    let mut words = markers
         .windows(2)
         .filter_map(|window| {
             let (_, current_end, current_start_ms) = window[0];
@@ -1396,6 +1422,7 @@ fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<Par
     if words.is_empty() {
         return None;
     }
+    insert_latin_word_gaps(&mut words);
 
     let text = sanitize_line_text(
         &words
@@ -1466,6 +1493,8 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
     if words.is_empty() {
         return None;
     }
+
+    insert_latin_word_gaps(&mut words);
 
     let text = sanitize_line_text(
         &words
