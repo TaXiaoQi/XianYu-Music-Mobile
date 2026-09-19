@@ -400,6 +400,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         'source': j['source'],
         'format': j['format'],
         'musicInfo': j['musicInfo'],
+        'addedInApp': j['addedInApp'] == true,
         'path': rawPath,
       });
     }
@@ -427,6 +428,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       'source': j['source'],
       'format': j['format'],
       'musicInfo': j['musicInfo'],
+      'addedInApp': j['addedInApp'] == true,
       'path': resolvedPath,
     });
   }
@@ -564,6 +566,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
           'name': p.name,
           'cloudCoverUrl': _firstRemoteSongCover(p.songs),
           'cloudId': p.cloudId,
+          if (p.sourcePluginId != null) 'sourcePluginId': p.sourcePluginId,
+          if (p.sourceUrl != null) 'sourceUrl': p.sourceUrl,
+          if (p.sourceRaw != null) 'sourceRaw': p.sourceRaw,
           'songs': payloadSongs,
           'deletedSongPaths': ?deletedSongPaths,
         });
@@ -651,6 +656,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
           originalSongCount: songs.length,
           cloudId: pl['cloudId'] as String?,
           isCloud: true,
+          sourcePluginId: (pl['sourcePluginId'] as String?),
+          sourceUrl: (pl['sourceUrl'] as String?),
+          sourceRaw: pl['sourceRaw'] is Map
+              ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
+              : null,
         ));
         if (deletedPaths.isNotEmpty) {
           final removePaths = <String>{};
@@ -698,14 +708,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
           p.songs.where((s) => !removePaths.contains(s.path)).toList();
       if (filtered.length == p.songs.length) return p;
       changed = true;
-      return ImportedPlaylist(
-        id: p.id,
-        name: p.name,
-        songs: filtered,
-        importedAt: p.importedAt,
-        cloudId: p.cloudId,
-        isCloud: p.isCloud,
-      );
+      return p.copyWith(songs: filtered);
     }).toList();
     if (changed) {
       await store.saveAll(next);

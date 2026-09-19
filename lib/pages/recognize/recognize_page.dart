@@ -256,10 +256,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         'hash': m.hash,
         '_types': m.types,
       };
-      final isMusicFree = plugin.format == PluginFormat.musicfree;
+      final isMusicFree = plugin.format.isMfCompatible;
       final songJson = <String, dynamic>{
         'pluginId': plugin.id,
-        'format': isMusicFree ? 'musicfree' : 'lx',
+        'format': isMusicFree ? plugin.format.value : 'lx',
         if (!isMusicFree) 'source': 'kg',
         'musicInfo': musicInfo,
       };
@@ -341,10 +341,10 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     Map<String, dynamic> raw,
   ) async {
     final track = OnlineTrack.fromJson(raw);
-    final isMusicFree = plugin.format == PluginFormat.musicfree;
+    final isMusicFree = plugin.format.isMfCompatible;
     final songJson = <String, dynamic>{
       'pluginId': plugin.id,
-      'format': isMusicFree ? 'musicfree' : 'lx',
+      'format': isMusicFree ? plugin.format.value : 'lx',
       if (!isMusicFree) 'source': sourceKey,
       'musicInfo': raw,
     };

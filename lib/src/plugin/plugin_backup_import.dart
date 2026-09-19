@@ -18,6 +18,7 @@ class ImportedSong {
   final String? source;
   final String? format;
   final Map<String, dynamic>? musicInfo;
+  final bool addedInApp;
   final String path;
 
   ImportedSong({
@@ -32,6 +33,7 @@ class ImportedSong {
     this.source,
     this.format,
     this.musicInfo,
+    this.addedInApp = false,
     required this.path,
   });
 
@@ -49,6 +51,7 @@ class ImportedSong {
         'source': source,
         'format': format,
         'musicInfo': musicInfo,
+        if (addedInApp) 'addedInApp': true,
         'path': path,
       };
 
@@ -66,6 +69,7 @@ class ImportedSong {
         musicInfo: j['musicInfo'] is Map
             ? (j['musicInfo'] as Map).cast<String, dynamic>()
             : null,
+        addedInApp: j['addedInApp'] == true,
         path: j['path'] as String? ?? '',
       );
 
@@ -74,6 +78,7 @@ class ImportedSong {
     String? source,
     String? format,
     Map<String, dynamic>? musicInfo,
+    bool? addedInApp,
   }) => ImportedSong(
         title: title,
         artist: artist,
@@ -86,6 +91,7 @@ class ImportedSong {
         source: source ?? this.source,
         format: format ?? this.format,
         musicInfo: musicInfo ?? this.musicInfo,
+        addedInApp: addedInApp ?? this.addedInApp,
         path: path,
       );
 }
@@ -96,6 +102,10 @@ class PluginBackupPlaylist {
   final int originalSongCount;
   final String? cloudId;
   final bool isCloud;
+  // 来源信息：云同步/备份链路透传，保证导入歌单跨设备保留源端更新能力
+  final String? sourcePluginId;
+  final String? sourceUrl;
+  final Map<String, dynamic>? sourceRaw;
 
   PluginBackupPlaylist({
     required this.name,
@@ -103,6 +113,9 @@ class PluginBackupPlaylist {
     required this.originalSongCount,
     this.cloudId,
     this.isCloud = false,
+    this.sourcePluginId,
+    this.sourceUrl,
+    this.sourceRaw,
   });
 }
 
@@ -271,7 +284,7 @@ int _pluginMatchScore(
   _PlatformDescriptor platform,
   String? format,
 ) {
-  if (plugin.format != PluginFormat.musicfree && plugin.format != PluginFormat.lx) {
+  if (!plugin.format.isMfCompatible && plugin.format != PluginFormat.lx) {
     return 0;
   }
 
@@ -287,13 +300,13 @@ int _pluginMatchScore(
     final normalized = _normalizePlatformLabel(label);
     if (normalized.isEmpty) continue;
     if (normalized == platform.normalized) {
-      final score = plugin.format == PluginFormat.musicfree ? 140 : 110;
+      final score = plugin.format.isMfCompatible ? 140 : 110;
       if (score > best) best = score;
     }
     final descriptor = _describePlatform(label);
     if (descriptor.canonical.isNotEmpty &&
         descriptor.canonical == platform.canonical) {
-      final score = plugin.format == PluginFormat.musicfree ? 130 : 100;
+      final score = plugin.format.isMfCompatible ? 130 : 100;
       if (score > best) best = score;
     }
   }
@@ -318,7 +331,7 @@ PluginSource? _findMatchingPlugin(
       if (format == 'lxmusic') {
         return a.$1.format == PluginFormat.lx ? -1 : 1;
       }
-      return a.$1.format == PluginFormat.musicfree ? -1 : 1;
+      return a.$1.format.isMfCompatible ? -1 : 1;
     }
     return 0;
   });

@@ -3,14 +3,31 @@ import '../i18n/i18n.dart';
 
 enum PluginFormat {
   lx('lx'),
-  musicfree('musicfree');
+  musicfree('musicfree'),
+  anime('anime');
 
   final String value;
   const PluginFormat(this.value);
 
-  static PluginFormat fromValue(String? v) =>
-      v == 'musicfree' ? PluginFormat.musicfree : PluginFormat.lx;
+  static PluginFormat fromValue(String? v) {
+    switch (v) {
+      case 'musicfree':
+        return PluginFormat.musicfree;
+      case 'anime':
+        return PluginFormat.anime;
+      default:
+        return PluginFormat.lx;
+    }
+  }
 }
+
+extension PluginFormatX on PluginFormat {
+  /// musicfree 兼容格式（musicfree / anime 共用同一套调用链）
+  bool get isMfCompatible => this == PluginFormat.musicfree || this == PluginFormat.anime;
+}
+
+/// songJson.format 字符串版兼容判断（musicfree / anime 同链路）
+bool isMfFormatValue(String? v) => v == 'musicfree' || v == 'anime';
 
 class PluginSource {
   final String id;

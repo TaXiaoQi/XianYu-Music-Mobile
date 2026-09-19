@@ -22,6 +22,23 @@ abstract class PluginUserVarCrypto {
     }
   }
 
+  /// 通用字符串解密（加密备份文件整体解密，与用户变量同构：AES-CBC/PKCS7，密钥 sha256(口令)）
+  static String? decryptString(String password, Map<String, dynamic>? block) {
+    if (block == null) return null;
+    try {
+      final ivB64 = block['iv'] as String?;
+      final dataB64 = block['data'] as String?;
+      if (ivB64 == null || dataB64 == null) return null;
+      final key = enc.Key(Uint8List.fromList(_key(password)));
+      final iv = enc.IV.fromBase64(ivB64);
+      final encrypter =
+          enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: 'PKCS7'));
+      return encrypter.decrypt(enc.Encrypted.fromBase64(dataB64), iv: iv);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Map<String, String>? decrypt(
       String ciyuanxiId, Map<String, dynamic>? block) {
     if (block == null) return null;

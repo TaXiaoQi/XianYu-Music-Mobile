@@ -97,7 +97,7 @@ class PluginCatalogService {
   PluginCatalogService(this.engine, this.sources);
 
   List<PluginSource> get musicFreeSources =>
-      sources.where((s) => s.enabled && s.format == PluginFormat.musicfree).toList();
+      sources.where((s) => s.enabled && s.format.isMfCompatible).toList();
 
   Future<Set<String>> _availableMethods(PluginSource source) async {
     await engine.ensureLoaded(source);
@@ -429,7 +429,7 @@ class PluginCatalogService {
   static QueueItem toQueueItem(PluginSource source, PluginSearchResult r) {
     final songJson = jsonEncode({
       'pluginId': source.id,
-      'format': 'musicfree',
+      'format': source.format.value,
       'musicInfo': r.toJson(),
     });
     return QueueItem(

@@ -8,12 +8,17 @@ import '../favorites/favorites_provider.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import '../plugin/plugin_sync_crypto.dart';
+import '../plugin/plugin_user_vars.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../i18n/i18n.dart';
 
 const _kBackupSchema = 'xianyu-music.app-backup';
 const _kBackupVersion = 1;
+
+/// 加密备份需要密码时抛出
+class BackupPasswordRequiredException implements Exception {}
 
 class AppBackupSummary {
   final int playlistCount;
@@ -147,7 +152,7 @@ class AppBackupService {
 
   // ==================== 解析 ====================
 
-  Map<String, dynamic> parse(String content) {
+  Map<String, dynamic> parse(String content, {String? password}) {
     final dynamic data;
     try {
       data = jsonDecode(content);
@@ -156,6 +161,18 @@ class AppBackupService {
     }
     if (data is! Map || data['schema'] != _kBackupSchema) {
       throw   FormatException(tr('无法识别的备份格式，请选择本应用导出的备份文件'));
+    }
+    if (data['encrypted'] == true) {
+      // 加密备份：用密码解密内部 JSON 后重新解析
+      if (password == null || password.isEmpty) {
+        throw BackupPasswordRequiredException();
+      }
+      final decrypted = PluginUserVarCrypto.decryptString(
+          password, data.cast<String, dynamic>());
+      if (decrypted == null) {
+        throw   FormatException(tr('解密失败：密码错误或备份已损坏'));
+      }
+      return parse(decrypted);
     }
     final inner = data['data'];
     if (inner is! Map) {
@@ -224,6 +241,16 @@ class AppBackupService {
             nameOverride: source.name.isNotEmpty ? source.name : null,
             versionOverride: source.version.isNotEmpty ? source.version : null,
           );
+          // 恢复备份中的用户变量值（跨端迁移卡密等配置）
+          final userVarsRaw = entry['userVariables'];
+          if (userVarsRaw is Map && userVarsRaw.isNotEmpty) {
+            final values = userVarsRaw
+                .map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+            await _ref
+                .read(pluginUserVarValuesProvider.notifier)
+                .save(source.id, values);
+            await manager.syncBilibiliCookiesFromVars(source.id, values);
+          }
           importedPlugins++;
         } catch (e) {
           errors.add(tr('插件「{name}」导入失败：{e}',
@@ -246,6 +273,11 @@ class AppBackupService {
           name: name,
           songs: songs,
           originalSongCount: songs.length,
+          sourcePluginId: pl['sourcePluginId'] as String?,
+          sourceUrl: pl['sourceUrl'] as String?,
+          sourceRaw: pl['sourceRaw'] is Map
+              ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
+              : null,
         ));
       }
       if (entries.isNotEmpty) {

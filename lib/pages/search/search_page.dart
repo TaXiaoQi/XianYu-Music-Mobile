@@ -382,6 +382,14 @@ class _SearchPageState extends ConsumerState<SearchPage>
     ref.read(searchHistoryProvider.notifier).add(q);
     final sourceId = ref.read(searchSessionProvider).sourceId;
     ref.read(searchSessionProvider.notifier).startSearch(q, sourceId);
+    // 结果页已紧邻本页下方（结果页→搜索页→再搜索）时直接返回复用它，
+    // 否则 pushReplacement 会不断堆叠结果页，退出需逐层弹出。
+    final matches = GoRouter.of(context).routerDelegate.currentConfiguration.matches;
+    final below = matches.length >= 2 ? matches[matches.length - 2] : null;
+    if (below is RouteMatch && below.matchedLocation == '/search/result') {
+      context.pop();
+      return;
+    }
     context.pushReplacement('/search/result');
   }
 
@@ -531,6 +539,12 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     _tab = TabController(length: 4, vsync: this);
     _tab.addListener(_onTabChanged);
     ref.listenManual(pluginManagerProvider, (_, _) => _refreshSources());
+    // 从搜索页提交新关键词后 pop 回本页时，同步搜索框文本（结果页签 watch 会话自动刷新）。
+    ref.listenManual(searchSessionProvider, (prev, next) {
+      if (next.query != _queryCtrl.text) {
+        _queryCtrl.text = next.query;
+      }
+    });
     _refreshSources();
   }
 
@@ -586,7 +600,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final items = <_SourceItem>[];
     for (final p in enabled) {
       final pName = showReal ? resolveRealSourceName(p.name) : p.name;
-      if (p.format == PluginFormat.musicfree) {
+      if (p.format.isMfCompatible) {
         items.add(_SourceItem(
             id: p.id, name: pName, type: _SourceType.musicfree, plugin: p));
       } else if (p.format == PluginFormat.lx) {

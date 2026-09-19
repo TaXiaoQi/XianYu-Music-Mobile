@@ -19,6 +19,7 @@ import '../player/media_url.dart';
 import '../player/mv_source.dart';
 import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
+import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import '../i18n/i18n.dart';
@@ -371,9 +372,16 @@ class DownloadManager extends StateNotifier<DownloadState> {
     String? ekey;
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
-      final tried = parsed.containsKey('pluginId')
-          ? await _resolvePluginUrl(parsed, q)
-          : await _resolveLxUrl(songJson, q);
+      ResolvedMediaUrl? tried;
+      try {
+        tried = parsed.containsKey('pluginId')
+            ? await _resolvePluginUrl(parsed, q)
+            : await _resolveLxUrl(songJson, q);
+      } on PluginEngineException catch (e) {
+        // 鉴权失效（卡密/401）时终止下载任务，不再逐档空转
+        if (PluginEngine.isAuthFailureMessage(e.message)) rethrow;
+        continue;
+      }
       if (tried == null) continue;
       final u = tried.url;
       final reported = tried.quality ?? q;
@@ -658,7 +666,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final source = sources.where((s) => s.id == pluginId).toList();
     if (source.isEmpty) throw StateError(tr('插件未启用'));
 
-    if (format == 'musicfree') {
+    if (isMfFormatValue(format)) {
       return engine.getMusicFreeUrl(
         source.first,
         musicInfo,

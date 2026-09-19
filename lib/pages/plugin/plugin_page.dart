@@ -814,6 +814,9 @@ class _PluginCard extends ConsumerWidget {
     if (source.format == PluginFormat.lx) {
       iconBg = const Color(0x1A22C55E);
       iconColor = const Color(0xFF22C55E);
+    } else if (source.format == PluginFormat.anime) {
+      iconBg = const Color(0x1AA855F7);
+      iconColor = const Color(0xFFA855F7);
     } else if (source.format == PluginFormat.musicfree &&
         source.author.toLowerCase().contains('toskysun')) {
       iconBg = const Color(0x1A3B82F6);
@@ -834,11 +837,13 @@ class _PluginCard extends ConsumerWidget {
 
     final tagLabel = source.format == PluginFormat.lx
         ? tr('落雪')
-        : source.format == PluginFormat.musicfree
-            ? (source.author.toLowerCase().contains('toskysun')
-                ? 'BakaMusic'
-                : 'MusicFree')
-            : tr('未知');
+        : source.format == PluginFormat.anime
+            ? 'anime'
+            : source.format == PluginFormat.musicfree
+                ? (source.author.toLowerCase().contains('toskysun')
+                    ? 'BakaMusic'
+                    : 'MusicFree')
+                : tr('未知');
 
     return Material(
       color: appCardFill(context, ref),
@@ -1227,8 +1232,11 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final formatLabel =
-        source.format == PluginFormat.lx ? tr('落雪格式') : tr('MusicFree 格式');
+    final formatLabel = switch (source.format) {
+      PluginFormat.lx => tr('落雪格式'),
+      PluginFormat.anime => 'anime 格式',
+      _ => tr('MusicFree 格式'),
+    };
 
     Widget row(String label, String value) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -1606,4 +1614,4 @@ class _InstallOption extends ConsumerWidget {
     );
   }
 }
-
+

@@ -97,7 +97,7 @@ class PluginCommentService {
     int page,
   ) async {
     final normalized = _normalizeMusicItem(source, musicItem);
-    if (source.format == PluginFormat.musicfree) {
+    if (source.format.isMfCompatible) {
       try {
         final result = await engine.call(
           source.id,
@@ -203,8 +203,9 @@ class CommentContext {
       final musicInfo = j['musicInfo'];
       if (musicInfo is! Map) return null;
       final formatRaw = j['format'];
-      final format =
-          formatRaw == 'musicfree' ? PluginFormat.musicfree : PluginFormat.lx;
+      final format = isMfFormatValue(formatRaw is String ? formatRaw : null)
+          ? PluginFormat.musicfree
+          : PluginFormat.lx;
       return CommentContext(
         pluginId: pluginId,
         format: format,

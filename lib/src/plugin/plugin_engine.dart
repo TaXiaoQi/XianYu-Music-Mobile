@@ -65,7 +65,6 @@ class PluginEngine {
     if (hasMusicFreeExport || (hasMusicFreePlatform && hasMusicFreeSearch)) {
       return false;
     }
-
     if (RegExp(r'\blx\s*\.\s*(on|send)\s*\(').hasMatch(trimmed)) return true;
     if (RegExp(r'EVENT_NAMES\s*\.\s*request').hasMatch(trimmed)) return true;
     if (RegExp(r"""globalThis\s*\[\s*['"]lx['"]\s*]""").hasMatch(trimmed)) return true;
@@ -85,6 +84,10 @@ class PluginEngine {
     }
     return false;
   }
+
+  /// animemusic/1 格式识别（meta + call 统一入口）
+  bool isAnimePluginScript(String script) =>
+      RegExp(r"""["']animemusic\/1["']""").hasMatch(script);
 
   Map<String, String> parseLxScriptInfo(String script) {
     final match = RegExp(r'^/\*[\S|\s]+?\*/').firstMatch(script);
@@ -232,7 +235,7 @@ class PluginEngine {
             );
       if (info != null) {
         AppLog.info('plugin',
-            '${source.name}(${source.id}) 加载成功 (${isLx ? 'lx' : 'musicfree'})');
+            '${source.name}(${source.id}) 加载成功 (${source.format.value})');
       }
       if (info != null && info['id'] != null && info['id'] != source.id) {
         final newId = info['id'].toString();
@@ -254,7 +257,7 @@ class PluginEngine {
     try {
       final meta = await ensureLoaded(source);
       if (meta == null) return false;
-      if (source.format == PluginFormat.musicfree) {
+      if (source.format.isMfCompatible) {
         final methods = meta['_availableMethods'];
         return methods is List && methods.contains('getMediaSource');
       }
@@ -278,9 +281,13 @@ class PluginEngine {
   static const Duration _authBanTtl = Duration(minutes: 5);
   static const int _authBanThreshold = 2;
 
-  static bool _isAuthError(String msg) =>
-      RegExp(r'API密钥|API\s*key|api[_\s-]?secret|401', caseSensitive: false)
+  // 三端统一鉴权失效关键词（与桌面端 AUTH_FAIL_RE / isAuthError 一致）
+  static bool isAuthFailureMessage(String msg) =>
+      RegExp(r'API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断',
+              caseSensitive: false)
           .hasMatch(msg);
+
+  static bool _isAuthError(String msg) => isAuthFailureMessage(msg);
 
   static bool isAuthBanned(String pluginId) {
     final until = _authBannedUntil[pluginId];
@@ -514,7 +521,9 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
-    if (bakaManager.isBakaPlugin(source.id)) {
+    // anime 插件 qualities 键可被 Baka 识别规则命中，需排除
+    if (source.format != PluginFormat.anime &&
+        bakaManager.isBakaPlugin(source.id)) {
       return bakaManager.getMediaSource(
         source,
         musicItem,
@@ -534,6 +543,8 @@ class PluginEngine {
       } catch (e) {
         final msg = e is PluginEngineException ? e.message : e.toString();
         if (isUnsupportedQualityError(msg)) unsupportedQuality = true;
+        // 鉴权失效（卡密/401）时剩余档位必然失败，直接终止
+        if (isAuthFailureMessage(msg)) rethrow;
       }
     }
 
@@ -560,6 +571,8 @@ class PluginEngine {
     } catch (e) {
       final msg = e is PluginEngineException ? e.message : e.toString();
       if (isUnsupportedQualityError(msg)) rethrow;
+      // 鉴权失效不重试，直接抛出
+      if (isAuthFailureMessage(msg)) rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 800));
       return call(pluginId, 'getMediaSource', [musicItem, q]);
     }
@@ -742,7 +755,7 @@ class PluginEngine {
     String sourceKey,
     Map<String, dynamic> songInfo,
   ) async {
-    if (source.format == PluginFormat.musicfree) {
+    if (source.format.isMfCompatible) {
       return getMusicFreeLyric(source, songInfo);
     }
     final response = await lxRequest(

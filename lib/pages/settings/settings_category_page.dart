@@ -3648,6 +3648,35 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     );
   }
 
+  /// 加密备份密码输入对话框；取消返回 null
+  Future<String?> _askBackupPassword() async {
+    final controller = TextEditingController();
+    final result = await showPredictiveDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('加密备份')),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(hintText: tr('输入导出时设置的密码')),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('取消')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+                ctx, controller.text.isEmpty ? null : controller.text),
+            child: Text(tr('确认')),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
+
   Future<void> _importBackup() async {
     if (_busy) return;
     try {
@@ -3672,7 +3701,21 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       }
 
       final service = ref.read(appBackupProvider);
-      final backup = service.parse(content);
+      Map<String, dynamic> backup;
+      try {
+        backup = service.parse(content);
+      } on BackupPasswordRequiredException {
+        // 加密备份：先输入密码再解析
+        final password = await _askBackupPassword();
+        if (password == null) return;
+        try {
+          backup = service.parse(content, password: password);
+        } on FormatException catch (e) {
+          if (!mounted) return;
+          _toast(e.message);
+          return;
+        }
+      }
       final options = await _confirmBackupImport(service.summarize(backup));
       if (options == null) return;
 

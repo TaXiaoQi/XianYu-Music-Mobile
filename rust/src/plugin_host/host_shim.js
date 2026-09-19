@@ -969,6 +969,200 @@
     browser: false,
   };
 
+  // ==================== Node http/https shim（animemusic/1 插件使用）====================
+
+  function makeHttpModule(isHttps) {
+    function buildRequestConfig(urlInput, options) {
+      // Node 允许 http.request(options[, cb]) 直接传配置对象（host/path/method/headers），
+      // 此时第一参数并非 URL，需重定向到 options
+      if (urlInput && typeof urlInput === 'object' && typeof urlInput.href !== 'string') {
+        if (options && typeof options === 'object') {
+          for (var mk in urlInput) {
+            if (Object.prototype.hasOwnProperty.call(urlInput, mk) && !Object.prototype.hasOwnProperty.call(options, mk)) {
+              options[mk] = urlInput[mk];
+            }
+          }
+        } else {
+          options = urlInput;
+        }
+        urlInput = null;
+      }
+      var method = (options && options.method) || 'GET';
+      var headers = {};
+      var host = '';
+      var path = '';
+      if (urlInput) {
+        var s = typeof urlInput === 'string' ? urlInput : (urlInput && urlInput.href) || String(urlInput);
+        var m = /^https?:\/\/([^/?#]+)([^#]*)/i.exec(s);
+        if (!m) throw new Error('http: 无效 URL ' + s);
+        var authIdx = m[1].indexOf('@');
+        host = authIdx >= 0 ? m[1].slice(authIdx + 1) : m[1];
+        path = m[2] || '/';
+        if (/^https:\/\//i.test(s)) isHttps = true;
+      }
+      if (options) {
+        if (options.method) method = options.method;
+        if (options.protocol === 'https:') isHttps = true;
+        else if (options.protocol === 'http:') isHttps = false;
+        if (options.hostname || options.host) host = String(options.hostname || options.host);
+        if (options.port && host.indexOf(':') < 0) host = host + ':' + options.port;
+        if (options.path) path = options.path;
+        if (options.headers) {
+          for (var k in options.headers) {
+            if (Object.prototype.hasOwnProperty.call(options.headers, k)) headers[k] = String(options.headers[k]);
+          }
+        }
+      }
+      if (!host) throw new Error('http: 缺少主机地址');
+      return {
+        method: String(method).toUpperCase(),
+        headers: headers,
+        url: (isHttps ? 'https://' : 'http://') + host + (path || '/'),
+      };
+    }
+
+    function ClientRequest(urlInput, options, callback) {
+      var self = this;
+      var cfg = buildRequestConfig(urlInput, options);
+      var listeners = {};
+      var bodyParts = [];
+      var finished = false;
+      var destroyed = false;
+
+      function emit(event, arg) {
+        var ls = listeners[event] || [];
+        for (var i = 0; i < ls.length; i++) {
+          try { ls[i](arg); } catch (e) { G.console.error('http shim: 监听器异常 ' + e); }
+        }
+      }
+
+      self.on = function (event, fn) {
+        (listeners[event] = listeners[event] || []).push(fn);
+        return self;
+      };
+      self.once = self.on;
+      self.addListener = self.on;
+      self.setHeader = function (name, value) { cfg.headers[name] = String(value); return self; };
+      self.getHeader = function (name) {
+        var lower = String(name).toLowerCase();
+        for (var k in cfg.headers) {
+          if (k.toLowerCase() === lower) return cfg.headers[k];
+        }
+        return undefined;
+      };
+      self.removeHeader = function (name) {
+        var lower = String(name).toLowerCase();
+        for (var k in cfg.headers) {
+          if (k.toLowerCase() === lower) delete cfg.headers[k];
+        }
+      };
+      self.getHeaders = function () { return cfg.headers; };
+      self.write = function (data) {
+        if (data != null) bodyParts.push(typeof data === 'string' ? data : String(data));
+        return self;
+      };
+      self.end = function (data) {
+        if (!finished) {
+          finished = true;
+          if (data != null) self.write(data);
+          dispatch();
+        }
+        return self;
+      };
+      self.setTimeout = function () { return self; };
+      self.setNoDelay = function () { return self; };
+      self.destroy = function () { destroyed = true; return self; };
+      self.abort = function () { self.destroy(); };
+      self.flushHeaders = function () {};
+
+      function dispatch() {
+        Promise.resolve().then(function () {
+          if (destroyed) return null;
+          var body = bodyParts.join('');
+          return nativeRequest(cfg.method, cfg.url, cfg.headers, body || '', 0, -1, true);
+        }).then(function (res) {
+          if (!res || destroyed) return;
+          if (res.error) throw new Error(res.error);
+          var B = getBuffer();
+          var respHeaders = {};
+          if (res.headers) {
+            for (var k in res.headers) respHeaders[k.toLowerCase()] = res.headers[k];
+          }
+          var dataBuf = B ? B.from(res.bodyBase64 || '', 'base64') : (res.bodyBase64 || '');
+          var rListeners = {};
+          var rEmitted = { response: false, data: false, end: false };
+          var encoding = null;
+
+          function emitR(event, arg) {
+            var ls = rListeners[event] || [];
+            for (var i = 0; i < ls.length; i++) {
+              try { ls[i](arg); } catch (e) { G.console.error('http shim: 响应监听器异常 ' + e); }
+            }
+          }
+
+          var response = {
+            statusCode: res.status || 0,
+            statusMessage: res.status >= 200 && res.status < 300 ? 'OK' : 'Error',
+            headers: respHeaders,
+            rawHeaders: [],
+            httpVersion: '1.1',
+            on: function (event, fn) { (rListeners[event] = rListeners[event] || []).push(fn); pump(); return response; },
+            setEncoding: function (enc) { encoding = enc; return response; },
+            destroy: function () { return response; },
+            pause: function () { return response; },
+            resume: function () { return response; },
+          };
+          response.once = response.on;
+          response.addListener = response.on;
+
+          function pump() {
+            if (!rEmitted.response) return;
+            if (!rEmitted.data) {
+              rEmitted.data = true;
+              var chunk = dataBuf;
+              if (chunk && encoding && typeof chunk.toString === 'function') {
+                chunk = chunk.toString(encoding === 'utf8' ? 'utf8' : encoding);
+              }
+              emitR('data', chunk);
+            }
+            if (!rEmitted.end) {
+              rEmitted.end = true;
+              emitR('end');
+            }
+          }
+
+          rEmitted.response = true;
+          emitR('response', response);
+          if (callback) { /* callback 已通过 on('response') 注册 */ }
+          pump();
+        }).catch(function (e) {
+          var err = e instanceof Error ? e : new Error(String(e && e.message || e));
+          if (listeners.error && listeners.error.length > 0) emit('error', err);
+          else G.console.error('http shim: 请求失败 ' + (err && err.message));
+        });
+      }
+    }
+
+    function request(urlInput, optionsOrCb, maybeCb) {
+      var options = typeof optionsOrCb === 'function' ? null : (optionsOrCb || null);
+      var cb = typeof optionsOrCb === 'function' ? optionsOrCb : (typeof maybeCb === 'function' ? maybeCb : null);
+      var req = new ClientRequest(urlInput, options, cb);
+      if (cb) req.on('response', cb);
+      return req;
+    }
+
+    function get(urlInput, optionsOrCb, maybeCb) {
+      var req = request(urlInput, optionsOrCb, maybeCb);
+      req.end();
+      return req;
+    }
+
+    return { request: request, get: get, ClientRequest: ClientRequest };
+  }
+
+  var httpShim = makeHttpModule(false);
+  var httpsShim = makeHttpModule(true);
+
   // ==================== require 体系 ====================
 
   var requireCache = {};
@@ -985,6 +1179,8 @@
       case 'buffer': pkg = { Buffer: getBuffer() }; break;
       case '@react-native-cookies/cookies': pkg = proxyCookiesPkg; break;
       case 'musicfree/storage': pkg = storagePkg; break;
+      case 'http': pkg = httpShim; break;
+      case 'https': pkg = httpsShim; break;
       default:
         pkg = pkgs[packageName] || null;
         break;
@@ -1269,6 +1465,152 @@
     'getArtistInfo', 'getMusicComments', 'getMusicDetailPageUrl',
   ];
 
+  // ==================== animemusic/1 适配器 ====================
+  // anime 插件统一入口 instance.call(action, params)，信封返回 {ok,...}/
+  // {ok:false,error:{code,message}}。这里包装成 musicfree 兼容实例
+  // （search/getMediaSource/getLyric），上层 Dart 调用链无需感知差异。
+
+  var ANIME_QUALITY_MAP = {
+    mgg: '128k', '128k': '128k', '192k': '192k', '320k': '320k',
+    flac: 'flac', flac24bit: 'flac24bit',
+    hires: 'flac24bit', vinyl: 'flac24bit', dolby: 'flac24bit',
+    atmos: 'flac24bit', atmos_plus: 'flac24bit', master: 'flac24bit',
+    low: '128k', standard: '320k', high: 'flac', super: 'flac24bit',
+  };
+
+  function toAnimeQuality(q) {
+    var mapped = ANIME_QUALITY_MAP[String(q || '')];
+    return mapped || '320k';
+  }
+
+  function makeAnimeAdapter(instance, meta) {
+    var singlePlatform = meta.platform && meta.platform !== 'all' ? String(meta.platform) : null;
+
+    // 聚合插件必须传 platform；_animePlatform 在搜索结果注入
+    function resolvePlatform(item) {
+      var p = item && item._animePlatform;
+      if (typeof p === 'string' && p && p !== 'all') return p;
+      return singlePlatform || undefined;
+    }
+
+    function envelopeError(env) {
+      var err = env && env.error;
+      if (!err) return '未知错误';
+      return ((err.code || 'E_UNKNOWN') + ': ' + (err.message || '')).trim();
+    }
+
+    function callAction(action, params) {
+      return Promise.resolve().then(function () {
+        return instance.call(action, params);
+      }).then(function (env) {
+        if (!env || env.ok !== true) {
+          throw new Error('[anime] ' + action + ' 失败: ' + envelopeError(env));
+        }
+        return env;
+      });
+    }
+
+    return {
+      platform: meta.platform,
+      // 原始统一入口透传：桌面端 animeCall 直接调 call 解包信封；
+      // 包装后的 musicfree 语义方法（search/getMediaSource/getLyric）见下
+      call: instance.call,
+      version: meta.version,
+      author: meta.author,
+      description: meta.description,
+      supportedQualities: Array.isArray(meta.qualities) ? meta.qualities : [],
+      supportedSearchType: ['music'],
+      defaultSearchType: 'music',
+      format: 'anime',
+      sources: Array.isArray(meta.platforms) && meta.platforms.length > 0
+        ? meta.platforms.map(String)
+        : [String(meta.platform || 'all')],
+      userVariables: meta.userVariables,
+
+      search: function (query, page, type) {
+        if (type && type !== 'music') {
+          return Promise.resolve({});
+        }
+        return callAction('search', { keyword: query, page: page || 1, limit: 30 }).then(function (env) {
+          var list = Array.isArray(env.list) ? env.list : [];
+          return {
+            isEnd: env.hasMore === false ? true : undefined,
+            list: list.map(function (item) {
+              var out = {};
+              for (var k in item) out[k] = item[k];
+              out.platform = item.platform || meta.platform;
+              out._animePlatform = item.platform || meta.platform;
+              return out;
+            }),
+          };
+        }, function (e) {
+          G.console.warn('[anime] search 失败: ' + (e && e.message ? e.message : e));
+          return {};
+        });
+      },
+
+      getMediaSource: function (musicItem, quality) {
+        var params = { id: musicItem && musicItem.id, quality: toAnimeQuality(quality) };
+        var p = resolvePlatform(musicItem);
+        if (p) params.platform = p;
+        return callAction('musicUrl', params).then(function (env) {
+          if (!env.url) throw new Error('[anime] musicUrl 失败: 响应缺少 url');
+          return { url: String(env.url), quality: env.quality ? String(env.quality) : undefined };
+        });
+      },
+
+      getLyric: function (musicItem) {
+        var base = {};
+        if (musicItem) {
+          if (musicItem.id != null) base.id = musicItem.id;
+          if (musicItem.title || musicItem.name) base.title = musicItem.title || musicItem.name;
+          if (musicItem.artist) base.artist = musicItem.artist;
+          var dur = Number(musicItem.duration);
+          if (isFinite(dur) && dur > 0) {
+            base.interval = dur >= 60000 ? Math.round(dur / 1000) : Math.round(dur);
+          }
+          var p = resolvePlatform(musicItem);
+          if (p) base.platform = p;
+        }
+
+        // 1) 逐行+逐字一次拿（lyricBoth）；2) 降级逐字（lyricWord）；3) 降级逐行（lyric）
+        return callAction('lyricBoth', base).catch(function () { return null; }).then(function (both) {
+          var line = both && both.line ? both.line : null;
+          var word = both && both.word ? both.word : null;
+          var promise;
+          if (line || word) {
+            promise = Promise.resolve({ line: line, word: word });
+          } else {
+            promise = callAction('lyricWord', base).then(function (w) {
+              return {
+                line: w ? { lrc: w.lrc || '', translation: w.translation || '', romanization: w.romanization || '' } : null,
+                word: w || null,
+              };
+            }).catch(function () { return { line: null, word: null }; });
+          }
+          return promise.then(function (r) {
+            var line2 = r.line;
+            var word2 = r.word;
+            var finish = function () {
+              if (!line2 || !line2.lrc) return null;
+              return {
+                lyric: String(line2.lrc || ''),
+                tlyric: String(line2.translation || ''),
+                rlyric: String(line2.romanization || ''),
+                lxlyric: word2 && word2.word && word2.lrc ? String(word2.lrc) : '',
+              };
+            };
+            if (line2 && line2.lrc) return finish();
+            return callAction('lyric', base).then(function (env) {
+              if (env && env.lrc) line2 = env;
+              return finish();
+            }).catch(function () { return finish(); });
+          });
+        });
+      },
+    };
+  }
+
   G.__xyLoadMusicFree = function (script, userVarsJson) {
     try {
       mfUserVars = JSON.parse(userVarsJson || '{}') || {};
@@ -1313,30 +1655,41 @@
     }
 
     var instance = _module.exports && _module.exports.default ? _module.exports.default : _module.exports;
-    mfInstance = instance;
 
+    // animemusic/1 格式：元信息在 instance.meta，统一入口为 instance.call(action, params)。
+    // 包装成 musicfree 兼容实例后，后续调用走同一链路。
+    var isAnime = !!(instance && instance.format === 'animemusic/1' && typeof instance.call === 'function');
+    var animeMeta = isAnime ? (instance.meta || {}) : null;
+    var animePlatforms = animeMeta && Array.isArray(animeMeta.platforms) && animeMeta.platforms.length > 0
+      ? animeMeta.platforms
+      : (animeMeta && animeMeta.platform ? [animeMeta.platform] : null);
+    mfInstance = isAnime ? makeAnimeAdapter(instance, animeMeta) : instance;
+
+    var sourceInstance = mfInstance;
     var availableMethods = [];
     for (var i = 0; i < MF_ALL_METHOD_NAMES.length; i++) {
       var m = MF_ALL_METHOD_NAMES[i];
-      if (typeof instance[m] === 'function') availableMethods.push(m);
+      if (typeof sourceInstance[m] === 'function') availableMethods.push(m);
     }
 
     return JSON.stringify({
       ok: true,
       metadata: {
-        platform: instance.platform,
-        version: instance.version,
+        platform: animeMeta ? (animeMeta.platform || 'all') : instance.platform,
+        pluginName: animeMeta ? (animeMeta.name || animeMeta.label || '') : '',
+        platforms: animePlatforms,
+        version: animeMeta ? (animeMeta.version || '') : instance.version,
         appVersion: instance.appVersion,
-        author: instance.author,
-        description: instance.description,
+        author: animeMeta ? (animeMeta.author || '') : instance.author,
+        description: animeMeta ? (animeMeta.description || '') : instance.description,
         srcUrl: instance.srcUrl,
         primaryKey: instance.primaryKey,
         cacheControl: instance.cacheControl,
-        supportedSearchType: instance.supportedSearchType,
-        defaultSearchType: instance.defaultSearchType,
-        userVariables: instance.userVariables,
+        supportedSearchType: animeMeta ? ['music'] : instance.supportedSearchType,
+        defaultSearchType: animeMeta ? 'music' : instance.defaultSearchType,
+        userVariables: sourceInstance.userVariables,
         hints: instance.hints,
-        supportedQualities: instance.supportedQualities,
+        supportedQualities: animeMeta ? (animeMeta.qualities || null) : instance.supportedQualities,
         _availableMethods: availableMethods,
       },
     });

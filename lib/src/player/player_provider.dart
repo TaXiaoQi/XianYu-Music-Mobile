@@ -2713,7 +2713,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           final newSourceKey = newJson['source'] as String? ?? sourceKey;
           final newMusicInfo =
               newJson['musicInfo'] as Map<String, dynamic>? ?? musicInfo;
-          if (newFormat == 'musicfree') {
+          if (isMfFormatValue(newFormat)) {
             hit = await engine.getMusicFreeUrl(
               plugin,
               newMusicInfo,
@@ -2851,7 +2851,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
 
       ResolvedMediaUrl? resolved;
-      if (format == 'musicfree') {
+      if (isMfFormatValue(format)) {
         resolved = await engine.getMusicFreeUrl(
           source.first,
           musicInfo,
@@ -2923,7 +2923,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       ).take(3);
       for (final plugin in candidates) {
         final ResolvedMediaUrl? hit;
-        if (plugin.format == PluginFormat.musicfree) {
+        if (plugin.format.isMfCompatible) {
           hit = await engine.getMusicFreeUrl(
             plugin,
             musicInfo,
@@ -3018,7 +3018,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final keyword = artist.isEmpty ? title : '$title $artist';
     try {
       final PluginSearchResult? match;
-      if (cross.format == PluginFormat.musicfree) {
+      if (cross.format.isMfCompatible) {
         final catalog = PluginCatalogService(engine, sources);
         final results = await catalog.searchMusic(cross, keyword, limit: 10);
         match = _pickBestSearchMatch(results, title, artist);
@@ -3029,10 +3029,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       if (match == null) return null;
 
-      final newSongJson = cross.format == PluginFormat.musicfree
+      final newSongJson = cross.format.isMfCompatible
           ? {
               'pluginId': cross.id,
-              'format': 'musicfree',
+              'format': cross.format.value,
               'musicInfo': match.toJson(),
             }
           : {
