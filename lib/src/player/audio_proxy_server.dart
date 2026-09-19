@@ -1,9 +1,11 @@
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../rust/api.dart' as frb;
 import 'audio_head_cache.dart';
 
 class _ByteRange {
@@ -12,10 +14,26 @@ class _ByteRange {
   final int? end;
 }
 
+class _CacheStatus {
+  const _CacheStatus({
+    required this.exists,
+    required this.complete,
+    required this.failed,
+    required this.total,
+  });
+  final bool exists;
+  final bool complete;
+  final bool failed;
+  final int? total;
+}
+
 class AudioProxyServer {
   AudioProxyServer._();
 
   static final AudioProxyServer instance = AudioProxyServer._();
+
+  /// 每次从 Rust 流缓存读取的分块大小（1MB）。
+  static const int _cacheChunk = 1 << 20;
 
   HttpServer? _server;
   String _token = '';
@@ -63,9 +81,10 @@ class AudioProxyServer {
   String playUrlFor(String url) {
     final server = _server;
     if (server == null || !running) return url;
-    final head = AudioHeadCache.instance.lookupForPlay(url);
-    if (head == null) return url;
-    return proxyUrlFor(url)!;
+    if (!url.startsWith('http')) return url;
+    // 无头部探测缓存也走代理：代理可透传（携带注册过的请求头），
+    // 同时预热 Rust 流缓存写入磁盘（对齐桌面端在线播放缓存）。
+    return proxyUrlFor(url) ?? url;
   }
 
   String? proxyUrlFor(String url) {
@@ -89,9 +108,21 @@ class AudioProxyServer {
       }
 
       final upstreamHeaders = AudioHeadCache.instance.headersFor(target);
-      final range = _parseRange(req.headers.value(HttpHeaders.rangeHeader)) ??
-          const _ByteRange(0, null);
+      final rawRange = req.headers.value(HttpHeaders.rangeHeader);
+      final range = _parseRange(rawRange) ?? const _ByteRange(0, null);
       final head = AudioHeadCache.instance.lookupForPlay(target);
+
+      // 在线播放磁盘缓存（对齐桌面端）：先预热流式下载写盘，再尝试本地伺服
+      var cacheReady = false;
+      if (req.method == 'GET') {
+        cacheReady = await _warmStreamCache(target, upstreamHeaders);
+      }
+      if (cacheReady &&
+          await _tryServeFromCache(
+            req, target, upstreamHeaders, head, range, rawRange != null,
+          )) {
+        return;
+      }
 
       if (head != null && range.start < head.bytes.length) {
         await _serveWithHead(req, target, upstreamHeaders, head, range);
@@ -103,6 +134,123 @@ class AudioProxyServer {
         await req.response.close();
       } catch (_) {}
     }
+  }
+
+  /// 启动/复用该 URL 的 Rust 流式下载（写盘）。已存在时复用，失败条目重下。
+  Future<bool> _warmStreamCache(
+    String target,
+    Map<String, String>? upstreamHeaders,
+  ) async {
+    try {
+      await frb.streamCacheBeginUrlDownload(
+        url: target,
+        headers: jsonEncode(upstreamHeaders ?? const <String, String>{}),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<_CacheStatus?> _cacheStatus(String target) async {
+    try {
+      final raw = await frb.streamCacheUrlStatus(url: target);
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final total = m['total'];
+      return _CacheStatus(
+        exists: m['exists'] == true,
+        complete: m['complete'] == true,
+        failed: m['failed'] == true,
+        total: total is num ? total.toInt() : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 尝试从磁盘流缓存伺服响应。返回 false 表示回退网络路径
+  /// （仅在尚未向响应写入任何字节时才允许回退）。
+  Future<bool> _tryServeFromCache(
+    HttpRequest req,
+    String target,
+    Map<String, String>? upstreamHeaders,
+    AudioHeadEntry? head,
+    _ByteRange range,
+    bool hasRangeHeader,
+  ) async {
+    final st = await _cacheStatus(target);
+    if (st == null || !st.exists || st.failed) return false;
+
+    // 总长：完整缓存用实际大小；下载中依赖头部探测的总长
+    final int? total = st.complete ? st.total : head?.totalLength;
+    if (total == null || total <= 0) return false;
+
+    if (range.start >= total) {
+      final res = req.response;
+      res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+      await res.close();
+      return true;
+    }
+
+    final res = req.response;
+    res.bufferOutput = false;
+    res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    final contentType = head?.contentType;
+    if (contentType != null && contentType.isNotEmpty) {
+      res.headers.set(HttpHeaders.contentTypeHeader, contentType);
+    }
+
+    var end = range.end ?? total - 1;
+    if (end >= total) end = total - 1;
+    if (hasRangeHeader) {
+      res.statusCode = HttpStatus.partialContent;
+      res.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes ${range.start}-$end/$total',
+      );
+    } else {
+      res.statusCode = HttpStatus.ok;
+    }
+    res.contentLength = end - range.start + 1;
+
+    var wroteAny = false;
+    try {
+      var pos = range.start;
+      while (pos <= end) {
+        final Uint8List chunk;
+        try {
+          chunk = await frb.streamCacheReadUrl(
+            url: target,
+            offset: BigInt.from(pos),
+            maxLen: _cacheChunk,
+          );
+        } catch (_) {
+          break;
+        }
+        if (chunk.isEmpty) {
+          // EOF 或下载失败
+          if (!wroteAny) return false; // 尚未写出：回退网络路径
+          break;
+        }
+        var data = chunk;
+        if (pos + data.length > end + 1) {
+          data = Uint8List.sublistView(data, 0, end + 1 - pos);
+        }
+        try {
+          res.add(data);
+          await res.flush();
+        } catch (_) {
+          return true;
+        }
+        pos += data.length;
+        wroteAny = true;
+      }
+    } catch (_) {}
+    try {
+      await res.close();
+    } catch (_) {}
+    return true;
   }
 
   Future<void> _reject(HttpRequest req, int status) async {

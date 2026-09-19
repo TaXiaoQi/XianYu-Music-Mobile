@@ -1422,6 +1422,54 @@ Future<bool> waitStreamComplete({
   timeoutSecs: timeoutSecs,
 );
 
+/// 设置流缓存持久化目录。须在首次触碰流缓存前调用
+/// （默认 temp_dir 在 Android 不可持久，对齐桌面端 set_stream_cache_dir）。
+Future<void> setStreamCacheDir({required String path}) =>
+    RustLib.instance.api.crateApiSetStreamCacheDir(path: path);
+
+/// 查询 URL 缓存状态，返回 JSON：
+/// `{"exists":bool,"complete":bool,"failed":bool,"downloaded":u64,"total":u64|null}`。
+Future<String> streamCacheUrlStatus({required String url}) =>
+    RustLib.instance.api.crateApiStreamCacheUrlStatus(url: url);
+
+/// 启动/复用该 URL 的流式下载（代理预热缓存写入）。
+/// `headers` 为 JSON 对象字符串（上游请求头，含 Referer/Cookie/UA 等）。
+Future<void> streamCacheBeginUrlDownload({
+  required String url,
+  required String headers,
+}) => RustLib.instance.api.crateApiStreamCacheBeginUrlDownload(
+  url: url,
+  headers: headers,
+);
+
+/// 按区间读取缓存内容（阻塞至该区间有数据或下载结束）。
+/// 返回空字节串表示 EOF（完成/失败/无缓存）。
+Future<Uint8List> streamCacheReadUrl({
+  required String url,
+  required BigInt offset,
+  required int maxLen,
+}) => RustLib.instance.api.crateApiStreamCacheReadUrl(
+  url: url,
+  offset: offset,
+  maxLen: maxLen,
+);
+
+/// MV 频谱对齐分析：用歌曲音频与 MV 音轨的能量包络互相关估计时间偏移。
+///
+/// - `mv_path`：MV 文件路径（通常是下载到缓存的 360P mp4）
+/// - `song_path`：歌曲音频文件路径（本地文件或缓存文件）
+///
+/// 语义：lag > 0 表示 `mv[t + lag] ↔ song[t]`，即 `videoPos = audioPos + offsetMs`。
+/// 返回 JSON：`{"ok":true,"offsetMs":i64,"confidence":f64,"trustworthy":bool}`；
+/// 解码失败等场景返回 `{"ok":false,"reason":"..."}`（调用方回退 offset=0）。
+Future<String> analyzeMvSync({
+  required String mvPath,
+  required String songPath,
+}) => RustLib.instance.api.crateApiAnalyzeMvSync(
+  mvPath: mvPath,
+  songPath: songPath,
+);
+
 /// 在播放前评估/更新响度元数据并计算目标线性增益。
 /// `enabled` 为 true 时按 `gain_offset_db`（dB）与 `prevent_clipping` 计算，
 /// 返回 `ProcessLoudnessResult` JSON；`enabled` 为 false 时返回 1.0（原始音量）。

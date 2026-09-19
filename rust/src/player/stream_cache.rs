@@ -458,10 +458,33 @@ pub fn max_cache_size() -> u64 {
         .max_size_bytes
 }
 
+/// 缓存目录覆盖（移动端由 Dart 启动时传入 app 数据目录下的 stream_cache；
+/// 默认 temp_dir 在 Android 不可持久，且该函数在 cache() 初始化前必须生效）。
+static CACHE_DIR_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// 设置缓存目录覆盖。须在首次触碰流缓存（cache() 初始化）之前调用。
+pub fn set_cache_dir_override(path: String) {
+    let dir = PathBuf::from(&path);
+    let _ = std::fs::create_dir_all(&dir);
+    let cell = CACHE_DIR_OVERRIDE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cell.lock() {
+        *guard = Some(dir);
+    }
+}
+
 /// 持久化缓存目录：
+/// 优先使用 Dart 侧设置的覆盖目录；
 /// Windows: %APPDATA%\com.xymusic.desktop\stream_cache\
 /// 其他平台: ~/com.xymusic.desktop/stream_cache/（回退 temp_dir）
 fn cache_dir() -> PathBuf {
+    if let Some(cell) = CACHE_DIR_OVERRIDE.get() {
+        if let Ok(guard) = cell.lock() {
+            if let Some(dir) = guard.as_ref() {
+                let _ = std::fs::create_dir_all(dir);
+                return dir.clone();
+            }
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
@@ -1483,5 +1506,102 @@ pub fn clear_all() {
             }
             mgr.current_size = 0;
         }
+    }
+}
+
+// =========================================================================
+// 代理伺服支持（移动端 AudioProxyServer 对齐桌面端在线播放磁盘缓存）
+// =========================================================================
+
+/// URL 缓存状态快照（供代理伺服决策）。
+pub struct UrlCacheStatus {
+    pub exists: bool,
+    pub complete: bool,
+    pub failed: bool,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+}
+
+/// 查询 URL 缓存状态（内部自动清洗 URL，与 begin/read 键一致）。
+pub fn url_cache_status(url: &str) -> UrlCacheStatus {
+    let hash = url_hash(&sanitize_stream_url(url));
+    let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
+    match mgr.entries.get(&hash) {
+        Some(entry) => {
+            let failed = entry.download_failed.load(Ordering::Relaxed);
+            let complete = entry.download_complete.load(Ordering::Relaxed) && !failed;
+            UrlCacheStatus {
+                exists: true,
+                complete,
+                failed,
+                downloaded_bytes: entry.downloaded_bytes.load(Ordering::Relaxed),
+                total_bytes: if complete { Some(entry.size) } else { None },
+            }
+        }
+        None => UrlCacheStatus {
+            exists: false,
+            complete: false,
+            failed: false,
+            downloaded_bytes: 0,
+            total_bytes: None,
+        },
+    }
+}
+
+/// 启动/复用该 URL 的流式下载（供代理预热缓存写入）。
+/// 已存在时复用（并刷新 LRU 访问时间），失败条目会被移除并重下。
+pub fn begin_url_download(
+    url: &str,
+    headers: &std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let cleaned = sanitize_stream_url(url);
+    start_streaming_download(&cleaned, Some(headers), None, None, None).map(|_| ())
+}
+
+/// 供代理按区间读取缓存：阻塞直到 offset 处有数据可读或下载结束。
+/// 返回空切片表示 EOF（完成/失败/无缓存）。单次最多读取 max_len 字节。
+pub fn read_url_range(url: &str, offset: u64, max_len: u32) -> Vec<u8> {
+    let cleaned = sanitize_stream_url(url);
+    let hash = url_hash(&cleaned);
+    let (path, downloaded, complete, failed) = {
+        let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
+        match mgr.entries.get(&hash) {
+            Some(entry) => (
+                entry.path.clone(),
+                entry.downloaded_bytes.clone(),
+                entry.download_complete.clone(),
+                entry.download_failed.clone(),
+            ),
+            None => return Vec::new(),
+        }
+    };
+    let max_len = (max_len as u64).max(1);
+    loop {
+        let avail = downloaded.load(Ordering::Relaxed);
+        if offset < avail {
+            let want = (avail - offset).min(max_len) as usize;
+            let mut file = match File::open(&path) {
+                Ok(f) => f,
+                Err(_) => return Vec::new(),
+            };
+            if file.seek(SeekFrom::Start(offset)).is_err() {
+                return Vec::new();
+            }
+            let mut buf = vec![0u8; want];
+            let mut filled = 0usize;
+            while filled < want {
+                match file.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(_) => break,
+                }
+            }
+            buf.truncate(filled);
+            return buf;
+        }
+        if complete.load(Ordering::Relaxed) || failed.load(Ordering::Relaxed) {
+            return Vec::new();
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }

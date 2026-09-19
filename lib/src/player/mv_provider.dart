@@ -11,6 +11,7 @@ import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import 'mv_auto_sync.dart';
 import 'mv_host_fallback.dart';
 import 'mv_source.dart';
 import 'player_provider.dart';
@@ -168,6 +169,9 @@ class MvNotifier extends StateNotifier<MvState> {
 
   QueueItem? _song;
 
+  /// 频谱对齐偏移（videoPos = audioPos + offsetMs），失败/低置信度回退 0。
+  int _syncOffsetMs = 0;
+
   Future<String?> toggle(QueueItem c) async {
     if (state.requested) {
       await stop();
@@ -219,6 +223,8 @@ class MvNotifier extends StateNotifier<MvState> {
     final target = (quality != null && quality.isNotEmpty)
         ? normalizeMvQuality(quality)
         : _defaultQuality();
+    final identity = _songIdentity(c);
+    _syncOffsetMs = mvCachedSyncOffset(identity) ?? 0;
 
     state = MvState(
       requested: true,
@@ -250,7 +256,9 @@ class MvNotifier extends StateNotifier<MvState> {
     final ad = _ref.read(playerProvider);
     final vd0 = controller.value.duration;
     if (ad.current != null && vd0 > Duration.zero) {
-      final posMs = (ad.position * 1000).round() % vd0.inMilliseconds;
+      final vd0Ms = vd0.inMilliseconds;
+      var posMs = ((ad.position * 1000).round() + _syncOffsetMs) % vd0Ms;
+      if (posMs < 0) posMs += vd0Ms;
       await controller.seekTo(Duration(milliseconds: posMs));
     }
 
@@ -266,7 +274,43 @@ class MvNotifier extends StateNotifier<MvState> {
     final vs = controller.value.size;
     AppLog.debug('mv', 'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
         'dur=${controller.value.duration} q=$target url=${src.url}');
+    // 频谱对齐：无缓存时后台下载 360P MV + 歌曲音频做包络互相关（结果按歌缓存）。
+    if (!mvSyncOffsetCache.containsKey(identity)) {
+      unawaited(_runAutoSync(c, identity, ver));
+    }
     return null;
+  }
+
+  Future<void> _runAutoSync(QueueItem c, String identity, int ver) async {
+    final cacheDir = await mvSyncCacheDir();
+    if (cacheDir == null) return;
+    final song = mvSongOf(c);
+    final result = await analyzeMvSyncForSong(
+      identity: identity,
+      resolveSource: (q) => _resolveQuality(song, q),
+      qualities: const ['360P', '480P', '720P'],
+      cacheDir: cacheDir,
+      songPath: LastAudioSource.filePath ?? (c.isOnline ? null : c.path),
+      songUrl: LastAudioSource.url,
+      songHeaders: LastAudioSource.headers,
+    );
+    if (result == null) return;
+    if (!mounted || ver != _requestVersion) return;
+    if (_song == null || _songIdentity(_song!) != identity) return;
+    if (!state.requested || !state.ready) return;
+    _syncOffsetMs = result.offsetMs;
+    // 分析完成立即校准 MV 到正确位置。
+    final ctrl = state.controller;
+    final now = _ref.read(playerProvider);
+    if (ctrl != null &&
+        ctrl.value.isInitialized &&
+        now.current != null &&
+        ctrl.value.duration > Duration.zero) {
+      final t = _ringTarget(now.position * 1000, ctrl.value.duration);
+      AppLog.debug('mv', '[autoSync] recalibrate vpos=${ctrl.value.position} '
+          'target=$t');
+      unawaited(ctrl.seekTo(t));
+    }
   }
 
   Future<void> _hardStop() async {
@@ -335,29 +379,26 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (sourceId == null || sourceId.isEmpty) return null;
 
+    final args = <dynamic>[song, if (quality.isNotEmpty) quality];
     try {
       final engine = await _ref.read(pluginEngineProvider.future);
-      final args = <dynamic>[song, if (quality.isNotEmpty) quality];
 
+      // 与桌面端一致：优先调用歌曲所属插件的 getMvSource（Baka 扩展）。
       try {
         final raw = await engine.call(sourceId, 'getMvSource', args);
         if (raw is Map<String, dynamic> && raw.isNotEmpty) {
           final parsed = MvSource.fromJson(raw);
           if (parsed.url.isNotEmpty) return parsed;
         }
-      } catch (_) {
+        AppLog.warn('mv', 'getMvSource($sourceId) 无有效结果');
+      } catch (e) {
+        AppLog.warn('mv', 'getMvSource($sourceId) 调用失败: $e');
       }
 
-      final candidates = _matchMfPlugins(sourceId);
-      if (candidates.isEmpty) {
-        final plugin = song['plugin'];
-        if (plugin is Map) {
-          final extraKw = plugin['name']?.toString();
-          if (extraKw != null && extraKw.isNotEmpty) {
-            candidates.addAll(_matchMfPlugins(extraKw));
-          }
-        }
-      }
+      // 插件路由失败后，按音源身份匹配同源 musicfree 插件再试。
+      final identity = _songIdentityForPluginMatch(song, sourceId);
+      final candidates =
+          _matchMfPlugins(identity).where((c) => c.$1 != sourceId).toList();
       for (final (pluginId, _) in candidates) {
         try {
           final raw = await engine.call(pluginId, 'getMvSource', args);
@@ -367,17 +408,39 @@ class MvNotifier extends StateNotifier<MvState> {
               return parsed;
             }
           }
-        } catch (_) {
+        } catch (e) {
+          AppLog.warn('mv', 'getMvSource($pluginId) 调用失败: $e');
         }
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('mv', 'MV 插件路由跳过: $e');
     }
 
+    // 宿主兜底：酷狗 mvHash / Bilibili bvid。
     final host = await resolveHostMvFallback(song: song, quality: quality);
     if (host != null) {
       return host;
     }
+    AppLog.warn('mv',
+        'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
     return null;
+  }
+
+  static String _songIdentityForPluginMatch(
+      Map<String, dynamic> song, String sourceId) {
+    final raw = song['rawData'];
+    final rawMap = raw is Map ? raw : null;
+    return [
+      sourceId,
+      song['source'],
+      song['platform'],
+      rawMap?['source'],
+      rawMap?['platform'],
+      song['plugin'],
+      song['plugin'] is Map
+          ? (song['plugin'] as Map)['name']
+          : song['plugin']?.toString(),
+    ].whereType<String>().join(' ');
   }
 
   static const _kSourceToMfKeywords = <String, List<String>>{
@@ -398,8 +461,17 @@ class MvNotifier extends StateNotifier<MvState> {
     'qishu': ['汽水', 'qishui'],
   };
 
-  List<(String, String)> _matchMfPlugins(String sourceId) {
-    final keywords = _kSourceToMfKeywords[sourceId.toLowerCase()] ?? const [];
+  List<(String, String)> _matchMfPlugins(String identity) {
+    final lower = identity.toLowerCase();
+    final keywords = <String>{};
+    _kSourceToMfKeywords.forEach((_, kws) {
+      for (final kw in kws) {
+        if (lower.contains(kw.toLowerCase())) {
+          keywords.addAll(kws);
+          break;
+        }
+      }
+    });
     if (keywords.isEmpty) return const [];
     final store = _ref.read(pluginManagerProvider);
     final sources = store.sources.where((s) => s.format == PluginFormat.musicfree);
@@ -571,7 +643,7 @@ class MvNotifier extends StateNotifier<MvState> {
 
   Duration _ringTarget(double audioPosMs, Duration vd) {
     final vdMs = vd.inMilliseconds;
-    var t = audioPosMs.round() % vdMs;
+    var t = (audioPosMs.round() + _syncOffsetMs) % vdMs;
     if (t < 0) t += vdMs;
     return Duration(milliseconds: t);
   }

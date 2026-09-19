@@ -466,7 +466,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               current: current,
             ),
           ),
-          if (landscapeNow && mv.ready && mv.controller != null) ...[
+          if (mv.ready && mv.controller != null) ...[
             Positioned.fill(
               child: LayoutBuilder(builder: (context, cons) {
                 final ar = mv.controller!.value.aspectRatio;
@@ -525,23 +525,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
         ),
       ),
-        if (!landscapeNow && mv.ready && mv.controller != null)
-          Positioned.fill(
-            child: Center(
-              child: LayoutBuilder(builder: (context, cons) {
-                final ar = mv.controller!.value.aspectRatio;
-                final w = cons.maxWidth;
-                final h = cons.maxHeight;
-                final vw = w >= h * ar ? h * ar : w;
-                final vh = w >= h * ar ? h : w / ar;
-                return SizedBox(
-                  width: vw,
-                  height: vh,
-                  child: VideoPlayer(mv.controller!),
-                );
-              }),
-            ),
-          ),
         ],
       ),
     );
@@ -557,6 +540,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     required int offsetMs,
     required bool hasRomaji,
   }) {
+    final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     final landscapeBody = _buildLandscapeAdvancedBody(
       notifier: notifier,
       current: current,
@@ -584,7 +568,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 ),
                 Expanded(
                   child: Text(
-                    _showLyrics ? tr('歌词') : tr('正在播放'),
+                    mvReady
+                        ? (current?.title ?? tr('正在播放'))
+                        : (_showLyrics ? tr('歌词') : tr('正在播放')),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 15,
@@ -597,8 +583,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ],
             ),
           ),
-          if (!_showLyrics) const SizedBox(height: 12),
-          if (!_showLyrics)
+          if (!_showLyrics && !mvReady) const SizedBox(height: 12),
+          if (!_showLyrics && !mvReady)
             GestureDetector(
               onTap: () {
                 setState(() => _showLyrics = true);
@@ -639,7 +625,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ),
             ),
         ],
-        flexible: _showLyrics
+        flexible: mvReady
+                ? const SizedBox.shrink()
+                : _showLyrics
                 ? ClipRect(
                     child: RepaintBoundary(
                       child: _LyricsView(
@@ -666,7 +654,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     ),
                   ),
         bottom: [
-          if (_showLyrics) const SizedBox(height: 8),
+          if (_showLyrics && !mvReady) const SizedBox(height: 8),
           RepaintBoundary(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -677,7 +665,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ),
         ],
-        overlay: _showLyrics
+        overlay: _showLyrics && !mvReady
             ? Positioned(
                 top: 4,
                 right: 12,
@@ -1136,12 +1124,15 @@ class _TraditionalPlayerLayoutState
   }
 
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
+    final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
       top: [
         _buildTopBar(context),
       ],
-      flexible: Stack(
+      flexible: mvReady
+          ? const SizedBox.shrink()
+          : Stack(
         fit: StackFit.expand,
         children: [
           PageView.builder(

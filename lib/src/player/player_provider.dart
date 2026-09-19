@@ -37,6 +37,7 @@ import '../rust/api.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/cover_image.dart';
 import '../navigation/routes.dart';
+import 'mv_auto_sync.dart';
 import 'audio_head_cache.dart';
 import 'audio_proxy_server.dart';
 import 'media_url.dart';
@@ -386,6 +387,41 @@ class _GatedAudioPlayer extends AudioPlayer {
     if (gate != null) await gate();
     return super.play();
   }
+
+  // 记录最近一次起播音源，供 MV 频谱对齐（mv_auto_sync）取当前歌曲音频。
+  @override
+  Future<Duration?> setUrl(
+    String url, {
+    Map<String, String>? headers,
+    Duration? initialPosition,
+    bool preload = true,
+    dynamic tag,
+  }) {
+    LastAudioSource.recordUrl(url, headers);
+    return super.setUrl(
+      url,
+      headers: headers,
+      initialPosition: initialPosition,
+      preload: preload,
+      tag: tag,
+    );
+  }
+
+  @override
+  Future<Duration?> setFilePath(
+    String filePath, {
+    Duration? initialPosition,
+    bool preload = true,
+    dynamic tag,
+  }) {
+    LastAudioSource.recordFilePath(filePath);
+    return super.setFilePath(
+      filePath,
+      initialPosition: initialPosition,
+      preload: preload,
+      tag: tag,
+    );
+  }
 }
 
 class PlayerNotifier extends StateNotifier<PlaybackState>
@@ -672,6 +708,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required double startAtSecs,
     required bool isPlaying,
   }) async {
+    // 独占/共享 DSP 分支不经 _GatedAudioPlayer：本地文件在此兜底记录
+    //（http 代理 URL 由 _startOnlineUrl 记录，此处不覆盖）。
+    if (!path.startsWith('http')) {
+      LastAudioSource.recordFilePath(path);
+    }
     try {
       final sfx = _ref.read(soundEffectProvider).settings;
       final settings = _ref.read(settingsProvider).valueOrNull;
@@ -710,6 +751,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (_dspSkipNextStart) {
       _dspSkipNextStart = false;
       return false;
+    }
+    if (!path.startsWith('http')) {
+      LastAudioSource.recordFilePath(path);
     }
     try {
       final sfx = _ref.read(soundEffectProvider).settings;
@@ -2288,6 +2332,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _startEncryptedFile(clean, h, item, ekey);
       return;
     }
+    // DSP 共享管线分支不经 _GatedAudioPlayer，这里兜底记录真实直链 + 请求头
+    //（若 DSP 失败走 setUrl，会被后者以代理 URL 覆盖，两路均可还原直链）。
+    LastAudioSource.recordUrl(clean, h);
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
     final proxyUrl = AudioProxyServer.instance.proxyUrlFor(clean);

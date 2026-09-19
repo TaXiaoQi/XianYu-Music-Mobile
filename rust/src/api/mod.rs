@@ -1876,6 +1876,81 @@ pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
 }
 
 // =========================================================================
+// 流缓存代理伺服（移动端 AudioProxyServer 对齐桌面端在线播放磁盘缓存）
+// =========================================================================
+
+/// 设置流缓存持久化目录。须在首次触碰流缓存前调用
+/// （默认 temp_dir 在 Android 不可持久，对齐桌面端 set_stream_cache_dir）。
+pub fn set_stream_cache_dir(path: String) {
+    crate::player::stream_cache::set_cache_dir_override(path);
+}
+
+/// 查询 URL 缓存状态，返回 JSON：
+/// `{"exists":bool,"complete":bool,"failed":bool,"downloaded":u64,"total":u64|null}`。
+pub fn stream_cache_url_status(url: String) -> String {
+    let s = crate::player::stream_cache::url_cache_status(&url);
+    serde_json::json!({
+        "exists": s.exists,
+        "complete": s.complete,
+        "failed": s.failed,
+        "downloaded": s.downloaded_bytes,
+        "total": s.total_bytes,
+    })
+    .to_string()
+}
+
+/// 启动/复用该 URL 的流式下载（代理预热缓存写入）。
+/// `headers` 为 JSON 对象字符串（上游请求头，含 Referer/Cookie/UA 等）。
+pub fn stream_cache_begin_url_download(url: String, headers: String) -> Result<(), String> {
+    let map: std::collections::HashMap<String, String> =
+        serde_json::from_str(&headers).unwrap_or_default();
+    crate::player::stream_cache::begin_url_download(&url, &map)
+}
+
+/// 按区间读取缓存内容（阻塞至该区间有数据或下载结束）。
+/// 返回空字节串表示 EOF（完成/失败/无缓存）。
+pub async fn stream_cache_read_url(
+    url: String,
+    offset: u64,
+    max_len: u32,
+) -> Result<Vec<u8>, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::player::stream_cache::read_url_range(&url, offset, max_len)
+    })
+    .await
+    .map_err(|e| format!("读取流缓存失败: {}", e))
+}
+
+// =========================================================================
+// MV 频谱对齐（对齐桌面端 mvAutoSync.ts 能量包络互相关）
+// =========================================================================
+
+/// MV 频谱对齐分析：用歌曲音频与 MV 音轨的能量包络互相关估计时间偏移。
+///
+/// - `mv_path`：MV 文件路径（通常是下载到缓存的 360P mp4）
+/// - `song_path`：歌曲音频文件路径（本地文件或缓存文件）
+///
+/// 语义：lag > 0 表示 `mv[t + lag] ↔ song[t]`，即 `videoPos = audioPos + offsetMs`。
+/// 返回 JSON：`{"ok":true,"offsetMs":i64,"confidence":f64,"trustworthy":bool}`；
+/// 解码失败等场景返回 `{"ok":false,"reason":"..."}`（调用方回退 offset=0）。
+pub fn analyze_mv_sync(mv_path: String, song_path: String) -> String {
+    let result = crate::player::mv_sync::analyze(
+        std::path::Path::new(&mv_path),
+        std::path::Path::new(&song_path),
+    );
+    match result {
+        Ok((offset_sec, confidence)) => serde_json::json!({
+            "ok": true,
+            "offsetMs": (offset_sec * 1000.0).round() as i64,
+            "confidence": (confidence * 1000.0).round() / 1000.0,
+            "trustworthy": crate::player::mv_sync::is_trustworthy(offset_sec, confidence),
+        })
+        .to_string(),
+        Err(reason) => serde_json::json!({ "ok": false, "reason": reason }).to_string(),
+    }
+}
+
+// =========================================================================
 // 响度目标设置 + 云端时长合并（对齐桌面端 update_loudness_settings /
 // merge_cloud_listen_duration）
 // =========================================================================

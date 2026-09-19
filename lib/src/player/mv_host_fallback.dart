@@ -13,6 +13,34 @@ String _firstString(List<dynamic Function()> getters) {
   return '';
 }
 
+/// 与桌面端 nestedValue 对齐：先取顶层，缺失时下钻一层 rawData。
+/// （酷狗 musicfree 插件把 mvHash/platform 等放在 rawData 里）
+Object? _nestedValue(Object? value, String key) {
+  if (value is! Map) return null;
+  final v = value[key];
+  if (v != null && v.toString().trim().isNotEmpty) return v;
+  final raw = value['rawData'];
+  if (raw is Map) return raw[key];
+  return null;
+}
+
+Iterable<String> _identityStrings(Map<String, dynamic> song) sync* {
+  final raw = song['rawData'];
+  final rawMap = raw is Map ? raw : null;
+  for (final m in [song, rawMap]) {
+    if (m == null) continue;
+    for (final k in const [
+      'source',
+      'platform',
+      'pluginId',
+      'platformId',
+    ]) {
+      final v = m[k];
+      if (v is String && v.trim().isNotEmpty) yield v.trim();
+    }
+  }
+}
+
 Map<String, dynamic>? _strMap(dynamic v) {
   if (v is! Map) return null;
   return Map<String, dynamic>.from(v);
@@ -51,22 +79,21 @@ Future<Map<String, dynamic>?> _httpGetJson(
 final RegExp _kugouPattern = RegExp(r'kugou|酷狗', caseSensitive: false);
 
 bool isKugouSong(Map<String, dynamic> song) {
-  final identity = [
-    song['source'],
-    song['platform'],
-    song['pluginId'],
-    song['platformId'],
-  ]
-      .whereType<String>()
-      .join(' ');
-  return _kugouPattern.hasMatch(identity);
+  return _kugouPattern.hasMatch(_identityStrings(song).join(' '));
 }
 
 String? extractKugouMvHash(Map<String, dynamic> song) {
-  final mvValue = song['mvHash'] ?? song['mv'] ?? song['mvdata'];
+  final mvValue = _nestedValue(song, 'mvHash') ??
+      _nestedValue(song, 'mv') ??
+      _nestedValue(song, 'mvdata');
   String hash = '';
   if (mvValue is String) {
     hash = mvValue;
+  } else if (mvValue is List && mvValue.isNotEmpty) {
+    final first = mvValue.first;
+    if (first is Map) {
+      hash = (first['hash'] ?? first['mvHash'] ?? '').toString();
+    }
   } else if (mvValue is Map) {
     hash = (mvValue['hash'] ?? mvValue['mvHash'] ?? '').toString();
   }
@@ -199,27 +226,17 @@ final RegExp _bilibiliPattern =
     RegExp(r'bilibili|哔哩哔哩|哔哩|b站', caseSensitive: false);
 
 bool isBilibiliSong(Map<String, dynamic> song) {
-  if ((song['bvid']?.toString() ?? '').isNotEmpty ||
-      (song['aid']?.toString() ?? '').isNotEmpty) {
+  if (_nestedValue(song, 'bvid') != null ||
+      _nestedValue(song, 'aid') != null) {
     return true;
   }
-  final identity = [
-    song['bvid'],
-    song['aid'],
-    song['source'],
-    song['platform'],
-    song['pluginId'],
-    song['platformId'],
-  ]
-      .whereType<String>()
-      .join(' ');
-  return _bilibiliPattern.hasMatch(identity);
+  return _bilibiliPattern.hasMatch(_identityStrings(song).join(' '));
 }
 
 Map<String, String> extractBilibiliIdentity(Map<String, dynamic> song) {
-  String bvid = song['bvid']?.toString() ?? '';
-  String aid = song['aid']?.toString() ?? '';
-  final cid = song['cid']?.toString() ?? '';
+  String bvid = _nestedValue(song, 'bvid')?.toString() ?? '';
+  String aid = _nestedValue(song, 'aid')?.toString() ?? '';
+  final cid = _nestedValue(song, 'cid')?.toString() ?? '';
   final id = song['id']?.toString() ?? '';
   final identityText = [bvid, id, aid].join(' ');
   final bvidMatch =

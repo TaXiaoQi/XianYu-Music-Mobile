@@ -1,11 +1,10 @@
-
 <div align="center">
   <img src="logo.png" width="120" height="120" alt="XianYu Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
 # 弦予音乐 · 移动端
 ## (XianYu-Music-Mobile)
 
-弦予音乐的移动端。基于 **Flutter + Rust** 跨平台架构，Rust 核心（`xianyu_core`）与桌面端同源复用，通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 桥接，提供专业级音频播放与音效体验。
+弦予音乐的移动端（Android / 鸿蒙 / iOS）：本地曲库 + 插件音源扩展，专业音频引擎与 30+ 音效 DSP、逐字歌词、液态玻璃 UI，手机上的沉浸式听歌体验。软件不内置音乐内容，插件由用户自行安装。
 
  [](https://flutter.dev/)
  [](https://www.rust-lang.org/)
@@ -19,34 +18,47 @@
 
 - 🎨 **高颜值液态玻璃 UI**
 
-  - **液态玻璃质感**：自研液态玻璃着色器，半透明磨砂设计与系统环境自然融合（鸿蒙端受引擎限制降级为毛玻璃，见「鸿蒙平台差异说明」）。
+  - **液态玻璃质感**：自研液态玻璃着色器，半透明磨砂设计与系统环境自然融合（鸿蒙端受引擎限制自动降级为毛玻璃，非故障）。
   - **Material 3 动态取色**：支持浅色 / 暗色 / 跟随系统，主题强调色可自定义（默认网易云红 `#EC4141`）。
-  - **沉浸式播放页**：封面液态网格渐变背景随曲目色彩动态演变，实时频谱可视化。
+  - **沉浸式播放页**：封面液态网格渐变背景随曲目色彩动态演变，实时频谱可视化，切歌封面飞入动效。
 
 - 🎧 **专业音频引擎**
 
   - **全格式解码**：基于 `symphonia`，支持 MP3 / FLAC / AAC / ALAC / OGG / Vorbis / WAV / AIFF。
-  - **QMC2 解密**：内置加密格式解密，在线加密资源直接播放。
+  - **倍速播放**：0.5~2.0 倍速变速不变调，播客 / 有声内容友好。
+  - **QMC2 解密**：内置加密格式解密，插件源加密资源直接播放。
   - **USB 独占输出**：Android 端 AAudio `EXCLUSIVE` 模式直连 USB DAC，绕过系统混音器，bit-perfect 输出。
 
 - 🎚️ **全 Rust 音效 DSP**
 
-  - **完整音效链**：响度归一化 → 10 段 EQ → 音效 → 音量 → 限幅，独占 / 共享模式管线一致。
-  - **30+ 音效**：FFT 卷积混响、常数功率交叉淡入、变速不变调（OLA 相位声码器）、3D / 8D / 36D 环绕等。
+  - **完整音效链**：响度归一化 → 10 段 EQ（自定义预设保存 / 重命名 / 删除）→ 音效 → 音量 → 限幅，独占 / 共享模式管线一致。
+  - **30+ 音效**：FFT 卷积混响、常数功率交叉淡入、变速不变调（OLA 相位声码器）、3D / 8D / 36D 环绕（转速 / 距离 / 声场可调）、重低音增强与动态低音回弹等。
   - **实时频谱**：环形缓冲 + 4096 点 FFT + 时间平滑，低开销高帧率。
 
 - 📱 **平台原生体验**
 
   - **原生手势**：Android Predictive Back 预测性返回、下拉返回等系统级手势与转场，不做自绘转场，省电且跟手。
+  - **横屏 / 平板适配**：响应式双栏布局，横屏播放页与竖屏布局自动切换。
+  - **播放队列管理**：队列面板拖拽排序、「下一首播放」插队不打乱原队列。
   - **后台播放**：系统媒体通知 + 锁屏控制，后台稳定续航。
+  - **应用内反馈**：登录后一键提交，附带错误日志 / 全量日志 / 截图。
   - **本地音乐库**：`rayon` 并行扫描、标签解析、封面提取与调色板、增量差异更新。
 
-- 🌐 **在线与云端**
+- 🌐 **远程与投放**
 
   - **双格式插件**：兼容 MusicFree / LX 落雪插件，QuickJS 沙箱执行，HTTP 请求经 Rust 代理无 CORS 限制。
-  - **云端同步**：歌单 / 收藏 / 插件 / 设置多端同步，自动同步调度。
+  - **播放失败自动降级**：起播失败行为可配，在线播放失败自动在其他落雪音源搜索并播放同一首歌，默认音质失败自动切换音质档位。
+  - **云端同步**：歌单 / 收藏 / 插件 / 设置多端同步，自动同步调度；冲突可选择性处理（设置同步提供保留本地 / 云端选择）。
+  - **本地全量备份**：歌单 / 收藏 / 插件 / 设置一键导出 JSON 备份（带 schema 版本）。
   - **WebDAV 远程音源**：远程曲库扫描、LRU 缓存、流式播放。
-  - **歌词**：QRC / LYS / YRC 逐字歌词，AMLL 风格渲染，本地缓存 + 远程获取。
+  - **下载与转码**：歌曲下载与音频格式转换（toolbox），加密源解密落盘。
+  - **Deep Link 分享**：外部分享歌曲 / 歌单链接直接唤起播放，支持「下一首播放」插入。
+  - **歌词**：QRC / LYS / YRC 逐字歌词，AMLL 风格渲染，本地缓存 + 远程获取；悬浮歌词（字体 / 颜色 / 位置 / 翻译 / 罗马音可配）、状态栏歌词，点击歌词行跳转进度。
+
+- 🧭 **个性化与统计**
+
+  - **每日推荐**：本地化推荐算法，按听歌偏好生成每日歌单。
+  - **听歌统计**：播放次数 / 时长累计，独立模式下完整记录。
 
 - 📦 **极致体积**
 
@@ -54,140 +66,110 @@
 
 ---
 
+## 📸 界面截图
+
+**竖屏**
+
+| ![首页](screenshots/竖屏-首页.jpg)<br/>首页 | ![封面](screenshots/竖屏-封面.jpg)<br/>播放页封面 | ![歌词](screenshots/竖屏-歌词.jpg)<br/>歌词 |
+|:---:|:---:|:---:|
+| ![通知栏](screenshots/竖屏-通知栏.jpg)<br/>通知栏控制 | ![桌面组件](screenshots/竖屏-桌面组件.jpg)<br/>桌面组件 | ![我的](screenshots/竖屏-我的.jpg)<br/>我的 |
+| ![本地](screenshots/竖屏-本地.jpg)<br/>本地音乐 | ![设置](screenshots/竖屏-设置.jpg)<br/>设置 | | 
+
+**横屏**
+
+| ![发现](screenshots/横屏-发现.jpg)<br/>发现 | ![沉浸](screenshots/横屏-沉浸.jpg)<br/>沉浸播放 | ![歌词](screenshots/横屏-歌词.jpg)<br/>歌词 |
+|:---:|:---:|:---:|
+| ![本地](screenshots/横屏-本地.jpg)<br/>本地音乐 | ![我的](screenshots/横屏-我的.jpg)<br/>我的 | ![设置](screenshots/横屏-设置.jpg)<br/>设置 |
+
+---
+
 ## 🛠️ 使用源码构建运行
 
 ### 环境要求
 
-| 依赖项 | 推荐版本 / 要求 |
+| 依赖项 | 要求 |
 | --- | --- |
-| **Flutter** | `3.47.0+`（Dart `3.13.0`，三平台通用） |
-| **Rust** | Stable 稳定版 + `cargo ndk`（构建钩子自动调用） |
-
-各平台额外要求：
-
-| 平台 | 操作系统 | 平台依赖 |
-| --- | --- | --- |
-| **Android** | Windows 10 / 11（构建钩子为 PowerShell 脚本） | Android SDK + NDK（API 36 编译，NDK r27+）；真机开启 USB 调试，`flutter devices` 确认识别 |
-| **iOS** | macOS（需 Xcode） | Rust `aarch64-apple-ios` / `aarch64-apple-ios-sim` 工具链、CocoaPods；真机调试需在 Xcode 选择开发团队 |
-| **鸿蒙** | Windows 10 / 11 | DevEco Studio 6+（含 HarmonyOS SDK + hdc）、Flutter-OH 分支（OpenHarmony SIG 维护的 Flutter fork，`scripts/ohos/env-ohos.ps1` 绑定工具链）、Rust `aarch64-unknown-linux-ohos` / `x86_64-unknown-linux-ohos`（musl std，`rustup target add`）；签名材料由 DevEco「自动生成签名」落盘 |
+| **Flutter** | `3.47.0+`（Dart `3.13.0`） |
+| **Rust** | Stable + `cargo ndk`（构建钩子自动调用） |
+| **Android** | Windows 10/11 + Android SDK / NDK（API 36 编译，NDK r27+），真机开 USB 调试 |
+| **iOS** | macOS + Xcode + CocoaPods，`rustup target add aarch64-apple-ios aarch64-apple-ios-sim` |
+| **鸿蒙** | DevEco Studio 6+、Flutter-OH fork（`scripts/ohos/env-ohos.ps1` 绑定工具链）、`rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos` |
 
 ### 运行与调试
 
-1. 克隆本仓库并安装依赖：
+```bash
+git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
+cd XianYu-Music-Mobile
+flutter pub get
 
-  ```bash
-  git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
-  cd XianYu-Music-Mobile
-  flutter pub get
-  ```
+flutter run          # Android 调试（或 .\scripts\dev.ps1：同步版本号 + 编 Rust + run）
+flutter hap          # 鸿蒙调试运行
+```
 
-2. Android 开发调试（热重载 `r` / 热重启 `R`）：
-
-  ```powershell
-  .\scripts\dev.ps1   # 包装脚本：先同步版本号并编译 Rust，再 flutter run
-  # 或直接：
-  flutter run
-  ```
-
-  > **改完代码怎么传递一句话记住**：`run` 进程还在就只在 run 终端按 `r`（热重载）或 `R`（热重启）直接传新构建，**不用每次全量 `flutter build`**；只有当 `run` 终端被关 / 进程退了才需要重新 `flutter run`。改的都是 Dart 业务代码（含新增 import、State、Ticker 等）时 `r`/`R` 都能覆盖，无需整包重装。改了 Rust 代码则不走热重载，重编后需 `R` 热重启或重新 Run。
-
-3. 鸿蒙构建 / 调试（与安卓同款体验，根目录直接用 flutter 命令；**代码始终在主工程改**）：
-
-  ```powershell
-  flutter hap                # 鸿蒙调试运行（对应安卓 flutter run；热重载 r / 热重启 R，-d 选设备）
-  flutter build hap          # 鸿蒙安装包 HAP（默认 --release + ohos-arm64,ohos-x64 双架构合一，真机/模拟器通吃）
-  flutter build app          # 鸿蒙商店包 APP（纯 arm64 + assembleApp），对应安卓的 flutter build appbundle
-  flutter build hap --target-platform ohos-x64   # 模拟器包（x86_64）
-  .\scripts\ohos\build-ohos.ps1                  # 完整自动化：编 Rust + 构建 + 归档 releases\ohos
-  .\scripts\ohos\build-ohos.ps1 -AppPack         # 同上 + 出上架 AppGallery 的 .app
-  .\scripts\ohos\build-ohos.ps1 -Codegen         # 改了 Rust API 签名时，强制 FRB 再生成
-  ```
-
-  > **flutter 命令路由（PowerShell profile 包装函数）**：本工程目录内，`flutter hap`（调试运行）、`flutter build app`/`build hap`（正式构建）、`pub get` 自动切到 Flutter-OH fork（与官方同为 3.44.9 引擎/Dart 3.12.2，仅多 ohos 目标），并注入 `PUB_CACHE=D:\XianYu-Music\.tools\pub-cache`（hvigor 插件要求 pub 缓存与工程同盘）与 DevEco ohpm/hvigor/node 工具，命令结束自动恢复环境，路由时终端会显示浅灰 `[flutter-ohos]` 提示；**裸 `flutter run` 与 `flutter build apk` 始终走官方 SDK（安卓）**，不做设备探测，安卓+鸿蒙设备同时在线也互不干扰。构建前自动做 rust 陈旧检测（rust 源码新于 `ohos/entry/libs/*.so` 时先编译，`XIANMU_SKIP_RUST=1` 跳过）。pub get 类操作务必用 flutter 命令而非 IDE 内置 dart——官方 flutter 重新生成的 `.flutter-plugins-dependencies` 没有 ohos 段，会让 DevEco 同步报 00305010。
-  >
-  > **就地构建（镜像机制已退役）**：工程现位于无空格路径（`D:\XianYu-Music\XianYu-Music-Mobile`），ohpm/hvigor 可直接工作，构建全部在主工程内完成。历史遗留：工程旧路径含空格时需要镜像目录（`XIANYU_OHOS_MIRROR` 环境变量可恢复该模式，默认已关闭，废弃镜像 `D:\xianyu-mobile-ohos` 已清理）。**主工程 `ohos/` 是唯一事实源**（含签名材料）。依赖态切换：ohos 命令（build / hap / build app / pub get）进入时由 `scripts\ohos\pub-state.ps1` 从模板写入 `pubspec_overrides.yaml`（fork 解析态）并在退出时删除、还原 `pubspec.lock` 到 `build\ohos\pubspec.lock.android` 快照——overrides/ohos lock **绝不滞留主工程**，否则 Android/iOS `pub get` 被劫持到引用 `TargetPlatform.ohos` 的 fork 包、官方 SDK 编译即爆（2026-09-15 Android release 事故）；裸 `flutter run`/`build apk` 遇残留 overrides 会自动清理并重新 pub get。
-  >
-  > build-ohos.ps1 参数：`-Abi x64|arm64` 显式指定 CPU 架构（不传自动探测在线设备；模拟器是 x86_64，真机是 arm64）；`-Device` 等其余参数透传给 flutter。**构建默认 `--release` 正式包**（测试用 `-Run`，无 debug 归档），产物在主工程 `build\ohos\hap\entry-default-signed.hap`，并自动归档到 `releases\ohos\弦予音乐v<版本>-Mobile-<架构>.hap`——版本号原样取自 `version.ts` 的 `APP_VERSION`，架构后缀随 `-Abi`/自动探测（arm64 真机 → `-arm64`，x86_64 模拟器 → `-x86`，如 `1.0.2-beta1` → `弦予音乐v1.0.2-beta1-Mobile-arm64.hap`，与安卓命名体系一致）；`-AppPack` 的 .app 同规则。装机：`hdc install -r <HAP>`。
-  >
-  > **注意：构建期间必须完全关闭 DevEco Studio**——它会对工程做 ohpm 重装（用未打补丁的 embedding 实例导致编译失败）并回写 `build-profile.json5`（清掉签名材料），与构建脚本互相破坏。
-
-> **Rust 自动编译**：以上任意 `flutter run` / `flutter build` 命令均会自动检测并编译 Rust（绑定 + `.so` / `.framework`）——改内部逻辑直接生效；改 API 时首次构建会中止，重跑一次命令即可。`XIANMU_SKIP_RUST=1` 可跳过。
->
-> 版本号同步（`version.ts` → `pubspec.yaml` / `account_api.dart`）仅在 release 模式触发（debug 不受影响），`XIANMU_SKIP_VERSION_SYNC=1` 可跳过。
+> `flutter run` / `flutter build` 均自动检测并编译 Rust（`XIANMU_SKIP_RUST=1` 跳过）；改 Rust API 时首次构建会中止，重跑一次即可。热重载按 `r`，热重启按 `R`。
 
 ### 构建各平台安装包
 
-> Flutter 无法跨平台出包：Android 包建议在 Windows 上构建（Rust 构建钩子为 PowerShell 脚本），iOS 包需在 macOS 上构建（Rust 构建钩子为 bash 脚本 `scripts/ios-rust-hook.sh`，Windows/Linux 上自动放行，不影响 Android 构建）。
-
-#### Android（.apk）
-
 ```bash
+# Android（.apk）
 flutter build apk --release
-```
 
-一条命令完成全部发版动作（等价旧 build-release.ps1，脚本已移除）：
-
-- **版本号自动同步**：`version.ts` → `pubspec.yaml` / `account_api.dart`（改版本只需改 `version.ts`）
-- 产物自动归档到 `releases/android/弦予音乐v<版本>-Mobile-arm64.apk`（约 17MB，arm64 单架构 + Dart 混淆 + R8 收缩 + .so 压缩，Rust 亦自动编译；预发布版本名自带 -betaN 后缀；架构后缀与鸿蒙 `-arm64/-x86`、腕上端 `-arm32/-arm64` 命名体系对齐）
-- 混淆符号自动归档到 `releases/symbols/<版本>/app.symbols`（`flutter symbolize -d` 还原线上崩溃堆栈用）
-
-#### iOS（Xcode 归档 / .ipa）
-
-前置：`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`，然后 `cd ios && pod install && cd ..`（pod 注册 `xianyu_core` 本地 pod，编译前自动重编 Rust 动态框架，与 Android 的 gradle rustHook 机制对齐）。
-
-```bash
+# iOS（未签名校验构建，归档 / 签名走 Xcode）
+cd ios && pod install && cd ..
 flutter build ios --release --no-codesign
+
+# 鸿蒙（.hap / .app）
+flutter build hap                        # 安装包（真机/模拟器通吃）
+flutter build app                        # 商店包（AppGallery 上架用）
+.\scripts\ohos\build-ohos.ps1            # 全自动：编 Rust + 构建 + 归档 releases\ohos
+.\scripts\ohos\build-ohos.ps1 -AppPack   # 同上 + 出上架 .app
 ```
 
-未签名校验构建，归档 / 签名走 Xcode；Rust 产物 `ios/Frameworks/xianyu_core.framework`（动态框架）会按当前 SDK（真机/模拟器）自动编译并更新，`XIANMU_SKIP_RUST=1` 同样可跳过。真机构建需在 Xcode 中为 **Runner** 与 **XianYuWidget** 两个 target 选择开发团队（Bundle ID 分别为 `cc.xymusic.mobile` / `cc.xymusic.mobile.XianYuWidget`）。
+- 产物自动归档到 `releases/`：`弦予音乐v<版本>-Mobile-<架构>.apk/.hap`（版本号取自 `version.ts`）；混淆符号归档到 `releases/symbols/<版本>/app.symbols`
+- 鸿蒙构建期间必须**完全关闭 DevEco Studio**（会回写配置清掉签名材料）；装机 `hdc install -r <HAP>`
+- 鸿蒙上液态玻璃自动降级为普通毛玻璃（Flutter-OH 引擎无 Impeller 后端），待引擎支持后同一份代码自动恢复
 
-**iOS 平台差异说明**（Android 专属功能在 iOS 上隐藏入口）：
-   - 下载固定保存到应用 Documents/Downloads（「文件」App → 弦予音乐 可访问），无自定义下载目录
-   - 悬浮歌词窗、状态栏歌词（车机歌词）、本地文件夹扫描、应用内更新为 Android 专属
-   - 分享走系统分享面板；`xianyu://` 分享深链已支持（Safari/扫码等场景拉起 App）
-   - QQ 直分享（QQ 好友音乐卡片 + QQ 空间网页卡片）已支持，与 Android 同一入口：
-     Universal Link 关联域 `api.xianyumusic.cn/qq_conn/{app_id}/`，三处必须一致
-     （`qq_share_service.universalLink`、`pubspec.yaml tencent_kit.universal_link`、
-     QQ 互联后台登记值）；AASA 文件由服务端 `/.well-known/apple-app-site-association`
-     路由托管；关联域签名需付费开发者账号，pod install 时 tencent_setup.rb 自动
-     注入 URL Scheme/查询白名单/ATS/entitlements
-   - 桌面小组件（WidgetKit）+ 锁屏/灵动岛歌词（Live Activity）已支持：需 iOS 16.1+，
-     小组件/锁屏交互按钮需 iOS 17+（低版本自动回落 `xianyu://play/*` 深链）；
-     数据经 App Group（`group.cc.xymusic.mobile`）共享，真机签名时 Xcode 自动管理即可
+---
 
-#### 鸿蒙（.hap）
+## 📐 技术架构
 
-前置：安装 DevEco Studio 6+ 并完成一次「自动生成签名」（签名四件套落盘 `~/.ohos/config`，Bundle name 为正式包名 `com.xianyumusic.app`）；Rust 工具链 `rustup target add aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos`。构建命令见上文「运行与调试」第 3 步（同一条 `build-ohos.ps1`，run 与出包共用）。
+移动端采用 Flutter + Rust 双层架构：Flutter 负责 UI 与状态，Rust 核心（`xianyu_core`）负责音频引擎、音乐库、插件运行时等高性能计算，两者通过 [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) 类型安全桥接，Rust 代码与桌面端同源复用。
 
-```powershell
-flutter build app        # 商店包 .app（内含 HAP 流程，对应安卓 appbundle）
-flutter build hap        # 仅安装包 HAP（真机/模拟器自装，对应安卓 build apk）
+```mermaid
+graph TD
+    A[Flutter UI<br/>pages + widgets] --> B[Riverpod 状态层<br/>player_provider + 各域 Provider]
+    B --> C[flutter_rust_bridge 桥接]
+    C --> D[Rust 核心 xianyu_core<br/>player / music / plugins / toolbox ...]
+    D --> E[平台层<br/>Android / HarmonyOS]
+
+    style A fill:#f5faff,stroke:#3178C6;
+    style B fill:#fff7e6,stroke:#ffa940;
+    style D fill:#f6ffed,stroke:#52c41a;
+    style E fill:#fff0f6,stroke:#eb2f96;
 ```
 
-与安卓同款发版体验（构建即正式版，测试走 `flutter hap`）：
+### 模块划分
 
-- **版本号自动同步**：`version.ts` → `pubspec.yaml` / `app.json5`（改版本只需改 `version.ts`）
-- 产物自动归档到 `releases/ohos/弦予音乐v<版本>-Mobile-<架构>.hap`（版本号原样取自 `APP_VERSION`，与安卓命名体系一致；预发布版本名自带 -betaN 后缀）
-- `flutter build app` 额外归档 `弦予音乐v<版本>-Mobile.app`（App Pack，AppGallery 上传用；HAP 不支持用户侧直接安装，分发一律走 AGC 上架/开放测试）
-- 调试直接 `hdc install -r` 归档产物或 `build\ohos\hap\entry-default-signed.hap`
-- 构建全流程自动化（主工程内完成，无镜像拷贝）：版本同步 → FRB codegen（按需）→ 依赖覆盖（`scripts/ohos/pubspec-ohos-overrides.yaml`）→ Rust 双架构 `.so` → hvigor 打包签名
-- 第三方插件鸿蒙适配：`shared_preferences` / `file_picker` 等走 openharmony-tpc 社区版本或 vendor 改造（`third_party/file_picker`），由 overrides 模板统一注入
-- 签名/证书变更一律回主工程 `ohos/` 修改（或 DevEco 里直接对主工程签名，注意别开着构建）
+| 层级 | 模块 | 职责 |
+| --- | --- | --- |
+| **UI** | `lib/pages/`、`lib/src/navigation/` | 24 个功能页域 + 主壳（底部导航、固定顶栏/底栏、播放条、飞封面转场） |
+| **UI** | `lib/src/widgets/` | 共享组件：液态玻璃体系、毛玻璃渲染预算、弹窗/Toast/滑条等 |
+| **状态** | `lib/src/player/player_provider.dart` | 播放状态中枢：队列管理、音效链控制、USB 独占、联动/独立模式热切换 |
+| **状态** | `lib/src/{library,search,playlist,sync,plugin,download,auth,...}` | 各业务域 Provider 与数据仓库 |
+| **Rust** | `rust/src/player/` | 音频引擎：BufferedSource → 响度归一化 → EQ → 音效 → 插件宿主 → 用户音量 → 限幅效果链；AAudio 共享 / USB `EXCLUSIVE` 双输出；QMC2 / CENC 解密 Reader |
+| **Rust** | `rust/src/music/` | 音乐库：rayon 并行扫描、标签/封面解析、SQLite 持久化、三端同源归一化搜索（NFKC + NFKD + 繁转简）、URL 解析、歌词获取 |
+| **Rust** | `rust/src/plugins/` | 插件扩展：MusicFree / LX 落雪双格式运行时、插件 HTTP 代理（无 CORS 限制）、SSRF 防护与路径校验（`security/`）、插件包存储 |
+| **Rust** | `rust/src/{toolbox,database,dlna,remote,statistics,recognize,audio_convert}` | 下载（ekey 透传）、SQLite 数据层、DLNA 投放、WebDAV 远程音源、听歌统计、听歌识曲、音频转码/裁剪 |
+| **桥接** | `rust/src/api/` | flutter_rust_bridge 集中桥接层，所有跨语言命令的唯一出入口 |
+| **平台** | `android/`、`ohos/` | Android：媒体前台服务（MediaSession + 通知）、WatchLink 蓝牙服务端、预测性返回；鸿蒙：屏形探测通道、表冠事件分发（RotaryDispatcher）、连续任务保活、返回链路收口 |
 
-**鸿蒙平台差异说明**（受 HarmonyOS NEXT 沙盒与 Flutter-OH 引擎能力限制）：
-   - 下载固定保存到应用沙盒 Documents/Downloads，无自定义下载目录（与 iOS 同策略），下载完成自动扫描入库
-   - 本地库为沙盒库模式：首访预置沙盒 Downloads/Music 目录，支持系统文件选择器导入音频（「+」入口）；无任意目录扫描（同 iOS）
+### 关键机制速记
 
-**⚠️ 鸿蒙引擎 Impeller 缺失说明**：
-
-Flutter 官方引擎在 Android/iOS 上默认启用新一代渲染引擎 **Impeller**，而 OpenHarmony SIG 维护的 Flutter-OH fork 目前**只编译了 Skia 后端，Impeller 后端完全缺失**（对引擎产物做符号核验：x86_64 debug 与 arm64-v8a release 的 `libflutter.so` 中 `impeller::` / `ImpellerOpenGLES` / `ImpellerVulkan` 符号均不存在；`buildinfo.json5` 的 `enable_impeller` 开关通道已预留，但底层无实现可启用）。
-
-受影响的功能：
-
-   - **液态玻璃**：核心折射效果依赖 `ui.ImageFilter.shader`（把自定义 fragment shader 挂进 BackdropFilter，Impeller 专属 API，非 Impeller 后端调用会抛 `UnsupportedError`）。`liquid_glass_widgets` 启动时通过 `ui.ImageFilter.isShaderFilterSupported`（实现即 `_impellerEnabled`）静态探测，鸿蒙上探测结果为 false，自动强制降级到 `GlassQuality.minimal`（纯 BackdropFilter，零 shader 成本）。因此鸿蒙上液态玻璃**开关可开、悬浮底栏联动正常，但无液态折射效果，呈现为普通毛玻璃**——这是自动降级在工作，非功能故障。
-   - 毛玻璃（BackdropFilter / `ImageFilter.blur`）走 Skia，不受影响，全量可用。
-
-恢复条件：待 Flutter-OH SIG 编出 OHOS Impeller 后端后，同一份代码**无需任何改动**即自动恢复液态效果（组件探测通过即走完整 shader 路径）。可用 `hdc shell hilog | grep -i impeller` 或引擎二进制符号核验跟踪引擎支持进展。
+- **双模式启动**：联动模式（外置控制端，跳过 12MB 原生库映射等重模块）与独立模式（完整服务）进程内热切换，无需重启。
+- **加密源直放**：插件返回的 `ekey` / `cek` 全链路透传，QMC2 / CENC 解密 Reader 流式解密，不解落盘。
+- **USB 独占**：AAudio `EXCLUSIVE` 模式直连 USB DAC，绕过系统混音器 bit-perfect 输出。
+- **三端同源搜索**：与桌面/腕上端同一套归一化搜索与关键词联想（Rust 层单实现）。
+- **腕上联动**：`watch_link` 作为 RFCOMM 服务端，向手表推送 state / now_playing / position / lyric 帧。
 
 ---
 
