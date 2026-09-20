@@ -1838,6 +1838,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<List<String>> _probeQualityOptions(
       {required bool forDownload}) async {
+    // 音质弹窗可能在 widget build 流程中调用本方法，
+    // 先让出当前帧，避免 building 期间同步修改 provider 抛异常
+    await Future<void>.delayed(Duration.zero);
     final item = state.current;
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
     AppLog.debug('quality', '[quality] _probeQualityOptions item=${item?.title} '

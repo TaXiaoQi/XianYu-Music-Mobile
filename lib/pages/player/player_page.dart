@@ -5403,7 +5403,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           _lines = cached;
         });
         _reportRomaji();
-        _autoScrollToActiveLine();
+        // 歌词就绪后强制校准：等待期间旧歌词残留可能已推进 _lastActiveIndex，
+        // 与新歌词当前行恰好相等时普通去重会跳过定位，首屏停旧行、慢一句才追上
+        _lastActiveIndex = -1;
+        _renderActiveIndex = -1;
+        // 保留居中待跳标记：此时新布局可能尚未生成，force 先按估算定位，
+        // 下一帧布局就绪后 _tryPendingCenterJump 再精确居中
+        _pendingCenterJump = true;
+        _autoScrollToActiveLine(force: true);
       }
       return;
     }
@@ -5470,7 +5477,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             _loading = false;
           });
           _reportRomaji();
-          _autoScrollToActiveLine();
+          // 歌词就绪后强制校准（同缓存分支）：异步加载期间 _lastActiveIndex
+          // 可能已在旧歌词上推进，需立即按当前播放位置定位到正在唱的行
+          _lastActiveIndex = -1;
+          _renderActiveIndex = -1;
+          _pendingCenterJump = true;
+          _autoScrollToActiveLine(force: true);
           return;
         }
       }

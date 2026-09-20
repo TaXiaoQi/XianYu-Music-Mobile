@@ -9,6 +9,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/app_logger.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
@@ -1593,7 +1594,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
           out.addAll(await _searchLxDerive(q));
         }
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin', '[search] ${widget.source.name} 搜索异常: $e');
     }
     if (!mounted) return;
     if (_searchedHash != hash) return;

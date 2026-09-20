@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::OnceLock;
 
 const MAX_GROUP_TOLERANCE_MS: u32 = 50;
+const ENHANCED_TRAILING_WORD_DURATION_MS: u32 = 400;
 
 // ==================== Regex caches (module-level, compiled once) ====================
 static XML_TAG_RE: OnceLock<Regex> = OnceLock::new();
@@ -1455,13 +1456,34 @@ fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<Par
     })
 }
 
+/// 判定词内尖括号时间是否为相对行首的偏移（与桌面端同规则）：
+/// 首词几乎为 0，或全部词时间远小于行起点时视为相对偏移。
+fn should_use_relative_angle_word_time(line_start_ms: u32, word_times: &[u32]) -> bool {
+    if line_start_ms == 0 || word_times.is_empty() {
+        return false;
+    }
+    let first = word_times[0];
+    let last = *word_times.last().unwrap();
+    first <= 10 || (first + 500 < line_start_ms && last < line_start_ms + 500)
+}
+
 fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine> {
     let leading = collect_markers(line, '[', ']');
     let (_, body_start, line_start_ms) = *leading.first()?;
     let body = &line[body_start..];
-    let markers = collect_markers(body, '<', '>');
-    if markers.len() < 2 {
+    let mut markers = collect_markers(body, '<', '>');
+    if markers.is_empty() {
         return None;
+    }
+
+    // lrc-a2（anime 等源）的词内尖括号时间可能是相对行首的偏移（如 <00:00.16>），
+    // 误当绝对时间会把整行词时间塌缩到歌曲开头，导致歌词整体错位。
+    // 与桌面端同规则：词时间远小于行起点时按相对偏移加回行起点。
+    let word_times = markers.iter().map(|marker| marker.2).collect::<Vec<_>>();
+    if should_use_relative_angle_word_time(line_start_ms, &word_times) {
+        for marker in markers.iter_mut() {
+            marker.2 = marker.2.saturating_add(line_start_ms);
+        }
     }
 
     if !body[..markers[0].0].trim().is_empty() {
@@ -1490,6 +1512,20 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         });
     }
 
+    // kw/wy 等源转换的 Enhanced LRC 末 marker 之后仍带最后一个词的文本
+    // （如 …<00:24.52>咖<00:24.61>啡），windows(2) 覆盖不到它，须单独补收。
+    if let Some((_, last_marker_end, last_start_ms)) = markers.last().copied() {
+        let trailing_text = sanitize_word_text(&body[last_marker_end..]);
+        if !trailing_text.is_empty() {
+            words.push(ParsedWord {
+                text: trailing_text,
+                start_ms: last_start_ms,
+                end_ms: last_start_ms + ENHANCED_TRAILING_WORD_DURATION_MS,
+                roman_text: None,
+            });
+        }
+    }
+
     if words.is_empty() {
         return None;
     }
@@ -1503,10 +1539,15 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
             .collect::<String>(),
     );
     let (explicit_role, normalized_text) = detect_explicit_role(&text);
+    let last_word_end = words
+        .last()
+        .map(|word| word.end_ms)
+        .unwrap_or(line_start_ms);
     let end_ms = markers
         .last()
         .map(|marker| marker.2)
-        .unwrap_or(line_start_ms);
+        .unwrap_or(line_start_ms)
+        .max(last_word_end);
 
     Some(ParsedLine {
         start_ms: line_start_ms,
@@ -4500,6 +4541,29 @@ mod tests {
         build_structured_lyrics_payload, parse_raw_lyrics, score_romanized_latin_text,
         ParsedLineSourceFormat,
     };
+
+    #[test]
+    fn parses_relative_angle_word_time_offset_to_line_start() {
+        // lrc-a2 相对逐字格式：词内尖括号时间为行首偏移，需加回行起点
+        let parsed = parse_raw_lyrics(
+            "[00:23.59]<00:00.16>塞<00:00.21>纳<00:00.23>河<00:00.32>畔",
+        );
+        assert_eq!(parsed.len(), 1);
+        let words = parsed[0].words.as_ref().unwrap();
+        assert_eq!(words[0].start_ms, 23590 + 160);
+        assert_eq!(words[1].start_ms, 23590 + 210);
+    }
+
+    #[test]
+    fn enhanced_lrc_keeps_trailing_word_after_last_marker() {
+        // kw/wy 逐字：末 marker 之后仍带末词文本，不补收会整行丢末字
+        let parsed = parse_raw_lyrics("[00:23.59]<00:23.75>塞<00:23.80>纳<00:24.61>啡");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].text, "塞纳啡");
+        let last = parsed[0].words.as_ref().unwrap().last().unwrap();
+        assert_eq!(last.text, "啡");
+        assert_eq!(last.start_ms, 24610);
+    }
 
     #[test]
     fn parses_inline_timestamp_lrc_into_word_timed_lines() {

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../player/player_provider.dart';
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../rust/api.dart';
 import 'plugin_engine.dart';
@@ -461,7 +462,9 @@ class PluginCatalogService {
       PluginSource source, String method, List<dynamic> args) async {
     try {
       return await _call(source, method, args);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin',
+          '[catalog] ${source.name} $method 调用失败: $e');
       return null;
     }
   }
@@ -470,8 +473,13 @@ class PluginCatalogService {
       PluginSource source, String method, List<dynamic> args) async {
     try {
       final result = await _call(source, method, args);
-      return extractMfResultList(result);
-    } catch (_) {
+      final list = extractMfResultList(result);
+      AppLog.debug(
+          'plugin', '[catalog] ${source.name} $method 返回 ${list.length} 条');
+      return list;
+    } catch (e) {
+      AppLog.warn('plugin',
+          '[catalog] ${source.name} $method 调用失败: $e');
       return const [];
     }
   }

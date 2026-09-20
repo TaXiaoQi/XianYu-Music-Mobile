@@ -1496,6 +1496,11 @@
 
   function makeAnimeAdapter(instance, meta) {
     var singlePlatform = meta.platform && meta.platform !== 'all' ? String(meta.platform) : null;
+    // 歌词 action 能力记忆：0=lyricBoth/未知, 1=lyricWord, 2=lyric
+    var lyricActionMode = 0;
+    // 词级时间戳检测：kw/wy 服务端返回的逐字 Enhanced LRC 常把 format 标成 lrc
+    // 而非 lrc-a2，按内容检测尖括号词时间戳判定，不信任插件自述
+    var WORD_TIMING_RE = /<\d{1,3}:\d{2}(?:\.\d{1,3})?>/;
 
     // 聚合插件必须传 platform；_animePlatform 在搜索结果注入
     function resolvePlatform(item) {
@@ -1584,39 +1589,68 @@
           if (p) base.platform = p;
         }
 
-        // 1) 逐行+逐字一次拿（lyricBoth）；2) 降级逐字（lyricWord）；3) 降级逐行（lyric）
-        return callAction('lyricBoth', base).catch(function () { return null; }).then(function (both) {
-          var line = both && both.line ? both.line : null;
-          var word = both && both.word ? both.word : null;
-          var promise;
-          if (line || word) {
-            promise = Promise.resolve({ line: line, word: word });
-          } else {
-            promise = callAction('lyricWord', base).then(function (w) {
-              return {
-                line: w ? { lrc: w.lrc || '', translation: w.translation || '', romanization: w.romanization || '' } : null,
-                word: w || null,
-              };
-            }).catch(function () { return { line: null, word: null }; });
-          }
-          return promise.then(function (r) {
-            var line2 = r.line;
-            var word2 = r.word;
-            var finish = function () {
-              if (!line2 || !line2.lrc) return null;
-              return {
-                lyric: String(line2.lrc || ''),
-                tlyric: String(line2.translation || ''),
-                rlyric: String(line2.romanization || ''),
-                lxlyric: word2 && word2.word && word2.lrc ? String(word2.lrc) : '',
-              };
-            };
-            if (line2 && line2.lrc) return finish();
-            return callAction('lyric', base).then(function (env) {
-              if (env && env.lrc) line2 = env;
-              return finish();
-            }).catch(function () { return finish(); });
+        // 1) 逐行+逐字一次拿（lyricBoth）；2) 降级逐字（lyricWord）；3) 降级逐行（lyric）。
+        // lyricActionMode 记忆插件实际支持的 action（0=both/未知, 1=word, 2=lyric），
+        // 避免慢 API 下每首歌都串行重走 404 降级链（歌词会比直链晚数秒）
+        var callLine = function (action) {
+          return callAction(action, base).then(function (env) {
+            return env && env.lrc ? env : null;
           });
+        };
+        var p;
+        if (lyricActionMode === 2) {
+          p = callLine('lyric').then(function (l) {
+            return { line: l, word: null };
+          }).catch(function () { return { line: null, word: null }; });
+        } else if (lyricActionMode === 1) {
+          p = callAction('lyricWord', base).then(function (w) {
+            return {
+              line: w && w.lrc ? { lrc: w.lrc, translation: w.translation || '', romanization: w.romanization || '' } : null,
+              word: w || null,
+            };
+          }).catch(function () { return { line: null, word: null }; });
+        } else {
+          p = callAction('lyricBoth', base).catch(function () { return null; }).then(function (both) {
+            var line = both && both.line && both.line.lrc ? both.line : null;
+            var word = both && both.word ? both.word : null;
+            if (line || word) return { line: line, word: word };
+            var wordFallback = function () {
+              return callAction('lyricWord', base).then(function (w) {
+                if (w && w.lrc) {
+                  lyricActionMode = 1;
+                  return {
+                    line: { lrc: w.lrc, translation: w.translation || '', romanization: w.romanization || '' },
+                    word: w,
+                  };
+                }
+                lyricActionMode = 2;
+                return callLine('lyric').then(function (l) {
+                  return { line: l, word: null };
+                });
+              }).catch(function () {
+                lyricActionMode = 2;
+                return callLine('lyric').then(function (l) {
+                  return { line: l, word: null };
+                }).catch(function () { return { line: null, word: null }; });
+              });
+            };
+            return wordFallback();
+          });
+        }
+        return p.then(function (r) {
+          var line2 = r.line;
+          var word2 = r.word;
+          if (!line2 || !line2.lrc) return null;
+          // 逐字内容按词级时间戳判定：word 逐字失败回退逐行时（fallback）lrc 无尖括号，
+          // 检测不通过自动落回逐行 lyric，避免把纯文本误当逐字
+          var wordLrc = word2 && word2.lrc ? String(word2.lrc) : '';
+          if (wordLrc && !WORD_TIMING_RE.test(wordLrc)) wordLrc = '';
+          return {
+            lyric: String(line2.lrc || ''),
+            tlyric: String(line2.translation || ''),
+            rlyric: String(line2.romanization || ''),
+            lxlyric: wordLrc,
+          };
         });
       },
     };

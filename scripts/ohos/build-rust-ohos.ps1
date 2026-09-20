@@ -43,21 +43,36 @@ if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) { throw 'rustup not
 # ---- 1.5 lld rejects non-ASCII paths (CN username breaks linking):
 # junction/subst get canonicalized back by rustc, so hard-copy the toolchain
 # to an ASCII path and call the real cargo/rustc (bypassing rustup proxies).
+# native tools emit UTF-8; a GBK console decodes it as mojibake and poisons
+# captured paths (CN username becomes garbage -> nonexistent dir, exit 16)
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $SysrootProbe = (& rustc --print sysroot 2>$null | Select-Object -First 1)
+if ($SysrootProbe -and -not (Test-Path (Join-Path $SysrootProbe 'lib\rustlib'))) {
+    # probed path unusable (encoding still wrong) - derive from RUSTUP_HOME
+    $RustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE '.rustup' }
+    $alt = Join-Path $RustupHome 'toolchains\stable-x86_64-pc-windows-msvc'
+    if (Test-Path (Join-Path $alt 'lib\rustlib')) { $SysrootProbe = $alt }
+}
 if ($SysrootProbe -and ($SysrootProbe -match '[^\x00-\x7F]')) {
     $TcAscii = 'C:\rust-ohos-tc'
     if (-not (Test-Path "$TcAscii\bin\rustc.exe")) {
         Write-Host "Copying Rust toolchain to ASCII path $TcAscii (one-time, ~1GB, local copy)..."
         New-Item -ItemType Directory -Force -Path $TcAscii | Out-Null
-        & robocopy $SysrootProbe $TcAscii /E /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "robocopy toolchain copy failed (exit=$LASTEXITCODE)" }
+        $rc = & robocopy $SysrootProbe $TcAscii /E /NFL /NDL /NJH /NJS /NP /R:3 /W:2 2>&1
+        if ($LASTEXITCODE -ge 8) {
+            $rc | Select-Object -Last 30 | ForEach-Object { Write-Host "$_" }
+            throw "robocopy toolchain copy failed (exit=$LASTEXITCODE)"
+        }
         Write-Host "Toolchain copy done"
     } else {
         # incremental sync: rustup target add installs std into the ORIGINAL
         # toolchain; the static copy must pick up new targets or rustc fails
         # with E0463 (can't find crate for core/std)
-        & robocopy "$SysrootProbe\lib\rustlib" "$TcAscii\lib\rustlib" /E /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "robocopy rustlib sync failed (exit=$LASTEXITCODE)" }
+        $rc = & robocopy "$SysrootProbe\lib\rustlib" "$TcAscii\lib\rustlib" /E /NFL /NDL /NJH /NJS /NP /R:3 /W:2 2>&1
+        if ($LASTEXITCODE -ge 8) {
+            $rc | Select-Object -Last 30 | ForEach-Object { Write-Host "$_" }
+            throw "robocopy rustlib sync failed (exit=$LASTEXITCODE)"
+        }
     }
     Set-Item -Path 'env:RUSTUP_TOOLCHAIN' -Value 'stable-x86_64-pc-windows-msvc'
     $env:PATH = "$TcAscii\bin;$env:PATH"

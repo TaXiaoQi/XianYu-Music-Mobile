@@ -145,16 +145,25 @@ impl HttpBridge {
         let client = self.client_for(redirect_limit)?;
 
         // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
-        crate::security::ssrf::validate_outbound_url(url)
+        let parsed_url = crate::security::ssrf::validate_outbound_url(url)
             .await
             .map_err(|e| e.to_string())?;
+        // fake-ip 目标（代理接管 DNS 但本应用被分应用排除、未走其隧道）会连接黑洞，
+        // 缩短等待并在失败时给出针对性提示
+        let fake_ip_target = parsed_url
+            .host_str()
+            .map(crate::security::ssrf::host_is_fake_ip_target)
+            .unwrap_or(false);
 
         let mut request = client.request(method, url);
-        if timeout_ms > 0 {
-            request = request.timeout(Duration::from_millis(timeout_ms));
+        let timeout = if timeout_ms > 0 {
+            Duration::from_millis(timeout_ms)
+        } else if fake_ip_target {
+            Duration::from_secs(8)
         } else {
-            request = request.timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
-        }
+            Duration::from_secs(DEFAULT_TIMEOUT_SECS)
+        };
+        request = request.timeout(timeout);
 
         let mut has_cookie_header = false;
         for (key, value) in &headers {
@@ -178,7 +187,15 @@ impl HttpBridge {
             }
         }
 
-        let mut response = request.send().await.map_err(|e| e.to_string())?;
+        let mut response = match request.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if fake_ip_target {
+                    return Err("连接失败：该域名被本机代理以 fake-ip 方式接管，但当前应用未走代理隧道（可能被分应用排除）。请在代理软件中将本应用加入代理名单，或将该域名设为直连/加入 fake-ip-filter".to_string());
+                }
+                return Err(format_request_error(e));
+            }
+        };
         let status = response.status().as_u16();
         let final_url = response.url().to_string();
 
