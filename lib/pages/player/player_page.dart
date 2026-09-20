@@ -4206,7 +4206,10 @@ class _ProgressBar extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = ref.watch(playerProvider.select((s) => s.duration));
-    final duration = dur <= 0 ? 1.0 : dur;
+    // 时长未知时（还没起播、或恢复的会话里没带时长）不能拿 1.0 顶替 max，
+    // 否则 position 会被 clamp 到满格、右侧显示 00:01，看着就像进度条坏了。
+    // 这里和底部时间行的做法一致：位置照实显示，总时长用 --:--。
+    final hasDuration = dur > 0;
     return Column(
       children: [
         SliderTheme(
@@ -4220,10 +4223,12 @@ class _ProgressBar extends ConsumerWidget {
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
           ),
           child: CommittedSlider(
-            value: position.clamp(0, duration),
+            value: hasDuration ? position.clamp(0, dur) : 0.0,
             min: 0,
-            max: duration,
-            onCommit: (v) => _seekAudioWithMv(ref, notifier, v),
+            max: hasDuration ? dur : 1.0,
+            enabled: hasDuration,
+            onCommit:
+                hasDuration ? (v) => _seekAudioWithMv(ref, notifier, v) : null,
           ),
         ),
         if (showTime)
@@ -4238,7 +4243,7 @@ class _ProgressBar extends ConsumerWidget {
                       fontSize: 11, color: scheme.onSurfaceVariant),
                 ),
                 Text(
-                  _fmt(duration),
+                  hasDuration ? _fmt(dur) : '--:--',
                   style:
                       TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                 ),

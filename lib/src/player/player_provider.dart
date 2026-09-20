@@ -499,6 +499,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
     _durSub = _player.durationStream.listen((d) {
       final dur = (d ?? Duration.zero).inMilliseconds / 1000.0;
+      // 播放器没载入音源时这里会收到 null。冷启动恢复会话时时长来自元数据，
+      // 被这一条冲成 0 会连带把进度条画成满格（position 被 clamp 到 max=1.0），
+      // 要手动点一次播放才恢复。已经拿到正时长时忽略 0。
+      if (dur <= 0 && state.duration > 0) return;
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
     });
@@ -1118,6 +1122,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         current: currentItem,
         isPlaying: false,
         position: pos,
+        // 时长必须一起恢复：进度条是按 position/duration 画的，duration 留 0
+        // 会让 position 被 clamp 到满格、右侧时间还显示成 00:01，
+        // 看起来像进度条坏了，直到起播后拿到真实时长才恢复。
+        duration: currentItem.durationMs / 1000.0,
         playMode: mode,
       );
 
@@ -1177,7 +1185,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       AppLog.info('session',
           'restored queue=${queue.length} cur="${currentItem.title}" '
-          'pos=${pos.toStringAsFixed(1)} online=${currentItem.isOnline}');
+          'pos=${pos.toStringAsFixed(1)} '
+          'dur=${state.duration.toStringAsFixed(1)} '
+          'online=${currentItem.isOnline}');
     } catch (e) {
       AppLogger.instance.log('session', '恢复播放会话异常: $e');
     }
