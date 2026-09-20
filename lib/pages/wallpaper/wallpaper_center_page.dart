@@ -1273,9 +1273,29 @@ class _CustomWallpaperEditorState
     }
   }
 
+  Future<void> _pickVideo() async {
+    final picked =
+        await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (picked == null) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'custom_background'));
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      var ext = p.extension(picked.path).toLowerCase();
+      if (ext.isEmpty) ext = '.mp4';
+      final target = p.join(dir.path, 'wallpaper$ext');
+      await File(picked.path).copy(target);
+      if (!mounted) return;
+      setState(() => _draft = _draft.copyWith(
+          imagePath: target, mediaType: WallpaperMediaType.video));
+    } catch (_) {
+      if (mounted) showXianYuToast(context, tr('请先选择视频'));
+    }
+  }
+
   Future<void> _apply() async {
     if (_draft.imagePath.isEmpty) {
-      showXianYuToast(context, tr('请先选择图片'));
+      showXianYuToast(context, tr('请先选择图片或视频'));
       return;
     }
     final overlay = Overlay.of(context, rootOverlay: true);
@@ -1325,7 +1345,7 @@ class _CustomWallpaperEditorState
                       size: 48, color: Colors.white70),
                   const SizedBox(height: 12),
                   Text(
-                    tr('从相册选择一张图片作为应用背景'),
+                    tr('从相册选择图片或视频作为应用背景'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70),
                   ),
@@ -1379,15 +1399,35 @@ class _CustomWallpaperEditorState
                       ],
                     ),
                     const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _pickImage,
-                        icon: const Icon(Icons.photo_library_outlined,
-                            size: 18),
-                        label: Text(
-                            hasImage ? tr('更换图片') : tr('选择本地图片')),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickImage,
+                            icon: const Icon(
+                                Icons.photo_library_outlined,
+                                size: 18),
+                            label: Text(hasImage &&
+                                    _draft.mediaType ==
+                                        WallpaperMediaType.image
+                                ? tr('更换图片')
+                                : tr('选择图片')),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickVideo,
+                            icon: const Icon(Icons.video_library_outlined,
+                                size: 18),
+                            label: Text(hasImage &&
+                                    _draft.mediaType ==
+                                        WallpaperMediaType.video
+                                ? tr('更换视频')
+                                : tr('选择视频')),
+                          ),
+                        ),
+                      ],
                     ),
                     if (hasImage) ...[
                       const SizedBox(height: 12),
