@@ -1613,6 +1613,18 @@
           p = callAction('lyricBoth', base).catch(function () { return null; }).then(function (both) {
             var line = both && both.line && both.line.lrc ? both.line : null;
             var word = both && both.word ? both.word : null;
+            // lyricBoth 部分成功（line 有、word 缺或逐行回退）时单独补次 lyricWord 争取逐字
+            if (line && !(word && word.lrc && WORD_TIMING_RE.test(String(word.lrc)))) {
+              return callAction('lyricWord', base).then(function (w) {
+                if (w && w.lrc && WORD_TIMING_RE.test(String(w.lrc))) {
+                  lyricActionMode = 1;
+                  return { line: line, word: w };
+                }
+                return { line: line, word: null };
+              }).catch(function () {
+                return { line: line, word: null };
+              });
+            }
             if (line || word) return { line: line, word: word };
             var wordFallback = function () {
               return callAction('lyricWord', base).then(function (w) {
