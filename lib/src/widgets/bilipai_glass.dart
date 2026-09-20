@@ -551,9 +551,12 @@ class RenderLiquidBacking extends RenderBox {
     // 也不会触发 markScrollActivity 变更 _frozen；须强制回归 live 重绘，
     // 否则折射采样位置停留在玻璃平移前的屏幕坐标。
     if (_frozen != null) {
-      _frozen?.dispose();
+      final old = _frozen;
       _frozen = null;
       _fadeBlend = 0;
+      // 该 image 可能仍被本帧 scene 引用，且回调在通知合成阶段同步触发，
+      // 直接 dispose 会触发 dart:ui Image.dispose 断言——延迟到本帧渲染后。
+      SchedulerBinding.instance.addPostFrameCallback((_) => old?.dispose());
     }
     markNeedsPaint();
   }
