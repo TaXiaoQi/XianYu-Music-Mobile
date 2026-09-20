@@ -598,11 +598,17 @@ ImportedSong _createLxSong(
   PluginSource plugin,
   _PlatformDescriptor platform,
 ) {
-  final id = (rawSong['songmid'] ?? rawSong['mid'] ?? rawSong['id'] ?? rawSong['hash'] ?? '')
+  final meta = rawSong['meta'];
+  final metaMap = meta is Map ? meta : const <String, dynamic>{};
+  final rawId = (rawSong['songmid'] ?? rawSong['mid'] ?? metaMap['songId'] ?? metaMap['songid'] ?? rawSong['id'] ?? rawSong['hash'] ?? metaMap['hash'] ?? '')
       .toString()
       .trim();
-  final duration = _parseDurationSeconds(rawSong['duration'] ?? rawSong['interval'] ?? rawSong['dt']);
-  final qualityEntries = rawSong['qualities'];
+  final lxPrefix = platform.lxSource != null ? '${platform.lxSource}_' : '';
+  final id = lxPrefix.isNotEmpty && rawId.startsWith(lxPrefix)
+      ? rawId.substring(lxPrefix.length)
+      : rawId;
+  final duration = _parseDurationSeconds(rawSong['duration'] ?? rawSong['interval'] ?? rawSong['dt'] ?? metaMap['interval']);
+  final qualityEntries = rawSong['qualities'] ?? metaMap['qualitys'];
   final types = <Map<String, dynamic>>[];
   final qualityMap = <String, dynamic>{};
   if (qualityEntries is Map) {
@@ -618,20 +624,20 @@ ImportedSong _createLxSong(
     'name': _extractTitle(rawSong),
     'singer': _extractArtist(rawSong),
     'albumName': _extractAlbum(rawSong),
-    'albumId': rawSong['albumId'] ?? rawSong['album_id'] ?? rawSong['albumid'] ?? '',
+    'albumId': metaMap['albumId'] ?? rawSong['albumId'] ?? rawSong['album_id'] ?? rawSong['albumid'] ?? '',
     'songmid': id,
     'source': platform.lxSource,
     'interval': rawSong['interval'] is String
         ? rawSong['interval']
         : _formatInterval(duration),
-    'img': (rawSong['artwork'] ?? rawSong['coverUrl'] ?? rawSong['img'])?.toString(),
+    'img': (metaMap['picUrl'] ?? rawSong['artwork'] ?? rawSong['coverUrl'] ?? rawSong['img'])?.toString(),
     'types': types,
     '_types': qualityMap,
-    'hash': rawSong['hash'] ?? rawSong['320hash'],
-    'strMediaMid': rawSong['strMediaMid'] ?? rawSong['songmid'] ?? rawSong['mid'],
-    'songId': rawSong['songId'] ?? rawSong['songid'],
-    'albumMid': rawSong['albumMid'] ?? rawSong['albummid'],
-    'copyrightId': rawSong['copyrightId'],
+    'hash': metaMap['hash'] ?? rawSong['hash'] ?? rawSong['320hash'],
+    'strMediaMid': (metaMap['strMediaMid'] ?? rawSong['strMediaMid'] ?? rawSong['songmid'] ?? rawSong['mid'] ?? id).toString(),
+    'songId': metaMap['songId'] ?? metaMap['songid'] ?? rawSong['songId'] ?? rawSong['songid'],
+    'albumMid': metaMap['albumMid'] ?? rawSong['albumMid'] ?? rawSong['albummid'],
+    'copyrightId': metaMap['copyrightId'] ?? rawSong['copyrightId'],
   };
   final path = 'lx://${platform.lxSource}/${Uri.encodeComponent(id)}';
   return ImportedSong(
