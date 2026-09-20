@@ -8,12 +8,15 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 
 import '../auth/auth_provider.dart';
+import '../backup/app_backup.dart';
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
 import '../i18n/i18n.dart';
+import '../library/saf_channel.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../navigation/routes.dart';
 import '../online/cover_proxy.dart';
@@ -60,6 +63,8 @@ class WatchLinkController {
   bool _sessionDenied = false;
 
   Future<void>? _askInFlight;
+
+  bool _backupDialogActive = false;
 
   String get connectedName => _connectedName;
 
@@ -302,6 +307,8 @@ class WatchLinkController {
         break;
       case LinkMsgType.cmd:
         _onCmd(msg);
+      case LinkMsgType.backupFile:
+        _handleIncomingBackup(msg);
       default:
         break;
     }
@@ -366,6 +373,38 @@ class WatchLinkController {
       } catch (_) {}
     }
     await _container.read(playerProvider.notifier).next();
+  }
+
+  /// 收到腕上推送的备份文件：弹窗（禁止点击空白关闭），按结果回执给腕上。
+  Future<void> _handleIncomingBackup(LinkMessage msg) async {
+    if (_backupDialogActive) {
+      _send(LinkMessage.backupAck(result: 'cancelled'));
+      return;
+    }
+    final content = msg.payload['backup'] as String? ?? '';
+    if (content.isEmpty) {
+      _send(LinkMessage.backupAck(result: 'cancelled'));
+      return;
+    }
+    final name = (msg.payload['name'] as String? ?? '').trim();
+    _backupDialogActive = true;
+    try {
+      final context = appNavigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      final result = await showPredictiveDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _IncomingBackupDialog(
+          fileName: name.isEmpty ? backupFileName() : name,
+          content: content,
+        ),
+      );
+      _send(LinkMessage.backupAck(
+        result: result == 'saved' ? 'saved' : 'cancelled',
+      ));
+    } finally {
+      _backupDialogActive = false;
+    }
   }
 
   // ---- 状态推送 ----
@@ -941,6 +980,192 @@ class _TransferConfirmDialog extends StatelessWidget {
                   ),
                 ),
                 child: Text(tr('不允许')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IncomingBackupDialog extends StatefulWidget {
+  const _IncomingBackupDialog({
+    required this.fileName,
+    required this.content,
+  });
+
+  final String fileName;
+  final String content;
+
+  @override
+  State<_IncomingBackupDialog> createState() => _IncomingBackupDialogState();
+}
+
+class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      String? saved;
+      if (SafChannel.isSupported) {
+        // 安卓：可自选保存位置
+        final treeUri = await SafChannel.chooseFolderTree(persist: false);
+        if (treeUri == null) return; // 用户在系统选择器中放弃：保持弹窗
+        final docId = await SafChannel.createTreeFile(
+            treeUri, widget.fileName, widget.content);
+        saved = docId.isEmpty ? null : widget.fileName;
+      } else {
+        // 鸿蒙 / iOS：直接保存到私有备份目录
+        final docs = await getApplicationDocumentsDirectory();
+        final dir = Directory('${docs.path}/backups');
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        final path = '${dir.path}${Platform.pathSeparator}${widget.fileName}';
+        await File(path).writeAsString(widget.content, flush: true);
+        saved = widget.fileName;
+      }
+      if (saved != null) {
+        if (mounted) Navigator.of(context).pop('saved');
+        return;
+      }
+      setState(() => _error = tr('无法写入所选文件夹'));
+    } catch (e) {
+      setState(() => _error = tr('保存失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _cancel() => Navigator.of(context).pop('cancelled');
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = scheme.primary;
+    final sizeKb = (utf8.encode(widget.content).length / 1024).truncate();
+    return ModernDialogCard(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.settings_backup_restore_rounded,
+                      color: accent, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    tr('收到腕上备份'),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              tr('腕上设备推送了一份应用备份，是否保存到手机？'),
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.insert_drive_file_outlined,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (sizeKb > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                tr('约 {kb} KB', {'kb': sizeKb}),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(fontSize: 12.5, color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: scheme.onPrimary))
+                    : const Icon(Icons.save_alt, size: 18),
+                label: Text(_saving ? tr('保存中…') : tr('保存文件')),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: scheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _saving ? null : _cancel,
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.onSurfaceVariant,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(tr('取消')),
               ),
             ),
           ],

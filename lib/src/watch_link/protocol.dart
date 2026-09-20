@@ -30,6 +30,10 @@ class LinkMsgType {
 
   static const int cmd = 0x20;
 
+  static const int backupFile = 0x21;
+
+  static const int backupAck = 0x22;
+
   static const int chunk = 0x30;
 
   static const int cloudBind = 0x41;
@@ -45,6 +49,8 @@ class LinkMsgType {
       t == lyric ||
       t == precache ||
       t == cmd ||
+      t == backupFile ||
+      t == backupAck ||
       t == chunk ||
       t == cloudBind;
 }
@@ -166,6 +172,18 @@ class LinkMessage {
 
   static LinkMessage cmd(String action, [Map<String, dynamic>? arg]) =>
       LinkMessage(LinkMsgType.cmd, {'action': action, 'arg': ?arg});
+
+  static LinkMessage backupFile({
+    required String name,
+    required String content,
+  }) => LinkMessage(LinkMsgType.backupFile, {
+    'name': name,
+    'size': utf8.encode(content).length,
+    'backup': content,
+  });
+
+  static LinkMessage backupAck({required String result}) =>
+      LinkMessage(LinkMsgType.backupAck, {'result': result});
 
   static LinkMessage cloudBind({required String key, String? url}) =>
       LinkMessage(LinkMsgType.cloudBind, {
