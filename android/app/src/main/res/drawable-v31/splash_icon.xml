@@ -1,11 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 12+ 系统闪屏图标 · 浅色（夜间见 drawable-night-v31 同名文件）。
-     前景与深色版同源（@drawable/splash_foreground 日间深色 logo 变体，
-     0.31 占比），保证昼夜 logo 显示大小一致；曾用启动器前景
-     ic_launcher_foreground（0.41 占比）比深色大 32%，已对齐。
-     背景 HyperOS（澎湃 Android 16）会离屏合成方形容器+1px 暗毛边，浅色
-     白底上呈「方框」；荣耀无对比跳过背景层只画裸 logo。 -->
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/splash_background"/>
-    <foreground android:drawable="@drawable/splash_foreground"/>
-</adaptive-icon>
+     HyperOS 3.0.305.0 实测仍会给 adaptive icon 合成方形容器并描 1px 暗毛边，
+     白底上无法消除；浅色改用非自适应 layer-list（白底 + 居中 splash_logo，
+     与 12 以下启动图同构）：非自适应 drawable 系统按原样绘制、不套容器。
+     尺寸对齐夜间 adaptive 观感：带背景层的 adaptive icon 在闪屏按 240dp
+     渲染，logo 占画布 0.306（132/432）≈ 73dp，故 item 定宽高 73x70dp
+     （splash_logo 592x571 等比）+ bitmap fill 拉伸；此前按位图固有 148dp
+     绘制，约为夜间两倍（2026-09-20 修）。splash_logo 本体仍为 148dp 基准，
+     供 12 以下窗口启动图沿用。
+     EMUI 安卓 16 忽略非自适应 icon 时回落默认启动器图标，观感等同。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:width="73dp"
+        android:height="70dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/splash_logo" />
+    </item>
+</layer-list>

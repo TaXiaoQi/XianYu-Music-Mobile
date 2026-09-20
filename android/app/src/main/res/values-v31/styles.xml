@@ -3,16 +3,18 @@
     <!-- Android 12+（含 16）系统闪屏强制接管：只认平台 windowSplashScreen* 属性，
          LaunchTheme 的 windowBackground 启动图在该阶段不可见。这里显式配置昼夜
          底色（@color/splash_background：白天白 / 夜间 #121212）+ 昼夜两版图标
-         splash_icon（浅色=桌面启动器图标同款，化解 HyperOS 方框；深色=裸反白
+         splash_icon（浅色=非自适应白底裸 logo，规避 HyperOS 方框；深色=裸反白
          logo），系统闪屏 → 窗口启动图 → Flutter 观感连贯。 -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <!-- splash_icon 昼夜两版（浅色=桌面启动器图标同款 / 深色=裸反白
+        <!-- splash_icon 昼夜两版（浅色=非自适应白底裸 logo / 深色=裸反白
              logo，详见 drawable-v31 与 drawable-night-v31 各自注释）。
              历史坑备忘：EMUI 安卓 16 会忽略非自适应 icon 与
              windowSplashScreenIconBackgroundColor（裸位图与该属性均实测
-             无效），只有 adaptive icon 能被真正采用；HyperOS 对 adaptive
-             icon 背景层会画方形容器+离屏毛边，浅色靠「图标化」化解。 -->
+             无效），只有 adaptive icon 能被真正采用，忽略时回落默认启动器
+             图标、观感等同；HyperOS 3.0.305.0 对 adaptive icon 背景层仍会
+             画方形容器+1px 暗毛边，「图标化」化解无效，浅色改走非自适应
+             layer-list（非自适应 drawable 系统按原样绘制、不套容器）。 -->
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <!-- 同 values/styles.xml：主题层显式透明状态栏，鸿蒙 4（Android 12
              兼容层）及以下不依赖 Flutter 运行时的 edge-to-edge 接管。 -->
