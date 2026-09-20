@@ -41,7 +41,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   bool _submitting = false;
   bool _compressing = false;
   bool _attachAllLogs = false;
-  bool _attachErrorLogs = false;
 
   List<FeedbackItem> _myFeedback = const [];
   bool _loadingFeedback = false;
@@ -142,9 +141,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final api = ref.read(accountApiProvider);
     final title = _feedbackType == 'suggestion' ? tr('功能建议') : tr('问题反馈');
     final isProblem = _feedbackType == 'problem';
-    final errorLogs = isProblem && _attachErrorLogs
-        ? ApplicationLogManager.instance.formatExport(onlyErrors: true)
-        : null;
     final allLogs = isProblem && _attachAllLogs
         ? ApplicationLogManager.instance.formatExport(onlyErrors: false)
         : null;
@@ -154,9 +150,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         title: title,
         content: content,
         feedbackType: _feedbackType,
-        errorLogs: errorLogs,
         allLogs: allLogs,
-        images: _feedbackType == 'suggestion' ? [..._images] : null,
+        images: [..._images],
       );
       if (!mounted) return;
       FocusScope.of(context).unfocus();
@@ -369,7 +364,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ),
             ),
           ),
-          if (_feedbackType == 'suggestion') ...[
+          if (_feedbackType != 'beta') ...[
             const SizedBox(height: 8),
             Text(
               tr('可上传截图辅助说明（最多 {n} 张）', {'n': _maxImages}),
@@ -484,7 +479,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
 
   Widget _buildLogOptions(
       BuildContext context, ColorScheme scheme, List<AppLogEntry> logs) {
-    final errorLogs = logs.where((e) => e.level == LogLevel.error).toList();
     if (logs.isEmpty) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
@@ -520,18 +514,6 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 Icon(Icons.description_outlined, size: 20, color: scheme.primary),
             onChanged: (v) => setState(() => _attachAllLogs = v ?? false),
           ),
-          if (errorLogs.isNotEmpty)
-            CheckboxListTile(
-              dense: true,
-              value: _attachErrorLogs,
-              title: Text(
-                tr('错误日志（{n} 条）', {'n': errorLogs.length}),
-                style: const TextStyle(fontSize: 14),
-              ),
-              secondary:
-                  Icon(Icons.error_outline, size: 20, color: scheme.error),
-              onChanged: (v) => setState(() => _attachErrorLogs = v ?? false),
-            ),
         ],
       ),
     );
