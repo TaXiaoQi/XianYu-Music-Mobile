@@ -1258,6 +1258,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       if (!mounted) return;
       if (_searchedHash != hash) return;
       setState(() {
+        // 失败后重置 hash：避免 KeepAlive 复用 state 时，同关键词重进/切源因
+        // hash == _searchedHash 跳过重搜而残留上一次的失败/空态。
+        _searchedHash = '';
         _searchError = e.toString();
         _results = const [];
         _loading = false;
@@ -1596,6 +1599,16 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       }
     } catch (e) {
       AppLog.warn('plugin', '[search] ${widget.source.name} 搜索异常: $e');
+      if (!mounted) return;
+      if (_searchedHash != hash) return;
+      setState(() {
+        // 失败后重置 hash：与 _TrackTab 一致，避免 KeepAlive 复用 state 时
+        // 同关键词重进/切源因 hash == _searchedHash 跳过重搜而残留旧空态。
+        _searchedHash = '';
+        _items = const [];
+        _loading = false;
+      });
+      return;
     }
     if (!mounted) return;
     if (_searchedHash != hash) return;
