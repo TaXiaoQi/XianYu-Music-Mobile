@@ -914,6 +914,9 @@ public class AudioService extends MediaBrowserServiceCompat {
             listener.onTaskRemoved();
         }
         super.onTaskRemoved(rootIntent);
+        // 划掉多任务即停止：结束服务并移除前台通知，恢复系统回收进程的默认行为。
+        // 鸿蒙4(安卓12兼容层)对前台媒体服务默认保活，不显式停止的话划掉后仍在后台运行。
+        stop();
     }
 
     public class MediaSessionCallback extends MediaSessionCompat.Callback {
