@@ -126,6 +126,17 @@ bool _sameSong(QueueItem? a, QueueItem? b) {
 class MvNotifier extends StateNotifier<MvState> {
   MvNotifier(this._ref) : super(const MvState()) {
     _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _syncTimeline());
+    // 换歌 → 同步 MV。必须挂在 provider 上而不是播放页 widget 上：
+    // 播放页退出后它的 ref.listen 会随 State 一起销毁，此时若在别处切歌
+    // （歌单 / 迷你条 / 系统「下一首」），旧 MV 不会被替换也不停，
+    // 重新打开播放页就还是上一首的 MV 在播。
+    _ref.listen<QueueItem?>(
+      playerProvider.select((s) => s.current),
+      (prev, next) {
+        if (prev == next) return;
+        syncSong(next);
+      },
+    );
     _ref.listen<bool>(
       playerProvider.select((s) => s.isPlaying),
       (prev, playing) {

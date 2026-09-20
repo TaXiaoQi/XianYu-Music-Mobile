@@ -400,7 +400,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final mv = ref.watch(mvProvider);
 
     ref.listen(playerProvider.select((s) => s.current), (prev, next) {
-      if (prev != next) ref.read(mvProvider.notifier).syncSong(next);
+      // 换歌同步 MV 已下沉到 MvNotifier 内部监听：播放页退出后本 widget
+      // 的 listen 会一并销毁，挂在页面上会导致页面不在时切歌不同步 MV。
       if (prev != null && next == null && mounted) {
         if (ModalRoute.of(context)?.isCurrent == true) {
           final nav = Navigator.of(context);
