@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
-import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
 
@@ -24,6 +23,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   VideoPlayerController? _videoController;
   bool _videoReady = false;
   String? _videoKey;
+  Size? _videoSize;
 
   bool get _videoShouldAutoPlay {
     final s = ref.read(settingsProvider);
@@ -91,6 +91,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     setState(() {
       _videoController = controller;
       _videoReady = true;
+      _videoSize = controller.value.size;
     });
     if (_videoShouldAutoPlay &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
@@ -139,6 +140,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         final h = constraints.maxHeight;
         final dx = cb.translateX / 100 * w;
         final dy = cb.translateY / 100 * h;
+        final videoBox = videoReady ? _coverBox(w, h, _videoSize) : null;
         return RepaintBoundary(
           child: SizedBox.expand(
             child: Stack(
@@ -167,29 +169,9 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
                               ),
                             ),
                           )
-                        : !videoReady
+                        : videoBox == null
                             ? const ColoredBox(color: Colors.black)
-                            : Transform.scale(
-                                scale: 2.0,
-                                alignment: Alignment.center,
-                                child: Transform.translate(
-                                  offset: Offset(dx / 2, dy / 2),
-                                  child: Transform.scale(
-                                    scale: cb.scale / 100 * 0.5,
-                                    alignment: Alignment.center,
-                                    child: ImageFiltered(
-                                      imageFilter: cheapBackdropBlur(
-                                        blurSig / 2,
-                                        downscale: 2,
-                                      ),
-                                      child: Opacity(
-                                        opacity: cb.opacity / 100,
-                                        child: VideoPlayer(video),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            : _buildVideoLayer(video!, videoBox, dx, dy, cb),
                   ),
                 if (cb.maskAlpha > 0)
                   Container(
@@ -201,6 +183,53 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
           ),
         );
       },
+    );
+  }
+
+  Size? _coverBox(double w, double h, Size? videoSize) {
+    final vw = videoSize?.width ?? 0;
+    final vh = videoSize?.height ?? 0;
+    if (vw <= 0 || vh <= 0 || w <= 0 || h <= 0) return null;
+    final containerRatio = w / h;
+    final videoRatio = vw / vh;
+    if (videoRatio > containerRatio) {
+      return Size(h * videoRatio, h);
+    }
+    return Size(w, w / videoRatio);
+  }
+
+  Widget _buildVideoLayer(
+    VideoPlayerController video,
+    Size box,
+    double dx,
+    double dy,
+    CustomBackground cb,
+  ) {
+    final halfW = box.width / 2;
+    final halfH = box.height / 2;
+    return Transform.translate(
+      offset: Offset(dx, dy),
+      child: Transform.scale(
+        scale: cb.scale / 100 * 2.0,
+        alignment: Alignment.center,
+        child: Align(
+          alignment: Alignment.center,
+          child: OverflowBox(
+            minWidth: halfW,
+            maxWidth: halfW,
+            minHeight: halfH,
+            maxHeight: halfH,
+            alignment: Alignment.center,
+            child: ImageFiltered(
+              imageFilter: cheapBackdropBlur(cb.blur * 0.6 / 2, downscale: 2),
+              child: Opacity(
+                opacity: cb.opacity / 100,
+                child: VideoPlayer(video),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -225,19 +254,6 @@ class AppPageBackground extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cb = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.customBackground),
-    );
-    if (cb?.active != true) return child;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        ColoredBox(
-          color: appSurfaceBg(context),
-          child: CustomBackgroundLayer(background: cb),
-        ),
-        child,
-      ],
-    );
+    return child;
   }
 }

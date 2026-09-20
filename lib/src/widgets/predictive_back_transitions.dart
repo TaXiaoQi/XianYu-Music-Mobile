@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/application_logger.dart';
-import '../core/settings.dart';
-import 'custom_background.dart';
 
 const bool kFrameworkPredictiveCompare = false;
 
@@ -265,30 +263,9 @@ class TransitionBackdrop extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (backgroundColor != null) {
-      return DecoratedBox(
-        decoration: BoxDecoration(color: backgroundColor),
-        child: child,
-      );
-    }
-    final cb = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.customBackground),
-    );
-    if (cb?.active == true) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: CustomBackgroundLayer(background: cb),
-          ),
-          ?child,
-        ],
-      );
-    }
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
       ),
       child: child,
     );

@@ -17,7 +17,6 @@ import '../core/haptics.dart';
 import '../core/settings.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/glass_settings.dart';
-import '../widgets/custom_background.dart';
 import '../widgets/landscape_page_fade.dart';
 import 'landscape_tab_switcher.dart';
 import '../widgets/blur_budget.dart';
@@ -904,9 +903,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          const Positioned.fill(
-            child: CustomBackgroundLayer(),
-          ),
           Positioned.fill(
             child: ColoredBox(
               color: Theme.of(context).scaffoldBackgroundColor,
