@@ -313,6 +313,28 @@ class MvNotifier extends StateNotifier<MvState> {
     }
   }
 
+  /// 用户主动跳转（拖动进度条 / 点歌词行）：立即把 MV 对齐到新的音频位置。
+  ///
+  /// 不能只依赖 [_syncTimeline] 的 500ms 自动同步：它对**所有** seek 施加
+  /// [_seekCooling]（任一 seek 之后的 5 秒内只做 ±8% 变速微调、完全不发 seek），
+  /// 用户的拖动很容易落进这个窗口，表现就是「拖了进度条 MV 不动、继续按自己的
+  /// 节奏播」。这里显式接收目标秒数、绕过冷却，且在跳转后重置停滞检测，
+  /// 避免这次人为跳变被 [_restartForStall] 误判成卡顿而重启视频。
+  void alignToAudioSeconds(double secs) {
+    if (!state.requested || !state.ready) return;
+    final c = state.controller;
+    if (c == null || !c.value.isInitialized) return;
+    final vd = c.value.duration;
+    if (vd <= Duration.zero) return;
+    _lastSeekAt = null;
+    _stallTicks = 0;
+    _lastVposMs = -1;
+    final t = _ringTarget(secs * 1000, vd);
+    AppLog.info('mv', 'user seek align vpos=${c.value.position.inMilliseconds} '
+        'target=${t.inMilliseconds} secs=$secs');
+    unawaited(c.seekTo(t));
+  }
+
   Future<void> _hardStop() async {
     _requestVersion++;
     final old = state.controller;
