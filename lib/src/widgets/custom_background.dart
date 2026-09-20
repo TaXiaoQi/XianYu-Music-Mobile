@@ -1,20 +1,90 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:video_player/video_player.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
 
-class CustomBackgroundLayer extends StatelessWidget {
+class CustomBackgroundLayer extends StatefulWidget {
   const CustomBackgroundLayer({super.key, this.background});
 
   final CustomBackground? background;
 
   @override
+  State<CustomBackgroundLayer> createState() => _CustomBackgroundLayerState();
+}
+
+class _CustomBackgroundLayerState extends State<CustomBackgroundLayer> {
+  VideoPlayerController? _videoController;
+  bool _videoReady = false;
+  String? _videoKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncVideo(widget.background);
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomBackgroundLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final cb = widget.background;
+    if (oldWidget.background?.imagePath != cb?.imagePath ||
+        oldWidget.background?.mediaType != cb?.mediaType) {
+      _syncVideo(cb);
+    }
+  }
+
+  Future<void> _syncVideo(CustomBackground? cb) async {
+    final isVideo = cb != null &&
+        cb.mediaType == WallpaperMediaType.video &&
+        cb.active;
+    final key = isVideo ? cb.imagePath : null;
+    if (_videoKey == key) return;
+    _videoKey = key;
+
+    final old = _videoController;
+    _videoController = null;
+    _videoReady = false;
+    if (mounted) setState(() {});
+    await old?.dispose();
+
+    if (!isVideo) return;
+
+    final controller = VideoPlayerController.file(File(cb.imagePath))
+      ..setLooping(true)
+      ..setVolume(0);
+    try {
+      await controller.initialize();
+    } catch (_) {
+      await controller.dispose().catchError((_) {});
+      if (_videoKey == key) _videoKey = null;
+      return;
+    }
+    if (!mounted || _videoKey != key) {
+      await controller.dispose().catchError((_) {});
+      return;
+    }
+    setState(() {
+      _videoController = controller;
+      _videoReady = true;
+    });
+    unawaited(controller.play());
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final cb = background;
+    final cb = widget.background;
     if (cb == null) {
       return _SettingsBound();
     }
@@ -23,7 +93,11 @@ class CustomBackgroundLayer extends StatelessWidget {
 
   Widget _render(CustomBackground cb) {
     final file = File(cb.imagePath);
-    final hasImage = file.path.isNotEmpty;
+    final hasMedia = file.path.isNotEmpty;
+    final isVideo = cb.mediaType == WallpaperMediaType.video ||
+        file.path.toLowerCase().endsWith('.mp4');
+    final video = _videoController;
+    final videoReady = isVideo && _videoReady && video != null;
     final blurSig = cb.blur * 0.6;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -36,7 +110,7 @@ class CustomBackgroundLayer extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (hasImage)
+                if (hasMedia)
                   ClipRect(
                     child: Transform.translate(
                       offset: Offset(dx, dy),
@@ -47,12 +121,15 @@ class CustomBackgroundLayer extends StatelessWidget {
                           imageFilter: cheapBackdropBlur(blurSig),
                           child: Opacity(
                             opacity: cb.opacity / 100,
-                            child: Image.file(
-                              key: ValueKey('wallpaper-${file.path}'),
-                              file,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                            ),
+                            child: videoReady
+                                ? VideoPlayer(video)
+                                : Image.file(
+                                    key: ValueKey('wallpaper-${file.path}'),
+                                    file,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        const SizedBox.shrink(),
+                                  ),
                           ),
                         ),
                       ),

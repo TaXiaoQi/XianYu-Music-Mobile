@@ -475,6 +475,18 @@ class AccountApi {
             w['image_url'] ??
             w['image'] ??
             '') as String,
+        'videoUrl': (w['videoUrl'] ?? w['video_url'] ?? '') as String,
+        'videoSha256': (w['videoSha256'] ?? w['video_sha256'] ?? '') as String,
+        'videoDuration':
+            ((w['videoDuration'] ?? w['video_duration'] ?? 0) as dynamic) is num
+                ? ((w['videoDuration'] ?? w['video_duration'] ?? 0) as num)
+                        .toInt()
+                : 0,
+        'videoSize':
+            ((w['videoSize'] ?? w['video_size'] ?? 0) as dynamic) is num
+                ? ((w['videoSize'] ?? w['video_size'] ?? 0) as num).toInt()
+                : 0,
+        'mediaType': (w['mediaType'] ?? w['media_type'] ?? '') as String,
         'category': (w['category'] as String?) ?? '',
         'status': (w['status'] as String?) ?? 'pending',
         'uploaderId':

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
@@ -10,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
@@ -230,6 +232,11 @@ class _WallpaperCard extends ConsumerWidget {
   final Map<String, dynamic> wallpaper;
   final String? statusBadge;
 
+  bool get _isVideo {
+    final mt = (wallpaper['mediaType'] as String?) ?? '';
+    return mt == 'video';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
@@ -286,6 +293,30 @@ class _WallpaperCard extends ConsumerWidget {
                     statusBadge!,
                     style: const TextStyle(
                         color: Colors.white, fontSize: 11),
+                  ),
+                ),
+              ),
+            if (_isVideo)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_circle_outline,
+                          size: 13, color: Colors.white),
+                      SizedBox(width: 2),
+                      Text('视频',
+                          style: TextStyle(
+                              color: Colors.white, fontSize: 11)),
+                    ],
                   ),
                 ),
               ),
@@ -354,8 +385,46 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
   String? _localPath;
   bool _busy = false;
   String? _result;
+  VideoPlayerController? _previewVideo;
+  bool _previewVideoReady = false;
+
+  bool get _isVideo {
+    final mt = (widget.wallpaper['mediaType'] as String?) ?? '';
+    return mt == 'video';
+  }
 
   bool get _hasLocal => _localPath != null && File(_localPath!).existsSync();
+
+  Future<void> _initPreviewVideo() async {
+    final lp = _localPath;
+    if (lp == null || !File(lp).existsSync()) return;
+    await _disposePreviewVideo();
+    final controller = VideoPlayerController.file(File(lp))
+      ..setLooping(true)
+      ..setVolume(0);
+    try {
+      await controller.initialize();
+    } catch (_) {
+      await controller.dispose().catchError((_) {});
+      return;
+    }
+    if (!mounted) {
+      await controller.dispose().catchError((_) {});
+      return;
+    }
+    setState(() {
+      _previewVideo = controller;
+      _previewVideoReady = true;
+    });
+    controller.play();
+  }
+
+  Future<void> _disposePreviewVideo() async {
+    final old = _previewVideo;
+    _previewVideo = null;
+    _previewVideoReady = false;
+    await old?.dispose().catchError((_) {});
+  }
 
   @override
   void initState() {
@@ -364,12 +433,43 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     if (lp.isNotEmpty && File(lp).existsSync()) {
       _localPath = lp;
     }
+    if (_isVideo && _hasLocal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initPreviewVideo());
+    }
+  }
+
+  @override
+  void dispose() {
+    _previewVideo?.dispose();
+    super.dispose();
   }
 
   Future<String> _ensureLocal() async {
     if (_hasLocal) return _localPath!;
-    final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
+    final isVideo = _isVideo;
+    final url = isVideo
+        ? ((widget.wallpaper['videoUrl'] as String?) ?? '')
+        : ((widget.wallpaper['imageUrl'] as String?) ?? '');
     if (url.isEmpty) throw Exception(tr('壁纸地址无效'));
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final id = widget.wallpaper['id'];
+    final sha = (widget.wallpaper['videoSha256'] as String?) ?? '';
+    final ext = isVideo ? 'mp4' : 'jpg';
+    // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
+    final cacheKey = isVideo && sha.isNotEmpty ? sha.substring(0, 8) : '';
+    final file = File(p.join(dir.path,
+        'wallpaper_${id}${cacheKey.isEmpty ? '' : '_$cacheKey'}_${_safeName(widget.wallpaper)}.$ext'));
+    if (file.existsSync() &&
+        file.lengthSync() > 0 &&
+        (isVideo ? cacheKey.isNotEmpty : true)) {
+      await _recordDownload(widget.wallpaper, file.path);
+      _downloadsRevision.value++;
+      setState(() => _localPath = file.path);
+      if (_isVideo) await _initPreviewVideo();
+      return _localPath!;
+    }
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 20);
     final req = await client.getUrl(Uri.parse(url));
@@ -378,18 +478,54 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
     }
     final bytes = await consolidateBytes(res);
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    final id = widget.wallpaper['id'];
-    final title = (widget.wallpaper['title'] as String?) ?? 'wallpaper';
-    final safeName = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final file = File(p.join(dir.path, 'wallpaper_${id}_$safeName.jpg'));
+    if (isVideo && sha.isNotEmpty) {
+      final actual = sha256.convert(bytes).toString();
+      if (actual != sha.toLowerCase()) {
+        throw Exception(tr('壁纸文件校验失败，请稍后重试'));
+      }
+    }
     await file.writeAsBytes(bytes);
     await _recordDownload(widget.wallpaper, file.path);
+    await _evictWallpaperCache(dir);
     _downloadsRevision.value++;
-    _localPath = file.path;
+    setState(() => _localPath = file.path);
+    if (_isVideo) {
+      await _initPreviewVideo();
+    }
     return _localPath!;
+  }
+
+  String _safeName(Map<String, dynamic> w) {
+    final t = (w['title'] as String?) ?? 'wallpaper';
+    return t.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+  }
+
+  static const _cacheLimitBytes = 300 * 1024 * 1024;
+
+  Future<void> _evictWallpaperCache(Directory dir) async {
+    try {
+      final files = dir.listSync().whereType<File>().toList();
+      var total = files.fold<int>(0, (s, f) => s + _fileSize(f));
+      if (total <= _cacheLimitBytes) return;
+      final active = _localPath;
+      files.sort(
+          (a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+      for (final f in files) {
+        if (f.path == active) continue;
+        final s = _fileSize(f);
+        await f.delete().catchError((_) {});
+        total -= s;
+        if (total <= _cacheLimitBytes) break;
+      }
+    } catch (_) {}
+  }
+
+  static int _fileSize(File f) {
+    try {
+      return f.lengthSync();
+    } catch (_) {
+      return 0;
+    }
   }
 
   Future<void> _saveOnly() async {
@@ -449,7 +585,8 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final applied = await Navigator.of(context).push<bool?>(
       coverPageRoute<bool>(
         context,
-        (_) => WallpaperCustomApplyPage(imagePath: path),
+        (_) => WallpaperCustomApplyPage(
+            imagePath: path, mediaType: _isVideo),
       ),
     );
     if (!mounted) return;
@@ -502,6 +639,31 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
     final hasLocal = _hasLocal;
     final title = (widget.wallpaper['title'] as String?) ?? '';
+    final video =
+        _previewVideoReady ? _previewVideo : null;
+    Widget previewContent;
+    if (video != null && video.value.isInitialized) {
+      previewContent = VideoPlayer(video);
+    } else if (_isVideo && url.isNotEmpty) {
+      previewContent = CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.contain,
+        errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined,
+            color: Colors.white54, size: 64),
+      );
+    } else if (hasLocal) {
+      previewContent = Image.file(File(_localPath!), fit: BoxFit.contain);
+    } else if (url.isNotEmpty) {
+      previewContent = CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.contain,
+        errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined,
+            color: Colors.white54, size: 64),
+      );
+    } else {
+      previewContent = const Icon(Icons.image_not_supported_outlined,
+          color: Colors.white54, size: 64);
+    }
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -513,21 +675,7 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
           Expanded(
             child: InteractiveViewer(
               maxScale: 4,
-              child: Center(
-                child: hasLocal
-                    ? Image.file(File(_localPath!), fit: BoxFit.contain)
-                    : url.isEmpty
-                        ? const Icon(Icons.image_not_supported_outlined,
-                            color: Colors.white54, size: 64)
-                        : CachedNetworkImage(
-                            imageUrl: url,
-                            fit: BoxFit.contain,
-                            errorWidget: (_, _, _) => const Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white54,
-                                size: 64),
-                          ),
-              ),
+              child: Center(child: previewContent),
             ),
           ),
           SafeArea(
@@ -1054,9 +1202,11 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
 }
 
 class CustomWallpaperEditor extends ConsumerStatefulWidget {
-  const CustomWallpaperEditor({super.key, this.initialImagePath});
+  const CustomWallpaperEditor(
+      {super.key, this.initialImagePath, this.initialIsVideo = false});
 
   final String? initialImagePath;
+  final bool initialIsVideo;
 
   @override
   ConsumerState<CustomWallpaperEditor> createState() =>
@@ -1064,15 +1214,18 @@ class CustomWallpaperEditor extends ConsumerStatefulWidget {
 }
 
 class WallpaperCustomApplyPage extends StatelessWidget {
-  const WallpaperCustomApplyPage({super.key, required this.imagePath});
+  const WallpaperCustomApplyPage(
+      {super.key, required this.imagePath, this.mediaType = false});
 
   final String imagePath;
+  final bool mediaType;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(tr('自定义壁纸'))),
-      body: CustomWallpaperEditor(initialImagePath: imagePath),
+      body: CustomWallpaperEditor(
+          initialImagePath: imagePath, initialIsVideo: mediaType),
     );
   }
 }
@@ -1088,6 +1241,9 @@ class _CustomWallpaperEditorState
     if (ip != null && ip.isNotEmpty && File(ip).existsSync()) {
       _draft = CustomBackground(
         imagePath: ip,
+        mediaType: widget.initialIsVideo
+            ? WallpaperMediaType.video
+            : WallpaperMediaType.image,
         enabled: true,
         blur: 0,
         maskAlpha: 18,
@@ -1110,7 +1266,8 @@ class _CustomWallpaperEditorState
       final target = p.join(dir.path, 'wallpaper$ext');
       await File(picked.path).copy(target);
       if (!mounted) return;
-      setState(() => _draft = _draft.copyWith(imagePath: target));
+      setState(() => _draft = _draft.copyWith(
+          imagePath: target, mediaType: WallpaperMediaType.image));
     } catch (_) {
       if (mounted) showXianYuToast(context, tr('请先选择图片'));
     }
