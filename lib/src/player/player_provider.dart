@@ -68,6 +68,37 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     unawaited(_materializeOnlineArt(item));
   }
 
+  /// 把整个播放队列同步给系统媒体会话，使系统 MediaSession/鸿蒙播控中心
+  /// 能拿到当前在播项的队列下标（active item id），否则鸿蒙判定会话「未在播放」。
+  /// 队列元素与 [syncPlaybackState] 的 queueIndex 按下标对齐。
+  void syncQueue(List<QueueItem> items, Map<String, String> artCache) {
+    queue.add([
+      for (final item in items)
+        _buildMediaItem(
+          item,
+          _lastSyncItem?.path == item.path ? _lastSyncDuration : 0,
+          _artUriForWithCache(item, artCache),
+        ),
+    ]);
+  }
+
+  Uri? _artUriForWithCache(QueueItem item, Map<String, String> artCache) {
+    final url = item.coverUrl;
+    if (url != null && url.isNotEmpty) {
+      final cached = artCache[url];
+      if (cached != null && File(cached).existsSync()) return Uri.file(cached);
+      return Uri.tryParse(url);
+    }
+    final local = item.coverPath;
+    if (local != null &&
+        local.isNotEmpty &&
+        !local.startsWith('http') &&
+        File(local).existsSync()) {
+      return Uri.file(local);
+    }
+    return null;
+  }
+
   QueueItem? _lastSyncItem;
   double _lastSyncDuration = 0;
 
@@ -142,6 +173,7 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     required double durationSecs,
     required bool isFavorite,
     required int playMode,
+    int? queueIndex,
   }) {
     playbackState.add(
       as_pkg.PlaybackState(
@@ -175,6 +207,7 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
         updatePosition: Duration(milliseconds: (positionSecs * 1000).round()),
         bufferedPosition: Duration(milliseconds: (positionSecs * 1000).round()),
         speed: 1.0,
+        queueIndex: queueIndex,
       ),
     );
   }
@@ -506,7 +539,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
     });
-    AudioSession.instance.then((session) {
+    AudioSession.instance.then((session) async {
+      // 声明为音乐媒体会话（USAGE_MEDIA + CONTENT_TYPE_MUSIC）。不配置时系统
+      // 收到 CONTENT_TYPE_UNKNOWN，鸿蒙播控中心/系统媒体卡片不会把它当音乐播控源，
+      // 表现为通知栏可见但控制中心「未在播放」。
+      try {
+        await session.configure(const AudioSessionConfiguration.music());
+      } catch (e) {
+        AppLog.warn('audio_session', 'configure failed: $e');
+      }
       _interruptionSub = session.interruptionEventStream.listen((event) async {
         if (!event.begin) {
           if (_interruptedByInterruption) {
@@ -917,12 +958,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       audioHandler?.syncMediaItem(item, state.duration);
+      // 同步整个队列 + 当前项下标，让系统 MediaSession/鸿蒙播控中心
+      // 能把会话判定为「正在播放」（active item id 对齐队列下标，否则 -1）。
+      if (state.queue.isNotEmpty) {
+        audioHandler?.syncQueue(state.queue, _notifCoverCache);
+      }
       audioHandler?.syncPlaybackState(
         isPlaying: state.isPlaying,
         positionSecs: state.position,
         durationSecs: state.duration,
         isFavorite: _ref.read(favoritesProvider).contains(cur.path),
         playMode: state.playMode,
+        queueIndex: state.queueIndex,
       );
     }
   }

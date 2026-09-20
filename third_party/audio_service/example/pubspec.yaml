@@ -1,0 +1,35 @@
+name: audio_service_example
+description: Demonstrates how to use the audio_service plugin.
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  path_provider: ^2.0.1
+  audio_session: ^0.1.25
+  just_audio: ^0.10.6
+  flutter_tts: ^4.2.5
+  device_info_plus: ^13.2.0
+  # Disabled until compileSdk is bumped
+  # android_content_provider: ^0.5.2
+  permission_handler : ^11.0.1
+  rxdart: ^0.27.2
+  audio_service:
+    path: ../
+  audio_service_mpris: ^0.2.1
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_linux: any
+  media_kit_libs_windows_audio: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  # disable-swift-package-manager: true
+  uses-material-design: true

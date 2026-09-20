@@ -16,6 +16,7 @@ import '../i18n/i18n.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../online/online_meta_store.dart';
+import '../player/player_provider.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart';
 

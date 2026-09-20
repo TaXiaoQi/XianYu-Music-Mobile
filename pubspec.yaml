@@ -110,6 +110,10 @@ dependencies:
 dependency_overrides:
   tencent_kit:
     path: third_party/tencent_kit
+  # audio_service 本地 patch：MediaSession 上报 CONTENT_TYPE_MUSIC，否则在鸿蒙
+  # 播控中心被识别为 content=UNKNOWN，第三方播放器会显示「未在播放」。
+  audio_service:
+    path: third_party/audio_service
 
 dev_dependencies:
   flutter_test:
