@@ -9,23 +9,31 @@ import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
 
-class CustomBackgroundLayer extends StatefulWidget {
+class CustomBackgroundLayer extends ConsumerStatefulWidget {
   const CustomBackgroundLayer({super.key, this.background});
 
   final CustomBackground? background;
 
   @override
-  State<CustomBackgroundLayer> createState() => _CustomBackgroundLayerState();
+  ConsumerState<CustomBackgroundLayer> createState() =>
+      _CustomBackgroundLayerState();
 }
 
-class _CustomBackgroundLayerState extends State<CustomBackgroundLayer> {
+class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
+    with WidgetsBindingObserver {
   VideoPlayerController? _videoController;
   bool _videoReady = false;
   String? _videoKey;
 
+  bool get _videoShouldAutoPlay {
+    final s = ref.read(settingsProvider);
+    return s.valueOrNull?.performanceMode != PerformanceMode.performance;
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _syncVideo(widget.background);
   }
 
@@ -36,6 +44,17 @@ class _CustomBackgroundLayerState extends State<CustomBackgroundLayer> {
     if (oldWidget.background?.imagePath != cb?.imagePath ||
         oldWidget.background?.mediaType != cb?.mediaType) {
       _syncVideo(cb);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final v = _videoController;
+    if (v == null || !_videoReady) return;
+    if (state == AppLifecycleState.resumed) {
+      if (_videoShouldAutoPlay) unawaited(v.play());
+    } else {
+      unawaited(v.pause());
     }
   }
 
@@ -73,17 +92,32 @@ class _CustomBackgroundLayerState extends State<CustomBackgroundLayer> {
       _videoController = controller;
       _videoReady = true;
     });
-    unawaited(controller.play());
+    if (_videoShouldAutoPlay &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      unawaited(controller.play());
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _videoController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<AppSettings>>(settingsProvider, (_, next) {
+      final v = _videoController;
+      if (v == null || !_videoReady) return;
+      final perf = next.valueOrNull?.performanceMode == PerformanceMode.performance;
+      if (perf) {
+        unawaited(v.pause());
+      } else if (WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed) {
+        unawaited(v.play());
+      }
+    });
     final cb = widget.background;
     if (cb == null) {
       return _SettingsBound();
@@ -112,28 +146,50 @@ class _CustomBackgroundLayerState extends State<CustomBackgroundLayer> {
               children: [
                 if (hasMedia)
                   ClipRect(
-                    child: Transform.translate(
-                      offset: Offset(dx, dy),
-                      child: Transform.scale(
-                        scale: cb.scale / 100,
-                        alignment: Alignment.center,
-                        child: ImageFiltered(
-                          imageFilter: cheapBackdropBlur(blurSig),
-                          child: Opacity(
-                            opacity: cb.opacity / 100,
-                            child: videoReady
-                                ? VideoPlayer(video)
-                                : Image.file(
+                    child: !isVideo
+                        ? Transform.translate(
+                            offset: Offset(dx, dy),
+                            child: Transform.scale(
+                              scale: cb.scale / 100,
+                              alignment: Alignment.center,
+                              child: ImageFiltered(
+                                imageFilter: cheapBackdropBlur(blurSig),
+                                child: Opacity(
+                                  opacity: cb.opacity / 100,
+                                  child: Image.file(
                                     key: ValueKey('wallpaper-${file.path}'),
                                     file,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, _, _) =>
                                         const SizedBox.shrink(),
                                   ),
-                          ),
-                        ),
-                      ),
-                    ),
+                                ),
+                              ),
+                            ),
+                          )
+                        : !videoReady
+                            ? const ColoredBox(color: Colors.black)
+                            : Transform.scale(
+                                scale: 2.0,
+                                alignment: Alignment.center,
+                                child: Transform.translate(
+                                  offset: Offset(dx / 2, dy / 2),
+                                  child: Transform.scale(
+                                    scale: cb.scale / 100 * 0.5,
+                                    alignment: Alignment.center,
+                                    child: ImageFiltered(
+                                      imageFilter: cheapBackdropBlur(
+                                        blurSig / 2,
+                                        downscale: 2,
+                                      ),
+                                      child: Opacity(
+                                        opacity: cb.opacity / 100,
+                                        child: VideoPlayer(video),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                   ),
                 if (cb.maskAlpha > 0)
                   Container(
