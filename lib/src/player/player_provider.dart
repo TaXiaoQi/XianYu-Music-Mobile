@@ -252,11 +252,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
 
   @override
   Future<void> stop() => _notifier?.pauseFromSystem() ?? Future.value();
-
-  @override
-  Future<void> onTaskRemoved() async {
-    await stop();
-  }
 }
 
 class QueueItem {
