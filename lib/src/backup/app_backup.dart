@@ -13,9 +13,22 @@ import '../plugin/plugin_user_vars.dart';
 import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../i18n/i18n.dart';
+import '../core/db_path.dart';
+import '../library/library_provider.dart';
+import '../online/online_meta_store.dart';
+import '../recent/recent_provider.dart';
+import '../rust/api.dart';
 
 const _kBackupSchema = 'xianyu-music.app-backup';
-const _kBackupVersion = 1;
+const _kBackupVersion = 2;
+
+/// 三端名称（settings 分槽 / platform 标记用）。
+const kBackupPlatformMobile = 'mobile';
+const kBackupPlatformDesktop = 'desktop';
+const kBackupPlatformWatch = 'watch';
+
+/// 本端写入 / 读取的 settings 槽位键。
+const kBackupSelfSettingKey = kBackupPlatformMobile;
 
 /// 加密备份需要密码时抛出
 class BackupPasswordRequiredException implements Exception {}
@@ -74,6 +87,7 @@ class AppBackupService {
     bool includeFavorites = true,
     bool includePlugins = true,
     bool includeSettings = true,
+    bool includeRecent = true,
   }) async {
     final playlists = includePlaylists
         ? (await PlaylistStore().loadAll()).map((p) => p.toJson()).toList()
@@ -100,6 +114,10 @@ class AppBackupService {
       }
     }
 
+    final recent = includeRecent
+        ? await _collectRecentForExport()
+        : null;
+
     final settings = includeSettings
         ? _ref.read(settingsProvider).valueOrNull
         : null;
@@ -108,7 +126,7 @@ class AppBackupService {
       'schema': _kBackupSchema,
       'version': _kBackupVersion,
       'createdAt': DateTime.now().toIso8601String(),
-      'platform': 'mobile',
+      'platform': kBackupPlatformMobile,
       'data': {
         'playlists': ?playlists,
         if (includeFavorites) ...{
@@ -116,11 +134,82 @@ class AppBackupService {
           'favoriteCollections': collections,
         },
         if (includePlugins) 'plugins': plugins,
-        if (includeSettings && settings != null)
-          'settings': _settingsToJson(settings),
+        if (includeRecent) 'recentHistory': recent,
+        // 设置按端分槽：本端只写自己的槽位，其余端留空位，导入互不影响。
+        'settings': {
+          kBackupPlatformMobile:
+              includeSettings && settings != null ? _settingsToJson(settings) : null,
+          kBackupPlatformDesktop: null,
+          kBackupPlatformWatch: null,
+        },
       },
     };
     return const JsonEncoder.withIndent('  ').convert(backup);
+  }
+
+  /// 最近播放：读 stats db 的 recent history，逐条补全歌曲元数据（本地/在线
+  /// 各取对应来源），生成与其他端统一的 [{path, playedAt, song}] 结构。
+  Future<List<Map<String, dynamic>>> _collectRecentForExport() async {
+    final out = <Map<String, dynamic>>[];
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final list = await statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(200));
+      final rows = (jsonDecode(list) as List)
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+      final paths = rows
+          .map((e) => e['songPath'] as String? ?? '')
+          .where((p) => p.isNotEmpty)
+          .toList();
+      final localPaths = paths.where((p) => !_isOnlinePath(p)).toList();
+      final songMap = <String, Map<String, dynamic>>{};
+      if (localPaths.isNotEmpty) {
+        try {
+          final songsJson =
+              await getLibrarySongsByPaths(dbPath: dbPath, paths: localPaths);
+          for (final e in jsonDecode(songsJson) as List) {
+            final m = (e as Map).cast<String, dynamic>();
+            // 库查询结果已是歌曲字段（path/title/artist... 等），直接用。
+            songMap[m['path'] as String? ?? ''] = m;
+          }
+        } catch (_) {}
+      }
+      final onlineMeta = await _ref.read(onlineMetaStoreProvider)
+          .getAll(paths.where(_isOnlinePath).toList());
+      for (final row in rows) {
+        final path = row['songPath'] as String? ?? '';
+        if (path.isEmpty) continue;
+        final playedAt = (row['playedAt'] as num?)?.toInt() ?? 0;
+        final song = _isOnlinePath(path)
+            ? _queueItemToSongMap(onlineMeta[path])
+            : (songMap[path] ?? {});
+        out.add({
+          'path': path,
+          'playedAt': playedAt,
+          'song': song,
+        });
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  bool _isOnlinePath(String p) =>
+      p.startsWith('lx://') || p.startsWith('plugin://');
+
+  /// 在线歌曲 QueueItem → 统一歌曲 dict（供最近播放导出）。
+  Map<String, dynamic> _queueItemToSongMap(QueueItem? q) {
+    if (q == null) return const {};
+    return {
+      'path': q.path,
+      'title': q.title,
+      'artist': q.artist,
+      'album': q.album,
+      'duration': (q.durationMs / 1000).round(),
+      'coverUrl': q.coverUrl,
+      'pluginId': q.source,
+      'musicInfo': q.onlineSongJson,
+    };
   }
 
   Map<String, dynamic> _settingsToJson(AppSettings s) => {
@@ -198,9 +287,21 @@ class AppBackupService {
       favoriteCount: favorites.length,
       favoriteCollectionCount: collections.length,
       pluginCount: plugins.length,
-      hasSettings: data['settings'] is Map,
+      hasSettings: data['settings'] is Map && _selfSettings(data) != null,
       createdAt: backup['createdAt'] as String? ?? '',
     );
+  }
+
+  /// 取出写给「本端」的 settings 槽位。v2 起按端分槽；旧 v1 备份的 settings
+  /// 是扁平对象（无端概念），视为旧结构、不导入设置（提示可见但跳过写入）。
+  Map<String, dynamic>? _selfSettings(Map<String, dynamic> data) {
+    final settings = data['settings'];
+    if (settings is Map) {
+      final slot = settings[kBackupSelfSettingKey];
+      if (slot is Map) return (slot as Map).cast<String, dynamic>();
+      return null;
+    }
+    return null;
   }
 
   // ==================== 导入 ====================
@@ -211,6 +312,7 @@ class AppBackupService {
     bool includeFavorites = true,
     bool includePlugins = true,
     bool includeSettings = true,
+    bool includeRecent = true,
   }) async {
     final summary = summarize(backup);
     final data = (backup['data'] as Map).cast<String, dynamic>();
@@ -322,18 +424,25 @@ class AppBackupService {
       await _ref.read(favoritesProvider.notifier).refresh();
     }
 
-    if (includeSettings && data['settings'] is Map) {
-      try {
-        final current = _ref.read(settingsProvider).valueOrNull;
-        if (current != null) {
-          final restored = _settingsFromJson(
-              current, (data['settings'] as Map).cast<String, dynamic>());
-          await _ref.read(settingsProvider.notifier).saveAll(restored);
-          settingsApplied = true;
+    if (includeSettings) {
+      final selfSettings = _selfSettings(data);
+      if (selfSettings != null) {
+        try {
+          final current = _ref.read(settingsProvider).valueOrNull;
+          if (current != null) {
+            final restored =
+                _settingsFromJson(current, selfSettings);
+            await _ref.read(settingsProvider.notifier).saveAll(restored);
+            settingsApplied = true;
+          }
+        } catch (e) {
+          errors.add(tr('设置导入失败：{e}', {'e': e}));
         }
-      } catch (e) {
-        errors.add(tr('设置导入失败：{e}', {'e': e}));
       }
+    }
+
+    if (includeRecent) {
+      await _importRecent(data['recentHistory']);
     }
 
     return AppBackupImportResult(
@@ -345,6 +454,39 @@ class AppBackupService {
       settingsApplied: settingsApplied,
       errors: errors,
     );
+  }
+
+  /// 最近播放：读 [{path, playedAt}]，与现有历史按 path 合并（保留较新时间戳），
+  /// 再整体重写。stats 端 add_to_history 以「当前时刻」落时间戳，故按 playedAt
+  /// 降序重插可保持相对先后（最近优先）。
+  Future<void> _importRecent(dynamic raw) async {
+    final list = raw is List ? raw.whereType<Map>().toList() : const <Map>[];
+    if (list.isEmpty) return;
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final existingJson =
+          await statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(5000));
+      final merged = <String, int>{};
+      for (final e in (jsonDecode(existingJson) as List).cast<Map>()) {
+        final p = e['songPath'] as String? ?? '';
+        if (p.isNotEmpty) merged[p] = (e['playedAt'] as num?)?.toInt() ?? 0;
+      }
+      for (final e in list) {
+        final p = (e['path'] as String? ?? e['songPath'] as String? ?? '');
+        final t = (e['playedAt'] as num?)?.toInt() ?? 0;
+        if (p.isEmpty) continue;
+        final prev = merged[p] ?? 0;
+        merged[p] = t > prev ? t : prev;
+      }
+      final ordered = merged.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      await statsRemoveFromRecentHistory(
+          dbPath: dbPath, songPaths: ordered.map((e) => e.key).toList());
+      for (final entry in ordered) {
+        await statsAddToHistory(dbPath: dbPath, songPath: entry.key);
+      }
+      await _ref.read(recentProvider.notifier).refresh();
+    } catch (_) {}
   }
 
   AppSettings _settingsFromJson(AppSettings fallback, Map<String, dynamic> j) {
