@@ -51,6 +51,11 @@ import '../../src/i18n/i18n.dart';
 final Map<String, List<_LyricLineItem>> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
+/// 传统布局「封面 ↔ 歌词」的切换时长/曲线。普通状态下由 [PageView] 翻页，
+/// 播放 MV 时没有 PageView，靠 MV 画面和歌词页各自的进出场动画对齐同样的时长。
+const Duration _mvSwitchDuration = Duration(milliseconds: 260);
+const Curve _mvSwitchCurve = Curves.easeOutCubic;
+
 void _cacheLyrics(String path, List<_LyricLineItem> lines) {
   if (path.isEmpty || lines.isEmpty) return;
   _lyricsCache[path] = lines;
@@ -366,6 +371,11 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
 class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _showLyrics = false;
 
+  /// 传统布局切到「歌词」时上报：歌词页会盖住画面，视频层留着只会从歌词背后
+  /// 透出来。为真时 MV 画面滑走并淡出（保持挂载，动画期间还要能看到画面；
+  /// 到 opacity 0 后不再绘制）。MV 本身仍在播放，切回「封面」即恢复。
+  bool _hideMvVideo = false;
+
   final GlobalKey _lyricsKey = GlobalKey();
 
   bool _lyricsViewHasRomaji = false;
@@ -432,6 +442,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final hasRomaji = _lyricsViewHasRomaji;
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
+    // 只有传统布局会把「歌词」当作盖住画面的整页，需要连视频层一起去掉；
+    // 高级布局在 MV 播放时不渲染歌词，别把 MV 藏没了。
+    final hideMvVideo = _hideMvVideo && playerStyle == PlayerStyle.traditional;
+
     final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
     final landscapeNow = ref.watch(isLandscapeProvider);
     if (!landscapeNow || !autoHideChrome) {
@@ -467,27 +481,43 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               current: current,
             ),
           ),
-          if (mv.ready && mv.controller != null) ...[
+          if (mv.ready && mv.controller != null)
             Positioned.fill(
-              child: LayoutBuilder(builder: (context, cons) {
-                final ar = mv.controller!.value.aspectRatio;
-                final w = cons.maxWidth;
-                final h = cons.maxHeight;
-                final vw = w >= h * ar ? h * ar : w;
-                final vh = w >= h * ar ? h : w / ar;
-                return Align(
-                  child: SizedBox(
-                    width: vw,
-                    height: vh,
-                    child: VideoPlayer(mv.controller!),
+              // 切到歌词页时让 MV 画面滑走并淡出，和歌词页的进场动画同步；
+              // 保持挂载是为了动画期间还能看到画面，opacity 到 0 后不会绘制。
+              child: IgnorePointer(
+                child: AnimatedSlide(
+                  offset: hideMvVideo ? const Offset(-0.08, 0) : Offset.zero,
+                  duration: _mvSwitchDuration,
+                  curve: _mvSwitchCurve,
+                  child: AnimatedOpacity(
+                    opacity: hideMvVideo ? 0 : 1,
+                    duration: _mvSwitchDuration,
+                    curve: _mvSwitchCurve,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        LayoutBuilder(builder: (context, cons) {
+                          final ar = mv.controller!.value.aspectRatio;
+                          final w = cons.maxWidth;
+                          final h = cons.maxHeight;
+                          final vw = w >= h * ar ? h * ar : w;
+                          final vh = w >= h * ar ? h : w / ar;
+                          return Align(
+                            child: SizedBox(
+                              width: vw,
+                              height: vh,
+                              child: VideoPlayer(mv.controller!),
+                            ),
+                          );
+                        }),
+                        Container(color: const Color(0x66000000)),
+                      ],
+                    ),
                   ),
-                );
-              }),
+                ),
+              ),
             ),
-            Positioned.fill(
-              child: Container(color: const Color(0x66000000)),
-            ),
-          ],
           _DragDismissSheet(
         child: Listener(
           behavior: HitTestBehavior.translucent,
@@ -501,6 +531,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   mvLoading: mv.loading,
                   mvReady: mv.ready,
                   mvSupported: mvSupports(current),
+                  onHideMvChanged: (hide) {
+                    if (_hideMvVideo != hide) {
+                      setState(() => _hideMvVideo = hide);
+                    }
+                  },
                   onToggleMv: current != null
                       ? () async {
                           final messenger = ScaffoldMessenger.of(context);
@@ -937,6 +972,7 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     this.mvReady = false,
     this.mvSupported = false,
     this.onToggleMv,
+    this.onHideMvChanged,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
@@ -952,6 +988,9 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   final bool mvSupported;
   final VoidCallback? onToggleMv;
 
+  /// 上报「歌词页是否需要隐藏 MV 视频层」，见 [_hideMvVideo]。
+  final ValueChanged<bool>? onHideMvChanged;
+
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
       _TraditionalPlayerLayoutState();
@@ -963,6 +1002,13 @@ class _TraditionalPlayerLayoutState
   bool _showLyrics = false;
 
   bool _wasLandscape = false;
+
+  /// MV 播放时 PageView 会被替换成占位，退出 MV 后 PageView 是重新挂载的
+  /// （停在封面页）。用这个标记在退出 MV 的那一帧把页码同步回 [_showLyrics]。
+  bool _wasMvReady = false;
+
+  /// 最近一次上报给外层的 [onHideMvChanged] 值。
+  bool? _reportedHideMv;
 
   bool _lyricsViewHasRomaji = false;
 
@@ -1083,12 +1129,28 @@ class _TraditionalPlayerLayoutState
   }
 
   void _switchPage(int i) {
-    _pageController.animateToPage(
-      i,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    // 播放 MV 时 PageView 不在树里（flexible 被替换成占位），此时控制器没有
+    // 关联的滚动视图，animateToPage 会抛异常并中断整个方法，表现就是顶栏的
+    // 「歌词」按钮点了没反应。所以只在真的有附着视图时才翻页。
+    if (_pageController.hasClients) {
+      _pageController.animateToPage(
+        i,
+        duration: _mvSwitchDuration,
+        curve: _mvSwitchCurve,
+      );
+    }
     if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
+    // 这里同步上报，避免歌词页先叠在视频上再抽掉视频层、闪一帧画面。
+    _notifyHideMv(ref.read(mvProvider).ready &&
+        _showLyrics &&
+        !ref.read(isLandscapeProvider));
+  }
+
+  /// 通知外层是否要把 MV 视频层整个去掉。
+  void _notifyHideMv(bool hide) {
+    if (_reportedHideMv == hide) return;
+    _reportedHideMv = hide;
+    widget.onHideMvChanged?.call(hide);
   }
 
   void _syncEq(bool isPlaying) {
@@ -1107,6 +1169,7 @@ class _TraditionalPlayerLayoutState
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     _syncEq(isPlaying);
     final isLandscape = ref.watch(isLandscapeProvider);
+    final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     if (!isLandscape && _wasLandscape) {
       _wasLandscape = false;
       if (_showLyrics) {
@@ -1118,9 +1181,52 @@ class _TraditionalPlayerLayoutState
     } else {
       _wasLandscape = isLandscape;
     }
+    if (!mvReady && _wasMvReady && !isLandscape && _showLyrics) {
+      // 退出 MV 后 PageView 才重新挂载并停在封面页，若之前在看歌词要把页码同步回来。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            _pageController.hasClients &&
+            _pageController.page != 1) {
+          _pageController.jumpToPage(1);
+        }
+      });
+    }
+    _wasMvReady = mvReady;
+    // 兜底同步：[_showLyrics] 也会在 build 里被改（例如横屏转回竖屏时重置），
+    // 那种路径走不到 [_switchPage]，所以这里再核对一次，只能延迟到帧末上报。
+    final hideMv = mvReady && _showLyrics && !isLandscape;
+    if (_reportedHideMv != hideMv) {
+      _reportedHideMv = hideMv;
+      final onHideMvChanged = widget.onHideMvChanged;
+      if (onHideMvChanged != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) onHideMvChanged(hideMv);
+        });
+      }
+    }
     return LandscapeGate.sequential(
       portrait: _buildTraditionalPortrait(context, current),
       landscape: _buildTraditionalLandscape(context, current),
+    );
+  }
+
+  /// 歌词页内容。MV 播放时 [PageView] 不在树中，同一份内容会作为叠在 MV 上的
+  /// 歌词层复用，保证顶栏的「歌词」按钮在两种状态下都能切到歌词。
+  Widget _buildLyricsPage(QueueItem? current) {
+    return ClipRect(
+      child: RepaintBoundary(
+        child: _LyricsView(
+          key: _lyricsKey,
+          current: current,
+          visible: _showLyrics,
+          onTap: () {},
+          onRomajiAvailable: (has) {
+            if (_lyricsViewHasRomaji != has) {
+              setState(() => _lyricsViewHasRomaji = has);
+            }
+          },
+        ),
+      ),
     );
   }
 
@@ -1132,7 +1238,22 @@ class _TraditionalPlayerLayoutState
         _buildTopBar(context),
       ],
       flexible: mvReady
-          ? const SizedBox.shrink()
+          // MV 播放时没有 PageView 可翻，歌词页和 MV 画面各自做进出场动画，
+          // 方向和翻页一致：歌词从右侧进来，MV 画面往左退掉。
+          ? AnimatedSlide(
+              offset: _showLyrics ? Offset.zero : const Offset(0.08, 0),
+              duration: _mvSwitchDuration,
+              curve: _mvSwitchCurve,
+              child: AnimatedOpacity(
+                opacity: _showLyrics ? 1 : 0,
+                duration: _mvSwitchDuration,
+                curve: _mvSwitchCurve,
+                child: IgnorePointer(
+                  ignoring: !_showLyrics,
+                  child: _buildLyricsPage(current),
+                ),
+              ),
+            )
           : Stack(
         fit: StackFit.expand,
         children: [
@@ -1149,23 +1270,7 @@ class _TraditionalPlayerLayoutState
               if (i == 0) {
                 return _KeepAliveWrap(child: _buildCoverSection(context));
               }
-              return _KeepAliveWrap(
-                child: ClipRect(
-                  child: RepaintBoundary(
-                    child: _LyricsView(
-                      key: _lyricsKey,
-                      current: current,
-                      visible: _showLyrics,
-                      onTap: () {},
-                      onRomajiAvailable: (has) {
-                        if (_lyricsViewHasRomaji != has) {
-                          setState(() => _lyricsViewHasRomaji = has);
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              );
+              return _KeepAliveWrap(child: _buildLyricsPage(current));
             },
           ),
         ],
