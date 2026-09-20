@@ -724,10 +724,11 @@ internal object WidgetShared {
             }
             cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), scrim)
 
-            // 圆角收边：按 widget_card_radius（v31 跟随系统组件半径）把圆角外
-            // 区域置透明（DST_IN），与 widget_bg 卡底圆角精确重合。
-            val cornerR = ctx.resources.getDimensionPixelSize(
-                R.dimen.widget_card_radius).toFloat()
+            // 圆角收边：按 CARD_CORNER_DP 恒定半径把圆角外区域置透明（DST_IN），
+            // 与 widget_bg 卡底圆角（同样恒定 24dp）精确重合。部分 ROM
+            // （鸿蒙兼容层等）v31 跟随的系统组件半径资源返回 0，浮层无桌面级
+            // 裁剪会露直角；固定值保证实况/提起浮层/选择器全路径位图恒圆角。
+            val cornerR = CARD_CORNER_DP * ctx.resources.displayMetrics.density
             if (cornerR > 0f) {
                 val rr = RectF(0f, 0f, w.toFloat(), h.toFloat())
                 val clip = Path().apply {

@@ -7,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 
 final ValueNotifier<bool> globalIsScrolling = ValueNotifier(false);
+final ValueNotifier<int> globalScrollTick = ValueNotifier(0);
 Timer? _scrollTimer;
 
 void markScrollActivity() {
   globalIsScrolling.value = true;
+  globalScrollTick.value++;
   _scrollTimer?.cancel();
   _scrollTimer = Timer(const Duration(milliseconds: 200), () {
     globalIsScrolling.value = false;

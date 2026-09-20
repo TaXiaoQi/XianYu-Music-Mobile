@@ -17,9 +17,9 @@ class ScrollOffsetCapture extends StatelessWidget {
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (notification) {
         final metrics = notification.metrics;
+        markScrollActivity();
         if (metrics.axis == Axis.vertical) {
           globalScrollOffset.value = metrics.pixels;
-          markScrollActivity();
         }
         return false;
       },

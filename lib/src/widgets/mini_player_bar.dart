@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
@@ -769,7 +770,12 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         vsync: this,
         duration: const Duration(seconds: 8),
         value: 3.0,
-      )..repeat();
+      );
+
+  // 激进省电：静止即冻结。只有拖动/滚动/转场等瞬时活动才跑 8s 循环重绘，
+  // 让折射实时跟手；活动停止 _kIdleFreezeMs 后停 tick，冻结最后一帧省 GPU。
+  static const _kIdleFreezeMs = 1600;
+  Timer? _idleTimer;
 
   ui.FragmentShader? _shader;
   final GlobalKey _surfaceKey = GlobalKey();
@@ -787,20 +793,48 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     _programFuture ??=
         ui.FragmentProgram.fromAsset('assets/shaders/bilipai_liquid.frag');
     _programFuture!.then((p) {
-      if (mounted) setState(() => _shader = p.fragmentShader());
+      if (!mounted) return;
+      _shader = p.fragmentShader();
+      _writeUniforms(_shader!);
+      setState(() {});
     });
     _tick.addListener(_onTick);
     _frozen = globalIsTransitioning.value;
     if (_frozen) _tick.stop();
     globalIsTransitioning.addListener(_onTransitionChanged);
+    globalIsDragging.addListener(_onDraggingChanged);
+    globalScrollTick.addListener(_onScrollTick);
+    // 挂载首帧即渲染一次实时玻璃（几何/uniforms 已就绪），避免静止态
+    // 一直停在 blur 降级面；此后才进入「静止冻结、活动激活」。
+    if (!_frozen) _nudgeLive();
   }
 
   @override
   void dispose() {
     globalIsTransitioning.removeListener(_onTransitionChanged);
+    globalIsDragging.removeListener(_onDraggingChanged);
+    globalScrollTick.removeListener(_onScrollTick);
+    _idleTimer?.cancel();
     _tickC?..removeListener(_onTick)..dispose();
     super.dispose();
   }
+
+  /// 舒适光：切到静止，正是此刻。外部发生一次「折射应实时跟手」的活动
+  /// （拖动/滚动/转场收尾），唤起 tick 并重置冻结计时。
+  void _nudgeLive() {
+    if (!mounted) return;
+    if (!_frozen) _tick.repeat();
+    _idleTimer?.cancel();
+    _idleTimer = Timer(const Duration(milliseconds: _kIdleFreezeMs), () {
+      if (mounted && !_frozen) _tick.stop();
+    });
+  }
+
+  void _onDraggingChanged() {
+    if (globalIsDragging.value) _nudgeLive();
+  }
+
+  void _onScrollTick() => _nudgeLive();
 
   void _onTransitionChanged() {
     if (!mounted) return;
@@ -808,9 +842,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (active == _frozen) return;
     setState(() => _frozen = active);
     if (active) {
+      _idleTimer?.cancel();
       _tick.stop();
     } else {
-      _tick.repeat();
+      _nudgeLive();
     }
   }
 

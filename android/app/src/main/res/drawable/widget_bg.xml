@@ -4,7 +4,8 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/widget_card_start" />
-    <!-- 半径取 widget_card_radius：API 31+ 跟随系统组件圆角（values-v31），
-         与桌面裁剪半径重合，避免四角透出壁纸（亮角）。 -->
-    <corners android:radius="@dimen/widget_card_radius" />
+    <!-- corners 恒取 24dp：部分 ROM（鸿蒙兼容层等）v31 跟随的系统组件半径
+         资源返回 0，桌面正常靠系统组件级裁剪兜着、长按提起浮层脱离该裁剪
+         即露四角直角；固定兜底值保证实况/提起/选择器各路径背景下恒圆角。 -->
+    <corners android:radius="24dp" />
 </shape>

@@ -532,16 +532,30 @@ class RenderLiquidBacking extends RenderBox {
   void attach(PipelineOwner owner) {
     super.attach(owner);
     globalScrollOffset.addListener(_onScrollChanged);
+    globalScrollTick.addListener(_onScrollTick);
   }
 
   @override
   void detach() {
     globalScrollOffset.removeListener(_onScrollChanged);
+    globalScrollTick.removeListener(_onScrollTick);
     super.detach();
   }
 
   void _onScrollChanged() {
     if (_frozen == null) markNeedsPaint();
+  }
+
+  void _onScrollTick() {
+    // 横向滚动（来源气泡等 transform 平移）不改变竖向 globalScrollOffset，
+    // 也不会触发 markScrollActivity 变更 _frozen；须强制回归 live 重绘，
+    // 否则折射采样位置停留在玻璃平移前的屏幕坐标。
+    if (_frozen != null) {
+      _frozen?.dispose();
+      _frozen = null;
+      _fadeBlend = 0;
+    }
+    markNeedsPaint();
   }
 
   @override
