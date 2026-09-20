@@ -1995,13 +1995,19 @@ class _TraditionalPlayerLayoutState
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
+        // 只约束最小点击热区（36×36），宽度交给文字自行撑开：
+        // 音质缩写长度不一（HQ/SQ/HRA/AT+ 与 MV 画质 480P/720P/1080P），
+        // 原先写死 width:36 会让 480P 这类 4~5 字符在 16px 字号下折行成两行。
         child: Container(
-          width: 36,
-          height: 36,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          padding: const EdgeInsets.symmetric(horizontal: 2),
           alignment: Alignment.center,
           decoration: const BoxDecoration(shape: BoxShape.circle),
           child: Text(
             _qualityAbbr(quality),
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -4067,6 +4073,16 @@ class _DownloadQualitySheetState
   }
 }
 
+/// 音频跳转 + 让 MV 同步跟随。
+///
+/// MV 的自动同步（[MvNotifier._syncTimeline]）对所有 seek 都施加 5 秒冷却，
+/// 冷却期内只做 ±8% 变速微调、不发 seek——用户主动跳转若落进该窗口就完全不动，
+/// 表现为「拖了进度条 MV 自己放自己的」。所以用户侧跳转必须显式告知 MV。
+void _seekAudioWithMv(WidgetRef ref, PlayerNotifier notifier, double secs) {
+  notifier.seek(secs);
+  ref.read(mvProvider.notifier).alignToAudioSeconds(secs);
+}
+
 class _ProgressBar extends ConsumerWidget {
   const _ProgressBar({required this.notifier, this.showTime = true});
   final PlayerNotifier notifier;
@@ -4101,7 +4117,7 @@ class _ProgressBar extends ConsumerWidget {
             value: position.clamp(0, duration),
             min: 0,
             max: duration,
-            onCommit: (v) => notifier.seek(v),
+            onCommit: (v) => _seekAudioWithMv(ref, notifier, v),
           ),
         ),
         if (showTime)
@@ -4438,13 +4454,18 @@ class _LandscapeControlsRow extends ConsumerWidget {
                 showXianYuToast(context, tr('本地音乐以原音质播放'));
               }
             },
+            // 同 _qualityActionItem：只约束最小热区，宽度交给文字撑开，
+            // 避免 480P/720P/1080P 等较长画质标签在 36px 内折行。
             child: Container(
-              width: 36,
-              height: 36,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 2),
               alignment: Alignment.center,
               decoration: const BoxDecoration(shape: BoxShape.circle),
               child: Text(
                 mvQualityShown ? mvQuality : _qualityAbbr(currentQuality),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -5370,7 +5391,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     final idx = _draggingIndex;
     if (idx == null || idx < 0 || idx >= _lines.length) return;
 
-    ref.read(playerProvider.notifier).seek(_lines[idx].timeMs / 1000.0);
+    _seekAudioWithMv(
+      ref,
+      ref.read(playerProvider.notifier),
+      _lines[idx].timeMs / 1000.0,
+    );
 
     _draggingIndexTimer?.cancel();
     setState(() {

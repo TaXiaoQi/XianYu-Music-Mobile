@@ -62,6 +62,20 @@ subprojects {
         }
     }
 }
+// camera_android_camerax（camera 0.11.4 的传递依赖）编译期读取 camera-core 1.5.3 的
+// 类文件时，SurfaceRequest 字段带 @org.jspecify.annotations.NonNull 类型批注；javac
+// 附加批注需解析该字段类型 androidx.concurrent.futures.CallbackToFutureAdapter，而
+// camera-core 的 POM 未把 concurrent-futures 暴露到编译类路径（仅运行时传递），
+// 于是报「找不到 androidx.concurrent.futures.CallbackToFutureAdapter 的类文件」而编译失败。
+// 为该模块补上 concurrent-futures（取本地 Gradle 缓存已有档，无需额外联网）。
+subprojects {
+    if (name == "camera_android_camerax") {
+        afterEvaluate {
+            dependencies.add("implementation", "androidx.concurrent:concurrent-futures:1.2.0")
+            println("[patch] injected androidx.concurrent:concurrent-futures into camera_android_camerax")
+        }
+    }
+}
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
