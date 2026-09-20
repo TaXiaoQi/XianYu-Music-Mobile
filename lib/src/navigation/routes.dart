@@ -643,6 +643,18 @@ bool _enablePredictiveBack(BuildContext context) =>
         ?.enablePredictiveBack ??
     true;
 
+/// 实时读取预测性返回开关：路由 push 时快照的 [Fallback] 仅在路由未挂载
+/// （无 context）时使用，挂载后始终以当前设置在判断，令开关改动即时生效，
+/// 无需退出设置页/重新进入。
+bool _livePredictiveBack(BuildContext? context, bool fallback) {
+  if (context == null) return fallback;
+  return ProviderScope.containerOf(context, listen: false)
+          .read(settingsProvider)
+          .valueOrNull
+          ?.enablePredictiveBack ??
+      true;
+}
+
 PageTransitionStyle _pageTransitionStyle(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false)
         .read(settingsProvider)
@@ -726,7 +738,7 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   final bool predictiveBack;
 
   @override
-  bool get popGestureEnabled => isCurrent && predictiveBack;
+  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
   @override
   void install() {
@@ -846,7 +858,7 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   final bool predictiveBack;
 
   @override
-  bool get popGestureEnabled => isCurrent && predictiveBack;
+  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
   @override
   bool get opaque => false;
@@ -945,7 +957,7 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   final bool predictiveBack;
 
   @override
-  bool get popGestureEnabled => isCurrent && predictiveBack;
+  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
   @override
   bool get opaque => true;
