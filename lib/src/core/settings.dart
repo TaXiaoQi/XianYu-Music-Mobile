@@ -107,6 +107,9 @@ class CustomBackground {
   final int scale;
   final int translateX;
   final int translateY;
+  final int landscapeScale;
+  final int landscapeTranslateX;
+  final int landscapeTranslateY;
   final WallpaperTextColor textMode;
   final int widgetAlpha;
 
@@ -120,6 +123,9 @@ class CustomBackground {
     this.scale = 100,
     this.translateX = 0,
     this.translateY = 0,
+    this.landscapeScale = 100,
+    this.landscapeTranslateX = 0,
+    this.landscapeTranslateY = 0,
     this.textMode = WallpaperTextColor.follow,
     this.widgetAlpha = 30,
   });
@@ -138,6 +144,9 @@ class CustomBackground {
     int? scale,
     int? translateX,
     int? translateY,
+    int? landscapeScale,
+    int? landscapeTranslateX,
+    int? landscapeTranslateY,
     WallpaperTextColor? textMode,
     int? widgetAlpha,
   }) {
@@ -151,6 +160,11 @@ class CustomBackground {
       scale: scale ?? this.scale,
       translateX: translateX ?? this.translateX,
       translateY: translateY ?? this.translateY,
+      landscapeScale: landscapeScale ?? this.landscapeScale,
+      landscapeTranslateX:
+          landscapeTranslateX ?? this.landscapeTranslateX,
+      landscapeTranslateY:
+          landscapeTranslateY ?? this.landscapeTranslateY,
       textMode: textMode ?? this.textMode,
       widgetAlpha: widgetAlpha ?? this.widgetAlpha,
     );
@@ -842,6 +856,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         scale: prefs.getInt('customBackgroundScale') ?? 100,
         translateX: prefs.getInt('customBackgroundTranslateX') ?? 0,
         translateY: prefs.getInt('customBackgroundTranslateY') ?? 0,
+        landscapeScale: prefs.getInt('customBackgroundLandscapeScale') ?? 100,
+        landscapeTranslateX:
+            prefs.getInt('customBackgroundLandscapeTranslateX') ?? 0,
+        landscapeTranslateY:
+            prefs.getInt('customBackgroundLandscapeTranslateY') ?? 0,
         textMode: WallpaperTextColor
             .values[prefs.getInt('customBackgroundTextMode') ?? 0],
         widgetAlpha: prefs.getInt('customBackgroundWidgetAlpha') ?? 30,
@@ -1035,6 +1054,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setInt('customBackgroundScale', next.customBackground.scale),
       prefs.setInt('customBackgroundTranslateX', next.customBackground.translateX),
       prefs.setInt('customBackgroundTranslateY', next.customBackground.translateY),
+      prefs.setInt('customBackgroundLandscapeScale', next.customBackground.landscapeScale),
+      prefs.setInt('customBackgroundLandscapeTranslateX', next.customBackground.landscapeTranslateX),
+      prefs.setInt('customBackgroundLandscapeTranslateY', next.customBackground.landscapeTranslateY),
       prefs.setInt('customBackgroundTextMode', next.customBackground.textMode.index),
       prefs.setInt(
           'customBackgroundWidgetAlpha', next.customBackground.widgetAlpha),

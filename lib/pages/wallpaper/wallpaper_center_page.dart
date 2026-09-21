@@ -16,12 +16,11 @@ import 'package:video_player/video_player.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/motion_photo.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/glass_appbar.dart';
-import '../../src/widgets/glass_settings.dart';
-import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
@@ -46,18 +45,18 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       TabController(length: loggedIn ? 4 : 1, vsync: this);
 
   PreferredSizeWidget get _tabBar => TabBar(
-        controller: _tab,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        tabs: [
-          if (_lastLoggedIn == true) ...[
-            Tab(text: tr('壁纸广场')),
-            Tab(text: tr('我的上传')),
-            Tab(text: tr('我的下载')),
-          ],
-          Tab(text: tr('自定义壁纸')),
-        ],
-      );
+    controller: _tab,
+    isScrollable: true,
+    tabAlignment: TabAlignment.start,
+    tabs: [
+      if (_lastLoggedIn == true) ...[
+        Tab(text: tr('壁纸广场')),
+        Tab(text: tr('我的上传')),
+        Tab(text: tr('我的下载')),
+      ],
+      Tab(text: tr('自定义壁纸')),
+    ],
+  );
 
   @override
   void dispose() {
@@ -76,14 +75,17 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
     }
     final portraitFloating =
         MediaQuery.of(context).orientation != Orientation.landscape &&
-            (ref.watch(settingsProvider.select(
-                    (s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
-                true);
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
+            true);
     final topInset = portraitFloating
         ? MediaQuery.paddingOf(context).top +
-            66 +
-            _tabBar.preferredSize.height +
-            6
+              66 +
+              _tabBar.preferredSize.height +
+              6
         : 0.0;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -102,7 +104,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
                     _MyUploadsTab(topInset: topInset),
                     _MyDownloadsTab(topInset: topInset),
                   ],
-                  const CustomWallpaperEditor(),
+                  CustomWallpaperEditor(topInset: topInset),
                 ],
               ),
             ),
@@ -121,6 +123,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       ),
     );
   }
+
   Widget _tabHost(bool floating, double topInset, Widget child) {
     if (floating) return Positioned.fill(child: RepaintBoundary(child: child));
     return Padding(
@@ -130,7 +133,6 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
       child: child,
     );
   }
-
 }
 
 class _WallpaperBrowseTab extends ConsumerStatefulWidget {
@@ -193,17 +195,17 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
           children: [
             Text(_error!, style: TextStyle(color: scheme.error)),
             const SizedBox(height: 12),
-            FilledButton.tonal(
-              onPressed: _load,
-              child:   Text(tr('重试')),
-            ),
+            FilledButton.tonal(onPressed: _load, child: Text(tr('重试'))),
           ],
         ),
       );
     }
     if (_wallpapers.isEmpty) {
       return Center(
-        child: Text(tr('暂无壁纸'), style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          tr('暂无壁纸'),
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     return RefreshIndicator(
@@ -246,9 +248,7 @@ class _WallpaperCard extends ConsumerWidget {
     return Material(
       clipBehavior: Clip.antiAlias,
       color: appCardColor(context),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openPreview(context),
         child: Stack(
@@ -275,8 +275,10 @@ class _WallpaperCard extends ConsumerWidget {
               )
             else
               Center(
-                child: Icon(Icons.image_outlined,
-                    color: scheme.onSurfaceVariant),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             if (statusBadge != null)
               Positioned(
@@ -284,15 +286,16 @@ class _WallpaperCard extends ConsumerWidget {
                 right: 6,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     statusBadge!,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 11),
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ),
               ),
@@ -302,7 +305,9 @@ class _WallpaperCard extends ConsumerWidget {
                 left: 6,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(999),
@@ -310,12 +315,16 @@ class _WallpaperCard extends ConsumerWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_circle_outline,
-                          size: 13, color: Colors.white),
+                      Icon(
+                        Icons.play_circle_outline,
+                        size: 13,
+                        color: Colors.white,
+                      ),
                       SizedBox(width: 2),
-                      Text('视频',
-                          style: TextStyle(
-                              color: Colors.white, fontSize: 11)),
+                      Text(
+                        '视频',
+                        style: TextStyle(color: Colors.white, fontSize: 11),
+                      ),
                     ],
                   ),
                 ),
@@ -340,19 +349,26 @@ class _WallpaperCard extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (uploader.isNotEmpty)
+                      Text(
+                        uploader,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white)),
-                    if (uploader.isNotEmpty)
-                      Text(uploader,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.white70)),
+                          fontSize: 11,
+                          color: Colors.white70,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -364,10 +380,12 @@ class _WallpaperCard extends ConsumerWidget {
   }
 
   void _openPreview(BuildContext context) {
-    Navigator.of(context).push(coverPageRoute<void>(
-      context,
-      (_) => _WallpaperPreviewPage(wallpaper: wallpaper),
-    ));
+    Navigator.of(context).push(
+      coverPageRoute<void>(
+        context,
+        (_) => _WallpaperPreviewPage(wallpaper: wallpaper),
+      ),
+    );
   }
 }
 
@@ -459,8 +477,12 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final ext = isVideo ? 'mp4' : 'jpg';
     // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
     final cacheKey = isVideo && sha.isNotEmpty ? sha.substring(0, 8) : '';
-    final file = File(p.join(dir.path,
-        'wallpaper_${id}${cacheKey.isEmpty ? '' : '_$cacheKey'}_${_safeName(widget.wallpaper)}.$ext'));
+    final file = File(
+      p.join(
+        dir.path,
+        'wallpaper_$id${cacheKey.isEmpty ? '' : '_$cacheKey'}_${_safeName(widget.wallpaper)}.$ext',
+      ),
+    );
     if (file.existsSync() &&
         file.lengthSync() > 0 &&
         (isVideo ? cacheKey.isNotEmpty : true)) {
@@ -509,11 +531,14 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       if (total <= _cacheLimitBytes) return;
       final active = _localPath;
       files.sort(
-          (a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+        (a, b) => a.statSync().modified.compareTo(b.statSync().modified),
+      );
       for (final f in files) {
         if (f.path == active) continue;
         final s = _fileSize(f);
-        await f.delete().catchError((_) {});
+        try {
+          await f.delete();
+        } catch (_) {}
         total -= s;
         if (total <= _cacheLimitBytes) break;
       }
@@ -585,8 +610,7 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final applied = await Navigator.of(context).push<bool?>(
       coverPageRoute<bool>(
         context,
-        (_) => WallpaperCustomApplyPage(
-            imagePath: path, mediaType: _isVideo),
+        (_) => WallpaperCustomApplyPage(imagePath: path, mediaType: _isVideo),
       ),
     );
     if (!mounted) return;
@@ -606,16 +630,20 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
   }
 
   Future<void> _recordDownload(
-      Map<String, dynamic> wallpaper, String localPath) async {
+    Map<String, dynamic> wallpaper,
+    String localPath,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('xianyu_downloaded_wallpapers_v1');
       final list = raw == null
           ? <Map<String, dynamic>>[]
           : (jsonDecode(raw) as List)
-              .whereType<Map>()
-              .map((m) => Map<String, dynamic>.from(m.cast<String, dynamic>()))
-              .toList();
+                .whereType<Map>()
+                .map(
+                  (m) => Map<String, dynamic>.from(m.cast<String, dynamic>()),
+                )
+                .toList();
       list.removeWhere((m) => m['id'] == wallpaper['id']);
       list.insert(0, {
         ...wallpaper,
@@ -623,24 +651,24 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
         'downloadedAt': DateTime.now().toIso8601String(),
       });
       await prefs.setString(
-          'xianyu_downloaded_wallpapers_v1', jsonEncode(list));
+        'xianyu_downloaded_wallpapers_v1',
+        jsonEncode(list),
+      );
     } catch (_) {}
   }
 
   Widget _spinner({double size = 16}) => SizedBox(
-        width: size,
-        height: size,
-        child: CircularProgressIndicator(
-            strokeWidth: 2, color: Colors.white),
-      );
+    width: size,
+    height: size,
+    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+  );
 
   @override
   Widget build(BuildContext context) {
     final url = (widget.wallpaper['imageUrl'] as String?) ?? '';
     final hasLocal = _hasLocal;
     final title = (widget.wallpaper['title'] as String?) ?? '';
-    final video =
-        _previewVideoReady ? _previewVideo : null;
+    final video = _previewVideoReady ? _previewVideo : null;
     Widget previewContent;
     if (video != null && video.value.isInitialized) {
       previewContent = VideoPlayer(video);
@@ -648,8 +676,11 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       previewContent = CachedNetworkImage(
         imageUrl: url,
         fit: BoxFit.contain,
-        errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined,
-            color: Colors.white54, size: 64),
+        errorWidget: (_, _, _) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 64,
+        ),
       );
     } else if (hasLocal) {
       previewContent = Image.file(File(_localPath!), fit: BoxFit.contain);
@@ -657,12 +688,18 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       previewContent = CachedNetworkImage(
         imageUrl: url,
         fit: BoxFit.contain,
-        errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined,
-            color: Colors.white54, size: 64),
+        errorWidget: (_, _, _) => const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 64,
+        ),
       );
     } else {
-      previewContent = const Icon(Icons.image_not_supported_outlined,
-          color: Colors.white54, size: 64);
+      previewContent = const Icon(
+        Icons.image_not_supported_outlined,
+        color: Colors.white54,
+        size: 64,
+      );
     }
     return Scaffold(
       backgroundColor: Colors.black,
@@ -690,7 +727,9 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
                       child: Text(
                         _result!,
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -765,8 +804,8 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
 
   String? get _ciyuanxiId =>
       ref.read(authProvider).user?.ciyuanxiId?.isNotEmpty == true
-          ? ref.read(authProvider).user!.ciyuanxiId
-          : null;
+      ? ref.read(authProvider).user!.ciyuanxiId
+      : null;
 
   @override
   void initState() {
@@ -858,11 +897,15 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
     return Stack(
       children: [
         if (_error != null)
-          Center(child: Text(_error!, style: TextStyle(color: scheme.error)))
+          Center(
+            child: Text(_error!, style: TextStyle(color: scheme.error)),
+          )
         else if (_mine.isEmpty)
           Center(
-            child: Text(tr('还没有上传过壁纸'),
-                style: TextStyle(color: scheme.onSurfaceVariant)),
+            child: Text(
+              tr('还没有上传过壁纸'),
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
           )
         else
           RefreshIndicator(
@@ -878,7 +921,9 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
               itemCount: _mine.length,
               itemBuilder: (context, i) => _WallpaperCard(
                 wallpaper: _mine[i],
-                statusBadge: _statusBadge((_mine[i]['status'] as String?) ?? ''),
+                statusBadge: _statusBadge(
+                  (_mine[i]['status'] as String?) ?? '',
+                ),
               ),
             ),
           ),
@@ -888,7 +933,7 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
           child: FloatingActionButton.extended(
             onPressed: _openUpload,
             icon: const Icon(Icons.upload_outlined),
-            label:   Text(tr('上传壁纸')),
+            label: Text(tr('上传壁纸')),
           ),
         ),
       ],
@@ -923,7 +968,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   Future<void> _pickImage() async {
     try {
       final picked = await ImagePicker().pickImage(
-          source: ImageSource.gallery, imageQuality: 100);
+        source: ImageSource.gallery,
+        imageQuality: 100,
+      );
       if (picked != null && mounted) {
         setState(() {
           _picked = picked;
@@ -962,7 +1009,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
     });
     try {
       final imageData = await _compressToDataUrl(_picked!);
-      await ref.read(accountApiProvider).uploadWallpaper(
+      await ref
+          .read(accountApiProvider)
+          .uploadWallpaper(
             title: title,
             description: _descCtrl.text.trim(),
             category: _categoryCtrl.text.trim(),
@@ -988,11 +1037,12 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(tr('上传壁纸'),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+          Text(
+            tr('上传壁纸'),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 14),
           GestureDetector(
             onTap: _uploading ? null : _pickImage,
@@ -1008,8 +1058,11 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_photo_alternate_outlined,
-                              size: 40, color: scheme.onSurfaceVariant),
+                          Icon(
+                            Icons.add_photo_alternate_outlined,
+                            size: 40,
+                            color: scheme.onSurfaceVariant,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             tr('点击选择图片\n(JPG / PNG / WEBP，30MB 以内)'),
@@ -1025,9 +1078,11 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                     )
                   : ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.file(File(_picked!.path),
-                          fit: BoxFit.cover,
-                          width: double.infinity),
+                      child: Image.file(
+                        File(_picked!.path),
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                      ),
                     ),
             ),
           ),
@@ -1035,33 +1090,40 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
           TextField(
             controller: _titleCtrl,
             enabled: !_uploading,
-            decoration:   InputDecoration(
-                labelText: tr('标题'), isDense: true, border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: tr('标题'),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _descCtrl,
             enabled: !_uploading,
             maxLines: 2,
-            decoration:   InputDecoration(
-                labelText: tr('描述（可选）'),
-                isDense: true,
-                border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: tr('描述（可选）'),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _categoryCtrl,
             enabled: !_uploading,
-            decoration:   InputDecoration(
-                labelText: tr('分类（可选，默认「用户上传」）'),
-                isDense: true,
-                border: OutlineInputBorder()),
+            decoration: InputDecoration(
+              labelText: tr('分类（可选，默认「用户上传」）'),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
           ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text(_error!,
-                  style: TextStyle(color: scheme.error, fontSize: 12)),
+              child: Text(
+                _error!,
+                style: TextStyle(color: scheme.error, fontSize: 12),
+              ),
             ),
           const SizedBox(height: 14),
           FilledButton(
@@ -1071,8 +1133,11 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                :   Text(tr('提交审核')),
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(tr('提交审核')),
           ),
         ],
       ),
@@ -1116,9 +1181,11 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
       final list = raw == null
           ? <Map<String, dynamic>>[]
           : (jsonDecode(raw) as List)
-              .whereType<Map>()
-              .map((m) => Map<String, dynamic>.from(m.cast<String, dynamic>()))
-              .toList();
+                .whereType<Map>()
+                .map(
+                  (m) => Map<String, dynamic>.from(m.cast<String, dynamic>()),
+                )
+                .toList();
       if (mounted) setState(() => _downloads = list);
     } catch (_) {}
   }
@@ -1130,7 +1197,9 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          'xianyu_downloaded_wallpapers_v1', jsonEncode(list));
+        'xianyu_downloaded_wallpapers_v1',
+        jsonEncode(list),
+      );
       final localPath = removed['localPath'] as String?;
       if (localPath != null && localPath.isNotEmpty) {
         final f = File(localPath);
@@ -1145,8 +1214,10 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
     final scheme = Theme.of(context).colorScheme;
     if (_downloads.isEmpty) {
       return Center(
-        child: Text(tr('还没有下载过壁纸'),
-            style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          tr('还没有下载过壁纸'),
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     return ListView.separated(
@@ -1169,12 +1240,16 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
                     height: 48,
                     fit: BoxFit.cover,
                     errorWidget: (_, _, _) => const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Icon(Icons.image_outlined)),
+                      width: 48,
+                      height: 48,
+                      child: Icon(Icons.image_outlined),
+                    ),
                   )
                 : const SizedBox(
-                    width: 48, height: 48, child: Icon(Icons.image_outlined)),
+                    width: 48,
+                    height: 48,
+                    child: Icon(Icons.image_outlined),
+                  ),
           ),
           title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
@@ -1189,10 +1264,12 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
           ),
           onTap: () {
             if (exists) {
-              Navigator.of(context).push(coverPageRoute<void>(
-                context,
-                (_) => _WallpaperPreviewPage(wallpaper: w),
-              ));
+              Navigator.of(context).push(
+                coverPageRoute<void>(
+                  context,
+                  (_) => _WallpaperPreviewPage(wallpaper: w),
+                ),
+              );
             }
           },
         );
@@ -1202,11 +1279,16 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
 }
 
 class CustomWallpaperEditor extends ConsumerStatefulWidget {
-  const CustomWallpaperEditor(
-      {super.key, this.initialImagePath, this.initialIsVideo = false});
+  const CustomWallpaperEditor({
+    super.key,
+    this.initialImagePath,
+    this.initialIsVideo = false,
+    this.topInset = 0,
+  });
 
   final String? initialImagePath;
   final bool initialIsVideo;
+  final double topInset;
 
   @override
   ConsumerState<CustomWallpaperEditor> createState() =>
@@ -1214,8 +1296,11 @@ class CustomWallpaperEditor extends ConsumerStatefulWidget {
 }
 
 class WallpaperCustomApplyPage extends StatelessWidget {
-  const WallpaperCustomApplyPage(
-      {super.key, required this.imagePath, this.mediaType = false});
+  const WallpaperCustomApplyPage({
+    super.key,
+    required this.imagePath,
+    this.mediaType = false,
+  });
 
   final String imagePath;
   final bool mediaType;
@@ -1225,14 +1310,19 @@ class WallpaperCustomApplyPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(tr('自定义壁纸'))),
       body: CustomWallpaperEditor(
-          initialImagePath: imagePath, initialIsVideo: mediaType),
+        initialImagePath: imagePath,
+        initialIsVideo: mediaType,
+      ),
     );
   }
 }
 
-class _CustomWallpaperEditorState
-    extends ConsumerState<CustomWallpaperEditor> {
+class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
   late CustomBackground _draft;
+  bool _landscape = false;
+  double? _gestureBaseScale;
+  double? _gestureBaseTx;
+  double? _gestureBaseTy;
 
   @override
   void initState() {
@@ -1249,48 +1339,91 @@ class _CustomWallpaperEditorState
         maskAlpha: 18,
       );
     } else {
-      _draft = ref.read(settingsProvider).valueOrNull?.customBackground ??
+      _draft =
+          ref.read(settingsProvider).valueOrNull?.customBackground ??
           CustomBackground.none;
     }
   }
 
   Future<void> _pickImage() async {
-    final picked =
-        await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked == null) return;
     try {
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'custom_background'));
       if (!dir.existsSync()) dir.createSync(recursive: true);
+      final ts = DateTime.now().millisecondsSinceEpoch;
       final ext = p.extension(picked.path).toLowerCase();
-      final target = p.join(dir.path, 'wallpaper$ext');
+      final videoTarget = p.join(dir.path, 'wallpaper_$ts.mp4');
+      final extracted = await extractMotionPhotoVideo(
+        File(picked.path),
+        videoTarget,
+      );
+      if (extracted != null) {
+        _cleanupOldBackgroundFiles(dir, keep: extracted);
+        if (!mounted) return;
+        setState(
+          () => _draft = _draft.copyWith(
+            imagePath: extracted,
+            mediaType: WallpaperMediaType.video,
+          ),
+        );
+        return;
+      }
+      final target = p.join(dir.path, 'wallpaper_$ts$ext');
       await File(picked.path).copy(target);
+      _cleanupOldBackgroundFiles(dir, keep: target);
       if (!mounted) return;
-      setState(() => _draft = _draft.copyWith(
-          imagePath: target, mediaType: WallpaperMediaType.image));
+      setState(
+        () => _draft = _draft.copyWith(
+          imagePath: target,
+          mediaType: WallpaperMediaType.image,
+        ),
+      );
     } catch (_) {
       if (mounted) showXianYuToast(context, tr('请先选择图片'));
     }
   }
 
   Future<void> _pickVideo() async {
-    final picked =
-        await ImagePicker().pickVideo(source: ImageSource.gallery);
+    final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
     if (picked == null) return;
     try {
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'custom_background'));
       if (!dir.existsSync()) dir.createSync(recursive: true);
+      final ts = DateTime.now().millisecondsSinceEpoch;
       var ext = p.extension(picked.path).toLowerCase();
       if (ext.isEmpty) ext = '.mp4';
-      final target = p.join(dir.path, 'wallpaper$ext');
-      await File(picked.path).copy(target);
+      final target = p.join(dir.path, 'wallpaper_$ts$ext');
+      await picked.saveTo(target);
+      _cleanupOldBackgroundFiles(dir, keep: target);
       if (!mounted) return;
-      setState(() => _draft = _draft.copyWith(
-          imagePath: target, mediaType: WallpaperMediaType.video));
+      setState(
+        () => _draft = _draft.copyWith(
+          imagePath: target,
+          mediaType: WallpaperMediaType.video,
+        ),
+      );
     } catch (_) {
       if (mounted) showXianYuToast(context, tr('请先选择视频'));
     }
+  }
+
+  void _cleanupOldBackgroundFiles(Directory dir, {required String keep}) {
+    try {
+      final appliedPath =
+          ref.read(settingsProvider).valueOrNull?.customBackground.imagePath ??
+          '';
+      for (final e in dir.listSync()) {
+        if (e is! File) continue;
+        final path = e.path;
+        if (path == keep || path == appliedPath) continue;
+        if (p.basename(path).startsWith('wallpaper_')) {
+          e.deleteSync();
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _apply() async {
@@ -1315,251 +1448,458 @@ class _CustomWallpaperEditorState
     showXianYuToastByOverlay(overlay, tr('已恢复默认背景'));
   }
 
+  void _onPreviewScaleStart(ScaleStartDetails d) {
+    if (_draft.imagePath.isEmpty) return;
+    _gestureBaseScale =
+        (_landscape ? _draft.landscapeScale : _draft.scale).toDouble();
+    _gestureBaseTx =
+        (_landscape ? _draft.landscapeTranslateX : _draft.translateX)
+            .toDouble();
+    _gestureBaseTy =
+        (_landscape ? _draft.landscapeTranslateY : _draft.translateY)
+            .toDouble();
+  }
+
+  void _onPreviewScaleUpdate(ScaleUpdateDetails d, double bw, double bh) {
+    final baseScale = _gestureBaseScale;
+    final baseTx = _gestureBaseTx;
+    final baseTy = _gestureBaseTy;
+    if (baseScale == null || baseTx == null || baseTy == null) return;
+    if (bw <= 0 || bh <= 0) return;
+
+    double scale = (_landscape ? _draft.landscapeScale : _draft.scale)
+        .toDouble();
+    if (d.pointerCount >= 2) {
+      scale = (baseScale * d.scale).clamp(80.0, 160.0);
+    }
+
+    final sEff = (scale / 100).clamp(1.0, 10.0).toDouble();
+    final maxTx = ((sEff - 1) / 2 * 100).clamp(0.0, 50.0).toDouble();
+    final maxTy = maxTx;
+    final tx = (baseTx + d.focalPointDelta.dx / bw * 100)
+        .clamp(-maxTx, maxTx)
+        .toDouble();
+    final ty = (baseTy + d.focalPointDelta.dy / bh * 100)
+        .clamp(-maxTy, maxTy)
+        .toDouble();
+
+    setState(() {
+      if (_landscape) {
+        _draft = _draft.copyWith(
+          landscapeScale: scale.round(),
+          landscapeTranslateX: tx.round(),
+          landscapeTranslateY: ty.round(),
+        );
+      } else {
+        _draft = _draft.copyWith(
+          scale: scale.round(),
+          translateX: tx.round(),
+          translateY: ty.round(),
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final hasImage =
         _draft.imagePath.isNotEmpty && File(_draft.imagePath).existsSync();
-    final panelBg = isDark
-        ? const Color(0xDE262626)
-        : const Color(0xEFFFFFFF);
-    final glassPanel = hasImage;
-    final panelColor = glassPanel
-        ? Colors.white.withValues(alpha: isDark ? 0.38 : 0.58)
-        : panelBg;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CustomBackgroundLayer(background: _draft),
-        if (!hasImage)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, 16 + widget.topInset, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildPreviewCard(context, hasImage, isDark),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickImage,
+                    icon: const Icon(Icons.photo_library_outlined, size: 18),
+                    label: Text(
+                      hasImage && _draft.mediaType == WallpaperMediaType.image
+                          ? tr('更换图片')
+                          : tr('选择图片'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickVideo,
+                    icon: const Icon(Icons.video_library_outlined, size: 18),
+                    label: Text(
+                      hasImage && _draft.mediaType == WallpaperMediaType.video
+                          ? tr('更换视频')
+                          : tr('选择视频'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (hasImage) ...[
+              const SizedBox(height: 12),
+              _ParamSlider(
+                icon: Icons.blur_on,
+                label: tr('模糊'),
+                value: _draft.blur,
+                min: 0,
+                max: 40,
+                divisions: 40,
+                onChanged: (v) =>
+                    setState(() => _draft = _draft.copyWith(blur: v)),
+              ),
+              _ParamSlider(
+                icon: Icons.opacity,
+                label: tr('不透明度'),
+                value: _draft.opacity,
+                min: 10,
+                max: 100,
+                divisions: 90,
+                onChanged: (v) =>
+                    setState(() => _draft = _draft.copyWith(opacity: v)),
+              ),
+              _ParamSlider(
+                icon: Icons.dark_mode_outlined,
+                label: tr('遮罩'),
+                value: _draft.maskAlpha,
+                min: 0,
+                max: 60,
+                divisions: 60,
+                suffix: tr('压暗'),
+                onChanged: (v) =>
+                    setState(() => _draft = _draft.copyWith(maskAlpha: v)),
+              ),
+              const SizedBox(height: 4),
+              SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment(value: false, label: Text(tr('竖屏'))),
+                  ButtonSegment(value: true, label: Text(tr('横屏'))),
+                ],
+                selected: {_landscape},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) =>
+                    setState(() => _landscape = selection.first),
+              ),
+              _ParamSlider(
+                icon: Icons.zoom_out_map,
+                label: tr('缩放'),
+                value: _landscape ? _draft.landscapeScale : _draft.scale,
+                min: 80,
+                max: 160,
+                divisions: 80,
+                onChanged: (v) => setState(
+                  () => _draft = _landscape
+                      ? _draft.copyWith(landscapeScale: v)
+                      : _draft.copyWith(scale: v),
+                ),
+              ),
+              _ParamSlider(
+                icon: Icons.swap_horiz,
+                label: tr('水平位移'),
+                value: _landscape
+                    ? _draft.landscapeTranslateX
+                    : _draft.translateX,
+                min: -50,
+                max: 50,
+                divisions: 100,
+                onChanged: (v) => setState(
+                  () => _draft = _landscape
+                      ? _draft.copyWith(landscapeTranslateX: v)
+                      : _draft.copyWith(translateX: v),
+                ),
+              ),
+              _ParamSlider(
+                icon: Icons.swap_vert,
+                label: tr('垂直位移'),
+                value: _landscape
+                    ? _draft.landscapeTranslateY
+                    : _draft.translateY,
+                min: -50,
+                max: 50,
+                divisions: 100,
+                onChanged: (v) => setState(
+                  () => _draft = _landscape
+                      ? _draft.copyWith(landscapeTranslateY: v)
+                      : _draft.copyWith(translateY: v),
+                ),
+              ),
+              _ParamSlider(
+                icon: Icons.invert_colors,
+                label: tr('组件底色'),
+                value: _draft.widgetAlpha,
+                min: 0,
+                max: 90,
+                divisions: 90,
+                suffix: '%',
+                onChanged: (v) =>
+                    setState(() => _draft = _draft.copyWith(widgetAlpha: v)),
+              ),
+              const SizedBox(height: 4),
+              SegmentedButton<WallpaperTextColor>(
+                segments: [
+                  ButtonSegment(
+                    value: WallpaperTextColor.follow,
+                    label: Text(tr('默认')),
+                  ),
+                  ButtonSegment(
+                    value: WallpaperTextColor.light,
+                    label: Text(tr('亮色字体')),
+                  ),
+                  ButtonSegment(
+                    value: WallpaperTextColor.dark,
+                    label: Text(tr('暗色字体')),
+                  ),
+                ],
+                selected: {_draft.textMode},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) => setState(
+                  () => _draft = _draft.copyWith(textMode: selection.first),
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _apply,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(tr('保存并使用')),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (_draft.active) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton(
+                    onPressed: _restore,
+                    child: Text(tr('恢复默认')),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard(BuildContext context, bool hasImage, bool isDark) {
+    final scheme = Theme.of(context).colorScheme;
+    final win = MediaQuery.sizeOf(context);
+    final long = win.width > win.height ? win.width : win.height;
+    final short = long > 0
+        ? (win.width > win.height ? win.height : win.width)
+        : 0.0;
+    final portraitRatio = short > 0 ? short / long : 9 / 19.5;
+    final landscapeRatio = 1 / portraitRatio;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        double bw;
+        double bh;
+        if (_landscape) {
+          bh = maxW / landscapeRatio;
+          if (bh > 240) bh = 240;
+          bw = bh * landscapeRatio;
+          if (bw > maxW) {
+            bw = maxW;
+            bh = bw / landscapeRatio;
+          }
+        } else {
+          bh = 240;
+          bw = bh * portraitRatio;
+          if (bw > maxW) {
+            bw = maxW;
+            bh = bw / portraitRatio;
+          }
+        }
+        Widget content;
+        if (!hasImage) {
+          content = ColoredBox(
+            color: isDark ? const Color(0xFF262626) : const Color(0xFFE8E8E8),
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.wallpaper,
-                      size: 48, color: Colors.white70),
-                  const SizedBox(height: 12),
+                  Icon(
+                    Icons.image_outlined,
+                    size: 44,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                  ),
+                  const SizedBox(height: 8),
                   Text(
-                    tr('从相册选择图片或视频作为应用背景'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70),
+                    _draft.mediaType == WallpaperMediaType.video
+                        ? tr('未选择视频')
+                        : tr('未选择图片'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: _FrostedSheet(
-            enabled: glassPanel,
-            radius: 28,
-            child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: panelColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(28),
-                topRight: Radius.circular(28),
+          );
+        } else {
+          final textColor = switch (_draft.textMode) {
+            WallpaperTextColor.light => Colors.white,
+            WallpaperTextColor.dark => const Color(0xFF111111),
+            WallpaperTextColor.follow => scheme.onSurface,
+          };
+          final shadow = Shadow(
+            color: textColor.computeLuminance() > 0.5
+                ? Colors.black.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.5),
+            blurRadius: 6,
+          );
+          final modeLabel = switch (_draft.textMode) {
+            WallpaperTextColor.light => tr('亮色字体'),
+            WallpaperTextColor.dark => tr('暗色字体'),
+            WallpaperTextColor.follow => tr('默认'),
+          };
+          content = Stack(
+            fit: StackFit.expand,
+            children: [
+              const ColoredBox(color: Colors.black),
+              CustomBackgroundLayer(
+                background: _draft.copyWith(enabled: true),
+                forceOrientation: _landscape
+                    ? Orientation.landscape
+                    : Orientation.portrait,
               ),
-              border: Border(
-                top: BorderSide(
-                  color: scheme.onSurface.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-            child: SafeArea(
-              top: false,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.7,
-                ),
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 10,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            tr('自定义壁纸'),
-                            style: const TextStyle(
-                                fontSize: 17, fontWeight: FontWeight.w700),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tr('字体预览'),
+                            style: TextStyle(
+                              fontSize: 9,
+                              letterSpacing: 2,
+                              color: textColor.withValues(alpha: 0.6),
+                              shadows: [shadow],
+                            ),
                           ),
-                        ),
-                        if (hasImage)
-                          TextButton(
-                            onPressed: _draft.active ? _restore : null,
-                            child: Text(tr('恢复默认')),
+                          const SizedBox(height: 2),
+                          Text(
+                            '夜航星',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                              shadows: [shadow],
+                            ),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickImage,
-                            icon: const Icon(
-                                Icons.photo_library_outlined,
-                                size: 18),
-                            label: Text(hasImage &&
-                                    _draft.mediaType ==
-                                        WallpaperMediaType.image
-                                ? tr('更换图片')
-                                : tr('选择图片')),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickVideo,
-                            icon: const Icon(Icons.video_library_outlined,
-                                size: 18),
-                            label: Text(hasImage &&
-                                    _draft.mediaType ==
-                                        WallpaperMediaType.video
-                                ? tr('更换视频')
-                                : tr('选择视频')),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (hasImage) ...[
-                      const SizedBox(height: 12),
-                      _ParamSlider(
-                        icon: Icons.blur_on,
-                        label: tr('模糊'),
-                        value: _draft.blur,
-                        min: 0,
-                        max: 40,
-                        divisions: 40,
-                        onChanged: (v) =>
-                            setState(() => _draft = _draft.copyWith(blur: v)),
-                      ),
-                      _ParamSlider(
-                        icon: Icons.opacity,
-                        label: tr('不透明度'),
-                        value: _draft.opacity,
-                        min: 10,
-                        max: 100,
-                        divisions: 90,
-                        onChanged: (v) =>
-                            setState(() => _draft = _draft.copyWith(opacity: v)),
-                      ),
-                      _ParamSlider(
-                        icon: Icons.dark_mode_outlined,
-                        label: tr('遮罩'),
-                        value: _draft.maskAlpha,
-                        min: 0,
-                        max: 60,
-                        divisions: 60,
-                        suffix: tr('压暗'),
-                        onChanged: (v) => setState(
-                            () => _draft = _draft.copyWith(maskAlpha: v)),
-                      ),
-                      _ParamSlider(
-                        icon: Icons.zoom_out_map,
-                        label: tr('缩放'),
-                        value: _draft.scale,
-                        min: 80,
-                        max: 160,
-                        divisions: 80,
-                        onChanged: (v) => setState(
-                            () => _draft = _draft.copyWith(scale: v)),
-                      ),
-                      _ParamSlider(
-                        icon: Icons.invert_colors,
-                        label: tr('组件底色'),
-                        value: _draft.widgetAlpha,
-                        min: 0,
-                        max: 90,
-                        divisions: 90,
-                        suffix: '%',
-                        onChanged: (v) => setState(
-                            () => _draft = _draft.copyWith(widgetAlpha: v)),
-                      ),
-                      const SizedBox(height: 4),
-                      SegmentedButton<WallpaperTextColor>(
-                        segments: [
-                          ButtonSegment(
-                            value: WallpaperTextColor.follow,
-                            label: Text(tr('默认')),
-                          ),
-                          ButtonSegment(
-                            value: WallpaperTextColor.light,
-                            label: Text(tr('亮色字体')),
-                          ),
-                          ButtonSegment(
-                            value: WallpaperTextColor.dark,
-                            label: Text(tr('暗色字体')),
+                          Text(
+                            tr('浅色和深色字体会直接预览在这里'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: textColor.withValues(alpha: 0.72),
+                              shadows: [shadow],
+                            ),
                           ),
                         ],
-                        selected: {_draft.textMode},
-                        showSelectedIcon: false,
-                        onSelectionChanged: (selection) => setState(
-                            () => _draft =
-                                _draft.copyWith(textMode: selection.first)),
                       ),
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: _apply,
-                        icon: const Icon(Icons.check, size: 18),
-                        label: Text(tr('保存并使用')),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(46),
-                          textStyle: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
-                        ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      modeLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: textColor.withValues(alpha: 0.85),
+                        shadows: [shadow],
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-            ),
+            ],
+          );
+        }
+        return Center(
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onScaleStart: _onPreviewScaleStart,
+                  onScaleUpdate: (d) => _onPreviewScaleUpdate(d, bw, bh),
+                  child: SizedBox(width: bw, height: bh, child: content),
+                ),
+              ),
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _DashedRectPainter(
+                    color: hasImage
+                        ? Colors.white.withValues(alpha: 0.45)
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.35),
+                  ),
+                ),
+              ),
+            ],
           ),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
 
-class _FrostedSheet extends ConsumerWidget {
-  const _FrostedSheet({
-    required this.enabled,
-    required this.radius,
-    required this.child,
-  });
+class _DashedRectPainter extends CustomPainter {
+  _DashedRectPainter({required this.color});
 
-  final bool enabled;
-  final double radius;
-  final Widget child;
+  final Color color;
+  static const double radius = 14;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!enabled) return child;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
-    final sigma = surfaceBlurSigma(
-      base: 12,
-      budget: budget,
-      type: BlurSurfaceType.drawerOrSheet,
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect.deflate(0.75),
+      Radius.circular(radius),
     );
-    return ClipRRect(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(radius),
-        topRight: Radius.circular(radius),
-      ),
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
-        child: child,
-      ),
-    );
+    final path = Path()..addRRect(rrect);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = color;
+    const dashLen = 5.0;
+    const gapLen = 4.0;
+    for (final metric in path.computeMetrics()) {
+      double dist = 0;
+      while (dist < metric.length) {
+        final end = (dist + dashLen).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(dist, end), paint);
+        dist = end + gapLen;
+      }
+    }
   }
+
+  @override
+  bool shouldRepaint(_DashedRectPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _ParamSlider extends StatelessWidget {
@@ -1594,15 +1934,11 @@ class _ParamSlider extends StatelessWidget {
             children: [
               Icon(icon, size: 18, color: scheme.onSurfaceVariant),
               const SizedBox(width: 8),
-              Text(label,
-                  style: const TextStyle(fontSize: 14)),
+              Text(label, style: const TextStyle(fontSize: 14)),
               const Spacer(),
               Text(
                 '$value${suffix ?? ''}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
               ),
             ],
           ),

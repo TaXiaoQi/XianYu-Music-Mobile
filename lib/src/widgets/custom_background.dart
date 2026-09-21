@@ -9,9 +9,16 @@ import '../core/settings.dart';
 import 'glass_settings.dart';
 
 class CustomBackgroundLayer extends ConsumerStatefulWidget {
-  const CustomBackgroundLayer({super.key, this.background});
+  const CustomBackgroundLayer({
+    super.key,
+    this.background,
+    this.forceOrientation,
+  });
 
   final CustomBackground? background;
+
+  /// 预览框内强制按指定方向取参（竖屏下预览横屏样式时使用）
+  final Orientation? forceOrientation;
 
   @override
   ConsumerState<CustomBackgroundLayer> createState() =>
@@ -59,9 +66,8 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   }
 
   Future<void> _syncVideo(CustomBackground? cb) async {
-    final isVideo = cb != null &&
-        cb.mediaType == WallpaperMediaType.video &&
-        cb.active;
+    final isVideo =
+        cb != null && cb.mediaType == WallpaperMediaType.video && cb.active;
     final key = isVideo ? cb.imagePath : null;
     if (_videoKey == key) return;
     _videoKey = key;
@@ -91,7 +97,11 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     setState(() {
       _videoController = controller;
       _videoReady = true;
-      _videoSize = controller.value.size;
+      final size = controller.value.size;
+      final rot = controller.value.rotationCorrection;
+      _videoSize = (rot == 90 || rot == 270)
+          ? Size(size.height, size.width)
+          : size;
     });
     if (_videoShouldAutoPlay &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
@@ -111,7 +121,8 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     ref.listen<AsyncValue<AppSettings>>(settingsProvider, (_, next) {
       final v = _videoController;
       if (v == null || !_videoReady) return;
-      final perf = next.valueOrNull?.performanceMode == PerformanceMode.performance;
+      final perf =
+          next.valueOrNull?.performanceMode == PerformanceMode.performance;
       if (perf) {
         unawaited(v.pause());
       } else if (WidgetsBinding.instance.lifecycleState ==
@@ -129,7 +140,8 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   Widget _render(CustomBackground cb) {
     final file = File(cb.imagePath);
     final hasMedia = file.path.isNotEmpty;
-    final isVideo = cb.mediaType == WallpaperMediaType.video ||
+    final isVideo =
+        cb.mediaType == WallpaperMediaType.video ||
         file.path.toLowerCase().endsWith('.mp4');
     final video = _videoController;
     final videoReady = isVideo && _videoReady && video != null;
@@ -138,8 +150,14 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
       builder: (context, constraints) {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
-        final dx = cb.translateX / 100 * w;
-        final dy = cb.translateY / 100 * h;
+        final isLandscape =
+            (widget.forceOrientation ?? MediaQuery.orientationOf(context)) ==
+            Orientation.landscape;
+        final useScale = isLandscape ? cb.landscapeScale : cb.scale;
+        final useTx = isLandscape ? cb.landscapeTranslateX : cb.translateX;
+        final useTy = isLandscape ? cb.landscapeTranslateY : cb.translateY;
+        final dx = useTx / 100 * w;
+        final dy = useTy / 100 * h;
         final videoBox = videoReady ? _coverBox(w, h, _videoSize) : null;
         return RepaintBoundary(
           child: SizedBox.expand(
@@ -152,7 +170,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
                         ? Transform.translate(
                             offset: Offset(dx, dy),
                             child: Transform.scale(
-                              scale: cb.scale / 100,
+                              scale: useScale / 100,
                               alignment: Alignment.center,
                               child: ImageFiltered(
                                 imageFilter: cheapBackdropBlur(blurSig),
@@ -170,13 +188,21 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
                             ),
                           )
                         : videoBox == null
-                            ? const ColoredBox(color: Colors.black)
-                            : _buildVideoLayer(video!, videoBox, dx, dy, cb),
+                        ? const ColoredBox(color: Colors.black)
+                        : _buildVideoLayer(
+                            video!,
+                            videoBox,
+                            dx,
+                            dy,
+                            useScale.toDouble(),
+                            cb,
+                          ),
                   ),
                 if (cb.maskAlpha > 0)
                   Container(
-                    color: Colors.black
-                        .withValues(alpha: (cb.maskAlpha / 100).clamp(0.0, 1.0)),
+                    color: Colors.black.withValues(
+                      alpha: (cb.maskAlpha / 100).clamp(0.0, 1.0),
+                    ),
                   ),
               ],
             ),
@@ -203,6 +229,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     Size box,
     double dx,
     double dy,
+    double scale,
     CustomBackground cb,
   ) {
     final halfW = box.width / 2;
@@ -210,7 +237,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     return Transform.translate(
       offset: Offset(dx, dy),
       child: Transform.scale(
-        scale: cb.scale / 100 * 2.0,
+        scale: scale / 100 * 2.0,
         alignment: Alignment.center,
         child: Align(
           alignment: Alignment.center,
