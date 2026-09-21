@@ -1,14 +1,18 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
+import '../../src/core/application_logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -417,24 +421,31 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final lp = _localPath;
     if (lp == null || !File(lp).existsSync()) return;
     await _disposePreviewVideo();
+    // 先登记控制器，避免 initialize 期间页面被 pop 时 in-flight 控制器无人 dispose
+    // （在真正赋值前就把它挂上，dispose() 才能在半途销毁它，否则异步回调里访问已回收原生对象会崩）
     final controller = VideoPlayerController.file(File(lp))
       ..setLooping(true)
       ..setVolume(0);
+    _previewVideo = controller;
     try {
       await controller.initialize();
     } catch (_) {
+      if (identical(_previewVideo, controller)) _previewVideo = null;
+      _previewVideoReady = false;
+      if (mounted) setState(() {});
       await controller.dispose().catchError((_) {});
       return;
     }
-    if (!mounted) {
+    if (!mounted || !identical(_previewVideo, controller)) {
       await controller.dispose().catchError((_) {});
       return;
     }
     setState(() {
-      _previewVideo = controller;
       _previewVideoReady = true;
     });
-    controller.play();
+    // 预览同样强制无声，规避初始化完成时音量被重置
+    await controller.setVolume(0);
+    unawaited(controller.play());
   }
 
   Future<void> _disposePreviewVideo() async {
@@ -458,7 +469,10 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
 
   @override
   void dispose() {
-    _previewVideo?.dispose();
+    final v = _previewVideo;
+    _previewVideo = null;
+    _previewVideoReady = false;
+    v?.dispose().catchError((_) {});
     super.dispose();
   }
 
@@ -671,7 +685,15 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final video = _previewVideoReady ? _previewVideo : null;
     Widget previewContent;
     if (video != null && video.value.isInitialized) {
-      previewContent = VideoPlayer(video);
+      final raw = video.value.size;
+      final rot = video.value.rotationCorrection;
+      final display = (rot == 90 || rot == 270)
+          ? Size(raw.height, raw.width)
+          : raw;
+      previewContent = AspectRatio(
+        aspectRatio: display.width / display.height,
+        child: VideoPlayer(video),
+      );
     } else if (_isVideo && url.isNotEmpty) {
       previewContent = CachedNetworkImage(
         imageUrl: url,
@@ -1345,20 +1367,86 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     }
   }
 
+  // 准备图片：GIF 动图直接 copy 原文件(Image.file 原生循环播放，不做解码校验以免当单帧)；
+  // JPEG/PNG 也 copy 原文件(保留 EXIF 方向)；解不了(HEIC 等)再交给原生 BitmapFactory 转 JPEG。
+  Future<String?> _prepareImageForWallpaper(File src, String target) async {
+    try {
+      final raf = src.openSync();
+      var isGif = false;
+      try {
+        final head = raf.readSync(6);
+        isGif = head.length >= 4 &&
+            head[0] == 0x47 &&
+            head[1] == 0x49 &&
+            head[2] == 0x46 &&
+            head[3] == 0x38;
+      } finally {
+        raf.closeSync();
+      }
+      if (isGif) {
+        await src.copy(target);
+        AppLog.warn('wallpaper', 'prepare gif copy=$target');
+        return target;
+      }
+    } catch (_) {}
+    try {
+      final bytes = await src.readAsBytes();
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: 64,
+        targetHeight: 64,
+      );
+      final frame = await codec.getNextFrame();
+      frame.image.dispose();
+      codec.dispose();
+      await src.copy(target);
+      return target;
+    } catch (_) {
+      // Flutter 解不了 → 原生解码转 JPEG
+    }
+    final converted = await FlutterImageCompress.compressAndGetFile(
+      src.path,
+      target,
+      quality: 90,
+      format: CompressFormat.jpeg,
+    );
+    final convertedPath = converted?.path;
+    if (convertedPath != null &&
+        File(convertedPath).existsSync() &&
+        File(convertedPath).lengthSync() > 0) {
+      return convertedPath;
+    }
+    return null;
+  }
+
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+    if (picked == null) {
+      AppLog.warn('wallpaper', 'pickImage cancelled');
+      return;
+    }
+    AppLog.warn('wallpaper', 'pickImage picked path=${picked.path}');
     try {
+      final pickedLen = File(picked.path).lengthSync();
+      final raf = File(picked.path).openSync();
+      var isJpeg = false;
+      try {
+        final head = raf.readSync(2);
+        isJpeg = head.length >= 2 && head[0] == 0xff && head[1] == 0xd8;
+      } finally {
+        raf.closeSync();
+      }
+      AppLog.warn('wallpaper', 'pickImage picked len=$pickedLen jpeg=$isJpeg');
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'custom_background'));
       if (!dir.existsSync()) dir.createSync(recursive: true);
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final ext = p.extension(picked.path).toLowerCase();
       final videoTarget = p.join(dir.path, 'wallpaper_$ts.mp4');
       final extracted = await extractMotionPhotoVideo(
         File(picked.path),
         videoTarget,
       );
+      AppLog.warn('wallpaper', 'pickImage motionExtract=$extracted');
       if (extracted != null) {
         _cleanupOldBackgroundFiles(dir, keep: extracted);
         if (!mounted) return;
@@ -1370,17 +1458,28 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
         );
         return;
       }
-      final target = p.join(dir.path, 'wallpaper_$ts$ext');
-      await File(picked.path).copy(target);
-      _cleanupOldBackgroundFiles(dir, keep: target);
-      if (!mounted) return;
-      setState(
-        () => _draft = _draft.copyWith(
-          imagePath: target,
-          mediaType: WallpaperMediaType.image,
-        ),
+      final ext = p.extension(picked.path).toLowerCase();
+      final target = p.join(dir.path, 'wallpaper_$ts${ext.isEmpty ? '.jpg' : ext}');
+      final ready = await _prepareImageForWallpaper(
+        File(picked.path),
+        target,
       );
-    } catch (_) {
+      AppLog.warn('wallpaper', 'pickImage ready=$ready');
+      if (ready != null) {
+        _cleanupOldBackgroundFiles(dir, keep: ready);
+        if (!mounted) return;
+        setState(
+          () => _draft = _draft.copyWith(
+            imagePath: ready,
+            mediaType: WallpaperMediaType.image,
+          ),
+        );
+        return;
+      }
+      if (!mounted) return;
+      showXianYuToast(context, tr('当前图片格式不受支持，请在相册中另存为 JPEG'));
+    } catch (e) {
+      AppLog.warn('wallpaper', 'pickImage failed: $e');
       if (mounted) showXianYuToast(context, tr('请先选择图片'));
     }
   }
@@ -1405,7 +1504,8 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
           mediaType: WallpaperMediaType.video,
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('custom wallpaper pickVideo failed: $e');
       if (mounted) showXianYuToast(context, tr('请先选择视频'));
     }
   }

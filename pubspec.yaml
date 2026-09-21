@@ -64,6 +64,8 @@ dependencies:
   # 轻量本地存储（设置项）
   shared_preferences: ^2.3.0
   image_picker: ^1.2.3
+  # 自定义壁纸 HEIC/HEIF 兜底转码（Flutter 无法解码 HEIC，走系统解码转 JPEG）
+  flutter_image_compress: ^2.3.0
   # 头像压缩（resize + JPEG 编码）
   image: ^4.2.0
   # 打开外部链接（关于页官网/开源地址等）

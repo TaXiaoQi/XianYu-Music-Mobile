@@ -31,6 +31,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   bool _videoReady = false;
   String? _videoKey;
   Size? _videoSize;
+  String? _lastVideoLogSig;
 
   bool get _videoShouldAutoPlay {
     final s = ref.read(settingsProvider);
@@ -102,7 +103,12 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
       _videoSize = (rot == 90 || rot == 270)
           ? Size(size.height, size.width)
           : size;
+      debugPrint(
+        'customBg video init raw=$size rot=$rot display=$_videoSize',
+      );
     });
+    // 壁纸视频必须无声：初始化后再静音一次，规避部分实现初始化完成时重置音量的情况
+    await controller.setVolume(0);
     if (_videoShouldAutoPlay &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       unawaited(controller.play());
@@ -159,6 +165,11 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         final dx = useTx / 100 * w;
         final dy = useTy / 100 * h;
         final videoBox = videoReady ? _coverBox(w, h, _videoSize) : null;
+        final logSig = videoReady ? '$videoBox|${w}x$h' : null;
+        if (logSig != null && logSig != _lastVideoLogSig) {
+          _lastVideoLogSig = logSig;
+          debugPrint('customBg videoBox=$videoBox container=${w}x$h');
+        }
         return RepaintBoundary(
           child: SizedBox.expand(
             child: Stack(
@@ -232,8 +243,15 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     double scale,
     CustomBackground cb,
   ) {
-    final halfW = box.width / 2;
-    final halfH = box.height / 2;
+    // box 是按旋转后显示比例算出的 cover 框。但 VideoPlayer 纹理本身是原始编码比例，
+    // 且视频带旋转元数据时会由内部 RotatedBox 旋转。若直接按显示比例拉伸纹理，旋转后必然变形。
+    // 因此带 90/270 旋转时把纹理框的宽高交换，让纹理按原始比例拉伸，旋转后再对回 box。
+    final rot = video.value.rotationCorrection;
+    final isRotated = rot == 90 || rot == 270;
+    final halfW0 = box.width / 2;
+    final halfH0 = box.height / 2;
+    final halfW = isRotated ? halfH0 : halfW0;
+    final halfH = isRotated ? halfW0 : halfH0;
     return Transform.translate(
       offset: Offset(dx, dy),
       child: Transform.scale(

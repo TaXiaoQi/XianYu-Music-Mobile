@@ -7,6 +7,13 @@ Future<String?> extractMotionPhotoVideo(File jpg, String destPath) async {
     final raf = await jpg.open();
     try {
       final len = await raf.length();
+      // 动态照片本质是 JPEG(头两字节 0xFFD8)内嵌 MP4；
+      // HEIF/HEIC 同为 ISOBMFF 容器且也含 mdat，若不先按 JPEG SOI 拦截，
+      // 会把 HEIC 照片误判成动态照片、抽出坏视频，拖垮普通照片选择。
+      if (len < 2) return null;
+      await raf.setPosition(0);
+      final head = await raf.read(2);
+      if (head.length < 2 || head[0] != 0xff || head[1] != 0xd8) return null;
       final candidates = await _findFtypCandidates(raf, len);
       for (final offset in candidates) {
         final end = await _walkMp4Boxes(raf, len, offset);
@@ -49,12 +56,17 @@ Future<List<int>> _findFtypCandidates(RandomAccessFile raf, int len) async {
             (buf[i - 4] << 24) | (buf[i - 3] << 16) | (buf[i - 2] << 8) |
             buf[i - 1];
         if (sizeField >= 8 && sizeField <= 512) {
-          out.add(base + i);
+          // i 指向 'ftyp' 的 'f'，size 字段在其前 4 字节，box 起始须减 4，
+          // 否则 _walkMp4Boxes 把 'ftyp' 当大小字段解析出超大值而直接 break
+          out.add(base + i - 4);
           if (out.length >= 8) break;
         }
       }
     }
-    base += n - overlap;
+    // 末尾不足 overlap 时 n - overlap <= 0，base 不会前进会死循环，须 break
+    final next = base + n - overlap;
+    if (next <= base) break;
+    base = next;
     skip = overlap;
   }
   return out;
