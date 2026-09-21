@@ -8,6 +8,13 @@ import 'dart:typed_data';
 import '../rust/api.dart' as frb;
 import 'audio_head_cache.dart';
 
+void probeLog(String msg) {
+  // 轻量同步日志，走 stderr 避免依赖全局 Logger 初始化时序。
+  try {
+    stderr.writeln('[proxyprobe] $msg');
+  } catch (_) {}
+}
+
 class _ByteRange {
   const _ByteRange(this.start, this.end);
   final int start;
@@ -111,11 +118,16 @@ class AudioProxyServer {
       final rawRange = req.headers.value(HttpHeaders.rangeHeader);
       final range = _parseRange(rawRange) ?? const _ByteRange(0, null);
       final head = AudioHeadCache.instance.lookupForPlay(target);
+      probeLog('req arrive range=${rawRange ?? 'none'} '
+          'head=${head?.bytes.length ?? 0}B total=${head?.totalLength ?? -1} '
+          'req.m=${req.method}');
 
       // 在线播放磁盘缓存（对齐桌面端）：先预热流式下载写盘，再尝试本地伺服
       var cacheReady = false;
       if (req.method == 'GET') {
+        final w = Stopwatch()..start();
         cacheReady = await _warmStreamCache(target, upstreamHeaders);
+        probeLog('warm done ready=$cacheReady t=${w.elapsedMilliseconds}ms');
       }
       if (cacheReady &&
           await _tryServeFromCache(
@@ -125,9 +137,13 @@ class AudioProxyServer {
       }
 
       if (head != null && range.start < head.bytes.length) {
+        final w = Stopwatch()..start();
         await _serveWithHead(req, target, upstreamHeaders, head, range);
+        probeLog('serveWithHead done t=${w.elapsedMilliseconds}ms');
       } else {
+        final w = Stopwatch()..start();
         await _passthrough(req, target, upstreamHeaders, range);
+        probeLog('passthrough done t=${w.elapsedMilliseconds}ms');
       }
     } catch (_) {
       try {
@@ -179,11 +195,17 @@ class AudioProxyServer {
     bool hasRangeHeader,
   ) async {
     final st = await _cacheStatus(target);
-    if (st == null || !st.exists || st.failed) return false;
+    if (st == null || !st.exists || st.failed) {
+      probeLog('tryCache skip status=${st == null ? 'null' : 'no-exist/failed'}');
+      return false;
+    }
 
     // 总长：完整缓存用实际大小；下载中依赖头部探测的总长
     final int? total = st.complete ? st.total : head?.totalLength;
-    if (total == null || total <= 0) return false;
+    if (total == null || total <= 0) {
+      probeLog('tryCache skip total=null complete=${st.complete}');
+      return false;
+    }
 
     if (range.start >= total) {
       final res = req.response;
@@ -215,6 +237,7 @@ class AudioProxyServer {
     res.contentLength = end - range.start + 1;
 
     var wroteAny = false;
+    final readTimer = Stopwatch()..start();
     try {
       var pos = range.start;
       while (pos <= end) {
@@ -231,7 +254,13 @@ class AudioProxyServer {
         if (chunk.isEmpty) {
           // EOF 或下载失败
           if (!wroteAny) return false; // 尚未写出：回退网络路径
+          probeLog('tryCache read-EOF pos=$pos total=$total '
+              'firstMs=${readTimer.elapsedMilliseconds}ms');
           break;
+        }
+        if (!wroteAny) {
+          probeLog('tryCache firstChunk pos=$pos len=${chunk.length} '
+              'after=${readTimer.elapsedMilliseconds}ms');
         }
         var data = chunk;
         if (pos + data.length > end + 1) {

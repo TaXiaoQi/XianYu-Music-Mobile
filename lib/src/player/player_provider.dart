@@ -2416,6 +2416,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
     }
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    unawaited(_diagProbeUrl(clean, h)); // 诊断探针(B)：绕过本地代理直连真实 URL 测速
     await _player.setUrl(playUrl, headers: h);
     final declaredMs = item.durationMs;
     final actualMs = _player.duration?.inMilliseconds ?? 0;
@@ -2427,6 +2428,38 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _player.setVolume(_ref.read(volumeProvider));
     await _player.play();
     _triggerOnlinePrecache(item);
+  }
+
+  // 诊断探针(B)：绕过本地代理直连真实 URL，测远端到底回不回字节、速率多少——
+  // 据此区分「代理层卡」还是「网络/OS 节流」。仅打日志，不影响播放链路。
+  Future<void> _diagProbeUrl(String url, Map<String, String>? headers) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final sw = Stopwatch()..start();
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      (headers ?? {}).forEach((k, v) {
+        try {
+          req.headers.set(k, v);
+        } catch (_) {}
+      });
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      final type = res.headers.contentType?.toString() ?? '-';
+      final len = res.contentLength ?? -1;
+      AppLog.warn('probe',
+          'conn ok t=${sw.elapsedMilliseconds}ms status=${res.statusCode} type=$type len=$len');
+      var got = 0;
+      await for (final chunk in res.timeout(const Duration(seconds: 3))) {
+        got += chunk.length;
+        if (sw.elapsedMilliseconds >= 3000) break;
+      }
+      final secs = sw.elapsedMilliseconds ~/ 1000 + 1;
+      AppLog.warn('probe',
+          'bytes=$got in ${sw.elapsedMilliseconds}ms rate=${(got ~/ secs) ~/ 1024}KB/s');
+    } catch (e) {
+      AppLog.warn('probe', 'probe failed after ${sw.elapsedMilliseconds}ms: $e');
+    } finally {
+      client.close(force: true);
+    }
   }
 
   Future<void> _startEncryptedFile(
