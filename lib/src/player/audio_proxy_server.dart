@@ -6,13 +6,11 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../rust/api.dart' as frb;
+import '../core/application_logger.dart';
 import 'audio_head_cache.dart';
 
 void probeLog(String msg) {
-  // 轻量同步日志，走 stderr 避免依赖全局 Logger 初始化时序。
-  try {
-    stderr.writeln('[proxyprobe] $msg');
-  } catch (_) {}
+  AppLog.warn('proxyprobe', msg);
 }
 
 class _ByteRange {
@@ -27,11 +25,13 @@ class _CacheStatus {
     required this.complete,
     required this.failed,
     required this.total,
+    required this.downloaded,
   });
   final bool exists;
   final bool complete;
   final bool failed;
   final int? total;
+  final int downloaded;
 }
 
 class AudioProxyServer {
@@ -173,11 +173,13 @@ class AudioProxyServer {
       final raw = await frb.streamCacheUrlStatus(url: target);
       final m = jsonDecode(raw) as Map<String, dynamic>;
       final total = m['total'];
+      final downloaded = m['downloaded_bytes'];
       return _CacheStatus(
         exists: m['exists'] == true,
         complete: m['complete'] == true,
         failed: m['failed'] == true,
         total: total is num ? total.toInt() : null,
+        downloaded: downloaded is num ? downloaded.toInt() : 0,
       );
     } catch (_) {
       return null;
@@ -204,6 +206,14 @@ class AudioProxyServer {
     final int? total = st.complete ? st.total : head?.totalLength;
     if (total == null || total <= 0) {
       probeLog('tryCache skip total=null complete=${st.complete}');
+      return false;
+    }
+
+    // 请求位置还没下载到：后台（如澎湃节流）下载器可能长时间不推进，
+    // 直接回退网络直连（避免在 read_url_range 里空等超时）。
+    if (st.downloaded <= range.start) {
+      probeLog('tryCache skip not-downloaded '
+          'downloaded=${st.downloaded} start=${range.start}');
       return false;
     }
 

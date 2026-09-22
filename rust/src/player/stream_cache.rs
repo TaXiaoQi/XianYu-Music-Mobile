@@ -1576,6 +1576,9 @@ pub fn read_url_range(url: &str, offset: u64, max_len: u32) -> Vec<u8> {
         }
     };
     let max_len = (max_len as u64).max(1);
+    // 等数据超时：后台（如澎湃节流）下载器可能长时间不推进，
+    // 无限阻塞会让代理卡死在缓存伺服；超时返回空，由代理回退直连。
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
     loop {
         let avail = downloaded.load(Ordering::Relaxed);
         if offset < avail {
@@ -1600,6 +1603,9 @@ pub fn read_url_range(url: &str, offset: u64, max_len: u32) -> Vec<u8> {
             return buf;
         }
         if complete.load(Ordering::Relaxed) || failed.load(Ordering::Relaxed) {
+            return Vec::new();
+        }
+        if std::time::Instant::now() >= deadline {
             return Vec::new();
         }
         std::thread::sleep(Duration::from_millis(10));
