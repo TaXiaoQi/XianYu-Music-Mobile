@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面组件分享钮图标：material share 形（右上/左中/右下三点 + 两连线）。
+     采用实心圆点 + 粗连线（区别于通知的 ic_notif_share 圆环细线版）：
+     组件按钮仅 24~32dp 且 ROM 浮层常低清重采样，圆环孔与细线会糊成
+     一根斜线；实心粗点任何缩放下都能保持分享图标辨识度。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M8.3,10.8L15.7,6.9M8.3,13.2L15.7,17.1" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,5.6m-2.8,0a2.8,2.8 0 1,1 5.6,0a2.8,2.8 0 1,1 -5.6,0M6,12m-2.8,0a2.8,2.8 0 1,1 5.6,0a2.8,2.8 0 1,1 -5.6,0M18,18.4m-2.8,0a2.8,2.8 0 1,1 5.6,0a2.8,2.8 0 1,1 -5.6,0" />
+</vector>

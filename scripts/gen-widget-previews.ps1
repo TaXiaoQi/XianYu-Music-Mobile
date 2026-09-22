@@ -1,4 +1,4 @@
-﻿# 生成桌面组件选择器的静态预览位图（previewImage）。
+# 生成桌面组件选择器的静态预览位图（previewImage）。
 #
 # 背景：此前 previewImage 用 layer-list（矢量示意），部分 ROM（如 MagicOS）
 # 的组件选择器对 layer-list 的 item 尺寸/gravity 渲染失效——同一张图在
@@ -145,14 +145,18 @@ New-Preview 'widget_preview_recognize.png' 1024 512 {
     # 歌名 / 歌手（左对齐）
     $g.DrawString('Alone', $fontTitle, $whiteBrush, [System.Drawing.RectangleF]::new(372, 88, 500, 60), $left)
     $g.DrawString('Alan Walker', $fontSub, $greyBrush, [System.Drawing.RectangleF]::new(372, 150, 500, 40), $left)
-    # 右上分享（三点连线简笔）
+    # 右上分享（material share 形：右上/左中/右下三个粗实心点 + 两连线。
+    # 此前为沿对角线的三点连线简笔，点小线细，缩到桌面预览尺寸糊成一根
+    # 斜线无辨识度；改标准 share 布点，点径/线宽对齐真实组件粗版图标。）
     $dotBrush = New-Object System.Drawing.SolidBrush $white
-    foreach ($pt in @(@(928, 118), @(960, 96), @(992, 74))) {
-        $g.FillEllipse($dotBrush, $pt[0] - 8, $pt[1] - 8, 16, 16)
+    foreach ($pt in @(@(1004, 70), @(942, 120), @(1004, 170))) {
+        $g.FillEllipse($dotBrush, $pt[0] - 12, $pt[1] - 12, 24, 24)
     }
-    $pen = New-Object System.Drawing.Pen($white, 4)
-    $g.DrawLine($pen, 928, 118, 960, 96)
-    $g.DrawLine($pen, 960, 96, 992, 74)
+    $pen = New-Object System.Drawing.Pen($white, 7)
+    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $g.DrawLine($pen, 948, 116, 997, 75)
+    $g.DrawLine($pen, 948, 124, 997, 165)
     $pen.Dispose(); $dotBrush.Dispose()
     # 三键（居中偏左，与真实卡一致）
     Draw-CircleBtn $g 470 330 27
