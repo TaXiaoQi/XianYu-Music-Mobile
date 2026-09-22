@@ -2417,20 +2417,40 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
     final proxyUrl = AudioProxyServer.instance.proxyUrlFor(clean);
+    // 时序标记：与代理的 req arrive 对表，锁定「ua=Dart/3.13」请求者
+    // 出现在哪一步之间（代理每首歌只收到一条 Dart 请求，而 ExoPlayer
+    // 的请求从未到达；本标记用于精确定位该请求的发起时刻）。
+    AppLog.warn('play', '[startOnlineUrl] begin url=$clean');
     if (proxyUrl != null) {
       try {
         await _player.stop();
       } catch (_) {}
       final ok = await _tryStartDspPipeline(proxyUrl,
           startAtSecs: 0, isPlaying: true);
+      AppLog.warn('play', '[startOnlineUrl] dsp=$ok');
       if (ok) {
         _triggerOnlinePrecache(item);
         return;
       }
     }
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    AppLog.warn('play',
+        '[startOnlineUrl] probe+setUrl viaProxy=${playUrl != clean}');
     unawaited(_diagProbeUrl(clean, h)); // 诊断探针(B)：绕过本地代理直连真实 URL 测速
-    await _player.setUrl(playUrl, headers: h);
+    try {
+      await _player.setUrl(playUrl, headers: h)
+          .timeout(const Duration(seconds: 10));
+      AppLog.warn('play',
+          '[startOnlineUrl] setUrl-done dur=${_player.duration?.inMilliseconds}ms');
+    } on TimeoutException {
+      // 代理起播超时：观测到 ExoPlayer 对 127.0.0.1 代理的请求在设备层
+      // 偶发丢失（代理收不到任何请求，just_audio 永远停在 loading，而
+      // Dart HttpClient 连同一端口每次都通）。10s 内未 ready 即打断本次
+      // load（新 setUrl 会 abort 旧 load），回退直链直连 CDN 播放。
+      AppLog.warn('play',
+          '[startOnlineUrl] 代理起播超时(10s)，回退直链播放 url=$clean');
+      await _player.setUrl(clean, headers: h);
+    }
     final declaredMs = item.durationMs;
     final actualMs = _player.duration?.inMilliseconds ?? 0;
     if (declaredMs >= 30000 && actualMs > 0 && actualMs < 5000) {
@@ -2457,7 +2477,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       });
       final res = await req.close().timeout(const Duration(seconds: 8));
       final type = res.headers.contentType?.toString() ?? '-';
-      final len = res.contentLength ?? -1;
+      final len = res.contentLength;
       AppLog.warn('probe',
           'conn ok t=${sw.elapsedMilliseconds}ms status=${res.statusCode} type=$type len=$len');
       var got = 0;
@@ -2964,15 +2984,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
       ResolvedMediaUrl? resolved;
       if (isMfFormatValue(format)) {
-        resolved = await engine.getMusicFreeUrl(
-          source.first,
-          musicInfo,
-          preferred: quality,
-          fallback: 'pause',
-        );
+        resolved = await engine
+            .getMusicFreeUrl(
+              source.first,
+              musicInfo,
+              preferred: quality,
+              fallback: 'pause',
+            )
+            .timeout(const Duration(seconds: 8));
       } else {
-        final result = await engine.getMusicUrl(
-            source.first, sourceKey, musicInfo, quality);
+        final result = await engine
+            .getMusicUrl(source.first, sourceKey, musicInfo, quality)
+            .timeout(const Duration(seconds: 8));
         final url = result?['url'] as String?;
         if (result != null && _isPlayableUrl(url)) {
           final h = result['headers'];
@@ -3036,12 +3059,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       for (final plugin in candidates) {
         final ResolvedMediaUrl? hit;
         if (plugin.format.isMfCompatible) {
-          hit = await engine.getMusicFreeUrl(
-            plugin,
-            musicInfo,
-            preferred: quality,
-            fallback: 'pause',
-          );
+          hit = await engine
+              .getMusicFreeUrl(
+                plugin,
+                musicInfo,
+                preferred: quality,
+                fallback: 'pause',
+              )
+              .timeout(const Duration(seconds: 8));
         } else {
           final lxKey = lxSourceKeyForPlatform(platformLabel);
           final lxSupported =
@@ -3049,8 +3074,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (lxKey.isEmpty || !lxSupported) {
             continue;
           }
-          final result =
-              await engine.getMusicUrl(plugin, lxKey, musicInfo, quality);
+          final result = await engine
+              .getMusicUrl(plugin, lxKey, musicInfo, quality)
+              .timeout(const Duration(seconds: 8));
           final url = result?['url'] as String?;
           hit = (result != null && _isPlayableUrl(url))
               ? ResolvedMediaUrl(

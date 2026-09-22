@@ -42,6 +42,10 @@ class AudioProxyServer {
   /// 每次从 Rust 流缓存读取的分块大小（1MB）。
   static const int _cacheChunk = 1 << 20;
 
+  /// 上游 tail 流饿死看门狗：连续这么久没有新字节即掐断连接，
+  /// 让播放器带 Range 重连（新连接通常不再被 CDN 限速饿死）。
+  static const Duration _upstreamStall = Duration(seconds: 10);
+
   HttpServer? _server;
   String _token = '';
   Future<void>? _starting;
@@ -120,7 +124,12 @@ class AudioProxyServer {
       final head = AudioHeadCache.instance.lookupForPlay(target);
       probeLog('req arrive range=${rawRange ?? 'none'} '
           'head=${head?.bytes.length ?? 0}B total=${head?.totalLength ?? -1} '
-          'req.m=${req.method}');
+          'req.m=${req.method} '
+          'ua=${req.headers.value(HttpHeaders.userAgentHeader) ?? '-'} '
+          'ae=${req.headers.value(HttpHeaders.acceptEncodingHeader) ?? '-'} '
+          'conn=${req.headers.value(HttpHeaders.connectionHeader) ?? '-'} '
+          'acc=${req.headers.value(HttpHeaders.acceptHeader) ?? '-'} '
+          'ref=${req.headers.value(HttpHeaders.refererHeader) ?? '-'}');
 
       // 在线播放磁盘缓存（对齐桌面端）：先预热流式下载写盘，再尝试本地伺服
       var cacheReady = false;
@@ -343,6 +352,7 @@ class AudioProxyServer {
     if (end >= headLen) {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
+      final sw = Stopwatch()..start();
       try {
         final ureq = await client.getUrl(Uri.parse(target));
         ureq.headers.set(HttpHeaders.rangeHeader, 'bytes=$headLen-$end');
@@ -353,15 +363,40 @@ class AudioProxyServer {
             ureq.abort();
           } catch (_) {}
         }));
-        if (uresp.statusCode == HttpStatus.partialContent) {
-          try {
-            await res.addStream(uresp);
-          } catch (_) {}
-        } else {
-          try {
-            await uresp.drain<void>().catchError((_) {});
-          } catch (_) {}
+        probeLog('tail resp status=${uresp.statusCode} '
+            'len=${uresp.contentLength} t=${sw.elapsedMilliseconds}ms');
+        // CDN 忽略 Range 返回 200 时正文从字节 0 开始：跳过已发给播放器的
+        // 部分（head 或 range.start 之前）继续透传，而不是整段丢弃后把响应
+        // 截断在 head 末尾（播放器承诺 9MB 实收 630KB 且连接关闭 → 卡 loading）。
+        final upstreamFullBody = uresp.statusCode != HttpStatus.partialContent;
+        var skip = 0;
+        if (upstreamFullBody) {
+          skip = headEnd >= range.start ? headEnd + 1 : range.start;
         }
+        var served = 0;
+        var stalled = false;
+        try {
+          await for (final chunk
+              in uresp.timeout(_upstreamStall, onTimeout: (sink) {
+            stalled = true;
+            sink.addError(TimeoutException('tail stall'));
+          })) {
+            var data = chunk;
+            if (skip > 0) {
+              if (data.length <= skip) {
+                skip -= data.length;
+                continue;
+              }
+              data = Uint8List.sublistView(
+                  data is Uint8List ? data : Uint8List.fromList(data), skip);
+              skip = 0;
+            }
+            res.add(data);
+            served += data.length;
+          }
+        } catch (_) {}
+        probeLog('tail done served=${served}B stalled=$stalled '
+            't=${sw.elapsedMilliseconds}ms');
       } catch (_) {
       } finally {
         client.close(force: true);
@@ -393,6 +428,10 @@ class AudioProxyServer {
       }
       _applyUpstreamHeaders(ureq, upstreamHeaders);
       final uresp = await ureq.close().timeout(const Duration(seconds: 20));
+      probeLog('passthrough resp status=${uresp.statusCode} '
+          'len=${uresp.contentLength} '
+          'ct=${uresp.headers.value(HttpHeaders.contentTypeHeader) ?? '-'} '
+          'cr=${uresp.headers.value(HttpHeaders.contentRangeHeader) ?? '-'}');
 
       final res = req.response;
       res.statusCode = uresp.statusCode;
@@ -402,14 +441,31 @@ class AudioProxyServer {
       _copyHeader(uresp, res, HttpHeaders.contentRangeHeader);
       _copyHeader(uresp, res, HttpHeaders.acceptRangesHeader);
 
+      final sw = Stopwatch()..start();
+      var served = 0;
+      var stalled = false;
+      // 响应被客户端真正读完（写完 socket + 连接收尾）的时刻：
+      // 与 passthrough done（仅代表 add 进缓冲）区分，
+      // 用于判定「播放器是否真的在消费这条响应」。
       unawaited(res.done.whenComplete(() {
+        probeLog('passthrough client-consumed served=$served '
+            't=${sw.elapsedMilliseconds}ms');
         try {
           ureq?.abort();
         } catch (_) {}
       }));
       try {
-        await res.addStream(uresp);
+        await for (final chunk
+            in uresp.timeout(_upstreamStall, onTimeout: (sink) {
+          stalled = true;
+          sink.addError(TimeoutException('passthrough stall'));
+        })) {
+          res.add(chunk);
+          served += chunk.length;
+        }
       } catch (_) {}
+      probeLog('passthrough done served=${served}B stalled=$stalled '
+          't=${sw.elapsedMilliseconds}ms');
       try {
         await res.close();
       } catch (_) {}

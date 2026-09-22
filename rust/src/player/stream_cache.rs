@@ -341,9 +341,15 @@ struct StreamCacheManager {
 impl StreamCacheManager {
     fn evict_if_needed(&mut self) {
         while self.current_size > self.max_size_bytes && !self.entries.is_empty() {
+            // 只淘汰下载已结束（完成或失败）的条目：正在下载的文件被写入线程持有，
+            // 删除会导致已下载字节作废、Windows 上文件残留，且其 size 尚未记账。
             let oldest_key = self
                 .entries
                 .iter()
+                .filter(|(_, entry)| {
+                    entry.download_complete.load(Ordering::Relaxed)
+                        || entry.download_failed.load(Ordering::Relaxed)
+                })
                 .min_by_key(|(_, entry)| entry.last_accessed)
                 .map(|(k, _)| k.clone());
 
@@ -1124,6 +1130,7 @@ async fn download_thread(
         }
         if let Ok(mut mgr) = cache().lock() {
             mgr.update_size(hash, bytes_written);
+            mgr.evict_if_needed();
         }
     };
 
@@ -1137,6 +1144,10 @@ async fn download_thread(
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
+        // 空闲读超时：CDN 对并发连接会随机饿死（长时间 0 字节），
+        // 不设此项被饿死的下载会吊满 120s 总超时才报失败，
+        // 表现为 downloaded_bytes 长时间不推进（代理侧被迫回退直连）。
+        .read_timeout(Duration::from_secs(15))
         // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
         .redirect(crate::security::ssrf::ip_literal_redirect_policy())
         // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
@@ -1411,9 +1422,11 @@ async fn download_thread(
 
     download_complete.store(true, Ordering::Relaxed);
 
-    // 更新缓存大小
+    // 更新缓存大小，并在完成后立即触发淘汰：否则多首歌下载完成而
+    // 没有新下载启动时，current_size 会持续超出用户设置的上限。
     if let Ok(mut mgr) = cache().lock() {
         mgr.update_size(hash, bytes_written);
+        mgr.evict_if_needed();
     }
 }
 

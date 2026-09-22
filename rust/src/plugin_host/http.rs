@@ -145,9 +145,11 @@ impl HttpBridge {
         let client = self.client_for(redirect_limit)?;
 
         // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
+        let t_validate = std::time::Instant::now();
         let parsed_url = crate::security::ssrf::validate_outbound_url(url)
             .await
             .map_err(|e| e.to_string())?;
+        let validate_ms = t_validate.elapsed().as_millis();
         // fake-ip 目标（代理接管 DNS 但本应用被分应用排除、未走其隧道）会连接黑洞，
         // 缩短等待并在失败时给出针对性提示
         let fake_ip_target = parsed_url
@@ -155,7 +157,7 @@ impl HttpBridge {
             .map(crate::security::ssrf::host_is_fake_ip_target)
             .unwrap_or(false);
 
-        let mut request = client.request(method, url);
+        let mut request = client.request(method.clone(), url);
         let timeout = if timeout_ms > 0 {
             Duration::from_millis(timeout_ms)
         } else if fake_ip_target {
@@ -187,6 +189,7 @@ impl HttpBridge {
             }
         }
 
+        let t_send = std::time::Instant::now();
         let mut response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
@@ -234,6 +237,14 @@ impl HttpBridge {
                 None,
             )
         };
+
+        let send_ms = t_send.elapsed().as_millis();
+        let total_ms = t_validate.elapsed().as_millis();
+        if send_ms >= 1500 || validate_ms >= 1500 {
+            eprintln!(
+                "[httpprobe] {method} {url} validate={validate_ms}ms send={send_ms}ms total={total_ms}ms status={status}"
+            );
+        }
 
         Ok(HttpBridgeResponse {
             status,
