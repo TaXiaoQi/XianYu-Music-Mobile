@@ -34,6 +34,9 @@ class LinkMsgType {
 
   static const int backupAck = 0x22;
 
+  /// 腕上端运行日志推送到手机；回执复用 backupAck（saved/cancelled）。
+  static const int watchLogFile = 0x23;
+
   static const int chunk = 0x30;
 
   static const int cloudBind = 0x41;
@@ -51,6 +54,7 @@ class LinkMsgType {
       t == cmd ||
       t == backupFile ||
       t == backupAck ||
+      t == watchLogFile ||
       t == chunk ||
       t == cloudBind;
 }
@@ -184,6 +188,16 @@ class LinkMessage {
 
   static LinkMessage backupAck({required String result}) =>
       LinkMessage(LinkMsgType.backupAck, {'result': result});
+
+  /// 腕上端运行日志推送：name=文件名，content=日志全文（超限自动分片）。
+  static LinkMessage watchLogFile({
+    required String name,
+    required String content,
+  }) => LinkMessage(LinkMsgType.watchLogFile, {
+    'name': name,
+    'size': utf8.encode(content).length,
+    'log': content,
+  });
 
   static LinkMessage cloudBind({required String key, String? url}) =>
       LinkMessage(LinkMsgType.cloudBind, {

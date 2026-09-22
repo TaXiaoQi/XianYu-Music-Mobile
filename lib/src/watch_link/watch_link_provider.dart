@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../auth/auth_provider.dart';
 import '../backup/app_backup.dart';
@@ -65,6 +66,8 @@ class WatchLinkController {
   Future<void>? _askInFlight;
 
   bool _backupDialogActive = false;
+
+  bool _logDialogActive = false;
 
   String get connectedName => _connectedName;
 
@@ -309,6 +312,8 @@ class WatchLinkController {
         _onCmd(msg);
       case LinkMsgType.backupFile:
         _handleIncomingBackup(msg);
+      case LinkMsgType.watchLogFile:
+        _handleIncomingLog(msg, fromCloud: fromCloud);
       default:
         break;
     }
@@ -404,6 +409,45 @@ class WatchLinkController {
       ));
     } finally {
       _backupDialogActive = false;
+    }
+  }
+
+  /// 收到腕上推送的运行日志：弹窗提供系统分享（与「导出日志文件」一致），
+  /// 分享/留存后回执 saved，放弃回执 cancelled。
+  Future<void> _handleIncomingLog(
+    LinkMessage msg, {
+    bool fromCloud = false,
+  }) async {
+    if (_logDialogActive) {
+      _send(LinkMessage.backupAck(result: 'cancelled'), cloud: fromCloud);
+      return;
+    }
+    final content = msg.payload['log'] as String? ?? '';
+    if (content.isEmpty) {
+      _send(LinkMessage.backupAck(result: 'cancelled'), cloud: fromCloud);
+      return;
+    }
+    final name = (msg.payload['name'] as String? ?? '').trim();
+    _logDialogActive = true;
+    try {
+      final context = appNavigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      final result = await showPredictiveDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _IncomingLogDialog(
+          fileName: name.isEmpty ? 'xianyu-watch-log.txt' : name,
+          content: content,
+        ),
+      );
+      _send(
+        LinkMessage.backupAck(
+          result: result == 'saved' ? 'saved' : 'cancelled',
+        ),
+        cloud: fromCloud,
+      );
+    } finally {
+      _logDialogActive = false;
     }
   }
 
@@ -1004,7 +1048,12 @@ class _IncomingBackupDialog extends StatefulWidget {
 
 class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
   bool _saving = false;
+
+  bool _sharing = false;
+
   String? _error;
+
+  bool get _busy => _saving || _sharing;
 
   Future<void> _save() async {
     if (_saving) return;
@@ -1039,6 +1088,29 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
       setState(() => _error = tr('保存失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// 一键分享：写临时文件后直接调系统分享面板，与日志弹窗同一链路。
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() {
+      _sharing = true;
+      _error = null;
+    });
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final file =
+          File('${docs.path}${Platform.pathSeparator}${widget.fileName}');
+      await file.writeAsString(widget.content, flush: true);
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐腕上端备份')),
+      );
+      if (mounted) Navigator.of(context).pop('saved');
+    } catch (e) {
+      setState(() => _error = tr('分享失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _sharing = false);
     }
   }
 
@@ -1083,7 +1155,206 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
             ),
             const SizedBox(height: 12),
             Text(
-              tr('腕上设备推送了一份应用备份，是否保存到手机？'),
+              tr('腕上设备推送了一份应用备份，可保存到手机或一键分享。'),
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.insert_drive_file_outlined,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (sizeKb > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                tr('约 {kb} KB', {'kb': sizeKb}),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(fontSize: 12.5, color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _save,
+                    icon: _saving
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: scheme.onPrimary))
+                        : const Icon(Icons.save_alt, size: 18),
+                    label: Text(_saving ? tr('保存中…') : tr('保存文件')),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: scheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _share,
+                    icon: _sharing
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.share_outlined, size: 18),
+                    label: Text(_sharing ? tr('分享中…') : tr('一键分享')),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accent,
+                      side: BorderSide(color: accent.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _busy ? null : _cancel,
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.onSurfaceVariant,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(tr('取消')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 收到腕上运行日志的弹窗：主按钮直接调系统分享面板分发日志文件，
+/// 与设置页「导出日志文件」的分享链路一致。
+class _IncomingLogDialog extends StatefulWidget {
+  const _IncomingLogDialog({
+    required this.fileName,
+    required this.content,
+  });
+
+  final String fileName;
+
+  final String content;
+
+  @override
+  State<_IncomingLogDialog> createState() => _IncomingLogDialogState();
+}
+
+class _IncomingLogDialogState extends State<_IncomingLogDialog> {
+  bool _sharing = false;
+
+  String? _error;
+
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() {
+      _sharing = true;
+      _error = null;
+    });
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final file =
+          File('${docs.path}${Platform.pathSeparator}${widget.fileName}');
+      await file.writeAsString(widget.content, flush: true);
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐腕上端日志')),
+      );
+      if (mounted) Navigator.of(context).pop('saved');
+    } catch (e) {
+      setState(() => _error = tr('分享失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  void _cancel() => Navigator.of(context).pop('cancelled');
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = scheme.primary;
+    final sizeKb = (utf8.encode(widget.content).length / 1024).truncate();
+    return ModernDialogCard(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.article_outlined, color: accent, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    tr('收到腕上日志'),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              tr('腕上设备推送了一份运行日志，可直接通过系统分享面板发给开发者或自行留存。'),
               style: TextStyle(
                 fontSize: 14,
                 height: 1.45,
@@ -1134,15 +1405,15 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
+                onPressed: _sharing ? null : _share,
+                icon: _sharing
                     ? SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: scheme.onPrimary))
-                    : const Icon(Icons.save_alt, size: 18),
-                label: Text(_saving ? tr('保存中…') : tr('保存文件')),
+                    : const Icon(Icons.share_outlined, size: 18),
+                label: Text(_sharing ? tr('分享中…') : tr('分享日志')),
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: scheme.onPrimary,
@@ -1157,7 +1428,7 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: _saving ? null : _cancel,
+                onPressed: _sharing ? null : _cancel,
                 style: TextButton.styleFrom(
                   foregroundColor: scheme.onSurfaceVariant,
                   padding: const EdgeInsets.symmetric(vertical: 12),
