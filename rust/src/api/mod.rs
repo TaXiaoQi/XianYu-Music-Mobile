@@ -1950,6 +1950,41 @@ pub fn analyze_mv_sync(mv_path: String, song_path: String) -> String {
     }
 }
 
+/// MV 局部频谱对齐：取歌曲在 `song_pos_sec` 位置附近一段音频窗，在整个 MV
+/// 音轨上滑窗做能量包络互相关，估计「当前歌曲位置 → 对应 MV 位置」的偏移。
+///
+/// 针对「MV 加了片头/花絮」这种与歌曲开篇不一致的情况，比全局互相关更鲁棒。
+/// - `song_pos_sec`：歌曲当前播放位置（秒）。
+/// - `window_sec`：参与匹配的歌曲窗时长（秒，建议 15s）。
+///
+/// 返回 JSON：`{"ok":true,"offsetMs":i64,"mvPosMs":i64,"confidence":f64,"trustworthy":bool}`，
+/// 其中 `offsetMs`（= `videoPos - audioPos`，沿用全局语义）与 `mvPosMs`（当前歌曲
+/// 位置对应的 MV 位置）二者取一即可。失败返回 `{"ok":false,"reason":"..."}`。
+pub fn analyze_mv_sync_local(
+    mv_path: String,
+    song_path: String,
+    song_pos_sec: f64,
+    window_sec: f64,
+) -> String {
+    let result = crate::player::mv_sync::analyze_local(
+        std::path::Path::new(&mv_path),
+        std::path::Path::new(&song_path),
+        song_pos_sec,
+        window_sec,
+    );
+    match result {
+        Ok((lag_sec, confidence)) => serde_json::json!({
+            "ok": true,
+            "offsetMs": (lag_sec * 1000.0).round() as i64,
+            "mvPosMs": ((lag_sec + song_pos_sec) * 1000.0).round() as i64,
+            "confidence": (confidence * 1000.0).round() / 1000.0,
+            "trustworthy": crate::player::mv_sync::is_local_trustworthy(lag_sec, confidence),
+        })
+        .to_string(),
+        Err(reason) => serde_json::json!({ "ok": false, "reason": reason }).to_string(),
+    }
+}
+
 // =========================================================================
 // 响度目标设置 + 云端时长合并（对齐桌面端 update_loudness_settings /
 // merge_cloud_listen_duration）

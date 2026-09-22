@@ -183,6 +183,113 @@ Future<MvAutoSyncResult?> analyzeMvSyncForSong({
   }
 }
 
+/// 局部频谱对齐：与 [analyzeMvSyncForSong] 相同地下载 MV + 歌曲音频，但把它交给
+/// Rust 的 `analyzeMvSyncLocal`——只取歌曲当前位置附近的一段窗，在整个 MV 音轨上
+/// 滑窗找最佳对齐点。对「MV 加了片头/花絮」这类全局互相关会被整段不匹配开头
+/// 带偏的情况更鲁棒。
+///
+/// - [songPosSec]：歌曲当前播放位置（秒），作为歌曲窗的锚点。
+/// - [windowSec]：歌曲窗时长（秒），默认 15s。
+Future<MvAutoSyncResult?> analyzeMvLocalForSong({
+  required String identity,
+  required Future<MvSource?> Function(String quality) resolveSource,
+  required List<String> qualities,
+  required String cacheDir,
+  required double songPosSec,
+  double windowSec = 15.0,
+  String? songPath,
+  String? songUrl,
+  Map<String, String>? songHeaders,
+}) async {
+  if (identity.isEmpty) return null;
+  if (mvSyncOffsetCache.containsKey(identity)) {
+    return MvAutoSyncResult(mvSyncOffsetCache[identity]!, 1.0);
+  }
+  if (_activeSyncIdentity != null) {
+    AppLog.debug('mv', '[autoSync.local] skip: analyzing $_activeSyncIdentity');
+    return null;
+  }
+  _activeSyncIdentity = identity;
+  final List<String> downloaded = <String>[];
+  try {
+    String? mvPath;
+    MvSource? mvSrc;
+    for (final q in qualities) {
+      final src = await resolveSource(q);
+      if (src == null || src.url.isEmpty) continue;
+      mvSrc = src;
+      for (final u in [src.url, ...src.backupUrls]) {
+        mvPath = await _downloadToCache(cacheDir, u, src.headers, downloaded);
+        if (mvPath != null) break;
+      }
+      if (mvPath != null) break;
+      AppLog.warn('mv', '[autoSync.local] MV $q 下载失败，尝试下一档');
+    }
+    if (mvPath == null || mvSrc == null) {
+      AppLog.warn('mv', '[autoSync.local] 无可用 MV 源，跳过分析');
+      return null;
+    }
+
+    String? songFile;
+    if (songPath != null && songPath.isNotEmpty) {
+      final f = File(songPath);
+      if (f.existsSync() && f.lengthSync() > 0) songFile = songPath;
+    }
+    if (songFile == null) {
+      final realUrl = _realUrlFromProxy(songUrl ?? '') ?? songUrl;
+      if (realUrl == null ||
+          !(realUrl.startsWith('http://') || realUrl.startsWith('https://'))) {
+        AppLog.warn('mv', '[autoSync.local] 无可分析音源，跳过分析');
+        return null;
+      }
+      songFile = await _downloadToCache(
+          cacheDir, realUrl, songHeaders, downloaded);
+    }
+    if (songFile == null) {
+      AppLog.warn('mv', '[autoSync.local] 歌曲音频下载失败，跳过分析');
+      return null;
+    }
+
+    final raw = await analyzeMvSyncLocal(
+      mvPath: mvPath,
+      songPath: songFile,
+      songPosSec: songPosSec,
+      windowSec: windowSec,
+    ).timeout(const Duration(minutes: 5));
+    final json = jsonDecode(raw);
+    if (json is! Map || json['ok'] != true) {
+      AppLog.warn('mv',
+          '[autoSync.local] 分析失败: ${json is Map ? json['reason'] : raw}');
+      return null;
+    }
+    final offsetMs = (json['offsetMs'] as num?)?.toInt() ?? 0;
+    final confidence = (json['confidence'] as num?)?.toDouble() ?? 0.0;
+    if (json['trustworthy'] != true) {
+      AppLog.info('mv',
+          '[autoSync.local] 置信度不足(${confidence.toStringAsFixed(3)})，保持环形映射');
+      return null;
+    }
+    mvSyncOffsetCache[identity] = offsetMs;
+    AppLog.info('mv',
+        '[autoSync.local] ok offset=${offsetMs}ms conf=${confidence.toStringAsFixed(3)} '
+        'anchor=${songPosSec.toStringAsFixed(1)}s mv=${mvSrc.videoQuality}');
+    return MvAutoSyncResult(offsetMs, confidence);
+  } catch (e) {
+    AppLog.warn('mv', '[autoSync.local] 异常: $e');
+    return null;
+  } finally {
+    if (_activeSyncIdentity == identity) {
+      _activeSyncIdentity = null;
+    }
+    for (final p in downloaded) {
+      unawaited(
+        removeCachedBackgroundVideo(cacheDir: cacheDir, path: p)
+            .catchError((_) {}),
+      );
+    }
+  }
+}
+
 /// 用 Rust 下载器把 URL 流式写入应用缓存（跟随重定向 + 带请求头），
 /// 返回缓存路径；失败返回 null。
 Future<String?> _downloadToCache(

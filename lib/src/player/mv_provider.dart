@@ -168,7 +168,17 @@ class MvNotifier extends StateNotifier<MvState> {
         });
       },
     );
+    // 音频被 MV 接管后，系统音量变化需同步到 MV 音轨（歌曲通道已静音）。
+    _ref.listen<double>(volumeProvider, (_, v) {
+      final c = state.controller;
+      if (_audioTakenOver && c != null && c.value.isInitialized) {
+        unawaited(c.setVolume(v.clamp(0.0, 1.0)));
+      }
+    });
   }
+
+  /// 音频已交给 MV 自带音轨（歌曲音频被静音）的标志。
+  bool _audioTakenOver = false;
 
   int _guardCount = 0;
   DateTime _guardWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
@@ -229,6 +239,8 @@ class MvNotifier extends StateNotifier<MvState> {
   }
 
   Future<String?> _start(QueueItem c, {String? quality}) async {
+    // 重开/切画质时若已接管音频，先还原歌曲通道，待新 MV 就绪后再重新接管。
+    if (_audioTakenOver) await _releaseAudio(state.controller);
     final song = mvSongOf(c);
     final ver = ++_requestVersion;
     final target = (quality != null && quality.isNotEmpty)
@@ -285,22 +297,40 @@ class MvNotifier extends StateNotifier<MvState> {
     final vs = controller.value.size;
     AppLog.debug('mv', 'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
         'dur=${controller.value.duration} q=$target url=${src.url}');
-    // 频谱对齐：无缓存时后台下载 360P MV + 歌曲音频做包络互相关（结果按歌缓存）。
-    if (!mvSyncOffsetCache.containsKey(identity)) {
-      unawaited(_runAutoSync(c, identity, ver));
+    // 音频接管 + 频谱对齐：
+    //  - 已缓存偏移（历史可信匹配）：无需再分析，直接把音频无缝切给 MV 音轨。
+    //  - 未缓存：下载 MV + 歌曲音频做滑窗匹配，命中即接管（顺带解决片头/花絮偏移）。
+    if (mvSyncOffsetCache.containsKey(identity)) {
+      unawaited(_takeoverIfCached(identity, ver));
+    } else {
+      unawaited(_runTakeover(c, identity, ver));
     }
     return null;
   }
 
-  Future<void> _runAutoSync(QueueItem c, String identity, int ver) async {
+  /// 已缓存可信偏移时，跳过重新分析，直接无缝接管 MV 音轨。
+  Future<void> _takeoverIfCached(String identity, int ver) async {
+    if (!mvSyncOffsetCache.containsKey(identity)) return;
+    if (!mounted || ver != _requestVersion) return;
+    if (!state.requested || !state.ready) return;
+    final ctrl = state.controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    await _takeOverAudio(ctrl);
+  }
+
+  /// 局部频谱对齐 + 音频接管：以歌曲当前位置为锚跑滑窗匹配，命中后把 MV 对准
+  /// 匹配点，并将音频无缝切换给 MV 自带音轨（歌曲音频被静音）。
+  Future<void> _runTakeover(QueueItem c, String identity, int ver) async {
     final cacheDir = await mvSyncCacheDir();
     if (cacheDir == null) return;
     final song = mvSongOf(c);
-    final result = await analyzeMvSyncForSong(
+    final anchorSec = _ref.read(playerProvider).position;
+    final result = await analyzeMvLocalForSong(
       identity: identity,
       resolveSource: (q) => _resolveQuality(song, q),
       qualities: const ['360P', '480P', '720P'],
       cacheDir: cacheDir,
+      songPosSec: anchorSec,
       songPath: LastAudioSource.filePath ?? (c.isOnline ? null : c.path),
       songUrl: LastAudioSource.url,
       songHeaders: LastAudioSource.headers,
@@ -309,19 +339,47 @@ class MvNotifier extends StateNotifier<MvState> {
     if (!mounted || ver != _requestVersion) return;
     if (_song == null || _songIdentity(_song!) != identity) return;
     if (!state.requested || !state.ready) return;
-    _syncOffsetMs = result.offsetMs;
-    // 分析完成立即校准 MV 到正确位置。
     final ctrl = state.controller;
-    final now = _ref.read(playerProvider);
-    if (ctrl != null &&
-        ctrl.value.isInitialized &&
-        now.current != null &&
-        ctrl.value.duration > Duration.zero) {
-      final t = _ringTarget(now.position * 1000, ctrl.value.duration);
-      AppLog.debug('mv', '[autoSync] recalibrate vpos=${ctrl.value.position} '
-          'target=$t');
-      unawaited(ctrl.seekTo(t));
+    if (ctrl == null ||
+        !ctrl.value.isInitialized ||
+        ctrl.value.duration <= Duration.zero) {
+      return;
     }
+    _syncOffsetMs = result.offsetMs;
+    final now = _ref.read(playerProvider);
+    if (now.current != null) {
+      unawaited(ctrl.seekTo(
+          _ringTarget(now.position * 1000, ctrl.value.duration)));
+    }
+    await _takeOverAudio(ctrl);
+  }
+
+  /// 把音频无缝切换到 MV 自带音轨：先静音歌曲通道，再短淡入 MV 音轨，
+  /// 二者同源同曲，交叉过渡体感无缝。
+  Future<void> _takeOverAudio(VideoPlayerController c) async {
+    if (_audioTakenOver) return;
+    _audioTakenOver = true;
+    await _ref.read(playerProvider.notifier).setMvAudioOverride(true);
+    final vol = _ref.read(volumeProvider).clamp(0.0, 1.0);
+    for (var v = 0.0; v < vol; v += 0.2) {
+      await c.setVolume(v);
+      await Future.delayed(const Duration(milliseconds: 55));
+    }
+    await c.setVolume(vol);
+    AppLog.info('mv', '[takeover] engaged vol=$vol');
+  }
+
+  /// 还原为歌曲音频通道：清零 MV 音量、取消歌曲静音。
+  Future<void> _releaseAudio(VideoPlayerController? c) async {
+    if (!_audioTakenOver) return;
+    _audioTakenOver = false;
+    if (c != null) {
+      try {
+        await c.setVolume(0);
+      } catch (_) {}
+    }
+    await _ref.read(playerProvider.notifier).setMvAudioOverride(false);
+    AppLog.info('mv', '[takeover] released');
   }
 
   /// 用户主动跳转（拖动进度条 / 点歌词行）：立即把 MV 对齐到新的音频位置。
@@ -349,6 +407,7 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<void> _hardStop() async {
     _requestVersion++;
     final old = state.controller;
+    if (_audioTakenOver) await _releaseAudio(old);
     state = const MvState();
     await old?.dispose();
   }

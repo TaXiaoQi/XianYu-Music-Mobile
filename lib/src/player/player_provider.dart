@@ -2123,8 +2123,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   double _rgGain = 1.0;
 
+  /// MV 音频接管时置 true：外部歌曲音频被静音，交由 MV 自带音轨出声。
+  bool _mvAudioOverride = false;
+
+  /// 设置 MV 音频接管开关。接管时歌曲音频静音，退出时恢复。
+  Future<void> setMvAudioOverride(bool value) async {
+    if (_mvAudioOverride == value) return;
+    _mvAudioOverride = value;
+    await _player.setVolume(_effectiveVolume());
+  }
+
   double _effectiveVolume() =>
-      (_ref.read(volumeProvider) * _effectiveBalanceGain()).clamp(0.0, 4.0);
+      (_ref.read(volumeProvider) *
+              _effectiveBalanceGain() *
+              (_mvAudioOverride ? 0.0 : 1.0))
+          .clamp(0.0, 4.0);
 
   double _effectiveBalanceGain() {
     final s = _ref.read(settingsProvider).valueOrNull;
@@ -2377,7 +2390,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     AudioHeadCache.instance.registerHeaders(clean, h);
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
     await _player.setUrl(playUrl, headers: h);
-    await _player.setVolume(_ref.read(volumeProvider));
+    await _player.setVolume(_effectiveVolume());
     await _player.play();
   }
 
@@ -2425,7 +2438,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'declared=${declaredMs}ms actual=${actualMs}ms url=$clean');
       throw StateError(tr('直链已失效（返回内容与歌曲不符）'));
     }
-    await _player.setVolume(_ref.read(volumeProvider));
+    await _player.setVolume(_effectiveVolume());
     await _player.play();
     _triggerOnlinePrecache(item);
   }
@@ -2473,7 +2486,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {}
     final plainPath = await _decryptUrlToTemp(url, headers, ekey);
     await _player.setFilePath(plainPath);
-    await _player.setVolume(_ref.read(volumeProvider));
+    await _player.setVolume(_effectiveVolume());
     await _player.play();
     _triggerOnlinePrecache(item);
   }

@@ -1470,6 +1470,28 @@ Future<String> analyzeMvSync({
   songPath: songPath,
 );
 
+/// MV 局部频谱对齐：取歌曲在 `song_pos_sec` 位置附近一段音频窗，在整个 MV
+/// 音轨上滑窗做能量包络互相关，估计「当前歌曲位置 → 对应 MV 位置」的偏移。
+///
+/// 针对「MV 加了片头/花絮」这种与歌曲开篇不一致的情况，比全局互相关更鲁棒。
+/// - `song_pos_sec`：歌曲当前播放位置（秒）。
+/// - `window_sec`：参与匹配的歌曲窗时长（秒，建议 15s）。
+///
+/// 返回 JSON：`{"ok":true,"offsetMs":i64,"mvPosMs":i64,"confidence":f64,"trustworthy":bool}`，
+/// 其中 `offsetMs`（= `videoPos - audioPos`，沿用全局语义）与 `mvPosMs`（当前歌曲
+/// 位置对应的 MV 位置）二者取一即可。失败返回 `{"ok":false,"reason":"..."}`。
+Future<String> analyzeMvSyncLocal({
+  required String mvPath,
+  required String songPath,
+  required double songPosSec,
+  required double windowSec,
+}) => RustLib.instance.api.crateApiAnalyzeMvSyncLocal(
+  mvPath: mvPath,
+  songPath: songPath,
+  songPosSec: songPosSec,
+  windowSec: windowSec,
+);
+
 /// 在播放前评估/更新响度元数据并计算目标线性增益。
 /// `enabled` 为 true 时按 `gain_offset_db`（dB）与 `prevent_clipping` 计算，
 /// 返回 `ProcessLoudnessResult` JSON；`enabled` 为 false 时返回 1.0（原始音量）。

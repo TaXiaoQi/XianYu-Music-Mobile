@@ -19,12 +19,32 @@ const ENVELOPE_WINDOW: usize = 1024;
 const MAX_LAG_SEC: f64 = 15.0;
 /// 最多分析前 110 秒（省时省内存，开头对齐已足够）。
 const MAX_ANALYSIS_SEC: f64 = 110.0;
-/// 互相关置信度阈值（低于此值视为不可信，回退 offset=0）。
+/// 全局互相关置信度阈值（低于此值视为不可信，回退 offset=0）。
 const MIN_CONFIDENCE: f64 = 0.2;
 /// 相关峰值两侧至少需要的重叠帧数（避免边缘伪峰）。
 const MIN_OVERLAP_FRAMES: usize = 16;
 
-/// 分析 MV 音频与歌曲音频的频谱偏移。
+// ---------- 局部滑动匹配（开机即刻对齐，容忍 MV 片头/花絮） ----------
+/// 局部匹配时 MV 解码上限秒数（放宽到能覆盖绝大多数歌曲 MV，
+/// 供在整个 MV 时间轴上滑窗找歌曲窗）。原生采样率下这段 mono buffer 较大
+/// （约 48kHz×420s×4B≈80MB，短暂峰值，后台执行后即释放）。
+const LOCAL_MV_MAX_SEC: f64 = 420.0;
+/// 局部匹配用歌曲窗默认时长（秒）。窗太长容易跨过歌里重复段落产生伪峰，
+/// 太短又不够独特；15s 在「独特 vs 鲁棒」间够用。
+const LOCAL_WINDOW_SEC: f64 = 15.0;
+/// 局部匹配滑窗互相关的置信度阈值（比全局更苛刻：局部窗更短更容易出现高相关）。
+const LOCAL_MIN_CONFIDENCE: f64 = 0.5;
+/// 局部匹配允许的最小重叠帧数（避免卷到 MV 尾部不足一窗）。
+const LOCAL_MIN_OVERLAP_FRAMES: usize = 48;
+
+/// 局部滑动匹配：取歌曲音频在 [song_pos_sec, song_pos_sec+window_sec] 的短窗，
+/// 在整个 MV 音轨上滑窗做能量包络互相关，返回 `(lag_sec, confidence)`。
+///
+/// `lag_sec = mv_pos - song_pos`，即 `videoPos = audioPos + lag`（沿用全局语义）。
+/// 由于只匹配「当前位置附近的一小段」，MV 即便有片头 / 花絮等与歌曲不一致的
+/// 内容，只要这段歌在 MV 里出现过一次，就能对准，不会像全局互相关那样被
+/// 整段不匹配的开头拖累而给出错误偏移。
+/// 全局频谱对齐：分析 MV 音频与歌曲音频的频谱偏移。
 /// 成功返回 `(offset_sec, confidence)`；失败返回错误说明（调用方回退 offset=0）。
 pub fn analyze(mv_path: &Path, song_path: &Path) -> Result<(f64, f64), String> {
     let (mv_rate, mv_samples) = decode_mono_native(mv_path)?;
@@ -43,6 +63,104 @@ pub fn analyze(mv_path: &Path, song_path: &Path) -> Result<(f64, f64), String> {
     estimate_envelope_lag(&mv_env, &song_env).ok_or_else(|| "包络过短，无法互相关".to_string())
 }
 
+pub fn analyze_local(
+    mv_path: &Path,
+    song_path: &Path,
+    song_pos_sec: f64,
+    window_sec: f64,
+) -> Result<(f64, f64), String> {
+    if !song_pos_sec.is_finite() || song_pos_sec < 0.0 || window_sec <= 0.0 {
+        return Err("无效的歌曲位置或窗口长度".to_string());
+    }
+
+    let (mv_rate, mv_samples) = decode_mono_native_cap(mv_path, LOCAL_MV_MAX_SEC)?;
+    let (song_rate, song_samples) = decode_mono_native_cap(
+        song_path,
+        song_pos_sec + window_sec + 5.0,
+    )?;
+
+    let mv8 = resample_linear(&mv_samples, mv_rate, ANALYSIS_SAMPLE_RATE);
+    let song8 = resample_linear(&song_samples, song_rate, ANALYSIS_SAMPLE_RATE);
+    drop(mv_samples);
+    drop(song_samples);
+
+    let mv_env = compute_envelope(&mv8);
+    let song_env = compute_envelope(&song8);
+    drop(mv8);
+    drop(song8);
+
+    let hop_sec = ENVELOPE_HOP as f64 / ANALYSIS_SAMPLE_RATE as f64;
+    let win_frames = ((window_sec / hop_sec).round() as usize).max(LOCAL_MIN_OVERLAP_FRAMES);
+    if win_frames >= song_env.len() {
+        return Err("歌曲音频过短，无法取窗".to_string());
+    }
+    // 歌曲窗起点对齐到采样帧；位置越过可用音频时往回调，保证能取出整窗。
+    let song_start_frame = (song_pos_sec / hop_sec).round().max(0.0) as usize;
+    let song_start = song_start_frame.min(song_env.len() - win_frames);
+    let song_window = &song_env[song_start..song_start + win_frames];
+
+    let mv_start =
+        sliding_window_align(&mv_env, song_window).ok_or("MV 过短，无法滑窗匹配")?;
+
+    let mv_pos_sec = mv_start as f64 * hop_sec;
+    let song_pos_sec_actual = song_start as f64 * hop_sec;
+    let lag = mv_pos_sec - song_pos_sec_actual;
+    Ok((lag, mv_start_confidence(&mv_env, song_window, mv_start)))
+}
+
+/// 滑窗互相关：把 [song_win] 当作模板，在 [mv_env] 上按下标滑窗求 Pearson 相关，
+/// 返回最佳 MV 起始帧。窗内各自 z-score 归一化（对齐全局算法的归一化口径）。
+/// 步进用 1 帧（≈64ms），对开局对齐精度足够。
+fn sliding_window_align(mv_env: &[f32], song_win: &[f32]) -> Option<usize> {
+    let w = song_win.len();
+    if mv_env.len() < w {
+        return None;
+    }
+    let song_z = z_normalize(song_win);
+    if song_z.iter().all(|v| *v == 0.0) {
+        return None;
+    }
+    let mut best = 0_usize;
+    let mut best_score = f64::NEG_INFINITY;
+    for start in 0..=(mv_env.len() - w) {
+        let slice = &mv_env[start..start + w];
+        let slice_z = z_normalize(slice);
+        let mut dot = 0.0_f64;
+        for i in 0..w {
+            dot += song_z[i] * slice_z[i];
+        }
+        // 两边都已 z 归一化，相关系数 = 点积 / n
+        let score = dot / w as f64;
+        if score.is_finite() && score > best_score {
+            best_score = score;
+            best = start;
+        }
+    }
+    Some(best)
+}
+
+/// 计算最佳 MV 起始帧处的局部置信度（Pearson 相关系数）。供外部判断是否可信。
+fn mv_start_confidence(mv_env: &[f32], song_win: &[f32], mv_start: usize) -> f64 {
+    let w = song_win.len();
+    if mv_start + w > mv_env.len() {
+        return 0.0;
+    }
+    let song_z = z_normalize(song_win);
+    let slice_z = z_normalize(&mv_env[mv_start..mv_start + w]);
+    let dot: f64 = song_z
+        .iter()
+        .zip(slice_z.iter())
+        .map(|(a, b)| a * b)
+        .sum();
+    (dot / w as f64).clamp(-1.0, 1.0)
+}
+
+/// 局部匹配是否可信：置信度达标即可，不限制偏移大小——
+/// 针对「MV 加了片头」的偏移可能远超全局的 15s 上限，但只要相关足够高就成立。
+pub fn is_local_trustworthy(_lag_sec: f64, confidence: f64) -> bool {
+    confidence.is_finite() && confidence >= LOCAL_MIN_CONFIDENCE
+}
+
 /// 置信度与偏移是否可信（对齐桌面端 isTrustworthyEstimate）。
 pub fn is_trustworthy(offset_sec: f64, confidence: f64) -> bool {
     offset_sec.is_finite()
@@ -50,8 +168,17 @@ pub fn is_trustworthy(offset_sec: f64, confidence: f64) -> bool {
         && offset_sec.abs() < MAX_LAG_SEC - 0.5
 }
 
-/// 解码音频文件为单声道 f32 采样（原生采样率），超过 MAX_ANALYSIS_SEC + 1s 提前停止。
+/// 解码音频文件为单声道 f32 采样（原生采样率），超过默认分析时长 + 1s 提前停止。
 fn decode_mono_native(path: &Path) -> Result<(u32, Vec<f32>), String> {
+    decode_mono_native_cap(path, MAX_ANALYSIS_SEC)
+}
+
+/// 解码音频文件为单声道 f32 采样（原生采样率），超过 `max_sec` 提前停止。
+/// 局部匹配用更大的上限让 MV 解到整曲，供在整个时间轴上滑窗。
+fn decode_mono_native_cap(
+    path: &Path,
+    max_sec: f64,
+) -> Result<(u32, Vec<f32>), String> {
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
     use symphonia::core::formats::FormatOptions;
@@ -93,7 +220,7 @@ fn decode_mono_native(path: &Path) -> Result<(u32, Vec<f32>), String> {
         .map(|c| c.count())
         .filter(|c| *c > 0)
         .unwrap_or(1);
-    let max_native = ((MAX_ANALYSIS_SEC + 1.0) * sr as f64) as usize;
+    let max_native = ((max_sec + 1.0) * sr as f64) as usize;
 
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
@@ -332,5 +459,28 @@ mod tests {
         let hop_sec = ENVELOPE_HOP as f64 / ANALYSIS_SAMPLE_RATE as f64;
         assert!((offset - lag_frames as f64 * hop_sec).abs() < hop_sec, "offset={offset}");
         assert!(conf > 0.9, "conf={conf}");
+    }
+
+    #[test]
+    fn local_align_recovers_shift_with_pad() {
+        // 模拟「MV 加了片头」：mv 包络前面垫一大段不相关内容，再出现整段歌。
+        // 歌曲窗取自歌中间；滑窗匹配应把窗对准到 mv 里歌的对应位置。
+        let w = 140_usize; // 歌曲窗长度（帧）
+        let song_base: Vec<f32> =
+            (0..400).map(|i| ((i as f32) * 0.17).sin().abs() + 0.08).collect();
+        let pad = 60_usize; // 片头帧数
+        let head_offset = 25_usize; // 歌窗原点到歌曲起点的帧偏移（模拟不在 0 秒开播）
+        let song_win: Vec<f32> = song_base[head_offset..head_offset + w].to_vec();
+        let mut mv: Vec<f32> = vec![0.03_f32; pad];
+        mv.extend_from_slice(&song_base[..song_base.len()]);
+        mv.extend_from_slice(&vec![0.04_f32; 60]);
+
+        let mv_start = sliding_window_align(&mv, &song_win).unwrap();
+        let conf = mv_start_confidence(&mv, &song_win, mv_start);
+        // 理想位置：mv = pad + song_base，窗在 song_base 内头位移 head_offset
+        let expect = pad + head_offset;
+        assert_eq!(mv_start, expect, "mv_start={mv_start} expect={expect}");
+        assert!(conf > 0.99, "conf={conf}");
+        assert!(is_local_trustworthy(3.0, conf));
     }
 }
