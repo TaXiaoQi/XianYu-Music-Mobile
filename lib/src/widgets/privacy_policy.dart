@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../auth/account_api.dart';
 import '../auth/server_models.dart';
@@ -230,21 +229,14 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
             ),
           ),
         ),
-        // 控件一行横排（同普通弹窗）：左侧在线版入口，右侧不同意/同意。
+        // 控件一行横排（同普通弹窗）：左侧不同意，右侧同意。
+        // OverflowBar 在窄约束下放不下时自动换行堆叠，避免 RenderFlex 溢出。
         actions: [
-          Row(
+          OverflowBar(
+            alignment: MainAxisAlignment.spaceBetween,
+            spacing: 8,
+            overflowSpacing: 4,
             children: [
-              TextButton(
-                onPressed: () => launchUrl(
-                  Uri.parse(kPrivacyPolicyUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
-                child: Text(
-                  tr('查看在线版'),
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-              const Spacer(),
               TextButton(
                 onPressed: () => SystemNavigator.pop(),
                 child: Text(
@@ -252,7 +244,6 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
                   style: const TextStyle(fontSize: 13),
                 ),
               ),
-              const SizedBox(width: 4),
               FilledButton(
                 onPressed: _atEnd ? _agree : null,
                 child: Text(

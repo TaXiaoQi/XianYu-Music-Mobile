@@ -128,12 +128,14 @@ class LinkMessage {
     required LinkPlayMode playMode,
     required bool liked,
     double? volume,
+    String? mvPhase,
   }) =>
       LinkMessage(LinkMsgType.state, {
         'isPlaying': isPlaying,
         'playMode': linkPlayModeToString(playMode),
         'liked': liked,
         'volume': ?volume,
+        'mvPhase': ?mvPhase,
       });
 
   static LinkMessage nowPlaying({
