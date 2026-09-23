@@ -63,37 +63,37 @@ class LyricsRepository {
 
   Future<String> _fetchLyricsJson(QueueItem item) async {
     if (item.isOnline) {
-      final pluginText = await _fetchPluginLyric(item);
-      if (pluginText.trim().isNotEmpty) {
-        return parseLyrics(rawLyrics: pluginText);
-      }
-      if (item.source != null && item.onlineInfoJson != null) {
-        final rawResultStr = await fetchLyricFromSource(
-          source: item.source!,
-          songInfoJson: item.onlineInfoJson!,
-        );
-        if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
-          String lyricsToParse = '';
-          try {
-            final lyricObj = jsonDecode(rawResultStr) as Map<String, dynamic>;
-            final lxlyric = lyricObj['lxlyric'] as String? ?? '';
-            final lyric = lyricObj['lyric'] as String? ?? '';
-            final tlyric = lyricObj['tlyric'] as String? ?? '';
-            if (lxlyric.trim().isNotEmpty) {
-              lyricsToParse = lxlyric;
-            } else if (lyric.trim().isNotEmpty) {
-              if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
-                lyricsToParse = '$lyric\n$tlyric';
-              } else {
-                lyricsToParse = lyric;
-              }
+      final pluginRes = await _fetchPluginLyric(item);
+      if (pluginRes != null) {
+        final mainText = _pickPluginMainText(pluginRes);
+        final tlyric = (pluginRes['tlyric'] as String?)?.trim() ?? '';
+        if (mainText.trim().isNotEmpty) {
+          if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
+            return parseLyrics(rawLyrics: '$mainText\n$tlyric');
+          }
+          if (tlyric.isEmpty) {
+            // 插件没带翻译（如 QQ 音源）→ 原生歌词源补齐翻译
+            final native = await _fetchNativeLyricResult(item);
+            final nTrans = native?['tlyric']?.trim() ?? '';
+            if (nTrans.isNotEmpty && !mainText.contains('tlyric')) {
+              return parseLyrics(rawLyrics: '$mainText\n$nTrans');
             }
-          } catch (_) {
-            lyricsToParse = rawResultStr;
           }
-          if (lyricsToParse.trim().isNotEmpty) {
-            return parseLyrics(rawLyrics: lyricsToParse);
-          }
+          return parseLyrics(rawLyrics: mainText);
+        }
+      }
+      // 插件无歌词 → 原生歌词源整包兜底
+      final native = await _fetchNativeLyricResult(item);
+      if (native != null) {
+        final lx = (native['lxlyric'] ?? '').trim();
+        if (lx.isNotEmpty) return parseLyrics(rawLyrics: lx);
+        final main = (native['lyric'] ?? '').trim();
+        final t = (native['tlyric'] ?? '').trim();
+        if (main.isNotEmpty) {
+          return parseLyrics(
+              rawLyrics: t.isNotEmpty && !main.contains('tlyric')
+                  ? '$main\n$t'
+                  : main);
         }
       }
       return '';
@@ -102,40 +102,76 @@ class LyricsRepository {
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
   }
 
-  Future<String> _fetchPluginLyric(QueueItem item) async {
+  /// 原生歌词源兜底：插件歌曲没有 source/onlineInfoJson，
+  /// 从 onlineSongJson.musicInfo 推导平台（仅支持原生实现了歌词抓取的四家）。
+  static const _nativeLyricSources = {'tx', 'wy', 'kw', 'kg'};
+
+  Future<Map<String, String>?> _fetchNativeLyricResult(QueueItem item) async {
+    Map<String, dynamic>? songInfo;
     final online = item.onlineSongJson;
-    if (online == null || online.isEmpty) return '';
+    if (online != null && online.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(online) as Map<String, dynamic>;
+        final musicInfo = parsed['musicInfo'];
+        if (musicInfo is Map<String, dynamic>) songInfo = musicInfo;
+      } catch (_) {}
+    }
+    if (songInfo == null && item.onlineInfoJson != null) {
+      try {
+        songInfo = jsonDecode(item.onlineInfoJson!) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    if (songInfo == null || songInfo.isEmpty) return null;
+    final sourceKey = (songInfo['source'] ?? songInfo['platform']) as String? ??
+        item.source ??
+        '';
+    if (!_nativeLyricSources.contains(sourceKey)) return null;
+    try {
+      final raw = await fetchLyricFromSource(
+        source: sourceKey,
+        songInfoJson: jsonEncode(songInfo),
+      );
+      if (raw.isEmpty || raw == 'null') return null;
+      final obj = jsonDecode(raw) as Map<String, dynamic>;
+      return {
+        for (final e in obj.entries)
+          e.key: e.value is String ? e.value as String : '',
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _pickPluginMainText(Map<String, dynamic> res) {
+    return (res['lxlyric'] ??
+            res['yrc'] ??
+            res['qrc'] ??
+            res['eslrc'] ??
+            res['lyric']) as String? ??
+        '';
+  }
+
+  Future<Map<String, dynamic>?> _fetchPluginLyric(QueueItem item) async {
+    final online = item.onlineSongJson;
+    if (online == null || online.isEmpty) return null;
     Map<String, dynamic> parsed;
     try {
       parsed = jsonDecode(online) as Map<String, dynamic>;
     } catch (_) {
-      return '';
+      return null;
     }
     final pluginId = parsed['pluginId'] as String?;
-    if (pluginId == null || pluginId.isEmpty) return '';
+    if (pluginId == null || pluginId.isEmpty) return null;
     final sourceKey = parsed['source'] as String? ?? '';
     final musicInfo = parsed['musicInfo'] as Map<String, dynamic>? ?? {};
     try {
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
       final matches = sources.where((s) => s.id == pluginId).toList();
-      if (matches.isEmpty) return '';
-      final res = await engine.getLyric(matches.first, sourceKey, musicInfo);
-      if (res == null) return '';
-      final mainText = (res['lxlyric'] ??
-              res['yrc'] ??
-              res['qrc'] ??
-              res['eslrc'] ??
-              res['lyric']) as String? ??
-          '';
-      if (mainText.trim().isEmpty) return '';
-      final tlyric = (res['tlyric'] as String?)?.trim() ?? '';
-      if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
-        return '$mainText\n$tlyric';
-      }
-      return mainText;
+      if (matches.isEmpty) return null;
+      return await engine.getLyric(matches.first, sourceKey, musicInfo);
     } catch (_) {
-      return '';
+      return null;
     }
   }
 }
