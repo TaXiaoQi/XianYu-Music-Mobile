@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -364,23 +363,12 @@ class PluginUpdateService {
     return installed;
   }
 
-  Future<String?> _fetchScript(String url) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36');
-      req.headers.set('Accept', '*/*');
-      final resp = await req.close().timeout(const Duration(seconds: 15));
-      if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      return await resp.transform(utf8.decoder).join();
-    } catch (_) {
-      return null;
-    } finally {
-      client.close();
-    }
-  }
+  Future<String?> _fetchScript(String url) => fetchPluginScriptWithRetry(
+        url,
+        connectionTimeout: const Duration(seconds: 10),
+        responseTimeout: const Duration(seconds: 15),
+        userAgent: 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36',
+      );
 }
 
 Future<void> runPluginAutoUpdateOnStartup(

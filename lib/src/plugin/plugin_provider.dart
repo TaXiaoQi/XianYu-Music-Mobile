@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/db_path.dart';
+import '../core/application_logger.dart';
 import '../core/rust_init.dart';
 import '../rust/api.dart' as frb;
 import '../sync/plugin_sync_state.dart';
@@ -28,6 +29,74 @@ const _bilibiliCookieKeys = {
   'PVID',
   'sid',
 };
+
+/// 带重试的插件脚本抓取（在线导入与订阅更新共用）。
+///
+/// 部分机型/网络下握手阶段被对端重置（errno 104 Connection reset by peer）
+/// 高发，多为瞬时性故障（服务端抖动/链路不稳/免费托管），逐次重试可显著
+/// 提高成功率；HTTP 4xx/5xx 是确定性结果，直接失败不重试。
+/// 每次尝试都落日志，失败机型上导出即可定位。
+Future<String?> fetchPluginScriptWithRetry(
+  String url, {
+  Duration connectionTimeout = const Duration(seconds: 15),
+  Duration responseTimeout = const Duration(seconds: 20),
+  String userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  int attempts = 3,
+}) async {
+  Object? lastErr;
+  for (var i = 1; i <= attempts; i++) {
+    final client = HttpClient()..connectionTimeout = connectionTimeout;
+    // IPv4 优先直连：部分机型的家庭宽带与蜂窝 IPv6 到 Cloudflare 免费段
+    // 均被链路级阻断（握手 RST），IPv4 正常；手机默认 AAAA 优先因此双网
+    // 全挂、PC（IPv4）正常。无 A 记录或解析失败时退回系统默认解析。
+    client.connectionFactory = (Uri uri, String? proxyHost, int? proxyPort) async {
+      final port = proxyPort ??
+          (uri.port != 0
+              ? uri.port
+              : (uri.scheme == 'https' ? 443 : 80));
+      if (proxyHost != null) {
+        return Socket.startConnect(proxyHost, port);
+      }
+      try {
+        final v4 = await InternetAddress.lookup(
+            uri.host, type: InternetAddressType.IPv4);
+        if (v4.isNotEmpty) {
+          AppLog.info('plugin',
+              'fetch connect v4 ${v4.first.address} ${uri.host}');
+          return await Socket.startConnect(v4.first, port);
+        }
+      } catch (e) {
+        AppLog.warn('plugin', 'v4 lookup failed ${uri.host}: $e');
+      }
+      return await Socket.startConnect(uri.host, port);
+    };
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      req.headers.set('User-Agent', userAgent);
+      req.headers.set('Accept', '*/*');
+      final resp = await req.close().timeout(responseTimeout);
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        AppLog.warn('plugin', 'fetch script http ${resp.statusCode} $url');
+        return null;
+      }
+      return await resp.transform(utf8.decoder).join();
+    } catch (e) {
+      lastErr = e;
+      AppLog.warn(
+          'plugin', 'fetch attempt $i/$attempts failed: $url\n$e');
+    } finally {
+      client.close();
+    }
+    if (i < attempts) {
+      await Future.delayed(const Duration(milliseconds: 800));
+    }
+  }
+  AppLog.error('plugin',
+      'fetch script failed after $attempts attempts: $url\n$lastErr');
+  return null;
+}
 
 final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
   await ref.watch(rustInitProvider.future);
@@ -238,7 +307,10 @@ class PluginManager extends StateNotifier<PluginListState> {
           .toList();
       if (items.isEmpty) return null;
       return items;
-    } catch (_) {
+    } catch (e) {
+      // 订阅链接返回非 JSON（反爬 HTML/登录页）时会静默走到单插件解析，
+      // 记一条便于识别被风控页劫持的情况。
+      AppLog.warn('plugin', 'plugin list parse failed: $e');
       return null;
     }
   }
@@ -285,25 +357,8 @@ class PluginManager extends StateNotifier<PluginListState> {
     );
   }
 
-  Future<String?> _fetchScript(String url) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      req.headers.set('User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-      req.headers.set('Accept', '*/*');
-      final resp = await req.close().timeout(const Duration(seconds: 20));
-      if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
-      final body = await resp.transform(utf8.decoder).join();
-      return body;
-    } catch (_) {
-      return null;
-    } finally {
-      client.close();
-    }
-  }
+  Future<String?> _fetchScript(String url) =>
+      fetchPluginScriptWithRetry(url);
 
   Future<void> toggleEnabled(String id) async {
     final engine = await _getEngine();
