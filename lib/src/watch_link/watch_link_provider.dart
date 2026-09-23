@@ -248,8 +248,10 @@ class WatchLinkController {
         if (_cloudRunning) {
           _cloudReconnect?.cancel();
           _cloudReconnect = Timer(_cloudBackoff, () {
-            _cloudBackoff = _cloudBackoff * 2 > const Duration(seconds: 60)
-                ? const Duration(seconds: 60)
+            // 封顶 15s：手表随时可能来连，手机 relay 长时间离线会让
+            // 表端一直「连接中」（表端退避更短，两端节奏要匹配）。
+            _cloudBackoff = _cloudBackoff * 2 > const Duration(seconds: 15)
+                ? const Duration(seconds: 15)
                 : _cloudBackoff * 2;
             _connectCloud();
           });
