@@ -810,10 +810,12 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
+                // 前段读完省 saveLayer（见 _PlayerCoverRoute 注释）。
                 opacity: CurvedAnimation(
                   parent: animation,
-                  curve: Curves.easeOutCubic,
-                  reverseCurve: Curves.easeOutCubic.flipped,
+                  curve: const Interval(0, 0.45, curve: Curves.easeOutCubic),
+                  reverseCurve:
+                      const Interval(0, 0.45, curve: Curves.easeOutCubic),
                 ),
                 child: child,
               );
@@ -902,13 +904,21 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
           curve: Curves.easeOutCubic,
           reverseCurve: Curves.easeInCubic,
         );
+        // fade 限制在前段读完：RenderAnimatedOpacity 在 opacity==1 时跳过
+        // 全屏 saveLayer，转场中段（全屏滑动 GPU 压力最大）零离屏合成，
+        // 避免「主页毛玻璃重采样 + 全屏 saveLayer」双全屏开销导致的卡顿。
+        final fade = CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0, 0.45, curve: Curves.easeOut),
+          reverseCurve: const Interval(0, 0.45, curve: Curves.easeIn),
+        );
         final exit = SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(curved),
           child: FadeTransition(
-            opacity: curved,
+            opacity: fade,
             child: RouteStaticSnapshot(animation: animation, child: child),
           ),
         );
@@ -1032,10 +1042,12 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
+                // 前段读完省 saveLayer（见 _PlayerCoverRoute 注释）。
                 opacity: CurvedAnimation(
                   parent: animation,
-                  curve: Curves.easeOutCubic,
-                  reverseCurve: Curves.easeOutCubic.flipped,
+                  curve: const Interval(0, 0.45, curve: Curves.easeOutCubic),
+                  reverseCurve:
+                      const Interval(0, 0.45, curve: Curves.easeOutCubic),
                 ),
                 child: child,
               );
