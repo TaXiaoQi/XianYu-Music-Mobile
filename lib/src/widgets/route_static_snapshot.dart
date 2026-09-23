@@ -56,15 +56,15 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !wasMoving) setState(() {});
     });
-    AppLog.debug('route-snapshot',
-        'end status=$status wasMoving=$wasMoving img=${_image != null} '
-        'size=${_size != null}');
   }
 
   @override
   void dispose() {
+    _token++; // 作废在途截图，防止完成后误 setState / 误用旧图
     widget.animation.removeStatusListener(_onStatus);
     _image?.dispose();
+    _image = null;
+    _size = null;
     super.dispose();
   }
 
@@ -78,7 +78,10 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       _capturing = false;
       return;
     }
-    if (box.size.isEmpty) {
+    // detached 后 toImage 会炸（native peer collected）：pop 拆树窗口
+    // 里 boundary 可能已被卸载，必须先挡掉。未绘制首帧的 layer! 空断言
+    // 无法提前判断（layer 是 protected），由下方 try/catch 兜底。
+    if (box.size.isEmpty || !box.attached) {
       _capturing = false;
       return;
     }

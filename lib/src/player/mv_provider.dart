@@ -122,6 +122,9 @@ class MvState {
   /// 初始化期间的缓冲进度（已缓冲秒数）。
   final int bufferedSec;
 
+  /// 音频已被 MV 自带音轨接管：歌曲通道静音，进度条切换为 MV 时间轴显示。
+  final bool audioTakenOver;
+
   const MvState({
     this.requested = false,
     this.ready = false,
@@ -130,11 +133,14 @@ class MvState {
     this.controller,
     this.phase = '',
     this.bufferedSec = 0,
+    this.audioTakenOver = false,
   });
 
   bool get active => requested;
 
-  MvState copyWith({String? phase, int? bufferedSec}) => MvState(
+  MvState copyWith(
+          {String? phase, int? bufferedSec, bool? audioTakenOver}) =>
+      MvState(
         requested: requested,
         ready: ready,
         loading: loading,
@@ -142,6 +148,7 @@ class MvState {
         controller: controller,
         phase: phase ?? this.phase,
         bufferedSec: bufferedSec ?? this.bufferedSec,
+        audioTakenOver: audioTakenOver ?? this.audioTakenOver,
       );
 
   /// 无参刷新：生成等值新对象以触发 provider 监听者重建。
@@ -153,6 +160,7 @@ class MvState {
         controller: controller,
         phase: phase,
         bufferedSec: bufferedSec,
+        audioTakenOver: audioTakenOver,
       );
 }
 
@@ -321,7 +329,10 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (has != null) _mvProbeResult[key] = has;
     if (!mounted) return;
-    // 重赋 state 触发监听者重建，让按钮按探测结论刷新显隐。
+    // 只在探测结论与字段判定不一致（入口显隐真的会变）时才广播重建；
+    // 一致或探测失败则静默。无条件全局 notify 会撞上转场/pop 的
+    // dispose 窗口，触发 use-after-dispose 崩溃（native peer collected）。
+    if (has == null || has == _hasMvIdentityHint(c)) return;
     state = state.refresh();
   }
 
@@ -457,8 +468,28 @@ class MvNotifier extends StateNotifier<MvState> {
     _syncOffsetMs = result.offsetMs;
     final now = _ref.read(playerProvider);
     if (now.current != null) {
-      unawaited(ctrl.seekTo(
-          _ringTarget(now.position * 1000, ctrl.value.duration)));
+      // 必须先 seek 到匹配点并等落位，再接管音频。此前 seek 是 unawaited 的：
+      // 淡入发生在旧位置（未匹配的默认环形映射点），听到的还是 MV 片头音乐，
+      // seek 落位瞬间音乐与画面双双跳变。此窗口内歌曲音频继续出声垫底，
+      // 画面先一步完成对齐，随后交叉淡入才是真正的无缝替换。
+      final target = _ringTarget(now.position * 1000, ctrl.value.duration);
+      _lastSeekAt = DateTime.now(); // 冷却压住 _syncTimeline，防接管窗口内二次硬跳
+      _stallTicks = 0;
+      _lastVposMs = -1;
+      try {
+        await ctrl.seekTo(target);
+      } catch (e) {
+        AppLog.warn('mv', 'takeover seek failed: $e');
+        // seek 失败不接管音频：此时淡入必然落在错误位置，宁可保持歌曲出声，
+        // 交给 _syncTimeline 后续对齐。
+        return;
+      }
+      if (!mounted || ver != _requestVersion) return;
+      if (!state.requested ||
+          !state.ready ||
+          !identical(state.controller, ctrl)) {
+        return;
+      }
     }
     await _takeOverAudio(ctrl);
   }
@@ -468,6 +499,8 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<void> _takeOverAudio(VideoPlayerController c) async {
     if (_audioTakenOver) return;
     _audioTakenOver = true;
+    // 同步暴露到状态：播放页进度条收到后整体切换为 MV 时间轴显示与拖动。
+    if (mounted) state = state.copyWith(audioTakenOver: true);
     await _ref.read(playerProvider.notifier).setMvAudioOverride(true);
     final vol = _ref.read(volumeProvider).clamp(0.0, 1.0);
     for (var v = 0.0; v < vol; v += 0.2) {
@@ -482,6 +515,8 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<void> _releaseAudio(VideoPlayerController? c) async {
     if (!_audioTakenOver) return;
     _audioTakenOver = false;
+    // 进度条切回歌曲时间轴。
+    if (mounted) state = state.copyWith(audioTakenOver: false);
     if (c != null) {
       try {
         await c.setVolume(0);
@@ -511,6 +546,47 @@ class MvNotifier extends StateNotifier<MvState> {
     AppLog.info('mv', 'user seek align vpos=${c.value.position.inMilliseconds} '
         'target=${t.inMilliseconds} secs=$secs');
     unawaited(c.seekTo(t));
+  }
+
+  /// 进度条切到 MV 时间轴后（音频接管）的拖动：把 MV 时间换算回歌曲时间轴
+  /// seek 静音的歌曲底座，再立即把 MV 对齐到对应点——时间基准仍是歌曲，
+  /// 歌词/切歌时机不受影响。
+  ///
+  /// 歌曲在 MV 时间轴上覆盖不到的区域（MV 片头 / 歌曲结束后的片尾）就近夹回
+  /// 可达弧 [offset, offset+songDur)，否则 [_syncTimeline] 会以歌曲位置为准
+  /// 把 MV 拽回去，表现为拖了又被弹回。
+  void seekToMvSeconds(double mvSecs) {
+    if (!state.requested || !state.ready) return;
+    final c = state.controller;
+    if (c == null || !c.value.isInitialized) return;
+    final vdMs = c.value.duration.inMilliseconds;
+    if (vdMs <= 0) return;
+    var off = _syncOffsetMs % vdMs;
+    if (off < 0) off += vdMs;
+    var tMs = (mvSecs * 1000).round();
+    if (tMs < 0) tMs = 0;
+    if (tMs > vdMs) tMs = vdMs;
+    final songDurMs =
+        (_ref.read(playerProvider).duration * 1000).round();
+    if (songDurMs > 0) {
+      if (tMs < off) tMs = off;
+      // 高位夹到歌曲结束前 0.5s，避免 seek 到歌曲末尾立刻触发切歌。
+      final maxSongMs = songDurMs > 800 ? songDurMs - 500 : songDurMs;
+      if (tMs - off > maxSongMs) tMs = off + maxSongMs;
+      if (tMs >= vdMs) tMs = vdMs - 1;
+    } else if (tMs < off) {
+      tMs = off; // 歌曲时长未知时至少保证落在非负歌曲位置上
+    }
+    final songSecs = (tMs - off) / 1000.0;
+    _stallTicks = 0;
+    _lastVposMs = -1;
+    AppLog.info('mv', 'mv-timeline seek mv=${(tMs / 1000.0).toStringAsFixed(1)}s '
+        'song=${songSecs.toStringAsFixed(1)}s');
+    // 先 seek 歌曲底座，再立即对齐 MV；冷却窗口压住 _syncTimeline 的硬 seek，
+    // 避免歌曲位置尚未落地时被二次拽走。
+    unawaited(_ref.read(playerProvider.notifier).seek(songSecs));
+    _lastSeekAt = DateTime.now();
+    unawaited(c.seekTo(Duration(milliseconds: tMs)));
   }
 
   Future<void> _hardStop() async {
@@ -735,6 +811,9 @@ class MvNotifier extends StateNotifier<MvState> {
   void _syncTimeline() {
     final c = state.controller;
     if (c == null || !c.value.isInitialized) {
+      // MV 未开启时静默跳过：定时器常驻 500ms 空转属正常态，不计数不写日志，
+      // 否则每 5s 一条 warn 的纯噪音会刷满日志环、挤掉有用记录。
+      if (!state.requested) return;
       _missCount++;
       if (_missCount % 10 == 1) {
         AppLog.warn('mv', 'tick skip: hasCtrl=${c != null} '
@@ -819,16 +898,8 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
     _applyNudge(c, driftMs);
-    _tickCount++;
-    if (_tickCount % 2 == 0) {
-      AppLog.debug('mv', 'tick vpos=${c.value.position.inMilliseconds} '
-          'ap=${audio.position} drift=${driftMs.round()}ms '
-          'buf=${c.value.isBuffering} playing=${c.value.isPlaying} '
-          'spd=${c.value.playbackSpeed}');
-    }
   }
 
-  int _tickCount = 0;
   int _missCount = 0;
   bool _lastBuffering = false;
 

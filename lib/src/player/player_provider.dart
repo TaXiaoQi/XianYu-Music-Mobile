@@ -417,6 +417,18 @@ class PlaybackState {
 const Object _noChange = Object();
 
 typedef BeforePlayGate = Future<void> Function();
+
+/// 在线起播 10s 超时（load 挂死）。与普通失败区分，供 _playOnline
+/// 做同曲降级音质重试，避免被误当作「换候选/跳歌」以外的失败。
+class _StartOnlineTimeoutException implements Exception {
+  _StartOnlineTimeoutException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 BeforePlayGate? beforePlayGate;
 
 class _GatedAudioPlayer extends AudioPlayer {
@@ -1285,9 +1297,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           positionSecs: pos,
           isPlaying: isPlaying,
         );
-        AppLog.debug('session',
-            'position saved cur=${current.title} pos=${pos.toStringAsFixed(1)} '
-            'playing=$isPlaying online=${current.isOnline}');
       } catch (e) {
         AppLog.warn('session', 'position save failed: $e');
       }
@@ -1567,9 +1576,28 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           'available=${probe.availableQualities} probing=${probe.probing}');
       if (start != null) {
         state = state.copyWith(resolving: false);
-        await _startOnlineUrl(start.url,
-            headers: start.headers, item: item, ekey: start.ekey);
-        state = state.copyWith(currentQuality: start.quality);
+        try {
+          await _startOnlineUrl(start.url,
+              headers: start.headers, item: item, ekey: start.ekey);
+          state = state.copyWith(currentQuality: start.quality);
+        } on _StartOnlineTimeoutException {
+          // 二次超时自动降级音质重试：当前音质的 CDN 节点可能挂死
+          // （如 kg hw 节点对特定文件无响应），probe 已解析的更低音质
+          // 是不同直链，重试有机会成功。重试再超时则透传走失败流程。
+          final lowerChain = _lowerQualityChain(start.quality, candidates);
+          if (lowerChain.isEmpty) rethrow;
+          AppLog.warn('play', '[playOnline] 起播超时，降级音质重试 '
+              'q=${start.quality} -> $lowerChain');
+          final retry = await probe
+              .startBest(lowerChain.first, lowerChain)
+              .timeout(const Duration(seconds: 45), onTimeout: () => null);
+          if (retry == null) rethrow;
+          AppLog.info('play',
+              '[playOnline] 降级重试 q=${retry.quality} url=${retry.url}');
+          await _startOnlineUrl(retry.url,
+              headers: retry.headers, item: item, ekey: retry.ekey);
+          state = state.copyWith(currentQuality: retry.quality);
+        }
         _refreshQualityMenuState(probe);
         unawaited(_prewarmOnlineSizes(item));
         _probeMvsAround(item);
@@ -2139,6 +2167,19 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return result;
   }
 
+  /// 降级重试链：候选中严格低于当前音质的档位（保持原顺序）。
+  /// 当前音质不在阶梯上（如自定义档）时无从降级，返回空。
+  static List<String> _lowerQualityChain(
+    String current,
+    List<String> candidates,
+  ) {
+    final curRank = _qualityLadder.indexOf(current);
+    if (curRank < 0) return const [];
+    return candidates
+        .where((q) => _qualityLadder.indexOf(q) < curRank)
+        .toList(growable: false);
+  }
+
   static bool _isPlayableUrl(String? url) =>
       url != null && RegExp(r'^https?://').hasMatch(url);
 
@@ -2500,14 +2541,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _player.setUrl(playUrl, headers: h)
           .timeout(const Duration(seconds: 10));
     } on TimeoutException {
-      // 起播超时兜底：任何未知原因的挂死都回退直链保可用；先抓现场
-      //（状态+线程堆栈随日志导出可离线定位），再重试直链。
+      // 起播超时：先抓现场（状态+线程堆栈随日志导出可离线定位）。
+      // 修复：不再对同一 player 二次 setUrl——首次 load 挂死时 just_audio
+      // 的串行锁会让后续 setUrl/pause/stop 全部排队挂死，导致旧源声音
+      // 叠加且暂停失效（双 ExoPlayer 线程组并存）。改为 fail-fast 交上层
+      // 走播放失败流程（换候选/跳歌），并尝试 2s 内 stop 打断挂死 load。
       AppLog.warn('play',
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
           'buffered=${_player.bufferedPosition.inMilliseconds}ms '
           'dur=${_player.duration?.inMilliseconds}ms url=$clean');
       await _dumpPlayerThreads();
-      await _player.setUrl(clean, headers: h);
+      unawaited(_player
+          .stop()
+          .then((_) => AppLog.info('play', '[startOnlineUrl] 超时后 stop 成功'))
+          .catchError((_) {})
+          .timeout(const Duration(seconds: 2), onTimeout: () {
+        AppLog.warn('play', '[startOnlineUrl] 超时后 stop 也挂起（控制通道被占）');
+      }));
+      throw _StartOnlineTimeoutException(tr('音源起播超时，已跳过'));
     }
     final declaredMs = item.durationMs;
     final actualMs = _player.duration?.inMilliseconds ?? 0;

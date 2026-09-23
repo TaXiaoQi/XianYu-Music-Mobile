@@ -122,16 +122,11 @@ class AudioProxyServer {
       final rawRange = req.headers.value(HttpHeaders.rangeHeader);
       final range = _parseRange(rawRange) ?? const _ByteRange(0, null);
       final head = AudioHeadCache.instance.lookupForPlay(target);
-      probeLog('req arrive range=${rawRange ?? 'none'} '
-          'head=${head?.bytes.length ?? 0}B total=${head?.totalLength ?? -1} '
-          'req.m=${req.method}');
 
       // 在线播放磁盘缓存（对齐桌面端）：先预热流式下载写盘，再尝试本地伺服
       var cacheReady = false;
       if (req.method == 'GET') {
-        final w = Stopwatch()..start();
         cacheReady = await _warmStreamCache(target, upstreamHeaders);
-        probeLog('warm done ready=$cacheReady t=${w.elapsedMilliseconds}ms');
       }
       if (cacheReady &&
           await _tryServeFromCache(
@@ -141,13 +136,9 @@ class AudioProxyServer {
       }
 
       if (head != null && range.start < head.bytes.length) {
-        final w = Stopwatch()..start();
         await _serveWithHead(req, target, upstreamHeaders, head, range);
-        probeLog('serveWithHead done t=${w.elapsedMilliseconds}ms');
       } else {
-        final w = Stopwatch()..start();
         await _passthrough(req, target, upstreamHeaders, range);
-        probeLog('passthrough done t=${w.elapsedMilliseconds}ms');
       }
     } catch (_) {
       try {
@@ -202,22 +193,18 @@ class AudioProxyServer {
   ) async {
     final st = await _cacheStatus(target);
     if (st == null || !st.exists || st.failed) {
-      probeLog('tryCache skip status=${st == null ? 'null' : 'no-exist/failed'}');
       return false;
     }
 
     // 总长：完整缓存用实际大小；下载中依赖头部探测的总长
     final int? total = st.complete ? st.total : head?.totalLength;
     if (total == null || total <= 0) {
-      probeLog('tryCache skip total=null complete=${st.complete}');
       return false;
     }
 
     // 请求位置还没下载到：后台（如澎湃节流）下载器可能长时间不推进，
     // 直接回退网络直连（避免在 read_url_range 里空等超时）。
     if (st.downloaded <= range.start) {
-      probeLog('tryCache skip not-downloaded '
-          'downloaded=${st.downloaded} start=${range.start}');
       return false;
     }
 
@@ -271,10 +258,6 @@ class AudioProxyServer {
           probeLog('tryCache read-EOF pos=$pos total=$total '
               'firstMs=${readTimer.elapsedMilliseconds}ms');
           break;
-        }
-        if (!wroteAny) {
-          probeLog('tryCache firstChunk pos=$pos len=${chunk.length} '
-              'after=${readTimer.elapsedMilliseconds}ms');
         }
         var data = chunk;
         if (pos + data.length > end + 1) {
@@ -388,8 +371,10 @@ class AudioProxyServer {
             served += data.length;
           }
         } catch (_) {}
-        probeLog('tail done served=${served}B stalled=$stalled '
-            't=${sw.elapsedMilliseconds}ms');
+        if (stalled) {
+          probeLog('tail done served=${served}B stalled=$stalled '
+              't=${sw.elapsedMilliseconds}ms');
+        }
       } catch (_) {
       } finally {
         client.close(force: true);
@@ -448,8 +433,10 @@ class AudioProxyServer {
           served += chunk.length;
         }
       } catch (_) {}
-      probeLog('passthrough done served=${served}B stalled=$stalled '
-          't=${sw.elapsedMilliseconds}ms');
+      if (stalled) {
+        probeLog('passthrough done served=${served}B stalled=$stalled '
+            't=${sw.elapsedMilliseconds}ms');
+      }
       try {
         await res.close();
       } catch (_) {}

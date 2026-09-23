@@ -4225,8 +4225,44 @@ class _ProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 音频被 MV 接管后，进度条整体切到 MV 时间轴：位置、总时长、拖动
+    // 都以 MV 为准，所见即所听。
+    final mvCtrl = ref.watch(mvProvider
+        .select((s) => (s.audioTakenOver && s.ready) ? s.controller : null));
+    if (mvCtrl != null && mvCtrl.value.isInitialized) {
+      return ListenableBuilder(
+        listenable: mvCtrl,
+        builder: (context, _) {
+          final v = mvCtrl.value;
+          return _bar(
+            context,
+            scheme,
+            position: v.position.inMilliseconds / 1000.0,
+            dur: v.duration.inMilliseconds / 1000.0,
+            onCommit: (secs) =>
+                ref.read(mvProvider.notifier).seekToMvSeconds(secs),
+          );
+        },
+      );
+    }
     final position = ref.watch(playerProvider.select((s) => s.position));
     final dur = ref.watch(playerProvider.select((s) => s.duration));
+    return _bar(
+      context,
+      scheme,
+      position: position,
+      dur: dur,
+      onCommit: (v) => _seekAudioWithMv(ref, notifier, v),
+    );
+  }
+
+  Widget _bar(
+    BuildContext context,
+    ColorScheme scheme, {
+    required double position,
+    required double dur,
+    required void Function(double secs) onCommit,
+  }) {
     // 时长未知时（还没起播、或恢复的会话里没带时长）不能拿 1.0 顶替 max，
     // 否则 position 会被 clamp 到满格、右侧显示 00:01，看着就像进度条坏了。
     // 这里和底部时间行的做法一致：位置照实显示，总时长用 --:--。
@@ -4248,8 +4284,7 @@ class _ProgressBar extends ConsumerWidget {
             min: 0,
             max: hasDuration ? dur : 1.0,
             enabled: hasDuration,
-            onCommit:
-                hasDuration ? (v) => _seekAudioWithMv(ref, notifier, v) : null,
+            onCommit: hasDuration ? onCommit : null,
           ),
         ),
         if (showTime)
