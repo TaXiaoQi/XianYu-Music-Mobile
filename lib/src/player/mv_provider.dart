@@ -442,7 +442,10 @@ class MvNotifier extends StateNotifier<MvState> {
   /// 匹配点，并将音频无缝切换给 MV 自带音轨（歌曲音频被静音）。
   Future<void> _runTakeover(QueueItem c, String identity, int ver) async {
     final cacheDir = await mvSyncCacheDir();
-    if (cacheDir == null) return;
+    if (cacheDir == null) {
+      AppLog.warn('mv', '[takeover] skip: sync cache dir unavailable');
+      return;
+    }
     final song = mvSongOf(c);
     final anchorSec = _ref.read(playerProvider).position;
     final result = await analyzeMvLocalForSong(
@@ -455,7 +458,7 @@ class MvNotifier extends StateNotifier<MvState> {
       songUrl: LastAudioSource.url,
       songHeaders: LastAudioSource.headers,
     );
-    if (result == null) return;
+    if (result == null) return; // 未命中原因由 analyzeMvLocalForSong 记录
     if (!mounted || ver != _requestVersion) return;
     if (_song == null || _songIdentity(_song!) != identity) return;
     if (!state.requested || !state.ready) return;
@@ -508,7 +511,6 @@ class MvNotifier extends StateNotifier<MvState> {
       await Future.delayed(const Duration(milliseconds: 55));
     }
     await c.setVolume(vol);
-    AppLog.info('mv', '[takeover] engaged vol=$vol');
   }
 
   /// 还原为歌曲音频通道：清零 MV 音量、取消歌曲静音。
@@ -523,7 +525,6 @@ class MvNotifier extends StateNotifier<MvState> {
       } catch (_) {}
     }
     await _ref.read(playerProvider.notifier).setMvAudioOverride(false);
-    AppLog.info('mv', '[takeover] released');
   }
 
   /// 用户主动跳转（拖动进度条 / 点歌词行）：立即把 MV 对齐到新的音频位置。
@@ -543,8 +544,6 @@ class MvNotifier extends StateNotifier<MvState> {
     _stallTicks = 0;
     _lastVposMs = -1;
     final t = _ringTarget(secs * 1000, vd);
-    AppLog.info('mv', 'user seek align vpos=${c.value.position.inMilliseconds} '
-        'target=${t.inMilliseconds} secs=$secs');
     unawaited(c.seekTo(t));
   }
 
@@ -580,8 +579,6 @@ class MvNotifier extends StateNotifier<MvState> {
     final songSecs = (tMs - off) / 1000.0;
     _stallTicks = 0;
     _lastVposMs = -1;
-    AppLog.info('mv', 'mv-timeline seek mv=${(tMs / 1000.0).toStringAsFixed(1)}s '
-        'song=${songSecs.toStringAsFixed(1)}s');
     // 先 seek 歌曲底座，再立即对齐 MV；冷却窗口压住 _syncTimeline 的硬 seek，
     // 避免歌曲位置尚未落地时被二次拽走。
     unawaited(_ref.read(playerProvider.notifier).seek(songSecs));

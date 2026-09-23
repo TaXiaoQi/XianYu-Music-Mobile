@@ -32,10 +32,9 @@ const _bilibiliCookieKeys = {
 
 /// 带重试的插件脚本抓取（在线导入与订阅更新共用）。
 ///
-/// 部分机型/网络下握手阶段被对端重置（errno 104 Connection reset by peer）
-/// 高发，多为瞬时性故障（服务端抖动/链路不稳/免费托管），逐次重试可显著
-/// 提高成功率；HTTP 4xx/5xx 是确定性结果，直接失败不重试。
-/// 每次尝试都落日志，失败机型上导出即可定位。
+/// 部分网络下握手阶段被对端重置（errno 104 Connection reset by peer）
+/// 高发，多为瞬时性故障（服务端抖动/链路不稳），逐次重试可提高成功率；
+/// HTTP 4xx/5xx 是确定性结果，直接失败不重试。
 Future<String?> fetchPluginScriptWithRetry(
   String url, {
   Duration connectionTimeout = const Duration(seconds: 15),
@@ -48,30 +47,6 @@ Future<String?> fetchPluginScriptWithRetry(
   Object? lastErr;
   for (var i = 1; i <= attempts; i++) {
     final client = HttpClient()..connectionTimeout = connectionTimeout;
-    // IPv4 优先直连：部分机型的家庭宽带与蜂窝 IPv6 到 Cloudflare 免费段
-    // 均被链路级阻断（握手 RST），IPv4 正常；手机默认 AAAA 优先因此双网
-    // 全挂、PC（IPv4）正常。无 A 记录或解析失败时退回系统默认解析。
-    client.connectionFactory = (Uri uri, String? proxyHost, int? proxyPort) async {
-      final port = proxyPort ??
-          (uri.port != 0
-              ? uri.port
-              : (uri.scheme == 'https' ? 443 : 80));
-      if (proxyHost != null) {
-        return Socket.startConnect(proxyHost, port);
-      }
-      try {
-        final v4 = await InternetAddress.lookup(
-            uri.host, type: InternetAddressType.IPv4);
-        if (v4.isNotEmpty) {
-          AppLog.info('plugin',
-              'fetch connect v4 ${v4.first.address} ${uri.host}');
-          return await Socket.startConnect(v4.first, port);
-        }
-      } catch (e) {
-        AppLog.warn('plugin', 'v4 lookup failed ${uri.host}: $e');
-      }
-      return await Socket.startConnect(uri.host, port);
-    };
     try {
       final req = await client.getUrl(Uri.parse(url));
       req.headers.set('User-Agent', userAgent);
@@ -84,8 +59,6 @@ Future<String?> fetchPluginScriptWithRetry(
       return await resp.transform(utf8.decoder).join();
     } catch (e) {
       lastErr = e;
-      AppLog.warn(
-          'plugin', 'fetch attempt $i/$attempts failed: $url\n$e');
     } finally {
       client.close();
     }
