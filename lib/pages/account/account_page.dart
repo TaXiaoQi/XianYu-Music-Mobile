@@ -12,6 +12,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/sync/sync_provider.dart' show syncProvider;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/app_logo.dart';
 import '../../src/widgets/user_agreement.dart';
 import '../../src/widgets/user_avatar.dart';
 import 'account_dialogs.dart';
@@ -278,26 +279,7 @@ class _AccountPageState extends ConsumerState<AccountPage>
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
           child: Column(
             children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [scheme.primary, scheme.primary.withValues(alpha: 0.7)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.3),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Icon(Icons.music_note, size: 34, color: scheme.onPrimary),
-              ),
+              const AppLogo(size: 64, radius: 16),
               const SizedBox(height: 12),
                 Text(tr('弦予音乐'),
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -1374,4 +1356,4 @@ class _AmbientBackground extends ConsumerWidget {
     );
   }
 }
-
+

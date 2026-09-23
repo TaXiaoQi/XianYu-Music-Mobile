@@ -10,6 +10,7 @@ import '../../src/core/developer_mode.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/update/app_update.dart';
+import '../../src/widgets/app_logo.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -189,26 +190,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             24, portraitFloating ? GlassTopBar.height(context) + 6 : 24, 24, 24),
         children: [
           Center(
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [scheme.primary, scheme.primary.withValues(alpha: 0.7)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: scheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Icon(Icons.music_note, size: 38, color: scheme.onPrimary),
-            ),
+            child: const AppLogo(size: 72),
           ),
           const SizedBox(height: 14),
             Center(

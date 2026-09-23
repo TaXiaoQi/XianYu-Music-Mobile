@@ -33,6 +33,18 @@ class Announcement {
       );
 }
 
+/// 服务器下发的隐私政策版本。
+class PrivacyPolicyRemote {
+  final String id;
+  final String content;
+  final String updatedAt;
+  const PrivacyPolicyRemote({
+    required this.id,
+    required this.content,
+    required this.updatedAt,
+  });
+}
+
 class AcknowledgementItem {
   final String name;
   final String url;
