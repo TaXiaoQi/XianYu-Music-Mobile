@@ -274,6 +274,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         children: [
           _watchLinkStatusTile(context, ref, s),
           _watchConnectTile(context, ref, s),
+          _watchWakeTile(context, ref),
           _watchDisconnectTile(context, ref, s),
           _watchResetAuthTile(context, s, n),
         ],
@@ -464,6 +465,48 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     if (context.mounted) {
       showXianYuToast(context, tr('已发起连接，请在手表端确认'),
           duration: const Duration(seconds: 2));
+    }
+  }
+
+  /// Wear Engine（华为运动健康通道）远程冷启动腕上端。
+  Widget _watchWakeTile(BuildContext context, WidgetRef ref) {
+    return _tile(
+      context,
+      icon: Icons.ring_volume_outlined,
+      title: tr('唤醒手表应用'),
+      subtitle: tr('通过华为运动健康远程启动腕上端'),
+      trailing: const SizedBox.shrink(),
+      showChevron: false,
+      onTap: () => _wakeWatchApp(context, ref),
+    );
+  }
+
+  Future<void> _wakeWatchApp(BuildContext context, WidgetRef ref) async {
+    final ctrl = ref.read(watchLinkControllerProvider);
+    // 未装运动健康：说明原因并引导安装（不静默跳转）
+    if (!await ctrl.hasWearEngine()) {
+      if (!context.mounted) return;
+      final go = await showModernConfirmDialog(
+        context: context,
+        title: tr('未检测到华为运动健康'),
+        message: tr('唤醒腕上端需要华为运动健康提供 Wear Engine 服务，是否前往安装？'),
+        isDanger: false,
+      );
+      if (go && context.mounted) await ctrl.installHealth();
+      return;
+    }
+    if (!context.mounted) return;
+    // 高德同款：先弹窗确认，再经 Wear Engine 授权并拉起腕上端
+    final ok = await showModernConfirmDialog(
+      context: context,
+      title: tr('同步到手表？'),
+      message: tr('将在手表端启动弦予音乐；首次使用需完成 Wear Engine 授权'),
+      isDanger: false,
+    );
+    if (!ok) return;
+    final msg = await ctrl.wakeWatchApp();
+    if (context.mounted && msg.isNotEmpty) {
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
     }
   }
 

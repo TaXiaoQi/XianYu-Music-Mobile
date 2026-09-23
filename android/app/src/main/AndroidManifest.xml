@@ -240,5 +240,8 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Wear Engine：Android 11+ 查询华为运动健康（Wear Engine 服务宿主）
+             安装状态需包可见性声明 -->
+        <package android:name="com.huawei.health"/>
     </queries>
 </manifest>

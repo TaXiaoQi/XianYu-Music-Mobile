@@ -18,3 +18,9 @@
 # QQ OpenSDK 3.5.19 运行时硬编码调用 android.support.v4.content.FileProvider
 # （app 内有对应的继承 androidx 的存根类），防止 R8 误删
 -keep class android.support.v4.content.FileProvider { *; }
+
+# 华为 Wear Engine SDK：回调接口经 Binder 跨进程派发，混淆会破坏 AIDL/反射
+-keep class com.huawei.wearengine.** { *; }
+-dontwarn com.huawei.wearengine.**
+-keep class com.huawei.hmf.tasks.** { *; }
+-dontwarn com.huawei.hmf.tasks.**

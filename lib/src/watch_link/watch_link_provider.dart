@@ -22,6 +22,7 @@ import '../library/saf_channel.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../navigation/routes.dart';
 import '../online/cover_proxy.dart';
+import '../player/mv_provider.dart';
 import '../player/player_provider.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
@@ -54,6 +55,8 @@ class WatchLinkController {
   bool _cloudRunning = false;
 
   Timer? _fxPushTimer;
+
+  Timer? _mvPushTimer;
 
   bool _cloudWatchOnline = false;
 
@@ -127,11 +130,18 @@ class WatchLinkController {
       soundEffectProvider,
       (_, _) => _pushEffectsDebounced(),
     ));
+
+    // MV 加载进度 → 推送到手表（节流；resolve/init/buffered 每次变化）
+    _providerSubs.add(_container.listen<MvState>(
+      mvProvider,
+      (_, _) => _pushMvPhaseDebounced(),
+    ));
   }
 
   void dispose() {
     beforePlayGate = null;
     _fxPushTimer?.cancel();
+    _mvPushTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
     }
@@ -290,6 +300,29 @@ class WatchLinkController {
       await _cloud.close();
       _cloudReconnect = Timer(const Duration(seconds: 3), _connectCloud);
     }
+  }
+
+  // ---- Wear Engine：华为运动健康通道远程冷启动腕上端 ----
+
+  /// 运动健康是否已安装（Wear Engine 服务宿主），UI 用于弹窗引导。
+  Future<bool> hasWearEngine() => _channel.hasWearEngine();
+
+  /// 跳转应用市场安装华为运动健康（经弹窗确认后由 UI 调用）。
+  Future<void> installHealth() => _channel.installHealth();
+
+  /// 授权（未授权弹华为授权页）后 ping 拉起腕上端，返回用户可读提示。
+  /// AGC 权限未审批/设备未绑定等错误统一透传真实原因，不额外包装。
+  Future<String> wakeWatchApp() async {
+    final auth = await _channel.wearAuthorize();
+    if (!auth.granted) {
+      return auth.canceled || auth.message.isEmpty
+          ? tr('Wear Engine 授权未完成')
+          : tr('Wear Engine 授权失败：{m}', {'m': auth.message});
+    }
+    final r = await _channel.wearWake();
+    return r.message.isEmpty
+        ? (r.ok ? tr('已拉起腕上端') : tr('唤醒失败'))
+        : r.message;
   }
 
   // ---- 字节入口与消息分发 ----
@@ -545,6 +578,7 @@ class WatchLinkController {
       playMode: _lastMode,
       liked: _lastLiked,
       volume: _volumeOf(),
+      mvPhase: _mvPhaseText(),
     ));
     _lastPosPush = DateTime.now();
     _send(LinkMessage.position(pos: st.position, duration: st.duration));
@@ -645,6 +679,42 @@ class WatchLinkController {
       playMode: _lastMode,
       liked: _lastLiked,
       volume: _volumeOf(),
+      mvPhase: _mvPhaseText(),
+    ));
+  }
+
+  // ---- MV 加载进度同步 ----
+
+  /// 当前 MV 加载进度提示；null 表示无 MV 活动态（加载完成或未开启）。
+  String? _mvPhaseText() {
+    final mv = _container.read(mvProvider);
+    if (!mv.requested || mv.ready) return null;
+    switch (mv.phase) {
+      case 'resolve':
+        return 'MV 加载中（解析地址）';
+      case 'init':
+        return mv.bufferedSec > 0
+            ? 'MV 加载中（已缓冲 ${mv.bufferedSec} 秒）'
+            : 'MV 加载中（准备画面）';
+      default:
+        return mv.loading ? 'MV 加载中' : null;
+    }
+  }
+
+  void _pushMvPhaseDebounced() {
+    _mvPushTimer?.cancel();
+    _mvPushTimer = Timer(const Duration(milliseconds: 300), _pushMvState);
+  }
+
+  void _pushMvState() {
+    if (!_connected && !_cloudWatchOnline) return;
+    final st = _container.read(playerProvider);
+    _send(LinkMessage.state(
+      isPlaying: st.isPlaying,
+      playMode: _lastMode,
+      liked: _lastLiked,
+      volume: _volumeOf(),
+      mvPhase: _mvPhaseText(),
     ));
   }
 
@@ -699,6 +769,7 @@ class WatchLinkController {
       playMode: _lastMode,
       liked: _lastLiked,
       volume: _volumeOf(),
+      mvPhase: _mvPhaseText(),
     ), cloud: cloud);
     _lastPosPush = DateTime.now();
     _send(LinkMessage.position(pos: st.position, duration: st.duration),

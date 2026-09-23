@@ -94,6 +94,39 @@ object WatchLink {
                         requestPermission()
                         result.success(null)
                     }
+                    // ---- Wear Engine（运动健康通道）：查询/授权/远程拉起腕上端 ----
+                    "wearHasEngine" -> result.success(WearEngineClient.hasWearEngine(activity))
+                    "wearInstallHealth" -> {
+                        WearEngineClient.installHealth(activity)
+                        result.success(null)
+                    }
+                    "wearAuthorize" -> {
+                        WearEngineClient.authorize(activity) { granted, canceled, message ->
+                            runCatching {
+                                result.success(
+                                    mapOf(
+                                        "granted" to granted,
+                                        "canceled" to canceled,
+                                        "message" to message,
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    "wearDevices" -> {
+                        WearEngineClient.devices(activity) { devs ->
+                            runCatching { result.success(devs) }
+                        }
+                    }
+                    "wearWake" -> {
+                        val bundleName = call.argument<String>("bundleName")
+                            ?: WearEngineClient.WATCH_BUNDLE_NAME
+                        WearEngineClient.wake(activity, bundleName) { ok, code, message ->
+                            runCatching {
+                                result.success(mapOf("ok" to ok, "code" to code, "message" to message))
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

@@ -111,6 +111,13 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    // 华为 Wear Engine SDK（Android 手机侧）：查询穿戴设备 + ping 远程冷启动
+    // 腕上端应用。宿主服务为华为运动健康，授权弹窗由运动健康承载。
+    // 版本号可按官方「版本更新说明」页升级。
+    implementation("com.huawei.hms:wearengine:5.0.2.306")
+}
+
 // 禁用 lint 关键检查 task（避免构建时从 dl.google.com 下载 lint 依赖超时）
 tasks.configureEach {
     if (name.startsWith("lintVital")) {

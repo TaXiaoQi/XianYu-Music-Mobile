@@ -76,6 +76,8 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
+        // 华为 Wear Engine SDK（wearengine）仅发布在华为 maven 仓
+        maven { url = uri("https://developer.huawei.com/repo/") }
         google()
         mavenCentral()
     }
