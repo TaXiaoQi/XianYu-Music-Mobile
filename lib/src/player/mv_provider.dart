@@ -11,6 +11,7 @@ import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import 'audio_proxy_server.dart';
 import 'mv_auto_sync.dart';
 import 'mv_host_fallback.dart';
 import 'mv_source.dart';
@@ -630,9 +631,13 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<VideoPlayerController?> _initControllerWithFallback(MvSource src) async {
     final candidates = [src.url, ...src.backupUrls];
     Object? lastError;
+    // MV 走本地代理伺服（请求头注入 + Range + 在线播放缓存池），
+    // 代理未启动时回退直连带原始请求头。
+    await AudioProxyServer.instance.ensureStarted();
     for (final u in candidates) {
+      final proxy = AudioProxyServer.instance.mvProxyUrlFor(u, src.headers);
       final c = VideoPlayerController.networkUrl(
-        Uri.parse(u),
+        Uri.parse(proxy ?? u),
         httpHeaders: src.headers,
       );
       try {

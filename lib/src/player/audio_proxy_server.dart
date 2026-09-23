@@ -105,6 +105,15 @@ class AudioProxyServer {
         '?u=${Uri.encodeComponent(url)}';
   }
 
+  /// MV 视频复用同一代理端点与在线播放缓存池：注册 MV 请求头后走
+  /// /audio 伺服（Range/缓存命中/上游续传与歌曲一致），缓存 key 即
+  /// MV 直链 URL，与歌曲同池 LRU 淘汰、同清理。
+  String? mvProxyUrlFor(String url, Map<String, String>? headers) {
+    if (!url.startsWith('http')) return null;
+    AudioHeadCache.instance.registerHeaders(url, headers);
+    return proxyUrlFor(url);
+  }
+
   Future<void> _onRequest(HttpRequest req) async {
     try {
       if (req.method != 'GET' && req.method != 'HEAD') {
