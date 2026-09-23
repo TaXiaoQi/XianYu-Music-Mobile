@@ -504,7 +504,34 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       isDanger: false,
     );
     if (!ok) return;
-    final msg = await ctrl.wakeWatchApp();
+    // 授权（已授权免弹窗）
+    final auth = await ctrl.wearAuthorize();
+    if (!context.mounted) return;
+    if (!auth.granted) {
+      showXianYuToast(
+        context,
+        auth.canceled || auth.message.isEmpty
+            ? tr('Wear Engine 授权未完成')
+            : tr('Wear Engine 授权失败：{m}', {'m': auth.message}),
+        duration: const Duration(seconds: 2),
+      );
+      return;
+    }
+    // 无华为绑定设备：远程唤醒仅支持华为手表，Wear OS 表引导常驻用法
+    final devs = await ctrl.wearDevices();
+    if (!context.mounted) return;
+    if (devs.isEmpty) {
+      await showModernConfirmDialog(
+        context: context,
+        title: tr('未检测到已绑定的华为手表'),
+        message: tr('远程唤醒仅支持华为手表；Wear OS 手表（三星/OPPO/小米等）请在表上打开弦予音乐，首次打开后将保持常驻，手机播放即可唤起'),
+        confirmText: tr('我知道了'),
+        isDanger: false,
+        icon: Icons.watch_outlined,
+      );
+      return;
+    }
+    final msg = await ctrl.wearPing();
     if (context.mounted && msg.isNotEmpty) {
       showXianYuToast(context, msg, duration: const Duration(seconds: 2));
     }

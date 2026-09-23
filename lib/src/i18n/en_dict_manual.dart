@@ -58,6 +58,9 @@ const Map<String, String> enDictManual = {
   '将在手表端启动弦予音乐；首次使用需完成 Wear Engine 授权': 'XianYu Music will be launched on the watch; Wear Engine authorization is required on first use',
   'Wear Engine 授权未完成': 'Wear Engine authorization not completed',
   'Wear Engine 授权失败：{m}': 'Wear Engine authorization failed: {m}',
+  '未检测到已绑定的华为手表': 'No bound Huawei watch found',
+  '远程唤醒仅支持华为手表；Wear OS 手表（三星/OPPO/小米等）请在表上打开弦予音乐，首次打开后将保持常驻，手机播放即可唤起':
+      'Remote wake-up only supports Huawei watches. For Wear OS watches (Samsung/OPPO/Xiaomi, etc.), open XianYu Music on the watch once — it stays resident afterwards and wakes when your phone plays',
   '已拉起腕上端': 'Watch app launched',
   '唤醒失败': 'Failed to wake the watch',
   '设备管理': 'Device management',

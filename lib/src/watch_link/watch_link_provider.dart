@@ -310,15 +310,15 @@ class WatchLinkController {
   /// 跳转应用市场安装华为运动健康（经弹窗确认后由 UI 调用）。
   Future<void> installHealth() => _channel.installHealth();
 
-  /// 授权（未授权弹华为授权页）后 ping 拉起腕上端，返回用户可读提示。
-  /// AGC 权限未审批/设备未绑定等错误统一透传真实原因，不额外包装。
-  Future<String> wakeWatchApp() async {
-    final auth = await _channel.wearAuthorize();
-    if (!auth.granted) {
-      return auth.canceled || auth.message.isEmpty
-          ? tr('Wear Engine 授权未完成')
-          : tr('Wear Engine 授权失败：{m}', {'m': auth.message});
-    }
+  /// 请求 Wear Engine DEVICE_MANAGER 授权（未授权时弹华为授权页，已授权免弹窗）。
+  Future<WearAuthResult> wearAuthorize() => _channel.wearAuthorize();
+
+  /// 已绑定的华为穿戴设备列表（Wear Engine 设备查询，需先授权）。
+  Future<List<WearEngineDevice>> wearDevices() => _channel.wearDevices();
+
+  /// ping 远程拉起腕上端（已安装未启动→冷启动，已启动→直接在线），
+  /// 返回用户可读提示；真实原因透传，不额外包装。
+  Future<String> wearPing() async {
     final r = await _channel.wearWake();
     return r.message.isEmpty
         ? (r.ok ? tr('已拉起腕上端') : tr('唤醒失败'))
