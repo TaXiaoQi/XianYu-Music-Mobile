@@ -47,14 +47,34 @@ String _mvProbeKey(QueueItem c) {
   }
 }
 
+bool _hasMvIdentityHint(QueueItem c) {
+  try {
+    final song = mvSongOf(c);
+    for (final key in _kMvIdKeys) {
+      final v = song[key];
+      if (v == null) continue;
+      final s = v is String ? v.trim() : v.toString();
+      if (s.isNotEmpty &&
+          s != '0' &&
+          s.toLowerCase() != 'false' &&
+          s.toLowerCase() != 'null') {
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
 bool mvSupports(QueueItem? c) {
   if (c == null) return false;
-  // 只认真实解析结论：探测确认可解析才显示入口。
-  // 未探测到结果的歌先不显示（起播批次探测完成后有 MV 的会自动出现），
-  // 避免任何静态字段猜测造成「有 MV 的不显示、显示的没有 MV」。
   final key = _mvProbeKey(c);
-  if (key.isEmpty) return false;
-  return _mvProbeResult[key] ?? false;
+  // 第二道：真实探测结论优先（探测确认后修正显隐）。
+  if (key.isNotEmpty && _mvProbeResult.containsKey(key)) {
+    return _mvProbeResult[key]!;
+  }
+  // 第一道：字段判定作初始显示，与探测结论一致则静默，
+  // 不一致由探测完成后 state.refresh() 更新弹窗。
+  return _hasMvIdentityHint(c);
 }
 
 Map<String, dynamic> mvSongOf(QueueItem c) {
