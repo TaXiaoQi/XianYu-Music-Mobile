@@ -23,6 +23,7 @@ import '../../src/widgets/privacy_policy.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_info_dialog.dart';
 import '../../src/widgets/user_agreement.dart';
+import '../../src/watch_link/watch_link_provider.dart';
 import '../../pages/account/account_dialogs.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -120,10 +121,9 @@ class DebugPage extends ConsumerWidget {
                         showUpdateDialog(context, _fakeLatestVersion),
                   ),
                   _DebugRow(
-                    title: tr('Beta 门控弹窗'),
-                    subtitle:
-                        tr('测试内测资格提示（注意：关闭弹窗的按钮会退出应用）'),
-                    onTap: () => showBetaGateDialog(context, pending: false),
+                    title: tr('内测锁弹窗（模拟）'),
+                    subtitle: tr('测试内测资格提示样式，按钮仅弹提示，不会退出应用'),
+                    onTap: () => _showBetaGatePreview(context),
                   ),
                 ],
               ),
@@ -189,6 +189,26 @@ class DebugPage extends ConsumerWidget {
                     title: tr('隐私政策弹窗'),
                     subtitle: tr('测试隐私政策弹窗显示（默认全文）'),
                     onTap: () => showPrivacyPolicyModal(context: context),
+                  ),
+                  _DebugRow(
+                    title: tr('联动授权弹窗'),
+                    subtitle: tr('测试设备联动授权三选项弹窗（模拟手表，不执行授权）'),
+                    onTap: () async {
+                      final result = await showTransferConfirmDialog(
+                        context,
+                        watchName: tr('测试手表'),
+                      );
+                      if (!context.mounted) return;
+                      showXianYuToast(
+                        context,
+                        switch (result) {
+                          'device' => tr('模拟结果：允许该设备'),
+                          'once' => tr('模拟结果：允许本次'),
+                          'never' => tr('模拟结果：不允许'),
+                          _ => tr('模拟结果：已取消'),
+                        },
+                      );
+                    },
                   ),
                   _DebugRow(
                     title: tr('修改密码弹窗'),
@@ -343,6 +363,43 @@ class DebugPage extends ConsumerWidget {
           ),
         ),
       );
+
+  /// 内测锁弹窗样式预览：UI 镜像 showBetaGateDialog（未申请内测分支），
+  /// 但「退出软件」「申请资格」仅弹模拟提示，不退出应用、不跳转申请页。
+  void _showBetaGatePreview(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black87,
+      useSafeArea: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text(tr('内测资格提示')),
+          content: Text(
+            tr('当前设备未申请内测资格，无法使用内测版本。\n点击「申请资格」填写申请理由，管理员同意后即可继续使用。'),
+            style: const TextStyle(fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                showXianYuToast(context, tr('模拟：退出软件'));
+              },
+              child: Text(tr('退出软件')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                showXianYuToast(context, tr('模拟：申请资格'));
+              },
+              child: Text(tr('申请资格')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DebugRow extends StatelessWidget {

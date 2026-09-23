@@ -177,7 +177,13 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         color: Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
       ),
-      dialogTheme: const DialogThemeData(backgroundColor: Color(0xFFFFFFFF)),
+      // 弹窗统一样式（与 ModernDialogCard 对齐）：24 圆角、无 surface 染色，
+      // 暗色底 0xFF333333 与 ModernDialogCard 的 surfaceContainerHigh 一致。
+      dialogTheme: DialogThemeData(
+        backgroundColor: const Color(0xFFFFFFFF),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
       snackBarTheme: _toastTheme,
       pageTransitionsTheme: lightTransitions,
       useMaterial3: true,
@@ -207,8 +213,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         color: Color(0xFF303030),
         surfaceTintColor: Colors.transparent,
       ),
-      dialogTheme:
-          const DialogThemeData(backgroundColor: Color(0xFF262626)),
+      dialogTheme: DialogThemeData(
+        backgroundColor: const Color(0xFF333333),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
       snackBarTheme: _toastTheme,
       pageTransitionsTheme: darkTransitions,
       useMaterial3: true,

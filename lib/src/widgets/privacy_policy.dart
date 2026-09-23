@@ -185,9 +185,6 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        backgroundColor: scheme.surface,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
         contentPadding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
         actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),

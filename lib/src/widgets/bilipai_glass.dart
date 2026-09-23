@@ -71,6 +71,13 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   bool _idle = false;
 
+  /// 路由切换期间为 true：跳过 shader/BackdropFilter 层，改用纯色回退。
+  /// 原因有二：① 平移动画中 RouteStaticSnapshot 会把整页 toImage 截图，
+  /// 离屏渲染里 BackdropFilter 无背景可采样，玻璃条会变成纯黑；
+  /// ② 平行滑动时外壳条（底栏/播放条）两侧露出透明缝隙，live 采样到
+  /// 空背景同样发黑。切换期间用纯色条过渡，动画结束自动恢复玻璃。
+  bool _routeTransition = false;
+
   bool _capturing = false;
   Timer? _idleDebounce;
 
@@ -100,8 +107,30 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     )..repeat();
     _ripple.addListener(_onRippleTick);
     globalIsScrolling.addListener(_onGlobalState);
-    globalIsTransitioning.addListener(_onGlobalState);
+    globalIsTransitioning.addListener(_onTransitionChanged);
     globalIsDragging.addListener(_onGlobalState);
+    globalScrollTick.addListener(_onOwnerScrollTick);
+    _routeTransition = globalIsTransitioning.value;
+  }
+
+  void _onTransitionChanged() {
+    if (!mounted) return;
+    if (_routeTransition == globalIsTransitioning.value) return;
+    setState(() => _routeTransition = globalIsTransitioning.value);
+  }
+
+  /// 冻结快照的唯一定时释放点。渲染层只解除引用不释放（见
+  /// RenderLiquidBacking._onScrollTick），所有权收口在 State 这一层：
+  /// 此前两边各自 dispose 同一张 ui.Image，会触发 double dispose——
+  /// release 下表现为「native peer collected (nullptr)」崩溃。
+  void _onOwnerScrollTick() {
+    if (!mounted || _frozen == null) return;
+    final old = _frozen!;
+    _frozen = null;
+    // 该图可能仍被本帧 scene 引用（tick 可能在合成通知阶段同步触发），
+    // 延迟到本帧渲染后再释放。
+    SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+    setState(() {});
   }
 
   void _onFadeTicked() {
@@ -136,8 +165,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   @override
   void dispose() {
     globalIsScrolling.removeListener(_onGlobalState);
-    globalIsTransitioning.removeListener(_onGlobalState);
+    globalIsTransitioning.removeListener(_onTransitionChanged);
     globalIsDragging.removeListener(_onGlobalState);
+    globalScrollTick.removeListener(_onOwnerScrollTick);
     _idleDebounce?.cancel();
     _fade.dispose();
     _ripple.dispose();
@@ -179,16 +209,23 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   void _startFadeOut() {
     if (_frozen == null && _fade.value <= 0.001) return;
+    // 记录本次淡出对应的快照：_capture 里 _fade.value = 0 会打断进行中的
+    // 动画使 whenComplete 提前触发，此时 _frozen 可能已换成新图——
+    // 不做身份校验会把新图误释放，后续再 dispose 同一张图即崩溃。
+    final captured = _frozen;
     _fade.animateTo(
       0,
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
     ).whenComplete(() {
       if (!mounted || _idle) return;
-      if (_frozen != null && _fade.value <= 0.001) {
+      if (_frozen != null &&
+          identical(_frozen, captured) &&
+          _fade.value <= 0.001) {
         final old = _frozen!;
         _frozen = null;
-        setState(() => old.dispose());
+        old.dispose();
+        setState(() {});
       }
     });
   }
@@ -242,7 +279,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    if (!ui.ImageFilter.isShaderFilterSupported || shader == null) {
+    if (!ui.ImageFilter.isShaderFilterSupported ||
+        shader == null ||
+        _routeTransition) {
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return Container(
         decoration: BoxDecoration(
@@ -551,13 +590,11 @@ class RenderLiquidBacking extends RenderBox {
     // 横向滚动（来源气泡等 transform 平移）不改变竖向 globalScrollOffset，
     // 也不会触发 markScrollActivity 变更 _frozen；须强制回归 live 重绘，
     // 否则折射采样位置停留在玻璃平移前的屏幕坐标。
+    // 这里只解除引用、不 dispose：图像所有权在 State（State 监听同一
+    // globalScrollTick 统一释放），两边都释放会 double dispose 崩溃。
     if (_frozen != null) {
-      final old = _frozen;
       _frozen = null;
       _fadeBlend = 0;
-      // 该 image 可能仍被本帧 scene 引用，且回调在通知合成阶段同步触发，
-      // 直接 dispose 会触发 dart:ui Image.dispose 断言——延迟到本帧渲染后。
-      SchedulerBinding.instance.addPostFrameCallback((_) => old?.dispose());
     }
     markNeedsPaint();
   }
