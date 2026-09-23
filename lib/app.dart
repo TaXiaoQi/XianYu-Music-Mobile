@@ -73,7 +73,18 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   }
 
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
-    final agreed = await ensurePrivacyConsent(context);
+    // 必须用根 Navigator 的 context：根 State 的 context 位于 Navigator 之上，
+    // 直接 showDialog 会因 Navigator.of 找不到 NavigatorState 而空断言崩溃
+    // （首次安装、尚未记录隐私同意时必现）。
+    final navContext = appNavigatorKey.currentContext;
+    if (navContext == null) {
+      // Router 尚未挂载，推迟一帧重试
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_runStartupAfterConsent(ref));
+      });
+      return;
+    }
+    final agreed = await ensurePrivacyConsent(navContext);
     if (!agreed || !mounted) return;
     ref.read(accountApiProvider).reportAppOpen();
     unawaited(runStartupVersionChecks(ref));
