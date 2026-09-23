@@ -850,8 +850,7 @@ const _settingsSearchItems = <_SearchItem>[
 
   _SearchItem(label: '导出应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导出 恢复'),
   _SearchItem(label: '导入应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导入 恢复'),
-  _SearchItem(label: '导出全部日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '日志 导出'),
-  _SearchItem(label: '导出错误日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '错误 日志 故障'),
+  _SearchItem(label: '导出日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '日志 导出 全部'),
   _SearchItem(label: '清理日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '删除 清空 日志'),
   _SearchItem(label: '保持屏幕常亮', section: '系统', path: '/settings/general', categoryName: '常规', keywords: '屏幕 常亮 唤醒'),
   _SearchItem(label: '预测返回手势', section: '导航', path: '/settings/advanced', categoryName: '高级设置', keywords: '返回 手势 预测'),

@@ -3435,28 +3435,25 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  Future<void> _export({required bool onlyErrors}) async {
+  Future<void> _export() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
       final manager = ApplicationLogManager.instance;
       final logs = ref.read(applicationLogsProvider);
-      if (logs.isEmpty ||
-          (onlyErrors && !logs.any((e) => e.level == LogLevel.error))) {
-        if (mounted) _toast(onlyErrors ? tr('暂无错误日志') : tr('暂无日志'));
+      if (logs.isEmpty) {
+        if (mounted) _toast(tr('暂无日志'));
         return;
       }
-      final content = manager.formatExport(onlyErrors: onlyErrors);
+      final content = manager.formatExport(onlyErrors: false);
       final docs = await getApplicationDocumentsDirectory();
-      final fileName = onlyErrors
-          ? 'xianyu_error_logs_${DateTime.now().millisecondsSinceEpoch}.txt'
-          : 'xianyu_all_logs_${DateTime.now().millisecondsSinceEpoch}.txt';
+      final fileName = 'xianyu_all_logs_${DateTime.now().millisecondsSinceEpoch}.txt';
       final file = File('${docs.path}/$fileName');
       await file.writeAsString(content, flush: true);
       if (!mounted) return;
-      _toast(onlyErrors ? tr('错误日志已导出') : tr('全部日志已导出'));
+      _toast(tr('日志已导出'));
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐{type}日志', {'type': onlyErrors ? tr('错误') : ''})),
+        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐日志')),
       );
     } catch (e) {
       if (mounted) _toast(tr('导出失败：{e}', {'e': e}));
@@ -3513,22 +3510,13 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
   @override
   Widget build(BuildContext context) {
     final logs = ref.watch(applicationLogsProvider);
-    final errorCount = logs.where((e) => e.level == LogLevel.error).length;
     return _CardGroup(
       children: [
         _action(
           context,
           icon: Icons.description_outlined,
-          title: tr('导出全部日志（{n} 条）', {'n': logs.length}),
-          onTap: _busy ? () {} : () => _export(onlyErrors: false),
-        ),
-        _action(
-          context,
-          icon: Icons.error_outline,
-          title: tr('导出错误日志（{n} 条）', {'n': errorCount}),
-          onTap: errorCount == 0 || _busy
-              ? null
-              : () => _export(onlyErrors: true),
+          title: tr('导出日志（{n} 条）', {'n': logs.length}),
+          onTap: _busy ? () {} : _export,
         ),
         _action(
           context,

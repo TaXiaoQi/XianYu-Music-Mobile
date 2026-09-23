@@ -246,6 +246,16 @@ class WatchLinkController {
     _songKey = null;
     _precachedPaths.clear();
     _decoder = FrameDecoder();
+    _resetTxPump();
+  }
+
+  /// 复位发送泵：旧泵可能挂死在未完成的 BLE 写上（GATT 写在断连边界
+  /// 可能永不返回），若不复位 _txDraining，重连后所有下行帧将永久停发。
+  void _resetTxPump() {
+    _txGen++;
+    _txDraining = false;
+    _txQueue.clear();
+    _txLowQueue.clear();
   }
 
   // ---- 设备管理（设置页） ----
@@ -849,6 +859,10 @@ class WatchLinkController {
 
   bool _txDraining = false;
 
+  /// 发送泵代际：连接事件（断开/重连）递增，使挂死在旧代际的 drain
+  /// 退出后不再触碰泵状态，避免与新一代泵互相清队列。
+  int _txGen = 0;
+
   void _send(LinkMessage msg, {bool cloud = false, bool low = false}) {
     final useCloud = cloud || (!_connected && _cloudWatchOnline);
     try {
@@ -864,8 +878,9 @@ class WatchLinkController {
   Future<void> _drainTx() async {
     if (_txDraining) return;
     _txDraining = true;
+    final gen = _txGen;
     try {
-      while (true) {
+      while (gen == _txGen) {
         if (!_connected && !_cloudWatchOnline) {
           _txQueue.clear();
           _txLowQueue.clear();
@@ -877,15 +892,21 @@ class WatchLinkController {
         if (useCloud) {
           await _cloud.send(frame);
         } else {
-          await _channel.send(frame);
+          // BLE 写可能挂死（GATT 在断连边界不返回），超时视为本次失败，
+          // 抛出走 catch 清队列复位，泵可被下一次 _send 重新拉起
+          await _channel.send(frame).timeout(const Duration(seconds: 5));
         }
         q.removeAt(0);
+      }
+      if (gen != _txGen) {
+        _txQueue.clear();
+        _txLowQueue.clear();
       }
     } catch (_) {
       _txQueue.clear();
       _txLowQueue.clear();
     } finally {
-      _txDraining = false;
+      if (gen == _txGen) _txDraining = false;
     }
   }
 }

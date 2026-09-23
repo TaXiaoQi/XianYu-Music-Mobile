@@ -1522,7 +1522,6 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
               autofocus: true,
               decoration:   InputDecoration(
                 labelText: tr('插件 URL'),
-                hintText: 'https://example.com/plugin.js',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),

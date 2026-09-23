@@ -64,7 +64,7 @@ class AppLogEntry {
   }
 }
 
-const int kMaxAppLogEntries = 200;
+const int kMaxAppLogEntries = 300;
 const int kMaxAppErrorEntries = 10;
 
 class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {

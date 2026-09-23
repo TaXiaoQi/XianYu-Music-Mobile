@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../src/auth/auth_provider.dart';
+import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
+import '../../src/deeplink/share_link_dialog.dart';
 import '../../src/notifications/notification_service.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/playlist/playlist_delete.dart';
 import '../../src/playlist/playlist_store.dart';
 import '../../src/plugin/plugin_backup_import.dart';
+import '../../src/share/share_sheet.dart';
 import '../../src/sync/settings_conflict_dialog.dart';
+import '../../src/update/app_update.dart';
+import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/dlna_device_dialog.dart';
 import '../../src/widgets/glass_appbar.dart';
-import '../../src/widgets/modern_dialog.dart';
+import '../../src/widgets/privacy_policy.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_info_dialog.dart';
-import '../../src/widgets/add_to_playlist_sheet.dart';
+import '../../src/widgets/user_agreement.dart';
 import '../../pages/account/account_dialogs.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -47,6 +56,23 @@ class DebugPage extends ConsumerWidget {
     name: tr('测试歌单'),
     songs: [_fakeImportedSong],
     importedAt: DateTime.now().millisecondsSinceEpoch,
+  );
+
+  /// 云端假歌单：触发「删除范围选择」分支（假 id 不会真正删除）
+  static ImportedPlaylist get _fakeCloudPlaylist => ImportedPlaylist(
+    id: 'demo-cloud-playlist-id',
+    name: tr('云端测试歌单'),
+    songs: [_fakeImportedSong],
+    importedAt: DateTime.now().millisecondsSinceEpoch,
+    cloudId: 'demo-cloud-id',
+    isCloud: true,
+  );
+
+  static LatestVersion get _fakeLatestVersion => const LatestVersion(
+    version: '9.9.9',
+    content: '调试用假更新日志：\n· 新增调试弹窗覆盖\n· 修复若干问题',
+    downloadUrl: 'https://example.com/app.apk',
+    fileSize: 36700160,
   );
 
   @override
@@ -84,58 +110,20 @@ class DebugPage extends ConsumerWidget {
                   ),
                 ],
               ),
-              _sectionHeader(context, tr('通用弹窗')),
+              _sectionHeader(context, tr('更新')),
               _CardGroup(
                 children: [
                   _DebugRow(
-                    title: tr('通用确认弹窗'),
-                    subtitle: tr('测试 ModernDialogCard 通用确认弹窗'),
-                    onTap: () => showModernConfirmDialog(
-                      context: context,
-                      title: tr('通用确认弹窗'),
-                      message: tr('这是移动端通用确认弹窗的调试内容，用于验证弹窗样式与交互。'),
-                      icon: Icons.help_outline,
-                    ),
+                    title: tr('检查更新弹窗'),
+                    subtitle: tr('测试发现新版本弹窗与去下载跳转（假版本）'),
+                    onTap: () =>
+                        showUpdateDialog(context, _fakeLatestVersion),
                   ),
                   _DebugRow(
-                    title: tr('危险确认弹窗'),
-                    subtitle: tr('测试红色危险操作的确认弹窗'),
-                    onTap: () => showModernConfirmDialog(
-                      context: context,
-                      title: tr('危险操作'),
-                      message: tr('此操作不可恢复，确定要继续吗？'),
-                      confirmText: tr('继续'),
-                      isDanger: true,
-                      icon: Icons.warning_amber_rounded,
-                    ),
-                  ),
-                  _DebugRow(
-                    title: tr('通用输入弹窗'),
-                    subtitle: tr('测试 ModernDialogCard 通用输入弹窗'),
-                    onTap: () => showModernInputDialog(
-                      context: context,
-                      title: tr('通用输入弹窗'),
-                      subtitle: tr('请输入内容'),
-                      hintText: tr('请输入内容'),
-                      initialValue: tr('调试初始值'),
-                    ),
-                  ),
-                  _DebugRow(
-                    title: tr('单选弹窗'),
-                    subtitle: tr('测试居中单选列表弹窗'),
-                    onTap: () => showModernChoiceSheet<String>(
-                      context: context,
-                      title: tr('单选弹窗'),
-                      subtitle: tr('请选择一个选项'),
-                      options:   [
-                        ModernChoiceOption(
-                            label: tr('选项一'), value: '1', subtitle: tr('第一个选项')),
-                        ModernChoiceOption(
-                            label: tr('选项二'), value: '2', subtitle: tr('第二个选项')),
-                        ModernChoiceOption(label: tr('选项三'), value: '3'),
-                      ],
-                      currentValue: '1',
-                    ),
+                    title: tr('Beta 门控弹窗'),
+                    subtitle:
+                        tr('测试内测资格提示（注意：关闭弹窗的按钮会退出应用）'),
+                    onTap: () => showBetaGateDialog(context, pending: false),
                   ),
                 ],
               ),
@@ -169,9 +157,78 @@ class DebugPage extends ConsumerWidget {
                         .read(notificationServiceProvider)
                         .showAnnouncementForDebug(context),
                   ),
+                  _DebugRow(
+                    title: tr('听歌重置通知'),
+                    subtitle: tr('测试听歌记录重置提醒弹窗（模拟未读状态）'),
+                    onTap: () async {
+                      final notifier = ref.read(notificationServiceProvider);
+                      notifier.resetListenResetNoticeForDebug();
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setInt('pending_listen_reset_at',
+                          DateTime.now().millisecondsSinceEpoch);
+                      await prefs.setString('pending_listen_reset_reason',
+                          tr('调试：模拟听歌记录因账号异常被重置'));
+                      if (context.mounted) {
+                        await notifier.showPendingListenResetNotice(context);
+                      }
+                    },
+                  ),
+                  _DebugRow(
+                    title: tr('用户协议弹窗'),
+                    subtitle: tr('测试协议滚动阅读与同意交互（假内容）'),
+                    onTap: () => showUserAgreementModal(
+                      context: context,
+                      agreement: const UserAgreement(
+                        title: '弦予音乐用户协议',
+                        content:
+                            '一、本协议为调试预览内容。\n二、滚动到底部后方可点击同意。\n三、此内容仅用于调试弹窗样式。',
+                      ),
+                    ),
+                  ),
+                  _DebugRow(
+                    title: tr('隐私政策弹窗'),
+                    subtitle: tr('测试隐私政策弹窗显示（默认全文）'),
+                    onTap: () => showPrivacyPolicyModal(context: context),
+                  ),
+                  _DebugRow(
+                    title: tr('修改密码弹窗'),
+                    subtitle: tr('测试修改密码表单弹窗（提交需登录态）'),
+                    onTap: () => showChangePasswordDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
+                  _DebugRow(
+                    title: tr('绑定邮箱弹窗'),
+                    subtitle: tr('测试绑定邮箱表单弹窗（提交需登录态）'),
+                    onTap: () => showBindEmailDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
+                  _DebugRow(
+                    title: tr('修改昵称弹窗'),
+                    subtitle: tr('测试修改昵称表单弹窗（提交需登录态）'),
+                    onTap: () => showChangeNicknameDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
+                  _DebugRow(
+                    title: tr('修改弦予号弹窗'),
+                    subtitle: tr('测试修改弦予号表单弹窗（提交需登录态）'),
+                    onTap: () => showChangeCiyuanxiDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
+                  _DebugRow(
+                    title: tr('注销账号弹窗'),
+                    subtitle: tr('测试注销账号确认与验证流程弹窗（提交需登录态）'),
+                    onTap: () => showDeleteAccountDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
+                  _DebugRow(
+                    title: tr('忘记密码弹窗'),
+                    subtitle: tr('测试忘记密码找回流程弹窗（提交需服务端）'),
+                    onTap: () => showForgotPasswordDialog(
+                        context, ref.read(authProvider.notifier)),
+                  ),
                 ],
               ),
-              _sectionHeader(context, tr('歌曲相关')),
+              _sectionHeader(context, tr('歌曲与歌单')),
               _CardGroup(
                 children: [
                   _DebugRow(
@@ -201,6 +258,41 @@ class DebugPage extends ConsumerWidget {
                     title: tr('歌单操作菜单'),
                     subtitle: tr('测试歌单重命名/删除操作菜单（假歌单）'),
                     onTap: () => showPlaylistActionsSheet(context, ref, _fakePlaylist),
+                  ),
+                  _DebugRow(
+                    title: tr('歌单删除范围选择'),
+                    subtitle: tr('测试云端歌单删除范围弹层（假云端 id，删除会失败）'),
+                    onTap: () => confirmRemovePlaylist(
+                        context, ref, _fakeCloudPlaylist),
+                  ),
+                ],
+              ),
+              _sectionHeader(context, tr('分享与投放')),
+              _CardGroup(
+                children: [
+                  _DebugRow(
+                    title: tr('分享链接预览弹窗'),
+                    subtitle: tr('测试打开他人分享歌曲时的预览确认弹窗'),
+                    onTap: () => showShareLinkPreviewDialog(
+                      context: context,
+                      name: tr('测试歌曲'),
+                      artist: tr('测试歌手'),
+                      sourceLabel: tr('本地音乐'),
+                    ),
+                  ),
+                  _DebugRow(
+                    title: tr('歌曲分享面板'),
+                    subtitle: tr('测试歌曲分享/生成链接面板（假歌曲）'),
+                    onTap: () => showSongShareSheet(
+                      context,
+                      ref: ref,
+                      song: _fakeQueueItem,
+                    ),
+                  ),
+                  _DebugRow(
+                    title: tr('DLNA 投放弹窗'),
+                    subtitle: tr('测试局域网设备发现与投放选择弹窗'),
+                    onTap: () => showDlnaDeviceDialog(context, ref),
                   ),
                 ],
               ),

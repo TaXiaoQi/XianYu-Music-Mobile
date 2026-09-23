@@ -530,6 +530,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   mvEnabled: mv.requested,
                   mvLoading: mv.loading,
                   mvReady: mv.ready,
+                  mvPhase: mv.phase,
+                  mvBufferedSec: mv.bufferedSec,
                   mvSupported: mvSupports(current),
                   onHideMvChanged: (hide) {
                     if (_hideMvVideo != hide) {
@@ -970,6 +972,8 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     this.mvEnabled = false,
     this.mvLoading = false,
     this.mvReady = false,
+    this.mvPhase = '',
+    this.mvBufferedSec = 0,
     this.mvSupported = false,
     this.onToggleMv,
     this.onHideMvChanged,
@@ -984,6 +988,12 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   final bool mvLoading;
 
   final bool mvReady;
+
+  /// MV 加载阶段（'resolve'=解析地址 / 'init'=初始化画面）。
+  final String mvPhase;
+
+  /// 初始化期间已缓冲秒数。
+  final int mvBufferedSec;
 
   final bool mvSupported;
   final VoidCallback? onToggleMv;
@@ -1982,7 +1992,18 @@ class _TraditionalPlayerLayoutState
                               : scheme.onSurfaceVariant,
                           size: 22,
                         ),
-                  title: Text(widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV')),
+                  title: Text(() {
+                    if (!widget.mvLoading) {
+                      return widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV');
+                    }
+                    if (widget.mvPhase == 'init') {
+                      return widget.mvBufferedSec > 0
+                          ? tr('MV 加载中（已缓冲 {sec} 秒）',
+                              {'sec': widget.mvBufferedSec})
+                          : tr('MV 加载中（准备画面）');
+                    }
+                    return tr('MV 加载中（解析地址）');
+                  }()),
                   onTap: widget.mvLoading
                       ? null
                       : () {
