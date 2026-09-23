@@ -125,3 +125,6 @@ third_party/*/ohos/build/
 # 鸿蒙就地构建产物：rust .so 与 flutter_assets（每次构建重新生成）
 /ohos/entry/libs/
 /ohos/entry/src/main/resources/rawfile/
+
+# fork 依赖自带的示例工程（仅上游参考用，不入库）
+/third_party/just_audio/example/
