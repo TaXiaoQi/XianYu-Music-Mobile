@@ -6,7 +6,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.2';
+const appVersion = '1.0.2-beta1';
 
 class HotSearchItem {
   final String keyword;
