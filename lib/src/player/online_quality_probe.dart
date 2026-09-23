@@ -79,6 +79,9 @@ class SongQualityProbe {
 
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
   final List<QualityProbeResult> _done = [];
+
+  /// 最近一次探测失败的原因（音质: 错误文本），用于失败提示透传。
+  String? lastFailureReason;
   List<String> _trustedDeclared = const [];
   final ListQueue<Future<void> Function()> _queue = ListQueue();
   int _active = 0;
@@ -143,6 +146,7 @@ class SongQualityProbe {
       try {
         res = await _resolveQuality(quality);
       } catch (e) {
+        lastFailureReason = '$quality: ${e.toString()}';
         if (_rateLimitPattern.hasMatch(e.toString())) {
           _rateLimited = true;
           _queue.clear();
@@ -150,7 +154,10 @@ class SongQualityProbe {
         }
         return null;
       }
-      if (res == null || res.url.isEmpty) return null;
+      if (res == null || res.url.isEmpty) {
+        lastFailureReason ??= '$quality: 无结果';
+        return null;
+      }
       final actual = resolveActualQuality(res.quality ?? quality, res.url);
       _done.add(QualityProbeResult(
         url: res.url,

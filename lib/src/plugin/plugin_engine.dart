@@ -177,9 +177,12 @@ class PluginEngine {
           tr('插件实例不存在: {pluginId}', {'pluginId': pluginId}));
     }
     if (method == 'request' && isAuthBanned(sandboxId)) {
+      final until = _authBannedUntil[sandboxId];
       throw PluginEngineException(
-          tr('音源鉴权失效已临时熔断（5 分钟后自动重试）: {pluginId}',
-              {'pluginId': sandboxId}));
+          tr('音源鉴权失效已临时熔断（{wait}后自动重试）: {pluginId}', {
+            'wait': until == null ? '稍后' : _banWaitLabel(until),
+            'pluginId': sandboxId,
+          }));
     }
     final result = EngineCallResult.fromJsonString(await frb.pluginEngineCall(
       dataDir: dataDir,
@@ -278,8 +281,25 @@ class PluginEngine {
   // ==================== 鉴权失效熔断 ====================
   static final Map<String, DateTime> _authBannedUntil = {};
   static final Map<String, int> _authFailStreak = {};
-  static const Duration _authBanTtl = Duration(minutes: 5);
-  static const int _authBanThreshold = 2;
+  static const Duration _authBanTtlBase = Duration(seconds: 30);
+  static const Duration _authBanTtlMax = Duration(minutes: 5);
+  static const int _authBanThreshold = 5;
+
+  /// 指数退避：30s → 1m → 2m → … → 5m 封顶。偶发鉴权抖动快速恢复，
+  /// 持续失效时逐级拉长挡连环刷。
+  static Duration _banTtlFor(int streak) {
+    final doublings = (streak - _authBanThreshold).clamp(0, 8);
+    final secs = _authBanTtlBase.inSeconds << doublings;
+    return secs >= _authBanTtlMax.inSeconds
+        ? _authBanTtlMax
+        : Duration(seconds: secs);
+  }
+
+  static String _banWaitLabel(DateTime until) {
+    final secs = until.difference(DateTime.now()).inSeconds.clamp(1, 3600);
+    if (secs < 60) return '$secs 秒';
+    return '${(secs / 60).ceil()} 分钟';
+  }
 
   // 三端统一鉴权失效关键词（与桌面端 AUTH_FAIL_RE / isAuthError 一致）
   static bool isAuthFailureMessage(String msg) =>
@@ -301,11 +321,16 @@ class PluginEngine {
   }
 
   static void _markAuthFailure(String pluginId, String msg) {
+    // 熔断期间被挡住的重试会再次走到这里（错误同样含鉴权关键词），
+    // 不刷新熔断截止时间，否则「一直点播放就永远熔断」。
+    if (isAuthBanned(pluginId)) return;
     final streak = (_authFailStreak[pluginId] ?? 0) + 1;
     _authFailStreak[pluginId] = streak;
     if (streak >= _authBanThreshold) {
-      _authBannedUntil[pluginId] = DateTime.now().add(_authBanTtl);
-      AppLog.warn('plugin', '[$pluginId] 鉴权连续失败 $streak 次，熔断 5 分钟: $msg');
+      final ttl = _banTtlFor(streak);
+      _authBannedUntil[pluginId] = DateTime.now().add(ttl);
+      AppLog.warn('plugin',
+          '[$pluginId] 鉴权连续失败 $streak 次，熔断 ${_banWaitLabel(_authBannedUntil[pluginId]!)}: $msg');
     }
   }
 
