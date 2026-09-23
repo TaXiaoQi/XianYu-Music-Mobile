@@ -478,6 +478,11 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 音频长流无连接复用收益，禁用 keep-alive 减少 HttpURLConnection
+        // 连接池状态机的不确定性（在线播放间歇挂死的最终根因是 media3
+        // 1.4.1 与新机型 audio HAL 兼容性缺陷，已在 just_audio fork 升级
+        // media3 1.11.1 修复；此项保留作稳健性加固）。
+        System.setProperty("http.keepAlive", "false")
         FlutterMessengerHolder.messenger = flutterEngine.dartExecutor.binaryMessenger
         // 手表联动 RFCOMM 传输层（Kotlin 仅字节管道，协议在 Dart 侧）
         com.xianyumusic.app.watch.WatchLink.register(flutterEngine.dartExecutor.binaryMessenger, this)
@@ -560,6 +565,38 @@ class MainActivity : AudioServiceActivity() {
                     // 平台级稳定设备 ID：Widevine DRM 设备 ID（硬件派生，恢复出厂
                     // 一般不变）优先，退回 ANDROID_ID（免权限，重装不变）
                     "getStableDeviceId" -> result.success(stableDeviceId())
+                    else -> result.notImplemented()
+                }
+            }
+        // ExoPlayer 卡死诊断（问题设备在用户手上、无 adb）：threadDump 返回
+        // 播放器相关线程的堆栈快照，Dart 侧写入 App 日志随「导出日志」回收，
+        // 直接看出卡在网络读取/解析/解码/AudioTrack 哪一层。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/diag")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "threadDump" -> {
+                        val kw = listOf(
+                            "exo", "loader", "audio", "media", "codec",
+                            "track", "playback", "just_audio"
+                        )
+                        val out = StringBuilder()
+                        Thread.getAllStackTraces().entries
+                            .sortedBy { it.key.name }
+                            .forEach { (t, st) ->
+                                val n = t.name.lowercase()
+                                if (kw.any { n.contains(it) }) {
+                                    out.append("thread ").append(t.name)
+                                        .append(" state=").append(t.state).append('\n')
+                                    st.take(14).forEach { f ->
+                                        out.append("  at ").append(f.toString()).append('\n')
+                                    }
+                                    out.append('\n')
+                                }
+                            }
+                        result.success(
+                            if (out.isEmpty()) "(无播放器相关线程)" else out.toString()
+                        )
+                    }
                     else -> result.notImplemented()
                 }
             }

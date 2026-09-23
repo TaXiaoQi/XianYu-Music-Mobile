@@ -116,6 +116,11 @@ dependency_overrides:
   # 播控中心被识别为 content=UNKNOWN，第三方播放器会显示「未在播放」。
   audio_service:
     path: third_party/audio_service
+  # just_audio 本地 patch：代理 handler 推流中途遭上游 HttpException 时误走
+  # HTTP 0.9 兜底，detachSocket 抛「Bad state: Headers already sent」
+  # （后台挂起冻结推流、恢复后即触发，见 0.9.46 _proxyHandlerForUri）。
+  just_audio:
+    path: third_party/just_audio
 
 dev_dependencies:
   flutter_test:

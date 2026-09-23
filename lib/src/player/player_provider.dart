@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:audio_service/audio_service.dart' as as_pkg;
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_session/audio_session.dart';
@@ -507,6 +508,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
 
+  static const MethodChannel _diagChannel = MethodChannel('xianyu/diag');
+
+  /// ExoPlayer 卡死现场转储：问题设备在用户手上无 adb，将原生播放器相关
+  /// 线程（ExoPlayer Loader/媒体编解码/音频）堆栈写入 App 日志，随「导出
+  /// 日志」回收。栈帧落在 socketRead=网络层挂、MediaCodec=解码初始化挂、
+  /// Object.wait(LoadControl)=缓冲逻辑，一望即知。
+  Future<void> _dumpPlayerThreads() async {
+    try {
+      final out = await _diagChannel.invokeMethod<String>('threadDump');
+      AppLog.warn('exodump', '播放器线程堆栈快照:\n${out ?? 'null'}');
+    } catch (e) {
+      AppLog.warn('exodump', '线程转储失败: $e');
+    }
+  }
+
   double? _restoredOnlinePending;
   double? _restoredLocalPending;
   DateTime? _trackStartTime;
@@ -623,7 +639,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } catch (_) {}
       if (state.usbExclusive || state.dspActive) {
         try {
-          setUsbExclusiveVolume(volume: v);
+          setUsbExclusiveVolume(volume: _mvAudioOverride ? 0.0 : v);
         } catch (_) {}
       }
     });
@@ -772,7 +788,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await startUsbExclusivePlayback(
         path: path,
         deviceId: settings?.usbExclusiveDeviceId ?? -1,
-        volume: _ref.read(volumeProvider),
+        volume: _mvAudioOverride ? 0.0 : _ref.read(volumeProvider),
         startTimeSecs: startAtSecs,
         isPlaying: isPlaying,
         volumeBalanceGain: bitPerfect ? 1.0 : _effectiveBalanceGain(),
@@ -812,7 +828,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final deviceName = await startUsbExclusivePlayback(
         path: path,
         deviceId: settings?.usbExclusiveDeviceId ?? -1,
-        volume: _ref.read(volumeProvider),
+        volume: _mvAudioOverride ? 0.0 : _ref.read(volumeProvider),
         startTimeSecs: startAtSecs,
         isPlaying: isPlaying,
         volumeBalanceGain: _effectiveBalanceGain(),
@@ -2127,10 +2143,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _mvAudioOverride = false;
 
   /// 设置 MV 音频接管开关。接管时歌曲音频静音，退出时恢复。
+  /// DSP 共享管线 / USB 独占输出不经 _player，需同步作用到 Rust 管线音量，
+  /// 否则接管后歌曲照常从该管线出声，与 MV 音轨叠播。
   Future<void> setMvAudioOverride(bool value) async {
     if (_mvAudioOverride == value) return;
     _mvAudioOverride = value;
     await _player.setVolume(_effectiveVolume());
+    if (state.usbExclusive || state.dspActive) {
+      try {
+        await setUsbExclusiveVolume(
+            volume: value ? 0.0 : _ref.read(volumeProvider));
+      } catch (_) {}
+    }
   }
 
   double _effectiveVolume() =>
@@ -2403,10 +2427,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
     final h = await withBilibiliStreamCookie(
-      clean,
-      normalizeMediaRequestHeaders(clean, headers),
-      dataDir: _ref.read(appDataDirProvider.future),
-    );
+          clean,
+          normalizeMediaRequestHeaders(clean, headers),
+          dataDir: _ref.read(appDataDirProvider.future),
+        ) ??
+        <String, String>{};
     if (ekey != null && ekey.isNotEmpty) {
       await _startEncryptedFile(clean, h, item, ekey);
       return;
@@ -2417,38 +2442,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
     final proxyUrl = AudioProxyServer.instance.proxyUrlFor(clean);
-    // 时序标记：与代理的 req arrive 对表，锁定「ua=Dart/3.13」请求者
-    // 出现在哪一步之间（代理每首歌只收到一条 Dart 请求，而 ExoPlayer
-    // 的请求从未到达；本标记用于精确定位该请求的发起时刻）。
-    AppLog.warn('play', '[startOnlineUrl] begin url=$clean');
     if (proxyUrl != null) {
       try {
         await _player.stop();
       } catch (_) {}
       final ok = await _tryStartDspPipeline(proxyUrl,
           startAtSecs: 0, isPlaying: true);
-      AppLog.warn('play', '[startOnlineUrl] dsp=$ok');
       if (ok) {
         _triggerOnlinePrecache(item);
         return;
       }
     }
+    // 代理路径：头注入/缓存伺服/流量收口；10s 超时回退直链作兜底。
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
-    AppLog.warn('play',
-        '[startOnlineUrl] probe+setUrl viaProxy=${playUrl != clean}');
-    unawaited(_diagProbeUrl(clean, h)); // 诊断探针(B)：绕过本地代理直连真实 URL 测速
+    unawaited(_diagProbeUrl(clean, h)); // 诊断探针：绕过本地代理直连真实 URL 测速
     try {
       await _player.setUrl(playUrl, headers: h)
           .timeout(const Duration(seconds: 10));
-      AppLog.warn('play',
-          '[startOnlineUrl] setUrl-done dur=${_player.duration?.inMilliseconds}ms');
     } on TimeoutException {
-      // 代理起播超时：观测到 ExoPlayer 对 127.0.0.1 代理的请求在设备层
-      // 偶发丢失（代理收不到任何请求，just_audio 永远停在 loading，而
-      // Dart HttpClient 连同一端口每次都通）。10s 内未 ready 即打断本次
-      // load（新 setUrl 会 abort 旧 load），回退直链直连 CDN 播放。
+      // 起播超时兜底：任何未知原因的挂死都回退直链保可用；先抓现场
+      //（状态+线程堆栈随日志导出可离线定位），再重试直链。
       AppLog.warn('play',
-          '[startOnlineUrl] 代理起播超时(10s)，回退直链播放 url=$clean');
+          '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
+          'buffered=${_player.bufferedPosition.inMilliseconds}ms '
+          'dur=${_player.duration?.inMilliseconds}ms url=$clean');
+      await _dumpPlayerThreads();
       await _player.setUrl(clean, headers: h);
     }
     final declaredMs = item.durationMs;

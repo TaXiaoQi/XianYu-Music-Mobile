@@ -1,0 +1,61 @@
+group 'com.ryanheise.just_audio'
+version '1.0'
+def args = ["-Xlint:deprecation","-Xlint:unchecked"]
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+project.getTasks().withType(JavaCompile) {
+    options.compilerArgs.addAll(args)
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.ryanheise.just_audio'
+    }
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 16
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    lintOptions {
+        disable 'AndroidGradlePluginVersion', 'InvalidPackage', 'GradleDependency', 'NewerVersionAvailable'
+    }
+
+    compileOptions {
+        sourceCompatibility 1.8
+        targetCompatibility 1.8
+    }
+
+    dependencies {
+        // media3 升级 1.4.1 -> 1.11.1（2026-09 稳定版）：修复部分新机型
+        // （小米 Civi 4 Pro 等）ExoPlayer prepare 间歇挂死、renderer 不
+        // 初始化的兼容性问题（1.4.1 为 2024 年中版本，audio HAL 协商路径
+        // 较旧）。fork 代码零改动，仅换依赖版本。
+        def exoplayer_version = "1.11.1"
+        implementation "androidx.media3:media3-exoplayer:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-dash:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-hls:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-smoothstreaming:$exoplayer_version"
+    }
+}
