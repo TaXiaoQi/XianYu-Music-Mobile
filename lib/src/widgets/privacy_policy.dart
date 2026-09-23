@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../auth/account_api.dart';
 import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
 import 'user_agreement.dart';
@@ -13,9 +15,12 @@ const kPrivacyPolicyUrl = 'https://xianyumusic.cn/privacy.html';
 
 const kPrivacyConsentPrefKey = 'privacy_policy_agreed_v1';
 
-const kPrivacyPolicyDefaultContent = '''
-更新日期：2026 年 9 月 4 日 · 生效日期：2026 年 9 月 4 日
+/// 已确认的服务器下发版本 fingerprint（id_updatedAt）。
+const kPrivacyConsentFingerprintKey = 'privacy_policy_agreed_fp';
 
+const kPrivacyPolicyDefaultUpdatedAt = '2026-09-04';
+
+const kPrivacyPolicyDefaultContent = '''
 弦予音乐（以下简称"本软件"）由个人开发者维护。我们深知个人信息对你的重要性，并会按照本政策收集、使用和保护你的信息。请在使用前仔细阅读本政策。
 
 一、我们收集的信息
@@ -70,22 +75,41 @@ Future<bool> showPrivacyPolicyModal({required BuildContext context}) {
   );
 }
 
+/// 启动时的隐私同意闸门：
+/// 1. 拉取服务器下发版本（6s 超时，失败/无下发用内置默认版）；
+/// 2. 已同意旧版且服务器无更新 → 直接放行；
+/// 3. 未同意或服务器有更新版 → 弹窗（没确认过才弹，确认状态存本地
+///    fingerprint，机制与公告一致），同意后上报服务器留存。
 Future<bool> ensurePrivacyConsent(BuildContext context) async {
+  final container = ProviderScope.containerOf(context, listen: false);
   final prefs = await SharedPreferences.getInstance();
-  if (prefs.getBool(kPrivacyConsentPrefKey) ?? false) return true;
+  final agreedV1 = prefs.getBool(kPrivacyConsentPrefKey) ?? false;
+  final remote = await container.read(accountApiProvider).fetchPrivacyPolicy();
+  final remoteFp =
+      remote == null ? '' : '${remote.id}_${remote.updatedAt}';
+  final confirmedFp = prefs.getString(kPrivacyConsentFingerprintKey) ?? '';
+  // 已同意过内置版：服务器无下发或已确认过该下发版本时放行。
+  if (agreedV1 &&
+      (remote == null ||
+          remoteFp.isEmpty ||
+          remoteFp == confirmedFp)) {
+    return true;
+  }
   if (!context.mounted) return false;
   final ok = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     barrierColor: Colors.black87,
     useSafeArea: false,
-    builder: (_) => const _PrivacyConsentDialog(),
+    builder: (_) => _PrivacyConsentDialog(remote: remote),
   ).then((v) => v ?? false);
   return ok;
 }
 
 class _PrivacyConsentDialog extends StatefulWidget {
-  const _PrivacyConsentDialog();
+  const _PrivacyConsentDialog({this.remote});
+
+  final PrivacyPolicyRemote? remote;
 
   @override
   State<_PrivacyConsentDialog> createState() => _PrivacyConsentDialogState();
@@ -135,13 +159,29 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
   Future<void> _agree() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kPrivacyConsentPrefKey, true);
+    final remote = widget.remote;
+    if (remote != null) {
+      await prefs.setString(
+          kPrivacyConsentFingerprintKey, '${remote.id}_${remote.updatedAt}');
+      // 确认上报（留存用，失败不影响本地放行）。
+      unawaitedConfirm(remote);
+    }
     if (!mounted) return;
     Navigator.of(context).pop(true);
+  }
+
+  void unawaitedConfirm(PrivacyPolicyRemote remote) {
+    ProviderScope.containerOf(context, listen: false)
+        .read(accountApiProvider)
+        .confirmPrivacyPolicy(remote);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final remote = widget.remote;
+    final updatedAt = remote?.updatedAt ?? kPrivacyPolicyDefaultUpdatedAt;
+    final content = remote?.content ?? kPrivacyPolicyDefaultContent;
     return PopScope(
       canPop: false,
       child: AlertDialog(
@@ -172,29 +212,58 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
             child: SingleChildScrollView(
               controller: _scroll,
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                kPrivacyPolicyDefaultContent,
-                style: TextStyle(
-                    fontSize: 13.5, height: 1.6, color: scheme.onSurfaceVariant),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    content,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.6,
+                        color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  // 更新日期放内容最底部。
+                  Text(
+                    '${tr('更新日期')}：$updatedAt',
+                    style: TextStyle(fontSize: 12, color: scheme.outline),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+        // 控件一行横排（同普通弹窗）：左侧在线版入口，右侧不同意/同意。
         actions: [
-          TextButton(
-            onPressed: () => launchUrl(
-              Uri.parse(kPrivacyPolicyUrl),
-              mode: LaunchMode.externalApplication,
-            ),
-            child: Text(tr('查看在线版')),
-          ),
-          TextButton(
-            onPressed: () => SystemNavigator.pop(),
-            child: Text(tr('不同意并退出')),
-          ),
-          FilledButton(
-            onPressed: _atEnd ? _agree : null,
-            child: Text(_atEnd ? tr('同意并继续') : tr('请滚动至底部')),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => launchUrl(
+                  Uri.parse(kPrivacyPolicyUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Text(
+                  tr('查看在线版'),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => SystemNavigator.pop(),
+                child: Text(
+                  tr('不同意并退出'),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 4),
+              FilledButton(
+                onPressed: _atEnd ? _agree : null,
+                child: Text(
+                  _atEnd ? tr('同意并继续') : tr('请滚动至底部'),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
           ),
         ],
       ),
