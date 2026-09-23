@@ -23,19 +23,38 @@ String normalizeMvQuality(String q) {
   return t.toUpperCase();
 }
 
+/// 歌曲信息里可用的 MV 标识字段（与 _songIdentity 的识别列表一致）。
+const _kMvIdKeys = [
+  'mv', 'mvHash', 'mvdata', 'mvVid', 'mvId', 'vid', 'vid_hash', 'vhash',
+  'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
+];
+
+/// 本会话内已探测/确认的歌曲 MV 可用性（pluginId|songId → 有无）。
+/// 插件机制下有无 MV 只有解析那一刻才知道；起播后并行静默探测一次，
+/// 结果缓存后用于显隐 MV 入口（重启清空，插件可能已更新可重探）。
+final Map<String, bool> _mvProbeResult = {};
+
+String _mvProbeKey(QueueItem c) {
+  try {
+    final raw = jsonDecode(c.onlineSongJson ?? '');
+    if (raw is! Map) return '';
+    final pluginId = raw['pluginId']?.toString() ?? '';
+    final songId = _songIdentity(c);
+    if (pluginId.isEmpty || songId.isEmpty) return '';
+    return '$pluginId|$songId';
+  } catch (_) {
+    return '';
+  }
+}
+
 bool mvSupports(QueueItem? c) {
   if (c == null) return false;
-  final js = c.onlineSongJson;
-  if (js == null || js.isEmpty) return false;
-  try {
-    final raw = jsonDecode(js);
-    if (raw is! Map) return false;
-    if (raw['format'] == 'lx') return false;
-    final pluginId = raw['pluginId']?.toString() ?? '';
-    return pluginId.isNotEmpty;
-  } catch (_) {
-    return false;
-  }
+  // 只认真实解析结论：探测确认可解析才显示入口。
+  // 未探测到结果的歌先不显示（起播批次探测完成后有 MV 的会自动出现），
+  // 避免任何静态字段猜测造成「有 MV 的不显示、显示的没有 MV」。
+  final key = _mvProbeKey(c);
+  if (key.isEmpty) return false;
+  return _mvProbeResult[key] ?? false;
 }
 
 Map<String, dynamic> mvSongOf(QueueItem c) {
@@ -77,25 +96,51 @@ class MvState {
 
   final VideoPlayerController? controller;
 
+  /// 加载阶段：'resolve'=解析地址，'init'=初始化画面。
+  final String phase;
+
+  /// 初始化期间的缓冲进度（已缓冲秒数）。
+  final int bufferedSec;
+
   const MvState({
     this.requested = false,
     this.ready = false,
     this.loading = false,
     this.source,
     this.controller,
+    this.phase = '',
+    this.bufferedSec = 0,
   });
 
   bool get active => requested;
+
+  MvState copyWith({String? phase, int? bufferedSec}) => MvState(
+        requested: requested,
+        ready: ready,
+        loading: loading,
+        source: source,
+        controller: controller,
+        phase: phase ?? this.phase,
+        bufferedSec: bufferedSec ?? this.bufferedSec,
+      );
+
+  /// 无参刷新：生成等值新对象以触发 provider 监听者重建。
+  MvState refresh() => MvState(
+        requested: requested,
+        ready: ready,
+        loading: loading,
+        source: source,
+        controller: controller,
+        phase: phase,
+        bufferedSec: bufferedSec,
+      );
 }
 
 String _songIdentity(QueueItem? c) {
   if (c == null) return '';
   final song = mvSongOf(c);
   final buf = <String>[];
-  for (final k in const [
-    'mv', 'mvHash', 'mvdata', 'mvVid', 'mvId', 'vid', 'vid_hash', 'vhash',
-    'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
-  ]) {
+  for (final k in _kMvIdKeys) {
     final v = song[k];
     if (_isValidIdValue(v)) {
       buf.add('$k=$v');
@@ -209,6 +254,7 @@ class MvNotifier extends StateNotifier<MvState> {
     _stallTicks = 0;
     _lastVposMs = -1;
     _restartCount = 0;
+    if (c != null) unawaited(probeMvFor(c));
     if (!state.requested) {
       if (state.source != null) {
         state = const MvState();
@@ -238,6 +284,43 @@ class MvNotifier extends StateNotifier<MvState> {
     return normalizeMvQuality(q ?? '720P');
   }
 
+  /// 起播后静默并行探测：这首歌的插件是否真能解析出 MV。
+  /// 不触碰播放状态（不动 requested/loading/controller），结果写缓存，
+  /// 供 mvSupports 显隐入口。
+  Future<void> probeMvFor(QueueItem c) async {
+    final key = _mvProbeKey(c);
+    if (key.isEmpty || _mvProbeResult.containsKey(key)) return;
+    bool? has;
+    try {
+      final src = await _resolve(mvSongOf(c), _defaultQuality());
+      has = src != null && src.url.isNotEmpty;
+    } catch (_) {
+      // 探测异常（网络波动/插件故障）不写缓存：与「插件明确无 MV」区分，
+      // 避免瞬时故障造成假阴性把有 MV 的歌在本会话内错误隐藏。
+      has = null;
+    }
+    if (has != null) _mvProbeResult[key] = has;
+    if (!mounted) return;
+    // 重赋 state 触发监听者重建，让按钮按探测结论刷新显隐。
+    state = state.refresh();
+  }
+
+  /// 队列批量探测：当前歌立即，后续歌逐个错开（避让音质预探测带宽）。
+  Future<void> probeQueueMvs(List<QueueItem> items) async {
+    var first = true;
+    for (final it in items) {
+      final key = _mvProbeKey(it);
+      if (key.isEmpty || _mvProbeResult.containsKey(key)) continue;
+      if (!first) {
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        if (!mounted) return;
+      }
+      first = false;
+      await probeMvFor(it);
+      if (!mounted) return;
+    }
+  }
+
   Future<String?> _start(QueueItem c, {String? quality}) async {
     // 重开/切画质时若已接管音频，先还原歌曲通道，待新 MV 就绪后再重新接管。
     if (_audioTakenOver) await _releaseAudio(state.controller);
@@ -252,22 +335,28 @@ class MvNotifier extends StateNotifier<MvState> {
     state = MvState(
       requested: true,
       loading: true,
+      phase: 'resolve',
       source: quality == null ? state.source : null,
     );
 
     final src = await _resolve(song, target);
     if (ver != _requestVersion) return null;
     if (src == null || src.url.isEmpty) {
+      final key = _mvProbeKey(c);
+      if (key.isNotEmpty) _mvProbeResult[key] = false;
       state = const MvState();
-      return '此歌曲无 MV 或画质不支持';
+      return '此歌曲无 MV 或插件未提供 MV 解析';
     }
 
+    state = state.copyWith(phase: 'init', bufferedSec: 0);
     final controller = await _initControllerWithFallback(src);
     if (controller == null) {
       if (ver != _requestVersion || !mounted) return null;
       state = const MvState();
       AppLog.warn('mv', 'init failed for all candidates: ${src.url}');
-      return 'MV 加载失败';
+      return _lastInitError == null
+          ? 'MV 加载失败'
+          : 'MV 加载失败：${_shortMvError(_lastInitError!)}';
     }
     if (ver != _requestVersion || !mounted) {
       await controller.dispose();
@@ -412,6 +501,39 @@ class MvNotifier extends StateNotifier<MvState> {
     await old?.dispose();
   }
 
+  String? _lastInitError;
+  Timer? _initProgressTimer;
+
+  /// 初始化期间轮询缓冲进度，把已缓冲秒数写进状态供 UI 显示。
+  void _trackInitProgress(VideoPlayerController c) {
+    _initProgressTimer?.cancel();
+    _initProgressTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
+      final v = c.value;
+      final endMs = v.buffered.isEmpty ? 0 : v.buffered.last.end.inMilliseconds;
+      final sec = (endMs / 1000).round();
+      if (mounted && state.loading && state.phase == 'init' &&
+          sec != state.bufferedSec) {
+        state = state.copyWith(bufferedSec: sec);
+      }
+    });
+  }
+
+  /// 把初始化异常压成一句短原因。
+  String _shortMvError(String raw) {
+    final s = raw.toLowerCase();
+    if (s.contains('timeout') || raw.contains('超时')) return '网络超时';
+    if (s.contains('403') || s.contains('forbidden')) return '链接无权限（403）';
+    if (s.contains('404') || s.contains('not found')) return '链接已失效（404）';
+    if (s.contains('network') || s.contains('socket') || s.contains('连接')) {
+      return '网络连接失败';
+    }
+    if (s.contains('codec') || s.contains('format') || s.contains('decoder')) {
+      return '画面格式不支持';
+    }
+    final t = raw.trim();
+    return t.length > 24 ? '${t.substring(0, 24)}…' : t;
+  }
+
   Future<VideoPlayerController?> _initControllerWithFallback(MvSource src) async {
     final candidates = [src.url, ...src.backupUrls];
     Object? lastError;
@@ -421,18 +543,26 @@ class MvNotifier extends StateNotifier<MvState> {
         httpHeaders: src.headers,
       );
       try {
+        _lastInitError = null;
+        _trackInitProgress(c);
         await c.initialize();
-        if (c.value.hasError) throw StateError(c.value.errorDescription ?? 'init error');
+        _initProgressTimer?.cancel();
+        if (c.value.hasError) {
+          throw StateError(c.value.errorDescription ?? 'init error');
+        }
         if (candidates.length > 1) {
           AppLog.debug('mv', 'init ok via backup(${candidates.indexOf(u) + 1}/'
               '${candidates.length}) url=$u');
         }
         return c;
       } catch (e) {
+        _initProgressTimer?.cancel();
+        _lastInitError = e.toString();
         lastError = e;
         await c.dispose().catchError((_) {});
       }
     }
+    _initProgressTimer?.cancel();
     AppLog.warn('mv', 'init failed all ${candidates.length} candidates: $lastError');
     return null;
   }

@@ -40,6 +40,7 @@ import '../widgets/cover_image.dart';
 import '../navigation/routes.dart';
 import 'mv_auto_sync.dart';
 import 'audio_head_cache.dart';
+import 'mv_provider.dart';
 import 'audio_proxy_server.dart';
 import 'media_url.dart';
 import 'cast_provider.dart';
@@ -1571,9 +1572,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(currentQuality: start.quality);
         _refreshQualityMenuState(probe);
         unawaited(_prewarmOnlineSizes(item));
+        _probeMvsAround(item);
         return;
       }
-      throw StateError(tr('直链解析失败'));
+      final reason = probe.lastFailureReason;
+      throw StateError(reason == null
+          ? tr('无法获取播放链接')
+          : _shortResolveReason(reason));
     }
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError(tr('无法获取播放链接'));
@@ -1595,6 +1600,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _startOnlineUrl(url.url,
         headers: url.headers, item: item, ekey: url.ekey);
     unawaited(_prewarmOnlineSizes(item));
+    _probeMvsAround(item);
+  }
+
+  /// 起播成功后批量探测当前歌与队列后续在线歌的 MV 可用性（真实解析
+  /// 结论决定 MV 入口显隐，对齐音质预探测的思路）。
+  void _probeMvsAround(QueueItem item) {
+    try {
+      final notifier = _ref.read(mvProvider.notifier);
+      final idx = state.queueIndex;
+      final upcoming = <QueueItem>[item];
+      if (idx >= 0 && state.playMode != 1) {
+        final n = state.queue.length;
+        for (var k = 1; k <= 4 && n > 0; k++) {
+          final it = state.queue[(idx + k) % n];
+          if (it.isOnline && it.onlineSongJson != null) upcoming.add(it);
+        }
+      }
+      unawaited(notifier.probeQueueMvs(upcoming));
+    } catch (_) {}
   }
 
   Future<void> _prewarmOnlineSizes(QueueItem item) async {
@@ -1625,6 +1649,22 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } catch (_) {
       _prewarmKeys.remove(key);
     }
+  }
+
+  /// 把探测失败的原始错误压成一句短提示（完整文本仍在日志里）。
+  String _shortResolveReason(String raw) {
+    if (raw.contains('熔断')) return '音源熔断中，稍后自动重试';
+    if (raw.contains('鉴权') || raw.contains('卡密') || raw.contains('不支持')) {
+      return '音源鉴权失败';
+    }
+    if (raw.contains('超时') || raw.toLowerCase().contains('timeout')) {
+      return '音源请求超时';
+    }
+    if (raw.contains('rate') || raw.contains('限') || raw.contains('429')) {
+      return '音源请求被限流';
+    }
+    final s = raw.trim();
+    return s.length > 24 ? '${s.substring(0, 24)}…' : s;
   }
 
   String _songProbeKey(Map<String, dynamic> songJson, QueueItem item) {
