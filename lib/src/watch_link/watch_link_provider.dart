@@ -15,6 +15,7 @@ import '../auth/auth_provider.dart';
 import '../backup/app_backup.dart';
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
+import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
 import '../i18n/i18n.dart';
 import '../library/saf_channel.dart';
@@ -51,6 +52,8 @@ class WatchLinkController {
   // ---- 云端兜底通道状态 ----
 
   bool _cloudRunning = false;
+
+  Timer? _fxPushTimer;
 
   bool _cloudWatchOnline = false;
 
@@ -118,10 +121,17 @@ class WatchLinkController {
         if (next.hasValue && _connected) _pushState();
       },
     ));
+
+    // 音效状态变化 → 推送到手表（节流，滑条拖动结束时触发一次）
+    _providerSubs.add(_container.listen<SoundEffectState>(
+      soundEffectProvider,
+      (_, _) => _pushEffectsDebounced(),
+    ));
   }
 
   void dispose() {
     beforePlayGate = null;
+    _fxPushTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
     }
@@ -301,6 +311,7 @@ class WatchLinkController {
             name: '弦予音乐',
           ), cloud: true);
           _pushSnapshot(cloud: true);
+          _sendEffects();
           _maybeAskOnHandshake();
         } else {
           _send(LinkMessage.hello(
@@ -309,6 +320,7 @@ class WatchLinkController {
             name: '弦予音乐',
           ));
           _pushSnapshot();
+          _sendEffects();
           _maybePushCloudBind();
           _maybeAskOnHandshake();
         }
@@ -365,6 +377,8 @@ class WatchLinkController {
               .setVolume(v.clamp(0.0, 1.0));
           _pushState();
         }
+      case LinkCmdAction.fx:
+        _onFxCommand(msg);
       default:
         break;
     }
@@ -596,12 +610,9 @@ class WatchLinkController {
   Future<void> _doAskTransfer() async {
     final context = appNavigatorKey.currentContext;
     if (context == null || !context.mounted) return;
-    final result = await showPredictiveDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => _TransferConfirmDialog(
-        watchName: _connectedName.isNotEmpty ? _connectedName : _cloudWatchName,
-      ),
+    final result = await showTransferConfirmDialog(
+      context,
+      watchName: _connectedName.isNotEmpty ? _connectedName : _cloudWatchName,
     );
     switch (result) {
       case 'device':
@@ -635,6 +646,32 @@ class WatchLinkController {
       liked: _lastLiked,
       volume: _volumeOf(),
     ));
+  }
+
+  // ---- 音效同步（手机 → 手表推送 / 手表 → 手机命令） ----
+
+  void _pushEffectsDebounced() {
+    _fxPushTimer?.cancel();
+    _fxPushTimer = Timer(const Duration(milliseconds: 120), _sendEffects);
+  }
+
+  void _sendEffects() {
+    if (!_connected && !_cloudWatchOnline) return;
+    // 音效控制不依赖媒体传输授权，连接即同步
+    final s = _container.read(soundEffectProvider).settings;
+    _send(LinkMessage.effects(fx: s.toJson()));
+  }
+
+  void _onFxCommand(LinkMessage msg) {
+    final arg = msg.payload['arg'];
+    if (arg is! Map) return;
+    try {
+      final s = SoundEffectSettings.fromJson(
+        Map<String, dynamic>.from(arg),
+      );
+      _container.read(soundEffectProvider.notifier).set(s);
+      // 变更经上方 provider 监听回推手表校正，无需在此手动 echo
+    } catch (_) {}
   }
 
   void _pushSnapshot({bool cloud = false}) {
@@ -945,6 +982,21 @@ Future<String?> _encodeLinkCoverBytes(List<int> raw) async {
   } catch (_) {
     return null;
   }
+}
+
+/// 弹出联动授权弹窗并返回原始选项（'device' / 'once' / 'never' / null）。
+/// 供真实联动流程与调试页共用；调试页只取返回值做提示，不执行授权动作。
+Future<String?> showTransferConfirmDialog(
+  BuildContext context, {
+  String? watchName,
+}) {
+  return showPredictiveDialog<String>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _TransferConfirmDialog(
+      watchName: watchName ?? tr('测试手表'),
+    ),
+  );
 }
 
 class _TransferConfirmDialog extends StatelessWidget {
