@@ -2312,16 +2312,55 @@ class _LyricPreview extends ConsumerStatefulWidget {
   ConsumerState<_LyricPreview> createState() => _LyricPreviewState();
 }
 
-class _LyricPreviewState extends ConsumerState<_LyricPreview> {
+class _LyricPreviewState extends ConsumerState<_LyricPreview>
+    with TickerProviderStateMixin {
   static const double _kLineH = 23.0;
 
   List<_LyricLineItem> _lines = const [];
   bool _loading = false;
 
+  // 逐字渲染需要逐帧播放位置：与主歌词页同一套「锚点+Stopwatch」模拟，
+  // 播放中每帧插值推进 _progress，seek/暂停由 provider 流重置锚点。
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
+  double _anchorPos = 0;
+  final Stopwatch _anchorWatch = Stopwatch();
+  Ticker? _ticker;
+
   @override
   void initState() {
     super.initState();
+    _anchorPos = ref.read(playerProvider).position;
+    _progress.value = _anchorPos;
+    _ticker = createTicker(_onPreviewTick);
+    _syncPreviewTicker();
     _load();
+  }
+
+  void _onPreviewTick(Duration _) {
+    final next = _anchorPos + _anchorWatch.elapsedMilliseconds / 1000.0;
+    if ((next - _progress.value).abs() < 0.002) return;
+    _progress.value = next;
+  }
+
+  void _onPreviewPositionChanged(double next) {
+    _anchorPos = next;
+    _anchorWatch.reset();
+    _progress.value = next;
+    _syncPreviewTicker();
+  }
+
+  void _syncPreviewTicker() {
+    final isPlaying = ref.read(playerProvider).isPlaying;
+    if (isPlaying && !(_ticker?.isActive ?? false)) {
+      _anchorWatch
+        ..reset()
+        ..start();
+      _ticker!.start();
+    } else if (!isPlaying && (_ticker?.isActive ?? false)) {
+      _ticker!.stop();
+      _anchorWatch.stop();
+      _progress.value = _anchorPos;
+    }
   }
 
   @override
@@ -2330,8 +2369,18 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     if (old.current?.path != widget.current?.path) {
       _lines = const [];
       _loading = false;
+      _anchorPos = ref.read(playerProvider).position;
+      _progress.value = _anchorPos;
+      _syncPreviewTicker();
       _load();
     }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.dispose();
+    _progress.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -2373,6 +2422,14 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      playerProvider.select((s) => s.position),
+      (_, next) => _onPreviewPositionChanged(next),
+    );
+    ref.listen(
+      playerProvider.select((s) => s.isPlaying),
+      (_, _) => _syncPreviewTicker(),
+    );
     if (_lines.isEmpty) return const SizedBox.shrink();
     final posMs = (ref.watch(playerProvider.select((s) => s.position)) * 1000);
     var active = 0;
@@ -2399,28 +2456,61 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
               final y = (i - cur) * _kLineH + _kLineH;
               if (y > 3 * _kLineH || y + _kLineH < 0) continue;
               final isActive = i == activeLine;
+              final line = _lines[i];
+              final align = switch (widget.align) {
+                'center' => Alignment.center,
+                'right' => Alignment.centerRight,
+                _ => Alignment.centerLeft,
+              };
+              // 当前行带逐字时间轴（YRC/QRC 等）时按卡拉OK渲染，
+              // 超宽单行整体缩放（FittedBox）保持一行不溢出。
+              Widget lineChild;
+              if (isActive && line.words.isNotEmpty) {
+                lineChild = RepaintBoundary(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _progress,
+                    builder: (context, posSec, _) {
+                      return Align(
+                        alignment: align,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final w in line.words)
+                                _buildKaraokeWord(w, posSec, 14, null),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              } else {
+                lineChild = Text(
+                  line.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: switch (widget.align) {
+                    'center' => TextAlign.center,
+                    'right' => TextAlign.right,
+                    _ => TextAlign.left,
+                  },
+                  style: TextStyle(
+                    color: isActive
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.5),
+                    fontSize: isActive ? 14 : 12.5,
+                    height: 1.2,
+                  ),
+                );
+              }
               rows.add(
                 Positioned(
                   top: y,
                   left: 0,
                   right: 0,
-                  child: Text(
-                    _lines[i].text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: switch (widget.align) {
-                      'center' => TextAlign.center,
-                      'right' => TextAlign.right,
-                      _ => TextAlign.left,
-                    },
-                    style: TextStyle(
-                      color: isActive
-                          ? Colors.white
-                          : Colors.white.withValues(alpha: 0.5),
-                      fontSize: isActive ? 14 : 12.5,
-                      height: 1.2,
-                    ),
-                  ),
+                  child: lineChild,
                 ),
               );
             }
@@ -5922,7 +6012,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                           },
                           children: [
                             for (final w in line.words)
-                              _buildKaraokeWordWidget(
+                              _buildKaraokeWord(
                                 w,
                                 pos - _offsetMs / 1000.0,
                                 mainFont,
@@ -6357,63 +6447,65 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       ),
     );
   }
+}
 
-  Widget _buildKaraokeWordWidget(
-    _LyricWordItem word,
-    double position,
-    double fontSize,
-    String? fontFamily,
-  ) {
-    final duration = math.max(0.001, word.end - word.start);
-    final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
+/// 卡拉OK逐字渲染：word.start/end（秒）区间内按进度渐变着色，
+/// 当前字有轻微上浮+放大动效。主歌词页与封面页预览小歌词共用。
+Widget _buildKaraokeWord(
+  _LyricWordItem word,
+  double position,
+  double fontSize,
+  String? fontFamily,
+) {
+  final duration = math.max(0.001, word.end - word.start);
+  final progress = ((position - word.start) / duration).clamp(0.0, 1.0);
 
-    const highlightColor = Colors.white;
-    final dimColor = Colors.white.withValues(alpha: 0.28);
+  const highlightColor = Colors.white;
+  final dimColor = Colors.white.withValues(alpha: 0.28);
 
-    final style = TextStyle(
-      fontSize: fontSize,
-      fontWeight: FontWeight.w700,
-      height: 1.35,
-      fontFamily: fontFamily,
-    );
+  final style = TextStyle(
+    fontSize: fontSize,
+    fontWeight: FontWeight.w700,
+    height: 1.35,
+    fontFamily: fontFamily,
+  );
 
-    if (progress <= 0) {
-      return Text(word.text, style: style.copyWith(color: dimColor));
-    }
+  if (progress <= 0) {
+    return Text(word.text, style: style.copyWith(color: dimColor));
+  }
 
-    if (progress >= 1.0) {
-      return Text(
-        word.text,
-        style: style.copyWith(
-          color: highlightColor,
-          shadows: [
-            Shadow(
-              color: Colors.white.withValues(alpha: 0.35),
-              blurRadius: 10,
-            ),
-          ],
-        ),
-      );
-    }
-
-    final featherEnd = (progress + 0.1).clamp(0.0, 1.0);
-    final pop = math.sin(progress * math.pi);
-    return Transform.translate(
-      offset: Offset(0, -2.5 * pop),
-      child: Transform.scale(
-        scale: 1.0 + 0.05 * pop,
-        child: ShaderMask(
-          shaderCallback: (bounds) {
-            return LinearGradient(
-              colors: [highlightColor, dimColor],
-              stops: [progress, featherEnd],
-            ).createShader(bounds);
-          },
-          child: Text(word.text, style: style.copyWith(color: Colors.white)),
-        ),
+  if (progress >= 1.0) {
+    return Text(
+      word.text,
+      style: style.copyWith(
+        color: highlightColor,
+        shadows: [
+          Shadow(
+            color: Colors.white.withValues(alpha: 0.35),
+            blurRadius: 10,
+          ),
+        ],
       ),
     );
   }
+
+  final featherEnd = (progress + 0.1).clamp(0.0, 1.0);
+  final pop = math.sin(progress * math.pi);
+  return Transform.translate(
+    offset: Offset(0, -2.5 * pop),
+    child: Transform.scale(
+      scale: 1.0 + 0.05 * pop,
+      child: ShaderMask(
+        shaderCallback: (bounds) {
+          return LinearGradient(
+            colors: [highlightColor, dimColor],
+            stops: [progress, featherEnd],
+          ).createShader(bounds);
+        },
+        child: Text(word.text, style: style.copyWith(color: Colors.white)),
+      ),
+    ),
+  );
 }
 
 class _BlurredLineSnapshot {
