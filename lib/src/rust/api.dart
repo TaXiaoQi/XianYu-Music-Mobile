@@ -117,6 +117,12 @@ Future<String> fetchLyricFromSource({
   songInfoJson: songInfoJson,
 );
 
+/// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib 压缩包 hex）。
+/// Baka 系 musicfree 插件 getLyric 的注释即声明「由应用层解密」——Dart 在
+/// 密文检测命中后直接调本函数解密复用，避免绕行可能被风控的原生歌词接口。
+Future<String> decryptPluginLyric({required String encryptedHex}) =>
+    RustLib.instance.api.crateApiDecryptPluginLyric(encryptedHex: encryptedHex);
+
 /// 测试 WebDAV 连接（列出根目录）。
 Future<void> webdavTestConnection({required String sourceJson}) =>
     RustLib.instance.api.crateApiWebdavTestConnection(sourceJson: sourceJson);

@@ -72,6 +72,22 @@ class LyricsRepository {
         final encrypted = pluginLyricLooksEncrypted(mainText);
         AppLog.debug('lyric',
             '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
+        if (encrypted) {
+          // Baka 系插件自身返回 QRC/e-lrc 密文（插件注释即声明「由应用层
+          // 解密」）——直接用 Rust 侧 qrc_decrypt 解密复用，比绕行可能被
+          // 风控的原生歌词接口可靠得多。解密失败才降级原生兜底。
+          final decrypted = await _decryptEncryptedLyric(mainText);
+          if (decrypted != null && decrypted.trim().isNotEmpty) {
+            AppLog.debug('lyric', '插件歌词: 密文解密成功 len=${decrypted.length}');
+            var combined = decrypted;
+            if (tlyric.isNotEmpty && pluginLyricLooksEncrypted(tlyric)) {
+              final dt = await _decryptEncryptedLyric(tlyric);
+              if (dt != null && dt.trim().isNotEmpty) combined = '$combined\n$dt';
+            }
+            return parseLyrics(rawLyrics: combined);
+          }
+          AppLog.warn('lyric', '插件歌词: 密文解密失败，降级原生兜底');
+        }
         if (mainText.trim().isNotEmpty && !encrypted) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
             return parseLyrics(rawLyrics: '$mainText\n$tlyric');
@@ -110,6 +126,20 @@ class LyricsRepository {
     }
     final dbPath = await _ref.read(dbPathProvider.future);
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
+  }
+
+  /// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib hex），
+  /// 走 Rust 侧与原生歌词源同一套解密实现。失败/空结果返回 null。
+  Future<String?> _decryptEncryptedLyric(String hex) async {
+    try {
+      final out = await decryptPluginLyric(
+          encryptedHex: hex.replaceAll(RegExp(r'\s'), ''));
+      final s = out.trim();
+      return s.isEmpty ? null : s;
+    } catch (e) {
+      AppLog.warn('lyric', '插件歌词: qrc 解密异常 $e');
+      return null;
+    }
   }
 
   /// 原生歌词源兜底：插件歌曲没有 source/onlineInfoJson，

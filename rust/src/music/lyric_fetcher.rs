@@ -493,7 +493,7 @@ fn triple_des_crypt(data: &[u8], key_schedule: &[DesSchedule; 3]) -> [u8; 8] {
     temp
 }
 
-fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
+pub(crate) fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
     let encrypted_bytes = hex_to_bytes(encrypted_hex);
     if encrypted_bytes.is_empty() {
         return Err("No data to decrypt".to_string());
