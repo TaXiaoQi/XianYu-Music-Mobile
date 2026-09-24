@@ -483,6 +483,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     WidgetsBinding.instance.addObserver(this);
     activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
+    // 初始订阅五路流（位置/时长/播放态/处理态/错误）。此前订阅内联在 _init 里，
+    // 抽出 _subscribePlayerStreams 供楔死重建复用后，构造里漏了初始调用——
+    // 表现为进度条不走、播放状态不广播、通知栏播控失效。
+    _subscribePlayerStreams();
     _init();
   }
 
