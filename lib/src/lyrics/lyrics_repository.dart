@@ -142,11 +142,15 @@ class LyricsRepository {
         item.source ??
         '';
     if (!_nativeLyricSources.contains(sourceKey)) {
-      // musicInfo 无平台标签（Baka 系 musicfree 插件的歌曲对象不带
-      // source/platform）时回退插件元数据：meta.platform 形如「QQ音乐[L1]」，
-      // 归一化映射到原生源 key（'tx'）——与换源空标签修复同一思路。
-      // 否则此处静默 return null，原生兜底失效、歌词直接为空。
-      if (sourceKey.trim().isEmpty && pluginId != null && pluginId.isNotEmpty) {
+      // 统一归一化映射：sourceKey 可能是空标签（Baka 系 musicInfo 不带
+      // source/platform），也可能是原始平台标签（如「QQ音乐[L1]」/「酷我
+      // 音乐[T]」）——都先过 lxSourceKeyForPlatform 映射到原生源 key
+      // （'tx'/'wy'/...），与换源空标签修复同一套归一化。映射不出再回退
+      // 插件元数据 platform。否则此处静默 return null，原生兜底失效。
+      var mapped = lxSourceKeyForPlatform(sourceKey);
+      if (!_nativeLyricSources.contains(mapped) &&
+          pluginId != null &&
+          pluginId.isNotEmpty) {
         try {
           final engine = await _ref.read(pluginEngineProvider.future);
           final sources = await engine.store.loadSources();
@@ -158,10 +162,11 @@ class LyricsRepository {
               meta['pluginName']?.toString(),
               matches.first.name,
             ].firstWhere((e) => (e ?? '').trim().isNotEmpty, orElse: () => null);
-            sourceKey = lxSourceKeyForPlatform(label ?? '');
+            mapped = lxSourceKeyForPlatform(label ?? '');
           }
         } catch (_) {}
       }
+      sourceKey = mapped;
       if (!_nativeLyricSources.contains(sourceKey)) {
         AppLog.warn('lyric', '原生歌词兜底: 无法确定原生源 key (sourceKey=$sourceKey pluginId=$pluginId)');
         return null;
