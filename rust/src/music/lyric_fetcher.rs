@@ -2333,4 +2333,21 @@ mod qrc_roundtrip_tests {
         let expected = include_str!("fixtures/lyrics/baby.qrc");
         assert_eq!(decrypted.trim(), expected.trim());
     }
+
+    /// 临时调试：QQ 接口真实解密产物（XML 包裹）过完整解析管线，定位丢行断点。
+    #[test]
+    fn qrc_real_product_parses_into_lines() {
+        let raw = include_str!("fixtures/lyrics/qq_real.qrc");
+        let payload = crate::music::lyrics::build_structured_lyrics_payload(raw.to_string());
+        println!("display_lines={}", payload.display_lines.len());
+        println!("semantic_lines={}", payload.semantic_lines.len());
+        if let Some(d) = payload.document.as_ref() {
+            println!("document: tracks={} display_track_id={:?}", d.tracks.len(), d.display_track_id);
+        } else {
+            println!("document=None");
+        }
+        for line in payload.display_lines.iter().take(5) {
+            println!("line: {:?}", line.text);
+        }
+    }
 }
