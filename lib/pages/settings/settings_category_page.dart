@@ -1069,7 +1069,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             subtitle: tr('在线音源完全无法播放时的处理方式'),
             trailing: Text(
               _failureBehaviorLabel(
-                  s?.onlineFailureBehavior ?? 'stop'),
+                  s?.onlineFailureBehavior ?? 'pause'),
             ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
@@ -1967,7 +1967,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
   String _failureBehaviorLabel(String v) => switch (v) {
     'autoswitch' => tr('自动换源'),
-    'stop' => tr('停止播放'),
     'pause' => tr('暂停播放'),
     _ => tr('跳到下一首'),
   };
@@ -2468,7 +2467,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.onlineFailureBehavior ?? 'stop';
+    final cur = s?.onlineFailureBehavior ?? 'pause';
     final choice = await showSheetDialog<_Choice>(
       context,
       (_) => _choiceSheet(
@@ -2477,7 +2476,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _Choice(tr('自动换源'), 'autoswitch'),
           _Choice(tr('暂停播放'), 'pause'),
           _Choice(tr('跳到下一首'), 'skip'),
-          _Choice(tr('停止播放'), 'stop'),
         ],
         cur,
         labelOf: (v) => _failureBehaviorLabel(v as String),

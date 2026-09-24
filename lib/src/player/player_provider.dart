@@ -2884,7 +2884,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     _lastAutoSwitchAt = now;
     _lastAutoSwitchPath = item.path;
-    if ((settings?.onlineFailureBehavior ?? 'stop') != 'autoswitch' &&
+    if ((settings?.onlineFailureBehavior ?? 'pause') != 'autoswitch' &&
         !force) {
       return false;
     }
@@ -3247,16 +3247,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       if (resolved != null) return resolved;
-      return await _resolveViaSiblingPlugin(
-        failedId: source.first.id,
-        format: format,
-        sourceKey: sourceKey,
-        musicInfo: musicInfo,
-        quality: quality,
-        itemPath: itemPath,
-        engine: engine,
-        platformLabelOverride: override,
-      );
+      // 解析失败不上抛兄弟换源：本函数被音质探测回调共用，探测每档失败
+      // 都会走到这里，若在此兜底换源会绕过「起播失败行为」设置门控与
+      // _autoSwitchSource 的防抖（表现为未开启自动换源也频繁触发换源）。
+      // 换源统一由起播失败路径 _autoSwitchSource 按 settings 门控执行。
+      return null;
     } catch (e) {
       return null;
     }

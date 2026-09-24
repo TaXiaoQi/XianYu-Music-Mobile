@@ -233,7 +233,7 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
-    this.onlineFailureBehavior = 'stop',
+    this.onlineFailureBehavior = 'pause',
     this.onlineQualityFallbackBehavior = 'lower',
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
@@ -786,7 +786,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
-      onlineFailureBehavior: prefs.getString('onlineFailureBehavior') ?? 'stop',
+      // 'stop' 选项已移除（与 pause 语义重复），存量值归一为 'pause'
+      onlineFailureBehavior:
+          prefs.getString('onlineFailureBehavior') == 'autoswitch'
+              ? 'autoswitch'
+              : prefs.getString('onlineFailureBehavior') == 'skip'
+                  ? 'skip'
+                  : 'pause',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
