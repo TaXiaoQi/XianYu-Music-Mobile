@@ -574,6 +574,11 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xianyu/diag")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // 楔死探测（player_provider._probeAndRebuild）：handler 在主线程
+                    // 执行——主线程活着则立即回包（内容无所谓），Dart 侧判定不重建；
+                    // 主线程被挂死的 ExoPlayer release/dispose 阻塞时调用排队无人
+                    // 处理，Dart 侧 2s 超时后判定楔死并重建播放器通道。
+                    "ping" -> result.success(null)
                     "threadDump" -> {
                         val kw = listOf(
                             "exo", "loader", "audio", "media", "codec",
