@@ -1486,6 +1486,7 @@
     flac: 'flac', flac24bit: 'flac24bit',
     hires: 'flac24bit', vinyl: 'flac24bit', dolby: 'flac24bit',
     atmos: 'flac24bit', atmos_plus: 'flac24bit', master: 'flac24bit',
+    '24bit': 'flac24bit', hifi: 'flac24bit',
     low: '128k', standard: '320k', high: 'flac', super: 'flac24bit',
   };
 
@@ -1493,6 +1494,29 @@
     var mapped = ANIME_QUALITY_MAP[String(q || '')];
     return mapped || '320k';
   }
+
+  // MV 画质：宿主档位(4K/1080P/720P/480P/360P) → anime videoQuality(240p~1080p)
+  var ANIME_VIDEO_QUALITY_MAP = {
+    '4k': '1080p', '2160p': '1080p',
+    '1080p': '1080p', '1080': '1080p',
+    '720p': '720p', '720': '720p',
+    '480p': '480p', '480': '480p',
+    '360p': '360p', '360': '360p',
+    '240p': '360p', '240': '360p',
+  };
+
+  function toAnimeVideoQuality(q) {
+    var key = String(q || '').toLowerCase();
+    return ANIME_VIDEO_QUALITY_MAP[key] || '1080p';
+  }
+
+  // 合法平台码（目录条目 platform 兜底识别用，防止宿主展示名误当平台）
+  var ANIME_PLATFORM_KEYS = ['kg', 'kw', 'wy', 'tx', 'mg', 'bilibili'];
+  // anime 适配器实现的目录/评论/MV 方法（暴露给宿主 catalog 链路路由）
+  var ANIME_CATALOG_METHODS = [
+    'getTopLists', 'getTopListDetail', 'getMusicSheetInfo', 'getArtistWorks',
+    'getArtistInfo', 'getAlbumInfo', 'getMusicComments', 'getMvSource',
+  ];
 
   function makeAnimeAdapter(instance, meta) {
     var singlePlatform = meta.platform && meta.platform !== 'all' ? String(meta.platform) : null;
@@ -1502,11 +1526,81 @@
     // 而非 lrc-a2，按内容检测尖括号词时间戳判定，不信任插件自述
     var WORD_TIMING_RE = /<\d{1,3}:\d{2}(?:\.\d{1,3})?>/;
 
-    // 聚合插件必须传 platform；_animePlatform 在搜索结果注入
+    // 聚合插件必须传 platform；_animePlatform 在搜索/目录结果注入，
+    // 兜底识别 rawData/顶层 platform（仅接受合法平台码，防宿主展示名混入）
     function resolvePlatform(item) {
       var p = item && item._animePlatform;
       if (typeof p === 'string' && p && p !== 'all') return p;
+      var raw = item && item.rawData;
+      if (raw) {
+        p = raw._animePlatform;
+        if (typeof p === 'string' && p && p !== 'all') return p;
+      }
+      p = item && item.platform;
+      if (ANIME_PLATFORM_KEYS.indexOf(p) >= 0) return p;
+      p = raw && raw.platform;
+      if (ANIME_PLATFORM_KEYS.indexOf(p) >= 0) return p;
       return singlePlatform || undefined;
+    }
+
+    // 目录条目 id：桌面端可能传 PluginSearchResult（id 在顶层/rawData/platformId）
+    function pickId(item) {
+      if (!item) return '';
+      if (item.id != null && item.id !== '') return item.id;
+      if (item.rawData && item.rawData.id != null && item.rawData.id !== '') return item.rawData.id;
+      if (item.platformId != null && item.platformId !== '') return item.platformId;
+      return '';
+    }
+
+    function injectPlatform(item) {
+      var out = {};
+      for (var k in item) out[k] = item[k];
+      var p = item.platform || singlePlatform;
+      if (p && p !== 'all') out._animePlatform = p;
+      return out;
+    }
+
+    // am 列表信封 → musicfree 风格 {isEnd, list}
+    function envToList(env) {
+      var list = Array.isArray(env.list) ? env.list : [];
+      return {
+        isEnd: env.hasMore === false ? true : undefined,
+        list: list.map(injectPlatform),
+      };
+    }
+
+    // am 评论条目 → musicfree/Baka 风格（user→nickName、content→comment、
+    // likes→like、time 字符串→createAt 毫秒、floors→replies 楼中楼）
+    function normalizeAnimeComment(c) {
+      if (!c || typeof c !== 'object') return { nickName: '', comment: '' };
+      var out = {
+        nickName: String(c.user || c.nickname || c.userName || ''),
+        avatar: c.avatar || undefined,
+        comment: String(c.content || c.text || ''),
+        like: typeof c.likes === 'number' ? c.likes : (typeof c.like === 'number' ? c.like : undefined),
+        location: c.location || undefined,
+      };
+      var t = c.time;
+      if (typeof t === 'number') {
+        out.createAt = t;
+      } else if (typeof t === 'string' && t) {
+        var ms = Date.parse(t.indexOf('T') < 0 ? t.replace(' ', 'T') : t);
+        if (isFinite(ms)) out.createAt = ms;
+      }
+      if (Array.isArray(c.floors) && c.floors.length) {
+        out.replies = c.floors.map(normalizeAnimeComment);
+      }
+      return out;
+    }
+
+    // 无条目平台的发现类动作（toplist）：单平台直接查；聚合插件按
+    // meta.platforms ∩ 榜单支持平台并发合并（条目自带 platform）
+    function toplistPlatforms() {
+      var supported = ['wy', 'kg', 'kw'];
+      if (singlePlatform) return [singlePlatform];
+      var platforms = Array.isArray(meta.platforms) ? meta.platforms : [];
+      var targets = platforms.filter(function (p) { return supported.indexOf(p) >= 0; });
+      return targets.length ? targets : supported;
     }
 
     function envelopeError(env) {
@@ -1665,6 +1759,142 @@
           };
         });
       },
+
+      // ==================== animemusic 发现类/评论/MV（v1.1.0+ 能力） ====================
+
+      // 榜单列表（am toplist 仅 wy/kg/kw 支持；聚合插件并发合并）
+      getTopLists: function () {
+        var targets = toplistPlatforms();
+        return Promise.all(targets.map(function (p) {
+          var params = targets.length > 1 ? { platform: p } : {};
+          return callAction('toplist', params).then(function (env) {
+            var list = Array.isArray(env.list) ? env.list : [];
+            return list.map(injectPlatform);
+          }).catch(function () {
+            return [];
+          });
+        })).then(function (groups) {
+          var merged = [];
+          for (var i = 0; i < groups.length; i++) merged = merged.concat(groups[i]);
+          return merged;
+        });
+      },
+
+      getTopListDetail: function (topListItem, page) {
+        var params = { id: pickId(topListItem), page: page || 1, limit: 30 };
+        var p = resolvePlatform(topListItem);
+        if (p) params.platform = p;
+        return callAction('toplistSongs', params).then(envToList);
+      },
+
+      // 歌单详情+歌曲
+      getMusicSheetInfo: function (sheetItem, page) {
+        var params = { id: pickId(sheetItem), page: page || 1, limit: 30 };
+        var p = resolvePlatform(sheetItem);
+        if (p) params.platform = p;
+        return callAction('playlistDetail', params).then(envToList);
+      },
+
+      // 歌手热门歌曲（music）/ 歌手专辑列表（album）
+      getArtistWorks: function (artistItem, page, type) {
+        var params = { id: pickId(artistItem), page: page || 1, limit: 30 };
+        var p = resolvePlatform(artistItem);
+        if (p) params.platform = p;
+        var action = type === 'album' ? 'artistAlbums' : 'artist';
+        return callAction(action, params).then(function (env) {
+          var out = envToList(env);
+          if (type === 'album') {
+            // 桌面端专辑卡片取 title 字段，am 专辑卡只有 name，这里补别名
+            out.list = out.list.map(function (item) {
+              if (!item.title && item.name) item.title = item.name;
+              return item;
+            });
+          }
+          return out;
+        });
+      },
+
+      // 歌手简介：artist 动作 desc 常为空，空时补一发 artistDesc
+      getArtistInfo: function (artistItem) {
+        var params = { id: pickId(artistItem) };
+        var p = resolvePlatform(artistItem);
+        if (p) params.platform = p;
+        return callAction('artist', params).then(function (env) {
+          var base = function (desc) {
+            return { name: env.name || '', avatar: env.avatar || '', desc: desc, description: desc };
+          };
+          if (env.desc) return base(env.desc);
+          var descParams = { id: params.id };
+          if (p) descParams.platform = p;
+          return callAction('artistDesc', descParams).then(function (dEnv) {
+            return base(dEnv.intro || dEnv.desc || '');
+          }).catch(function () {
+            return base('');
+          });
+        });
+      },
+
+      // 专辑详情+歌曲（kw 平台上游无歌曲列表，空 list 由宿主 search 兜底）
+      getAlbumInfo: function (albumItem, page) {
+        var params = { id: pickId(albumItem), page: page || 1, limit: 30 };
+        var p = resolvePlatform(albumItem);
+        if (p) params.platform = p;
+        return callAction('album', params).then(envToList);
+      },
+
+      // 歌曲评论（am 仅 wy/bilibili 有真实评论，其余平台空结果不报错）
+      getMusicComments: function (musicItem, page) {
+        var pageNum = page || 1;
+        var params = { id: pickId(musicItem), page: pageNum, limit: 20 };
+        var p = resolvePlatform(musicItem);
+        if (p) params.platform = p;
+        return callAction('comment', params).then(function (env) {
+          var hot = pageNum === 1 && Array.isArray(env.hot) ? env.hot : [];
+          var list = Array.isArray(env.list) ? env.list : [];
+          return {
+            isEnd: list.length < 20,
+            data: hot.concat(list).map(normalizeAnimeComment),
+          };
+        });
+      },
+
+      // MV：mvSearch 按歌名匹配 → mvUrl 取直链。宿主把空结果视为「无 MV」
+      // （非异常），因此搜索无命中时返回 null 而非抛错，避免探测误判存疑
+      getMvSource: function (musicItem, quality) {
+        var title = String((musicItem && (musicItem.title || musicItem.name)) || '').trim();
+        if (!title) return Promise.resolve(null);
+        var params = { keyword: title, limit: 10 };
+        var p = resolvePlatform(musicItem);
+        if (p) params.platform = p;
+        return callAction('mvSearch', params).then(function (env) {
+          var list = Array.isArray(env.list) ? env.list : [];
+          var t = title.toLowerCase();
+          var artist = musicItem && musicItem.artist ? String(musicItem.artist).toLowerCase() : '';
+          var best = null;
+          var bestScore = 0;
+          for (var i = 0; i < list.length; i++) {
+            var it = list[i];
+            var itTitle = String(it.title || '').toLowerCase();
+            var score = 0;
+            if (itTitle === t) score = 4;
+            else if (itTitle && (itTitle.indexOf(t) >= 0 || t.indexOf(itTitle) >= 0)) score = 3;
+            else if (itTitle.length >= 8 && t.slice(0, 8) === itTitle.slice(0, 8)) score = 2;
+            if (score <= 0) continue;
+            var itArtist = String(it.artist || '').toLowerCase();
+            if (artist && itArtist && (itArtist.indexOf(artist) >= 0 || artist.indexOf(itArtist) >= 0)) score += 1;
+            score += Math.min((Number(it.playCount) || 0) / 1e8, 0.5);
+            if (score > bestScore) { bestScore = score; best = it; }
+          }
+          if (!best) return null;
+          var urlParams = { id: best.id, videoQuality: toAnimeVideoQuality(quality) };
+          var mp = best.platform || p;
+          if (mp) urlParams.platform = mp;
+          return callAction('mvUrl', urlParams).then(function (uEnv) {
+            if (!uEnv || !uEnv.url) return null;
+            return { url: String(uEnv.url), quality: toAnimeVideoQuality(quality) };
+          });
+        });
+      },
     };
   }
 
@@ -1733,8 +1963,18 @@
       var m = MF_ALL_METHOD_NAMES[i];
       if (typeof methodEnumTarget[m] === 'function') availableMethods.push(m);
     }
-    if (isAnime && typeof instance.call === 'function' && availableMethods.indexOf('call') < 0) {
-      availableMethods.push('call');
+    if (isAnime) {
+      // 目录/评论/MV 方法由适配器实现，暴露给宿主 catalog 链路路由；
+      // search/getMediaSource/getLyric 仍不暴露，避免 anime 被误当
+      // musicfree 插件走通用搜索路径（与 TS 侧 animePluginEngine 双重适配）
+      for (var ai = 0; ai < ANIME_CATALOG_METHODS.length; ai++) {
+        if (availableMethods.indexOf(ANIME_CATALOG_METHODS[ai]) < 0) {
+          availableMethods.push(ANIME_CATALOG_METHODS[ai]);
+        }
+      }
+      if (typeof instance.call === 'function' && availableMethods.indexOf('call') < 0) {
+        availableMethods.push('call');
+      }
     }
 
     return JSON.stringify({
