@@ -3580,6 +3580,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _player.stop();
     } catch (_) {}
     state = const PlaybackState();
+    // 同步落盘空会话，防止下次启动恢复出已清空的队列
+    await _persistSession();
   }
 
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
@@ -4034,7 +4036,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final dbPath = await _ref.read(dbPathProvider.future);
       final settings = _ref.read(settingsProvider).valueOrNull;
       final item = state.current;
-      if (item == null || state.queue.isEmpty) return;
+      if (item == null || state.queue.isEmpty) {
+        // 空队列（如清空播放队列后）也要落盘空会话，否则旧会话残留
+        // 会在下次启动被 _restoreSession 原样恢复，表现为队列清不掉
+        await savePlaybackSession(
+          dbPath: dbPath,
+          sessionJson: jsonEncode({
+            'currentSongPath': '',
+            'playQueuePaths': <String>[],
+            'sourceSongPaths': <String>[],
+            'playMode': 0,
+            'volume': (settings?.volume ?? 1.0) * 100.0,
+            'currentPositionSecs': 0.0,
+            'isPlaying': false,
+            'sessionQualityOverride': null,
+            'queueSongMeta': <String, dynamic>{},
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          }),
+        );
+        return;
+      }
 
       final Map<String, dynamic> queueSongMeta = {};
       for (final q in state.queue) {
