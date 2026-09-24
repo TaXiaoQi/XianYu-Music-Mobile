@@ -381,10 +381,17 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       case 'en':
         return I18nMode.en;
       case 'zh':
+        // 繁体命中链：zh-Hant（系统选「繁體中文」通用项，无地区码）/
+        // zh-TW / zh-HK / zh-MO。只看 countryCode 会漏掉 zh-Hant，
+        // 导致必须选「繁體中文(台灣)」才能切到繁体。
         final cc = first.countryCode;
-        return (cc == 'TW' || cc == 'HK' || cc == 'MO')
-            ? I18nMode.zhTw
-            : I18nMode.zhCn;
+        if (first.scriptCode == 'Hant' ||
+            cc == 'TW' ||
+            cc == 'HK' ||
+            cc == 'MO') {
+          return I18nMode.zhTw;
+        }
+        return I18nMode.zhCn;
     }
     return I18nMode.zhCn;
   }

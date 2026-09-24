@@ -30,7 +30,6 @@ android {
 
     defaultConfig {
         applicationId = "com.xianyumusic.app"
-        manifestPlaceholders["appLabel"] = "弦予音乐"
         minSdk = flutter.minSdkVersion
         // 见 compileSdk 注释：预测返回进度需要 targetSdk 37
         targetSdk = 37
@@ -74,8 +73,8 @@ android {
         // xianyu:// 深链与文件打开会同时命中两包，系统弹「打开方式」选择框属预期。
         debug {
             applicationIdSuffix = ".debug"
-            // debug 应用显示名加「·测试」后缀，与 release 正式版在一屏内可区分
-            manifestPlaceholders["appLabel"] = "弦予音乐·测试"
+            // debug 应用显示名带「·测试」后缀，与 release 正式版在一屏内可区分
+            // （src/debug/res 覆盖 app_name，三语言对齐 main 的 values-en/values-zh-rTW）
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
@@ -83,7 +82,6 @@ android {
             }
         }
         release {
-            manifestPlaceholders["appLabel"] = "弦予音乐"
             // key.properties 存在时用专用 release 密钥签名，缺失时回退 debug 签名
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
@@ -116,6 +114,14 @@ dependencies {
     // 腕上端应用。宿主服务为华为运动健康，授权弹窗由运动健康承载。
     // 版本号可按官方「版本更新说明」页升级。
     implementation("com.huawei.hms:wearengine:5.0.2.306")
+}
+
+// wearengine 仅发布在华为 maven 仓。Flutter Gradle 插件会在 project 级注入
+// 仓库列表（google/mavenCentral/flutter 存储），使 settings 里
+// dependencyResolutionManagement 声明的仓库被整体忽略（PREFER_PROJECT 默认
+// 模式），因此华为仓必须在这里补进 :app 的 project 级列表才能被解析到。
+repositories {
+    maven { url = uri("https://developer.huawei.com/repo/") }
 }
 
 // 禁用 lint 关键检查 task（避免构建时从 dl.google.com 下载 lint 依赖超时）

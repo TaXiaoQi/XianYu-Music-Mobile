@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 桌面图标名（application label）：默认简中；values-en / values-zh-rTW 按系统语言切换 -->
+    <string name="app_name">弦予音乐</string>
     <string name="widget_label">弦予播放</string>
     <string name="widget_square_label">弦予播放·方形</string>
     <string name="widget_recognize_label">弦予播放·识曲</string>

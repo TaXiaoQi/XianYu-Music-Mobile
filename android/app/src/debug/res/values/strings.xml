@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- debug 变体覆盖：图标名带「·测试」后缀，与 release 一屏可区分（三语言对齐 main） -->
+    <string name="app_name">弦予音乐·测试</string>
+</resources>
