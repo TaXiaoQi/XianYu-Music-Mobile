@@ -81,6 +81,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   bool _capturing = false;
   Timer? _idleDebounce;
 
+  /// 转场收尾冷却：markTransitionActivity 的 400ms 窗口短于部分路由动画
+  /// （如播放页 450ms），窗口过期后的 idle 截图会把收尾动画中的画面
+  /// （播放页下滑的深色残影）定格进 _frozen，静止期间持续显示深色玻璃，
+  /// 直到滚动/切页才恢复。转场结束后冷却期内禁止截图，玻璃保持 live。
+  DateTime _captureCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
   late final AnimationController _fade;
 
   late final AnimationController _ripple;
@@ -117,6 +123,19 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (!mounted) return;
     if (_routeTransition == globalIsTransitioning.value) return;
     setState(() => _routeTransition = globalIsTransitioning.value);
+    if (_routeTransition) return;
+    // 转场收尾：丢弃遗留快照（可能在隐藏期/收尾动画中采到深色残像），
+    // 强制回 live 重绘；截图进入冷却期，确保下次截图只发生在画面稳定后。
+    _idleDebounce?.cancel();
+    _captureCooldownUntil =
+        DateTime.now().add(const Duration(milliseconds: 700));
+    final old = _frozen;
+    if (old != null) {
+      _frozen = null;
+      // 快照可能仍被本帧 scene 引用，延迟到本帧渲染后再释放。
+      SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+      setState(() {});
+    }
   }
 
   /// 冻结快照的唯一定时释放点。渲染层只解除引用不释放（见
@@ -239,6 +258,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   Future<void> _capture() async {
     if (_capturing || !mounted || _frozen != null) return;
+    if (DateTime.now().isBefore(_captureCooldownUntil)) return;
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is! RenderRepaintBoundary) return;
     if (ro.debugNeedsPaint) {
