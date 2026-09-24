@@ -722,9 +722,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
                 lyric['yrc'] ??
                 lyric['qrc'] ??
                 lyric['eslrc'] ??
-                lyric['lyric']) as String? ??
+                lyric['lyric'] ??
+                lyric['rawLrc']) as String? ??
             ''
-        : (lyric['lyric'] as String?) ?? '';
+        : ((lyric['lyric'] ?? lyric['rawLrc']) as String?) ?? '';
     // 未解密的加密密文（QQ/酷我对特定歌曲返回 QRC/e-lrc hex）不能落盘
     if (text.isEmpty || pluginLyricLooksEncrypted(text)) return null;
     return text;

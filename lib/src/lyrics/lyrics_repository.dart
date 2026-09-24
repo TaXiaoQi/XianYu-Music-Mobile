@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db_path.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
+import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_provider.dart';
 import '../rust/api.dart';
 import 'lyric_model.dart';
@@ -109,12 +110,15 @@ class LyricsRepository {
 
   Future<Map<String, String>?> _fetchNativeLyricResult(QueueItem item) async {
     Map<String, dynamic>? songInfo;
+    String? pluginId;
     final online = item.onlineSongJson;
     if (online != null && online.isNotEmpty) {
       try {
         final parsed = jsonDecode(online) as Map<String, dynamic>;
         final musicInfo = parsed['musicInfo'];
         if (musicInfo is Map<String, dynamic>) songInfo = musicInfo;
+        final pid = parsed['pluginId'] as String?;
+        if (pid != null && pid.isNotEmpty) pluginId = pid;
       } catch (_) {}
     }
     if (songInfo == null && item.onlineInfoJson != null) {
@@ -123,10 +127,32 @@ class LyricsRepository {
       } catch (_) {}
     }
     if (songInfo == null || songInfo.isEmpty) return null;
-    final sourceKey = (songInfo['source'] ?? songInfo['platform']) as String? ??
+    var sourceKey = (songInfo['source'] ?? songInfo['platform']) as String? ??
         item.source ??
         '';
-    if (!_nativeLyricSources.contains(sourceKey)) return null;
+    if (!_nativeLyricSources.contains(sourceKey)) {
+      // musicInfo 无平台标签（Baka 系 musicfree 插件的歌曲对象不带
+      // source/platform）时回退插件元数据：meta.platform 形如「QQ音乐[L1]」，
+      // 归一化映射到原生源 key（'tx'）——与换源空标签修复同一思路。
+      // 否则此处静默 return null，原生兜底失效、歌词直接为空。
+      if (sourceKey.trim().isEmpty && pluginId != null && pluginId.isNotEmpty) {
+        try {
+          final engine = await _ref.read(pluginEngineProvider.future);
+          final sources = await engine.store.loadSources();
+          final matches = sources.where((s) => s.id == pluginId).toList();
+          if (matches.isNotEmpty) {
+            final meta = await engine.ensureLoaded(matches.first) ?? const {};
+            final label = <String?>[
+              meta['platform']?.toString(),
+              meta['pluginName']?.toString(),
+              matches.first.name,
+            ].firstWhere((e) => (e ?? '').trim().isNotEmpty, orElse: () => null);
+            sourceKey = lxSourceKeyForPlatform(label ?? '');
+          }
+        } catch (_) {}
+      }
+      if (!_nativeLyricSources.contains(sourceKey)) return null;
+    }
     try {
       final raw = await fetchLyricFromSource(
         source: sourceKey,
@@ -168,13 +194,16 @@ class LyricsRepository {
   }
 }
 
-/// 插件歌词结果的主文本挑选：lxlyric（逐字）→ yrc → qrc → eslrc → lyric。
+/// 插件歌词结果的主文本挑选：lxlyric（逐字）→ yrc → qrc → eslrc → lyric → rawLrc。
+/// rawLrc 是 Baka 系 musicfree 插件（如 QQ音乐[L1]）的歌词字段——新接口带
+/// crypt:1 时返回未解密的 QRC hex 密文，由上层 pluginLyricLooksEncrypted 拦截。
 String pickPluginMainText(Map<String, dynamic> res) {
   return (res['lxlyric'] ??
           res['yrc'] ??
           res['qrc'] ??
           res['eslrc'] ??
-          res['lyric']) as String? ??
+          res['lyric'] ??
+          res['rawLrc']) as String? ??
       '';
 }
 

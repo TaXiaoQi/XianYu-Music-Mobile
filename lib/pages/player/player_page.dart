@@ -2338,7 +2338,8 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
               lyric['yrc'] ??
               lyric['qrc'] ??
               lyric['eslrc'] ??
-              lyric['lyric']) as String? ??
+              lyric['lyric'] ??
+              lyric['rawLrc']) as String? ??
           '';
       return pluginLyricLooksEncrypted(text) ? '' : text;
     } catch (_) {
@@ -5723,7 +5724,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
               lyric['yrc'] ??
               lyric['qrc'] ??
               lyric['eslrc'] ??
-              lyric['lyric']) as String? ??
+              lyric['lyric'] ??
+              lyric['rawLrc']) as String? ??
           '';
       return pluginLyricLooksEncrypted(text) ? '' : text;
     } catch (_) {
