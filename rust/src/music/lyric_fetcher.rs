@@ -445,8 +445,10 @@ fn des_key_schedule(key: &[u8], mode: u32) -> [[u8; 6]; 16] {
 
     for i in 0..16 {
         let shift = key_rnd_shift[i];
-        c = ((c << shift) | (c >> (28 - shift))) & 0x0fffffff;
-        d = ((d << shift) | (d >> (28 - shift))) & 0x0fffffff;
+        // BakaMusic 原版掩码 0xfffffff0：c/d 有效位域在高 28 位（bit 31..4），
+        // 清低 4 位；此前误写 0x0fffffff 会清掉高位数据导致 key schedule 错误
+        c = ((c << shift) | (c >> (28 - shift))) & 0xfffffff0;
+        d = ((d << shift) | (d >> (28 - shift))) & 0xfffffff0;
         let togen = if mode == 0 { 15 - i } else { i };
         for j in 0..6 {
             schedule[togen][j] = 0;
@@ -463,63 +465,48 @@ fn des_key_schedule(key: &[u8], mode: u32) -> [[u8; 6]; 16] {
     schedule
 }
 
-type DesSchedule = [[u8; 6]; 16];
+// QQ 客户端三把自定义 DES 密钥（移植自 BakaMusic lyric-decrypt.ts，同源于
+// MusicFree 移动端 customDES.ts；16 字节写法中仅前 8 字节参与 DES 位寻址）
+const QRC_KEY1: &[u8; 8] = b"!@#)(NHL";
+const QRC_KEY2: &[u8; 8] = b"123ZXC!@";
+const QRC_KEY3: &[u8; 8] = b"!@#)(*$%";
 
-fn triple_des_key_setup(key: &[u8], mode: u32) -> [DesSchedule; 3] {
-    let key0 = &key[0..8];
-    let key8 = &key[8..16];
-    let key16 = &key[16..24];
-    if mode == 1 {
-        [
-            des_key_schedule(key0, 1),
-            des_key_schedule(key8, 0),
-            des_key_schedule(key16, 1),
-        ]
-    } else {
-        [
-            des_key_schedule(key16, 0),
-            des_key_schedule(key8, 1),
-            des_key_schedule(key0, 0),
-        ]
-    }
-}
-
-fn triple_des_crypt(data: &[u8], key_schedule: &[DesSchedule; 3]) -> [u8; 8] {
-    let mut temp = [0u8; 8];
-    temp.copy_from_slice(&data[0..8]);
-    for i in 0..3 {
-        temp = des_crypt(&temp, &key_schedule[i]);
-    }
-    temp
-}
-
+/// 解密插件/原生接口返回的 QQ QRC 加密歌词密文（hex）。
+/// 算法与 BakaMusic 一致：D(KEY1) -> E(KEY2) -> D(KEY3) 三段自定义 DES，
+/// 产物为标准 zlib 流（老密文偶见 sync-flush/裸 deflate 变体，保留多路尝试）。
 pub(crate) fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
-    let encrypted_bytes = hex_to_bytes(encrypted_hex);
+    let encrypted_hex = encrypted_hex.trim();
+    if encrypted_hex.is_empty() || encrypted_hex.len() % 2 != 0 {
+        return Err("Invalid hex data".to_string());
+    }
+    let mut encrypted_bytes = hex_to_bytes(encrypted_hex);
     if encrypted_bytes.is_empty() {
         return Err("No data to decrypt".to_string());
     }
-    let qrc_key = b"!@#)(*$%123ZXC!@!@#)(NHL";
-    let schedule = triple_des_key_setup(qrc_key, 0);
 
-    let mut decrypted_bytes = vec![0u8; encrypted_bytes.len()];
-    let mut i = 0;
-    while i < encrypted_bytes.len() {
-        let block_len = std::cmp::min(8, encrypted_bytes.len() - i);
+    // mode: 0 = 解密（schedule 逆序生成），1 = 加密
+    let schedule = [
+        des_key_schedule(QRC_KEY1, 0),
+        des_key_schedule(QRC_KEY2, 1),
+        des_key_schedule(QRC_KEY3, 0),
+    ];
+    for chunk in encrypted_bytes.chunks_exact_mut(8) {
         let mut block = [0u8; 8];
-        block[..block_len].copy_from_slice(&encrypted_bytes[i..i + block_len]);
-        let decrypted = triple_des_crypt(&block, &schedule);
-        decrypted_bytes[i..i + block_len].copy_from_slice(&decrypted[..block_len]);
-        i += 8;
+        block.copy_from_slice(chunk);
+        for key in &schedule {
+            block = des_crypt(&block, key);
+        }
+        chunk.copy_from_slice(&block);
     }
 
-    // 桌面端同款多格式解压尝试（QQ QRC 实际为 zlib sync-flush 变体，单一裸
-    // deflate 会报 corrupt deflate stream）
+    // 解压：正确密钥下产物为标准 zlib 流（BakaMusic 用 pako.inflate），
+    // 保留多格式尝试兜底老变体
     for attempt in [
-        decompress_zlib_sync_flush(&decrypted_bytes),
-        decompress_zlib_to_bytes(&decrypted_bytes),
-        decompress_deflate_to_bytes(&decrypted_bytes),
-        decompress_zlib_to_bytes_skip_header(&decrypted_bytes),
-        decompress_gzip_to_bytes(&decrypted_bytes),
+        decompress_zlib_to_bytes(&encrypted_bytes),
+        decompress_zlib_sync_flush(&encrypted_bytes),
+        decompress_deflate_to_bytes(&encrypted_bytes),
+        decompress_zlib_to_bytes_skip_header(&encrypted_bytes),
+        decompress_gzip_to_bytes(&encrypted_bytes),
     ] {
         if let Ok(bytes) = attempt {
             if !bytes.is_empty() {
@@ -2331,4 +2318,19 @@ pub async fn fetch_lyric_from_source(
         _ => return Ok(None),
     };
     Ok(result)
+}
+
+#[cfg(test)]
+mod qrc_roundtrip_tests {
+    use super::qrc_decrypt;
+
+    /// 密文由 BakaMusic lyric-decrypt.ts 同款 JS 实现（Node + zlib.deflateSync）
+    /// 对 fixtures/lyrics/baby.qrc 加密生成，验证 Rust 移植与 BakaMusic 等价。
+    #[test]
+    fn qrc_decrypt_roundtrip_baka_music_sample() {
+        let hex = "28feb85c1e5b0aee52751548debf8cec52f70ac1da86688e31bcd4d2a45cb2c8160f5c250523e901f07ebf7fe6d77f6faa0f5043b807fcc537f7187d35c7679b37036be3184b3105526561110e1753714a7e6d1d7f17b0b2a10fe8c072d2e43ef5ec7d25bc331953a9ca7bf72bc291aa1c86176920dd579407719661fa2779178156cd4d9c435d39b7d92fad21e1e16de1096ea95d514b6e9d649c010e4f4003d763cf03ee9144d0ee69b070891a4636";
+        let decrypted = qrc_decrypt(hex).expect("decrypt failed");
+        let expected = include_str!("fixtures/lyrics/baby.qrc");
+        assert_eq!(decrypted.trim(), expected.trim());
+    }
 }

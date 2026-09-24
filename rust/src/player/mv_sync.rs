@@ -503,7 +503,7 @@ mod tests {
         mv.extend_from_slice(&song_base[..song_base.len()]);
         mv.extend_from_slice(&vec![0.04_f32; 60]);
 
-        let mv_start = sliding_window_align(&mv, &song_win).unwrap();
+        let mv_start = sliding_window_align(&mv, &song_win, 0, mv.len() - song_win.len()).unwrap();
         let conf = mv_start_confidence(&mv, &song_win, mv_start);
         // 理想位置：mv = pad + song_base，窗在 song_base 内头位移 head_offset
         let expect = pad + head_offset;
