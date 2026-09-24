@@ -1681,10 +1681,21 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                 }
             }
         }
-    }
 
-    if lyric.is_empty() && lxlyric.is_empty() {
-        return Ok(None);
+        if lyric.is_empty() && lxlyric.is_empty() {
+            // 诊断上抛：两条 QQ 接口都无歌词时，把响应摘要带给 Dart 侧日志，
+            // 否则静默 Ok(None) 无法区分风控/参数/解析问题
+            let truncate = |s: &str, n: usize| -> String {
+                s.chars().take(n).collect::<String>().replace('\n', " ")
+            };
+            return Err(format!(
+                "tx 无歌词 songmid={songmid} songID={song_id_num} main_status={} main_body={} legacy_status={} legacy_body={}",
+                resp.status,
+                truncate(&resp.body, 200),
+                old_resp.status,
+                truncate(&old_resp.body, 160),
+            ));
+        }
     }
 
     Ok(Some(LyricResult {
