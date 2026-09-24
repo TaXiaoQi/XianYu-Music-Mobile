@@ -123,6 +123,23 @@ class PluginInstallResult {
   bool get success => names.isNotEmpty;
 }
 
+/// 取第一个非空白的文本值（null/空串/空白都视为缺失，回退下一项）。
+String? _firstNonEmptyText(Iterable<Object?> values) {
+  for (final v in values) {
+    if (v == null) continue;
+    final s = v.toString().trim();
+    if (s.isNotEmpty) return s;
+  }
+  return null;
+}
+
+/// 插件展示名：历史版本可能把空串存成名字（musicfree 插件的 pluginName
+/// 恒为 ''，真名在 platform 字段），展示时空名回退为「未知插件」。
+String pluginDisplayName(PluginSource source) {
+  final s = source.name.trim();
+  return s.isNotEmpty ? s : tr('未知插件');
+}
+
 class PluginManager extends StateNotifier<PluginListState> {
   PluginManager(this._ref) : super(const PluginListState());
 
@@ -189,9 +206,16 @@ class PluginManager extends StateNotifier<PluginListState> {
     final path = await engine.store.saveScript(id, trimmed);
 
     final sources = _extractSources(isLx, metadata);
-    final fallbackName = isLx
-        ? (info['name'] ?? fileName ?? tr('未知插件'))
-        : ((metadata['pluginName'] ?? metadata['platform']) ?? fileName ?? tr('未知插件'));
+    // 名称回退链需跳过空串/空白：musicfree 插件的 pluginName 恒为 ''（真名在
+    // platform 字段），空串不是 null，`??` 不会回退，导致本地导入插件无名字。
+    final fallbackName = _firstNonEmptyText(isLx
+            ? [info['name'], fileName]
+            : [
+                metadata['pluginName'],
+                metadata['platform'],
+                fileName,
+              ]) ??
+        tr('未知插件');
     final mAuthor = isLx
         ? (info['author'] ?? '')
         : (metadata['author']?.toString() ?? '');

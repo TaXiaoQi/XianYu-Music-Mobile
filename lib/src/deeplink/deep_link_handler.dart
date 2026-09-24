@@ -492,8 +492,13 @@ class XianYuDeepLink {
       await _waitNavigatorContext();
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
+        // 名字异常缺失时退化为不带冒号的短提示，避免「插件已导入：」悬空冒号。
+        final shownName = source.name.trim();
         showXianYuToastByOverlay(
-            overlay, tr('插件已导入：{name}', {'name': source.name}));
+            overlay,
+            shownName.isEmpty
+                ? tr('插件已导入')
+                : tr('插件已导入：{name}', {'name': shownName}));
       }
       if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
         router.push('/plugin');

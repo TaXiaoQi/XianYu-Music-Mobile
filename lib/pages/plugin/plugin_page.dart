@@ -919,7 +919,7 @@ class _PluginCard extends ConsumerWidget {
           children: [
             Flexible(
               child: Text(
-                source.name,
+                pluginDisplayName(source),
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.w600),
                 overflow: TextOverflow.ellipsis,
@@ -1291,7 +1291,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(source.name,
+                        Text(pluginDisplayName(source),
                             style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.w700),
                             overflow: TextOverflow.ellipsis),

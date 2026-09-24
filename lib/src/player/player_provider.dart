@@ -487,7 +487,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   final Ref _ref;
-  final AudioPlayer _player = _GatedAudioPlayer();
+  // 非.final：平台主线程被挂死的 ExoPlayer release 阻塞时（楔死），需整体
+  // 重建播放器实例（新 UUID 不与原生残留注册撞号）才能恢复，见 _rebuildPlayer。
+  AudioPlayer _player = _GatedAudioPlayer();
+  bool _rebuildingPlayer = false;
   String? _activeProbeKey;
   final Random _rand = Random();
   StreamSubscription<Duration?>? _posSub;
@@ -558,7 +561,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> _init() async {
+  /// 订阅当前 _player 的五路流（位置/时长/播放态/处理态/错误）。
+  /// 楔死重建换新实例后必须重跑，否则 UI 与统计全部失聪。
+  void _subscribePlayerStreams() {
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _stateSub?.cancel();
+    _procSub?.cancel();
+    _errSub?.cancel();
     _posSub = _player.positionStream.listen((p) {
       final pos = p.inMilliseconds / 1000.0;
       state = state.copyWith(position: pos);
@@ -573,34 +583,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (dur <= 0 && state.duration > 0) return;
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
-    });
-    AudioSession.instance.then((session) async {
-      // 声明为音乐媒体会话（USAGE_MEDIA + CONTENT_TYPE_MUSIC）。不配置时系统
-      // 收到 CONTENT_TYPE_UNKNOWN，鸿蒙播控中心/系统媒体卡片不会把它当音乐播控源，
-      // 表现为通知栏可见但控制中心「未在播放」。
-      try {
-        await session.configure(const AudioSessionConfiguration.music());
-      } catch (e) {
-        AppLog.warn('audio_session', 'configure failed: $e');
-      }
-      _interruptionSub = session.interruptionEventStream.listen((event) async {
-        if (!event.begin) {
-          if (_interruptedByInterruption) {
-            _interruptedByInterruption = false;
-            await _player.play();
-          }
-          return;
-        }
-        if (event.type == AudioInterruptionType.duck) return;
-        if (event.type == AudioInterruptionType.unknown && mvSuppressFocusLoss) {
-          AppLog.warn('playgate', 'ignore focus loss (mv active)');
-          return;
-        }
-        if (state.isPlaying) {
-          _interruptedByInterruption = true;
-          await _player.pause();
-        }
-      });
     });
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
@@ -631,6 +613,83 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _onPlaybackError(e);
       },
     );
+  }
+
+  /// 楔死探测：向 xianyu/diag 发一次 ping（原生主线程执行，notImplemented
+  /// 也算响应）。2s 内无任何回包说明主线程被挂死的 ExoPlayer release/dispose
+  /// 阻塞——表现为 setUrl 静默挂到起播超时（proc=idle、buffered=0、exodump
+  /// 无任何加载任务）。用 diag 通道而非 player 自身调用：stop 后平台可能
+  /// 已降级到 idle 代理，player 调用会「假成功」探测不到楔死。
+  Future<void> _probeAndRebuild(String reason) async {
+    if (_rebuildingPlayer) return;
+    try {
+      await const MethodChannel('xianyu/diag')
+          .invokeMethod<Object>('ping')
+          .timeout(const Duration(seconds: 2));
+      return; // 主线程有响应，不重建
+    } on TimeoutException {
+      // 主线程无响应 → 楔死，走重建
+    } catch (_) {
+      return; // notImplemented/MissingPlugin 等错误同样证明通道有响应
+    }
+    await _rebuildPlayer(reason);
+  }
+
+  /// 重建播放器实例：旧实例 native 侧可能已永久挂死，且其 dispose 通道调用
+  /// 不可信，因此直接弃用换新（新 UUID 不与原生残留注册撞号，主线程恢复后
+  /// 即可正常工作）。dispose 用超时保护，绝不阻塞重建本身。
+  Future<void> _rebuildPlayer(String reason) async {
+    if (_rebuildingPlayer) return;
+    _rebuildingPlayer = true;
+    try {
+      final old = _player;
+      AppLog.warn('play', '[player-rebuild] 重建播放器通道 reason=$reason');
+      unawaited(old.dispose().catchError((_) {}).timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {
+              AppLog.warn('play', '[player-rebuild] 旧实例 dispose 挂起，放弃等待');
+            },
+          ));
+      _player = _GatedAudioPlayer();
+      _subscribePlayerStreams();
+      try {
+        await _player.setVolume(_effectiveVolume())
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    } finally {
+      _rebuildingPlayer = false;
+    }
+  }
+
+  Future<void> _init() async {
+    AudioSession.instance.then((session) async {
+      // 声明为音乐媒体会话（USAGE_MEDIA + CONTENT_TYPE_MUSIC）。不配置时系统
+      // 收到 CONTENT_TYPE_UNKNOWN，鸿蒙播控中心/系统媒体卡片不会把它当音乐播控源，
+      // 表现为通知栏可见但控制中心「未在播放」。
+      try {
+        await session.configure(const AudioSessionConfiguration.music());
+      } catch (e) {
+        AppLog.warn('audio_session', 'configure failed: $e');
+      }
+      _interruptionSub = session.interruptionEventStream.listen((event) async {
+        if (!event.begin) {
+          if (_interruptedByInterruption) {
+            _interruptedByInterruption = false;
+            await _player.play();
+          }
+          return;
+        }
+        if (event.type == AudioInterruptionType.duck) return;
+        if (event.type == AudioInterruptionType.unknown && mvSuppressFocusLoss) {
+          AppLog.warn('playgate', 'ignore focus loss (mv active)');
+          return;
+        }
+        if (state.isPlaying) {
+          _interruptedByInterruption = true;
+          await _player.pause();
+        }
+      });
+    });
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (state.isPlaying) {
         _flushPlayStats();
@@ -2223,17 +2282,36 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   /// MV 音频接管时置 true：外部歌曲音频被静音，交由 MV 自带音轨出声。
   bool _mvAudioOverride = false;
 
-  /// 设置 MV 音频接管开关。接管时歌曲音频静音，退出时恢复。
+  /// MV 交叉淡化进行中的歌曲通道增益（1.0 正常，0.0 完全静音）。
+  double _mvSongGain = 1.0;
+
+  /// 设置 MV 音频接管开关。接管时交由 MV 自带音轨出声，退出时还原歌曲通道。
+  /// 本身不瞬静也不瞬切：歌曲通道与 USB/DSP 管线音量始终跟随 `setMvSongGain`
+  /// 的增益，由调用方驱动交叉淡化。
   /// DSP 共享管线 / USB 独占输出不经 _player，需同步作用到 Rust 管线音量，
   /// 否则接管后歌曲照常从该管线出声，与 MV 音轨叠播。
   Future<void> setMvAudioOverride(bool value) async {
     if (_mvAudioOverride == value) return;
     _mvAudioOverride = value;
+    if (!value) _mvSongGain = 1.0;
     await _player.setVolume(_effectiveVolume());
     if (state.usbExclusive || state.dspActive) {
       try {
         await setUsbExclusiveVolume(
-            volume: value ? 0.0 : _ref.read(volumeProvider));
+            volume: _ref.read(volumeProvider) * _mvSongGain);
+      } catch (_) {}
+    }
+  }
+
+  /// MV 交叉淡化：调节歌曲通道增益（1.0 正常，0.0 静音），与 MV 音轨音量
+  /// 反向同步变化，形成等功率交叉淡化。USB/DSP 管线音量按比例同步缩放。
+  Future<void> setMvSongGain(double gain) async {
+    _mvSongGain = gain.clamp(0.0, 1.0);
+    await _player.setVolume(_effectiveVolume());
+    if (state.usbExclusive || state.dspActive) {
+      try {
+        await setUsbExclusiveVolume(
+            volume: _ref.read(volumeProvider) * _mvSongGain);
       } catch (_) {}
     }
   }
@@ -2241,7 +2319,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   double _effectiveVolume() =>
       (_ref.read(volumeProvider) *
               _effectiveBalanceGain() *
-              (_mvAudioOverride ? 0.0 : 1.0))
+              (_mvAudioOverride ? _mvSongGain : 1.0))
           .clamp(0.0, 4.0);
 
   double _effectiveBalanceGain() {
@@ -2558,7 +2636,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           .timeout(const Duration(seconds: 2), onTimeout: () {
         AppLog.warn('play', '[startOnlineUrl] 超时后 stop 也挂起（控制通道被占）');
       }));
+      // 超时 + stop 假成功常意味着原生主线程被挂死 release 阻塞（ExoPlayer
+      // 无任何加载任务、setUrl 静默挂满 10s）：探测楔死并重建播放器通道。
+      unawaited(_probeAndRebuild('[startOnlineUrl] 起播超时'));
       throw _StartOnlineTimeoutException(tr('音源起播超时，已跳过'));
+    } on PlatformException catch (e) {
+      // 原生注册表异常（如 Platform player already exists）：此前未捕获会
+      // 冒泡成未处理异常刷 *** 堆栈。走正常失败流程并探测楔死。
+      AppLog.error('play', '[startOnlineUrl] 平台通道异常 code=${e.code}');
+      unawaited(_probeAndRebuild('平台通道异常 ${e.code}'));
+      throw StateError(tr('播放器通道异常'));
     }
     final declaredMs = item.durationMs;
     final actualMs = _player.duration?.inMilliseconds ?? 0;
@@ -2813,6 +2900,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _failedSources.clear();
     }
     if (item.title.trim().isEmpty) return false;
+    AppLog.info('autoswitch', '起播失败自动换源: ${item.title}');
 
     if (await _switchViaSiblingPlatform(item)) return true;
 
@@ -2830,11 +2918,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (sm is Map<String, dynamic>) {
             label = (sm['platform'] ?? sm['source'])?.toString() ?? '';
           }
+          if (label.trim().isEmpty) {
+            final pid = sj?['pluginId'] as String?;
+            if (pid != null && pid.isNotEmpty) {
+              final engine = await _ref.read(pluginEngineProvider.future);
+              label = await _platformLabelFromPluginMeta(engine, pid);
+              if (label.isNotEmpty) {
+                AppLog.info('autoswitch',
+                    'musicInfo 无平台标签，回退插件元数据: $label');
+              }
+            }
+          }
         } catch (_) {}
       }
       curKey = lxSourceKeyForPlatform(label);
     }
-    if (curKey.isEmpty) return false;
+    if (curKey.isEmpty) {
+      AppLog.warn('autoswitch', '无法识别平台标签，放弃落雪换源: ${item.title}');
+      return false;
+    }
     _failedSources.add(curKey);
 
     final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
@@ -2875,6 +2977,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _qualityCandidates(preferred, fb),
       );
       if (url == null) {
+        AppLog.warn('autoswitch', '落雪换源候选解析失败: $srcId');
         _failedSources.add(srcId);
         continue;
       }
@@ -2908,6 +3011,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _reportBehavior(newItem, 'play', 0);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
+      AppLog.info('autoswitch', '落雪换源命中: $srcId');
       _showPlaybackToast(
           tr('已自动切换到 {source} 音源', {'source': sourceLabels[srcId] ?? srcId}));
       return true;
@@ -2934,6 +3038,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           _ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ??
               '320k';
 
+      var labelOverride = _songPlatformLabel(format, sourceKey, musicInfo);
+      if (labelOverride.trim().isEmpty) {
+        labelOverride = await _platformLabelFromPluginMeta(engine, pluginId);
+        if (labelOverride.isNotEmpty) {
+          AppLog.info('autoswitch',
+              'musicInfo 无平台标签，回退插件元数据: $labelOverride');
+        }
+      }
+      final override = labelOverride.trim().isEmpty ? null : labelOverride;
+
       hit = await _resolveViaSiblingPlugin(
         failedId: pluginId,
         format: format,
@@ -2942,12 +3056,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         quality: preferred,
         itemPath: item.path,
         engine: engine,
+        platformLabelOverride: override,
       );
 
       if (hit == null) {
         final sources = await engine.store.loadSources();
         final healed = await _crossFormatHeal(
-            pluginId, format, sourceKey, musicInfo, sources, engine);
+            pluginId, format, sourceKey, musicInfo, sources, engine,
+            platformLabelOverride: override);
         if (healed != null) {
           final (plugin, newJson) = healed;
           final newFormat = newJson['format'] as String? ?? format;
@@ -3045,12 +3161,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         musicInfo.remove('url');
       }
       var source = sources.where((s) => s.id == pluginId).toList();
+      var labelOverride = _songPlatformLabel(format, sourceKey, musicInfo);
+      if (labelOverride.trim().isEmpty) {
+        labelOverride = await _platformLabelFromPluginMeta(engine, pluginId);
+      }
+      final override = labelOverride.trim().isEmpty ? null : labelOverride;
       if (source.isEmpty) {
-        final healed =
-            _findHealedPlugin(sources, format, sourceKey, musicInfo);
+        final healed = _findHealedPlugin(sources, format, sourceKey, musicInfo,
+            platformLabelOverride: override);
         if (healed == null) {
-          final healedCross =
-              await _crossFormatHeal(pluginId, format, sourceKey, musicInfo, sources, engine);
+          final healedCross = await _crossFormatHeal(
+              pluginId, format, sourceKey, musicInfo, sources, engine,
+              platformLabelOverride: override);
           if (healedCross == null) {
             return null;
           }
@@ -3129,6 +3251,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         quality: quality,
         itemPath: itemPath,
         engine: engine,
+        platformLabelOverride: override,
       );
     } catch (e) {
       return null;
@@ -3145,6 +3268,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return v?.toString() ?? '';
   }
 
+  /// musicfree 插件的歌曲 musicInfo 常不带 platform/source 字段，
+  /// 平台标签为空时从插件元数据兜底（exports 的 platform / pluginName / name）。
+  Future<String> _platformLabelFromPluginMeta(
+    PluginEngine engine,
+    String pluginId,
+  ) async {
+    try {
+      final sources = await engine.store.loadSources();
+      final src = sources.where((s) => s.id == pluginId).toList();
+      if (src.isEmpty) return '';
+      final meta = await engine.ensureLoaded(src.first);
+      for (final k in const ['platform', 'pluginName', 'name']) {
+        final v = meta?[k]?.toString() ?? '';
+        if (v.trim().isNotEmpty) return v.trim();
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<ResolvedMediaUrl?> _resolveViaSiblingPlugin({
     required String failedId,
     required String format,
@@ -3153,18 +3297,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required String quality,
     required String itemPath,
     required PluginEngine engine,
+    String? platformLabelOverride,
   }) async {
     try {
       final pluginFormat = PluginFormat.fromValue(format);
-      final platformLabel =
-          _songPlatformLabel(format, sourceKey, musicInfo);
+      var platformLabel = _songPlatformLabel(format, sourceKey, musicInfo);
+      if (platformLabel.trim().isEmpty &&
+          platformLabelOverride != null &&
+          platformLabelOverride.trim().isNotEmpty) {
+        platformLabel = platformLabelOverride;
+      }
       final sources = await engine.store.loadSources();
       final candidates = listEnabledPluginsForPlatform(
         platformLabel: platformLabel,
         installedPlugins: sources,
         format: pluginFormat,
         excludeId: failedId,
-      ).take(3);
+      ).take(3).toList();
+      AppLog.info('autoswitch',
+          '兄弟插件换源 label=$platformLabel failedId=$failedId candidates=${candidates.length}');
       for (final plugin in candidates) {
         final ResolvedMediaUrl? hit;
         if (plugin.format.isMfCompatible) {
@@ -3217,10 +3368,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     List<PluginSource> sources,
     String format,
     String sourceKey,
-    Map<String, dynamic> musicInfo,
-  ) {
+    Map<String, dynamic> musicInfo, {
+    String? platformLabelOverride,
+  }) {
     final pluginFormat = PluginFormat.fromValue(format);
-    final platform = _songPlatformLabel(format, sourceKey, musicInfo);
+    var platform = _songPlatformLabel(format, sourceKey, musicInfo);
+    if (platform.trim().isEmpty &&
+        platformLabelOverride != null &&
+        platformLabelOverride.trim().isNotEmpty) {
+      platform = platformLabelOverride;
+    }
     if (platform.trim().isEmpty) return null;
     return findPluginForPlatform(
       platformLabel: platform,
@@ -3235,10 +3392,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String sourceKey,
     Map<String, dynamic> musicInfo,
     List<PluginSource> sources,
-    PluginEngine engine,
-  ) async {
+    PluginEngine engine, {
+    String? platformLabelOverride,
+  }) async {
     final pluginFormat = PluginFormat.fromValue(format);
-    final platformLabel = _songPlatformLabel(format, sourceKey, musicInfo);
+    var platformLabel = _songPlatformLabel(format, sourceKey, musicInfo);
+    if (platformLabel.trim().isEmpty &&
+        platformLabelOverride != null &&
+        platformLabelOverride.trim().isNotEmpty) {
+      platformLabel = platformLabelOverride;
+    }
     if (platformLabel.trim().isEmpty) return null;
 
     final title = (musicInfo['name'] ?? musicInfo['title'] ?? '').toString().trim();
