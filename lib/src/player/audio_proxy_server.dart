@@ -205,17 +205,18 @@ class AudioProxyServer {
       return false;
     }
 
-    // 总长：完整缓存用实际大小；下载中依赖头部探测的总长
-    final int? total = st.complete ? st.total : head?.totalLength;
+    // 总长：完整缓存用实际大小；下载中优先头部探测，其次 Rust 上报的
+    // Content-Length（首播无头部探测缓存时也能伺服）
+    final int? total = st.complete ? st.total : (head?.totalLength ?? st.total);
     if (total == null || total <= 0) {
       return false;
     }
 
-    // 请求位置还没下载到：后台（如澎湃节流）下载器可能长时间不推进，
-    // 直接回退网络直连（避免在 read_url_range 里空等超时）。
-    if (st.downloaded <= range.start) {
-      return false;
-    }
+    // 请求位置还没下载到：不再立即回退直连——read_url_range 会等数据
+    // （单次最多 2s）。首播时预热下载器与透传并发开两条上游连接会被
+    // 部分 CDN（酷狗）按 token 并发限制饿死其一，表现为起播 10s 超时；
+    // 统一从预热缓存伺服后全链路只有一条上游连接。
+    // 真长时间不推进（如澎湃节流）也只多等 2s 即回退直连。
 
     if (range.start >= total) {
       final res = req.response;

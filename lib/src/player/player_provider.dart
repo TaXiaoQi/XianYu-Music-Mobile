@@ -2618,7 +2618,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     // 代理路径：头注入/缓存伺服/流量收口；10s 超时回退直链作兜底。
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
-    unawaited(_diagProbeUrl(clean, h)); // 诊断探针：绕过本地代理直连真实 URL 测速
     try {
       await _player.setUrl(playUrl, headers: h)
           .timeout(const Duration(seconds: 10));
@@ -2632,6 +2631,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
           'buffered=${_player.bufferedPosition.inMilliseconds}ms '
           'dur=${_player.duration?.inMilliseconds}ms url=$clean');
+      // 诊断探针只在超时后跑：正常链路必须只有预热缓存一条上游连接，
+      // 额外直连会被按 token 限并发的 CDN（酷狗）抢走伺服槽位。
+      unawaited(_diagProbeUrl(clean, h));
       await _dumpPlayerThreads();
       unawaited(_player
           .stop()

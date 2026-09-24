@@ -327,6 +327,8 @@ struct CacheEntry {
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
     download_failed: Arc<AtomicBool>,
+    /// 响应头里的 Content-Length（下载中即上报，供代理伺服 206 用）
+    content_length: Option<u64>,
     /// 下载线程句柄（detach，不阻塞；线程结束后自然回收）
     _download_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -417,6 +419,7 @@ impl StreamCacheManager {
                     downloaded_bytes: Arc::new(AtomicU64::new(size)),
                     download_complete: Arc::new(AtomicBool::new(true)),
                     download_failed: Arc::new(AtomicBool::new(false)),
+                    content_length: Some(size),
                     _download_handle: None,
                 },
             );
@@ -669,6 +672,7 @@ pub fn start_streaming_download(
             downloaded_bytes: downloaded_bytes.clone(),
             download_complete: download_complete.clone(),
             download_failed: download_failed.clone(),
+            content_length: None,
             _download_handle: Some(handle),
         },
     );
@@ -1310,6 +1314,16 @@ async fn download_thread(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
 
+    // 下载中即上报总长：代理据此可在首播阶段（无头部探测缓存）直接
+    // 从预热缓存伺服 206，避免与透传各开一条上游连接被 CDN 并发限制饿死。
+    if let Some(total) = total_bytes {
+        if let Ok(mut mgr) = cache().lock() {
+            if let Some(entry) = mgr.entries.get_mut(hash) {
+                entry.content_length = Some(total);
+            }
+        }
+    }
+
     let mut file = match OpenOptions::new().write(true).open(&path) {
         Ok(f) => f,
         Err(e) => {
@@ -1548,7 +1562,12 @@ pub fn url_cache_status(url: &str) -> UrlCacheStatus {
                 complete,
                 failed,
                 downloaded_bytes: entry.downloaded_bytes.load(Ordering::Relaxed),
-                total_bytes: if complete { Some(entry.size) } else { None },
+                // 完成用实际文件大小；下载中用响应头 Content-Length
+                total_bytes: if complete {
+                    Some(entry.size)
+                } else {
+                    entry.content_length
+                },
             }
         }
         None => UrlCacheStatus {
