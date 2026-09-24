@@ -24,6 +24,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
+import '../../src/lyrics/lyrics_repository.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
@@ -2333,12 +2334,13 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
       if (matches.isEmpty) return '';
       final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
       if (lyric == null) return '';
-      return (lyric['lxlyric'] ??
+      final text = (lyric['lxlyric'] ??
               lyric['yrc'] ??
               lyric['qrc'] ??
               lyric['eslrc'] ??
               lyric['lyric']) as String? ??
           '';
+      return pluginLyricLooksEncrypted(text) ? '' : text;
     } catch (_) {
       return '';
     }
@@ -5717,12 +5719,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       if (matches.isEmpty) return '';
       final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
       if (lyric == null) return '';
-      return (lyric['lxlyric'] ??
+      final text = (lyric['lxlyric'] ??
               lyric['yrc'] ??
               lyric['qrc'] ??
               lyric['eslrc'] ??
               lyric['lyric']) as String? ??
           '';
+      return pluginLyricLooksEncrypted(text) ? '' : text;
     } catch (_) {
       return '';
     }

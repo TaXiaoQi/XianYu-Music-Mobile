@@ -21,6 +21,7 @@ import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import '../lyrics/lyrics_repository.dart';
 import '../rust/api.dart';
 import '../i18n/i18n.dart';
 
@@ -724,7 +725,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
                 lyric['lyric']) as String? ??
             ''
         : (lyric['lyric'] as String?) ?? '';
-    return text.isEmpty ? null : text;
+    // 未解密的加密密文（QQ/酷我对特定歌曲返回 QRC/e-lrc hex）不能落盘
+    if (text.isEmpty || pluginLyricLooksEncrypted(text)) return null;
+    return text;
   }
 
   static String _convertLyricsFormat(String text, String format) {

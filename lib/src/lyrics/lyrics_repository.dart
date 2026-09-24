@@ -65,9 +65,10 @@ class LyricsRepository {
     if (item.isOnline) {
       final pluginRes = await _fetchPluginLyric(item);
       if (pluginRes != null) {
-        final mainText = _pickPluginMainText(pluginRes);
+        final mainText = pickPluginMainText(pluginRes);
         final tlyric = (pluginRes['tlyric'] as String?)?.trim() ?? '';
-        if (mainText.trim().isNotEmpty) {
+        if (mainText.trim().isNotEmpty &&
+            !pluginLyricLooksEncrypted(mainText)) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
             return parseLyrics(rawLyrics: '$mainText\n$tlyric');
           }
@@ -82,7 +83,7 @@ class LyricsRepository {
           return parseLyrics(rawLyrics: mainText);
         }
       }
-      // 插件无歌词 → 原生歌词源整包兜底
+      // 插件无歌词，或返回的是未解密的加密密文 → 原生歌词源整包兜底
       final native = await _fetchNativeLyricResult(item);
       if (native != null) {
         final lx = (native['lxlyric'] ?? '').trim();
@@ -142,15 +143,6 @@ class LyricsRepository {
     }
   }
 
-  String _pickPluginMainText(Map<String, dynamic> res) {
-    return (res['lxlyric'] ??
-            res['yrc'] ??
-            res['qrc'] ??
-            res['eslrc'] ??
-            res['lyric']) as String? ??
-        '';
-  }
-
   Future<Map<String, dynamic>?> _fetchPluginLyric(QueueItem item) async {
     final online = item.onlineSongJson;
     if (online == null || online.isEmpty) return null;
@@ -174,6 +166,28 @@ class LyricsRepository {
       return null;
     }
   }
+}
+
+/// 插件歌词结果的主文本挑选：lxlyric（逐字）→ yrc → qrc → eslrc → lyric。
+String pickPluginMainText(Map<String, dynamic> res) {
+  return (res['lxlyric'] ??
+          res['yrc'] ??
+          res['qrc'] ??
+          res['eslrc'] ??
+          res['lyric']) as String? ??
+      '';
+}
+
+/// 是否为未解密的加密歌词密文：部分音源（QQ 的 QRC / 酷我的 e-lrc）对特定
+/// 歌曲会返回十六进制密文（3DES+zlib 压缩包的 hex），不能当歌词展示或落盘。
+/// 判据：剥掉空白后几乎全是十六进制字符，且不含任何 `[mm:ss` 时间戳——
+/// 真实歌词（LRC/QRC/YRC/lys）必然带时间戳。
+bool pluginLyricLooksEncrypted(String text) {
+  final t = text.replaceAll(RegExp(r'\s'), '');
+  if (t.length < 48) return false;
+  final nonHex = t.replaceAll(RegExp(r'[0-9A-Fa-f]'), '').length;
+  return nonHex <= t.length * 0.05 &&
+      !RegExp(r'\[\d{1,3}:\d{2}').hasMatch(text);
 }
 
 String _cleanLyricText(String raw) {
