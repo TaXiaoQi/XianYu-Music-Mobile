@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
@@ -68,8 +69,10 @@ class LyricsRepository {
       if (pluginRes != null) {
         final mainText = pickPluginMainText(pluginRes);
         final tlyric = (pluginRes['tlyric'] as String?)?.trim() ?? '';
-        if (mainText.trim().isNotEmpty &&
-            !pluginLyricLooksEncrypted(mainText)) {
+        final encrypted = pluginLyricLooksEncrypted(mainText);
+        AppLog.debug('lyric',
+            '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
+        if (mainText.trim().isNotEmpty && !encrypted) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
             return parseLyrics(rawLyrics: '$mainText\n$tlyric');
           }
@@ -83,6 +86,8 @@ class LyricsRepository {
           }
           return parseLyrics(rawLyrics: mainText);
         }
+      } else {
+        AppLog.debug('lyric', '插件歌词: 无结果');
       }
       // 插件无歌词，或返回的是未解密的加密密文 → 原生歌词源整包兜底
       final native = await _fetchNativeLyricResult(item);
@@ -97,6 +102,9 @@ class LyricsRepository {
                   ? '$main\n$t'
                   : main);
         }
+        AppLog.warn('lyric', '原生歌词兜底: 结果主文本为空 keys=${native.keys.toList()}');
+      } else {
+        AppLog.warn('lyric', '原生歌词兜底: 无结果');
       }
       return '';
     }
@@ -126,7 +134,10 @@ class LyricsRepository {
         songInfo = jsonDecode(item.onlineInfoJson!) as Map<String, dynamic>;
       } catch (_) {}
     }
-    if (songInfo == null || songInfo.isEmpty) return null;
+    if (songInfo == null || songInfo.isEmpty) {
+      AppLog.warn('lyric', '原生歌词兜底: 无 songInfo');
+      return null;
+    }
     var sourceKey = (songInfo['source'] ?? songInfo['platform']) as String? ??
         item.source ??
         '';
@@ -151,20 +162,29 @@ class LyricsRepository {
           }
         } catch (_) {}
       }
-      if (!_nativeLyricSources.contains(sourceKey)) return null;
+      if (!_nativeLyricSources.contains(sourceKey)) {
+        AppLog.warn('lyric', '原生歌词兜底: 无法确定原生源 key (sourceKey=$sourceKey pluginId=$pluginId)');
+        return null;
+      }
     }
+    AppLog.debug('lyric', '原生歌词兜底: sourceKey=$sourceKey');
     try {
       final raw = await fetchLyricFromSource(
         source: sourceKey,
         songInfoJson: jsonEncode(songInfo),
       );
+      AppLog.debug('lyric', '原生歌词兜底: 抓取返回 len=${raw.length}');
       if (raw.isEmpty || raw == 'null') return null;
       final obj = jsonDecode(raw) as Map<String, dynamic>;
+      final lengths =
+          obj.map((k, v) => MapEntry(k, v is String ? v.length : 0));
+      AppLog.debug('lyric', '原生歌词兜底: 字段长度=$lengths');
       return {
         for (final e in obj.entries)
           e.key: e.value is String ? e.value as String : '',
       };
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('lyric', '原生歌词兜底: 抓取异常 $e');
       return null;
     }
   }
@@ -186,9 +206,13 @@ class LyricsRepository {
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = await engine.store.loadSources();
       final matches = sources.where((s) => s.id == pluginId).toList();
-      if (matches.isEmpty) return null;
+      if (matches.isEmpty) {
+        AppLog.warn('lyric', '插件歌词: 插件不存在 pluginId=$pluginId');
+        return null;
+      }
       return await engine.getLyric(matches.first, sourceKey, musicInfo);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('lyric', '插件歌词: 调用失败 $e');
       return null;
     }
   }
