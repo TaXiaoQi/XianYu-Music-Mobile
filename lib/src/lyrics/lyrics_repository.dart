@@ -74,8 +74,10 @@ class LyricsRepository {
             '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
         if (encrypted) {
           // Baka 系插件自身返回 QRC/e-lrc 密文（插件注释即声明「由应用层
-          // 解密」）——直接用 Rust 侧 qrc_decrypt 解密复用，比绕行可能被
-          // 风控的原生歌词接口可靠得多。解密失败才降级原生兜底。
+          // 解密」）——直接用后端 qrc_decrypt 解密复用（三端同一后端能力）。
+          // 原生歌词源兜底（fetch_lyric_from_source）是 lx:// 系专用：需要
+          // 完整平台 songInfo（songId 等），Baka musicInfo 只有 songmid，
+          // 两条 QQ 接口都查不到——密文场景不降级它，解密失败即无歌词。
           final decrypted = await _decryptEncryptedLyric(mainText);
           if (decrypted != null && decrypted.trim().isNotEmpty) {
             AppLog.debug('lyric', '插件歌词: 密文解密成功 len=${decrypted.length}');
@@ -86,7 +88,8 @@ class LyricsRepository {
             }
             return parseLyrics(rawLyrics: combined);
           }
-          AppLog.warn('lyric', '插件歌词: 密文解密失败，降级原生兜底');
+          AppLog.warn('lyric', '插件歌词: 密文解密失败，无可用歌词');
+          return '';
         }
         if (mainText.trim().isNotEmpty && !encrypted) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
