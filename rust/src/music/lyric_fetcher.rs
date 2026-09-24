@@ -512,7 +512,59 @@ pub(crate) fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
         i += 8;
     }
 
-    decompress_deflate_to_string(&decrypted_bytes)
+    // 桌面端同款多格式解压尝试（QQ QRC 实际为 zlib sync-flush 变体，单一裸
+    // deflate 会报 corrupt deflate stream）
+    for attempt in [
+        decompress_zlib_sync_flush(&decrypted_bytes),
+        decompress_zlib_to_bytes(&decrypted_bytes),
+        decompress_deflate_to_bytes(&decrypted_bytes),
+        decompress_zlib_to_bytes_skip_header(&decrypted_bytes),
+        decompress_gzip_to_bytes(&decrypted_bytes),
+    ] {
+        if let Ok(bytes) = attempt {
+            if !bytes.is_empty() {
+                return String::from_utf8(bytes).map_err(|e| e.to_string());
+            }
+        }
+    }
+    Err("decompression failed".to_string())
+}
+
+fn decompress_zlib_sync_flush(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::{Decompress, FlushDecompress, Status};
+    let mut d = Decompress::new(true);
+    let mut out = Vec::with_capacity(bytes.len() * 3 + 64);
+    let mut buf = [0u8; 16384];
+    let mut in_pos = 0usize;
+    let mut guard = 0usize;
+    loop {
+        guard += 1;
+        if guard > 1_000_000 {
+            return Err("zlib inflate loop limit".to_string());
+        }
+        let before = d.total_out();
+        let available_in = bytes.len().saturating_sub(in_pos);
+        let status = d
+            .decompress(
+                &bytes[in_pos..in_pos + available_in],
+                &mut buf,
+                FlushDecompress::Sync,
+            )
+            .map_err(|e| e.to_string())?;
+        let produced = (d.total_out() - before) as usize;
+        out.extend_from_slice(&buf[..produced.min(buf.len())]);
+        in_pos = d.total_in() as usize;
+        match status {
+            Status::StreamEnd => break,
+            Status::BufError => break,
+            Status::Ok => {
+                if produced == 0 && in_pos >= bytes.len() {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 // ==================== Deflate/Zlib Decompression ====================
