@@ -2,6 +2,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -254,6 +255,12 @@ class MvNotifier extends StateNotifier<MvState> {
   /// 音频已交给 MV 自带音轨（歌曲音频被静音）的标志。
   bool _audioTakenOver = false;
 
+  /// 最近一次 `_resolve` 过程中是否发生过插件调用异常（鉴权失效/网络/插件
+  /// 抛错等）。解析失败但有此标志时，结果视为「存疑」而非「明确无 MV」，
+  /// 探测与显式开启路径都不得缓存 false——否则瞬时故障会把有 MV 的歌在
+  /// 整个会话内错误隐藏。
+  bool _mvResolveAmbiguous = false;
+
   int _guardCount = 0;
   DateTime _guardWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -315,17 +322,18 @@ class MvNotifier extends StateNotifier<MvState> {
 
   /// 起播后静默并行探测：这首歌的插件是否真能解析出 MV。
   /// 不触碰播放状态（不动 requested/loading/controller），结果写缓存，
-  /// 供 mvSupports 显隐入口。
+  /// 供 mvSupports 显隐入口。解析过程中任何插件调用异常都视为「存疑」，
+  /// 不写缓存——只有插件全部干净返回无结果才记录 false。
   Future<void> probeMvFor(QueueItem c) async {
     final key = _mvProbeKey(c);
     if (key.isEmpty || _mvProbeResult.containsKey(key)) return;
     bool? has;
     try {
       final src = await _resolve(mvSongOf(c), _defaultQuality());
-      has = src != null && src.url.isNotEmpty;
+      has = _mvResolveAmbiguous
+          ? null
+          : (src != null && src.url.isNotEmpty);
     } catch (_) {
-      // 探测异常（网络波动/插件故障）不写缓存：与「插件明确无 MV」区分，
-      // 避免瞬时故障造成假阴性把有 MV 的歌在本会话内错误隐藏。
       has = null;
     }
     if (has != null) _mvProbeResult[key] = has;
@@ -374,8 +382,12 @@ class MvNotifier extends StateNotifier<MvState> {
     final src = await _resolve(song, target);
     if (ver != _requestVersion) return null;
     if (src == null || src.url.isEmpty) {
-      final key = _mvProbeKey(c);
-      if (key.isNotEmpty) _mvProbeResult[key] = false;
+      // 解析过程中有插件异常（鉴权/网络等）时结果存疑，不缓存 false：
+      // 否则一次瞬时失败就把入口在整个会话内隐藏。
+      if (!_mvResolveAmbiguous) {
+        final key = _mvProbeKey(c);
+        if (key.isNotEmpty) _mvProbeResult[key] = false;
+      }
       state = const MvState();
       return '此歌曲无 MV 或插件未提供 MV 解析';
     }
@@ -418,29 +430,18 @@ class MvNotifier extends StateNotifier<MvState> {
     final vs = controller.value.size;
     AppLog.debug('mv', 'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
         'dur=${controller.value.duration} q=$target url=${src.url}');
-    // 音频接管 + 频谱对齐：
-    //  - 已缓存偏移（历史可信匹配）：无需再分析，直接把音频无缝切给 MV 音轨。
-    //  - 未缓存：下载 MV + 歌曲音频做滑窗匹配，命中即接管（顺带解决片头/花絮偏移）。
-    if (mvSyncOffsetCache.containsKey(identity)) {
-      unawaited(_takeoverIfCached(identity, ver));
-    } else {
-      unawaited(_runTakeover(c, identity, ver));
-    }
+    // 立即接管：画面起播的同一时刻静音歌曲、淡入 MV 音轨，进度条同步切为
+    // MV 时间轴——音频、进度与画面一起替换，不存在「画面先行、音频/进度
+    // 慢半拍」的窗口。MV 起播位置已按当前偏移环形映射（未分析时 offset=0，
+    // 与歌曲同刻度），音画天然同步。频谱分析命中后仅做一次重对齐 seek。
+    await _takeOverAudio(controller);
+    unawaited(_runTakeover(c, identity, ver));
     return null;
   }
 
-  /// 已缓存可信偏移时，跳过重新分析，直接无缝接管 MV 音轨。
-  Future<void> _takeoverIfCached(String identity, int ver) async {
-    if (!mvSyncOffsetCache.containsKey(identity)) return;
-    if (!mounted || ver != _requestVersion) return;
-    if (!state.requested || !state.ready) return;
-    final ctrl = state.controller;
-    if (ctrl == null || !ctrl.value.isInitialized) return;
-    await _takeOverAudio(ctrl);
-  }
-
-  /// 局部频谱对齐 + 音频接管：以歌曲当前位置为锚跑滑窗匹配，命中后把 MV 对准
-  /// 匹配点，并将音频无缝切换给 MV 自带音轨（歌曲音频被静音）。
+  /// 后台频谱对齐：以歌曲当前位置为锚跑滑窗匹配，命中后更新偏移并把 MV
+  /// 重对齐到匹配点。音频自起播即由 MV 音轨承担（见 _start 的立即接管），
+  /// 重对齐只是一次音画一体的 seek，不存在二次音频切换。
   Future<void> _runTakeover(QueueItem c, String identity, int ver) async {
     final cacheDir = await mvSyncCacheDir();
     if (cacheDir == null) {
@@ -448,13 +449,14 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
     final song = mvSongOf(c);
-    final anchorSec = _ref.read(playerProvider).position;
+    final anchor = _ref.read(playerProvider);
     final result = await analyzeMvLocalForSong(
       identity: identity,
       resolveSource: (q) => _resolveQuality(song, q),
       qualities: const ['360P', '480P', '720P'],
       cacheDir: cacheDir,
-      songPosSec: anchorSec,
+      songPosSec: anchor.position,
+      songDurationSec: anchor.duration,
       songPath: LastAudioSource.filePath ?? (c.isOnline ? null : c.path),
       songUrl: LastAudioSource.url,
       songHeaders: LastAudioSource.headers,
@@ -472,60 +474,74 @@ class MvNotifier extends StateNotifier<MvState> {
     _syncOffsetMs = result.offsetMs;
     final now = _ref.read(playerProvider);
     if (now.current != null) {
-      // 必须先 seek 到匹配点并等落位，再接管音频。此前 seek 是 unawaited 的：
-      // 淡入发生在旧位置（未匹配的默认环形映射点），听到的还是 MV 片头音乐，
-      // seek 落位瞬间音乐与画面双双跳变。此窗口内歌曲音频继续出声垫底，
-      // 画面先一步完成对齐，随后交叉淡入才是真正的无缝替换。
+      // 重对齐：MV（含其音轨）一起 seek 到匹配点，单次干净跳变；歌曲底座
+      // 是静音时间基准，不动——歌词进度、切歌时机完全不受影响。
       final target = _ringTarget(now.position * 1000, ctrl.value.duration);
-      _lastSeekAt = DateTime.now(); // 冷却压住 _syncTimeline，防接管窗口内二次硬跳
+      _lastSeekAt = DateTime.now(); // 冷却压住 _syncTimeline，防重对齐窗口内二次硬跳
       _stallTicks = 0;
       _lastVposMs = -1;
       try {
         await ctrl.seekTo(target);
       } catch (e) {
-        AppLog.warn('mv', 'takeover seek failed: $e');
-        // seek 失败不接管音频：此时淡入必然落在错误位置，宁可保持歌曲出声，
-        // 交给 _syncTimeline 后续对齐。
-        return;
-      }
-      if (!mounted || ver != _requestVersion) return;
-      if (!state.requested ||
-          !state.ready ||
-          !identical(state.controller, ctrl)) {
-        return;
+        // seek 失败不致命：交给 _syncTimeline 后续漂移对齐。
+        AppLog.warn('mv', 'realign seek failed: $e');
       }
     }
-    await _takeOverAudio(ctrl);
   }
 
-  /// 把音频无缝切换到 MV 自带音轨：先静音歌曲通道，再短淡入 MV 音轨，
-  /// 二者同源同曲，交叉过渡体感无缝。
+  /// 把音频切给 MV 自带音轨：与歌曲通道做等功率交叉淡化（见下），全程总
+  /// 响度基本恒定。MV 起播位置与歌曲底座同刻度（环形映射），二者同源同曲。
   Future<void> _takeOverAudio(VideoPlayerController c) async {
     if (_audioTakenOver) return;
     _audioTakenOver = true;
     // 同步暴露到状态：播放页进度条收到后整体切换为 MV 时间轴显示与拖动。
     if (mounted) state = state.copyWith(audioTakenOver: true);
-    await _ref.read(playerProvider.notifier).setMvAudioOverride(true);
+    final pn = _ref.read(playerProvider.notifier);
+    // 标记接管但不瞬静：歌曲通道增益保持 1，随后与 MV 音轨同步交叉淡化。
+    await pn.setMvAudioOverride(true);
     final vol = _ref.read(volumeProvider).clamp(0.0, 1.0);
-    for (var v = 0.0; v < vol; v += 0.2) {
-      await c.setVolume(v);
-      await Future.delayed(const Duration(milliseconds: 55));
+    // 等功率交叉淡化（≈420ms，30ms 步进）：歌曲通道增益按 cos 衰减、MV 音轨
+    // 音量按 sin 上升，二者反向同步，全程总响度基本恒定，听感无「凹坑」。
+    const steps = 14;
+    for (var i = 1; i <= steps; i++) {
+      final k = (i / steps) * math.pi / 2;
+      try {
+        await pn.setMvSongGain(math.cos(k));
+        await c.setVolume(vol * math.sin(k));
+      } catch (_) {
+        // MV 控制器半路被释放：增益停在当前值，由 _releaseAudio 兜底还原。
+        return;
+      }
+      if (i < steps) await Future.delayed(const Duration(milliseconds: 30));
     }
-    await c.setVolume(vol);
   }
 
-  /// 还原为歌曲音频通道：清零 MV 音量、取消歌曲静音。
+  /// 还原为歌曲音频通道：MV 音轨快速淡出（≈180ms）的同时歌曲通道淡入，
+  /// 反向交叉淡化，随后取消歌曲静音并复位增益。
   Future<void> _releaseAudio(VideoPlayerController? c) async {
     if (!_audioTakenOver) return;
     _audioTakenOver = false;
     // 进度条切回歌曲时间轴。
     if (mounted) state = state.copyWith(audioTakenOver: false);
-    if (c != null) {
+    final pn = _ref.read(playerProvider.notifier);
+    if (c != null && c.value.isInitialized) {
+      final vol = _ref.read(volumeProvider).clamp(0.0, 1.0);
+      const steps = 6;
+      for (var i = 1; i <= steps; i++) {
+        final k = (i / steps) * math.pi / 2;
+        try {
+          await c.setVolume(vol * math.cos(k));
+          await pn.setMvSongGain(math.sin(k));
+        } catch (_) {
+          break;
+        }
+        if (i < steps) await Future.delayed(const Duration(milliseconds: 30));
+      }
       try {
         await c.setVolume(0);
       } catch (_) {}
     }
-    await _ref.read(playerProvider.notifier).setMvAudioOverride(false);
+    await pn.setMvAudioOverride(false);
   }
 
   /// 用户主动跳转（拖动进度条 / 点歌词行）：立即把 MV 对齐到新的音频位置。
@@ -666,6 +682,7 @@ class MvNotifier extends StateNotifier<MvState> {
   }
 
   Future<MvSource?> _resolve(Map<String, dynamic> song, String quality) async {
+    _mvResolveAmbiguous = false;
     for (final q in _qualityCandidates(quality)) {
       final src = await _resolveQuality(song, q);
       if (src != null && src.url.isNotEmpty) return src;
@@ -712,6 +729,7 @@ class MvNotifier extends StateNotifier<MvState> {
         }
         AppLog.warn('mv', 'getMvSource($sourceId) 无有效结果');
       } catch (e) {
+        _mvResolveAmbiguous = true;
         AppLog.warn('mv', 'getMvSource($sourceId) 调用失败: $e');
       }
 
@@ -729,10 +747,12 @@ class MvNotifier extends StateNotifier<MvState> {
             }
           }
         } catch (e) {
+          _mvResolveAmbiguous = true;
           AppLog.warn('mv', 'getMvSource($pluginId) 调用失败: $e');
         }
       }
     } catch (e) {
+      _mvResolveAmbiguous = true;
       AppLog.warn('mv', 'MV 插件路由跳过: $e');
     }
 

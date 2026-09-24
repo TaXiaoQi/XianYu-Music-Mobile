@@ -1950,12 +1950,15 @@ pub fn analyze_mv_sync(mv_path: String, song_path: String) -> String {
     }
 }
 
-/// MV 局部频谱对齐：取歌曲在 `song_pos_sec` 位置附近一段音频窗，在整个 MV
-/// 音轨上滑窗做能量包络互相关，估计「当前歌曲位置 → 对应 MV 位置」的偏移。
+/// MV 局部频谱对齐：取歌曲在 `song_pos_sec` 位置附近一段音频窗，在 MV 音轨的
+/// 「前/中/后相对位置对应带」内滑窗做能量包络互相关，估计「当前歌曲位置 → 对应
+/// MV 位置」的偏移。
 ///
-/// 针对「MV 加了片头/花絮」这种与歌曲开篇不一致的情况，比全局互相关更鲁棒。
+/// 针对「MV 加了片头/花絮」这种与歌曲开篇不一致的情况，比全局互相关更鲁棒；
+/// 相对位置模糊带同时杜绝「歌曲开头误配到 MV 尾部高潮」的跨区伪峰。
 /// - `song_pos_sec`：歌曲当前播放位置（秒）。
 /// - `window_sec`：参与匹配的歌曲窗时长（秒，建议 15s）。
+/// - `song_dur_sec`：歌曲总时长（秒）；≤0 或非有限值时退化为全 MV 轴搜索。
 ///
 /// 返回 JSON：`{"ok":true,"offsetMs":i64,"mvPosMs":i64,"confidence":f64,"trustworthy":bool}`，
 /// 其中 `offsetMs`（= `videoPos - audioPos`，沿用全局语义）与 `mvPosMs`（当前歌曲
@@ -1965,12 +1968,14 @@ pub fn analyze_mv_sync_local(
     song_path: String,
     song_pos_sec: f64,
     window_sec: f64,
+    song_dur_sec: f64,
 ) -> String {
     let result = crate::player::mv_sync::analyze_local(
         std::path::Path::new(&mv_path),
         std::path::Path::new(&song_path),
         song_pos_sec,
         window_sec,
+        song_dur_sec,
     );
     match result {
         Ok((lag_sec, confidence)) => serde_json::json!({

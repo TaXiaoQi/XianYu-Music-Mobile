@@ -190,12 +190,15 @@ Future<MvAutoSyncResult?> analyzeMvSyncForSong({
 ///
 /// - [songPosSec]：歌曲当前播放位置（秒），作为歌曲窗的锚点。
 /// - [windowSec]：歌曲窗时长（秒），默认 15s。
+/// - [songDurationSec]：歌曲总时长（秒），供时间轴模糊匹配划前/中/后对应带；
+///   未知（≤0）时 Rust 退化为全 MV 轴搜索。
 Future<MvAutoSyncResult?> analyzeMvLocalForSong({
   required String identity,
   required Future<MvSource?> Function(String quality) resolveSource,
   required List<String> qualities,
   required String cacheDir,
   required double songPosSec,
+  required double songDurationSec,
   double windowSec = 15.0,
   String? songPath,
   String? songUrl,
@@ -254,6 +257,7 @@ Future<MvAutoSyncResult?> analyzeMvLocalForSong({
       mvPath: mvPath,
       songPath: songFile,
       songPosSec: songPosSec,
+      songDurSec: songDurationSec,
       windowSec: windowSec,
     ).timeout(const Duration(minutes: 5));
     final json = jsonDecode(raw);

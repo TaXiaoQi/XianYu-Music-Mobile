@@ -36,6 +36,9 @@ const LOCAL_WINDOW_SEC: f64 = 15.0;
 const LOCAL_MIN_CONFIDENCE: f64 = 0.5;
 /// 局部匹配允许的最小重叠帧数（避免卷到 MV 尾部不足一窗）。
 const LOCAL_MIN_OVERLAP_FRAMES: usize = 48;
+/// 时间轴模糊匹配的半带宽下限（秒）。相对带（0.25×MV 时长）在短 MV 上可能
+/// 不足以容纳片头/花絮偏移，此下限保证歌首至少能匹配到 MV 前 60s。
+const LOCAL_BAND_MIN_SEC: f64 = 60.0;
 
 /// 局部滑动匹配：取歌曲音频在 [song_pos_sec, song_pos_sec+window_sec] 的短窗，
 /// 在整个 MV 音轨上滑窗做能量包络互相关，返回 `(lag_sec, confidence)`。
@@ -68,6 +71,7 @@ pub fn analyze_local(
     song_path: &Path,
     song_pos_sec: f64,
     window_sec: f64,
+    song_dur_sec: f64,
 ) -> Result<(f64, f64), String> {
     if !song_pos_sec.is_finite() || song_pos_sec < 0.0 || window_sec <= 0.0 {
         return Err("无效的歌曲位置或窗口长度".to_string());
@@ -99,8 +103,27 @@ pub fn analyze_local(
     let song_start = song_start_frame.min(song_env.len() - win_frames);
     let song_window = &song_env[song_start..song_start + win_frames];
 
-    let mv_start =
-        sliding_window_align(&mv_env, song_window).ok_or("MV 过短，无法滑窗匹配")?;
+    // —— 时间轴模糊匹配（前/中/后对应带）——
+    // 全轴滑窗的根因缺陷：相似段落（副歌）在时间轴上可以任意远，歌曲开头会
+    // 误配到 MV 尾部高潮。约束锚点只能落在「歌曲相对位置 ↔ MV 相对位置」
+    // 附近的模糊带内：带心 = f×MV 时长（f = 歌曲位置/歌曲时长），半带宽取
+    // max(0.25×MV 时长, 60s)——前中后三段粗对应，同时足以容纳 MV 片头/
+    // 片尾造成的刻度偏移。歌曲时长未知（≤0）时退化为全轴搜索。
+    let mv_last_start = mv_env.len().saturating_sub(win_frames);
+    let (search_lo, search_hi) = if song_dur_sec.is_finite() && song_dur_sec > 0.0 {
+        let f = (song_pos_sec / song_dur_sec).clamp(0.0, 1.0);
+        let mv_total_sec = mv_env.len() as f64 * hop_sec;
+        let half_band = (mv_total_sec * 0.25).max(LOCAL_BAND_MIN_SEC);
+        let center = f * mv_total_sec;
+        let lo = ((center - half_band) / hop_sec).floor().max(0.0) as usize;
+        let hi = (((center + half_band) / hop_sec).ceil() as usize).min(mv_last_start);
+        if hi >= lo { (lo, hi) } else { (0, mv_last_start) }
+    } else {
+        (0, mv_last_start)
+    };
+
+    let mv_start = sliding_window_align(&mv_env, song_window, search_lo, search_hi)
+        .ok_or("MV 过短，无法滑窗匹配")?;
 
     let mv_pos_sec = mv_start as f64 * hop_sec;
     let song_pos_sec_actual = song_start as f64 * hop_sec;
@@ -108,21 +131,26 @@ pub fn analyze_local(
     Ok((lag, mv_start_confidence(&mv_env, song_window, mv_start)))
 }
 
-/// 滑窗互相关：把 [song_win] 当作模板，在 [mv_env] 上按下标滑窗求 Pearson 相关，
-/// 返回最佳 MV 起始帧。窗内各自 z-score 归一化（对齐全局算法的归一化口径）。
-/// 步进用 1 帧（≈64ms），对开局对齐精度足够。
-fn sliding_window_align(mv_env: &[f32], song_win: &[f32]) -> Option<usize> {
+/// 滑窗互相关：把 [song_win] 当作模板，在 [mv_env] 的 `[lo, hi]` 帧范围内按下标
+/// 滑窗求 Pearson 相关，返回最佳 MV 起始帧。窗内各自 z-score 归一化（对齐全局
+/// 算法的归一化口径）。步进用 1 帧（≈64ms），对开局对齐精度足够。
+fn sliding_window_align(
+    mv_env: &[f32],
+    song_win: &[f32],
+    lo: usize,
+    hi: usize,
+) -> Option<usize> {
     let w = song_win.len();
-    if mv_env.len() < w {
+    if mv_env.len() < w || lo > hi || hi + w > mv_env.len() {
         return None;
     }
     let song_z = z_normalize(song_win);
     if song_z.iter().all(|v| *v == 0.0) {
         return None;
     }
-    let mut best = 0_usize;
+    let mut best = lo;
     let mut best_score = f64::NEG_INFINITY;
-    for start in 0..=(mv_env.len() - w) {
+    for start in lo..=hi {
         let slice = &mv_env[start..start + w];
         let slice_z = z_normalize(slice);
         let mut dot = 0.0_f64;

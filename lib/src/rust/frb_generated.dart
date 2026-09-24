@@ -92,6 +92,7 @@ abstract class RustLibApi extends BaseApi {
     required String songPath,
     required double songPosSec,
     required double windowSec,
+    required double songDurSec,
   });
 
   Future<int> crateApiApplyRename({required String operationsJson});
@@ -1012,6 +1013,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String songPath,
     required double songPosSec,
     required double windowSec,
+    required double songDurSec,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1021,6 +1023,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(songPath, serializer);
           sse_encode_f_64(songPosSec, serializer);
           sse_encode_f_64(windowSec, serializer);
+          sse_encode_f_64(songDurSec, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1033,7 +1036,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiAnalyzeMvSyncLocalConstMeta,
-        argValues: [mvPath, songPath, songPosSec, windowSec],
+        argValues: [mvPath, songPath, songPosSec, windowSec, songDurSec],
         apiImpl: this,
       ),
     );
@@ -1041,7 +1044,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiAnalyzeMvSyncLocalConstMeta => const TaskConstMeta(
     debugName: "analyze_mv_sync_local",
-    argNames: ["mvPath", "songPath", "songPosSec", "windowSec"],
+    argNames: ["mvPath", "songPath", "songPosSec", "windowSec", "songDurSec"],
   );
 
   @override
