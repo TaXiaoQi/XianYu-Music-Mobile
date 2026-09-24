@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../auth/auth_provider.dart';
 import '../backup/app_backup.dart';
+import '../core/application_logger.dart';
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../effects/sound_effect_provider.dart';
@@ -24,6 +25,7 @@ import '../navigation/routes.dart';
 import '../online/cover_proxy.dart';
 import '../player/mv_provider.dart';
 import '../player/player_provider.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
 import 'cloud_channel.dart';
@@ -85,9 +87,16 @@ class WatchLinkController {
 
   final Set<String> _precachedPaths = {};
   bool _lastPlaying = false;
+  bool _lastSeenPlaying = false;
   LinkPlayMode _lastMode = LinkPlayMode.order;
   bool _lastLiked = false;
   DateTime _lastPosPush = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // ---- 起播自动唤起（Wear Engine 静默 ping） ----
+
+  bool _wakeInFlight = false;
+  DateTime _lastWakeAttempt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _wakeRetryGap = Duration(seconds: 60);
 
   void init() {
     if (!PlatformCaps.isAndroid) return;
@@ -171,13 +180,11 @@ class WatchLinkController {
       return;
     }
     if (_running) return;
-    final granted = await _channel.hasPermission();
-    if (granted) {
-      await _channel.start();
-      _running = true;
-    } else {
-      await _channel.requestPermission();
-    }
+    // 开屏静默：已授权才启动通道；未授权不弹窗，等用户触发
+    // （设置页腕上联动开关、连接手表）时再申请
+    if (!await _channel.hasPermission()) return;
+    await _channel.start();
+    _running = true;
   }
 
   void _onPermission(bool granted) {
@@ -281,6 +288,12 @@ class WatchLinkController {
   }
 
   // ---- 设备管理（设置页） ----
+
+  /// 蓝牙权限是否已授予（设置页腕上联动开关触发申请用）。
+  Future<bool> hasLinkPermission() => _channel.hasPermission();
+
+  /// 发起蓝牙运行时权限申请，授权结果经 onPermission 事件回传并自动启动通道。
+  Future<void> requestLinkPermission() => _channel.requestPermission();
 
   Future<List<WatchBondedDevice>> loadPairedDevices() =>
       _channel.pairedDevices();
@@ -513,6 +526,9 @@ class WatchLinkController {
   // ---- 状态推送 ----
 
   void _onPlayback(PlaybackState st) {
+    // 起播边沿触发自动唤起（无论腕上端是否已连接，未连接才有意义）
+    if (st.isPlaying && !_lastSeenPlaying) _maybeAutoWakeWatch();
+    _lastSeenPlaying = st.isPlaying;
     if (!_connected && !_cloudWatchOnline) return;
     final item = st.current;
     final key = item == null
@@ -561,6 +577,50 @@ class WatchLinkController {
         _lastPosPush = now;
         _send(LinkMessage.position(pos: st.position, duration: st.duration));
       }
+    }
+  }
+
+  /// 起播自动唤起：联动开启且腕上端未连接（BLE/云端均不在线）时，经
+  /// Wear Engine 静默 ping 远程拉起腕上端（对标高德「开始导航即拉起手表版」）。
+  /// 全程无弹窗：未装运动健康/未授权/无设备/未安装均静默跳过并记日志，
+  /// 授权引导仍走设置页「唤醒手表应用」手动入口；60s 冷却防止频繁切歌连打。
+  Future<void> _maybeAutoWakeWatch() async {
+    if (_wakeInFlight) return;
+    final s = _container.read(settingsProvider).valueOrNull;
+    if (s?.watchLinkageEnabled != true) {
+      AppLog.info('watch_link', '起播自动唤起跳过: 联动开关未开启');
+      return;
+    }
+    if (_connected || _cloudWatchOnline) {
+      AppLog.debug('watch_link', '起播自动唤起跳过: 腕上端已在线');
+      return;
+    }
+    final now = DateTime.now();
+    if (now.difference(_lastWakeAttempt) < _wakeRetryGap) {
+      AppLog.debug('watch_link', '起播自动唤起跳过: 冷却中');
+      return;
+    }
+    _lastWakeAttempt = now;
+    _wakeInFlight = true;
+    try {
+      final r = await _channel.wearWake();
+      if (r.ok) {
+        AppLog.info('watch_link',
+            '起播自动唤起: ok=true code=${r.code} ${r.message}');
+      } else {
+        AppLog.warn('watch_link',
+            '起播自动唤起失败: code=${r.code} ${r.message}');
+      }
+      // 仅冷启动成功给提示（已在运行/失败静默，避免打扰）
+      if (r.ok && r.code == 201) {
+        final ctx = appNavigatorKey.currentContext;
+        if (ctx != null && ctx.mounted) {
+          showXianYuToast(ctx, tr('已拉起腕上端'),
+              duration: const Duration(seconds: 2));
+        }
+      }
+    } finally {
+      _wakeInFlight = false;
     }
   }
 

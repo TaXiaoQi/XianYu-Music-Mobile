@@ -19,8 +19,9 @@ import com.huawei.wearengine.p2p.PingCallback
  * 前置条件（缺任一则对应接口报错，Dart 侧降级提示）：
  *  - 手机装有华为运动健康并已登录华为账号（<queries> 已声明包可见性）；
  *  - 手表已在运动健康中绑定、连接正常；
- *  - AGC 已开通 Wear Engine 服务且「设备基础信息（DEVICE_MANAGER）」权限
- *    审批通过（未批时接口报错码 8 等，authorize/wake 全程 try/catch 兜底）。
+ *  - AGC 已开通 Wear Engine 服务且「设备基础信息（DEVICE_MANAGER）」审批
+ *    通过，P2P 子能力已勾选（未批时接口报错码 8 等，authorize/wake 全程
+ *    try/catch 兜底）。
  *
  * 拉起机制：P2P `ping(device)`——穿戴侧应用已安装未启动时由系统冷启动
  * （errCode 201），已启动返回 202，未安装返回 200。本轮仅用 ping 拉起，
@@ -63,6 +64,8 @@ object WearEngineClient {
 
     /**
      * 查询 DEVICE_MANAGER 授权状态，未授权时弹华为授权页。
+     * 注：本 SDK（5.0.2.306）Permission 无 P2P 项，ping 不需要运行时 P2P
+     * 权限，仅需 AGC 侧开通 Wear Engine 的 P2P 子能力。
      * [onResult] 恰好回调一次：granted=true 已授权；canceled=true 用户取消；
      * 其余为失败原因文案。
      */

@@ -301,7 +301,16 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       title: tr('腕上联动'),
       subtitle: subtitle,
       value: enabled,
-      onChanged: (v) => n.setWatchLinkageEnabled(v),
+      onChanged: (v) async {
+        await n.setWatchLinkageEnabled(v);
+        // 仅在用户主动开启时申请蓝牙权限，开屏不再弹窗
+        if (v) {
+          final ctrl = ref.read(watchLinkControllerProvider);
+          if (!await ctrl.hasLinkPermission()) {
+            await ctrl.requestLinkPermission();
+          }
+        }
+      },
     );
   }
 
