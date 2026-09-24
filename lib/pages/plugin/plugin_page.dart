@@ -9,8 +9,6 @@ import '../../src/widgets/flat_top_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
-
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/plugin/plugin_engine.dart';
@@ -46,6 +44,10 @@ class _PluginPageState extends ConsumerState<PluginPage> {
 
   final Map<String, bool> _hasVars = {};
   bool _collectingVars = false;
+
+  // 已检测出的插件更新结果缓存：点更新直接安装，免重复检测与弹窗（对齐桌面端）
+  final Map<String, PluginUpdateCheckResult> _updateCheckResults = {};
+  final Set<String> _updatingIds = {};
 
   @override
   void initState() {
@@ -288,6 +290,7 @@ class _PluginPageState extends ConsumerState<PluginPage> {
                           index: i,
                           dragEnabled: _query.isEmpty,
                           hasVars: _hasVars[source.id] == true,
+                          onUpdate: (ctx) => _updatePlugin(ctx, source),
                         ),
                       ),
                     );
@@ -568,6 +571,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       final sources = ref.read(pluginManagerProvider).sources;
       final results = await service.checkAll();
       if (!mounted) return;
+      _updateCheckResults
+        ..clear()
+        ..addAll(results);
       for (final s in sources) {
         final r = results[s.id];
         await manager.setUpdateAvailable(s.id, r?.hasUpdate ?? false);
@@ -585,6 +591,44 @@ class _PluginPageState extends ConsumerState<PluginPage> {
       showXianYuToast(context, tr('检查更新失败：{e}', {'e': e}));
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
+
+  // 对齐桌面端：已检出更新则点击直接安装；未检出时先检测并提示再次点击，全程无确认弹窗
+  Future<void> _updatePlugin(BuildContext context, PluginSource source) async {
+    if (_updatingIds.contains(source.id)) return;
+    _updatingIds.add(source.id);
+    final manager = ref.read(pluginManagerProvider.notifier);
+    try {
+      final cached = _updateCheckResults[source.id];
+      if (cached != null && cached.hasUpdate && cached.newScript != null) {
+        final service = await _updateService();
+        final outcome = await service.performPluginUpdate(source, cached);
+        if (!context.mounted) return;
+        showXianYuToast(context, outcome.message);
+        if (outcome.success) {
+          _updateCheckResults.remove(source.id);
+          await manager.setUpdateAvailable(source.id, false);
+        }
+        return;
+      }
+      final service = await _updateService();
+      final result = await service.checkPluginUpdate(source);
+      await manager.setUpdateAvailable(source.id, result?.hasUpdate ?? false);
+      if (!context.mounted) return;
+      if (result == null) {
+        showXianYuToast(context, tr('无可用更新源'));
+      } else if (result.hasUpdate) {
+        _updateCheckResults[source.id] = result;
+        showXianYuToast(context, tr('「{name}」发现新版本 v{ver}，再次点击更新',
+            {'name': source.name, 'ver': result.newVersion}));
+      } else {
+        showXianYuToast(context, tr('「{name}」已是最新版本', {'name': source.name}));
+      }
+    } catch (e) {
+      if (context.mounted) showXianYuToast(context, tr('检查更新失败：{e}', {'e': e}));
+    } finally {
+      _updatingIds.remove(source.id);
     }
   }
 
@@ -803,12 +847,14 @@ class _PluginCard extends ConsumerWidget {
     required this.index,
     required this.dragEnabled,
     required this.hasVars,
+    required this.onUpdate,
   });
 
   final PluginSource source;
   final int index;
   final bool dragEnabled;
   final bool hasVars;
+  final Future<void> Function(BuildContext context) onUpdate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -997,7 +1043,7 @@ class _PluginCard extends ConsumerWidget {
           context,
           Icons.system_update_alt_outlined,
           tr('更新'),
-          () => _checkUpdate(context, ref),
+          () => onUpdate(context),
           color: source.updateAvailable ? scheme.error : null,
         ),
         const SizedBox(width: 4),
@@ -1080,49 +1126,6 @@ class _PluginCard extends ConsumerWidget {
       context,
       (ctx) => _PluginDetailSheet(source: source),
     );
-  }
-
-  Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
-    final engine = await ref.read(pluginEngineProvider.future);
-    final service = PluginUpdateService(
-      engine,
-      ref.read(pluginManagerProvider.notifier),
-      subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
-    );
-    final result = await service.checkPluginUpdate(source);
-    await ref.read(pluginManagerProvider.notifier)
-        .setUpdateAvailable(source.id, result?.hasUpdate ?? false);
-    if (!context.mounted) return;
-    if (result == null) {
-      showXianYuToast(context, tr('无可用更新源'));
-      return;
-    }
-    if (!result.hasUpdate) {
-      showXianYuToast(context, tr('「{name}」已是最新版本', {'name': source.name}));
-      return;
-    }
-    final confirmed = await showPredictiveDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('发现新版本')),
-        content: Text(
-            tr('「{name}」\n当前版本：v{cur}\n新版本：v{new}\n\n是否立即更新？', {'name': source.name, 'cur': result.currentVersion, 'new': result.newVersion})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('更新')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    final outcome = await service.performPluginUpdate(source, result);
-    if (!context.mounted) return;
-    showXianYuToast(context, outcome.message);
   }
 
   void _confirmRemove(BuildContext context, WidgetRef ref, PluginManager manager) {

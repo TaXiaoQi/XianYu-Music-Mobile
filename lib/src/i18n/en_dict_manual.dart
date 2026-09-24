@@ -1105,6 +1105,7 @@ const Map<String, String> enDictManual = {
   '{count} 个跳过）': '{count} skipped)',
   '· {name}（{count} 首）': '· {name} ({count} songs)',
   '「{name}」已是最新版本': '"{name}" is already the latest version',
+  '「{name}」发现新版本 v{ver}，再次点击更新': '"{name}" found new version v{ver}, tap update again',
   '「{name}」暂无榜单': 'No charts for "{name}"',
   '「{name}」为必填项': '"{name}" is required',
   '「{name}」授权已失效，请重新授权': 'Access to "{name}" has expired; re-authorize it',
