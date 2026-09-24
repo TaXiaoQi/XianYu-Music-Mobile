@@ -86,6 +86,15 @@ Map<String, dynamic> mvSongOf(QueueItem c) {
       final raw = jsonDecode(js) as Map<String, dynamic>;
       if (raw['format'] == 'musicfree' && raw['musicInfo'] is Map) {
         final song = Map<String, dynamic>.from(raw['musicInfo'] as Map);
+        // Baka 系插件的原始 item 被宿主存进 rawData（musicInfo 顶层是 lx
+        // 风格的 name/singer），而插件 getMvSource 只认顶层的 mv/mvVid/mvId
+        // ——缺 vid 会被插件入口判定直接 return null，表现为 MV 全部无结果。
+        final rawMap = song['rawData'];
+        if (rawMap is Map) {
+          for (final k in const ['mv', 'mvVid', 'mvId', 'vid']) {
+            if (rawMap[k] != null && song[k] == null) song[k] = rawMap[k];
+          }
+        }
         if (raw['pluginId'] != null) {
           song['pluginId'] = raw['pluginId'];
         }
