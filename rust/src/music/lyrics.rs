@@ -1755,6 +1755,44 @@ fn parse_manual_lrc_like(raw: &str) -> Vec<ParsedLine> {
     finalize_lrc_blank_lines(lines)
 }
 
+/// 把主歌词 XML 尾部的译文 LRC 行按时间戳就近关联到主行 translated_text
+/// （QQ/Baka 链路：解密 QRC XML + 插件译文 LRC 拼成一份 raw）。仅填空位不
+/// 覆盖已有翻译；时间差超过 2s 视为对不上、丢弃。
+fn attach_lrc_translation_lines(lines: &mut [ParsedLine], tail: &str) {
+    let translation_lines = parse_manual_lrc_like(tail);
+    if translation_lines.is_empty() || lines.is_empty() {
+        return;
+    }
+    for translation in &translation_lines {
+        let text = translation.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let mut best: Option<(usize, i64)> = None;
+        for (index, line) in lines.iter().enumerate() {
+            let delta = (line.start_ms as i64 - translation.start_ms as i64).abs();
+            if delta > 2000 {
+                continue;
+            }
+            if best.map(|(_, best_delta)| delta < best_delta).unwrap_or(true) {
+                best = Some((index, delta));
+            }
+        }
+        if let Some((index, _)) = best {
+            let line = &mut lines[index];
+            let is_empty = line
+                .translated_text
+                .as_deref()
+                .map(str::trim)
+                .map(str::is_empty)
+                .unwrap_or(true);
+            if is_empty {
+                line.translated_text = Some(text.to_string());
+            }
+        }
+    }
+}
+
 fn collect_candidate(
     candidates: &mut Vec<ParserCandidate>,
     source: ParsedLineSourceFormat,
@@ -1838,14 +1876,24 @@ fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
             .collect(),
     );
 
+    let mut qrc_candidate = parse_qrc(&normalized)
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| prepare_amll_line(line, ParsedLineSourceFormat::Qrc, index))
+        .collect::<Vec<_>>();
+    // Baka/插件链路把解密 QRC XML 与插件译文 LRC 拼成一份 raw（同桌面组合）。
+    // parse_qrc 只消费 XML，尾部译文 LRC 会被静默丢弃——这里按时间戳把译文
+    // 行关联回主行 translated_text（±2s 内就近），译文解析复用行级 LRC 解析
+    if !qrc_candidate.is_empty() {
+        if let Some(end) = normalized.find("</QrcInfos>") {
+            let tail = &normalized[end + "</QrcInfos>".len()..];
+            attach_lrc_translation_lines(&mut qrc_candidate, tail);
+        }
+    }
     collect_candidate(
         &mut candidates,
         ParsedLineSourceFormat::Qrc,
-        parse_qrc(&normalized)
-            .iter()
-            .enumerate()
-            .filter_map(|(index, line)| prepare_amll_line(line, ParsedLineSourceFormat::Qrc, index))
-            .collect(),
+        qrc_candidate,
     );
 
     collect_candidate(
@@ -4816,6 +4864,57 @@ mod tests {
             vec!["You ", "know ", "you ", "love ", "me", " I ", "know ", "you ", "care",]
         );
         assert_eq!(parsed[1].text, "你知道你爱我 我知道你在意");
+    }
+
+    #[test]
+    fn parses_qq_real_qrc_fixture() {
+        // Baka QQ 插件解密产物（天外来物真实 QRC XML）：解析兼容性回归
+        let parsed = parse_raw_lyrics(include_str!("fixtures/lyrics/qq_real.qrc"));
+
+        assert!(
+            !parsed.is_empty(),
+            "QQ 真实 QRC XML 应解析出歌词行，实际 0 行"
+        );
+        assert_eq!(parsed[0].source_format, ParsedLineSourceFormat::Qrc);
+        assert!(
+            parsed.iter().all(|line| !line.text.trim().is_empty()),
+            "解析行不应有空文本"
+        );
+    }
+
+    #[test]
+    fn parses_qq_qrc_mixed_with_translation_lrc() {
+        // 宿主取词链把解密 QRC XML 与插件译文 LRC 拼成一份 lyricsRaw：应走
+        // Qrc 逐字解析，且译文按时间戳关联出 translated_text 而不是丢弃
+        let raw = format!(
+            "{}\n[00:21.50]这是译文第一行\n[00:45.00]这是译文第二行",
+            include_str!("fixtures/lyrics/qq_real.qrc")
+        );
+        let parsed = parse_raw_lyrics(&raw);
+
+        assert!(
+            !parsed.is_empty(),
+            "QRC XML + 译文 LRC 混合文本应解析出歌词行，实际 0 行"
+        );
+        assert_eq!(
+            parsed[0].source_format,
+            ParsedLineSourceFormat::Qrc,
+            "混合文本应走 Qrc 逐字分支，实际走了 {:?}",
+            parsed[0].source_format
+        );
+        assert!(
+            parsed[0].words.as_ref().map(|w| !w.is_empty()).unwrap_or(false),
+            "Qrc 行应保留逐字 words"
+        );
+        let with_translation = parsed
+            .iter()
+            .find(|line| line.translated_text.as_deref().map(|t| !t.trim().is_empty()).unwrap_or(false));
+        assert!(
+            with_translation.is_some(),
+            "译文 LRC 应关联出 translated_text，实际全部为空；行数={}，前3行文本={:?}",
+            parsed.len(),
+            parsed.iter().take(3).map(|l| l.text.as_str()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
