@@ -81,7 +81,7 @@ EXCLUDE_DIRS_EXACT = {"third_party", "l10n", "test"}
 EXCLUDE_FILE_SUFFIX = (".g.dart", ".freezed.dart")
 # 脱敏规则：替换 defaultAuthApiSecret 真实值为 ***
 DESENSITIZE_MAP = {
-    "const defaultAuthApiSecret = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';":
+    "const defaultAuthApiSecret = 'acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3';":
     "const defaultAuthApiSecret = '***';",
 }
 

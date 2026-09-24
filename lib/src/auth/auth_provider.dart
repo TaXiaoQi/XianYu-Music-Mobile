@@ -11,7 +11,7 @@ import 'server_models.dart';
 import '../i18n/i18n.dart';
 
 const defaultAuthBaseUrl = 'https://api.xianyumusic.cn/api';
-const defaultAuthApiSecret = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
+const defaultAuthApiSecret = 'acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3';
 
 class AuthUser {
   final String id;

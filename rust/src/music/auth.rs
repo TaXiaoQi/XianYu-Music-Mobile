@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 /// 默认 API 签名密钥。自建后端可在客户端账号设置页覆盖。
-const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
+const DEFAULT_API_SECRET: &str = "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3";
 
 /// 官方后端地址
 const OFFICIAL_AUTH_BASE_URL: &str = "https://api.xianyumusic.cn/api";
