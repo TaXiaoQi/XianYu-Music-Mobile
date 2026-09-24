@@ -52,8 +52,15 @@ public class MainMethodCallHandler implements MethodCallHandler {
             String id = call.argument("id");
             AudioPlayer player = players.get(id);
             if (player != null) {
-                player.dispose();
+                // 先摘号再 dispose：dispose 抛异常时若后摘号，残留的 id 会让
+                // 同实例下一次 init 报 "Platform player already exists"。
+                // dispose 本体可能阻塞在挂死的 ExoPlayer.release 上（此时
+                // Dart 侧有超时兜底并整体重建新实例），这里不吞结果语义。
                 players.remove(id);
+                try {
+                    player.dispose();
+                } catch (Exception e) {
+                }
             }
             result.success(new HashMap<String, Object>());
             break;

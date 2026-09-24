@@ -125,7 +125,7 @@ object WearEngineClient {
             return
         }
         try {
-            HiWear.getDeviceClient(act).connectedDevices
+            HiWear.getDeviceClient(act).getBondedDevices()
                 .addOnSuccessListener { devs ->
                     mainHandler.post {
                         onResult(
@@ -157,7 +157,7 @@ object WearEngineClient {
             return
         }
         try {
-            HiWear.getDeviceClient(act).connectedDevices
+            HiWear.getDeviceClient(act).getBondedDevices()
                 .addOnSuccessListener { devs ->
                     val dev = devs.orEmpty().firstOrNull { it.isConnected }
                         ?: devs.orEmpty().firstOrNull()
