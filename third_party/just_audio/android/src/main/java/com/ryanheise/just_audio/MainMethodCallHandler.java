@@ -29,10 +29,12 @@ public class MainMethodCallHandler implements MethodCallHandler {
         switch (call.method) {
         case "init": {
             String id = call.argument("id");
-            if (players.containsKey(id)) {
-                result.error("Platform player " + id + " already exists", null, null);
-                break;
-            }
+            // 幂等 init：idle 代理机制会反复「disposePlayer → 同 id init」握手。
+            // load 挂死时 dispose 回复丢失/激活被打断会让旧注册残留，此后每次
+            // activate 的 init 都报 "already exists"，播放器永久失能直到重启。
+            // 撞号时改为摘掉残留实例并重建（dispose 可能阻塞在挂死的
+            // ExoPlayer.release 上，故先回包再清理，不拖住 Dart 侧激活）。
+            AudioPlayer stale = players.remove(id);
             List<Object> rawAudioEffects = call.argument("androidAudioEffects");
             players.put(
                 id,
@@ -46,6 +48,12 @@ public class MainMethodCallHandler implements MethodCallHandler {
                 )
             );
             result.success(null);
+            if (stale != null) {
+                try {
+                    stale.dispose();
+                } catch (Exception e) {
+                }
+            }
             break;
         }
         case "disposePlayer": {
