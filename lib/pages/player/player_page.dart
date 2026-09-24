@@ -24,11 +24,11 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/lyrics/lyric_font.dart';
+import '../../src/lyrics/lyric_model.dart';
 import '../../src/lyrics/lyrics_repository.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/rust/api.dart';
-import '../../src/plugin/plugin_provider.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/navigation/shell.dart' show isLandscapeProvider;
 import '../../src/share/share_service.dart';
@@ -63,6 +63,26 @@ void _cacheLyrics(String path, List<_LyricLineItem> lines) {
   if (_lyricsCache.length > _lyricsCacheMax) {
     _lyricsCache.remove(_lyricsCache.keys.first);
   }
+}
+
+/// LyricsRepository 仓储模型（LyricLine）→ 播放页渲染模型
+/// （_LyricLineItem）的字段子集映射。在线歌词链路复用仓储取词，
+/// 两套模型在此对齐。
+List<_LyricLineItem> _lyricLinesToViewItems(List<LyricLine> lines) {
+  return [
+    for (final l in lines)
+      _LyricLineItem(
+        timeMs: l.timeMs,
+        endTimeMs: l.endTimeMs,
+        text: l.text,
+        translation: l.translation,
+        romaji: l.romaji,
+        words: [
+          for (final w in l.words)
+            _LyricWordItem(text: w.text, start: w.start, end: w.end),
+        ],
+      ),
+  ];
 }
 
 bool _hasPlayerEffects(SoundEffectSettings sfx) {
@@ -2314,39 +2334,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     }
   }
 
-  Future<String> _fetchPluginPreviewLyric(QueueItem item) async {
-    final online = item.onlineSongJson;
-    if (online == null || online.isEmpty) return '';
-    Map<String, dynamic> parsed;
-    try {
-      parsed = jsonDecode(online) as Map<String, dynamic>;
-    } catch (_) {
-      return '';
-    }
-    final pluginId = parsed['pluginId'] as String?;
-    if (pluginId == null || pluginId.isEmpty) return '';
-    final sourceKey = parsed['source'] as String? ?? '';
-    final musicInfo = parsed['musicInfo'] as Map<String, dynamic>? ?? {};
-    try {
-      final engine = await ref.read(pluginEngineProvider.future);
-      final sources = await engine.store.loadSources();
-      final matches = sources.where((s) => s.id == pluginId).toList();
-      if (matches.isEmpty) return '';
-      final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
-      if (lyric == null) return '';
-      final text = (lyric['lxlyric'] ??
-              lyric['yrc'] ??
-              lyric['qrc'] ??
-              lyric['eslrc'] ??
-              lyric['lyric'] ??
-              lyric['rawLrc']) as String? ??
-          '';
-      return pluginLyricLooksEncrypted(text) ? '' : text;
-    } catch (_) {
-      return '';
-    }
-  }
-
   Future<void> _load() async {
     final item = widget.current;
     final path = item?.path ?? '';
@@ -2358,52 +2345,25 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview> {
     }
     _loading = true;
     try {
-      String jsonStr = '';
       if (item!.isOnline) {
-        final pluginText = await _fetchPluginPreviewLyric(item);
-        if (pluginText.trim().isNotEmpty) {
-          jsonStr = await parseLyrics(rawLyrics: pluginText);
-        } else if (item.source != null && item.onlineInfoJson != null) {
-          final rawResultStr = await fetchLyricFromSource(
-            source: item.source!,
-            songInfoJson: item.onlineInfoJson!,
-          );
-          if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
-            String lyricsToParse = '';
-            try {
-              final lyricObj =
-                  jsonDecode(rawResultStr) as Map<String, dynamic>;
-              final lxlyric = lyricObj['lxlyric'] as String? ?? '';
-              final lyric = lyricObj['lyric'] as String? ?? '';
-              final tlyric = lyricObj['tlyric'] as String? ?? '';
-              if (lxlyric.trim().isNotEmpty) {
-                lyricsToParse = lxlyric;
-              } else if (lyric.trim().isNotEmpty) {
-                if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
-                  lyricsToParse = '$lyric\n$tlyric';
-                } else {
-                  lyricsToParse = lyric;
-                }
-              }
-            } catch (_) {
-              lyricsToParse = rawResultStr;
-            }
-            if (lyricsToParse.trim().isNotEmpty) {
-              jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
-            }
-          }
-        }
+        // 在线歌曲与主歌词页同源：统一走 LyricsRepository（含密文解密）。
+        final lines =
+            _lyricLinesToViewItems(await ref.read(lyricsRepositoryProvider).fetchLyrics(item));
+        if (lines.isNotEmpty) _cacheLyrics(path, lines);
+        if (!mounted) return;
+        setState(() => _lines = lines);
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
-        jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+        final jsonStr =
+            await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+        final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
+            ? await compute(_parseLyricsJson, jsonStr)
+            : const <_LyricLineItem>[];
+        final lines = await compute(_normalizeBoundaries, parsed);
+        if (lines.isNotEmpty) _cacheLyrics(path, lines);
+        if (!mounted) return;
+        setState(() => _lines = lines);
       }
-      final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
-          ? await compute(_parseLyricsJson, jsonStr)
-          : const <_LyricLineItem>[];
-      final lines = await compute(_normalizeBoundaries, parsed);
-      if (lines.isNotEmpty) _cacheLyrics(path, lines);
-      if (!mounted) return;
-      setState(() => _lines = lines);
     } catch (_) {
       if (mounted) setState(() => _lines = const []);
     } finally {
@@ -5619,42 +5579,25 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       String jsonStr = '';
 
       if (item.isOnline) {
-        final pluginText = await _fetchPluginLyric(item);
-        if (pluginText.trim().isNotEmpty) {
-          jsonStr = await parseLyrics(rawLyrics: pluginText);
-        } else if (item.source != null && item.onlineInfoJson != null) {
-          final rawResultStr = await fetchLyricFromSource(
-            source: item.source!,
-            songInfoJson: item.onlineInfoJson!,
-          );
-
-          if (rawResultStr != 'null' && rawResultStr.isNotEmpty) {
-            String lyricsToParse = '';
-
-            try {
-              final lyricObj =
-                  jsonDecode(rawResultStr) as Map<String, dynamic>;
-              final lxlyric = lyricObj['lxlyric'] as String? ?? '';
-              final lyric = lyricObj['lyric'] as String? ?? '';
-              final tlyric = lyricObj['tlyric'] as String? ?? '';
-
-              if (lxlyric.trim().isNotEmpty) {
-                lyricsToParse = lxlyric;
-              } else if (lyric.trim().isNotEmpty) {
-                if (tlyric.trim().isNotEmpty && !lyric.contains('tlyric')) {
-                  lyricsToParse = '$lyric\n$tlyric';
-                } else {
-                  lyricsToParse = lyric;
-                }
-              }
-            } catch (_) {
-              lyricsToParse = rawResultStr;
-            }
-
-            if (lyricsToParse.trim().isNotEmpty) {
-              jsonStr = await parseLyrics(rawLyrics: lyricsToParse);
-            }
-          }
+        // 在线歌曲统一走 LyricsRepository：含插件密文 QRC/e-lrc 解密、
+        // 翻译解密、原生兜底与 payload 缓存。此前播放页独立取词对密文
+        // 直接判空，Baka 系 QQ 插件密文歌词显示「暂无歌词」。
+        final repoLines = await ref.read(lyricsRepositoryProvider).fetchLyrics(item);
+        final viewLines = _lyricLinesToViewItems(repoLines);
+        if (viewLines.isNotEmpty && mounted) {
+          _cacheLyrics(item.path, viewLines);
+          setState(() {
+            _lines = viewLines;
+            _loading = false;
+          });
+          _reportRomaji();
+          // 歌词就绪后强制校准（同缓存分支）：异步加载期间 _lastActiveIndex
+          // 可能已在旧歌词上推进，需立即按当前播放位置定位到正在唱的行
+          _lastActiveIndex = -1;
+          _renderActiveIndex = -1;
+          _pendingCenterJump = true;
+          _autoScrollToActiveLine(force: true);
+          return;
         }
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
@@ -5697,39 +5640,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         });
         _reportRomaji();
       }
-    }
-  }
-
-  Future<String> _fetchPluginLyric(QueueItem item) async {
-    final online = item.onlineSongJson;
-    if (online == null || online.isEmpty) return '';
-    Map<String, dynamic> parsed;
-    try {
-      parsed = jsonDecode(online) as Map<String, dynamic>;
-    } catch (_) {
-      return '';
-    }
-    final pluginId = parsed['pluginId'] as String?;
-    if (pluginId == null || pluginId.isEmpty) return '';
-    final sourceKey = parsed['source'] as String? ?? '';
-    final musicInfo = parsed['musicInfo'] as Map<String, dynamic>? ?? {};
-    try {
-      final engine = await ref.read(pluginEngineProvider.future);
-      final sources = await engine.store.loadSources();
-      final matches = sources.where((s) => s.id == pluginId).toList();
-      if (matches.isEmpty) return '';
-      final lyric = await engine.getLyric(matches.first, sourceKey, musicInfo);
-      if (lyric == null) return '';
-      final text = (lyric['lxlyric'] ??
-              lyric['yrc'] ??
-              lyric['qrc'] ??
-              lyric['eslrc'] ??
-              lyric['lyric'] ??
-              lyric['rawLrc']) as String? ??
-          '';
-      return pluginLyricLooksEncrypted(text) ? '' : text;
-    } catch (_) {
-      return '';
     }
   }
 

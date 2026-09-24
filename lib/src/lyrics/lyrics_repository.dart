@@ -45,7 +45,8 @@ class LyricsRepository {
       final localized = localizeLyricLines(lines);
       if (localized.isNotEmpty) _cacheLyrics(item.path, localized);
       return localized;
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('lyric', '歌词载荷处理异常: $e');
       return const [];
     }
   }
@@ -86,7 +87,8 @@ class LyricsRepository {
               final dt = await _decryptEncryptedLyric(tlyric);
               if (dt != null && dt.trim().isNotEmpty) combined = '$combined\n$dt';
             }
-            return parseLyrics(rawLyrics: combined);
+            final payload = await parseLyrics(rawLyrics: combined);
+            return payload;
           }
           AppLog.warn('lyric', '插件歌词: 密文解密失败，无可用歌词');
           return '';
