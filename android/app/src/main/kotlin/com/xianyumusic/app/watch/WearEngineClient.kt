@@ -7,8 +7,10 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import com.huawei.wearengine.HiWear
+import com.huawei.wearengine.WearEngineException
 import com.huawei.wearengine.auth.AuthCallback
 import com.huawei.wearengine.auth.Permission
+import com.huawei.wearengine.common.WearEngineErrorCode
 import com.huawei.wearengine.device.Device
 import com.huawei.wearengine.p2p.PingCallback
 
@@ -29,10 +31,13 @@ import com.huawei.wearengine.p2p.PingCallback
  */
 object WearEngineClient {
     /** 腕上端鸿蒙工程 bundleName（XianYu-Music-Watch/ohos/AppScope/app.json5）。 */
-    const val WATCH_BUNDLE_NAME = "com.xianyumusic.watch"
+    const val WATCH_BUNDLE_NAME = "com.xianyumusic.watch.next"
 
     /** Wear Engine 服务宿主：华为运动健康。 */
     private const val HEALTH_PACKAGE = "com.huawei.health"
+
+    /** 底层服务宿主：HMS Core (APK)，非华为手机上 Wear Engine 必需。 */
+    const val HMS_PACKAGE = "com.huawei.hms"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -45,6 +50,27 @@ object WearEngineClient {
         } catch (_: Exception) {
             false
         }
+    }
+
+    /** HMS Core (APK) 是否安装：荣耀等非华为手机上 Wear Engine 依赖其提供底层服务。 */
+    fun hasHmsCore(activity: Activity?): Boolean {
+        val ctx = activity ?: return false
+        return try {
+            ctx.packageManager.getPackageInfo(HMS_PACKAGE, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** 失败异常转可读文案：WearEngineException 附带真实错误码（12=Internal error、6=服务未连上、3=运动健康未登录等）。 */
+    private fun errText(e: Exception): String {
+        if (e is WearEngineException) {
+            val code = e.errorCode
+            val msg = e.message ?: WearEngineErrorCode.getErrorMsgFromCode(code)
+            return "$msg(code=$code)"
+        }
+        return e.message ?: e.javaClass.simpleName
     }
 
     /** 跳转应用市场安装运动健康（无市场时回退浏览器打开官网）。 */
@@ -145,9 +171,11 @@ object WearEngineClient {
     }
 
     /**
-     * ping 拉起穿戴侧应用：优选取第一台已连接设备。
+     * ping 拉起穿戴侧应用（自动唤起静默路径）：先静默校验 DEVICE_MANAGER
+     * 授权（getBondedDevices 的官方前置条件，未授权直接放弃，不弹窗），
+     * 再取第一台**已连接**设备 ping——对未连接设备 ping 注定失败。
      * [onResult] 恰好回调一次：ok=true 已拉起（201 冷启动 / 202 已在运行）；
-     * 200=手表端未安装；其余为失败原因文案。
+     * 200=手表端未安装；401=未授权；404=无绑定设备；405=手表未连接；其余为失败原因文案。
      */
     fun wake(
         activity: Activity?,
@@ -159,24 +187,51 @@ object WearEngineClient {
             onResult(false, -1, "activity 不可用")
             return
         }
+        if (!hasWearEngine(act)) {
+            onResult(false, 2, "未安装华为运动健康")
+            return
+        }
+        try {
+            HiWear.getAuthClient(act).checkPermission(Permission.DEVICE_MANAGER)
+                .addOnSuccessListener { granted ->
+                    mainHandler.post {
+                        if (granted == true) {
+                            wakeBonded(act, bundleName, onResult)
+                        } else {
+                            onResult(false, 401, "Wear Engine 未授权")
+                        }
+                    }
+                }
+                // 授权校验接口不可用（如运动健康版本过旧）时尽力而为
+                .addOnFailureListener { _ -> wakeBonded(act, bundleName, onResult) }
+        } catch (e: Exception) {
+            onResult(false, -1, errText(e))
+        }
+    }
+
+    private fun wakeBonded(
+        act: Activity,
+        bundleName: String,
+        onResult: (Boolean, Int, String) -> Unit,
+    ) {
         try {
             HiWear.getDeviceClient(act).getBondedDevices()
                 .addOnSuccessListener { devs ->
-                    val dev = devs.orEmpty().firstOrNull { it.isConnected }
-                        ?: devs.orEmpty().firstOrNull()
-                    if (dev == null) {
-                        mainHandler.post {
-                            onResult(false, 404, "未找到已绑定的穿戴设备")
+                    mainHandler.post {
+                        val list = devs.orEmpty()
+                        val dev = list.firstOrNull { it.isConnected }
+                        when {
+                            dev != null -> ping(act, dev, bundleName, onResult)
+                            list.isEmpty() -> onResult(false, 404, "未找到已绑定的穿戴设备")
+                            else -> onResult(false, 405, "手表未连接（运动健康蓝牙未连上）")
                         }
-                    } else {
-                        ping(act, dev, bundleName, onResult)
                     }
                 }
                 .addOnFailureListener { e ->
-                    mainHandler.post { onResult(false, -1, e.message ?: "获取设备列表失败") }
+                    mainHandler.post { onResult(false, -1, errText(e)) }
                 }
         } catch (e: Exception) {
-            onResult(false, -1, e.message ?: "Wear Engine 不可用")
+            onResult(false, -1, errText(e))
         }
     }
 
@@ -201,7 +256,7 @@ object WearEngineClient {
                 }
             })
         } catch (e: Exception) {
-            onResult(false, -1, e.message ?: "ping 失败")
+            onResult(false, -1, errText(e))
         }
     }
 }

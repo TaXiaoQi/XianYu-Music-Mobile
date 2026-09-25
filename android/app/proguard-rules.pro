@@ -20,6 +20,10 @@
 -keep class android.support.v4.content.FileProvider { *; }
 
 # 华为 Wear Engine SDK：回调接口经 Binder 跨进程派发，混淆会破坏 AIDL/反射
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
 -keep class com.huawei.wearengine.** { *; }
 -dontwarn com.huawei.wearengine.**
 -keep class com.huawei.hmf.tasks.** { *; }
