@@ -3697,13 +3697,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     if (state.usbExclusive || state.dspActive) {
+      // 暂停/恢复必须走 Pause/Resume（Rust 侧仅切换流状态，samples_played
+      // 冻结不动，位置严格连续）。不可用 Seek(state.position) 实现——显示
+      // 位置比实际解码位置滞后至多一个轮询周期，且 try_seek 失败时错误被
+      // 吞、进度基准仍被无条件重设，恢复播放后音频位置与进度条脱节（乱飞）。
       if (state.isPlaying) {
         _flushPlayStats();
-        await seekUsbExclusive(timeSecs: state.position, isPlaying: false);
+        _lastUserPauseAt = DateTime.now();
+        await pauseUsbExclusive();
         state = state.copyWith(isPlaying: false);
       } else {
         _trackStartTime = DateTime.now();
-        await seekUsbExclusive(timeSecs: state.position, isPlaying: true);
+        await resumeUsbExclusive();
         state = state.copyWith(isPlaying: true);
       }
       _syncToSystemMediaSession();
