@@ -394,41 +394,46 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         color: appCardColor(context),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            secondary: Icon(Icons.image_outlined,
-                size: 20, color: scheme.primary),
-            title: Text(tr('保留内置封面'),
-                style: const TextStyle(fontSize: 13.5)),
-            subtitle: Text(tr('复制专辑封面到输出文件'),
-                style: TextStyle(fontSize: 11.5, color: scheme.outline)),
-            value: _keepCover,
-            onChanged: _busy
-                ? null
-                : (v) => setState(() => _keepCover = v),
-          ),
-          const Divider(height: 1, indent: 52),
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            secondary: Icon(Icons.subtitles_outlined,
-                size: 20, color: scheme.primary),
-            title: Text(tr('保留内置歌词'),
-                style: const TextStyle(fontSize: 13.5)),
-            subtitle: Text(tr('复制内嵌歌词和元数据'),
-                style: TextStyle(fontSize: 11.5, color: scheme.outline)),
-            value: _keepLyrics,
-            onChanged: _busy
-                ? null
-                : (v) => setState(() => _keepLyrics = v),
-          ),
-        ],
+      // Material 透明层让 SwitchListTile 的背景/水波纹画在这里，
+      // 否则被外层 DecoratedBox 遮住并触发框架断言。
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile.adaptive(
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              secondary: Icon(Icons.image_outlined,
+                  size: 20, color: scheme.primary),
+              title: Text(tr('保留内置封面'),
+                  style: const TextStyle(fontSize: 13.5)),
+              subtitle: Text(tr('复制专辑封面到输出文件'),
+                  style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+              value: _keepCover,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() => _keepCover = v),
+            ),
+            const Divider(height: 1, indent: 52),
+            SwitchListTile.adaptive(
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              secondary: Icon(Icons.subtitles_outlined,
+                  size: 20, color: scheme.primary),
+              title: Text(tr('保留内置歌词'),
+                  style: const TextStyle(fontSize: 13.5)),
+              subtitle: Text(tr('复制内嵌歌词和元数据'),
+                  style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+              value: _keepLyrics,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() => _keepLyrics = v),
+            ),
+          ],
+        ),
       ),
     );
   }
