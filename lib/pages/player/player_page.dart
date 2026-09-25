@@ -1222,6 +1222,11 @@ class _TraditionalPlayerLayoutState
         }
       });
     }
+    if (mvReady && !_wasMvReady && _showLyrics) {
+      // 播放 MV 时顶栏不再有「封面/歌词」切换（整屏就是 MV 画面），
+      // 歌词若还开着就没有回画面的入口了，所以进入 MV 直接回到画面。
+      _showLyrics = false;
+    }
     _wasMvReady = mvReady;
     // 兜底同步：[_showLyrics] 也会在 build 里被改（例如横屏转回竖屏时重置），
     // 那种路径走不到 [_switchPage]，所以这里再核对一次，只能延迟到帧末上报。
@@ -1569,6 +1574,18 @@ class _TraditionalPlayerLayoutState
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Colors.white.withValues(alpha: 0.94),
+                      ),
+                    )
+                  : widget.mvReady
+                  // 整屏都是 MV 画面，封面/歌词切换没有意义，顶栏只留歌名。
+                  ? Text(
+                      widget.current?.title ?? tr('正在播放'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     )
                   : _SegmentSwitcher(
