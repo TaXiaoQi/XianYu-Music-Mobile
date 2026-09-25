@@ -9,6 +9,7 @@ import 'plugin_models.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_store.dart';
 import 'baka_plugin_manager.dart';
+import 'plugin_backup_import.dart' show lxSourceKeyForPlatform;
 
 class PluginEngine {
   final String dataDir;
@@ -652,8 +653,13 @@ class PluginEngine {
     Map<String, dynamic> songInfo,
     String quality,
   ) async {
+    // lx request 的 source 必须是平台码（tx/kg/kw/wy/mg）。跨格式换源或
+    // 导入歌单产生的歌曲可能携带中文展示名（如「QQ音乐」），源端会直接
+    // 报「不支持的音源」，这里统一归一化兜底（已是平台码则原样返回）。
+    final mapped = lxSourceKeyForPlatform(sourceKey);
+    final effectiveKey = mapped.isNotEmpty ? mapped : sourceKey;
     final response = await lxRequest(source, 'musicUrl', {
-      'source': sourceKey,
+      'source': effectiveKey,
       'type': lxQualityKeyFor(quality),
       'musicInfo': songInfo,
     });

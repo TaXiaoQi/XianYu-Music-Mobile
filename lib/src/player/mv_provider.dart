@@ -728,21 +728,28 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (sourceId == null || sourceId.isEmpty) return null;
 
+    // lx 源无 getMvSource 能力（engine.call 会转发成 lx request 报
+    // 「action not supported: undefined」且必然失败），跳过主插件调用，
+    // 仍保留同源 musicfree 插件匹配与宿主兜底，避免每档音质都空耗请求。
+    final isLxSong = song['format']?.toString() == 'lx';
+
     final args = <dynamic>[song, if (quality.isNotEmpty) quality];
     try {
       final engine = await _ref.read(pluginEngineProvider.future);
 
       // 与桌面端一致：优先调用歌曲所属插件的 getMvSource（Baka 扩展）。
-      try {
-        final raw = await engine.call(sourceId, 'getMvSource', args);
-        if (raw is Map<String, dynamic> && raw.isNotEmpty) {
-          final parsed = MvSource.fromJson(raw);
-          if (parsed.url.isNotEmpty) return parsed;
+      if (!isLxSong) {
+        try {
+          final raw = await engine.call(sourceId, 'getMvSource', args);
+          if (raw is Map<String, dynamic> && raw.isNotEmpty) {
+            final parsed = MvSource.fromJson(raw);
+            if (parsed.url.isNotEmpty) return parsed;
+          }
+          AppLog.warn('mv', 'getMvSource($sourceId) 无有效结果');
+        } catch (e) {
+          _mvResolveAmbiguous = true;
+          AppLog.warn('mv', 'getMvSource($sourceId) 调用失败: $e');
         }
-        AppLog.warn('mv', 'getMvSource($sourceId) 无有效结果');
-      } catch (e) {
-        _mvResolveAmbiguous = true;
-        AppLog.warn('mv', 'getMvSource($sourceId) 调用失败: $e');
       }
 
       // 插件路由失败后，按音源身份匹配同源 musicfree 插件再试。
