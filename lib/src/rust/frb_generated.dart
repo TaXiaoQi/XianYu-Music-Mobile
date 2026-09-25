@@ -612,6 +612,7 @@ abstract class RustLibApi extends BaseApi {
     required bool keepSourceFilename,
     required String fileNameStyle,
     required bool overwriteExisting,
+    String? cek,
   });
 
   Future<String> crateApiResolveDownloadPath({
@@ -5268,6 +5269,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required bool keepSourceFilename,
     required String fileNameStyle,
     required bool overwriteExisting,
+    String? cek,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5282,6 +5284,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(keepSourceFilename, serializer);
           sse_encode_String(fileNameStyle, serializer);
           sse_encode_bool(overwriteExisting, serializer);
+          sse_encode_opt_String(cek, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5304,6 +5307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           keepSourceFilename,
           fileNameStyle,
           overwriteExisting,
+          cek,
         ],
         apiImpl: this,
       ),
@@ -5323,6 +5327,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "keepSourceFilename",
           "fileNameStyle",
           "overwriteExisting",
+          "cek",
         ],
       );
 

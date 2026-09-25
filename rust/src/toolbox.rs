@@ -363,8 +363,14 @@ fn build_download_filename(
     quality: &str,
     keep_source_filename: bool,
     style: &str,
+    cek: &str,
 ) -> String {
-    let ext = {
+    // CENC 加密流（如网易 dolby）固定为 MP4/M4A 容器，内部即使是 FLAC
+    // 编码也不是裸 .flac 文件；URL 后缀可能是伪装（.flac 的 VIPER 同款
+    // 手法），因此带 cek 时一律强制 .m4a（对齐桌面端 hasCencCek 规则）。
+    let ext = if !cek.is_empty() {
+        ".m4a".to_string()
+    } else {
         let e = ext_from_url(url);
         if e.is_empty() {
             ext_from_quality(quality)
@@ -395,6 +401,7 @@ fn build_download_filename(
 }
 
 /// 构建下载文件名并解析非冲突完整路径（单次调用）。
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_download_full_path(
     directory: String,
     title: String,
@@ -405,6 +412,7 @@ pub fn resolve_download_full_path(
     keep_source_filename: bool,
     file_name_style: String,
     overwrite_existing: bool,
+    cek: Option<String>,
 ) -> Result<String, String> {
     let validated_dir = path_validator::validate_path(&directory, None)?;
     let directory = validated_dir.to_string_lossy().to_string();
@@ -416,6 +424,7 @@ pub fn resolve_download_full_path(
         &quality,
         keep_source_filename,
         &file_name_style,
+        cek.as_deref().unwrap_or(""),
     );
     let file_name = path_validator::sanitize_filename_component(&file_name)?;
     resolve_download_path(directory, file_name, overwrite_existing)

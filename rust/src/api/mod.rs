@@ -971,6 +971,10 @@ pub fn refresh_folder_songs(
 }
 
 /// 根据歌曲信息构建下载文件名并解析非冲突完整路径（单次调用）。
+///
+/// `cek`：可选 CENC 内容密钥（32 位 hex）。非空时强制 `.m4a` 扩展名
+/// （CENC 流固定为 MP4/M4A 容器，URL 后缀可能是伪装）。
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_download_full_path(
     directory: String,
     title: String,
@@ -981,6 +985,7 @@ pub fn resolve_download_full_path(
     keep_source_filename: bool,
     file_name_style: String,
     overwrite_existing: bool,
+    cek: Option<String>,
 ) -> Result<String, String> {
     crate::toolbox::resolve_download_full_path(
         directory,
@@ -992,6 +997,7 @@ pub fn resolve_download_full_path(
         keep_source_filename,
         file_name_style,
         overwrite_existing,
+        cek,
     )
 }
 

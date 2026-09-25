@@ -420,6 +420,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       keepSourceFilename: settings?.keepSourceFilename ?? false,
       fileNameStyle: settings?.downloadFileNameStyle ?? 'artist-title',
       overwriteExisting: settings?.overwriteExisting ?? false,
+      cek: cek,
     );
 
     _updateTask(task.songPath, progressPercent: 60);
