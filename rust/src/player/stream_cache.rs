@@ -60,7 +60,7 @@ impl<T: Read + Seek> ReadSeek for T {}
 
 /// 对已完整下载的缓存文件执行 CENC 后处理解密（就地，长度不变）。
 /// 若文件不是 CENC 加密则直接返回成功（无操作）。
-fn decrypt_cenc_file(path: &std::path::Path, cek: &str) -> Result<(), String> {
+pub fn decrypt_cenc_file(path: &std::path::Path, cek: &str) -> Result<(), String> {
     let mut data = std::fs::read(path).map_err(|e| format!("读取缓存文件失败: {}", e))?;
     let key = crate::player::cenc::cek_to_key(cek).map_err(|e| e.to_string())?;
     let decrypted = crate::player::cenc::decrypt_cenc_in_place(&mut data, &key)

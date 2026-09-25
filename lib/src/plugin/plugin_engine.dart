@@ -635,12 +635,17 @@ class PluginEngine {
           reported = _normalizeQualityKey(qField);
         }
         final h = obj['headers'];
-        final ekey = (obj['ekey'] ?? obj['cek']) as String?;
+        // ekey（QMC2，base64）与 cek（CENC，32-hex）是两种加密体系，
+        // 必须分开提取——不能 `??` 合并，否则 CENC 密钥会被当成 QMC2
+        // ekey 解析而必然失败（与桌面端 bakaPluginManagerMedia 一致）。
+        final ekey = obj['ekey'] as String?;
+        final cek = obj['cek'] as String?;
         return ResolvedMediaUrl(
           url: url,
           headers: h is Map ? h.cast<String, String>() : null,
           quality: reported ?? requestedNorm,
           ekey: (ekey != null && ekey.isNotEmpty) ? ekey : null,
+          cek: (cek != null && cek.isNotEmpty) ? cek : null,
         );
       }
     }

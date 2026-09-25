@@ -1672,7 +1672,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(resolving: false);
         try {
           await _startOnlineUrl(start.url,
-              headers: start.headers, item: item, ekey: start.ekey);
+              headers: start.headers, item: item, ekey: start.ekey, cek: start.cek);
           state = state.copyWith(currentQuality: start.quality);
         } on _StartOnlineTimeoutException {
           // 二次超时自动降级音质重试：当前音质的 CDN 节点可能挂死
@@ -1689,7 +1689,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           AppLog.info('play',
               '[playOnline] 降级重试 q=${retry.quality} url=${retry.url}');
           await _startOnlineUrl(retry.url,
-              headers: retry.headers, item: item, ekey: retry.ekey);
+              headers: retry.headers, item: item, ekey: retry.ekey, cek: retry.cek);
           state = state.copyWith(currentQuality: retry.quality);
         }
         _refreshQualityMenuState(probe);
@@ -1711,7 +1711,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final seedKey = _songProbeKey(infoMap, item);
         onlineQualityProbeRegistry.seed(
             seedKey, url.quality ?? '320k', url.url,
-            headers: url.headers, ekey: url.ekey);
+            headers: url.headers, ekey: url.ekey, cek: url.cek);
       } catch (_) {
       }
     }
@@ -1720,7 +1720,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       currentQuality: url.quality,
     );
     await _startOnlineUrl(url.url,
-        headers: url.headers, item: item, ekey: url.ekey);
+        headers: url.headers, item: item, ekey: url.ekey, cek: url.cek);
     unawaited(_prewarmOnlineSizes(item));
     _probeMvsAround(item);
   }
@@ -2617,6 +2617,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     Map<String, String>? headers,
     required QueueItem item,
     String? ekey,
+    String? cek,
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
@@ -2628,6 +2629,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         <String, String>{};
     if (ekey != null && ekey.isNotEmpty) {
       await _startEncryptedFile(clean, h, item, ekey);
+      return;
+    }
+    if (cek != null && cek.isNotEmpty) {
+      // CENC 加密流（如网易 dolby）：复用 ekey 的「下载到临时文件 + 解密」
+      // 离线模式，解密由 Rust 侧按 CENC（AES-CTR 样本级）执行。
+      await _startEncryptedFile(clean, h, item, cek, isCenc: true);
       return;
     }
     // DSP 共享管线分支不经 _GatedAudioPlayer，这里兜底记录真实直链 + 请求头
@@ -2732,12 +2739,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String url,
     Map<String, String>? headers,
     QueueItem item,
-    String ekey,
-  ) async {
+    String key, {
+    bool isCenc = false,
+  }) async {
     try {
       await _player.stop();
     } catch (_) {}
-    final plainPath = await _decryptUrlToTemp(url, headers, ekey);
+    final plainPath =
+        await _decryptUrlToTemp(url, headers, key, isCenc: isCenc);
     await _player.setFilePath(plainPath);
     await _player.setVolume(_effectiveVolume());
     await _player.play();
@@ -2750,8 +2759,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<String> _decryptUrlToTemp(
     String url,
     Map<String, String>? headers,
-    String ekey,
-  ) async {
+    String key, {
+    bool isCenc = false,
+  }) async {
     final cached = _decryptPathCache[url];
     if (cached != null) {
       final f = File(cached);
@@ -2785,7 +2795,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final plainPath = await downloadOnlineSong(
       url: url,
       destPath: dest,
-      ekey: ekey,
+      ekey: isCenc ? null : key,
+      cek: isCenc ? key : null,
       headersJson: jsonEncode(headers ?? <String, String>{}),
     );
     _decryptPathCache[url] = plainPath;
@@ -3034,7 +3045,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         state = state.copyWith(resolving: false);
         await _startOnlineUrl(url.url,
-            headers: url.headers, item: newItem, ekey: url.ekey);
+            headers: url.headers, item: newItem, ekey: url.ekey, cek: url.cek);
       } catch (_) {
         _failedSources.add(srcId);
         continue;
@@ -3152,7 +3163,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
       _skipDepth = 0;
       await _startOnlineUrl(hit.url,
-          headers: hit.headers, item: item, ekey: hit.ekey);
+          headers: hit.headers, item: item, ekey: hit.ekey, cek: hit.cek);
       state = state.copyWith(resolving: false, error: null);
       _currentPlayCountRecorded = false;
       _accumulatedTime = 0;

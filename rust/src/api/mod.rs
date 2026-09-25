@@ -1123,14 +1123,16 @@ pub fn get_usb_exclusive_position_secs() -> f64 {
     crate::player::output::get_exclusive_position_secs()
 }
 
-/// 下载在线歌曲真实音源直链到指定路径（流式写入 + QMC2 解密），返回最终路径。
+/// 下载在线歌曲真实音源直链到指定路径（流式写入 + QMC2/CENC 解密），返回最终路径。
 ///
 /// - `headers_json`：可选 HTTP 头 JSON（对象）
 /// - `ekey`：可选 QMC2 加密 key（base64）
+/// - `cek`：可选 CENC 内容密钥（32 位 hex，如网易 dolby 流），与 `ekey` 互斥
 pub async fn download_online_song(
     url: String,
     dest_path: String,
     ekey: Option<String>,
+    cek: Option<String>,
     headers_json: String,
 ) -> Result<String, String> {
     let headers: std::collections::HashMap<String, String> = if headers_json.trim().is_empty() {
@@ -1138,7 +1140,7 @@ pub async fn download_online_song(
     } else {
         serde_json::from_str(&headers_json).map_err(|e| e.to_string())?
     };
-    crate::toolbox::download_online_song(url, dest_path, ekey, Some(headers)).await
+    crate::toolbox::download_online_song(url, dest_path, ekey, cek, Some(headers)).await
 }
 
 /// 独立解密 QMC 加密文件（用户手动选择文件的工具入口）。
@@ -2303,4 +2305,24 @@ pub fn audio_convert_supported_inputs() -> Vec<String> {
 /// 本模块支持的目标输出格式。
 pub fn audio_convert_supported_outputs() -> Vec<String> {
     vec!["wav".to_string(), "flac".to_string(), "mp3".to_string()]
+}
+
+/// 单文件音频剪辑（时间段截取 + 重编码）。
+/// `options_json` 格式：`{"targetFormat":"wav"|"flac"|"mp3","sampleRate":null|u32,
+/// "startSecs":f64,"endSecs":f64,"keepCover":bool,"keepLyrics":bool,"outStem":null|String}`
+/// 返回单个 `ConvertResult` JSON。
+pub async fn trim_audio(
+    input_path: String,
+    out_dir: String,
+    options_json: String,
+) -> Result<String, String> {
+    let opts: crate::audio_convert::TrimOptions =
+        serde_json::from_str(&options_json).map_err(|e| format!("options 解析失败：{e}"))?;
+    let result = crate::audio_convert::trim_audio(input_path, out_dir, opts).await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 探测音频时长（秒）。容器/头信息可估算时直接返回，否则完整解码统计。
+pub async fn audio_probe_duration(path: String) -> Result<f64, String> {
+    crate::audio_convert::audio_probe_duration(path).await
 }

@@ -371,6 +371,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     String? url;
     Map<String, String>? urlHeaders;
     String? ekey;
+    String? cek;
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
       ResolvedMediaUrl? tried;
@@ -393,6 +394,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       url = u;
       urlHeaders = tried.headers;
       ekey = tried.ekey;
+      cek = tried.cek;
       usedQuality = effective;
       break;
     }
@@ -428,6 +430,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: destPath,
         ekey: ekey,
+        cek: cek,
         headersJson: headersJson,
       );
     } catch (e) {
@@ -447,6 +450,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         settings: settings,
         headersJson: headersJson,
         ekey: ekey,
+        cek: cek,
       );
       if (fallback == null) {
         ApplicationLogManager.instance
@@ -481,6 +485,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
     AppSettings? settings,
     required String headersJson,
     String? ekey,
+    String? cek,
   }) async {
     if (!Platform.isAndroid) return null;
     if (!await MediaStoreWriter.available) return null;
@@ -493,6 +498,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         url: url,
         destPath: tempPath,
         ekey: ekey,
+        cek: cek,
         headersJson: headersJson,
       );
 

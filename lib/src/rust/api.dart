@@ -834,19 +834,22 @@ Future<String> getUsbExclusiveDeviceInfo() =>
 Future<double> getUsbExclusivePositionSecs() =>
     RustLib.instance.api.crateApiGetUsbExclusivePositionSecs();
 
-/// 下载在线歌曲真实音源直链到指定路径（流式写入 + QMC2 解密），返回最终路径。
+/// 下载在线歌曲真实音源直链到指定路径（流式写入 + QMC2/CENC 解密），返回最终路径。
 ///
 /// - `headers_json`：可选 HTTP 头 JSON（对象）
 /// - `ekey`：可选 QMC2 加密 key（base64）
+/// - `cek`：可选 CENC 内容密钥（32 位 hex，如网易 dolby 流），与 `ekey` 互斥
 Future<String> downloadOnlineSong({
   required String url,
   required String destPath,
   String? ekey,
+  String? cek,
   required String headersJson,
 }) => RustLib.instance.api.crateApiDownloadOnlineSong(
   url: url,
   destPath: destPath,
   ekey: ekey,
+  cek: cek,
   headersJson: headersJson,
 );
 
@@ -1696,6 +1699,24 @@ Future<List<String>> audioConvertSupportedInputs() =>
 /// 本模块支持的目标输出格式。
 Future<List<String>> audioConvertSupportedOutputs() =>
     RustLib.instance.api.crateApiAudioConvertSupportedOutputs();
+
+/// 单文件音频剪辑（时间段截取 + 重编码）。
+/// `options_json` 格式：`{"targetFormat":"wav"|"flac"|"mp3","sampleRate":null|u32,
+/// "startSecs":f64,"endSecs":f64,"keepCover":bool,"keepLyrics":bool,"outStem":null|String}`
+/// 返回单个 `ConvertResult` JSON。
+Future<String> trimAudio({
+  required String inputPath,
+  required String outDir,
+  required String optionsJson,
+}) => RustLib.instance.api.crateApiTrimAudio(
+  inputPath: inputPath,
+  outDir: outDir,
+  optionsJson: optionsJson,
+);
+
+/// 探测音频时长（秒）。容器/头信息可估算时直接返回，否则完整解码统计。
+Future<double> audioProbeDuration({required String path}) =>
+    RustLib.instance.api.crateApiAudioProbeDuration(path: path);
 
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {

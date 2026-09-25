@@ -191,8 +191,9 @@ class AudioProxyServer {
     }
   }
 
-  /// 等待下载线程记录总长（CDN 响应头到达）或下载完成/失败。
-  /// 返回 null 表示 3s 内总长仍未就绪或条目失败，调用方应回退网络路径。
+  /// 等待下载线程记录总长（CDN 响应头到达）、写出首批数据（chunked CDN
+  /// 无总长但在推进）或下载完成/失败。返回 null 表示条目失败，或 3s 内
+  /// 既无总长也无任何数据（调用方应回退网络路径）；否则返回最新状态。
   Future<_CacheStatus?> _waitForCacheTotal(
     String target,
     _CacheStatus initial,
@@ -201,6 +202,7 @@ class AudioProxyServer {
     final waitStart = DateTime.now();
     while (!st.complete &&
         st.total == null &&
+        st.downloaded <= 0 &&
         DateTime.now().difference(waitStart) < const Duration(seconds: 3)) {
       await Future<void>.delayed(const Duration(milliseconds: 150));
       final st2 = await _cacheStatus(target);
@@ -209,7 +211,7 @@ class AudioProxyServer {
       }
       st = st2;
     }
-    if (!st.complete && st.total == null) {
+    if (!st.complete && st.total == null && st.downloaded <= 0) {
       return null;
     }
     return st;
@@ -249,9 +251,24 @@ class AudioProxyServer {
     // 总长：完整缓存用实际大小；下载中优先头部探测，其次 Rust 上报的
     // Content-Length（首播无头部探测缓存时也能伺服）
     final int? total = st.complete ? st.total : (head?.totalLength ?? st.total);
+
+    // 酷我等 chunked CDN 回无 Content-Length 的 200：total 永远等不到，
+    // 回退透传又会开第二条上游连接（同上被 CDN 掐断）。开放起点请求
+    // （start=0 且无上界）此时改为直接从缓存伺服无总长的 200 流式响应
+    // （读到下载完成/EOF 为止），保持全链路单条上游连接。带 Range 的
+    // 无总长请求仍回退透传（206 语义需要 */total，流式响应给不出）。
+    final bool noTotalStream;
     if (total == null || total <= 0) {
-      return false;
+      if (range.start == 0 && range.end == null) {
+        noTotalStream = true;
+      } else {
+        return false;
+      }
+    } else {
+      noTotalStream = false;
     }
+    // 流式模式下恒为 0 且不参与任何判定（均有 noTotalStream 前置）
+    final int safeTotal = total ?? 0;
 
     // 请求位置还没下载到：不再立即回退直连——read_url_range 会等数据
     // （单次最多 2s）。首播时预热下载器与透传并发开两条上游连接会被
@@ -259,40 +276,47 @@ class AudioProxyServer {
     // 统一从预热缓存伺服后全链路只有一条上游连接。
     // 真长时间不推进（如澎湃节流）也只多等 2s 即回退直连。
 
-    if (range.start >= total) {
+    if (!noTotalStream && range.start >= safeTotal) {
       final res = req.response;
       res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
-      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$safeTotal');
       await res.close();
       return true;
     }
 
     final res = req.response;
     res.bufferOutput = false;
-    res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
     final contentType = head?.contentType;
     if (contentType != null && contentType.isNotEmpty) {
       res.headers.set(HttpHeaders.contentTypeHeader, contentType);
     }
 
-    var end = range.end ?? total - 1;
-    if (end >= total) end = total - 1;
-    if (hasRangeHeader) {
+    var end = noTotalStream ? -1 : (range.end ?? safeTotal - 1);
+    if (!noTotalStream && end >= safeTotal) end = safeTotal - 1;
+    if (noTotalStream) {
+      // 无总长流式伺服：close-delimited 200，不声明 Accept-Ranges
+      res.statusCode = HttpStatus.ok;
+      probeLog('tryCache no-total serve dl=${st.downloaded}');
+    } else if (hasRangeHeader) {
       res.statusCode = HttpStatus.partialContent;
+      res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
       res.headers.set(
         HttpHeaders.contentRangeHeader,
-        'bytes ${range.start}-$end/$total',
+        'bytes ${range.start}-$end/$safeTotal',
       );
     } else {
       res.statusCode = HttpStatus.ok;
+      res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
     }
-    res.contentLength = end - range.start + 1;
+    if (!noTotalStream) {
+      res.contentLength = end - range.start + 1;
+    }
 
     var wroteAny = false;
     var pos = range.start;
     final readTimer = Stopwatch()..start();
     try {
-      while (pos <= end) {
+      while (noTotalStream || pos <= end) {
         final Uint8List chunk;
         try {
           chunk = await frb.streamCacheReadUrl(
@@ -301,27 +325,27 @@ class AudioProxyServer {
             maxLen: _cacheChunk,
           );
         } catch (e) {
-          probeLog('tryCache read-error pos=$pos total=$total '
+          probeLog('tryCache read-error pos=$pos total=${total ?? '-'} '
               'firstMs=${readTimer.elapsedMilliseconds}ms err=$e');
           break;
         }
         if (chunk.isEmpty) {
-          if (!wroteAny) {
+          if (!wroteAny && !noTotalStream) {
             // 尚未写出：回退网络路径（首块最多等 2s，保住起播时效）
             return false;
           }
-          // 已写出后续块为空：下载仍在推进/未失败时不能断流——
-          // ExoPlayer 截断可 Range 重连，但 DSP(Symphonia) 截断=EOF=
-          // 解码退出→管线回退无音效。read_url_range 单次上限 2s 内
-          // 无数据时短暂等待后继续拉，直到下载失败/客户端断开。
+          // 流式模式首块空（或已写出后续块为空）：下载仍在推进/未失败时
+          // 不能断流——ExoPlayer 截断可 Range 重连，但 DSP(Symphonia) 截
+          // 断=EOF=解码退出→管线回退无音效。read_url_range 单次上限 2s
+          // 内无数据时短暂等待后继续拉，直到下载失败/客户端断开。
           final st2 = await _cacheStatus(target);
           if (st2 == null || st2.failed) {
-            probeLog('tryCache stalled-failed pos=$pos total=$total '
+            probeLog('tryCache stalled-failed pos=$pos total=${total ?? '-'} '
                 'firstMs=${readTimer.elapsedMilliseconds}ms');
             break;
           }
           if (st2.complete && pos >= st2.downloaded) {
-            probeLog('tryCache read-EOF pos=$pos total=$total '
+            probeLog('tryCache read-EOF pos=$pos total=${total ?? '-'} '
                 'firstMs=${readTimer.elapsedMilliseconds}ms');
             break;
           }
@@ -329,24 +353,25 @@ class AudioProxyServer {
           continue;
         }
         var data = chunk;
-        if (pos + data.length > end + 1) {
+        if (!noTotalStream && pos + data.length > end + 1) {
           data = Uint8List.sublistView(data, 0, end + 1 - pos);
         }
         try {
           res.add(data);
           await res.flush();
         } catch (_) {
-          probeLog('tryCache client-disconnect pos=$pos total=$total');
+          probeLog('tryCache client-disconnect pos=$pos total=${total ?? '-'}');
           return true;
         }
         pos += data.length;
         wroteAny = true;
       }
     } catch (e) {
-      probeLog('tryCache loop-error pos=$pos total=$total err=$e');
+      probeLog('tryCache loop-error pos=$pos total=${total ?? '-'} err=$e');
     }
     final stEnd = await _cacheStatus(target);
-    probeLog('tryCache serve-end pos=$pos end=$end total=$total '
+    probeLog('tryCache serve-end pos=$pos '
+        'end=${noTotalStream ? '-' : '$end'} total=${total ?? '-'} '
         'complete=${stEnd?.complete} failed=${stEnd?.failed} '
         'dl=${stEnd?.downloaded} firstMs=${readTimer.elapsedMilliseconds}ms');
     try {

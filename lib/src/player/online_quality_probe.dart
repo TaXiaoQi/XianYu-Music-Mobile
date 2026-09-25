@@ -63,6 +63,7 @@ class QualityProbeResult {
     this.requested,
     this.headers,
     this.ekey,
+    this.cek,
   });
   final String url;
   final String quality;
@@ -71,6 +72,9 @@ class QualityProbeResult {
   final String? requested;
 
   final String? ekey;
+
+  /// CENC 内容密钥（32-hex），与 ekey（QMC2）互斥使用。
+  final String? cek;
 }
 
 class QualitySizeInfo {
@@ -120,7 +124,7 @@ class SongQualityProbe {
   bool get seeded => _seeded;
 
   void seed(String quality, String url,
-      {Map<String, String>? headers, String? ekey}) {
+      {Map<String, String>? headers, String? ekey, String? cek}) {
     if (_seeded || _done.isNotEmpty || _rateLimited || url.isEmpty) return;
     _seeded = true;
     final result = QualityProbeResult(
@@ -129,6 +133,7 @@ class SongQualityProbe {
       requested: quality,
       headers: headers,
       ekey: ekey,
+      cek: cek,
     );
     _done.add(result);
     _perQuality[quality] = Future.value(result);
@@ -176,6 +181,7 @@ class SongQualityProbe {
         requested: quality,
         headers: res.headers,
         ekey: res.ekey,
+        cek: res.cek,
       ));
       _dedupeSameUrl();
       return QualityProbeResult(
@@ -184,6 +190,7 @@ class SongQualityProbe {
         requested: quality,
         headers: res.headers,
         ekey: res.ekey,
+        cek: res.cek,
       );
     });
     _perQuality[quality] = future;
@@ -327,16 +334,16 @@ final class OnlineQualityProbeRegistry {
   }
 
   void seed(String songKey, String quality, String url,
-      {Map<String, String>? headers, String? ekey}) {
+      {Map<String, String>? headers, String? ekey, String? cek}) {
     final probe = _registry[songKey];
     if (probe == null) {
       _registry[songKey] = SongQualityProbe(
         resolveQuality: (_) async => null,
         maxConcurrency: maxConcurrency,
-      )..seed(quality, url, headers: headers, ekey: ekey);
+      )..seed(quality, url, headers: headers, ekey: ekey, cek: cek);
       return;
     }
-    probe.seed(quality, url, headers: headers, ekey: ekey);
+    probe.seed(quality, url, headers: headers, ekey: ekey, cek: cek);
   }
 
   SongQualityProbe? peek(String songKey) => _registry[songKey];

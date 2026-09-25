@@ -85,8 +85,6 @@ dependencies:
   # 诊断日志分享（Android 系统分享面板）
   share_plus: ^13.3.0
   record: ^7.1.1
-  # FFmpeg（音频格式转换 / 剪辑）— 纯原生二进制，Android/iOS 同一份 Dart API
-  ffmpeg_kit_flutter_new_audio: ^2.5.0
   # 扫码登录（2026-09-12 起替代 mobile_scanner/MLKit，APK 约减 2~3MB）：
   # camera（CameraX 预览 + YUV 帧流）+ zxing2（纯 Dart ZXing 移植，无原生库）。
   # 版本钉 ^0.11.0 以匹配鸿蒙 openharmony-sig camera fork（适配版 0.11.0+2）。

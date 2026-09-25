@@ -1,8 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,12 +10,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
-
-enum _OutMode {
-  original,
-  recode,
-}
 
 class AudioTrimPage extends ConsumerStatefulWidget {
   const AudioTrimPage({super.key});
@@ -44,7 +38,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   double _playStartOffset = 0;
   bool _previewRange = true;
 
-  _OutMode _mode = _OutMode.original;
   String _recodeFmt = 'mp3';
   bool _keepCover = true;
   bool _keepLyrics = true;
@@ -55,7 +48,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   final _controllerStart = TextEditingController();
   final _controllerEnd = TextEditingController();
 
-  static const _RECODE_FORMATS = ['mp3', 'aac', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'wma'];
+  static const _RECODE_FORMATS = ['mp3', 'wav', 'flac'];
 
   @override
   void dispose() {
@@ -191,16 +184,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   Future<double> _probeDuration(String path) async {
     try {
-      final session = await FFprobeKit.execute(
-        '-v error -show_entries format=duration '
-        '-of default=nw=1:nk=1 "$path"',
-      );
-      final rc = await session.getReturnCode();
-      if (ReturnCode.isSuccess(rc)) {
-        final out = await session.getOutput();
-        final v = double.tryParse((out ?? '').trim());
-        if (v != null && v > 0) return v;
-      }
+      final v = await frb.audioProbeDuration(path: path);
+      if (v > 0) return v;
     } catch (_) {}
     return 0;
   }
@@ -256,66 +241,31 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
         ? _fileName.substring(0, _fileName.lastIndexOf('.'))
         : _fileName;
     final safeBase = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final dur = (_end - _start).toStringAsFixed(3);
-
-    final String outPath;
-    final String cmd;
-
-    if (_mode == _OutMode.original) {
-      final ext = _fileName.contains('.')
-          ? _fileName.substring(_fileName.lastIndexOf('.') + 1)
-          : 'audio';
-      outPath = '$outDir${Platform.pathSeparator}${safeBase}_trim.$ext';
-
-      final buf = StringBuffer('-y');
-      buf.write(' -ss ${_start.toStringAsFixed(3)}');
-      buf.write(' -i "${_filePath}"');
-      buf.write(' -t $dur');
-      buf.write(' -c copy');
-      buf.write(' -avoid_negative_ts make_zero');
-      if (_keepLyrics) buf.write(' -map_metadata 0 -map_chapters 0');
-      buf.write(' "$outPath"');
-      cmd = buf.toString();
-    } else {
-      outPath = '$outDir${Platform.pathSeparator}${safeBase}_trim.$_recodeFmt';
-
-      const encoders = {
-        'mp3': ('libmp3lame', '-b:a 192k'),
-        'aac': ('aac', '-b:a 192k'),
-        'm4a': ('aac', '-b:a 192k'),
-        'wav': ('pcm_s16le', ''),
-        'flac': ('flac', ''),
-        'ogg': ('libvorbis', '-b:a 192k'),
-        'opus': ('libopus', '-b:a 128k'),
-        'wma': ('wmav2', '-b:a 192k'),
-      };
-      final (enc, extra) = encoders[_recodeFmt]!;
-
-      final buf = StringBuffer('-y');
-      buf.write(' -ss ${_start.toStringAsFixed(3)}');
-      buf.write(' -i "${_filePath}"');
-      buf.write(' -t $dur');
-      buf.write(' -c:a $enc');
-      if (extra.isNotEmpty) buf.write(' $extra');
-      if (_keepCover) buf.write(' -map 0:v? -c copy');
-      if (_keepLyrics) buf.write(' -map_metadata 0 -map_chapters 0');
-      buf.write(' "$outPath"');
-      cmd = buf.toString();
-    }
 
     try {
       final sw = Stopwatch()..start();
-      final session = await FFmpegKit.execute(cmd);
+      final options = jsonEncode({
+        'targetFormat': _recodeFmt,
+        'sampleRate': null,
+        'startSecs': _start,
+        'endSecs': _end,
+        'keepCover': _keepCover,
+        'keepLyrics': _keepLyrics,
+        'outStem': '${safeBase}_trim',
+      });
+      final raw = await frb.trimAudio(
+        inputPath: _filePath!,
+        outDir: outDir,
+        optionsJson: options,
+      );
       sw.stop();
-      final rc = await session.getReturnCode();
-      if (ReturnCode.isSuccess(rc)) {
-        setState(() => _outPath = outPath);
-        if (mounted) _showSuccessDialog(context, outPath);
+      final r = jsonDecode(raw) as Map<String, dynamic>;
+      if (r['success'] == true) {
+        setState(() => _outPath = r['outputPath'] as String?);
+        if (mounted && _outPath != null) _showSuccessDialog(context, _outPath!);
       } else {
-        final logs = await session.getLogs();
-        final err = logs.isNotEmpty ? logs.last.getMessage() : '';
         setState(() {
-          _error = err.isEmpty ? 'ffmpeg 返回码 ${rc?.getValue()}' : err;
+          _error = (r['error'] as String?) ?? tr('未知错误');
         });
       }
     } catch (e) {
@@ -483,7 +433,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              tr('选择一个音频文件，拖选起止点，导出剪辑片段。支持无损剪切（原格式）或重编码为 MP3 / WAV / FLAC 等。'),
+              tr('选择一个音频文件，拖选起止点，导出剪辑片段。输出支持 MP3 / WAV / FLAC，可保留封面和内嵌歌词。'),
               style: TextStyle(
                   fontSize: 12.5,
                   color: scheme.onSurfaceVariant,
@@ -770,22 +720,18 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
             ],
           ),
           const SizedBox(height: 10),
-          _modeRow(scheme),
-          if (_mode == _OutMode.recode) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _RECODE_FORMATS.map((f) {
-                final selected = _recodeFmt == f;
-                return ChoiceChip(
-                  label: Text(f.toUpperCase()),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _recodeFmt = f),
-                );
-              }).toList(),
-            ),
-          ],
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _RECODE_FORMATS.map((f) {
+              final selected = _recodeFmt == f;
+              return ChoiceChip(
+                label: Text(f.toUpperCase()),
+                selected: selected,
+                onSelected: (_) => setState(() => _recodeFmt = f),
+              );
+            }).toList(),
+          ),
           const SizedBox(height: 4),
           SwitchListTile.adaptive(
             dense: true,
@@ -809,31 +755,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _modeRow(ColorScheme scheme) {
-    return Row(
-      children: [
-        Expanded(
-          child: SegmentedButton<_OutMode>(
-            segments: [
-              ButtonSegment(
-                value: _OutMode.original,
-                label: Text(tr('原格式（无损）')),
-                icon: const Icon(Icons.bolt, size: 16),
-              ),
-              ButtonSegment(
-                value: _OutMode.recode,
-                label: Text(tr('重编码')),
-                icon: const Icon(Icons.autorenew, size: 16),
-              ),
-            ],
-            selected: {_mode},
-            onSelectionChanged: (sel) => setState(() => _mode = sel.first),
-          ),
-        ),
-      ],
     );
   }
 

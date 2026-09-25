@@ -1,8 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_session.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,80 +9,24 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
 
 class _Format {
   final String value;
   final String label;
-  final String ext;
-  final String encoderArg;
-  final String extraArgs;
   final bool lossless;
   const _Format({
     required this.value,
     required this.label,
-    required this.ext,
-    required this.encoderArg,
-    this.extraArgs = '',
     this.lossless = false,
   });
 }
 
 const _FORMATS = [
-  _Format(
-      value: 'mp3',
-      label: 'MP3',
-      ext: 'mp3',
-      encoderArg: 'libmp3lame',
-      extraArgs: '-b:a 192k',
-      lossless: false),
-  _Format(
-      value: 'aac',
-      label: 'AAC',
-      ext: 'aac',
-      encoderArg: 'aac',
-      extraArgs: '-b:a 192k',
-      lossless: false),
-  _Format(
-      value: 'm4a',
-      label: 'M4A',
-      ext: 'm4a',
-      encoderArg: 'aac',
-      extraArgs: '-b:a 192k',
-      lossless: false),
-  _Format(
-      value: 'wav',
-      label: 'WAV',
-      ext: 'wav',
-      encoderArg: 'pcm_s16le',
-      lossless: true),
-  _Format(
-      value: 'flac',
-      label: 'FLAC',
-      ext: 'flac',
-      encoderArg: 'flac',
-      lossless: true),
-  _Format(
-      value: 'ogg',
-      label: 'OGG',
-      ext: 'ogg',
-      encoderArg: 'libvorbis',
-      extraArgs: '-b:a 192k',
-      lossless: false),
-  _Format(
-      value: 'opus',
-      label: 'Opus',
-      ext: 'opus',
-      encoderArg: 'libopus',
-      extraArgs: '-b:a 128k',
-      lossless: false),
-  _Format(
-      value: 'wma',
-      label: 'WMA',
-      ext: 'wma',
-      encoderArg: 'wmav2',
-      extraArgs: '-b:a 192k',
-      lossless: false),
+  _Format(value: 'mp3', label: 'MP3', lossless: false),
+  _Format(value: 'wav', label: 'WAV', lossless: true),
+  _Format(value: 'flac', label: 'FLAC', lossless: true),
 ];
 
 enum _Status { pending, running, done, failed }
@@ -192,51 +134,40 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
     });
 
     final fmt = _fmt;
-    final failed = <String>[];
+    final options = jsonEncode({
+      'targetFormat': fmt.value,
+      'sampleRate': _sampleRate > 0 ? _sampleRate : null,
+      'keepCover': _keepCover,
+      'keepLyrics': _keepLyrics,
+    });
 
     for (var i = 0; i < _results.length; i++) {
       final item = _results[i];
       item.status = _Status.running;
       if (mounted) setState(() {});
 
-      final base = item.name.contains('.')
-          ? item.name.substring(0, item.name.lastIndexOf('.'))
-          : item.name;
-      final safeBase = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final outPath = '$outDir${Platform.pathSeparator}$safeBase.${fmt.ext}';
-      item.output = outPath;
-
-      final buf = StringBuffer('-y -i "${item.input}"');
-      buf.write(' -c:a ${fmt.encoderArg}');
-      if (fmt.extraArgs.isNotEmpty) buf.write(' ${fmt.extraArgs}');
-      if (_sampleRate > 0) buf.write(' -ar $_sampleRate');
-      if (_keepCover) buf.write(' -map 0:v? -c copy');
-      if (_keepLyrics) buf.write(' -map_metadata 0 -map_chapters 0');
-      buf.write(' "${outPath}"');
-      final cmd = buf.toString();
-
       final sw = Stopwatch()..start();
-      FFmpegSession? session;
       try {
-        session = await FFmpegKit.execute(cmd);
+        final raw = await frb.convertAudioBatch(
+          inputPaths: [item.input],
+          outDir: outDir,
+          optionsJson: options,
+        );
         sw.stop();
         item.secs = sw.elapsedMilliseconds / 1000;
-        final rc = await session.getReturnCode();
-        if (ReturnCode.isSuccess(rc)) {
+        final r = (jsonDecode(raw) as List).cast<Map<String, dynamic>>().first;
+        if (r['success'] == true) {
+          item.output = r['outputPath'] as String?;
           item.status = _Status.done;
         } else {
           item.status = _Status.failed;
-          final logs = await session.getLogs();
-          final err = logs.isNotEmpty ? logs.last.getMessage() : '';
-          item.error = err.isEmpty ? 'ffmpeg 返回码 ${rc?.getValue()}' : err;
-          failed.add(item.name);
+          item.error = (r['error'] as String?) ?? tr('未知错误');
         }
       } catch (e) {
         sw.stop();
         item.secs = sw.elapsedMilliseconds / 1000;
         item.status = _Status.failed;
         item.error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-        failed.add(item.name);
       }
 
       if (mounted) setState(() {});
@@ -399,7 +330,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              tr('选择音频文件批量转换格式。支持 MP3 / AAC / M4A / WAV / FLAC / OGG / Opus / WMA 输出。'),
+              tr('选择音频文件批量转换格式。支持输出 MP3 / WAV / FLAC，可保留封面和内嵌歌词。'),
               style: TextStyle(
                   fontSize: 12.5,
                   color: scheme.onSurfaceVariant,

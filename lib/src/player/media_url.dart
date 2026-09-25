@@ -168,10 +168,16 @@ class ResolvedMediaUrl {
     this.headers,
     this.quality,
     this.ekey,
+    this.cek,
   });
   final String url;
   final Map<String, String>? headers;
   final String? quality;
 
   final String? ekey;
+
+  /// CENC 内容密钥（32 位 hex，如网易 dolby 流）。与 QMC2 的 ekey 是
+  /// 两种不同的加密体系，不能混用——历史上曾被 `??` 并进 ekey 导致
+  /// 按 QMC2 base64 解析必然失败。
+  final String? cek;
 }
