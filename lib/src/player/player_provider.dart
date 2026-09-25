@@ -528,6 +528,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
+  // 同曲重播（切音质）锚定门：加载新直链的窗口期内 _player.stop() 会让
+  // positionStream 吐 0、playerStateStream 吐 playing=false，若放行会把 UI
+  // 进度冲归零、按钮翻暂停（对齐桌面 reanchorPlaybackClock + requestId 守卫：
+  // 桌面同曲重播全程保持进度与播放态显示，无跳变）。门在 _playAt 起播请求
+  // 生命周期内有效：位置事件 < 锚点一律吞掉，播放态仅吞 idle（stop 所致），
+  // 真实起播（ready/buffering 的 playing=true 或位置 ≥ 锚点）自然放行。
+  double? _replayAnchorSecs;
 
   static const MethodChannel _diagChannel = MethodChannel('xianyu/diag');
 
@@ -576,6 +583,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _errSub?.cancel();
     _posSub = _player.positionStream.listen((p) {
       final pos = p.inMilliseconds / 1000.0;
+      // 同曲重播加载窗口：新源尚未就绪时的归零/回跳位置事件一律吞掉，
+      // 保持 UI 锚定在续播点（首个 ≥ 锚点的事件放行并撤门）
+      final anchor = _replayAnchorSecs;
+      if (anchor != null) {
+        if (pos < anchor) return;
+        _replayAnchorSecs = null;
+      }
       state = state.copyWith(position: pos);
       _persistPositionDebounced();
       _maybePrecacheNextRemote(pos);
@@ -591,6 +605,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
+      // 同曲重播加载窗口：stop() 引发的 idle+playing=false 不放行，避免
+      // UI 播放态被翻成暂停；真实暂停（loading/ready 态）不受影响
+      if (!playing &&
+          ps.processingState == ProcessingState.idle &&
+          _replayAnchorSecs != null) {
+        return;
+      }
       if (playing != state.isPlaying) {
         if (!playing) {
           final st = StackTrace.current
@@ -1350,12 +1371,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       } else {
         _restoredOnlinePending = pos;
-        // 在线歌冷启动需重新解析直链，复用 toggle 的恢复入口；稍等
+        // 在线歌冷启动需重新解析直链，统一走 _playAt 入口续播；稍等
         // 启动链（AudioService/设置流）就绪再续播，避免时序撞车。
         if (wasPlaying) {
           _restoredOnlinePending = null;
           unawaited(Future.delayed(const Duration(milliseconds: 800), () {
-            _resumeRestoredOnline(pos);
+            final idx = state.queueIndex;
+            if (idx >= 0 && idx < state.queue.length) {
+              _playAt(idx, startAtSecs: pos, skipOnFailure: false)
+                  .catchError((Object e) {
+                // 失败已在 _playAt 内置错误态，只吞 rethrow
+              });
+            }
           }));
         }
       }
@@ -1427,16 +1454,30 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> _playAt(int index, {double startAtSecs = 0}) async {
+  Future<void> _playAt(
+    int index, {
+    double startAtSecs = 0,
+    // 对齐桌面端 playSong 选项：同一首换源续播（切音质）时保持统计会话
+    // 连续——切换前收听增量照常入账，但不重置累计时长与播放计数。
+    bool continueStatsSession = false,
+    // 失败时是否走「自动换源/跳下一首」；切音质失败应停在当前歌报错，
+    // 而不是被拉去别的歌。
+    bool skipOnFailure = true,
+  }) async {
     if (index < 0 || index >= state.queue.length) return;
     _playEpoch++;
     final epoch = _playEpoch;
+    // 同曲重播（切音质）设锚定门；普通起播/切歌清门
+    _replayAnchorSecs =
+        (continueStatsSession && startAtSecs > 0) ? startAtSecs : null;
 
     AppLog.info('play', '_playAt index=$index path=${state.queue[index].path}');
     unawaited(_ensureNotificationPermission());
     _flushPlayStats();
-    _currentPlayCountRecorded = false;
-    _accumulatedTime = 0;
+    if (!continueStatsSession) {
+      _currentPlayCountRecorded = false;
+      _accumulatedTime = 0;
+    }
 
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
@@ -1461,6 +1502,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       );
       _syncToSystemMediaSession();
       _showPlaybackToast(tr('该音源的歌曲均无法播放，已停止'));
+      _replayAnchorSecs = null;
       return;
     }
     final prev = state.current;
@@ -1474,12 +1516,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } catch (_) {}
       if (epoch != _playEpoch) return;
     }
+    // 同曲重播：对齐桌面 reanchorPlaybackClock——UI 进度锚定在续播点并
+    // 保持播放态，加载窗口期不归零、歌词不回卷；普通切歌仍归零
+    final sameSongReplay = continueStatsSession;
     state = state.copyWith(
       queueIndex: index,
       current: item,
-      isPlaying: false,
-      position: 0,
-      duration: item.durationMs / 1000.0,
+      isPlaying: sameSongReplay ? state.isPlaying : false,
+      position: sameSongReplay && startAtSecs > 0 ? startAtSecs : 0,
+      duration: item.durationMs > 0
+          ? item.durationMs / 1000.0
+          : (sameSongReplay ? null : 0),
       resolving: item.isOnline,
       error: null,
     );
@@ -1489,7 +1536,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (_ref.read(dlnaCastProvider).isCasting) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
-          await _castFollowPlay(item, epoch);
+          // 投放中同曲重播（切音质）：起始位置经 castMedia 的 startAtSecs
+          // 内建链路直达，普通起播 startAtSecs=0 行为不变
+          await _castFollowPlay(item, epoch, startAtSecs: startAtSecs);
           if (epoch != _playEpoch) return;
         } else if (item.isOnline) {
           await _stopExclusive();
@@ -1498,7 +1547,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             await _player.stop();
           } catch (_) {}
           if (epoch != _playEpoch) return;
-          await _playOnline(item);
+          // 暂停态同曲重播（切音质）不强制起播，维持之前的暂停承诺；
+          // 正常起播/会话恢复恒为播放
+          await _playOnline(
+            item,
+            startAtSecs: startAtSecs,
+            startPlayback: !continueStatsSession || state.isPlaying,
+          );
           if (epoch != _playEpoch) return;
         } else if (_isRemotePath(item.path)) {
           await _stopExclusive();
@@ -1570,10 +1625,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _skipDepth = 0;
       if (epoch != _playEpoch) return;
       state = state.copyWith(resolving: false, error: null);
-      _reportBehavior(item, 'play', 0);
-      _recordRecentPlay(item);
-      _recordHistory(item);
+      // 同一首换源续播（切音质）：不重复记历史/最近播放/播放上报
+      if (!continueStatsSession) {
+        _reportBehavior(item, 'play', 0);
+        _recordRecentPlay(item);
+        _recordHistory(item);
+      }
       _trackStartTime = DateTime.now();
+      _replayAnchorSecs = null;
       _syncToSystemMediaSession();
       unawaited(Future(() => _preloadQueueCovers()));
     } catch (e) {
@@ -1581,6 +1640,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _shareLinkPlayback = false;
         return;
       }
+      _replayAnchorSecs = null;
       state = state.copyWith(isPlaying: false, resolving: false);
       try {
         await _stopExclusive();
@@ -1588,6 +1648,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         await _player.stop();
       } catch (_) {}
+      if (!skipOnFailure) {
+        // 切音质等同曲重播失败：不自动换源、不跳下一首，停在当前曲目报错，
+        // 异常上抛由调用方回滚会话级音质覆盖。
+        final msg = e is PluginEngineException
+            ? e.message
+            : tr('播放失败：{e}', {'e': e.toString()});
+        state = state.copyWith(error: msg);
+        _syncToSystemMediaSession();
+        rethrow;
+      }
       if (item.isOnline && _skipDepth < state.queue.length) {
         final allowSwitch = !_shareLinkPlayback
             ? true
@@ -1640,7 +1710,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (!item.isOnline) _persistSession();
   }
 
-  Future<void> _playOnline(QueueItem item) async {
+  Future<void> _playOnline(
+    QueueItem item, {
+    double startAtSecs = 0,
+    bool startPlayback = true,
+  }) async {
     final json = item.onlineSongJson;
     AppLog.info('play', '[playOnline] ${item.title} path=${item.path} '
         'onlineSongJson=${json?.isNotEmpty ?? false}');
@@ -1672,7 +1746,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(resolving: false);
         try {
           await _startOnlineUrl(start.url,
-              headers: start.headers, item: item, ekey: start.ekey, cek: start.cek);
+              headers: start.headers,
+              item: item,
+              ekey: start.ekey,
+              cek: start.cek,
+              startAtSecs: startAtSecs,
+              isPlaying: startPlayback);
           state = state.copyWith(currentQuality: start.quality);
         } on _StartOnlineTimeoutException {
           // 二次超时自动降级音质重试：当前音质的 CDN 节点可能挂死
@@ -1689,7 +1768,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           AppLog.info('play',
               '[playOnline] 降级重试 q=${retry.quality} url=${retry.url}');
           await _startOnlineUrl(retry.url,
-              headers: retry.headers, item: item, ekey: retry.ekey, cek: retry.cek);
+              headers: retry.headers,
+              item: item,
+              ekey: retry.ekey,
+              cek: retry.cek,
+              startAtSecs: startAtSecs,
+              isPlaying: startPlayback);
           state = state.copyWith(currentQuality: retry.quality);
         }
         _refreshQualityMenuState(probe);
@@ -1720,7 +1804,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       currentQuality: url.quality,
     );
     await _startOnlineUrl(url.url,
-        headers: url.headers, item: item, ekey: url.ekey, cek: url.cek);
+        headers: url.headers,
+        item: item,
+        ekey: url.ekey,
+        cek: url.cek,
+        startAtSecs: startAtSecs,
+        isPlaying: startPlayback);
     unawaited(_prewarmOnlineSizes(item));
     _probeMvsAround(item);
   }
@@ -1903,34 +1992,38 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (item == null || !item.isOnline) return false;
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return false;
+    // 与桌面端 selectQuality 同构：设会话级音质覆盖后按同一首经统一入口
+    // _playAt 重播，复用其输出仲裁（先停 DSP/USB 管线与旧源，避免双声与
+    // 双进度源打架）、候选降级链与超时兜底，进度无缝续播。
+    if (quality == state.currentQuality) return true;
+    final prevOverride = _sessionQualityOverride;
+    final resumePos = state.position;
+    _sessionQualityOverride = quality;
     try {
-      final songJson = jsonDecode(json) as Map<String, dynamic>;
-      final key = _songProbeKey(songJson, item);
-      final probe = onlineQualityProbeRegistry
-          .ensure(key, _buildResolveCallback(songJson, item));
-      _activeProbeKey = key;
-      state = state.copyWith(resolving: true);
-      final res = await probe.probe(quality);
-      if (res == null || res.url.isEmpty) {
-        state = state.copyWith(resolving: false);
-        return false;
-      }
-      await _startUrl(res.url, headers: res.headers);
-      _sessionQualityOverride = res.quality;
-      final updated = item.copyWithQuality(res.quality);
-      state = state.copyWith(
-        current: updated,
-        queue: state.queue
-            .map((e) => e.path == item.path ? updated : e)
-            .toList(),
-        resolving: false,
-        currentQuality: res.quality,
-        availableQualities: probe.availableQualities,
-        qualityMenuProbing: probe.probing,
+      await _playAt(
+        state.queueIndex,
+        startAtSecs: resumePos,
+        continueStatsSession: true,
+        skipOnFailure: false,
       );
+      // 切档期间用户可能已切歌：当前曲目已变则按失败处理（不回写队列）
+      if (state.current?.path != item.path) return false;
+      final picked = state.currentQuality;
+      if (picked != null && picked.isNotEmpty) {
+        // 降级链可能命中的是比请求档更低的可用档，按实际生效档回写；
+        // 以窗口期后的 state.current 为基，避免用捕获时的旧对象覆盖
+        // 期间其它链路（如歌词补全）已 patch 过的字段
+        final updated = (state.current ?? item).copyWithQuality(picked);
+        state = state.copyWith(
+          current: updated,
+          queue: state.queue
+              .map((e) => e.path == item.path ? updated : e)
+              .toList(),
+        );
+      }
       return true;
     } catch (_) {
-      state = state.copyWith(resolving: false);
+      _sessionQualityOverride = prevOverride;
       return false;
     }
   }
@@ -2618,6 +2711,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required QueueItem item,
     String? ekey,
     String? cek,
+    // 切音质复用本方法：从该秒数续播；isPlaying=false 时载入但不自动播
+    double startAtSecs = 0,
+    bool isPlaying = true,
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
@@ -2628,13 +2724,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         ) ??
         <String, String>{};
     if (ekey != null && ekey.isNotEmpty) {
-      await _startEncryptedFile(clean, h, item, ekey);
+      await _startEncryptedFile(clean, h, item, ekey,
+          startAtSecs: startAtSecs, isPlaying: isPlaying);
       return;
     }
     if (cek != null && cek.isNotEmpty) {
       // CENC 加密流（如网易 dolby）：复用 ekey 的「下载到临时文件 + 解密」
       // 离线模式，解密由 Rust 侧按 CENC（AES-CTR 样本级）执行。
-      await _startEncryptedFile(clean, h, item, cek, isCenc: true);
+      await _startEncryptedFile(clean, h, item, cek,
+          isCenc: true, startAtSecs: startAtSecs, isPlaying: isPlaying);
       return;
     }
     // DSP 共享管线分支不经 _GatedAudioPlayer，这里兜底记录真实直链 + 请求头
@@ -2648,7 +2746,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _player.stop();
       } catch (_) {}
       final ok = await _tryStartDspPipeline(proxyUrl,
-          startAtSecs: 0, isPlaying: true);
+          startAtSecs: startAtSecs, isPlaying: isPlaying);
       if (ok) {
         _triggerOnlinePrecache(item);
         return;
@@ -2657,7 +2755,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 代理路径：头注入/缓存伺服/流量收口；10s 超时回退直链作兜底。
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
     try {
-      await _player.setUrl(playUrl, headers: h)
+      await _player.setUrl(playUrl,
+              headers: h,
+              initialPosition: startAtSecs > 0
+                  ? Duration(milliseconds: (startAtSecs * 1000).round())
+                  : null)
           .timeout(const Duration(seconds: 10));
     } on TimeoutException {
       // 起播超时：先抓现场（状态+线程堆栈随日志导出可离线定位）。
@@ -2699,7 +2801,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       throw StateError(tr('直链已失效（返回内容与歌曲不符）'));
     }
     await _player.setVolume(_effectiveVolume());
-    await _player.play();
+    if (isPlaying) {
+      await _player.play();
+    }
     _triggerOnlinePrecache(item);
   }
 
@@ -2741,6 +2845,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     QueueItem item,
     String key, {
     bool isCenc = false,
+    double startAtSecs = 0,
+    bool isPlaying = true,
   }) async {
     try {
       await _player.stop();
@@ -2748,8 +2854,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final plainPath =
         await _decryptUrlToTemp(url, headers, key, isCenc: isCenc);
     await _player.setFilePath(plainPath);
+    if (startAtSecs > 0) {
+      try {
+        await _player
+            .seek(Duration(milliseconds: (startAtSecs * 1000).round()));
+      } catch (_) {}
+    }
     await _player.setVolume(_effectiveVolume());
-    await _player.play();
+    if (isPlaying) {
+      await _player.play();
+    }
     _triggerOnlinePrecache(item);
   }
 
@@ -3724,9 +3838,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final pendingPos = _restoredOnlinePending;
       if (pendingPos != null) {
         _restoredOnlinePending = null;
-        await _resumeRestoredOnline(pendingPos);
-        _persistSession();
-        return;
+        // 在线歌冷启动恢复：直链需重新解析，统一走 _playAt 入口续播
+        final idx = state.queueIndex;
+        if (idx >= 0 && idx < state.queue.length) {
+          try {
+            await _playAt(idx, startAtSecs: pendingPos, skipOnFailure: false);
+          } catch (_) {
+            // 失败已在 _playAt 内置错误态（不换源不跳歌），这里只吞 rethrow
+          }
+          _persistSession();
+          return;
+        }
       }
       final pendingLocalPos = _restoredLocalPending;
       if (pendingLocalPos != null) {
@@ -4120,44 +4242,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> _resumeRestoredOnline(double pos) async {
-    final item = state.current;
-    if (item == null) return;
-    await _stopExclusive();
-    state = state.copyWith(resolving: true, error: null);
-    _syncToSystemMediaSession();
-    try {
-      if (item.onlineSongJson != null && item.onlineSongJson!.isNotEmpty) {
-        await _playOnline(item);
-      } else {
-        final url = await _resolveOnlineUrl(item);
-        if (url == null) {
-          state = state.copyWith(
-            isPlaying: false,
-            resolving: false,
-            error: tr('无法获取播放链接'),
-          );
-          _syncToSystemMediaSession();
-          return;
-        }
-        await _player.setUrl(url.url, headers: url.headers);
-        final vol = _ref.read(settingsProvider).valueOrNull?.volume ?? 1.0;
-        await _player.setVolume(vol);
-      }
-      state = state.copyWith(resolving: false);
-      await seek(pos);
-      await _player.play();
-      _syncToSystemMediaSession();
-    } catch (e) {
-      state = state.copyWith(
-        isPlaying: false,
-        resolving: false,
-        error: tr('在线播放失败'),
-      );
-      _syncToSystemMediaSession();
-    }
-  }
-
   // ---------------- DLNA 投屏支持 ----------------
 
   Future<void> pauseLocalEngine() async {
@@ -4303,7 +4387,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return CastMediaResolution(url: target, headers: const {}, isRemote: false);
   }
 
-  Future<void> _castFollowPlay(QueueItem item, int epoch) async {
+  Future<void> _castFollowPlay(
+    QueueItem item,
+    int epoch, {
+    double startAtSecs = 0,
+  }) async {
     state = state.copyWith(resolving: item.isOnline);
     final media = await resolveForCast(item);
     if (epoch != _playEpoch) return;
@@ -4311,6 +4399,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       await _player.stop();
     } catch (_) {}
+    // castMedia 内建 SetUri→Play→Seek 链（startAtSecs 直达，设备不响应
+    // seek 时静默降级从头播），与桌面 castFromPlayAudio 的 startOffsetMs
+    // 语义对齐，无需调用方事后补偿 seek
     await _ref.read(dlnaCastProvider.notifier).castMedia(
           title: item.title,
           artist: item.artist,
@@ -4320,6 +4411,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           headers: media.headers,
           durationMs: item.durationMs,
           coverUrl: item.coverUrl,
+          startAtSecs: startAtSecs,
         );
     if (epoch != _playEpoch) return;
     state = state.copyWith(isPlaying: true, resolving: false);
