@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # versionCode 过渡说明：已发出的 1.0.2-beta1（旧公式）= 1000201，新公式推导
 # 1.0.2 = 1000200 反而更低会被判降级；手动抬至 1000299 保证 beta1 用户可无缝
 # 覆盖升级，且低于 1.0.3 公式值（1000300）保持单调。1.0.3 起恢复自动推导。
-version: 1.0.2-beta1+1000299
+version: 1.0.2+1000299
 
 environment:
   # 下限放宽到 3.11：Flutter-OH 3.41.10-ohos 对应 Dart 3.11（鸿蒙构建用），
