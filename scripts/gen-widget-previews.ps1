@@ -1,4 +1,4 @@
-# 生成桌面组件选择器的静态预览位图（previewImage）。
+﻿# 生成桌面组件选择器的静态预览位图（previewImage）。
 #
 # 背景：此前 previewImage 用 layer-list（矢量示意），部分 ROM（如 MagicOS）
 # 的组件选择器对 layer-list 的 item 尺寸/gravity 渲染失效——同一张图在

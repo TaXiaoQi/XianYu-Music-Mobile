@@ -1,4 +1,4 @@
-# build-rust-ohos.ps1 - cross-compile libxianyu_core.so for OpenHarmony/HarmonyOS NEXT
+﻿# build-rust-ohos.ps1 - cross-compile libxianyu_core.so for OpenHarmony/HarmonyOS NEXT
 #
 # Targets: aarch64-unknown-linux-ohos (real device) + x86_64-unknown-linux-ohos (emulator)
 # Rust Tier 2 targets, distributed by rustup.

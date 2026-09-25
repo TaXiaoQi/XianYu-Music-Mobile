@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $realSource = Split-Path -Parent $PSScriptRoot
 
 if ($env:XIANMU_SKIP_RUST -eq "1") { exit 0 }

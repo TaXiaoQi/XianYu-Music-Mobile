@@ -1,4 +1,4 @@
-# env-ohos.ps1 - switch current session to Flutter-OH toolchain
+﻿# env-ohos.ps1 - switch current session to Flutter-OH toolchain
 # (does not touch global PATH, official Flutter unaffected)
 # Usage: . ./scripts/ohos/env-ohos.ps1   (note the leading dot: dot-source)
 #

@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
 .SYNOPSIS
   开发运行：键入本脚本时先自动同步版本号（version.ts），再直接 `flutter run`。
