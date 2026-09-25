@@ -333,6 +333,20 @@ if ($targetAbi -eq '') {
     Write-Host "[ohos] target ABI (explicit): $targetAbi" -ForegroundColor Cyan
 }
 
+# 打包前剔除对侧架构的 rust so：hvigor 会把 entry/libs 下所有 ABI 目录原样
+# 打进 HAP，entry/libs/x86_64 只有 build-rust-ohos.ps1 为模拟器调试复制的
+# libxianyu_core.so（~14MB），混进 arm64 发布包直接让体积翻倍（30.9MB -> 16MB）。
+# libapp/libflutter 由 FlutterTask 按 TARGET_PLATFORM 物化，不受影响；
+# 模拟器调试（-Run 或 -Abi x64）下次构建时 build-rust-ohos.ps1 会重新复制
+# （cargo 增量，秒级）。仅 build 分支执行，-Run 不动 libs。
+if (-not $Run -and $targetAbi -eq 'arm64') {
+    $staleEmuLibs = Join-Path $MirrorDir 'ohos\entry\libs\x86_64'
+    if (Test-Path $staleEmuLibs) {
+        Remove-Item $staleEmuLibs -Recurse -Force
+        Write-Host "[ohos] removed emulator rust libs from pack: $staleEmuLibs" -ForegroundColor DarkGray
+    }
+}
+
 Push-Location $MirrorDir
 try {
     if ($Run) {
@@ -398,6 +412,10 @@ try {
         if ($versionTs -match "APP_VERSION\s*=\s*'([^']+)'") { $appVersion = $Matches[1] }
         $relDir = Join-Path $ProjectRoot 'releases\ohos'
         $archSuffix = if ($targetAbi -eq 'x64') { 'x86' } else { 'arm64' }
+        # hvigor FlutterTask 的目标平台：缺省（不传 TARGET_PLATFORM）会编译全部
+        # ohos 目标并在 entry/libs 重新物化 x86_64，.app 体积翻倍——assembleApp
+        # 必须显式传（2026-09-25 腕上端实测 29.8MB vs 18.1MB）
+        $tpHvigor = if ($targetAbi -eq 'x64') { 'ohos-x64' } else { 'ohos-arm64' }
         if ($buildMode -ne 'debug') {
             New-Item -ItemType Directory -Force -Path $relDir | Out-Null
             foreach ($h in $haps) {
@@ -413,15 +431,15 @@ try {
             # $buildMode 已在上方 HAP 归档处解析（--release/--profile/--debug）。
             Push-Location (Join-Path $MirrorDir 'ohos')
             try {
-                Write-Host "[ohos] hvigorw assembleApp (buildMode=$buildMode) ..." -ForegroundColor Cyan
-                & hvigorw assembleApp -p product=default -p buildMode=$buildMode
+                Write-Host "[ohos] hvigorw assembleApp (buildMode=$buildMode, TARGET_PLATFORM=$tpHvigor) ..." -ForegroundColor Cyan
+                & hvigorw assembleApp -p product=default -p buildMode=$buildMode -p TARGET_PLATFORM=$tpHvigor
                 if ($LASTEXITCODE -ne 0) {
                     # hvigor 每次启动的 ohpm install 会重物化 @ohos/flutter_ohos 实例
                     # （哈希变化）冲掉 patch-embedding 补丁，ArkTS 编译报 AutoFill/
                     # CompetitionStrategy 缺失 - 与 hap 构建同款两段式：patch 后重试一次。
                     Write-Host '[ohos] assembleApp attempt 1 failed - patch embedding and retry ...' -ForegroundColor Yellow
                     & (Join-Path $ScriptDir 'patch-embedding.ps1') -ProjectRoot $MirrorDir
-                    & hvigorw assembleApp -p product=default -p buildMode=$buildMode
+                    & hvigorw assembleApp -p product=default -p buildMode=$buildMode -p TARGET_PLATFORM=$tpHvigor
                     if ($LASTEXITCODE -ne 0) { throw "assembleApp failed ($LASTEXITCODE)" }
                 }
                 $apps = Get-ChildItem (Join-Path $MirrorDir 'ohos\build\outputs') -Recurse -Filter '*signed.app' -ErrorAction SilentlyContinue

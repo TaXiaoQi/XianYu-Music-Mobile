@@ -1,7 +1,7 @@
 
 {
   "app": {
-    "signingConfigs": [{"name":"default","type":"HarmonyOS","material":{"certpath":"C:\\Users\\小奇\\Downloads\\弦予音乐.cer","keyAlias":"xianyu","keyPassword":"00000036a651fcaa87c29c0635e2d756257e764cf7deaf50a792e94c7896607a7522ad235ceee35c1521b1d3a72a22ccbc5fe86a2bf568e6f3289d52f366df6dcb7d54a9fd17661f0e4a","profile":"C:\\Users\\小奇\\Downloads\\xianyu_releaseRelease.p7b","signAlg":"SHA256withECDSA","storeFile":"C:\\Users\\小奇\\.ohos\\config\\xianyu_release.p12","storePassword":"00000036a651fcaa87c29c0635e2d756257e764cf7deaf50a792e94c7896607a7522ad235ceee35c1521b1d3a72a22ccbc5fe86a2bf568e6f3289d52f366df6dcb7d54a9fd17661f0e4a"}}],
+    "signingConfigs": [{"name":"default","type":"HarmonyOS","material":{"certpath":"C:\\Users\\小奇\\.ohos\\config\\xianyu_root_ca.cer","keyAlias":"debugKey","keyPassword":"0000001B57D6A81CE266B0C8CF9A3B6EB902AE179F8E8F2FF13D435C47C667868B996F1D25DAF850E583E5","profile":"C:\\Users\\小奇\\.ohos\\config\\弦予音乐Release.p7b","signAlg":"SHA256withECDSA","storeFile":"C:\\Users\\小奇\\.ohos\\config\\default_ohos_qFRiZBEIRmHA4sssAF4ofZAwJYiNUbh0ljLRmTkJP2g=.p12","storePassword":"0000001BBFA3070A00A61CAEDDA9C618E9B218671B92B647618AFD478955CAC03F8FF3DCE0D2072D35EE22"}}],
     "products": [
       {
         "name": "default",
