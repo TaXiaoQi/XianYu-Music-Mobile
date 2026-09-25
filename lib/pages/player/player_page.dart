@@ -1846,6 +1846,8 @@ class _TraditionalPlayerLayoutState
             icon: Icons.graphic_eq,
             tooltip: tr('音效'),
             active: !bypass && _hasPlayerEffects(sfx),
+            // MV 的音轨不走音效引擎，控制不了它，MV 开启时入口置灰不可点。
+            enabled: !mvRequested,
             onTap: () => context.push('/effects'),
           ))),
           Expanded(child: Center(child: _qualityActionItem(
@@ -2060,18 +2062,25 @@ class _TraditionalPlayerLayoutState
                 },
               ),
               ListTile(
+                // MV 开启时画面就是 MV，桌面歌词没有意义，整行禁用。
+                enabled: !widget.mvEnabled,
                 leading: Icon(
                   Icons.closed_caption_outlined,
-                  color: lyricsEnabled
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
+                  color: widget.mvEnabled
+                      ? scheme.outline
+                      : (lyricsEnabled
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant),
                   size: 22,
                 ),
                 title: Text(tr('桌面歌词')),
                 trailing: Text(
                   lyricsEnabled ? tr('已开启') : tr('已关闭'),
                   style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: widget.mvEnabled
+                          ? scheme.outline
+                          : scheme.onSurfaceVariant),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -3512,7 +3521,10 @@ class _TitleRow extends ConsumerWidget {
               const SizedBox(width: 4),
               InkWell(
                 borderRadius: BorderRadius.circular(10),
-                onTap: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+                // MV 开启时画面就是 MV，桌面歌词没有意义，这里置灰不可点。
+                onTap: mvRequested
+                    ? null
+                    : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   child: Container(
@@ -3521,7 +3533,7 @@ class _TitleRow extends ConsumerWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: lyricsEnabled
+                      color: !mvRequested && lyricsEnabled
                           ? scheme.primary.withValues(alpha: 0.14)
                           : Colors.transparent,
                     ),
@@ -3530,9 +3542,11 @@ class _TitleRow extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: lyricsEnabled
-                            ? scheme.primary
-                            : Colors.white.withValues(alpha: 0.72),
+                        color: mvRequested
+                            ? Colors.white.withValues(alpha: 0.32)
+                            : lyricsEnabled
+                                ? scheme.primary
+                                : Colors.white.withValues(alpha: 0.72),
                       ),
                     ),
                   ),
@@ -4658,7 +4672,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: lyricsEnabled
+              color: !mvRequested && lyricsEnabled
                   ? accent.withValues(alpha: 0.14)
                   : Colors.transparent,
             ),
@@ -4667,11 +4681,18 @@ class _LandscapeControlsRow extends ConsumerWidget {
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: lyricsEnabled ? accent : idle,
+                color: mvRequested
+                    ? Colors.white.withValues(alpha: 0.32)
+                    : lyricsEnabled
+                        ? accent
+                        : idle,
               ),
             ),
           ),
-          onPressed: () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
+          // MV 开启时画面就是 MV，桌面歌词没有意义，置灰不可点。
+          onPressed: mvRequested
+              ? null
+              : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
         ),
       ],
     );
@@ -4717,9 +4738,12 @@ class _LandscapeControlsRow extends ConsumerWidget {
           tooltip: tr('音效'),
           icon: Icon(
             Icons.graphic_eq,
-            color: !bypass && _hasPlayerEffects(sfx) ? accent : idle,
+            color: mvRequested
+                ? Colors.white.withValues(alpha: 0.32)
+                : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
           ),
-          onPressed: () => context.push('/effects'),
+          // MV 的音轨不走音效引擎，控制不了它，MV 开启时置灰不可点。
+          onPressed: mvRequested ? null : () => context.push('/effects'),
         ),
         IconButton(
           iconSize: 28,

@@ -17,6 +17,7 @@ import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/mv_provider.dart';
 import '../../src/player/cast_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -835,6 +836,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
+    // MV 期间桌面歌词不可用（音画由 MV 接管），总开关置灰并给出说明。
+    final mvOn = ref.watch(mvProvider.select((state) => state.requested));
     return [
       _sectionHeader(context, tr('歌词显示')),
       _CardGroup(
@@ -882,7 +885,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.lyrics_outlined,
             title: tr('悬浮歌词窗'),
-            subtitle: tr('在其他应用上层显示卡拉OK逐字歌词'),
+            subtitle: mvOn
+                ? tr('此功能不支持在MV期间使用')
+                : tr('在其他应用上层显示卡拉OK逐字歌词'),
+            enabled: !mvOn,
             value: s?.floatingLyricsEnabled ?? false,
             onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
           ),

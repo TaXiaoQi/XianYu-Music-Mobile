@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
+import '../player/mv_provider.dart';
 import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
@@ -31,6 +32,11 @@ class FloatingLyricsController {
 
   ProviderSubscription<AsyncValue<AppSettings>>? _settingsSub;
   ProviderSubscription<PlaybackState>? _playerSub;
+
+  /// MV 是否已开启。MV 期间桌面歌词整体不可用：设置里即使开着也不显示浮窗。
+  ProviderSubscription<bool>? _mvSub;
+  bool _mvActive = false;
+
   bool _enabled = false;
   int _lastPushedPosMs = -1;
   bool _lastPushedPlaying = false;
@@ -49,6 +55,10 @@ class FloatingLyricsController {
     _playerSub = _container.listen(playerProvider, (prev, next) {
       _onPlaybackChanged(next);
     });
+    _mvSub = _container.listen(
+      mvProvider.select((state) => state.requested),
+      (prev, next) => _onMvChanged(next),
+    );
   }
 
   void dispose() {
@@ -56,6 +66,7 @@ class FloatingLyricsController {
     I18n.modeVersion.removeListener(_onLanguageChanged);
     _settingsSub?.close();
     _playerSub?.close();
+    _mvSub?.close();
   }
 
   void _onLanguageChanged() {
@@ -67,7 +78,8 @@ class FloatingLyricsController {
   // ---- 设置变化 ----
 
   void _onSettingsChanged(AppSettings s) {
-    final enabled = s.floatingLyricsEnabled;
+    // MV 期间不显示浮窗，即使设置里是开着的。
+    final enabled = s.floatingLyricsEnabled && !_mvActive;
     if (enabled && !_enabled) {
       _enabled = true;
       _pushSettings(s);
@@ -83,11 +95,28 @@ class FloatingLyricsController {
     }
   }
 
+  // ---- MV 变化 ----
+
+  void _onMvChanged(bool active) {
+    if (_mvActive == active) return;
+    _mvActive = active;
+    final s = _container.read(settingsProvider).valueOrNull;
+    final want = (s?.floatingLyricsEnabled ?? false) && !active;
+    if (want == _enabled) return;
+    _enabled = want;
+    if (want) {
+      // MV 结束且设置仍开着：把浮窗放回来（_show 内部会补齐设置/歌词/进度）。
+      _show();
+    } else {
+      _hide();
+    }
+  }
+
   // ---- 播放状态变化 ----
 
   void _onPlaybackChanged(PlaybackState state) {
     final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null || !s.floatingLyricsEnabled) return;
+    if (s == null || !s.floatingLyricsEnabled || _mvActive) return;
 
     final item = state.current;
     final key = item == null
