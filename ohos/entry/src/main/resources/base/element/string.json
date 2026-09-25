@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "弦予音乐"
+    },
+    {
+      "name": "bluetooth_permission_reason",
+      "value": "用于允许手表通过蓝牙连接并控制播放（腕上联动）"
     }
   ]
 }

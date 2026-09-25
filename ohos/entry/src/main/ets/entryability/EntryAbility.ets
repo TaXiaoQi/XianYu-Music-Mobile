@@ -3,6 +3,7 @@ import { FlutterAbility, FlutterEngine, MethodChannel } from '@ohos/flutter_ohos
 import { GeneratedPluginRegistrant } from '../plugins/GeneratedPluginRegistrant';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { AbilityConstant, Want } from '@kit.AbilityKit';
+import { WatchLinkServerDispatcher } from './WatchLinkServerDispatcher';
 
 export default class EntryAbility extends FlutterAbility {
   private pendingDeepLink: string = '';
@@ -11,6 +12,10 @@ export default class EntryAbility extends FlutterAbility {
   configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     GeneratedPluginRegistrant.registerWith(flutterEngine)
+    // 手表联动 SPP 通道（ohos 服务端角色）：协议与安卓 WatchLink.kt
+    // 一致（字节管道 + Dart 侧帧/心跳），实机差异见 WatchLinkServerDispatcher。
+    WatchLinkServerDispatcher.attach(
+      flutterEngine.dartExecutor.getBinaryMessenger(), this.context)
     // xianyu:// 深链桥：协议与 Android MainActivity / iOS SceneDelegate 完全一致 ——
     // Dart → 原生 `getInitialDeepLink`（取冷启动暂存），原生 → Dart `onDeepLink`
     // （运行期投递）。Dart 侧 lib/src/deeplink/deep_link_handler.dart 无需改动。
