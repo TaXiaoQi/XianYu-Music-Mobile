@@ -270,6 +270,36 @@ pub fn validate_url_ip_literal(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 轻量出站校验（DSP 播放入口专用）：在 validate_url_ip_literal 基础上放行
+/// 本机回环地址。
+///
+/// 移动端在线播放的 DSP 管线输入是 Dart 本地回环代理 URL（127.0.0.1，
+/// 负责插件请求头注入/缓存伺服/流量收口），属进程内合法链路，必须允许；
+/// 与桌面端不同（桌面端喂给 DSP 的是真实 CDN 直链），此处一刀切会杀死全部
+/// 在线音效。云元数据/私网/CGNAT/多播等禁区依旧拒绝。
+pub fn validate_url_ip_literal_allow_loopback(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("无效的 URL: {e}"))?;
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("仅允许 http/https，收到: {scheme}"));
+    }
+    let host = parsed.host_str().ok_or("URL 缺少主机名")?;
+    let host_trim = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host_trim.parse::<IpAddr>() {
+        let is_loopback = match ip {
+            IpAddr::V4(v4) => v4.is_loopback(),
+            IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+                Some(v4) => v4.is_loopback(),
+                None => v6.is_loopback(),
+            },
+        };
+        if !is_loopback && forbidden_ip(ip) {
+            return Err(format!("目标地址被禁止（内网/保留地址）: {ip}"));
+        }
+    }
+    Ok(())
+}
+
 /// 轻量重定向策略：每个跳转目标只做 IP 字面量校验（域名不查 DNS、不做端口白名单）。
 ///
 /// 用于播放流、用户配置的 WebDAV/账号 API 等端口/IP 多样、不宜硬校验的目标，
@@ -429,6 +459,21 @@ mod tests {
         assert!(validate_url_ip_literal("http://169.254.169.254/latest/meta-data").is_err(), "meta");
         assert!(validate_url_ip_literal("http://[::1]/x").is_err(), "::1");
         assert!(validate_url_ip_literal("http://[::ffff:192.168.1.1]/x").is_err(), "v4mapped");
+    }
+
+    #[test]
+    fn dsp_entry_allows_loopback_only() {
+        // DSP 播放入口：回环代理 URL 放行
+        assert!(validate_url_ip_literal_allow_loopback("http://127.0.0.1:8765/token/audio?u=x").is_ok());
+        assert!(validate_url_ip_literal_allow_loopback("http://[::1]:8765/x").is_ok());
+        assert!(validate_url_ip_literal_allow_loopback("http://[::ffff:127.0.0.1]/x").is_ok());
+        // 其余禁区（云元数据/私网/CGNAT/多播）依旧拒绝
+        assert!(validate_url_ip_literal_allow_loopback("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(validate_url_ip_literal_allow_loopback("http://10.0.0.5/x").is_err());
+        assert!(validate_url_ip_literal_allow_loopback("http://192.168.1.1/x").is_err());
+        assert!(validate_url_ip_literal_allow_loopback("http://100.64.0.1/x").is_err());
+        // 非 http(s) scheme 拒绝
+        assert!(validate_url_ip_literal_allow_loopback("file:///etc/passwd").is_err());
     }
 
     #[test]

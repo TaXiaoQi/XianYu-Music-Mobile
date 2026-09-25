@@ -66,7 +66,8 @@ type FnStreamRequestPause = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 type FnStreamRequestStop = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 type FnStreamClose = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 type FnStreamWrite = unsafe extern "C" fn(*mut AAudioStream, *const std::os::raw::c_void, i32, i64) -> i64;
-type FnStreamGetAvailableFrames = unsafe extern "C" fn(*mut AAudioStream) -> i32;
+type FnStreamGetFramesRead = unsafe extern "C" fn(*mut AAudioStream) -> i64;
+type FnStreamGetFramesWritten = unsafe extern "C" fn(*mut AAudioStream) -> i64;
 type FnStreamGetXRunCount = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 type FnStreamGetSampleRate = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 type FnStreamGetChannelCount = unsafe extern "C" fn(*mut AAudioStream) -> i32;
@@ -99,7 +100,8 @@ struct AAudioLib {
     stream_request_stop: FnStreamRequestStop,
     stream_close: FnStreamClose,
     stream_write: FnStreamWrite,
-    stream_get_available_frames: FnStreamGetAvailableFrames,
+    stream_get_frames_read: FnStreamGetFramesRead,
+    stream_get_frames_written: FnStreamGetFramesWritten,
     stream_get_xrun_count: FnStreamGetXRunCount,
     stream_get_sample_rate: FnStreamGetSampleRate,
     stream_get_channel_count: FnStreamGetChannelCount,
@@ -112,13 +114,20 @@ struct AAudioLib {
 unsafe impl Send for AAudioLib {}
 
 impl AAudioLib {
-    /// 动态加载 libaaudio.so。失败返回 None（API < 26 或库损坏）。
-    fn load() -> Option<Self> {
+    /// 动态加载 libaaudio.so。失败时带出具体原因（dlerror / 缺失符号名），
+    /// 避免上游只见「无法加载」而无法定位。
+    fn load() -> Result<Self, String> {
         unsafe {
             let name = b"libaaudio.so\0".as_ptr();
             let handle = libc::dlopen(name as *const _, libc::RTLD_NOW);
             if handle.is_null() {
-                return None;
+                let err = libc::dlerror();
+                let detail = if err.is_null() {
+                    "dlopen 返回空句柄".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(err).to_string_lossy().into_owned()
+                };
+                return Err(format!("dlopen libaaudio.so 失败: {detail}"));
             }
 
             macro_rules! sym {
@@ -127,8 +136,16 @@ impl AAudioLib {
                         let sym_name = concat!($name, "\0").as_ptr();
                         let ptr = libc::dlsym(handle, sym_name as *const _);
                         if ptr.is_null() {
+                            let err = libc::dlerror();
+                            let detail = if err.is_null() {
+                                "符号不存在".to_string()
+                            } else {
+                                std::ffi::CStr::from_ptr(err)
+                                    .to_string_lossy()
+                                    .into_owned()
+                            };
                             libc::dlclose(handle);
-                            return None;
+                            return Err(format!("dlsym {} 失败: {}", $name, detail));
                         }
                         std::mem::transmute::<*mut std::os::raw::c_void, $type>(ptr)
                     }
@@ -153,7 +170,11 @@ impl AAudioLib {
                 stream_request_stop: sym!("AAudioStream_requestStop", FnStreamRequestStop),
                 stream_close: sym!("AAudioStream_close", FnStreamClose),
                 stream_write: sym!("AAudioStream_write", FnStreamWrite),
-                stream_get_available_frames: sym!("AAudioStream_getAvailableFrames", FnStreamGetAvailableFrames),
+                stream_get_frames_read: sym!("AAudioStream_getFramesRead", FnStreamGetFramesRead),
+                stream_get_frames_written: sym!(
+                    "AAudioStream_getFramesWritten",
+                    FnStreamGetFramesWritten
+                ),
                 stream_get_xrun_count: sym!("AAudioStream_getXRunCount", FnStreamGetXRunCount),
                 stream_get_sample_rate: sym!("AAudioStream_getSampleRate", FnStreamGetSampleRate),
                 stream_get_channel_count: sym!("AAudioStream_getChannelCount", FnStreamGetChannelCount),
@@ -162,8 +183,20 @@ impl AAudioLib {
                 stream_get_timestamp: sym!("AAudioStream_getTimestamp", FnStreamGetTimestamp),
                 convert_result_to_text: sym!("AAudio_convertResultToText", FnConvertResultToText),
             };
-            Some(lib)
+            Ok(lib)
         }
+    }
+
+    /// 当前可写帧数 = 缓冲大小 - (已写入 - 已读取)。
+    ///
+    /// 用公开 API（getFramesWritten/getFramesRead/getBufferSizeInFrames，API 26+）
+    /// 组合计算，替代非公开符号 AAudioStream_getAvailableFrames（部分厂商 ROM
+    /// 不导出该符号，dlsym 失败会导致整个 libaaudio 加载被判失败）。
+    unsafe fn available_frames(&self, stream: *mut AAudioStream) -> i32 {
+        let written = (self.stream_get_frames_written)(stream);
+        let read = (self.stream_get_frames_read)(stream);
+        let buf = (self.stream_get_buffer_size)(stream);
+        buf - (written - read).clamp(0, buf as i64) as i32
     }
 
     unsafe fn result_text(&self, result: i32) -> String {
@@ -514,10 +547,11 @@ pub fn start_exclusive_playback(
     if request.shared_mode {
         request.bit_perfect = false;
     }
-    // SSRF 纵深：HTTP 直链为 IP 字面量且命中内网/回环/保留地址时拒绝
-    //（对齐桌面端 play_audio 入口校验）。
+    // SSRF 纵深：HTTP 直链为 IP 字面量且命中禁区时拒绝（对齐桌面端 play_audio
+    // 入口校验）。放行本机回环——在线播放的 DSP 管线输入是 Dart 本地回环代理
+    // URL（插件头注入/缓存伺服），属进程内合法链路；云元数据/私网等仍拒绝。
     if request.path.starts_with("http://") || request.path.starts_with("https://") {
-        crate::security::ssrf::validate_url_ip_literal(&request.path)
+        crate::security::ssrf::validate_url_ip_literal_allow_loopback(&request.path)
             .map_err(|e| format!("播放链接校验失败: {e}"))?;
     }
     // 先停止已有实例
@@ -774,9 +808,9 @@ fn run_exclusive_playback(
 ) {
     // 1. 加载 AAudio 库
     let lib = match AAudioLib::load() {
-        Some(l) => l,
-        None => {
-            let _ = init_tx.send(Err("无法加载 libaaudio.so（需要 Android API 26+）".to_string()));
+        Ok(l) => l,
+        Err(e) => {
+            let _ = init_tx.send(Err(format!("无法加载 libaaudio.so（需要 Android API 26+）: {e}")));
             return;
         }
     };
@@ -1012,7 +1046,7 @@ fn run_exclusive_playback(
         }
 
         // 检查可写空间
-        let available = unsafe { (lib.stream_get_available_frames)(stream) };
+        let available = unsafe { lib.available_frames(stream) };
         if available <= 0 {
             thread::sleep(Duration::from_millis(5));
             continue;
@@ -1246,7 +1280,7 @@ fn run_dsd_passthrough(
             continue;
         }
 
-        let available = unsafe { (lib.stream_get_available_frames)(stream) };
+        let available = unsafe { lib.available_frames(stream) };
         if available <= 0 {
             thread::sleep(Duration::from_millis(5));
             continue;

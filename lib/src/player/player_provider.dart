@@ -510,7 +510,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _onTrackEndBusy = false;
   Timer? _exclusiveTimer;
   Timer? _sfxSyncTimer;
-  bool _dspAvailable = true;
+  // DSP 管线失败冷却：一次失败禁 60s 后自动重试（失败是立即报错，
+  // 重试仅毫秒级开销），避免一次瞬时/环境性失败把 DSP 禁用到会话结束
+  DateTime _dspFailUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _dspSkipNextStart = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   int _skipDepth = 0;
@@ -890,9 +892,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required double startAtSecs,
     required bool isPlaying,
   }) async {
-    if (!_dspAvailable) return false;
+    if (DateTime.now().isBefore(_dspFailUntil)) {
+      AppLog.warn('play', '[dsp] 跳过接管: 失败冷却中(至 $_dspFailUntil)');
+      return false;
+    }
     if (_dspSkipNextStart) {
       _dspSkipNextStart = false;
+      AppLog.warn('play', '[dsp] 跳过接管: skipNextStart 标志(管线曾异常退出)');
       return false;
     }
     if (!path.startsWith('http')) {
@@ -917,15 +923,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(usbExclusive: false, dspActive: true, isPlaying: isPlaying);
       _startExclusivePolling();
       _syncToSystemMediaSession();
-      AppLogger.instance.log('dsp', '共享 DSP 管线已接管播放: $deviceName');
+      AppLog.info('play', '[dsp] 共享管线接管成功: $deviceName');
       return true;
     } catch (e) {
       state = state.copyWith(dspActive: false);
-      final msg = e.toString();
-      if (msg.contains('libaaudio')) {
-        _dspAvailable = false;
-      }
-      AppLogger.instance.log('dsp', '共享 DSP 管线启动失败，回退 ExoPlayer: $e');
+      // 失败进入 60s 冷却，之后自动重试（成功即恢复接管）
+      _dspFailUntil = DateTime.now().add(const Duration(seconds: 60));
+      AppLog.warn('play', '[dsp] 启动失败(60s冷却后重试) 回退ExoPlayer: $e');
       return false;
     }
   }
@@ -985,6 +989,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> _onExclusiveDisconnect() async {
     final cur = state.current;
     _flushPlayStats();
+    AppLog.warn('play',
+        '[dsp] 管线提前退出(active=false) 自动重播回退 cur=${cur?.title}');
     if (cur != null) _reportBehavior(cur, 'usb_disconnect', 0);
     await _stopExclusive();
     _dspSkipNextStart = true;

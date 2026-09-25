@@ -263,11 +263,27 @@ class AudioProxyServer {
           break;
         }
         if (chunk.isEmpty) {
-          // EOF 或下载失败
-          if (!wroteAny) return false; // 尚未写出：回退网络路径
-          probeLog('tryCache read-EOF pos=$pos total=$total '
-              'firstMs=${readTimer.elapsedMilliseconds}ms');
-          break;
+          if (!wroteAny) {
+            // 尚未写出：回退网络路径（首块最多等 2s，保住起播时效）
+            return false;
+          }
+          // 已写出后续块为空：下载仍在推进/未失败时不能断流——
+          // ExoPlayer 截断可 Range 重连，但 DSP(Symphonia) 截断=EOF=
+          // 解码退出→管线回退无音效。read_url_range 单次上限 2s 内
+          // 无数据时短暂等待后继续拉，直到下载失败/客户端断开。
+          final st2 = await _cacheStatus(target);
+          if (st2 == null || st2.failed) {
+            probeLog('tryCache stalled-failed pos=$pos total=$total '
+                'firstMs=${readTimer.elapsedMilliseconds}ms');
+            break;
+          }
+          if (st2.complete && pos >= st2.downloaded) {
+            probeLog('tryCache read-EOF pos=$pos total=$total '
+                'firstMs=${readTimer.elapsedMilliseconds}ms');
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+          continue;
         }
         var data = chunk;
         if (pos + data.length > end + 1) {
