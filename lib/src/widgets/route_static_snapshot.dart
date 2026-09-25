@@ -49,7 +49,11 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   void _onStatus(AnimationStatus status) {
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
-      _capture();
+      // 状态监听在帧中途同步触发，此时树可能刚标脏未 paint，
+      // 直接 toImage 会撞 !debugNeedsPaint 断言；推到帧末再截。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _moving) _capture();
+      });
       return;
     }
     final wasMoving = _moving;
@@ -68,7 +72,7 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
     super.dispose();
   }
 
-  Future<void> _capture() async {
+  Future<void> _capture({int attempt = 0}) async {
     if (!_enabled || _capturing) return;
     _capturing = true;
     final token = ++_token;
@@ -94,6 +98,15 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       );
     } catch (e) {
       img = null;
+      // 帧中标脏（新路由首帧、Offstage 切换、动画 tick）会让 toImage 撞
+      // !debugNeedsPaint 断言；推迟一帧重试最多两次，覆盖所有时序。
+      if (e.toString().contains('debugNeedsPaint') && attempt < 2 && mounted) {
+        _capturing = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _capture(attempt: attempt + 1);
+        });
+        return;
+      }
       AppLog.warn('route-snapshot', 'capture toImage failed: $e');
     }
     _capturing = false;
