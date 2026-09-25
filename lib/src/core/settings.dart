@@ -213,7 +213,7 @@ class AppSettings {
     this.lyricFontPath = '',
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
-    this.frostedGlass = false,
+    this.frostedGlass = true,
     this.frostedGlassLevel = FrostedGlassLevel.strongest,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
@@ -701,7 +701,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
     final liquidGlass = prefs.getBool('liquidGlass') ?? false;
-    final frostedGlass = prefs.getBool('frostedGlass') ?? false;
+    final frostedGlass = prefs.getBool('frostedGlass') ?? true;
 
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
