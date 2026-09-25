@@ -31,7 +31,6 @@ import '../plugin/plugin_catalog.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
-import '../playlist/playlist_provider.dart';
 import '../recent/recent_provider.dart';
 import '../remote/remote_library_service.dart';
 import '../rust/api.dart';
@@ -973,6 +972,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       final dur = state.duration;
       if (info['active'] != true) {
+        final lastErr = (info['lastError'] as String?)?.trim() ?? '';
+        AppLog.warn('play',
+            '[dsp] 轮询发现 active=false pos=${pos.toStringAsFixed(1)} lastError=$lastErr');
         if (dur > 0 && pos >= dur - 0.3) {
           await _onExclusiveTrackEnd();
         } else {
@@ -3204,24 +3206,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             newSource: newSource,
             newOnlineInfoJson: newOnlineInfoJson,
           );
-          if (itemPath.isNotEmpty) {
-            unawaited(_ref
-                .read(playlistManagerProvider.notifier)
-                .healSongPluginFull(
-                  itemPath,
-                  pluginId: healedCross.$1.id,
-                  source: newSource,
-                  format: newFormat,
-                  musicInfo: newMusicInfo,
-                ));
-          }
         } else {
           source = [healed];
-          if (itemPath.isNotEmpty) {
-            unawaited(_ref
-                .read(playlistManagerProvider.notifier)
-                .healSongPlugin(itemPath, healed.id));
-          }
         }
       }
 
@@ -3357,11 +3343,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
         if (hit == null) {
           continue;
-        }
-        if (itemPath.isNotEmpty) {
-          unawaited(_ref
-              .read(playlistManagerProvider.notifier)
-              .healSongPlugin(itemPath, plugin.id));
         }
         return hit;
       }

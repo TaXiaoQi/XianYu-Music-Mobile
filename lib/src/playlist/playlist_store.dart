@@ -235,56 +235,6 @@ class PlaylistStore {
     return result;
   }
 
-  Future<List<ImportedPlaylist>> healSongPluginId(
-      String path, String pluginId) async {
-    if (path.isEmpty || pluginId.isEmpty) return loadAll();
-    final all = await loadAll();
-    var changed = false;
-    final result = all.map((p) {
-      var touched = false;
-      final songs = p.songs.map((s) {
-        if (s.path != path || s.isLocal || s.pluginId == pluginId) return s;
-        touched = true;
-        return s.copyWith(pluginId: pluginId);
-      }).toList();
-      if (!touched) return p;
-      changed = true;
-      return p.copyWith(songs: songs);
-    }).toList();
-    if (changed) await saveAll(result);
-    return result;
-  }
-
-  Future<List<ImportedPlaylist>> healSongPluginFull(
-    String path, {
-    required String pluginId,
-    String? source,
-    String? format,
-    Map<String, dynamic>? musicInfo,
-  }) async {
-    if (path.isEmpty || pluginId.isEmpty) return loadAll();
-    final all = await loadAll();
-    var changed = false;
-    final result = all.map((p) {
-      var touched = false;
-      final songs = p.songs.map((s) {
-        if (s.path != path || s.isLocal || s.pluginId == pluginId) return s;
-        touched = true;
-        return s.copyWith(
-          pluginId: pluginId,
-          source: source,
-          format: format,
-          musicInfo: musicInfo,
-        );
-      }).toList();
-      if (!touched) return p;
-      changed = true;
-      return p.copyWith(songs: songs);
-    }).toList();
-    if (changed) await saveAll(result);
-    return result;
-  }
-
   Future<List<ImportedPlaylist>> reorderSongs(
       String id, List<String> orderedPaths) async {
     final all = await loadAll();

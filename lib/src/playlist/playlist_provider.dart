@@ -116,28 +116,6 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     state = ImportedPlaylistState(playlists: playlists, loading: false);
   }
 
-  Future<void> healSongPlugin(String path, String pluginId) async {
-    final playlists = await _store.healSongPluginId(path, pluginId);
-    state = ImportedPlaylistState(playlists: playlists, loading: false);
-  }
-
-  Future<void> healSongPluginFull(
-    String path, {
-    required String pluginId,
-    String? source,
-    String? format,
-    Map<String, dynamic>? musicInfo,
-  }) async {
-    final playlists = await _store.healSongPluginFull(
-      path,
-      pluginId: pluginId,
-      source: source,
-      format: format,
-      musicInfo: musicInfo,
-    );
-    state = ImportedPlaylistState(playlists: playlists, loading: false);
-  }
-
   Future<void> reorderSongs(String id, List<String> orderedPaths) async {
     final playlists = await _store.reorderSongs(id, orderedPaths);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
