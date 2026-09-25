@@ -29,9 +29,6 @@ const MIN_OVERLAP_FRAMES: usize = 16;
 /// 供在整个 MV 时间轴上滑窗找歌曲窗）。原生采样率下这段 mono buffer 较大
 /// （约 48kHz×420s×4B≈80MB，短暂峰值，后台执行后即释放）。
 const LOCAL_MV_MAX_SEC: f64 = 420.0;
-/// 局部匹配用歌曲窗默认时长（秒）。窗太长容易跨过歌里重复段落产生伪峰，
-/// 太短又不够独特；15s 在「独特 vs 鲁棒」间够用。
-const LOCAL_WINDOW_SEC: f64 = 15.0;
 /// 局部匹配滑窗互相关的置信度阈值（比全局更苛刻：局部窗更短更容易出现高相关）。
 const LOCAL_MIN_CONFIDENCE: f64 = 0.5;
 /// 局部匹配允许的最小重叠帧数（避免卷到 MV 尾部不足一窗）。

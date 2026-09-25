@@ -89,6 +89,10 @@ Future<void> main() async {
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'cc.xymusic.mobile.channel.audio',
         androidNotificationChannelName: '弦予音乐播放控制',
+        // 注意：不要改 androidNotificationOngoing=true——本仓库 audio_service
+        // 实际走 pubspec_overrides 的 openharmony git fork，其 assert 禁止
+        // ongoing 与 stopForegroundOnPause=false 组合；且实测被杀场景通知
+        // 并未被清除，主因是荣耀 MagicOS 激进杀后台，改通知无效。
         androidNotificationOngoing: false,
         androidStopForegroundOnPause: false,
         androidNotificationIcon: 'drawable/ic_notification',

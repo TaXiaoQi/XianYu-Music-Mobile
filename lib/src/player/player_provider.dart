@@ -1230,6 +1230,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final Map rawMeta = data['queueSongMeta'] as Map? ?? {};
       final int mode = (data['playMode'] as num?)?.toInt() ?? 0;
       final double pos = (data['currentPositionSecs'] as num?)?.toDouble() ?? 0;
+      // 被杀前是否在播（_persistSession 已持久化）。进程被系统 LMK 杀掉
+      // （典型场景：切相机等内存大户）重启后据此自动续播，避免「回来发现
+      // 播放被重置到暂停」的割裂感。
+      final bool wasPlaying = data['isPlaying'] as bool? ?? false;
 
       if (rawQueue.isEmpty || curPath.isEmpty) {
         AppLog.info('session',
@@ -1298,8 +1302,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           await _updateRgGain(cached);
           await seek(pos);
           await _player.setVolume(_effectiveVolume());
+          if (wasPlaying) unawaited(_player.play());
         } else if (SafChannel.isSafPath(currentItem.path)) {
           _restoredLocalPending = pos;
+          // SAF 路径不能直接预载，复用 _playAt 续播。
+          if (wasPlaying) {
+            unawaited(Future.delayed(const Duration(milliseconds: 800), () {
+              final idx = state.queueIndex;
+              if (idx >= 0 && idx < state.queue.length) {
+                _playAt(idx, startAtSecs: pos);
+              }
+            }));
+          }
         } else {
           await _updateRgGain(currentItem.path);
           final useExclusive =
@@ -1307,7 +1321,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           var restored = false;
           if (useExclusive) {
             restored = await _tryStartExclusive(currentItem.path,
-                startAtSecs: pos, isPlaying: false);
+                startAtSecs: pos, isPlaying: wasPlaying);
           }
           if (!restored) {
             var path = currentItem.path;
@@ -1321,11 +1335,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               }
             }
             restored = await _tryStartDspPipeline(path,
-                startAtSecs: pos, isPlaying: false);
+                startAtSecs: pos, isPlaying: wasPlaying);
             if (!restored) {
               try {
                 await _player.setFilePath(path);
                 await seek(pos);
+                if (wasPlaying) unawaited(_player.play());
               } catch (e) {
                 AppLogger.instance.log('session', '本地曲目预加载失败: $e');
               }
@@ -1335,6 +1350,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       } else {
         _restoredOnlinePending = pos;
+        // 在线歌冷启动需重新解析直链，复用 toggle 的恢复入口；稍等
+        // 启动链（AudioService/设置流）就绪再续播，避免时序撞车。
+        if (wasPlaying) {
+          _restoredOnlinePending = null;
+          unawaited(Future.delayed(const Duration(milliseconds: 800), () {
+            _resumeRestoredOnline(pos);
+          }));
+        }
       }
       AppLog.info('session',
           'restored queue=${queue.length} cur="${currentItem.title}" '

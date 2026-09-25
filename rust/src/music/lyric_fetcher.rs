@@ -556,17 +556,6 @@ fn decompress_zlib_sync_flush(bytes: &[u8]) -> Result<Vec<u8>, String> {
 
 // ==================== Deflate/Zlib Decompression ====================
 
-fn decompress_deflate_to_string(bytes: &[u8]) -> Result<String, String> {
-    use flate2::read::DeflateDecoder;
-    use std::io::Read;
-    let mut decoder = DeflateDecoder::new(bytes);
-    let mut result = String::new();
-    decoder
-        .read_to_string(&mut result)
-        .map_err(|e| e.to_string())?;
-    Ok(result)
-}
-
 fn decompress_deflate_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
     use flate2::read::DeflateDecoder;
     use std::io::Read;

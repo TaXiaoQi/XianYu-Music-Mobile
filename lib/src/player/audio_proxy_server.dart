@@ -149,7 +149,8 @@ class AudioProxyServer {
       } else {
         await _passthrough(req, target, upstreamHeaders, range);
       }
-    } catch (_) {
+    } catch (e) {
+      probeLog('onRequest error path=${req.uri.path} err=$e');
       try {
         await req.response.close();
       } catch (_) {}
@@ -190,6 +191,30 @@ class AudioProxyServer {
     }
   }
 
+  /// 等待下载线程记录总长（CDN 响应头到达）或下载完成/失败。
+  /// 返回 null 表示 3s 内总长仍未就绪或条目失败，调用方应回退网络路径。
+  Future<_CacheStatus?> _waitForCacheTotal(
+    String target,
+    _CacheStatus initial,
+  ) async {
+    var st = initial;
+    final waitStart = DateTime.now();
+    while (!st.complete &&
+        st.total == null &&
+        DateTime.now().difference(waitStart) < const Duration(seconds: 3)) {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final st2 = await _cacheStatus(target);
+      if (st2 == null || st2.failed) {
+        return null;
+      }
+      st = st2;
+    }
+    if (!st.complete && st.total == null) {
+      return null;
+    }
+    return st;
+  }
+
   /// 尝试从磁盘流缓存伺服响应。返回 false 表示回退网络路径
   /// （仅在尚未向响应写入任何字节时才允许回退）。
   Future<bool> _tryServeFromCache(
@@ -200,9 +225,25 @@ class AudioProxyServer {
     _ByteRange range,
     bool hasRangeHeader,
   ) async {
-    final st = await _cacheStatus(target);
-    if (st == null || !st.exists || st.failed) {
+    final st0 = await _cacheStatus(target);
+    if (st0 == null || !st0.exists || st0.failed) {
       return false;
+    }
+
+    // 下载条目刚建立时 Rust 侧还没记录 Content-Length（下载线程要等 CDN
+    // 响应头到达才写入 content_length）。此时若回退透传，会与预热下载并发
+    // 各开一条上游连接——酷狗等按并发数掐新连接的 CDN 会把透传连接干净
+    // 关闭，DSP(Symphonia) 把完结的响应体当正常 EOF 直接解码退出（表现为
+    // 接管后秒退且无任何 proxyprobe）。无头部探测缓存可提供总长时，先等
+    // 下载线程记录总长（通常数百 ms 内），超时才回退网络路径。
+    _CacheStatus st = st0;
+    if (!st0.complete && st0.total == null && head == null) {
+      final waited = await _waitForCacheTotal(target, st0);
+      if (waited == null) {
+        probeLog('tryCache no-total timeout → fallback');
+        return false;
+      }
+      st = waited;
     }
 
     // 总长：完整缓存用实际大小；下载中优先头部探测，其次 Rust 上报的
@@ -248,9 +289,9 @@ class AudioProxyServer {
     res.contentLength = end - range.start + 1;
 
     var wroteAny = false;
+    var pos = range.start;
     final readTimer = Stopwatch()..start();
     try {
-      var pos = range.start;
       while (pos <= end) {
         final Uint8List chunk;
         try {
@@ -259,7 +300,9 @@ class AudioProxyServer {
             offset: BigInt.from(pos),
             maxLen: _cacheChunk,
           );
-        } catch (_) {
+        } catch (e) {
+          probeLog('tryCache read-error pos=$pos total=$total '
+              'firstMs=${readTimer.elapsedMilliseconds}ms err=$e');
           break;
         }
         if (chunk.isEmpty) {
@@ -293,12 +336,19 @@ class AudioProxyServer {
           res.add(data);
           await res.flush();
         } catch (_) {
+          probeLog('tryCache client-disconnect pos=$pos total=$total');
           return true;
         }
         pos += data.length;
         wroteAny = true;
       }
-    } catch (_) {}
+    } catch (e) {
+      probeLog('tryCache loop-error pos=$pos total=$total err=$e');
+    }
+    final stEnd = await _cacheStatus(target);
+    probeLog('tryCache serve-end pos=$pos end=$end total=$total '
+        'complete=${stEnd?.complete} failed=${stEnd?.failed} '
+        'dl=${stEnd?.downloaded} firstMs=${readTimer.elapsedMilliseconds}ms');
     try {
       await res.close();
     } catch (_) {}
@@ -396,12 +446,14 @@ class AudioProxyServer {
             res.add(data);
             served += data.length;
           }
-        } catch (_) {}
-        if (stalled) {
-          probeLog('tail done served=${served}B stalled=$stalled '
-              't=${sw.elapsedMilliseconds}ms');
+        } catch (e) {
+          probeLog('tail stream-error status=${uresp.statusCode} '
+              'served=${served}B t=${sw.elapsedMilliseconds}ms err=$e');
         }
-      } catch (_) {
+        probeLog('tail end status=${uresp.statusCode} '
+            'served=${served}B stalled=$stalled t=${sw.elapsedMilliseconds}ms');
+      } catch (e) {
+        probeLog('tail upstream-error err=$e');
       } finally {
         client.close(force: true);
       }
@@ -458,15 +510,20 @@ class AudioProxyServer {
           res.add(chunk);
           served += chunk.length;
         }
-      } catch (_) {}
-      if (stalled) {
-        probeLog('passthrough done served=${served}B stalled=$stalled '
-            't=${sw.elapsedMilliseconds}ms');
+      } catch (e) {
+        probeLog('passthrough stream-error status=${uresp.statusCode} '
+            'served=${served}B t=${sw.elapsedMilliseconds}ms err=$e');
       }
+      // 无条件记录透传结束状态：上游被 CDN 干净提前关闭（无 stall 无异常）
+      // 时这是唯一痕迹——DSP(Symphonia) 会把完结响应体当正常 EOF 退出。
+      probeLog('passthrough end status=${uresp.statusCode} '
+          'cl=${uresp.headers.value(HttpHeaders.contentLengthHeader) ?? '-'} '
+          'served=${served}B stalled=$stalled t=${sw.elapsedMilliseconds}ms');
       try {
         await res.close();
       } catch (_) {}
-    } catch (_) {
+    } catch (e) {
+      probeLog('passthrough upstream-error err=$e');
       try {
         req.response.statusCode = HttpStatus.badGateway;
         await req.response.close();

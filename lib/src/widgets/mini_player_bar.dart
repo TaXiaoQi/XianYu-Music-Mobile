@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+
+import '../core/application_logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -764,6 +766,9 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
   static Future<ui.FragmentProgram>? _programFuture;
 
+  /// 引擎能力降级原因只报一次（进程级），避免 build 热路径刷屏。
+  static bool _kCapabilityWarned = false;
+
   AnimationController? _tickC;
   AnimationController get _tick =>
       _tickC ??= AnimationController(
@@ -797,6 +802,8 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       _shader = p.fragmentShader();
       _writeUniforms(_shader!);
       setState(() {});
+    }).catchError((Object e) {
+      AppLog.warn('glass', 'bilipai_liquid.frag 加载失败：$e');
     });
     _tick.addListener(_onTick);
     _frozen = globalIsTransitioning.value;
@@ -903,6 +910,11 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
       // 转场/降级期用同款 blur + 液态底色的毛玻璃过渡，避免
       // 「实心色块 ↔ 液态玻璃」来回硬切产生闪跳。
+      if (!_frozen && !_kCapabilityWarned && shader != null) {
+        _kCapabilityWarned = true;
+        AppLog.warn('glass',
+            '液态玻璃降级：isShaderFilterSupported=false（引擎不支持 ImageFilter.shader）');
+      }
       return ClipRRect(
         borderRadius: BorderRadius.circular(widget.radius),
         child: BackdropFilter(

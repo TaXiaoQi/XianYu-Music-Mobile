@@ -24,6 +24,16 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
+
+/// 记录工作线程退出原因到共享 slot（诊断用：Flutter 侧在 active=false 时读取展示）。
+/// 模块级定义（macro_rules! 仅对定义点之后的代码可见）。
+macro_rules! set_exit_reason {
+    ($last_error:expr, $msg:expr) => {
+        if let Ok(mut slot) = $last_error.lock() {
+            *slot = Some($msg.to_string());
+        }
+    };
+}
 use std::thread;
 use std::time::Duration;
 
@@ -401,10 +411,14 @@ impl BlockProducer for SymphoniaDecoder {
                 Err(symphonia::core::errors::Error::IoError(ref e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
+                    record_decoder_error(&format!(
+                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e}"
+                    ));
                     self.eof = true;
                     return None;
                 }
-                Err(_) => {
+                Err(e) => {
+                    record_decoder_error(&format!("解码器错误: {e}"));
                     self.eof = true;
                     return None;
                 }
@@ -462,6 +476,23 @@ impl BlockProducer for SymphoniaDecoder {
 // 进度跟踪
 // =========================================================================
 
+/// 记录/读取解码线程最近一次错误（诊断用：音频线程 EOF 退出时读出，
+/// 随 status 的 lastError 上报 Flutter）。Symphonia 把网络读失败与自然
+/// EOF 都折叠成 produce()==None，这里负责保留真实死因。
+static DECODER_LAST_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn record_decoder_error(msg: &str) {
+    let slot = DECODER_LAST_ERROR.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(msg.to_string());
+    }
+}
+
+fn take_decoder_error() -> Option<String> {
+    let slot = DECODER_LAST_ERROR.get_or_init(|| Mutex::new(None));
+    slot.lock().ok().and_then(|mut g| g.take())
+}
+
 struct ExclusiveProgress {
     samples_played: AtomicU64,
     sample_rate: AtomicU32,
@@ -515,6 +546,8 @@ struct AndroidExclusivePlayback {
     /// 工作线程是否仍在运行（true=设备连接中且在播放循环内；
     /// false=USB DAC 断开或播放结束已退出，供 Flutter 侧检测热插拔并自动回退）。
     running: Arc<AtomicBool>,
+    /// 工作线程退出原因（供 Flutter 侧日志诊断；空=正常 Stop）。
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl Drop for AndroidExclusivePlayback {
@@ -556,6 +589,8 @@ pub fn start_exclusive_playback(
     }
     // 先停止已有实例
     stop_exclusive_playback();
+    // 清空上一会话的解码线程错误记录
+    take_decoder_error();
 
     let progress = Arc::new(ExclusiveProgress::new());
     let (tx, rx) = mpsc::channel::<ExclusiveCommand>();
@@ -565,6 +600,8 @@ pub fn start_exclusive_playback(
     let bit_perfect_clone = bit_perfect.clone();
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
+    let last_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let last_error_clone = last_error.clone();
 
     // 共享模式标记先取出：request 即将整体 move 进播放线程。
     let shared_mode = request.shared_mode;
@@ -572,7 +609,15 @@ pub fn start_exclusive_playback(
     let handle = thread::Builder::new()
         .name("xy-aaudio-exclusive".to_string())
         .spawn(move || {
-            run_exclusive_playback(request, rx, init_tx, progress_clone, bit_perfect_clone, running_clone);
+            run_exclusive_playback(
+                request,
+                rx,
+                init_tx,
+                progress_clone,
+                bit_perfect_clone,
+                running_clone,
+                last_error_clone,
+            );
         })
         .map_err(|e| e.to_string())?;
 
@@ -606,6 +651,7 @@ pub fn start_exclusive_playback(
         device_name: device_name.clone(),
         bit_perfect,
         running,
+        last_error,
     };
 
     let mut guard = instance().lock().map_err(|e| e.to_string())?;
@@ -766,7 +812,7 @@ pub fn get_exclusive_channels() -> u16 {
 /// 供前端检测热插拔断开并自动回退到普通播放。
 /// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
 pub fn get_exclusive_device_info() -> String {
-    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms) =
+    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms, last_error) =
         if let Ok(guard) = instance().lock() {
             if let Some(playback) = guard.as_ref() {
                 (
@@ -776,12 +822,18 @@ pub fn get_exclusive_device_info() -> String {
                     playback.progress.channels.load(Ordering::Relaxed) as u16,
                     playback.bit_perfect.load(Ordering::Relaxed),
                     playback.progress.duration_ms.load(Ordering::Relaxed),
+                    playback
+                        .last_error
+                        .lock()
+                        .ok()
+                        .and_then(|e| e.clone())
+                        .unwrap_or_default(),
                 )
             } else {
-                (false, String::new(), 0, 0, false, 0)
+                (false, String::new(), 0, 0, false, 0, String::new())
             }
         } else {
-            (false, String::new(), 0, 0, false, 0)
+            (false, String::new(), 0, 0, false, 0, String::new())
         };
     serde_json::json!({
         "active": active,
@@ -790,6 +842,7 @@ pub fn get_exclusive_device_info() -> String {
         "channels": channels,
         "bitPerfect": bit_perfect,
         "durationSecs": duration_ms as f64 / 1000.0,
+        "lastError": last_error,
     })
     .to_string()
 }
@@ -805,6 +858,7 @@ fn run_exclusive_playback(
     progress: Arc<ExclusiveProgress>,
     bit_perfect: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
+    last_error: Arc<Mutex<Option<String>>>,
 ) {
     // 1. 加载 AAudio 库
     let lib = match AAudioLib::load() {
@@ -820,7 +874,16 @@ fn run_exclusive_playback(
     // 关闭直通时 DSD 容器降级为 PCM 解码，走常规 DSP 管线。
     // 共享模式不走 DoP（系统混音器无法透传 DSD）。
     if request.dsd_native_passthrough && !request.shared_mode && is_dsd_path(&request.path) {
-        run_dsd_passthrough(request, lib, cmd_rx, init_tx, progress, bit_perfect, running);
+        run_dsd_passthrough(
+            request,
+            lib,
+            cmd_rx,
+            init_tx,
+            progress,
+            bit_perfect,
+            running,
+            last_error,
+        );
         return;
     }
 
@@ -1056,7 +1119,15 @@ fn run_exclusive_playback(
         let block = match buffered.next_block() {
             Some(block) => block,
             None => {
-                // EOF
+                // EOF：区分「播完自然结束」与「解码/拉流从未产出数据」
+                let played = progress.samples_played.load(Ordering::Relaxed);
+                let dec_err = take_decoder_error()
+                    .map(|e| format!(" ← 解码线程死因: {e}"))
+                    .unwrap_or_default();
+                set_exit_reason!(last_error, format!(
+                    "解码缓冲EOF(已播{played}样本, rate={source_sample_rate}){dec_err}{}",
+                    if played == 0 { " ← 从未产出数据，拉流/解码失败" } else { "" }
+                ));
                 break;
             }
         };
@@ -1111,6 +1182,11 @@ fn run_exclusive_playback(
 
         if frames_written < 0 {
             // 写入错误，可能是设备断开
+            set_exit_reason!(last_error, format!(
+                "stream_write错误({} 已播{}样本)",
+                unsafe { lib.result_text(frames_written as i32) },
+                progress.samples_played.load(Ordering::Relaxed)
+            ));
             break;
         }
 
@@ -1162,6 +1238,7 @@ fn run_dsd_passthrough(
     progress: Arc<ExclusiveProgress>,
     bit_perfect: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
+    last_error: Arc<Mutex<Option<String>>>,
 ) {
     let dsd = match parse_dsd_info(&request.path) {
         Ok(info) => info,
@@ -1290,10 +1367,17 @@ fn run_dsd_passthrough(
         let mut dop_buf: Vec<u8> = Vec::with_capacity(max_frames * stream_channels as usize * 3);
         let produced = match dop.next_frames(&mut dop_buf, max_frames) {
             Ok(n) => n,
-            Err(_) => break,
+            Err(e) => {
+                set_exit_reason!(last_error, format!("DoP生成错误({e})"));
+                break;
+            }
         };
         if produced == 0 {
             // EOF
+            set_exit_reason!(last_error, format!(
+                "DoP EOF(已播{}样本)",
+                progress.samples_played.load(Ordering::Relaxed)
+            ));
             break;
         }
         progress
@@ -1309,6 +1393,11 @@ fn run_dsd_passthrough(
             )
         };
         if written < 0 {
+            set_exit_reason!(last_error, format!(
+                "DoP stream_write错误({} 已播{}样本)",
+                unsafe { lib.result_text(written as i32) },
+                progress.samples_played.load(Ordering::Relaxed)
+            ));
             break;
         }
         if written < produced as i64 {
