@@ -319,17 +319,23 @@ impl CacheDiag {
 
 /// 流缓存 Reader 的 MediaSource 适配：`Box<dyn ReadSeek>` 不自动实现 Read/Seek
 /// 超trait，用具体 newtype 转发以满足 symphonia 的 `MediaSource` blanket impl。
-struct StreamCacheMediaReader(Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>);
+/// `total_shared` 为共享总长槽位（0 = 未知）：symphonia FLAC/MP3 demuxer 的
+/// seek 依赖 `byte_len()` 提供二分上界，缺失时报 "stream is not seekable"
+/// 导致 DMR/手动 seek 后管线死亡（2026-09-26 实锤）。
+struct StreamCacheMediaReader {
+    inner: Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>,
+    total_shared: Option<Arc<std::sync::atomic::AtomicU64>>,
+}
 
 impl std::io::Read for StreamCacheMediaReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0.read(buf)
+        self.inner.read(buf)
     }
 }
 
 impl std::io::Seek for StreamCacheMediaReader {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.0.seek(pos)
+        self.inner.seek(pos)
     }
 }
 
@@ -339,8 +345,16 @@ impl symphonia::core::io::MediaSource for StreamCacheMediaReader {
     }
 
     fn byte_len(&self) -> Option<u64> {
-        // 流式下载中总长未知；symphonia 依赖解码器自身协议处理
-        None
+        let v = self
+            .total_shared
+            .as_ref()
+            .map(|t| t.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(0);
+        if v == 0 {
+            None
+        } else {
+            Some(v)
+        }
     }
 }
 
@@ -371,7 +385,12 @@ impl SymphoniaDecoder {
                 hint.with_extension(&ext);
             }
             MediaSourceStream::new(
-                Box::new(StreamCacheMediaReader(reader)),
+                Box::new(StreamCacheMediaReader {
+                    inner: reader,
+                    total_shared: stream_state
+                        .as_ref()
+                        .map(|s| s.content_length_shared.clone()),
+                }),
                 Default::default(),
             )
         } else if is_http {

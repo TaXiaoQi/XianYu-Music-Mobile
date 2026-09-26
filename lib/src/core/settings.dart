@@ -233,6 +233,7 @@ class AppSettings {
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
+    this.autoResumeAfterInterruption = true,
     this.onlineFailureBehavior = 'pause',
     this.onlineQualityFallbackBehavior = 'lower',
     this.usbExclusiveDeviceId = -1,
@@ -374,6 +375,8 @@ class AppSettings {
 
   final bool volumeBalancePreventClipping;
 
+  final bool autoResumeAfterInterruption;
+
   final String onlineFailureBehavior;
 
   final String onlineQualityFallbackBehavior;
@@ -513,6 +516,7 @@ class AppSettings {
     bool? volumeBalanceEnabled,
     double? volumeBalanceGainOffsetDb,
     bool? volumeBalancePreventClipping,
+    bool? autoResumeAfterInterruption,
     String? onlineFailureBehavior,
     String? onlineQualityFallbackBehavior,
     int? usbExclusiveDeviceId,
@@ -629,6 +633,8 @@ class AppSettings {
           volumeBalanceGainOffsetDb ?? this.volumeBalanceGainOffsetDb,
       volumeBalancePreventClipping:
           volumeBalancePreventClipping ?? this.volumeBalancePreventClipping,
+      autoResumeAfterInterruption:
+          autoResumeAfterInterruption ?? this.autoResumeAfterInterruption,
       onlineFailureBehavior:
           onlineFailureBehavior ?? this.onlineFailureBehavior,
       onlineQualityFallbackBehavior:
@@ -786,6 +792,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
       volumeBalancePreventClipping:
           prefs.getBool('volumeBalancePreventClipping') ?? true,
+      autoResumeAfterInterruption:
+          prefs.getBool('autoResumeAfterInterruption') ?? true,
       // 'stop' 选项已移除（与 pause 语义重复），存量值归一为 'pause'
       onlineFailureBehavior:
           prefs.getString('onlineFailureBehavior') == 'autoswitch'
@@ -1005,6 +1013,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('volumeBalanceEnabled', next.volumeBalanceEnabled),
       prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
       prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
+      prefs.setBool('autoResumeAfterInterruption', next.autoResumeAfterInterruption),
       prefs.setString('onlineFailureBehavior', next.onlineFailureBehavior),
       prefs.setString('onlineQualityFallbackBehavior', next.onlineQualityFallbackBehavior),
       prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
@@ -1162,6 +1171,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLandscapeTransitionEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(landscapeTransitionEnabled: v));
   Future<void> setSideBarExpandDirection(SideBarExpandDirection dir) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sideBarExpandDirection: dir));
   Future<void> setUsbExclusiveOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(usbExclusiveOutput: v));
+
+  Future<void> setAutoResumeAfterInterruption(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(autoResumeAfterInterruption: v));
   Future<void> setBitPerfectOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(bitPerfectOutput: v));
   Future<void> setDsdNativePassthrough(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dsdNativePassthrough: v));
   Future<void> setVolumeBalanceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceEnabled: v));

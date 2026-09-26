@@ -238,6 +238,7 @@ class AppBackupService {
         'navBarPosition': s.navBarPosition.name,
         'sideBarExpandDirection': s.sideBarExpandDirection.name,
         'usbExclusiveOutput': s.usbExclusiveOutput,
+        'autoResumeAfterInterruption': s.autoResumeAfterInterruption,
       };
 
   // ==================== 解析 ====================
@@ -530,6 +531,7 @@ class AppBackupService {
               ? SideBarExpandDirection.down
               : null,
       usbExclusiveOutput: asBool('usbExclusiveOutput'),
+      autoResumeAfterInterruption: asBool('autoResumeAfterInterruption'),
     );
   }
 

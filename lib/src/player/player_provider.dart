@@ -258,6 +258,11 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   Future<void> onTaskRemoved() async {
     await _notifier?.pauseFromSystem();
     await super.stop();
+    // 划掉多任务卡片=彻底退出。audio_service 前台服务/悬浮歌词/DSP 引擎
+    // 全在同一进程，仅 stop 服务后进程仍存活，荣耀 MagicOS 会把空进程
+    // 重新挂回最近任务（表现为"划了又回来，要再滑一次"）。直接退出进程，
+    // 通知、悬浮窗随进程回收，卡片不再回挂。
+    exit(0);
   }
 }
 
@@ -699,9 +704,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _interruptionSub = session.interruptionEventStream.listen((event) async {
         if (!event.begin) {
+          // 临时打断（来电/导航语音）结束：仅当打断期间暂停过且设置允许时
+          // 自动恢复。永久焦点丢失（type=unknown）不会有结束事件。
           if (_interruptedByInterruption) {
             _interruptedByInterruption = false;
-            await _player.play();
+            final auto = _ref.read(settingsProvider).valueOrNull
+                    ?.autoResumeAfterInterruption ??
+                true;
+            if (auto && !state.isPlaying && state.current != null) {
+              await _resumeAfterInterruption();
+            }
           }
           return;
         }
@@ -712,7 +724,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
         if (state.isPlaying) {
           _interruptedByInterruption = true;
-          await _player.pause();
+          await _pauseForInterruption();
         }
       });
     });
@@ -3877,6 +3889,47 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   bool mvSuppressFocusLoss = false;
+
+  /// 音频焦点被其他应用打断：暂停当前出声主体。DSP/USB 独占管线必须走
+  /// Pause 命令（_player 只控制 ExoPlayer，停不了 Rust 侧 AAudio 流）；
+  /// 投放中输出主体不在本机，焦点变化不影响被投端，忽略。
+  Future<void> _pauseForInterruption() async {
+    if (_ref.read(dlnaCastProvider).isCasting) return;
+    try {
+      if (state.usbExclusive || state.dspActive) {
+        await pauseUsbExclusive();
+      } else {
+        await _player.pause();
+      }
+    } catch (e) {
+      AppLog.warn('playgate', 'interruption pause failed: $e');
+    }
+    state = state.copyWith(isPlaying: false);
+    _syncToSystemMediaSession();
+    _persistSession();
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      _showPlaybackToast(tr('音频输出被其他应用占用，已暂停'));
+    }
+  }
+
+  /// 临时打断结束后恢复播放（与 toggle 恢复分支同构，但不涉及冷启动续播）。
+  Future<void> _resumeAfterInterruption() async {
+    if (_ref.read(dlnaCastProvider).isCasting) return;
+    try {
+      _trackStartTime = DateTime.now();
+      if (state.usbExclusive || state.dspActive) {
+        await resumeUsbExclusive();
+      } else {
+        await _player.play();
+      }
+    } catch (e) {
+      AppLog.warn('playgate', 'interruption resume failed: $e');
+      return;
+    }
+    state = state.copyWith(isPlaying: true);
+    _syncToSystemMediaSession();
+    _persistSession();
+  }
 
   Future<void> toggle() async {
     if (state.current == null) return;
