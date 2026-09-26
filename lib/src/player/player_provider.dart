@@ -911,6 +911,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String path, {
     required double startAtSecs,
     required bool isPlaying,
+    // 在线流缓存直读（对齐桌面端 StreamingTempFile 模型）：Some 时 Rust 管线
+    // 经流缓存 Reader 解码（复用预热线程，单上游连接），path 仅作回退记录。
+    String? streamCacheUrl,
+    Map<String, String>? streamCacheHeaders,
   }) async {
     if (DateTime.now().isBefore(_dspFailUntil)) {
       AppLog.warn('play', '[dsp] 跳过接管: 失败冷却中(至 $_dspFailUntil)');
@@ -939,6 +943,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         bitPerfect: false,
         dsdNativePassthrough: false,
         sharedMode: true,
+        streamCacheUrl: streamCacheUrl,
+        streamCacheHeaders: streamCacheHeaders == null
+            ? null
+            : jsonEncode(streamCacheHeaders),
       );
       state = state.copyWith(usbExclusive: false, dspActive: true, isPlaying: isPlaying);
       _startExclusivePolling();
@@ -1467,6 +1475,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (index < 0 || index >= state.queue.length) return;
     _playEpoch++;
     final epoch = _playEpoch;
+    // 起播前播放态快照：切音质链路里 stop() 的 idle+playing=false 事件可能
+    // 在 _playOnline 读取前就把 state.isPlaying 翻成 false（锚定门被旧源
+    // 存活期位置事件提前撤掉时），届时再读会误判为暂停态导致新源不带
+    // play() 起播——表现为切音质后直接暂停
+    final wasPlaying = state.isPlaying;
     // 同曲重播（切音质）设锚定门；普通起播/切歌清门
     _replayAnchorSecs =
         (continueStatsSession && startAtSecs > 0) ? startAtSecs : null;
@@ -1543,16 +1556,22 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         } else if (item.isOnline) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
+          // 锚定门在此之前会被旧源存活期的位置事件（pos≥锚点）提前撤掉，
+          // stop 前重设：挡住 stop 引发的 idle+playing=false 翻转 UI 播放态
+          if (sameSongReplay && startAtSecs > 0) {
+            _replayAnchorSecs = startAtSecs;
+          }
           try {
             await _player.stop();
           } catch (_) {}
           if (epoch != _playEpoch) return;
           // 暂停态同曲重播（切音质）不强制起播，维持之前的暂停承诺；
-          // 正常起播/会话恢复恒为播放
+          // 正常起播/会话恢复恒为播放。用 stop 前的快照而非实时
+          // state.isPlaying（stop 的 idle 事件可能已将其翻转）
           await _playOnline(
             item,
             startAtSecs: startAtSecs,
-            startPlayback: !continueStatsSession || state.isPlaying,
+            startPlayback: !continueStatsSession || wasPlaying,
           );
           if (epoch != _playEpoch) return;
         } else if (_isRemotePath(item.path)) {
@@ -1997,9 +2016,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 双进度源打架）、候选降级链与超时兜底，进度无缝续播。
     if (quality == state.currentQuality) return true;
     final prevOverride = _sessionQualityOverride;
-    final resumePos = state.position;
     _sessionQualityOverride = quality;
     try {
+      // 预解析目标音质直链（此间旧源继续出声）：对齐桌面端「旧源播到
+      // 新源就绪才停」的无缝观感。结果缓存在 probe 内，_playAt 里
+      // _playOnline 的 startBest 命中缓存瞬时返回，静音窗口只剩换源与
+      // 起播缓冲；解析失败静默，降级链交由 _playAt 常规流程处理
+      await _prewarmQuality(item, quality);
+      // 预解析期间旧源持续走带，续播点取停旧源前的实时位置而非点击时刻，
+      // 避免长解析（秒级）导致切完进度跳回
+      final resumePos = state.position;
       await _playAt(
         state.queueIndex,
         startAtSecs: resumePos,
@@ -2026,6 +2052,53 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _sessionQualityOverride = prevOverride;
       return false;
     }
+  }
+
+  /// 切音质前预解析目标音质直链并缓存到 probe：让旧源在解析期间继续
+  /// 出声，网络耗时不落入静音窗口。失败静默返回 null，正式起播链路
+  /// （startBest 降级链 + 超时兜底）自会处理。
+  ///
+  /// 解析命中后进一步预热流缓存：注册请求头并预启动 Rust 流式下载写盘，
+  /// 把「代理建条目 → CDN 握手 → 记录 Content-Length → 首块字节落盘」
+  /// 整段握手挪进旧源继续出声的窗口——停旧源后 _startOnlineUrl 的 Range
+  /// 请求到达时，_tryServeFromCache 面对的是已存活、总长已记录的缓存
+  /// 条目（省掉最长 3s 的 _waitForCacheTotal 空转），伺服直达或短暂等
+  /// 下载推进即回退直连，静音窗口从秒级压到亚秒级。
+  Future<void> _prewarmQuality(QueueItem item, String quality) async {
+    final json = item.onlineSongJson;
+    if (json == null || json.isEmpty) return;
+    QualityProbeResult? resolved;
+    try {
+      final songJson = jsonDecode(json) as Map<String, dynamic>;
+      final key = _songProbeKey(songJson, item);
+      final probe = onlineQualityProbeRegistry.ensure(
+          key, _buildResolveCallback(songJson, item));
+      resolved = await probe
+          .probe(quality)
+          .timeout(const Duration(seconds: 20), onTimeout: () => null);
+    } catch (_) {}
+    final res = resolved;
+    // 加密流（ekey/cek）走下载解密临时文件路径，不经流缓存伺服；
+    // 预启动下载反而可能与解密拉流对同一 URL 开双上游连接
+    if (res == null || res.url.isEmpty || res.ekey != null || res.cek != null) {
+      return;
+    }
+    try {
+      // 与 _startOnlineUrl 完全同构的 URL/头部归一，确保缓存键一致命中
+      final clean = sanitizeMediaUrl(res.url);
+      if (clean.isEmpty || !clean.startsWith('http')) return;
+      final h = await withBilibiliStreamCookie(
+            clean,
+            normalizeMediaRequestHeaders(clean, res.headers),
+            dataDir: _ref.read(appDataDirProvider.future),
+          ) ??
+          const <String, String>{};
+      AudioHeadCache.instance.registerHeaders(clean, h);
+      await AudioProxyServer.instance.ensureStarted();
+      // 预启动即返回：下载与旧源播放并行推进，不阻塞切换
+      unawaited(streamCacheBeginUrlDownload(
+          url: clean, headers: jsonEncode(h)));
+    } catch (_) {}
   }
 
   Future<List<String>> qualityOptions() =>
@@ -2457,6 +2530,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<Duration?> _setLocalSource(String path) async {
     var target = path;
+    // DLNA 被投直链等 http 源误入本地回退时必须走 setUrl：setFilePath 经
+    // Uri.file 会把 scheme 冒号编码成 http%3A//（ExoPlayer 报 no protocol）。
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      return _player.setUrl(target);
+    }
     if (path.startsWith('content://')) {
       final tmp = await getTemporaryDirectory();
       target = await SafChannel.ensureLocalPlaybackCopy(
@@ -2693,18 +2771,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> _startUrl(String url, {Map<String, String>? headers}) async {
-    final clean = sanitizeMediaUrl(url);
-    if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
-    final h = normalizeMediaRequestHeaders(clean, headers);
-    await AudioProxyServer.instance.ensureStarted();
-    AudioHeadCache.instance.registerHeaders(clean, h);
-    final playUrl = AudioProxyServer.instance.playUrlFor(clean);
-    await _player.setUrl(playUrl, headers: h);
-    await _player.setVolume(_effectiveVolume());
-    await _player.play();
-  }
-
   Future<void> _startOnlineUrl(
     String url, {
     Map<String, String>? headers,
@@ -2745,7 +2811,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         await _player.stop();
       } catch (_) {}
+      // DSP 直读流缓存：对齐桌面端 StreamingTempFile 模型——出声主体不再是
+      // 代理 HTTP 流，而是 Rust 流缓存文件 Reader（复用预热线程，单上游连接）。
+      // 代理仅保留给 ExoPlayer 兜底分支。
       final ok = await _tryStartDspPipeline(proxyUrl,
+          streamCacheUrl: clean,
+          streamCacheHeaders: h,
           startAtSecs: startAtSecs, isPlaying: isPlaying);
       if (ok) {
         _triggerOnlinePrecache(item);
@@ -3867,6 +3938,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   Future<void> seek(double secs) async {
+    // 诊断插桩：定位 DLNA 被投场景下「起播 ~200ms 内 DSP 死亡」是否有
+    // 隐性 seek 参与（watch_link / MediaSession / DMR 均是候选来源）。
+    final st = StackTrace.current.toString().split('\n').take(4).join(' <- ');
+    AppLog.info('play', '[seek] t=$secs $st');
     if (_ref.read(dlnaCastProvider).isCasting) {
       await _ref.read(dlnaCastProvider.notifier).castSeek(secs);
       state = state.copyWith(position: secs);
@@ -4271,6 +4346,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String artist = '',
     String album = '',
     int durationMs = 0,
+    String coverUrl = '',
   }) async {
     await _stopExclusive();
     _playEpoch++;
@@ -4289,6 +4365,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       artist: artist,
       album: album,
       durationMs: durationMs,
+      coverUrl: coverUrl.isEmpty ? null : coverUrl,
     );
     state = state.copyWith(
       queue: [item],
@@ -4302,7 +4379,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
     _syncToSystemMediaSession();
     try {
-      await _startUrl(uri);
+      // 走在线管线而非 _startUrl：被投 URL 指向发送端 httpd（内网地址），
+      // 直喂 DSP 会被 SSRF 校验拒绝；经本机回环代理后 DSP 拿到 127.0.0.1
+      // 天然放行，同时获得流缓存/进度 seek 支持与正常的播放上报链路。
+      await _startOnlineUrl(uri, item: item);
       state = state.copyWith(isPlaying: true);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();

@@ -41,6 +41,16 @@ pub struct ExclusivePlayRequest {
     /// 共享模式下 bit_perfect/DSD 直通/device_id 均被忽略。
     #[serde(default)]
     pub shared_mode: bool,
+    /// 在线流缓存直读 URL：Some(url) 时解码输入经 Rust 流缓存 Reader
+    /// （复用/启动 `start_streaming_download` 下载线程，单上游连接），
+    /// 对齐桌面端 StreamingTempFile 模型；`path` 字段此时仅作扩展名探测。
+    #[serde(default)]
+    pub stream_cache_url: Option<String>,
+    /// 流缓存直链的上游请求头（Referer/User-Agent/Cookie 等），
+    /// 供 `start_streaming_download` 冷启动下载使用；命中已预热的缓存
+    /// 条目时忽略。
+    #[serde(default)]
+    pub stream_cache_headers: Option<std::collections::HashMap<String, String>>,
 }
 
 // =========================================================================

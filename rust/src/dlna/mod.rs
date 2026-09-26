@@ -36,6 +36,9 @@ pub struct DlnaCore {
     client: reqwest::Client,
     registry: Arc<media_server::MediaRegistry>,
     httpd_port: AtomicU64, // 0 = 未启动
+    /// httpd 句柄保活：HttpServer 持有优雅停机 Sender，drop 即触发 graceful
+    /// shutdown 关闭监听，必须长期持有（生产进程内 httpd 只随进程退出）。
+    httpd: Mutex<Option<httpd::HttpServer>>,
     /// DMR 共享状态（ensure_httpd 时创建，httpd 与 enable_renderer 共享）。
     dmr_shared: OnceLock<Arc<dmr::DmrShared>>,
     /// 渲染器指令接收端（宿主单次取走：移动端长轮询 / 桌面端 emit 循环）。
@@ -60,6 +63,7 @@ impl DlnaCore {
                     .unwrap_or_default(),
             )),
             httpd_port: AtomicU64::new(0),
+            httpd: Mutex::new(None),
             dmr_shared: OnceLock::new(),
             dmr_rx: tokio::sync::Mutex::new(None),
             renderer: Mutex::new(None),
@@ -96,6 +100,14 @@ impl DlnaCore {
                     .insert(dev.udn.clone(), dev);
             }
         }
+        // 本机渲染器开启时会收到自己的 M-SEARCH 应答（多接口/多 ST 还会产生
+        // 重复条目）：按 UDN 剔除自己并去重。
+        let own_udn = self
+            .dmr_shared
+            .get()
+            .map(|s| s.udn.lock().unwrap().clone());
+        let mut seen = std::collections::HashSet::new();
+        out.retain(|d| Some(&d.udn) != own_udn.as_ref() && seen.insert(d.udn.clone()));
         out.sort_by(|a, b| a.friendly_name.cmp(&b.friendly_name));
         out
     }
@@ -115,8 +127,11 @@ impl DlnaCore {
         .await?;
         let _ = self.dmr_shared.set(shared);
         *self.dmr_rx.lock().await = Some(cmd_rx);
-        self.httpd_port.store(server.port as u64, Ordering::SeqCst);
-        Ok(server.port)
+        let port = server.port;
+        self.httpd_port.store(port as u64, Ordering::SeqCst);
+        // 回归关键：句柄交由 DlnaCore 保活，drop 会立即关闭监听（见 struct 注释）
+        *self.httpd.lock().unwrap() = Some(server);
+        Ok(port)
     }
 
     /// TTL 续投：热替换 token 上游（电视不断流）。

@@ -1009,6 +1009,11 @@ pub fn resolve_download_full_path(
 /// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
 /// `bit_perfect` = Bit-perfect 直出（绕过响度/EQ/音效/音量，按源位深整数直出）。
 /// `dsd_native_passthrough` = DSD(.dsf/.dff) 原生 DoP 直通开关。
+/// `stream_cache_url` = 在线流缓存直读 URL（对齐桌面端 StreamingTempFile 模型，
+/// 经 Rust 流缓存 Reader 解码，单上游连接；与预热线程 `stream_cache_begin_url_download`
+/// 按 URL 命中同一缓存条目）。`stream_cache_headers` = 直链上游请求头 JSON 对象字符串，
+/// 供缓存下载线程冷启动使用。
+#[allow(clippy::too_many_arguments)]
 pub fn start_usb_exclusive_playback(
     path: String,
     device_id: i32,
@@ -1021,7 +1026,11 @@ pub fn start_usb_exclusive_playback(
     bit_perfect: bool,
     dsd_native_passthrough: bool,
     shared_mode: bool,
+    stream_cache_url: Option<String>,
+    stream_cache_headers: Option<String>,
 ) -> Result<String, String> {
+    let stream_cache_headers: Option<std::collections::HashMap<String, String>> =
+        stream_cache_headers.and_then(|s| serde_json::from_str(&s).ok());
     crate::player::commands::dispatch_playback_command(
         crate::player::commands::PlaybackCommand::Play {
             path,
@@ -1035,6 +1044,8 @@ pub fn start_usb_exclusive_playback(
             bit_perfect,
             dsd_native_passthrough,
             shared_mode,
+            stream_cache_url,
+            stream_cache_headers,
         },
     )
 }
@@ -2217,6 +2228,8 @@ pub fn dlna_update_media_token(token: String, payload_json: String) -> Result<bo
 
 /// 启用本机渲染器（SSDP 广播 + SOAP 端点），返回实际端口。
 pub async fn dlna_enable_renderer(friendly_name: String, udn: String) -> Result<u16, String> {
+    // 宿主传入的 UDN 可能自带 "uuid:" 前缀，协议层统一裸 UUID，避免 uuid:uuid: 双前缀
+    let udn = udn.trim().trim_start_matches("uuid:").to_string();
     DlnaCore::shared()
         .enable_renderer(
             crate::dlna::RendererConfig {

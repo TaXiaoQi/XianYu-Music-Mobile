@@ -6,6 +6,7 @@ import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/widgets/cover_carousel.dart';
@@ -213,6 +214,10 @@ class _MostPlayedRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final song = entry.song;
+    final item = entry.toQueueItem();
+    final title = item?.title ?? '';
+    final artist = item?.artist ?? '';
+    final path = song?.path ?? item?.path ?? '';
     return frostedCardSurface(
       context: context,
       ref: ref,
@@ -221,8 +226,13 @@ class _MostPlayedRow extends ConsumerWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
-          onTap: () =>
-              ref.read(libraryProvider.notifier).playList([song], 0),
+          onTap: () {
+            if (song != null) {
+              ref.read(libraryProvider.notifier).playList([song], 0);
+            } else if (item != null) {
+              ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
+            }
+          },
           borderRadius: BorderRadius.circular(13),
           child: Container(
             height: 62,
@@ -230,7 +240,8 @@ class _MostPlayedRow extends ConsumerWidget {
             child: Row(
             children: [
               CoverImage(
-                songPath: song.path,
+                songPath: path,
+                networkUrl: item?.coverUrl,
                 width: 42,
                 height: 42,
                 radius: 10,
@@ -243,7 +254,7 @@ class _MostPlayedRow extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      song.title,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -253,7 +264,7 @@ class _MostPlayedRow extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      song.artist,
+                      artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

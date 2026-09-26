@@ -1,6 +1,5 @@
-use amll_lyric::{
-    eqrc::decrypt_qrc_hex, eslrc::parse_eslrc, lys::parse_lys, qrc::parse_qrc, yrc::parse_yrc,
-    LyricLine as AmlLyricLine,
+use crate::music::lyric_formats::{
+    decrypt_qrc_hex, parse_eslrc, parse_lys, parse_qrc, parse_yrc, LyricLine as AmlLyricLine,
 };
 use regex::Regex;
 use serde::Serialize;

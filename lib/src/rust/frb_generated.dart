@@ -733,6 +733,8 @@ abstract class RustLibApi extends BaseApi {
     required bool bitPerfect,
     required bool dsdNativePassthrough,
     required bool sharedMode,
+    String? streamCacheUrl,
+    String? streamCacheHeaders,
   });
 
   Future<void> crateApiStatsAddToHistory({
@@ -6166,6 +6168,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required bool bitPerfect,
     required bool dsdNativePassthrough,
     required bool sharedMode,
+    String? streamCacheUrl,
+    String? streamCacheHeaders,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6182,6 +6186,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(bitPerfect, serializer);
           sse_encode_bool(dsdNativePassthrough, serializer);
           sse_encode_bool(sharedMode, serializer);
+          sse_encode_opt_String(streamCacheUrl, serializer);
+          sse_encode_opt_String(streamCacheHeaders, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6206,6 +6212,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           bitPerfect,
           dsdNativePassthrough,
           sharedMode,
+          streamCacheUrl,
+          streamCacheHeaders,
         ],
         apiImpl: this,
       ),
@@ -6227,6 +6235,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "bitPerfect",
           "dsdNativePassthrough",
           "sharedMode",
+          "streamCacheUrl",
+          "streamCacheHeaders",
         ],
       );
 

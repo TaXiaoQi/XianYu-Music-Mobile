@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
+import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
 
@@ -300,5 +301,54 @@ class AppPageBackground extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return child;
+  }
+}
+
+/// 覆盖式转场中跟随新页滑入的页面底。页面 Scaffold 是透明的
+/// （scaffoldBackgroundColor 全局 transparent，为了根部视频壁纸能透出），
+/// 覆盖转场若不垫底，新页滑入区域会直接透出旧页内容造成混叠。
+/// - 无壁纸：垫 appSurfaceBg，与根 Stack 的 ColoredBox 同源，视觉一致；
+/// - 图片壁纸：渲一份与根部对齐的壁纸副本（Image.file 走 ImageCache，开销小），
+///   转场结束后常驻也与底层壁纸无缝；
+/// - 视频壁纸：转场期间垫纯色、[completion] 动画完成后变透明露出底层视频
+///   （避免每个转场页各挂一路视频解码器）。
+class RoutePageBackdrop extends ConsumerWidget {
+  const RoutePageBackdrop({super.key, this.completion, required this.child});
+
+  final Animation<double>? completion;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final plain =
+        ColoredBox(color: appSurfaceBg(context), child: child);
+    if (!ref.watch(wallpaperActiveProvider)) return plain;
+    final cb = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.customBackground),
+    );
+    if (cb?.active != true) return plain;
+    if (cb!.mediaType == WallpaperMediaType.video) {
+      final anim = completion;
+      if (anim == null) return plain;
+      return AnimatedBuilder(
+        animation: anim,
+        builder: (context, child) =>
+            anim.status == AnimationStatus.completed
+                ? (child ?? const SizedBox.shrink())
+                : ColoredBox(color: appSurfaceBg(context), child: child!),
+        child: child,
+      );
+    }
+    return ColoredBox(
+      color: appSurfaceBg(context),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CustomBackgroundLayer(background: cb),
+          Positioned.fill(child: child),
+        ],
+      ),
+    );
   }
 }

@@ -3,7 +3,7 @@ name = "xianyu_core"
 version = "0.1.0"
 description = "弦予音乐移动端复用核心（从桌面端抽取的纯逻辑，不依赖 Tauri）"
 authors = ["lyc"]
-license = "AGPL-3.0-only"
+license = "LicenseRef-XianYu-SAL-1.0"
 edition = "2021"
 
 [lib]
@@ -13,7 +13,6 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-amll-lyric = "0.3.0"
 regex = "1"
 sha1 = "0.10"
 hex = "0.4"

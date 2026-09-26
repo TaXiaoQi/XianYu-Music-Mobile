@@ -3745,6 +3745,17 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
       await Future.delayed(const Duration(milliseconds: 600));
     }
   }
+
+  /// 探测收尾后仍无体积的档位视为假音质（声明了但解析不出直链、
+  /// 元数据也无体积），从列表剔除，对齐桌面端规则。
+  /// 体积尚未就绪（_sizes 为空）时不过滤，避免误伤本地/未探测场景。
+  List<String> dropFakeQualities(List<String> shown, Set<String> keep) {
+    final sizes = _sizes;
+    if (sizes.isEmpty) return shown;
+    return shown
+        .where((q) => sizes.containsKey(q) || keep.contains(q))
+        .toList(growable: false);
+  }
 }
 
 class _QualitySheet extends ConsumerStatefulWidget {
@@ -3811,19 +3822,28 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                 if (cur != null && cur.isNotEmpty) combined.add(cur);
                 final shown =
                     kQualityLadder.reversed.where(combined.contains).toList();
-                if (shown.isEmpty) {
+                // 探测收尾后仍无体积的档位视为假音质剔除（对齐桌面端），
+                // 探测中或体积结果未就绪时不过滤
+                final probing = ref.watch(
+                  playerProvider.select((s) => s.qualityMenuProbing),
+                );
+                final sizes = _sizes;
+                final visible = probing || sizes.isEmpty
+                    ? shown
+                    : dropFakeQualities(
+                        shown, {if (cur != null && cur.isNotEmpty) cur});
+                if (visible.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 48),
                     child: Center(child: Text(tr('暂无可切换音质'))),
                   );
                 }
-                final sizes = _sizes;
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final q in shown) ...[
+                      for (final q in visible) ...[
                         ModernOptionTile<String>(
                           option: ModernChoiceOption(
                             label:
@@ -3834,16 +3854,18 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                           onTap: q == cur
                               ? () {}
                               : () async {
-                                  final ok = await widget.notifier
-                                      .switchQuality(
-                                    q,
-                                  );
-                                  if (!ctx.mounted) return;
+                                  // 先关弹窗再后台切换：切换含网络解析与
+                                  // 起播，耗时可能长达数秒，不能让弹窗
+                                  // 挂着等结果
                                   final overlay = Overlay.of(
                                     ctx,
                                     rootOverlay: true,
                                   );
                                   Navigator.of(ctx).pop();
+                                  final ok = await widget.notifier
+                                      .switchQuality(
+                                    q,
+                                  );
                                   showXianYuToastByOverlay(
                                     overlay,
                                     ok
@@ -4211,7 +4233,15 @@ class _DownloadQualitySheetState
                 final fallbackOpts = ref.watch(
                   playerProvider.select((s) => s.availableQualities),
                 );
-                final shown = opts.isNotEmpty ? opts : fallbackOpts;
+                final probed = opts.isNotEmpty ? opts : fallbackOpts;
+                // 体积探测基于当前播放歌曲，仅在下载对象就是播放歌曲时
+                // 剔除假音质（对齐桌面端）；探测中或体积未就绪时不过滤
+                final probing = ref.watch(
+                  playerProvider.select((s) => s.qualityMenuProbing),
+                );
+                final shown = probing || _sizes.isEmpty || !isPlayingSong
+                    ? probed
+                    : dropFakeQualities(probed, {cur});
                 final sizes = _sizes;
                 final defaultQ =
                     _nearestAvailable(initial, shown, fallbackBehavior);

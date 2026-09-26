@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
   s.summary          = '弦予音乐移动端 Rust 核心（flutter_rust_bridge 动态框架）'
   s.description      = 'Prebuilt dynamic framework of the Rust core, built by scripts/ios-rust-hook.sh.'
   s.homepage         = 'https://xymusic.cc'
-  s.license          = { :type => 'AGPL-3.0-only' }
+  s.license          = { :type => 'XianYu Source-Available License 1.0' }
   s.authors          = { 'lyc' => 'lyc@xymusic.cc' }
   s.source           = { :path => '.' }
 

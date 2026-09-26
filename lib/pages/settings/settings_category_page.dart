@@ -32,6 +32,7 @@ import '../../src/i18n/i18n.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
+import '../../src/widgets/dlna_device_dialog.dart';
 
 enum SettingsCategory {
   general,
@@ -41,6 +42,7 @@ enum SettingsCategory {
   download,
   tools,
   watch,
+  dlna,
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
@@ -50,6 +52,7 @@ enum SettingsCategory {
     'download' => SettingsCategory.download,
     'tools' => SettingsCategory.tools,
     'watch' => SettingsCategory.watch,
+    'dlna' => SettingsCategory.dlna,
     'advanced' => SettingsCategory.advanced,
     _ => SettingsCategory.general,
   };
@@ -62,6 +65,7 @@ enum SettingsCategory {
     SettingsCategory.download => tr('下载'),
     SettingsCategory.tools => tr('工具'),
     SettingsCategory.watch => tr('腕上联动'),
+    SettingsCategory.dlna => tr('DLNA 投放'),
     SettingsCategory.advanced => tr('高级设置'),
   };
 }
@@ -172,9 +176,87 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         return _tools(context);
       case SettingsCategory.watch:
         return _watch(context, ref, settings, notifier);
+      case SettingsCategory.dlna:
+        return _dlna(context, ref, settings, notifier);
       case SettingsCategory.advanced:
         return _advanced(context, settings, notifier);
     }
+  }
+
+  // ---- DLNA 投放 ----
+  List<Widget> _dlna(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) {
+    return [
+      _sectionHeader(context, tr('DLNA 投放')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.cast_outlined,
+            title: tr('选择设备投放'),
+            subtitle: tr('将当前播放投送到电视、音箱等 DLNA 设备'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => showDlnaDeviceDialog(context, ref),
+          ),
+        ],
+      ),
+      _sectionHeader(context, tr('DLNA 渲染器')),
+      _CardGroup(
+        children: [
+          Builder(builder: (ctx) {
+            final dlnaCast = ref.watch(dlnaCastProvider);
+            return _switchTile(
+              context,
+              icon: Icons.album_outlined,
+              title: tr('接收其它设备投屏'),
+              subtitle: dlnaCast.rendererRunning
+                  ? tr('运行中 · 端口 {port}',
+                      {'port': dlnaCast.rendererPort.toString()})
+                  : tr('开启后本机作为 DLNA 设备出现在局域网，其它 App 可直接投歌到本端'),
+              value: s?.dlnaRendererEnabled ?? false,
+              onChanged: (v) async {
+                await n.setDlnaRendererEnabled(v);
+                await ref.read(dlnaCastProvider.notifier).applyRendererSetting();
+              },
+            );
+          }),
+          _tile(
+            context,
+            icon: Icons.badge_outlined,
+            title: tr('设备名称'),
+            subtitle: tr('投送端看到的名字'),
+            trailing: Text(
+              (s?.dlnaRendererName ?? '').trim().isEmpty
+                  ? tr('弦予音乐')
+                  : s!.dlnaRendererName.trim(),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => _editDlnaRendererName(context, ref),
+          ),
+        ],
+      ),
+      _sectionHeader(context, tr('说明')),
+      _CardGroup(
+        children: [
+          _tile(
+            context,
+            icon: Icons.info_outline,
+            title: tr('同一局域网'),
+            subtitle: tr('接收设备需与手机连接同一 Wi-Fi；播放页分享面板中也可发起投放'),
+            trailing: const SizedBox.shrink(),
+            showChevron: false,
+          ),
+        ],
+      ),
+    ];
   }
 
   // ---- 常规 ----
@@ -1157,45 +1239,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
                 tr('dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定'),
             value: s?.dsdNativePassthrough ?? false,
             onChanged: (v) => n.setDsdNativePassthrough(v),
-          ),
-        ],
-      ),
-      _sectionHeader(context, tr('DLNA 渲染器')),
-      _CardGroup(
-        children: [
-          Builder(builder: (ctx) {
-            final dlnaCast = ref.watch(dlnaCastProvider);
-            return _switchTile(
-              context,
-              icon: Icons.album_outlined,
-              title: tr('接收其它设备投屏'),
-              subtitle: dlnaCast.rendererRunning
-                  ? tr('运行中 · 端口 {port}',
-                      {'port': dlnaCast.rendererPort.toString()})
-                  : tr('开启后本机作为 DLNA 设备出现在局域网，其它 App 可直接投歌到本端'),
-              value: s?.dlnaRendererEnabled ?? false,
-              onChanged: (v) async {
-                await n.setDlnaRendererEnabled(v);
-                await ref.read(dlnaCastProvider.notifier).applyRendererSetting();
-              },
-            );
-          }),
-          _tile(
-            context,
-            icon: Icons.badge_outlined,
-            title: tr('设备名称'),
-            subtitle: tr('投送端看到的名字'),
-            trailing: Text(
-              (s?.dlnaRendererName ?? '').trim().isEmpty
-                  ? tr('弦予音乐')
-                  : s!.dlnaRendererName.trim(),
-              style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => _editDlnaRendererName(context, ref),
           ),
         ],
       ),

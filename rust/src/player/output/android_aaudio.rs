@@ -285,8 +285,41 @@ struct SymphoniaDecoder {
     eof: bool,
 }
 
+/// 流缓存 Reader 的 MediaSource 适配：`Box<dyn ReadSeek>` 不自动实现 Read/Seek
+/// 超trait，用具体 newtype 转发以满足 symphonia 的 `MediaSource` blanket impl。
+struct StreamCacheMediaReader(Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>);
+
+impl std::io::Read for StreamCacheMediaReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl std::io::Seek for StreamCacheMediaReader {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.0.seek(pos)
+    }
+}
+
+impl symphonia::core::io::MediaSource for StreamCacheMediaReader {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        // 流式下载中总长未知；symphonia 依赖解码器自身协议处理
+        None
+    }
+}
+
 impl SymphoniaDecoder {
-    fn open(path: &str) -> Result<Self, String> {
+    /// `stream_reader`：预构建的流缓存 Reader（在线直读，对齐桌面端
+    /// StreamingTempFile 模型）。Some 时跳过文件/HTTP 源构造，`path` 仅用于
+    /// 扩展名探测提示（应为流缓存直链 URL）。
+    fn open(
+        path: &str,
+        stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>>,
+    ) -> Result<Self, String> {
         use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
         use symphonia::core::formats::FormatOptions;
         use symphonia::core::io::MediaSourceStream;
@@ -295,10 +328,20 @@ impl SymphoniaDecoder {
 
         // HTTP 流式源（本地回环代理转发的在线歌曲）：跳过本地文件相关检查，
         // 扩展名从 URL 路径提取（去掉 query）供格式探测。
-        let is_http = path.starts_with("http://") || path.starts_with("https://");
+        let is_http = stream_reader.is_none()
+            && (path.starts_with("http://") || path.starts_with("https://"));
 
         let mut hint = Hint::new();
-        let mss: MediaSourceStream = if is_http {
+        let mss: MediaSourceStream = if let Some(reader) = stream_reader {
+            // 流缓存直读：数据已由下载线程落盘（≥最小缓冲），探测头立即可读
+            if let Some(ext) = url_path_extension(path) {
+                hint.with_extension(&ext);
+            }
+            MediaSourceStream::new(
+                Box::new(StreamCacheMediaReader(reader)),
+                Default::default(),
+            )
+        } else if is_http {
             if let Some(ext) = url_path_extension(path) {
                 hint.with_extension(&ext);
             }
@@ -412,7 +455,8 @@ impl BlockProducer for SymphoniaDecoder {
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
                     record_decoder_error(&format!(
-                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e}"
+                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e} (leftover={})",
+                        self.leftover.len()
                     ));
                     self.eof = true;
                     return None;
@@ -456,6 +500,17 @@ impl BlockProducer for SymphoniaDecoder {
         use symphonia::core::formats::{SeekMode, SeekTo};
         use symphonia::core::units::Time;
 
+        // 越界防护：symphonia WAV 允许 ts==n_frames（seek_pos=data_end_pos），
+        // seek 后 next_packet 立即报 end of stream → 生产者退出 → 管线死亡。
+        // 钳制在结尾前 250ms，保证 seek 后仍有数据可读。
+        let mut pos = pos;
+        if let Some(total) = self.total_duration {
+            let guard = Duration::from_millis(250);
+            if total > guard && pos + guard >= total {
+                pos = total - guard;
+            }
+        }
+
         let seek_to = SeekTo::Time {
             time: Time::new(pos.as_secs(), 0.0),
             track_id: Some(self.track_id),
@@ -491,6 +546,44 @@ fn record_decoder_error(msg: &str) {
 fn take_decoder_error() -> Option<String> {
     let slot = DECODER_LAST_ERROR.get_or_init(|| Mutex::new(None));
     slot.lock().ok().and_then(|mut g| g.take())
+}
+
+/// 管线内诊断事件环（seek/panic 等，容量 16）：音频线程 EOF 退出时并入
+/// last_error 上报 Flutter——管线线程的 eprintln 在 Android 上不可见，
+/// 死亡消息是唯一能带出运行时现场的信道路径。
+static PIPELINE_DIAG: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+fn record_pipeline_diag(msg: &str) {
+    let slot = PIPELINE_DIAG.get_or_init(|| Mutex::new(Vec::new()));
+    if let Ok(mut guard) = slot.lock() {
+        guard.push(msg.to_string());
+        if guard.len() > 16 {
+            guard.remove(0);
+        }
+    }
+}
+
+fn take_pipeline_diag() -> String {
+    let slot = PIPELINE_DIAG.get_or_init(|| Mutex::new(Vec::new()));
+    match slot.lock() {
+        Ok(mut g) => std::mem::take(&mut *g).join(" | "),
+        Err(_) => String::new(),
+    }
+}
+
+/// 管线启动时清空上一会话的诊断残留。DECODER_LAST_ERROR 跨播放不重置，
+/// 曾把新会话的死因误注解成旧会话的「end of stream」，排障被严重误导。
+pub fn reset_pipeline_diag() {
+    if let Some(slot) = DECODER_LAST_ERROR.get() {
+        if let Ok(mut guard) = slot.lock() {
+            *guard = None;
+        }
+    }
+    if let Some(slot) = PIPELINE_DIAG.get() {
+        if let Ok(mut guard) = slot.lock() {
+            guard.clear();
+        }
+    }
 }
 
 struct ExclusiveProgress {
@@ -605,6 +698,9 @@ pub fn start_exclusive_playback(
 
     // 共享模式标记先取出：request 即将整体 move 进播放线程。
     let shared_mode = request.shared_mode;
+    // 流缓存直读路径：播放线程需等最小缓冲（≤8s）+ 探测 + 初始 seek 追下载进度，
+    // 放宽初始化等待窗口；超时仍由调用方回退 ExoPlayer。
+    let stream_cache = request.stream_cache_url.is_some();
 
     let handle = thread::Builder::new()
         .name("xy-aaudio-exclusive".to_string())
@@ -622,8 +718,11 @@ pub fn start_exclusive_playback(
         .map_err(|e| e.to_string())?;
 
     // 等待初始化结果。共享模式（在线流）需经代理向上游 CDN 拉取探测头，
-    // 网络耗时高于本地文件，放宽到 6s；超时由调用方回退 ExoPlayer。
-    let init_wait = if shared_mode {
+    // 网络耗时高于本地文件，放宽到 6s；流缓存直读路径（在线直读）含最小
+    // 缓冲等待与初始 seek 追下载，放宽到 15s；超时由调用方回退 ExoPlayer。
+    let init_wait = if stream_cache {
+        Duration::from_secs(15)
+    } else if shared_mode {
         Duration::from_secs(6)
     } else {
         Duration::from_secs(3)
@@ -860,6 +959,9 @@ fn run_exclusive_playback(
     running: Arc<AtomicBool>,
     last_error: Arc<Mutex<Option<String>>>,
 ) {
+    // 诊断残留清零：上一会话的死因注解不得泄入本会话
+    reset_pipeline_diag();
+
     // 1. 加载 AAudio 库
     let lib = match AAudioLib::load() {
         Ok(l) => l,
@@ -872,8 +974,12 @@ fn run_exclusive_playback(
     // 1.5 DSD（dsf/dff）原生 DoP 直出：仅当打开「DSD 原生直通」且当前处于
     // Bit-perfect 直出状态才走 DoP 打包（绕过解码器与 DSP，逐帧打包 24-bit）。
     // 关闭直通时 DSD 容器降级为 PCM 解码，走常规 DSP 管线。
-    // 共享模式不走 DoP（系统混音器无法透传 DSD）。
-    if request.dsd_native_passthrough && !request.shared_mode && is_dsd_path(&request.path) {
+    // 共享模式不走 DoP（系统混音器无法透传 DSD）；流缓存直读（在线）同理。
+    if request.dsd_native_passthrough
+        && !request.shared_mode
+        && request.stream_cache_url.is_none()
+        && is_dsd_path(&request.path)
+    {
         run_dsd_passthrough(
             request,
             lib,
@@ -887,8 +993,57 @@ fn run_exclusive_playback(
         return;
     }
 
-    // 2. 打开 symphonia 解码器
-    let decoder = match SymphoniaDecoder::open(&request.path) {
+    // 1.6 预构建流缓存直读 Reader（在线歌曲对齐桌面端 StreamingTempFile 模型）：
+    // 复用/启动 start_streaming_download 下载线程（与 Dart 侧预热按 URL 命中
+    // 同一条目，维持单上游连接），等最小缓冲（256KB）就绪后交解码器探测。
+    let stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>> =
+        match request.stream_cache_url.as_deref() {
+            None => None,
+            Some(url) => {
+                let state = match crate::player::stream_cache::start_streaming_download(
+                    url,
+                    request.stream_cache_headers.as_ref(),
+                    None,
+                    None,
+                    None,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = init_tx.send(Err(format!("流缓存启动失败: {e}")));
+                        return;
+                    }
+                };
+                // 等待最小缓冲就绪；超时/失败交上层回退 ExoPlayer（代理路径）。
+                // 预热命中时这里近乎立即通过。
+                let deadline = std::time::Instant::now() + Duration::from_secs(8);
+                while !crate::player::stream_cache::is_buffer_ready(&state) {
+                    if let Some(err) = state.download_error() {
+                        let _ = init_tx.send(Err(format!("流缓存下载失败: {err}")));
+                        return;
+                    }
+                    if !running.load(Ordering::Relaxed)
+                        || std::time::Instant::now() >= deadline
+                    {
+                        let _ = init_tx.send(Err("流缓存缓冲超时".to_string()));
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                match state.new_reader_with_decryption() {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        let _ = init_tx.send(Err(format!("流缓存读取失败: {e}")));
+                        return;
+                    }
+                }
+            }
+        };
+
+    // 2. 打开 symphonia 解码器（流缓存 Reader / 代理 URL / 本地文件）
+    let decoder = match SymphoniaDecoder::open(
+        request.stream_cache_url.as_deref().unwrap_or(&request.path),
+        stream_reader,
+    ) {
         Ok(d) => d,
         Err(e) => {
             let _ = init_tx.send(Err(format!("打开音频文件失败: {e}")));
@@ -899,6 +1054,16 @@ fn run_exclusive_playback(
     let source_sample_rate = decoder.sample_rate;
     let source_channels = decoder.channels;
     let total_duration = decoder.total_duration;
+
+    // 对齐桌面端策略：共享模式走系统混音器，>2 声道流（伪 6ch 全景声等）
+    // 混音器不做声道映射会直接破音，样本层下混为立体声（ITU BS.775）；
+    // 独占模式仍按源声道直出（USB DAC 支持时），失败照旧回退。
+    let playback_channels: u16 = if request.shared_mode && source_channels > 2 {
+        2
+    } else {
+        source_channels
+    };
+    let downmix_active = playback_channels != source_channels;
 
     // 3. 创建 BufferedSource（后台预读取）
     let mut buffered = BufferedSource::new(
@@ -927,7 +1092,7 @@ fn run_exclusive_playback(
             request.volume_balance_gain
         },
         source_sample_rate,
-        source_channels,
+        playback_channels,
         100,
     );
 
@@ -939,9 +1104,9 @@ fn run_exclusive_playback(
         serde_json::from_str(&request.equalizer_settings_json).unwrap_or_default()
     };
     let eq_handle = Arc::new(EqualizerHandle::new(eq_settings));
-    let mut equalizer = Equalizer::new(source_sample_rate, source_channels, eq_handle.clone());
+    let mut equalizer = Equalizer::new(source_sample_rate, playback_channels, eq_handle.clone());
 
-    let mut sound_effect = SoundEffectBlockProcessor::new(source_sample_rate, source_channels);
+    let mut sound_effect = SoundEffectBlockProcessor::new(source_sample_rate, playback_channels);
     if !initial_bit_perfect && !request.sound_effect_settings_json.is_empty() {
         if let Ok(se_settings) =
             serde_json::from_str::<SoundEffectSettings>(&request.sound_effect_settings_json)
@@ -963,7 +1128,7 @@ fn run_exclusive_playback(
     // 独占 Bit-perfect 时优先按源位深协商整数格式（≤16bit→Int16，>16bit→Int24，
     // 深层浮点回退），实现「按源位深整数直出」；常规独占仍 Float32→Int16。
     let (stream, device_format, stream_sample_rate, stream_channels) = if request.shared_mode {
-        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels, true) {
+        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, playback_channels, true) {
             Ok(result) => result,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
@@ -1004,7 +1169,7 @@ fn run_exclusive_playback(
         Ordering::Relaxed,
     );
     progress.samples_played.store(
-        (request.start_time_secs * source_sample_rate as f64 * source_channels as f64) as u64,
+        (request.start_time_secs * source_sample_rate as f64 * playback_channels as f64) as u64,
         Ordering::Relaxed,
     );
 
@@ -1022,7 +1187,16 @@ fn run_exclusive_playback(
 
     // 8. 通知初始化成功
     let device_name = if request.shared_mode {
-        format!("系统混音器 ({}Hz, {}ch shared)", stream_sample_rate, stream_channels)
+        format!(
+            "系统混音器 ({}Hz, {}ch shared){}",
+            stream_sample_rate,
+            stream_channels,
+            if downmix_active {
+                format!(" {}ch→2ch 下混", source_channels)
+            } else {
+                String::new()
+            }
+        )
     } else {
         format!(
             "USB DAC ({}Hz, {}ch, {}bit exclusive)",
@@ -1047,17 +1221,21 @@ fn run_exclusive_playback(
             Ok(ExclusiveCommand::Stop) => break,
             Ok(ExclusiveCommand::Seek { time_secs, is_playing }) => {
                 let _ = unsafe { (lib.stream_request_pause)(stream) };
-                if let Err(e) = buffered.try_seek(Duration::from_secs_f64(time_secs)) {
-                    let _ = e;
+                let seek_res = buffered.try_seek(Duration::from_secs_f64(time_secs));
+                record_pipeline_diag(&format!(
+                    "seek t={time_secs:.3}s ok={}",
+                    seek_res.is_ok()
+                ));
+                if seek_res.is_ok() {
+                    normalizer.reset();
+                    equalizer.reset();
+                    sound_effect.reset();
+                    progress.samples_played.store(
+                        (time_secs * source_sample_rate as f64 * playback_channels as f64) as u64,
+                        Ordering::Relaxed,
+                    );
+                    visualizer.reset();
                 }
-                normalizer.reset();
-                equalizer.reset();
-                sound_effect.reset();
-                progress.samples_played.store(
-                    (time_secs * source_sample_rate as f64 * source_channels as f64) as u64,
-                    Ordering::Relaxed,
-                );
-                visualizer.reset();
                 is_paused.store(!is_playing, Ordering::Relaxed);
                 if is_playing {
                     let _ = unsafe { (lib.stream_request_start)(stream) };
@@ -1115,7 +1293,7 @@ fn run_exclusive_playback(
             continue;
         }
 
-        // 读取一块样本
+        // 读取一块样本；共享模式多声道先在样本层下混为立体声（对齐桌面端）
         let block = match buffered.next_block() {
             Some(block) => block,
             None => {
@@ -1124,12 +1302,30 @@ fn run_exclusive_playback(
                 let dec_err = take_decoder_error()
                     .map(|e| format!(" ← 解码线程死因: {e}"))
                     .unwrap_or_default();
+                let diag = {
+                    let d = take_pipeline_diag();
+                    if d.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ← 管线事件: {d}")
+                    }
+                };
+                let panic_note = if crate::player::buffered_source::take_producer_panicked() {
+                    " ← 生产者线程panic"
+                } else {
+                    ""
+                };
                 set_exit_reason!(last_error, format!(
-                    "解码缓冲EOF(已播{played}样本, rate={source_sample_rate}){dec_err}{}",
+                    "解码缓冲EOF(已播{played}样本, rate={source_sample_rate}){dec_err}{diag}{panic_note}{}",
                     if played == 0 { " ← 从未产出数据，拉流/解码失败" } else { "" }
                 ));
                 break;
             }
+        };
+        let block = if downmix_active {
+            crate::player::channel_downmix::downmix_block(&block, source_channels)
+        } else {
+            block
         };
 
         // DSP 链处理。Bit-perfect 直出：绕过响度/EQ/音效/主音量，仅保留安全限幅（对齐桌面端）。
@@ -1144,7 +1340,7 @@ fn run_exclusive_playback(
 
         // 用户音量渐变（直出时旁通，对齐桌面端 bit-perfect 分支）+ 最终安全限幅。
         if !do_bypass {
-            user_volume_source.process_block(&mut effected, source_channels, &user_volume);
+            user_volume_source.process_block(&mut effected, playback_channels, &user_volume);
         }
         clip_guard.process_block(&mut effected);
 

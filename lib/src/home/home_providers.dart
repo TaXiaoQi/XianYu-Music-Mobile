@@ -7,14 +7,22 @@ import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
+import '../online/online_meta_store.dart';
+import '../player/player_provider.dart';
 import '../rust/api.dart';
 import '../i18n/i18n.dart';
 
 class MostPlayedEntry {
-  final Song song;
+  final Song? song;
+  final QueueItem? onlineItem;
   final int playCount;
-  const MostPlayedEntry({required this.song, required this.playCount});
+  const MostPlayedEntry({this.song, this.onlineItem, required this.playCount});
+
+  QueueItem? toQueueItem() => song?.toQueueItem() ?? onlineItem;
 }
+
+bool isOnlineSongPath(String p) =>
+    p.startsWith('lx://') || p.startsWith('plugin://');
 
 final mostPlayedProvider = FutureProvider<List<MostPlayedEntry>>((ref) async {
   final dbPath = await ref.read(dbPathProvider.future);
@@ -28,16 +36,36 @@ final mostPlayedProvider = FutureProvider<List<MostPlayedEntry>>((ref) async {
     for (final s in ref.watch(libraryProvider.select((st) => st.songs)))
       s.path: s,
   };
+  final onlinePaths = [
+    for (final e in top)
+      if (isOnlineSongPath(
+          (e as Map<String, dynamic>)['song_path'] as String? ?? ''))
+        e['song_path'] as String,
+  ];
+  final onlineMeta = onlinePaths.isEmpty
+      ? const <String, QueueItem>{}
+      : await ref.read(onlineMetaStoreProvider).getAll(onlinePaths);
   final entries = <MostPlayedEntry>[];
   for (final e in top) {
     final m = e as Map<String, dynamic>;
     final path = m['song_path'] as String? ?? '';
     final song = songsByPath[path];
-    if (song == null) continue;
-    entries.add(MostPlayedEntry(
-      song: song,
-      playCount: (m['play_count'] as num?)?.toInt() ?? 0,
-    ));
+    if (song != null) {
+      entries.add(MostPlayedEntry(
+        song: song,
+        playCount: (m['play_count'] as num?)?.toInt() ?? 0,
+      ));
+      continue;
+    }
+    if (isOnlineSongPath(path)) {
+      final item = onlineMeta[path];
+      if (item != null) {
+        entries.add(MostPlayedEntry(
+          onlineItem: item,
+          playCount: (m['play_count'] as num?)?.toInt() ?? 0,
+        ));
+      }
+    }
   }
   return entries;
 });

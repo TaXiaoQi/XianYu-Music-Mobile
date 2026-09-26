@@ -6,6 +6,7 @@ pub mod equalizer;
 pub mod cenc;
 pub mod loudness;
 pub mod buffered_source;
+pub mod channel_downmix;
 pub mod http_source;
 pub mod sound_effect;
 pub mod stream_cache;

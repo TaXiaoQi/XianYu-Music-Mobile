@@ -26,6 +26,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- DLNA 投放：灭屏 Doze 的 dozable 防火墙会掐掉应用全部网络导致桌面拉流
+         中断（MagicOS 实测），投放开始时经系统授权框请求电池优化白名单 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- Android 13+：媒体控制通知需运行时申请通知权限，否则系统静默拦截 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 听歌识曲：麦克风录音 -->

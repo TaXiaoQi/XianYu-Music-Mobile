@@ -756,6 +756,10 @@ Future<String> resolveDownloadFullPath({
 /// `device_id` = AAudio 设备 ID（USB DAC），-1 = 默认设备。
 /// `bit_perfect` = Bit-perfect 直出（绕过响度/EQ/音效/音量，按源位深整数直出）。
 /// `dsd_native_passthrough` = DSD(.dsf/.dff) 原生 DoP 直通开关。
+/// `stream_cache_url` = 在线流缓存直读 URL（对齐桌面端 StreamingTempFile 模型，
+/// 经 Rust 流缓存 Reader 解码，单上游连接；与预热线程 `stream_cache_begin_url_download`
+/// 按 URL 命中同一缓存条目）。`stream_cache_headers` = 直链上游请求头 JSON 对象字符串，
+/// 供缓存下载线程冷启动使用。
 Future<String> startUsbExclusivePlayback({
   required String path,
   required int deviceId,
@@ -768,6 +772,8 @@ Future<String> startUsbExclusivePlayback({
   required bool bitPerfect,
   required bool dsdNativePassthrough,
   required bool sharedMode,
+  String? streamCacheUrl,
+  String? streamCacheHeaders,
 }) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
   path: path,
   deviceId: deviceId,
@@ -780,6 +786,8 @@ Future<String> startUsbExclusivePlayback({
   bitPerfect: bitPerfect,
   dsdNativePassthrough: dsdNativePassthrough,
   sharedMode: sharedMode,
+  streamCacheUrl: streamCacheUrl,
+  streamCacheHeaders: streamCacheHeaders,
 );
 
 /// 停止 USB 独占播放并释放设备。

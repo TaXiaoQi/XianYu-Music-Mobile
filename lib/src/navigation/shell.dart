@@ -103,6 +103,7 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/playback',
   '/settings/download',
   '/settings/watch',
+  '/settings/dlna',
   '/settings/tools',
   '/settings/advanced',
   '/about',
@@ -854,7 +855,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         : (floating
             ? (miniBarLow
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                : (screenSize.height - 18.0 - 70.0 - 58.0))
+                : (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0))
             : (screenSize.height - safeBottom - 58.0 - 64.0));
 
     final batchLift = ref.watch(batchBarLiftProvider);
@@ -866,7 +867,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       if (floating) {
         return hidden
             ? (screenSize.height - padding.bottom - barH - 12.0)
-            : (screenSize.height - 18.0 - 70.0 - barH - batchLift);
+            : (screenSize.height - safeBottom - 18.0 - 70.0 - barH - batchLift);
       }
       return hidden
           ? (screenSize.height - padding.bottom - barH - 12.0)
@@ -895,7 +896,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final rootBarTop = (isSide
             ? (screenSize.height - safeBottom - 58.0 - 12.0)
             : (floating
-                ? (screenSize.height - 18.0 - 70.0 - 58.0)
+                ? (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0)
                 : (screenSize.height - safeBottom - 58.0 - 64.0))) -
         batchLift;
 
@@ -1093,7 +1094,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             Positioned(
                 left: 12,
                 right: 12,
-                bottom: 18,
+                bottom: 18 + safeBottom,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
@@ -2879,4 +2880,4 @@ class _DropletEdgePainter extends CustomPainter {
   bool shouldRepaint(_DropletEdgePainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
-
+

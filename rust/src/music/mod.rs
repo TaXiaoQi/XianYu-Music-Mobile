@@ -3,6 +3,7 @@ pub mod utils;
 pub mod cue;
 pub mod tags;
 pub mod lyrics;
+pub mod lyric_formats;
 pub mod lyric_fetcher;
 pub mod url_resolver;
 pub mod lx_search;

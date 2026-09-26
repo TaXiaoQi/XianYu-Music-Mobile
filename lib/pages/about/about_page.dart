@@ -288,7 +288,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           const SizedBox(height: 20),
           Center(
             child: Text(
-              tr('© 2026 弦予音乐 · Licensed under AGPL-3.0-only'),
+              tr('© 2026 弦予音乐 · 源码可见协议 XSAL-1.0'),
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),

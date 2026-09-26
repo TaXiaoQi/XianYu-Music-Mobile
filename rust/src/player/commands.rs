@@ -26,6 +26,10 @@ pub enum PlaybackCommand {
         bit_perfect: bool,
         dsd_native_passthrough: bool,
         shared_mode: bool,
+        /// 在线流缓存直读 URL（对齐桌面端 StreamingTempFile 模型）。
+        stream_cache_url: Option<String>,
+        /// 流缓存直链上游请求头（冷启动下载用）。
+        stream_cache_headers: Option<std::collections::HashMap<String, String>>,
     },
     /// 暂停（保持进度）。
     Pause,
@@ -64,6 +68,8 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
             bit_perfect,
             dsd_native_passthrough,
             shared_mode,
+            stream_cache_url,
+            stream_cache_headers,
         } => {
             let request = output::ExclusivePlayRequest {
                 path,
@@ -77,6 +83,8 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
                 bit_perfect,
                 dsd_native_passthrough,
                 shared_mode,
+                stream_cache_url,
+                stream_cache_headers,
             };
             output::start_exclusive_playback(request)
         }

@@ -10,6 +10,7 @@ import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../plugin/plugin_provider.dart';
+import '../plugin/plugin_search.dart';
 import '../rust/api.dart';
 import 'lyric_model.dart';
 
@@ -129,8 +130,48 @@ class LyricsRepository {
       }
       return '';
     }
+    // DLNA 被投条目（http 直链、无本地库记录）：按标题/歌手走插件搜索
+    // 拿到插件歌曲信息后取歌词，与分享深链同一套插件链路。
+    if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
+      final online = await _searchCastLyricSource(item);
+      if (online != null) {
+        final payload = await _fetchLyricsJson(online);
+        if (payload.isNotEmpty && payload != 'null') return payload;
+      }
+      AppLog.debug('lyric', 'DLNA 被投曲目无插件歌词: ${item.title}');
+      return '';
+    }
     final dbPath = await _ref.read(dbPathProvider.future);
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
+  }
+
+  /// DLNA 被投曲目按标题/歌手搜索插件音源，返回带插件信息的 QueueItem。
+  Future<QueueItem?> _searchCastLyricSource(QueueItem item) async {
+    final name = item.title.trim();
+    if (name.isEmpty || name.contains('DLNA')) {
+      AppLog.debug('lyric', 'DLNA 歌词搜索跳过: title="$name"');
+      return null;
+    }
+    final artist = item.artist.trim();
+    final keyword = artist.isEmpty ? name : '$name $artist';
+    try {
+      final manager = _ref.read(pluginManagerProvider);
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final service = PluginSearchService(engine, manager.sources);
+      final all = await service.searchAll(keyword, limit: 10);
+      final hit = all.where((e) => e.$2.isNotEmpty).length;
+      AppLog.info('lyric', 'DLNA 歌词搜索完成: 命中源=$hit/${all.length} keyword=$keyword');
+      for (final (ps, items) in all) {
+        if (items.isNotEmpty) {
+          final qi = service.toQueueItem(ps, items.first);
+          AppLog.info('lyric', 'DLNA 歌词搜索命中: ${qi.title} - ${qi.artist}');
+          return qi;
+        }
+      }
+    } catch (e) {
+      AppLog.warn('lyric', 'DLNA 歌词搜索失败: $e');
+    }
+    return null;
   }
 
   /// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib hex），

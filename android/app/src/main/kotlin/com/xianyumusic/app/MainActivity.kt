@@ -105,6 +105,59 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    // DLNA 投放：手机灭屏进入 Doze 后，dozable 防火墙链会拦截未加电池优化
+    // 白名单应用的全部网络（SYN-ACK 都发不出去），表现为「手机显示投放中、
+    // 播放端无声」。投放会话期间需：①电池优化白名单（dozable 链豁免）；
+    // ②WifiLock 防 Wi-Fi 省电断流。WAKE_LOCK / REQUEST_IGNORE_BATTERY_
+    // OPTIMIZATIONS 权限见 AndroidManifest。
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
+    /** 获取 Wi-Fi 低延迟锁（API 29 以下回退高性能模式，幂等）。 */
+    private fun dlnaWifiLockAcquire() {
+        if (wifiLock?.isHeld == true) return
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        } else {
+            @Suppress("DEPRECATION")
+            android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        }
+        val lock = wifiLock ?: wifi.createWifiLock(mode, "xianyu_dlna_cast").apply {
+            setReferenceCounted(false)
+            wifiLock = this
+        }
+        try {
+            lock.acquire()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 释放 Wi-Fi 锁（未持有时为 no-op）。 */
+    private fun dlnaWifiLockRelease() {
+        val lock = wifiLock ?: return
+        try {
+            if (lock.isHeld) lock.release()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 电池优化白名单：已在白名单返回 true（不弹框）；否则拉起系统授权框并
+     *  返回 false（用户是否授权经设置页/后续 isIgnoringBatteryOptimizations
+     *  观测，投放在弹框期间照常进行）。 */
+    private fun dlnaRequestIgnoreBatteryOptimization(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return true
+        return try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     // SAF 枚举/复制都是重 I/O，必须离开主线程，否则扫描与切歌时整个 UI 冻结。
     private val safExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -795,6 +848,17 @@ class MainActivity : AudioServiceActivity() {
                     "releaseMulticast" -> {
                         dlnaMulticastRelease()
                         result.success(null)
+                    }
+                    "acquireWifiLock" -> {
+                        dlnaWifiLockAcquire()
+                        result.success(null)
+                    }
+                    "releaseWifiLock" -> {
+                        dlnaWifiLockRelease()
+                        result.success(null)
+                    }
+                    "requestIgnoreBatteryOptimization" -> {
+                        result.success(dlnaRequestIgnoreBatteryOptimization())
                     }
                     else -> result.notImplemented()
                 }

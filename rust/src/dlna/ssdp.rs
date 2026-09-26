@@ -17,7 +17,17 @@ pub const SSDP_MULTICAST_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 pub const SSDP_PORT: u16 = 1900;
 pub const ALIVE_MAX_AGE: &str = "1800";
 
-/// 组播 socket 绑定（两端复用；SO_REUSEADDR 允许多进程共用 1900）。
+/// 取默认路由出网 IPv4（与 net_util::lan_ip 同判据；本文件三端同步，避免跨模块依赖）。
+fn lan_ipv4() -> Option<Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("8.8.8.8:80").ok()?;
+    match sock.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(v4) => Some(v4),
+        std::net::IpAddr::V6(_) => None,
+    }
+}
+
+/// 组播 socket 绑定（三端复用；SO_REUSEADDR 允许多进程共用 1900）。
 fn bind_multicast_socket() -> std::io::Result<Socket> {
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     sock.set_reuse_address(true)?;
@@ -25,10 +35,21 @@ fn bind_multicast_socket() -> std::io::Result<Socket> {
     let _ = sock.set_reuse_port(true);
     let bind_addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, SSDP_PORT));
     sock.bind(&bind_addr.into())?;
-    // 加入 SSDP 组播组：不加入则内核不会把控制点的 M-SEARCH 组播报文投递给本 socket
-    // （Windows 上尤其如此），DMR 将无法被主动搜索发现。加入失败不致命：仍可发 alive
+    // 加入 SSDP 组播组必须显式落在默认路由网卡：交给系统自选（UNSPECIFIED）时，
+    // 多网卡机器（虚拟网卡/WiFi Direct/蓝牙并存）常 join 到收不到局域网
+    // M-SEARCH 的接口，导致 DMR 无法被搜索发现。加入失败不致命：仍可发 alive
     // 广播、应答单播 M-SEARCH，仅主动搜索路径不可用。
-    let _ = sock.join_multicast_v4(&SSDP_MULTICAST_V4, &Ipv4Addr::UNSPECIFIED);
+    let iface = lan_ipv4();
+    if let Some(ip) = iface {
+        let _ = sock.set_multicast_if_v4(&ip);
+    }
+    let join = match iface {
+        Some(ip) => sock.join_multicast_v4(&SSDP_MULTICAST_V4, &ip),
+        None => sock.join_multicast_v4(&SSDP_MULTICAST_V4, &Ipv4Addr::UNSPECIFIED),
+    };
+    if let Err(e) = join {
+        eprintln!("[dlna] join SSDP multicast group on {iface:?} failed: {e}");
+    }
     Ok(sock)
 }
 
@@ -54,8 +75,24 @@ fn header_value(msg: &str, name: &str) -> Option<String> {
 
 /// M-SEARCH 搜索局域网 DLNA 渲染器，返回去重后的 LOCATION 列表。
 pub async fn search_renderers(timeout_ms: u64) -> Vec<String> {
-    let Ok(sock) = UdpSocket::bind("0.0.0.0:0").await else {
+    let std_sock = match lan_ipv4() {
+        // 多网卡时显式指定组播出接口，避免 M-SEARCH 从虚拟网卡发出导致设备收不到
+        Some(iface) => Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .and_then(|s| {
+                s.set_multicast_if_v4(&iface)?;
+                s.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)).into())?;
+                s.set_nonblocking(true)?;
+                Ok(s)
+            })
+            .map(std::net::UdpSocket::from),
+        None => std::net::UdpSocket::bind("0.0.0.0:0"),
+    };
+    let Ok(std_sock) = std_sock else {
         return Vec::new();
+    };
+    let sock = match UdpSocket::from_std(std_sock) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
     };
     let target: SocketAddr = SocketAddrV4::new(SSDP_MULTICAST_V4, SSDP_PORT).into();
     let mut packet = String::from("M-SEARCH * HTTP/1.1\r\n");
@@ -119,8 +156,7 @@ impl SsdpAdvertiser {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         super::spawn::spawn_persistent(async move {
-            let result = run_advertiser(cfg, shutdown_rx).await;
-            let _ = ready_tx.send(result);
+            let _ = run_advertiser(cfg, shutdown_rx, ready_tx).await;
         });
         ready_rx
             .await
@@ -134,14 +170,27 @@ impl SsdpAdvertiser {
     }
 }
 
-async fn run_advertiser(cfg: AdvertiseConfig, mut shutdown_rx: watch::Receiver<bool>) -> Result<(), String> {
+async fn run_advertiser(
+    cfg: AdvertiseConfig,
+    mut shutdown_rx: watch::Receiver<bool>,
+    ready_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+) -> Result<(), String> {
     let sock = match bind_multicast_socket() {
         Ok(s) => match tokio_udp_from_socket(s) {
             Ok(s) => s,
-            Err(e) => return Err(format!("convert SSDP socket failed: {e}")),
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("convert SSDP socket failed: {e}")));
+                return Err(format!("convert SSDP socket failed: {e}"));
+            }
         },
-        Err(e) => return Err(format!("bind SSDP 1900 failed: {e}")),
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("bind SSDP 1900 failed: {e}")));
+            return Err(format!("bind SSDP 1900 failed: {e}"));
+        }
     };
+    // socket 就绪立即回执：run_advertiser 是常驻循环，只有 shutdown 才返回，
+    // ready 不能等循环退出再发（否则 start() 永远挂起，enable_renderer 卡死）。
+    let _ = ready_tx.send(Ok(()));
     let sock = Arc::new(sock);
 
     let udn = cfg.udn.clone();

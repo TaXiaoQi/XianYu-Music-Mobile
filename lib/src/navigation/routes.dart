@@ -822,7 +822,7 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         return SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: page,
+          child: RoutePageBackdrop(completion: animation, child: page),
         );
       },
     );
@@ -1054,7 +1054,7 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         final transition = SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: page,
+          child: RoutePageBackdrop(completion: animation, child: page),
         );
         if (phase != PredictiveBackPhase.idle) {
           return Stack(

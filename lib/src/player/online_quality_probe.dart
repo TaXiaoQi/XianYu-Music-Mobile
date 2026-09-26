@@ -227,6 +227,7 @@ class SongQualityProbe {
             requested: _done[i].requested,
             headers: _done[i].headers,
             ekey: _done[i].ekey,
+            cek: _done[i].cek,
           );
         }
       }
