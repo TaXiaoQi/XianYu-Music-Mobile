@@ -309,7 +309,13 @@ where
         // 等待后台 seek 完成（最长 2s，网络流 seek 可能较慢）
         match self.ack_rx.recv_timeout(Duration::from_secs(2)) {
             Ok(SeekAck::Ok) => {}
-            _ => return Err("BufferedSource seek 失败或超时".to_string()),
+            Ok(SeekAck::Failed) => {
+                return Err(match take_last_seek_error() {
+                    Some(e) => format!("生产者 seek 失败: {e}"),
+                    None => "生产者 seek 失败".to_string(),
+                });
+            }
+            Err(_) => return Err("生产者 seek 超时(2s)".to_string()),
         }
 
         // 排空通道中 seek 前的陈旧样本块
@@ -320,11 +326,36 @@ where
         self.prefill_one_block();
         Ok(())
     }
+
+    /// 排空通道中未消费的样本块（seek 超时/失败路径用：生产者稍后补新位置的
+    /// 块，不排空会先回放 seek 前位置的样本）。
+    pub fn drain_stale(&mut self) {
+        while self.sample_rx.try_recv().is_ok() {}
+        self.current_block.clear();
+    }
 }
 
 /// 生产者线程 panic 标志：线程静默死亡会让音频侧把 panic 误判成自然 EOF，
 /// 这里置位后由播放引擎在 EOF 退出时读走，并入死亡消息保留真实死因。
 static PRODUCER_PANICKED: AtomicBool = AtomicBool::new(false);
+
+/// 生产者侧最近一次 seek 失败的具体原因（ack 只传 Ok/Failed，错误文本在
+/// 这里留存，供播放引擎并入 seek 诊断/死亡消息，定位 symphonia 层失败原因）。
+static LAST_SEEK_ERROR: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+fn record_seek_error(err: &str) {
+    let slot = LAST_SEEK_ERROR.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(err.to_string());
+    }
+}
+
+/// 读取并清除最近一次生产者 seek 失败原因。
+pub fn take_last_seek_error() -> Option<String> {
+    let slot = LAST_SEEK_ERROR.get_or_init(|| std::sync::Mutex::new(None));
+    slot.lock().ok().and_then(|mut g| g.take())
+}
 
 /// 读取并清除生产者 panic 标志。
 pub fn take_producer_panicked() -> bool {
@@ -355,10 +386,12 @@ fn producer_loop<P: BlockProducer + Send>(
         match cmd_rx.try_recv() {
             Ok(Command::Stop) => return,
             Ok(Command::Seek(pos)) => {
-                let ack = if producer.try_seek(pos).is_ok() {
-                    SeekAck::Ok
-                } else {
-                    SeekAck::Failed
+                let ack = match producer.try_seek(pos) {
+                    Ok(()) => SeekAck::Ok,
+                    Err(e) => {
+                        record_seek_error(&e);
+                        SeekAck::Failed
+                    }
                 };
                 let _ = ack_tx.send(ack);
                 // seek 后重置 EOF，恢复生产
@@ -374,10 +407,12 @@ fn producer_loop<P: BlockProducer + Send>(
             match cmd_rx.recv_timeout(BACKOFF) {
                 Ok(Command::Stop) => return,
                 Ok(Command::Seek(pos)) => {
-                    let _ = ack_tx.send(if producer.try_seek(pos).is_ok() {
-                        SeekAck::Ok
-                    } else {
-                        SeekAck::Failed
+                    let _ = ack_tx.send(match producer.try_seek(pos) {
+                        Ok(()) => SeekAck::Ok,
+                        Err(e) => {
+                            record_seek_error(&e);
+                            SeekAck::Failed
+                        }
                     });
                     eof = false;
                 }
@@ -411,10 +446,12 @@ fn producer_loop<P: BlockProducer + Send>(
                 match cmd_rx.try_recv() {
                     Ok(Command::Stop) => return,
                     Ok(Command::Seek(pos)) => {
-                        let _ = ack_tx.send(if producer.try_seek(pos).is_ok() {
-                            SeekAck::Ok
-                        } else {
-                            SeekAck::Failed
+                        let _ = ack_tx.send(match producer.try_seek(pos) {
+                            Ok(()) => SeekAck::Ok,
+                            Err(e) => {
+                                record_seek_error(&e);
+                                SeekAck::Failed
+                            }
                         });
                         eof = false;
                         // 丢弃当前块（seek 前的陈旧数据）

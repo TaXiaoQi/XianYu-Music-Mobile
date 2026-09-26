@@ -1354,7 +1354,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
           if (!restored) {
             var path = currentItem.path;
-            if (_isTranscodePath(path)) {
+            // http 直链（DLNA 被投等）不能喂 DSP：request.path 直连内网地址
+            // 会被 SSRF 校验拒绝，还白置 60s 冷却；也不可 setFilePath——
+            // Uri.file 会把 scheme 冒号编码成 http%3A//（ExoPlayer no protocol）。
+            final isHttpSource =
+                path.startsWith('http://') || path.startsWith('https://');
+            if (_isTranscodePath(path) && !isHttpSource) {
               try {
                 path =
                     (await RemoteLibraryService(_ref).transcodeToWav(path)).path;
@@ -1363,11 +1368,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 AppLogger.instance.log('session', '转码预载失败: $e');
               }
             }
-            restored = await _tryStartDspPipeline(path,
-                startAtSecs: pos, isPlaying: wasPlaying);
+            if (!isHttpSource) {
+              restored = await _tryStartDspPipeline(path,
+                  startAtSecs: pos, isPlaying: wasPlaying);
+            }
             if (!restored) {
               try {
-                await _player.setFilePath(path);
+                await _setLocalSource(path);
                 await seek(pos);
                 if (wasPlaying) unawaited(_player.play());
               } catch (e) {
@@ -1586,7 +1593,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (epoch != _playEpoch) return;
         } else {
         var target = item.path;
-        if (SafChannel.isSafPath(target)) {
+        // http 直链（DLNA 被投条目重播等）：直喂 DSP 会被 SSRF 内网校验拒绝
+        // （发送端 httpd 就是内网地址），统一走在线管线（回环代理 + 流缓存），
+        // 与 playExternalUri 同路；DSP 失败时 _startOnlineUrl 内部自动回退。
+        if (target.startsWith('http://') || target.startsWith('https://')) {
+          await _stopExclusive();
+          if (epoch != _playEpoch) return;
+          try {
+            await _player.stop();
+          } catch (_) {}
+          await _startOnlineUrl(target, item: item, startAtSecs: startAtSecs);
+        } else if (SafChannel.isSafPath(target)) {
           final tmp = await getTemporaryDirectory();
           target = await SafChannel.ensureLocalPlaybackCopy(
               target, p.join(tmp.path, 'saf_playback'));

@@ -283,6 +283,38 @@ struct SymphoniaDecoder {
     sample_buf_frames: usize,
     leftover: Vec<f32>,
     eof: bool,
+    /// 流缓存源持有 state：失败 seek 会污染 symphonia 内部状态（实测后续
+    /// packet 直接报 EOF → 管线死亡），持 state 可整体重建解码器续播。
+    stream_state: Option<crate::player::stream_cache::StreamingTempFileState>,
+    /// 打开时的探测路径（供重建时复用扩展名提示）。
+    hint_path: String,
+}
+
+/// 流缓存下载状态快照：Seek 诊断与死亡消息用，用于区分「symphonia 层失败」
+/// 与「下载线程已死/断流」（真机 DLNA 实测 seek 失败后即 EOF，需看到下载态）。
+struct CacheDiag {
+    downloaded_bytes: Arc<std::sync::atomic::AtomicU64>,
+    download_complete: Arc<AtomicBool>,
+    download_failed: Arc<AtomicBool>,
+    download_error: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+impl CacheDiag {
+    fn snapshot(&self) -> String {
+        let err = self
+            .download_error
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_default();
+        format!(
+            "流缓存[dl={}KB done={} fail={} err={}]",
+            self.downloaded_bytes.load(Ordering::Relaxed) / 1024,
+            self.download_complete.load(Ordering::Relaxed),
+            self.download_failed.load(Ordering::Relaxed),
+            if err.is_empty() { "-" } else { err.as_str() }
+        )
+    }
 }
 
 /// 流缓存 Reader 的 MediaSource 适配：`Box<dyn ReadSeek>` 不自动实现 Read/Seek
@@ -319,6 +351,7 @@ impl SymphoniaDecoder {
     fn open(
         path: &str,
         stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>>,
+        stream_state: Option<crate::player::stream_cache::StreamingTempFileState>,
     ) -> Result<Self, String> {
         use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
         use symphonia::core::formats::FormatOptions;
@@ -425,6 +458,8 @@ impl SymphoniaDecoder {
             sample_buf_frames: 0,
             leftover: Vec::new(),
             eof: false,
+            stream_state,
+            hint_path: path.to_string(),
         })
     }
 }
@@ -497,6 +532,20 @@ impl BlockProducer for SymphoniaDecoder {
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), String> {
+        // 转发到固有的重建式 seek 实现（方法解析优先命中固有方法）
+        SymphoniaDecoder::try_seek(self, pos)
+    }
+}
+
+impl SymphoniaDecoder {
+    /// （非 trait）seek + 重建兜底：symphonia seek 失败且为流缓存源时整体
+    /// 重建解码器后重试，避免状态污染导致管线死亡。
+    fn try_seek(&mut self, pos: Duration) -> Result<(), String> {
+        self.try_seek_inner(pos, true)
+    }
+
+    /// `allow_rebuild=false` 供重建后的新解码器复入，防止持久性失败无限递归。
+    fn try_seek_inner(&mut self, pos: Duration, allow_rebuild: bool) -> Result<(), String> {
         use symphonia::core::formats::{SeekMode, SeekTo};
         use symphonia::core::units::Time;
 
@@ -516,14 +565,43 @@ impl BlockProducer for SymphoniaDecoder {
             track_id: Some(self.track_id),
         };
 
-        self.format_reader
-            .seek(SeekMode::Accurate, seek_to)
-            .map_err(|e| e.to_string())?;
-
-        self.decoder.reset();
-        self.leftover.clear();
-        self.eof = false;
-        Ok(())
+        match self.format_reader.seek(SeekMode::Accurate, seek_to) {
+            Ok(_seeked) => {
+                self.decoder.reset();
+                self.leftover.clear();
+                self.eof = false;
+                Ok(())
+            }
+            Err(e) => {
+                // 失败的 seek 可能污染 symphonia 内部状态（DLNA 真机实测：
+                // seek 失败后 next_packet 立即报 end of stream → 管线死亡）。
+                // 流缓存源整体重建：新 reader 的 seek 自带「等下载追上目标」
+                // 语义，重建后从目标位置续解码；非流缓存源无重建能力，原样上报。
+                if !allow_rebuild {
+                    return Err(e.to_string());
+                }
+                let state = self.stream_state.clone().ok_or_else(|| e.to_string())?;
+                let fresh_reader = state
+                    .new_reader_with_decryption()
+                    .map_err(|ie| format!("{e}; 重建reader失败: {ie}"))?;
+                let mut fresh = Self::open(&self.hint_path, Some(fresh_reader), Some(state))
+                    .map_err(|ie| format!("{e}; 重建解码器失败: {ie}"))?;
+                fresh
+                    .try_seek_inner(pos, false)
+                    .map_err(|ie| format!("{e}; 重建后seek仍失败: {ie}"))?;
+                self.format_reader = fresh.format_reader;
+                self.decoder = fresh.decoder;
+                self.track_id = fresh.track_id;
+                self.sample_rate = fresh.sample_rate;
+                self.channels = fresh.channels;
+                self.total_duration = fresh.total_duration;
+                self.sample_buf = None;
+                self.sample_buf_frames = 0;
+                self.leftover.clear();
+                self.eof = false;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -996,6 +1074,8 @@ fn run_exclusive_playback(
     // 1.6 预构建流缓存直读 Reader（在线歌曲对齐桌面端 StreamingTempFile 模型）：
     // 复用/启动 start_streaming_download 下载线程（与 Dart 侧预热按 URL 命中
     // 同一条目，维持单上游连接），等最小缓冲（256KB）就绪后交解码器探测。
+    let mut cache_state: Option<crate::player::stream_cache::StreamingTempFileState> = None;
+    let mut cache_diag: Option<CacheDiag> = None;
     let stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>> =
         match request.stream_cache_url.as_deref() {
             None => None,
@@ -1013,6 +1093,14 @@ fn run_exclusive_playback(
                         return;
                     }
                 };
+                // 下载态留档：Seek 诊断与死亡消息可引用，定位断流类死因。
+                cache_diag = Some(CacheDiag {
+                    downloaded_bytes: state.downloaded_bytes.clone(),
+                    download_complete: state.download_complete.clone(),
+                    download_failed: state.download_failed.clone(),
+                    download_error: state.download_error.clone(),
+                });
+                cache_state = Some(state.clone());
                 // 等待最小缓冲就绪；超时/失败交上层回退 ExoPlayer（代理路径）。
                 // 预热命中时这里近乎立即通过。
                 let deadline = std::time::Instant::now() + Duration::from_secs(8);
@@ -1043,6 +1131,7 @@ fn run_exclusive_playback(
     let decoder = match SymphoniaDecoder::open(
         request.stream_cache_url.as_deref().unwrap_or(&request.path),
         stream_reader,
+        cache_state,
     ) {
         Ok(d) => d,
         Err(e) => {
@@ -1222,10 +1311,21 @@ fn run_exclusive_playback(
             Ok(ExclusiveCommand::Seek { time_secs, is_playing }) => {
                 let _ = unsafe { (lib.stream_request_pause)(stream) };
                 let seek_res = buffered.try_seek(Duration::from_secs_f64(time_secs));
-                record_pipeline_diag(&format!(
-                    "seek t={time_secs:.3}s ok={}",
-                    seek_res.is_ok()
-                ));
+                match &seek_res {
+                    Ok(()) => record_pipeline_diag(&format!("seek t={time_secs:.3}s ok=true")),
+                    Err(e) => {
+                        // 超时/失败也排空陈旧块：生产者（含重建路径）稍后补新
+                        // 位置的块，不排空会先回放 seek 前位置的样本。
+                        buffered.drain_stale();
+                        record_pipeline_diag(&format!(
+                            "seek t={time_secs:.3}s ok=false err={e}{}",
+                            cache_diag
+                                .as_ref()
+                                .map(|c| format!(" {}", c.snapshot()))
+                                .unwrap_or_default()
+                        ));
+                    }
+                }
                 if seek_res.is_ok() {
                     normalizer.reset();
                     equalizer.reset();
@@ -1315,8 +1415,12 @@ fn run_exclusive_playback(
                 } else {
                     ""
                 };
+                let cache_note = cache_diag
+                    .as_ref()
+                    .map(|c| format!(" ← {}", c.snapshot()))
+                    .unwrap_or_default();
                 set_exit_reason!(last_error, format!(
-                    "解码缓冲EOF(已播{played}样本, rate={source_sample_rate}){dec_err}{diag}{panic_note}{}",
+                    "解码缓冲EOF(已播{played}样本, rate={source_sample_rate}){dec_err}{diag}{panic_note}{cache_note}{}",
                     if played == 0 { " ← 从未产出数据，拉流/解码失败" } else { "" }
                 ));
                 break;
