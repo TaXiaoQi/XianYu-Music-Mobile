@@ -34,7 +34,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   bool _isPlaying = false;
   bool _isLoading = false;
   double _playProgress = 0;
-  double _playBuffered = 0;
   double _playStartOffset = 0;
   bool _previewRange = true;
 

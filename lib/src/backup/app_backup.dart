@@ -14,7 +14,6 @@ import '../playlist/playlist_provider.dart';
 import '../playlist/playlist_store.dart';
 import '../i18n/i18n.dart';
 import '../core/db_path.dart';
-import '../library/library_provider.dart';
 import '../online/online_meta_store.dart';
 import '../player/player_provider.dart';
 import '../recent/recent_provider.dart';
@@ -300,7 +299,7 @@ class AppBackupService {
     final settings = data['settings'];
     if (settings is Map) {
       final slot = settings[kBackupSelfSettingKey];
-      if (slot is Map) return (slot as Map).cast<String, dynamic>();
+      if (slot is Map) return slot.cast<String, dynamic>();
       return null;
     }
     return null;
