@@ -128,3 +128,6 @@ third_party/*/ohos/build/
 
 # fork 依赖自带的示例工程（仅上游参考用，不入库）
 /third_party/just_audio/example/
+
+# 软著申请材料不入库
+软著申请材料/
