@@ -1333,7 +1333,7 @@ class _FixedNavBar extends ConsumerWidget {
     if (solid) {
       return barBox;
     }
-    final barSigma = kNavSurfaceBlurSigma;
+    final barSigma = navSurfaceBlurSigma(ref);
     return ClipRect(
       child: BackdropFilter(
         filter: cheapBackdropBlur(barSigma),
@@ -1564,7 +1564,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
                 : Colors.white.withValues(alpha: 0.52)));
     final fill =
         (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
-    final sigma = kNavSurfaceBlurSigma;
+    final sigma = navSurfaceBlurSigma(ref);
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);

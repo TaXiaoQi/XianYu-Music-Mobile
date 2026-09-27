@@ -198,8 +198,8 @@ class _ScrollFab extends ConsumerWidget {
       surface = ClipOval(
         child: BackdropFilter(
           filter: ImageFilter.blur(
-            sigmaX: wallpaper ? kNavSurfaceBlurSigma : 10,
-            sigmaY: wallpaper ? kNavSurfaceBlurSigma : 10,
+            sigmaX: wallpaper ? navSurfaceBlurSigma(ref) : 10,
+            sigmaY: wallpaper ? navSurfaceBlurSigma(ref) : 10,
           ),
           child: button(
             Container(

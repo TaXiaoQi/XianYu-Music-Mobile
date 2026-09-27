@@ -69,7 +69,7 @@ class GlassTopBar extends ConsumerWidget {
     final solid = forceSolid || prefSolid || routeTransition;
     final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
-    final sigma = kNavSurfaceBlurSigma;
+    final sigma = navSurfaceBlurSigma(ref);
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper

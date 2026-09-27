@@ -213,8 +213,8 @@ class AppSettings {
     this.lyricFontPath = '',
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
-    this.frostedGlass = true,
-    this.frostedGlassLevel = FrostedGlassLevel.strongest,
+    this.frostedGlass = false,
+    this.frostedGlassLevel = FrostedGlassLevel.light,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
@@ -707,7 +707,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     final savedPath = prefs.getString('lyricFontPath') ?? '';
     unawaited(LyricFontManager.loadSavedFont(savedName, savedPath));
     final liquidGlass = prefs.getBool('liquidGlass') ?? false;
-    final frostedGlass = prefs.getBool('frostedGlass') ?? true;
+    final frostedGlass = prefs.getBool('frostedGlass') ?? false;
 
     return AppSettings(
       volume: prefs.getDouble('volume') ?? 1.0,
@@ -758,7 +758,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       lyricAlignment: prefs.getString('lyricAlignment') ?? 'center',
       liquidGlass: liquidGlass,
       frostedGlass: frostedGlass,
-      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'strongest'),
+      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'light'),
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
       liquidGlassQuality:
           _lgqFromString(prefs.getString('liquidGlassQuality') ?? 'medium'),
@@ -922,7 +922,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   FrostedGlassLevel _fglFromString(String v) => switch (v) {
         'light' => FrostedGlassLevel.light,
         'medium' => FrostedGlassLevel.medium,
-        _ => FrostedGlassLevel.strongest,
+        _ => FrostedGlassLevel.light,
       };
 
   ThemeModePreference _themeFromInt(int v) {

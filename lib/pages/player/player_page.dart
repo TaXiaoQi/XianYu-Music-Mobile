@@ -3366,7 +3366,7 @@ class _GlassControlCard extends ConsumerWidget {
             : Colors.white.withValues(alpha: 0.6));
 
     final sigma = wallpaperGlassActive(ref)
-        ? kNavSurfaceBlurSigma
+        ? navSurfaceBlurSigma(ref)
         : surfaceBlurSigma(
             base: 15,
             budget: budget,

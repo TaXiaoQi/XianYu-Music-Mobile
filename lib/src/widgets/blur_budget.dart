@@ -101,6 +101,10 @@ final isTransitioningProvider =
     NotifierProvider<_ValueNotifierState, bool>(
       () => _ValueNotifierState(globalIsTransitioning),
     );
+final isTabSwitchingProvider =
+    NotifierProvider<_ValueNotifierState, bool>(
+      () => _ValueNotifierState(globalIsTabSwitching),
+    );
 
 enum BlurSurfaceType {
   header,

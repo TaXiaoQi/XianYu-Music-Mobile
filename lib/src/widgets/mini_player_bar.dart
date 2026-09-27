@@ -83,7 +83,7 @@ Widget playbarGlassSurface(
                   (s) => s.valueOrNull?.floatingSearchBar)) ??
               false);
   final sigma =
-      navFloating ? frostedBlurSigma(ref) : kNavSurfaceBlurSigma;
+      navFloating ? frostedBlurSigma(ref) : navSurfaceBlurSigma(ref);
   final surface = Container(
     decoration: BoxDecoration(
       color: fill,
@@ -615,7 +615,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                     (s) => s.valueOrNull?.floatingSearchBar)) ??
                 false);
     final sigma =
-        navFloating ? frostedBlurSigma(ref) : kNavSurfaceBlurSigma;
+        navFloating ? frostedBlurSigma(ref) : navSurfaceBlurSigma(ref);
     final surface = Container(
       height: 58,
       decoration: BoxDecoration(

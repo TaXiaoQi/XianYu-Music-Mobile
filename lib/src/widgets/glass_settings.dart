@@ -8,7 +8,7 @@ import 'blur_budget.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
-        FrostedGlassLevel.strongest));
+        FrostedGlassLevel.light));
 
 bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
@@ -50,12 +50,18 @@ List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
 double wallpaperGlassSigma(BuildContext context) => 0.0;
 
 double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
-      FrostedGlassLevel.strongest => 1.0,
-      FrostedGlassLevel.medium => 0.6,
-      FrostedGlassLevel.light => 0.4,
+      // 旧档位（1.0/0.6/0.4）整体偏重，以原轻档 0.4 为新重档下压
+      FrostedGlassLevel.strongest => 0.4,
+      FrostedGlassLevel.medium => 0.28,
+      FrostedGlassLevel.light => 0.18,
     };
 
+/// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
 const double kNavSurfaceBlurSigma = 16.0;
+
+/// 导航面（悬浮导航/mini 播放条/appbar 等）随档位缩放的模糊强度
+double navSurfaceBlurSigma(WidgetRef ref) =>
+    kNavSurfaceBlurSigma * frostedBlurScaleOf(frostedGlassLevelSetting(ref));
 
 double frostedBlurSigma(WidgetRef ref) => 16 * frostedBlurScale(ref);
 
@@ -73,6 +79,10 @@ Widget frostedCardSurface({
   final wallpaper = wallpaperGlassActive(ref);
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
+  // 转场/切页中玻璃层在亚像素位置平移，BackdropFilter 逐帧重排会让文字抖动，
+  // 期间降级为实色渲染，落定后再恢复模糊
+  final settling = ref.watch(isTransitioningProvider) ||
+      ref.watch(isTabSwitchingProvider);
   final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
   final frostedFill = isDark
@@ -80,9 +90,11 @@ Widget frostedCardSurface({
       : Colors.white.withValues(alpha: 0.52);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallpaperTransparent
-          ? wallpaperGlassFill(context, ref)
-          : frostedFill);
+      : settling
+          ? (isDark ? const Color(0xF02A2A2E) : const Color(0xF7FFFFFF))
+          : (wallpaperTransparent
+              ? wallpaperGlassFill(context, ref)
+              : frostedFill);
   final border = solid
       ? null
       : Border.all(
@@ -99,9 +111,11 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
-  final sigma = wallpaperTransparent
-      ? wallpaperGlassSigma(context)
-      : frostedBlurSigma(ref);
+  final sigma = settling
+      ? 0.0
+      : wallpaperTransparent
+          ? wallpaperGlassSigma(context)
+          : frostedBlurSigma(ref);
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -208,7 +222,7 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
   if (wallpaperGlassActive(ref)) return false;
   return !(ref.watch(settingsProvider.select(
           (s) => s.valueOrNull?.frostedGlass)) ??
-      true);
+      false);
 }
 
 final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
@@ -269,9 +283,11 @@ Widget pseudoLiquidSurface({
   final wallpaper = wallpaperGlassActive(ref);
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
+  final settling = ref.watch(isTransitioningProvider) ||
+      ref.watch(isTabSwitchingProvider);
   final wallTransparent = wallpaper && !frostedOn;
   final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-  final solid = forceSolid || prefSolid;
+  final solid = forceSolid || prefSolid || settling;
   final keepAlive = forceSolid && keepFilter && !prefSolid;
   final navSurface = surfaceType == BlurSurfaceType.header ||
       surfaceType == BlurSurfaceType.bottomBar;
@@ -293,7 +309,7 @@ Widget pseudoLiquidSurface({
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
   final sigma = wallpaperNav
-      ? kNavSurfaceBlurSigma
+      ? navSurfaceBlurSigma(ref)
       : wallTransparent
           ? wallpaperGlassSigma(context)
           : (budget == null
@@ -320,4 +336,4 @@ Widget pseudoLiquidSurface({
     ),
   );
 }
-
+
