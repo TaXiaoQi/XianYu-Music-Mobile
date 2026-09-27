@@ -54,7 +54,7 @@ class StatsSummaryCard extends ConsumerWidget {
             child: _statCell(
               scheme,
               icon: Icons.headphones_outlined,
-              label: tr('累计听歌'),
+              label: tr('累计时长'),
               value: data?.totalDurationText ?? '—',
             ),
           ),
@@ -99,11 +99,15 @@ class StatsSummaryCard extends ConsumerWidget {
         const SizedBox(height: 6),
         Text(
           value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 3),
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
               fontSize: 11, color: scheme.onSurfaceVariant),
         ),

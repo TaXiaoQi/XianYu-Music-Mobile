@@ -89,7 +89,14 @@ class ListenStatsData {
     final hours = seconds ~/ 3600;
     final mins = (seconds % 3600) ~/ 60;
     if (hours > 0) {
-      return '$hours 小时 $mins 分钟';
+      // 累计值会长成「21 小时 14 分钟」九个字，挤在三等分的一列里会把
+      // 另外两列压窄；十小时以上收成小数小时（21.2 小时），精度够用也更整齐。
+      if (hours >= 10) {
+        final h = seconds / 3600;
+        final text = h.toStringAsFixed(1);
+        return '${text.endsWith('.0') ? h.toStringAsFixed(0) : text} 小时';
+      }
+      return '$hours 小时 $mins 分';
     }
     return '$mins 分钟';
   }
