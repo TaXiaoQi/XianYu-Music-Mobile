@@ -660,7 +660,7 @@ fn record_pipeline_diag(msg: &str) {
     }
 }
 
-fn take_pipeline_diag() -> String {
+pub fn take_pipeline_diag() -> String {
     let slot = PIPELINE_DIAG.get_or_init(|| Mutex::new(Vec::new()));
     match slot.lock() {
         Ok(mut g) => std::mem::take(&mut *g).join(" | "),
@@ -689,6 +689,11 @@ struct ExclusiveProgress {
     channels: AtomicU32,
     /// 源总时长（毫秒），供 Flutter 侧在 DSP 管线播放时更新进度条。
     duration_ms: AtomicU64,
+    /// 跳过静音累计丢弃的交错样本数（与 SilenceSkipProducer 共享同一计数器）。
+    /// 位置上报要把它加回去，UI 才停留在原曲时间轴上。
+    skipped_samples: Arc<AtomicU64>,
+    /// 无缝拼接次数：Dart 轮询到变化即知「已经切到下一首了」。
+    transition_seq: AtomicU64,
 }
 
 impl ExclusiveProgress {
@@ -698,6 +703,8 @@ impl ExclusiveProgress {
             sample_rate: AtomicU32::new(0),
             channels: AtomicU32::new(0),
             duration_ms: AtomicU64::new(0),
+            skipped_samples: Arc::new(AtomicU64::new(0)),
+            transition_seq: AtomicU64::new(0),
         }
     }
 }
@@ -720,6 +727,22 @@ enum ExclusiveCommand {
     SetSoundEffect(SoundEffectSettings),
     /// Bit-perfect 直出运行时切换：开启即绕过响度/EQ/音效/音量。
     SetBitPerfect(bool),
+    /// 跳过静音运行时切换（开关 + 阈值 + 保留时长），无需重启管线。
+    SetSkipSilence {
+        enabled: bool,
+        threshold_db: f32,
+        keep_ms: u32,
+    },
+    /// 预排下一首：格式与当前流一致时，当前曲 EOF 处直接接上（无缝）。
+    SetNext {
+        path: String,
+        stream_cache_url: Option<String>,
+        stream_cache_headers_json: Option<String>,
+    },
+    /// 取消预排（手动切歌/插队/seek 越界时用）。
+    CancelNext,
+    /// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭），运行期可改。
+    SetCrossfade(u32),
 }
 
 // =========================================================================
@@ -962,6 +985,54 @@ pub fn is_exclusive_bit_perfect() -> bool {
     false
 }
 
+/// 运行时切换跳过静音（开关 + 阈值 + 保留时长），不需要重启管线。
+pub fn set_exclusive_skip_silence(enabled: bool, threshold_db: f32, keep_ms: u32) {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::SetSkipSilence {
+                enabled,
+                threshold_db,
+                keep_ms,
+            });
+        }
+    }
+}
+
+/// 预排下一首用于无缝拼接；格式不一致或准备失败时自动退回普通切歌。
+pub fn set_exclusive_next(
+    path: String,
+    stream_cache_url: Option<String>,
+    stream_cache_headers_json: Option<String>,
+) {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::SetNext {
+                path,
+                stream_cache_url,
+                stream_cache_headers_json,
+            });
+        }
+    }
+}
+
+/// 取消预排（手动切歌 / 插队 / seek 越界时调用）。
+pub fn cancel_exclusive_next() {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::CancelNext);
+        }
+    }
+}
+
+/// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。运行期可改，不用重启管线。
+pub fn set_exclusive_crossfade(ms: u32) {
+    if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            let _ = playback.tx.send(ExclusiveCommand::SetCrossfade(ms));
+        }
+    }
+}
+
 pub fn is_exclusive_active() -> bool {
     if let Ok(guard) = instance().lock() {
         if let Some(playback) = guard.as_ref() {
@@ -975,10 +1046,12 @@ pub fn get_exclusive_position_secs() -> f64 {
     if let Ok(guard) = instance().lock() {
         if let Some(playback) = guard.as_ref() {
             let samples = playback.progress.samples_played.load(Ordering::Relaxed);
+            let skipped = playback.progress.skipped_samples.load(Ordering::Relaxed);
             let rate = playback.progress.sample_rate.load(Ordering::Relaxed);
             let channels = playback.progress.channels.load(Ordering::Relaxed).max(1);
             if rate > 0 {
-                return samples as f64 / (rate as f64 * channels as f64);
+                // 位置 = (已输出 + 被跳过的静音) / 帧率：跳过静音后仍是原曲时间轴
+                return (samples + skipped) as f64 / (rate as f64 * channels as f64);
             }
         }
     }
@@ -1008,7 +1081,7 @@ pub fn get_exclusive_channels() -> u16 {
 /// 供前端检测热插拔断开并自动回退到普通播放。
 /// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
 pub fn get_exclusive_device_info() -> String {
-    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms, last_error) =
+    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms, last_error, transition_seq) =
         if let Ok(guard) = instance().lock() {
             if let Some(playback) = guard.as_ref() {
                 (
@@ -1024,12 +1097,13 @@ pub fn get_exclusive_device_info() -> String {
                         .ok()
                         .and_then(|e| e.clone())
                         .unwrap_or_default(),
+                    playback.progress.transition_seq.load(Ordering::Relaxed),
                 )
             } else {
-                (false, String::new(), 0, 0, false, 0, String::new())
+                (false, String::new(), 0, 0, false, 0, String::new(), 0)
             }
         } else {
-            (false, String::new(), 0, 0, false, 0, String::new())
+            (false, String::new(), 0, 0, false, 0, String::new(), 0)
         };
     serde_json::json!({
         "active": active,
@@ -1039,6 +1113,7 @@ pub fn get_exclusive_device_info() -> String {
         "bitPerfect": bit_perfect,
         "durationSecs": duration_ms as f64 / 1000.0,
         "lastError": last_error,
+        "transitionSeq": transition_seq,
     })
     .to_string()
 }
@@ -1046,6 +1121,36 @@ pub fn get_exclusive_device_info() -> String {
 // =========================================================================
 // 工作线程
 // =========================================================================
+
+/// 准备「下一首」的采样来源（无缝拼接用）。
+///
+/// 目前只处理本地文件与直链：在线源需要 Dart 侧先解析直链并预热流缓存，
+/// 未预热时这里不阻塞等待（等不到反而拖慢切歌），直接退回普通切歌。
+fn prepare_next_source(
+    path: &str,
+    stream_cache_url: Option<&str>,
+    _stream_cache_headers: Option<&std::collections::HashMap<String, String>>,
+    skip_state: &Arc<crate::player::silence_skip::SkipSilenceState>,
+) -> Result<crate::player::queue_producer::PreparedSource, String> {
+    if stream_cache_url.is_some() {
+        return Err("在线源暂不走无缝拼接（需先预热流缓存）".to_string());
+    }
+    let decoder = SymphoniaDecoder::open(path, None, None)?;
+    let rate = decoder.sample_rate;
+    let channels = decoder.channels;
+    let duration = decoder.total_duration;
+    Ok(crate::player::queue_producer::PreparedSource {
+        producer: Box::new(crate::player::silence_skip::SilenceSkipProducer::new(
+            decoder,
+            channels,
+            rate,
+            skip_state.clone(),
+        )),
+        sample_rate: rate,
+        channels,
+        duration,
+    })
+}
 
 fn run_exclusive_playback(
     request: super::ExclusivePlayRequest,
@@ -1173,9 +1278,38 @@ fn run_exclusive_playback(
     };
     let downmix_active = playback_channels != source_channels;
 
+    // 跳过静音：状态与进度共享同一个「已跳过样本数」计数器。
+    let skip_state = Arc::new(crate::player::silence_skip::SkipSilenceState::new(
+        request.skip_silence_enabled,
+        request.skip_silence_threshold_db,
+        request.skip_silence_keep_ms,
+        progress.skipped_samples.clone(),
+    ));
+
     // 3. 创建 BufferedSource（后台预读取）
-    let mut buffered = BufferedSource::new(
+    // 解码器外面套两层：
+    //  - SilenceSkipProducer：静音段压到保留时长，位置按「已输出+已跳过」折算；
+    //  - QueueProducer：当前曲 EOF 时把预排好的下一首直接接上（无缝拼接）。
+    let skip_producer = crate::player::silence_skip::SilenceSkipProducer::new(
         decoder,
+        source_channels,
+        source_sample_rate,
+        skip_state.clone(),
+    );
+    let next_slot = crate::player::queue_producer::new_next_slot();
+    let transition = Arc::new(crate::player::queue_producer::TransitionState::new());
+    let producer = crate::player::queue_producer::QueueProducer::new(
+        Box::new(skip_producer),
+        source_sample_rate,
+        source_channels,
+        total_duration,
+        next_slot.clone(),
+        transition.clone(),
+    );
+    // 交叉淡入淡出的共享句柄：时长由 Dart 经运行期命令下发（默认 0 = 只做无缝）
+    let crossfade_ms = producer.crossfade_handle();
+    let mut buffered = BufferedSource::new(
+        producer,
         source_sample_rate,
         source_channels,
         total_duration,
@@ -1322,6 +1456,8 @@ fn run_exclusive_playback(
     // 9. 轮询循环
     let timeout_ns: i64 = 20_000_000; // 20ms
     let bytes_per_sample = device_format.bytes_per_sample();
+    // 无缝拼接次数（本地镜像），用于把「已切到下一首」通报给 Dart
+    let mut last_transition: u64 = 0;
 
     loop {
         // 检查命令
@@ -1353,6 +1489,9 @@ fn run_exclusive_playback(
                         (time_secs * source_sample_rate as f64 * playback_channels as f64) as u64,
                         Ordering::Relaxed,
                     );
+                    // 位置已改写到新点，跳过的静音计数要一起清零，
+                    // 否则位置会被上一段的跳过量抬高。
+                    progress.skipped_samples.store(0, Ordering::Relaxed);
                     visualizer.reset();
                 }
                 is_paused.store(!is_playing, Ordering::Relaxed);
@@ -1396,8 +1535,88 @@ fn run_exclusive_playback(
                 }
                 // 关闭直出：仅恢复绕过的 DSP 链，不改变暂停状态。
             }
+            Ok(ExclusiveCommand::SetSkipSilence {
+                enabled,
+                threshold_db,
+                keep_ms,
+            }) => {
+                skip_state.apply(enabled, threshold_db, keep_ms);
+                record_pipeline_diag(&format!(
+                    "skip_silence enabled={enabled} thr={threshold_db:.1}dB keep={keep_ms}ms"
+                ));
+            }
+            Ok(ExclusiveCommand::SetNext {
+                path,
+                stream_cache_url,
+                stream_cache_headers_json,
+            }) => {
+                // 开解码器是 I/O（本地文件也要读头部），不能在音频线程做：
+                // 丢到后台线程准备，就绪后写进交接槽，预读线程到 EOF 时取用。
+                let slot = next_slot.clone();
+                let skip_state = skip_state.clone();
+                let expect_rate = source_sample_rate;
+                let expect_channels = source_channels;
+                std::thread::spawn(move || {
+                    let headers: Option<std::collections::HashMap<String, String>> =
+                        stream_cache_headers_json
+                            .as_deref()
+                            .and_then(|s| serde_json::from_str(s).ok());
+                    match prepare_next_source(
+                        &path,
+                        stream_cache_url.as_deref(),
+                        headers.as_ref(),
+                        &skip_state,
+                    ) {
+                        Ok(prepared) => {
+                            if crate::player::queue_producer::can_splice(
+                                expect_rate,
+                                expect_channels,
+                                &prepared,
+                            ) {
+                                if let Ok(mut g) = slot.lock() {
+                                    *g = Some(prepared);
+                                }
+                                record_pipeline_diag(&format!("next ready: {path}"));
+                            } else {
+                                // 格式不一致只能普通切歌：不放槽，Dart 走曲终流程
+                                record_pipeline_diag(&format!(
+                                    "next declined (format mismatch {}/{} vs {}/{}): {path}",
+                                    prepared.sample_rate,
+                                    prepared.channels,
+                                    expect_rate,
+                                    expect_channels
+                                ));
+                            }
+                        }
+                        Err(e) => record_pipeline_diag(&format!("next prepare failed: {e}")),
+                    }
+                });
+            }
+            Ok(ExclusiveCommand::CancelNext) => {
+                if let Ok(mut g) = next_slot.lock() {
+                    *g = None;
+                }
+            }
+            Ok(ExclusiveCommand::SetCrossfade(ms)) => {
+                crossfade_ms.store(ms as u64, Ordering::Relaxed);
+                record_pipeline_diag(&format!("crossfade {ms}ms"));
+            }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
+        }
+
+        // 无缝拼接已发生：进度重定位到新曲起点，并把次数通报给 Dart
+        let tseq = transition.seq.load(Ordering::Relaxed);
+        if tseq != last_transition {
+            last_transition = tseq;
+            progress.samples_played.store(0, Ordering::Relaxed);
+            progress.skipped_samples.store(0, Ordering::Relaxed);
+            let d = transition.duration_ms.load(Ordering::Relaxed);
+            if d > 0 {
+                progress.duration_ms.store(d, Ordering::Relaxed);
+            }
+            progress.transition_seq.store(tseq, Ordering::Relaxed);
+            record_pipeline_diag(&format!("gapless splice #{tseq}"));
         }
 
         if is_paused.load(Ordering::Relaxed) {
@@ -1662,11 +1881,16 @@ fn run_dsd_passthrough(
                 // DSD 原生直出天然 bit-perfect，保持状态开启。
                 bit_perfect.store(true, Ordering::Relaxed);
             }
-            // DSD 直出下音量、增益、EQ 与音效均被绕过，命令直接忽略。
+            // DSD 直出下音量、增益、EQ、音效、跳过静音与无缝预排均被绕过，
+            // 命令直接忽略（DoP 直通要求样本逐帧对齐，剪静音/拼接都会破坏）。
             Ok(ExclusiveCommand::SetVolume(_))
             | Ok(ExclusiveCommand::SetVolumeBalanceGain(_))
             | Ok(ExclusiveCommand::SetEqualizer(_))
-            | Ok(ExclusiveCommand::SetSoundEffect(_)) => {}
+            | Ok(ExclusiveCommand::SetSoundEffect(_))
+            | Ok(ExclusiveCommand::SetSkipSilence { .. })
+            | Ok(ExclusiveCommand::SetNext { .. })
+            | Ok(ExclusiveCommand::CancelNext)
+            | Ok(ExclusiveCommand::SetCrossfade(_)) => {}
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
         }

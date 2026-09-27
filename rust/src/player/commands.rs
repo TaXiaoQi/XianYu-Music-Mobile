@@ -30,6 +30,10 @@ pub enum PlaybackCommand {
         stream_cache_url: Option<String>,
         /// 流缓存直链上游请求头（冷启动下载用）。
         stream_cache_headers: Option<std::collections::HashMap<String, String>>,
+        /// 跳过静音初始参数（管线启动时生效，运行期可再改）。
+        skip_silence_enabled: bool,
+        skip_silence_threshold_db: f32,
+        skip_silence_keep_ms: u32,
     },
     /// 暂停（保持进度）。
     Pause,
@@ -49,6 +53,22 @@ pub enum PlaybackCommand {
     SetSoundEffect(String),
     /// 运行时切换 Bit-perfect 直出（绕过响度/EQ/音效/音量）。
     SetBitPerfect(bool),
+    /// 跳过静音开关/阈值/保留时长（运行期切换，无需重启管线）。
+    SetSkipSilence {
+        enabled: bool,
+        threshold_db: f32,
+        keep_ms: u32,
+    },
+    /// 预排下一首（无缝拼接）。
+    SetNext {
+        path: String,
+        stream_cache_url: Option<String>,
+        stream_cache_headers_json: Option<String>,
+    },
+    /// 取消预排。
+    CancelNext,
+    /// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。
+    SetCrossfade(u32),
 }
 
 /// 统一分发入口。
@@ -70,6 +90,9 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
             shared_mode,
             stream_cache_url,
             stream_cache_headers,
+            skip_silence_enabled,
+            skip_silence_threshold_db,
+            skip_silence_keep_ms,
         } => {
             let request = output::ExclusivePlayRequest {
                 path,
@@ -85,6 +108,9 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
                 shared_mode,
                 stream_cache_url,
                 stream_cache_headers,
+                skip_silence_enabled,
+                skip_silence_threshold_db,
+                skip_silence_keep_ms,
             };
             output::start_exclusive_playback(request)
         }
@@ -122,6 +148,30 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
         }
         PlaybackCommand::SetBitPerfect(enabled) => {
             output::set_exclusive_bit_perfect(enabled);
+            Ok(String::new())
+        }
+        PlaybackCommand::SetSkipSilence {
+            enabled,
+            threshold_db,
+            keep_ms,
+        } => {
+            output::set_exclusive_skip_silence(enabled, threshold_db, keep_ms);
+            Ok(String::new())
+        }
+        PlaybackCommand::SetNext {
+            path,
+            stream_cache_url,
+            stream_cache_headers_json,
+        } => {
+            output::set_exclusive_next(path, stream_cache_url, stream_cache_headers_json);
+            Ok(String::new())
+        }
+        PlaybackCommand::CancelNext => {
+            output::cancel_exclusive_next();
+            Ok(String::new())
+        }
+        PlaybackCommand::SetCrossfade(ms) => {
+            output::set_exclusive_crossfade(ms);
             Ok(String::new())
         }
     }

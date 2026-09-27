@@ -365,6 +365,11 @@ class PlaybackState {
   final String? currentQuality;
   final List<String> availableQualities;
   final bool qualityMenuProbing;
+  /// 当前 Rust 管线的**输出**采样率/声道数（0=未知）；来自 AAudio 流实际参数。
+  final int outSampleRate;
+  final int outChannels;
+  /// 当前是否 bit-perfect 直出（输出与源一致、未经响度/EQ/音效/音量）。
+  final bool outBitPerfect;
   const PlaybackState({
     this.current,
     this.queue = const [],
@@ -380,6 +385,9 @@ class PlaybackState {
     this.currentQuality,
     this.availableQualities = const [],
     this.qualityMenuProbing = false,
+    this.outSampleRate = 0,
+    this.outChannels = 0,
+    this.outBitPerfect = false,
   });
 
   PlaybackState copyWith({
@@ -397,6 +405,9 @@ class PlaybackState {
     String? currentQuality,
     List<String>? availableQualities,
     bool? qualityMenuProbing,
+    int? outSampleRate,
+    int? outChannels,
+    bool? outBitPerfect,
   }) {
     return PlaybackState(
       current: current ?? this.current,
@@ -414,6 +425,9 @@ class PlaybackState {
       availableQualities: availableQualities ?? this.availableQualities,
       qualityMenuProbing:
           qualityMenuProbing ?? this.qualityMenuProbing,
+      outSampleRate: outSampleRate ?? this.outSampleRate,
+      outChannels: outChannels ?? this.outChannels,
+      outBitPerfect: outBitPerfect ?? this.outBitPerfect,
     );
   }
 }
@@ -558,6 +572,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   double? _restoredOnlinePending;
   double? _restoredLocalPending;
+  /// 已预排给 Rust 的「下一首」下标（-1 = 未预排）；无缝拼接发生时按它推进队列。
+  int _gaplessNextIndex = -1;
+  /// 已预排的路径，避免对同一首重复下发预排。
+  String? _gaplessNextPath;
+  /// 最近一次看到的无缝拼接次数（来自 device_info 的 transitionSeq）。
+  int _lastTransitionSeq = 0;
   DateTime? _trackStartTime;
   double _accumulatedTime = 0;
   bool _currentPlayCountRecorded = false;
@@ -740,6 +760,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _applyEffectSpeedPitch(s);
       _syncExclusiveEffects(s);
     });
+    // 跳过静音：设置一改就下发给正在跑的 Rust 管线；管线没起来时不发，
+    // 起播时会随启动请求一起带上（见 _tryStartExclusive/_tryStartDspPipeline）。
+    _ref.listen(
+      settingsProvider.select((s) => (
+            s.valueOrNull?.skipSilenceEnabled ?? false,
+            s.valueOrNull?.skipSilenceThresholdDb ?? -45.0,
+            s.valueOrNull?.skipSilenceKeepMs ?? 500,
+          )),
+      (prev, next) {
+        if (prev == next) return;
+        _pushSkipSilence(next.$1, next.$2, next.$3);
+      },
+    );
+    // 曲间淡入淡出：设置一变就下发给正在跑的管线；管线没起来时不发，
+    // 起播后 _startExclusivePolling 会补齐（见 _pushCrossfade）。
+    _ref.listen(
+      settingsProvider.select((s) => (
+            s.valueOrNull?.crossfadeEnabled ?? false,
+            s.valueOrNull?.crossfadeSeconds ?? 5,
+          )),
+      (prev, next) {
+        if (prev == next) return;
+        _pushCrossfade(next.$1, next.$2);
+      },
+    );
     _ref.listen(favoritesProvider, (_, _) {
       _syncToSystemMediaSession();
     });
@@ -907,6 +952,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         bitPerfect: bitPerfect,
         dsdNativePassthrough: dsd,
         sharedMode: false,
+        // 跳过静音：独占直出时也走解码器外层包装，直出照样能剪静音
+        skipSilenceEnabled: settings?.skipSilenceEnabled ?? false,
+        skipSilenceThresholdDb: settings?.skipSilenceThresholdDb ?? -45.0,
+        skipSilenceKeepMs: settings?.skipSilenceKeepMs ?? 500,
       );
       state = state.copyWith(usbExclusive: true, isPlaying: isPlaying);
       _startExclusivePolling();
@@ -959,6 +1008,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         streamCacheHeaders: streamCacheHeaders == null
             ? null
             : jsonEncode(streamCacheHeaders),
+        skipSilenceEnabled: settings?.skipSilenceEnabled ?? false,
+        skipSilenceThresholdDb: settings?.skipSilenceThresholdDb ?? -45.0,
+        skipSilenceKeepMs: settings?.skipSilenceKeepMs ?? 500,
       );
       state = state.copyWith(usbExclusive: false, dspActive: true, isPlaying: isPlaying);
       _startExclusivePolling();
@@ -979,13 +1031,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       await stopUsbExclusivePlayback();
     } catch (_) {}
-    if (state.usbExclusive || state.dspActive) {
-      state = state.copyWith(usbExclusive: false, dspActive: false);
+    // 管线没了，预排的下一首与过渡计数一并作废
+    _gaplessNextIndex = -1;
+    _gaplessNextPath = null;
+    _lastTransitionSeq = 0;
+    if (state.usbExclusive ||
+        state.dspActive ||
+        state.outSampleRate != 0 ||
+        state.outChannels != 0 ||
+        state.outBitPerfect) {
+      state = state.copyWith(
+        usbExclusive: false,
+        dspActive: false,
+        // 回退到 ExoPlayer 后输出参数不再来自 AAudio，清掉避免显示过期格式
+        outSampleRate: 0,
+        outChannels: 0,
+        outBitPerfect: false,
+      );
     }
   }
 
   void _startExclusivePolling() {
     _stopExclusivePolling();
+    // 新会话的管线侧配置是默认值：把交叉时长补上（默认关 → 0）
+    final s = _ref.read(settingsProvider).valueOrNull;
+    _pushCrossfade(s?.crossfadeEnabled ?? false, s?.crossfadeSeconds ?? 5);
     _exclusiveTimer = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) => _pollExclusive(),
@@ -995,6 +1065,26 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   void _stopExclusivePolling() {
     _exclusiveTimer?.cancel();
     _exclusiveTimer = null;
+  }
+
+  /// 下发曲间交叉淡入淡出时长（未接管时忽略；关闭 = 0）。
+  void _pushCrossfade(bool enabled, int seconds) {
+    if (!state.usbExclusive && !state.dspActive) return;
+    try {
+      setUsbExclusiveCrossfade(ms: enabled ? (seconds * 1000) : 0);
+    } catch (_) {}
+  }
+
+  /// 下发跳过静音参数到 Rust 管线（未接管时忽略）。
+  void _pushSkipSilence(bool enabled, double thresholdDb, int keepMs) {
+    if (!state.usbExclusive && !state.dspActive) return;
+    try {
+      setUsbExclusiveSkipSilence(
+        enabled: enabled,
+        thresholdDb: thresholdDb,
+        keepMs: keepMs,
+      );
+    } catch (_) {}
   }
 
   Future<void> _pollExclusive() async {
@@ -1011,7 +1101,36 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       if (engineDur > 0) {
         state = state.copyWith(duration: engineDur);
       }
+      // 输出格式（AAudio 流实际参数）：质量指示要显示「源 → 输出」，
+      // 只有拿到真实输出采样率才能判断有没有重采样。
+      final outRate = (info['sampleRate'] as num?)?.toInt() ?? 0;
+      final outCh = (info['channels'] as num?)?.toInt() ?? 0;
+      final outBp = info['bitPerfect'] == true;
+      if (state.outSampleRate != outRate ||
+          state.outChannels != outCh ||
+          state.outBitPerfect != outBp) {
+        state = state.copyWith(
+          outSampleRate: outRate,
+          outChannels: outCh,
+          outBitPerfect: outBp,
+        );
+      }
+      // 管线关键事件（seek / 预排就绪 / 无缝拼接 / 交叉时长 / 跳过静音切换）：
+      // Rust 侧「取出即清空」，所以只有真发生事件时才非空，不会刷屏。
+      // 作用是让这几项在真机上可从日志核对，而不是只能靠耳朵判断。
+      final diag = await takeUsbExclusivePipelineDiag();
+      if (diag.isNotEmpty) {
+        AppLog.info('play', '[dsp-diag] $diag');
+      }
       final dur = state.duration;
+      // 无缝拼接已发生：Rust 侧已经接上下一首，这里只把队列/UI 推进过去，
+      // 绝不能重启管线（重启就又出缝了）。
+      final tseq = (info['transitionSeq'] as num?)?.toInt() ?? 0;
+      if (tseq != _lastTransitionSeq) {
+        _lastTransitionSeq = tseq;
+        await _onGaplessTransition();
+        return;
+      }
       if (info['active'] != true) {
         final lastErr = (info['lastError'] as String?)?.trim() ?? '';
         AppLog.warn('play',
@@ -1025,7 +1144,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       if (dur > 0 && pos >= dur - 0.3) {
         await _onExclusiveTrackEnd();
+        return;
       }
+      // 快播完了就把下一首预排给 Rust（本地/直链才预排）
+      _maybeQueueGaplessNext();
     } catch (_) {}
   }
 
@@ -1057,6 +1179,80 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     await _playAt(next);
+  }
+
+  /// 剩余不多时把「下一首」预排给 Rust：播完直接接上，不重启管线。
+  ///
+  /// 只预排本地文件；在线源需要 Dart 先解析直链并预热流缓存（后续再做），
+  /// 这里不下发，让它走普通切歌，不会更差。
+  void _maybeQueueGaplessNext() {
+    if (!state.usbExclusive && !state.dspActive) return;
+    final gapless =
+        _ref.read(settingsProvider).valueOrNull?.gaplessEnabled ?? true;
+    if (!gapless) return;
+    if (_gaplessNextIndex >= 0) return; // 已预排
+    final dur = state.duration;
+    if (dur <= 0) return;
+    if (dur - state.position > 15) return; // 还早，等下一轮轮询再看
+    final queue = state.queue;
+    if (queue.isEmpty) return;
+    final int next;
+    if (state.playMode == 1) {
+      next = state.queueIndex; // 单曲循环：无缝重来
+    } else {
+      // 注意：随机模式下这里会消费一次随机队列，所以结果必须缓存下来，
+      // 过渡时直接用它，不能再算一次。
+      next = _pickNextIndex();
+    }
+    if (next < 0 || next >= queue.length) return;
+    final item = queue[next];
+    if (item.isOnline || _isRemotePath(item.path)) return;
+    if (item.path.startsWith('http')) return; // 直链留给后续（需预热流缓存）
+    _gaplessNextIndex = next;
+    _gaplessNextPath = item.path;
+    try {
+      setUsbExclusiveNext(path: item.path);
+      AppLog.info('play', '[gapless] 预排下一首 index=$next path=${item.path}');
+    } catch (e) {
+      _gaplessNextIndex = -1;
+      _gaplessNextPath = null;
+      AppLog.warn('play', '[gapless] 预排下发失败: $e');
+    }
+  }
+
+  /// Rust 侧已无缝接上下一首：只推进 Dart 状态，不碰管线（一碰就又出缝）。
+  Future<void> _onGaplessTransition() async {
+    final queue = state.queue;
+    final target = _gaplessNextIndex;
+    _gaplessNextIndex = -1;
+    _gaplessNextPath = null;
+    if (target < 0 || target >= queue.length) {
+      // 没预排却收到过渡（理论上不会发生）：按曲终兜底，避免状态停在旧曲
+      AppLog.warn('play', '[gapless] 过渡回调缺少预排下标，按曲终兜底');
+      await _onExclusiveTrackEnd();
+      return;
+    }
+    final ended = state.current;
+    if (ended != null) _reportBehavior(ended, 'complete', 0);
+    _flushPlayStats();
+    final item = queue[target];
+    _currentPlayCountRecorded = false;
+    _accumulatedTime = 0;
+    AppLog.info('play', '[gapless] 已无缝接上 index=$target title=${item.title}');
+    state = state.copyWith(
+      queueIndex: target,
+      current: item,
+      position: 0,
+      duration: item.durationMs / 1000.0,
+      isPlaying: true,
+      error: null,
+    );
+    _reportBehavior(item, 'play', 0);
+    _recordRecentPlay(item);
+    _recordHistory(item);
+    _trackStartTime = DateTime.now();
+    _syncToSystemMediaSession();
+    unawaited(Future(() => _preloadQueueCovers()));
   }
 
   void _syncExclusiveEffects(SoundEffectSettings s) {

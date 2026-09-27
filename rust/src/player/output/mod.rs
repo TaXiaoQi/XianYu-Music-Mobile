@@ -51,6 +51,16 @@ pub struct ExclusivePlayRequest {
     /// 条目时忽略。
     #[serde(default)]
     pub stream_cache_headers: Option<std::collections::HashMap<String, String>>,
+    /// 跳过静音初始开关（Dart 起播后也会用 `set_exclusive_skip_silence`
+    /// 下发一次，这里只作为管线启动时的初值）。
+    #[serde(default)]
+    pub skip_silence_enabled: bool,
+    /// 静音判定阈值（dBFS，负值；默认 -45）
+    #[serde(default)]
+    pub skip_silence_threshold_db: f32,
+    /// 静音段保留时长（毫秒；默认 500）
+    #[serde(default)]
+    pub skip_silence_keep_ms: u32,
 }
 
 // =========================================================================
@@ -166,6 +176,66 @@ pub fn set_exclusive_bit_perfect(enabled: bool) {
     #[cfg(not(target_os = "android"))]
     {
         let _ = enabled;
+    }
+}
+
+/// 运行时切换跳过静音（开关 + 阈值 dBFS + 保留时长 ms），不需要重启管线。
+pub fn set_exclusive_skip_silence(enabled: bool, threshold_db: f32, keep_ms: u32) {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::set_exclusive_skip_silence(enabled, threshold_db, keep_ms);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (enabled, threshold_db, keep_ms);
+    }
+}
+
+/// 预排下一首用于无缝拼接（格式不一致/准备失败时退回普通切歌）。
+pub fn set_exclusive_next(
+    path: String,
+    stream_cache_url: Option<String>,
+    stream_cache_headers_json: Option<String>,
+) {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::set_exclusive_next(path, stream_cache_url, stream_cache_headers_json);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (path, stream_cache_url, stream_cache_headers_json);
+    }
+}
+
+/// 取消预排。
+pub fn cancel_exclusive_next() {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::cancel_exclusive_next();
+    }
+}
+
+/// 取出并清空管线诊断（seek / 无缝拼接 / 交叉 / 跳过静音等关键事件）。
+pub fn take_exclusive_pipeline_diag() -> String {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::take_pipeline_diag()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        String::new()
+    }
+}
+
+/// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。
+pub fn set_exclusive_crossfade(ms: u32) {
+    #[cfg(target_os = "android")]
+    {
+        android_aaudio::set_exclusive_crossfade(ms);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = ms;
     }
 }
 

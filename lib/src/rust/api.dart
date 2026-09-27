@@ -774,6 +774,9 @@ Future<String> startUsbExclusivePlayback({
   required bool sharedMode,
   String? streamCacheUrl,
   String? streamCacheHeaders,
+  required bool skipSilenceEnabled,
+  required double skipSilenceThresholdDb,
+  required int skipSilenceKeepMs,
 }) => RustLib.instance.api.crateApiStartUsbExclusivePlayback(
   path: path,
   deviceId: deviceId,
@@ -788,6 +791,9 @@ Future<String> startUsbExclusivePlayback({
   sharedMode: sharedMode,
   streamCacheUrl: streamCacheUrl,
   streamCacheHeaders: streamCacheHeaders,
+  skipSilenceEnabled: skipSilenceEnabled,
+  skipSilenceThresholdDb: skipSilenceThresholdDb,
+  skipSilenceKeepMs: skipSilenceKeepMs,
 );
 
 /// 停止 USB 独占播放并释放设备。
@@ -835,9 +841,47 @@ Future<void> setUsbExclusiveSoundEffect({required String settingsJson}) =>
 Future<void> setUsbExclusiveBitPerfect({required bool enabled}) =>
     RustLib.instance.api.crateApiSetUsbExclusiveBitPerfect(enabled: enabled);
 
+/// 运行时切换跳过静音：静音段只保留 `keep_ms`，多出来的丢掉。
+/// 位置上报会把丢掉的时长加回去，所以进度条仍按原曲时间轴走。
+Future<void> setUsbExclusiveSkipSilence({
+  required bool enabled,
+  required double thresholdDb,
+  required int keepMs,
+}) => RustLib.instance.api.crateApiSetUsbExclusiveSkipSilence(
+  enabled: enabled,
+  thresholdDb: thresholdDb,
+  keepMs: keepMs,
+);
+
+/// 预排下一首：格式与当前流一致时，当前曲播完直接接上（无缝），
+/// 不一致或准备失败会自动退回普通切歌，不需要前端处理。
+Future<void> setUsbExclusiveNext({
+  required String path,
+  String? streamCacheUrl,
+  String? streamCacheHeadersJson,
+}) => RustLib.instance.api.crateApiSetUsbExclusiveNext(
+  path: path,
+  streamCacheUrl: streamCacheUrl,
+  streamCacheHeadersJson: streamCacheHeadersJson,
+);
+
+/// 取消预排（手动切歌/插队/seek 越界时调用）。
+Future<void> cancelUsbExclusiveNext() =>
+    RustLib.instance.api.crateApiCancelUsbExclusiveNext();
+
+/// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。运行期可改，不用重启管线。
+Future<void> setUsbExclusiveCrossfade({required int ms}) =>
+    RustLib.instance.api.crateApiSetUsbExclusiveCrossfade(ms: ms);
+
 /// 当前独占播放是否处于 Bit-perfect 直出状态。
 Future<bool> getUsbExclusiveBitPerfect() =>
     RustLib.instance.api.crateApiGetUsbExclusiveBitPerfect();
+
+/// 取出并清空当前管线的诊断信息（seek/拼接/交叉/跳过静音等关键事件）。
+///
+/// 供前端在排查「无缝/淡入淡出/跳静音有没有真的生效」时打日志用。
+Future<String> takeUsbExclusivePipelineDiag() =>
+    RustLib.instance.api.crateApiTakeUsbExclusivePipelineDiag();
 
 /// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出设备。
 Future<String> getUsbExclusiveDeviceInfo() =>
