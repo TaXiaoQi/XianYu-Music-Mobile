@@ -106,7 +106,9 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
       _zeroStreak++;
     } else {
       _zeroStreak = 0;
-      _synth = false;
+      // 系统 progress 有噪声（0→微值→0 抖动）。单帧微值就关 synth 会让页面在
+      // touch 合成进度与系统微进度之间逐帧横跳（抽搐），只在系统真正接管时交还。
+      if (p > 0.02) _synth = false;
     }
     if (_updateCount == 1) {
       AppLog.debug('backgesture',

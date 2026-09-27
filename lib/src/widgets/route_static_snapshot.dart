@@ -93,7 +93,8 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       );
     } catch (e) {
       img = null;
-      if (e.toString().contains('debugNeedsPaint') && attempt < 2 && mounted) {
+      if (attempt < 2 && mounted) {
+        // push 后首帧图层未就绪时 toImage 可能抛空断言，不只 debugNeedsPaint 一种
         _capturing = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _capture(attempt: attempt + 1);
