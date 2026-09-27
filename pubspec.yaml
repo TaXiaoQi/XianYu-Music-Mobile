@@ -169,6 +169,7 @@ flutter:
 
   assets:
     - assets/icon/
+    - assets/mascot/
 
   shaders:
     - assets/shaders/liquid_wave.frag
