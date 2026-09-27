@@ -933,48 +933,60 @@ class SearchIdleView extends ConsumerWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomInset),
       children: [
-        Row(
-          children: [
-            Icon(Icons.history, size: 18, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Text(
-              tr('搜索历史'),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const Spacer(),
-            if (history.isNotEmpty)
-              InkWell(
-                onTap: () =>
-                    ref.read(searchHistoryProvider.notifier).clear(),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
-                  child: Text(
-                    tr('清空'),
+        _IdleCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.history, size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Text(
+                    tr('搜索历史'),
                     style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
+                  const Spacer(),
+                  if (history.isNotEmpty)
+                    InkWell(
+                      onTap: () =>
+                          ref.read(searchHistoryProvider.notifier).clear(),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: Text(
+                          tr('清空'),
+                          style: TextStyle(
+                              fontSize: 12, color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
+              const SizedBox(height: 12),
+              if (history.isEmpty)
+                Text(
+                  tr('暂无搜索历史'),
+                  style: TextStyle(fontSize: 13, color: scheme.outline),
+                )
+              else
+                // 一条一个胶囊：比"每条占一整行"省下大半屏，删除按钮也就在词条旁边
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final kw in history)
+                      _HistoryTile(keyword: kw, onTap: onSearch),
+                  ],
+                ),
+            ],
+          ),
         ),
-        const SizedBox(height: 12),
-        if (history.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              tr('暂无搜索历史'),
-              style: TextStyle(fontSize: 13, color: scheme.outline),
-            ),
-          )
-        else
-          for (final kw in history) _HistoryTile(keyword: kw, onTap: onSearch),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
 
         if (loggedIn) ...[
           Row(
@@ -1024,6 +1036,27 @@ class SearchIdleView extends ConsumerWidget {
   }
 }
 
+/// 搜索页空闲态的分组卡片：两段内容（历史/热搜）用同一套圆角容器，
+/// 与个人中心统计卡观感一致。
+class _IdleCard extends StatelessWidget {
+  const _IdleCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _HistoryTile extends ConsumerWidget {
   const _HistoryTile({required this.keyword, required this.onTap});
 
@@ -1033,34 +1066,37 @@ class _HistoryTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 胶囊标签：词条与删除按钮挨着，整行高度也从 ~40px 降到 ~32px
     return InkWell(
       onTap: () => onTap(keyword),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(999),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 148),
               child: Text(
                 keyword,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 14, color: scheme.onSurface),
+                style: TextStyle(fontSize: 13, color: scheme.onSurface),
               ),
             ),
+            const SizedBox(width: 2),
             InkWell(
               onTap: () => ref
                   .read(searchHistoryProvider.notifier)
                   .remove(keyword),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(999),
               child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.close,
-                  size: 16,
-                  color: scheme.outline,
-                ),
+                padding: const EdgeInsets.all(3),
+                child: Icon(Icons.close, size: 14, color: scheme.outline),
               ),
             ),
           ],
