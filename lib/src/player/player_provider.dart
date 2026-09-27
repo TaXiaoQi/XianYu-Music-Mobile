@@ -785,6 +785,21 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _pushCrossfade(next.$1, next.$2);
       },
     );
+    // 关掉「无缝播放」时要把已预排的下一首撤掉：否则槽里那一首还会被拼接，
+    // 表现为「开关关了但当场不生效」（开关只影响下一次预排）。
+    _ref.listen(
+      settingsProvider.select((s) => s.valueOrNull?.gaplessEnabled ?? true),
+      (prev, next) {
+        if (prev == next || next) return;
+        _gaplessNextIndex = -1;
+        _gaplessNextPath = null;
+        if (state.usbExclusive || state.dspActive) {
+          try {
+            cancelUsbExclusiveNext();
+          } catch (_) {}
+        }
+      },
+    );
     _ref.listen(favoritesProvider, (_, _) {
       _syncToSystemMediaSession();
     });

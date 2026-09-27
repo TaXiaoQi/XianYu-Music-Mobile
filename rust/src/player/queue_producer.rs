@@ -76,6 +76,8 @@ pub struct QueueProducer {
     /// 本次交叉的总帧数与已完成帧数。
     crossfade_total: u64,
     crossfade_done: u64,
+    /// 混音时 A 一侧多出来的样本（两个源块长不等时留到下一轮，不能丢）。
+    mix_carry: Vec<f32>,
 }
 
 impl QueueProducer {
@@ -99,6 +101,7 @@ impl QueueProducer {
             mixing: None,
             crossfade_total: 0,
             crossfade_done: 0,
+            mix_carry: Vec::new(),
         }
     }
 
@@ -154,17 +157,27 @@ impl QueueProducer {
     fn mix_step(&mut self, max_samples: usize) -> Option<Vec<f32>> {
         let ch = self.channels.max(1) as usize;
         let want = ((max_samples / ch).max(1)) * ch;
-        let a = match self.cur.produce(want) {
-            Some(a) if !a.is_empty() => a,
-            _ => {
-                // A 比交叉窗更早结束：把下一首放回槽里，让拼接路径正常接上
-                if let (Some(p), Ok(mut g)) = (self.mixing.take(), self.slot.lock()) {
-                    *g = Some(p);
+        // A：优先用掉上一轮多出来的样本（两源块长不等时不能丢）
+        let a = if self.mix_carry.is_empty() {
+            match self.cur.produce(want) {
+                Some(a) if !a.is_empty() => a,
+                _ => {
+                    // A 比交叉窗更早结束：把下一首放回槽里，让拼接路径正常接上
+                    if let (Some(p), Ok(mut g)) = (self.mixing.take(), self.slot.lock()) {
+                        *g = Some(p);
+                    }
+                    return None;
                 }
-                return None;
             }
+        } else {
+            std::mem::take(&mut self.mix_carry)
         };
-        let b = match self.mixing.as_mut().and_then(|m| m.producer.produce(want)) {
+        // B 按 A 的样本数取（生产者契约不会超发），取少了就以短的为准
+        let b = match self
+            .mixing
+            .as_mut()
+            .and_then(|m| m.producer.produce(a.len()))
+        {
             Some(b) if !b.is_empty() => b,
             // 下一首意外提前结束：放弃交叉，直接交出 A
             _ => {
@@ -174,6 +187,10 @@ impl QueueProducer {
             }
         };
         let n = (a.len() / ch).min(b.len() / ch);
+        // A 多出来的尾巴留到下一轮，丢掉就是丢样本
+        if a.len() > n * ch {
+            self.mix_carry = a[n * ch..].to_vec();
+        }
         let tail = self.crossfade_total.max(1) as f32;
         let mut out = Vec::with_capacity(n * ch);
         for f in 0..n {
@@ -204,6 +221,7 @@ impl QueueProducer {
             }
             self.crossfade_total = 0;
             self.crossfade_done = 0;
+            self.mix_carry.clear();
         }
         Some(out)
     }
@@ -238,6 +256,10 @@ impl QueueProducer {
                 self.channels = p.channels;
                 self.duration = p.duration;
                 self.cur = p.producer;
+                // 帧计数必须跟着归零到新曲起点：否则「尾段判定」以为还在曲尾，
+                // 一旦槽里又排了下一首，会立刻把它交叉混进来（新曲刚开头就被换掉）。
+                self.frames_emitted = 0;
+                self.mix_carry.clear();
                 if let Some(d) = p.duration {
                     self.transition
                         .duration_ms
@@ -283,7 +305,21 @@ impl BlockProducer for QueueProducer {
     }
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), String> {
-        // 拼接后 cur 已是新曲，seek 自然作用在正确的源上
+        // 交叉途中 seek：用户跳走了，进行中的交叉没有意义——中止它，并把已经
+        // 取出的下一首退回槽里（等新位置播完照常拼接）。
+        if let Some(p) = self.mixing.take() {
+            if let Ok(mut g) = self.slot.lock() {
+                if g.is_none() {
+                    *g = Some(p);
+                }
+            }
+            self.crossfade_total = 0;
+            self.crossfade_done = 0;
+            self.mix_carry.clear();
+        }
+        // 帧计数跟着跳到新位置：否则向后 seek 后尾段判定仍以为「快播完了」，
+        // 会立刻又进入交叉。
+        self.frames_emitted = (pos.as_millis() as u64 * self.sample_rate as u64) / 1000;
         self.cur.try_seek(pos)
     }
 }
@@ -500,6 +536,152 @@ mod tests {
         let out = drain_all(&mut p);
         assert_eq!(out.len() / 2, 500);
         assert_eq!(transition.seq.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn crossfade_handles_current_ending_inside_window() {
+        // A 在交叉窗内提前结束（尾段判定有块粒度误差时会落到这条路径）：
+        // 要求不丢样本、不重复计过渡，接缝处直接续上 B。
+        let slot = new_next_slot();
+        *slot.lock().unwrap() = Some(PreparedSource {
+            producer: Box::new(ConstProducer::new(1000, 2, 2.0)),
+            sample_rate: 1000,
+            channels: 2,
+            duration: Some(Duration::from_millis(1000)),
+        });
+        let transition = Arc::new(TransitionState::new());
+        // A 实际只有 850 帧，但时长元数据仍是 1000ms → 交叉从第 800 帧开始，
+        // A 在窗内（只剩 50 帧）就结束了
+        let mut p = QueueProducer::new(
+            Box::new(ConstProducer::new(850, 2, 1.0)),
+            1000,
+            2,
+            Some(Duration::from_millis(1000)),
+            slot,
+            transition.clone(),
+        );
+        p.set_crossfade(Duration::from_millis(200));
+        let out = drain_all(&mut p);
+        let frames = out.len() / 2;
+        // 800（窗内混音前）+ 50（交叉段）+ 950（B 余下）= 1800，样本一个不丢
+        assert_eq!(frames, 1800, "实得 {frames} 帧");
+        assert_eq!(
+            transition.seq.load(Ordering::Relaxed),
+            1,
+            "应恰好一次过渡，不能因为窗内结束而重复计"
+        );
+        assert_eq!(out[(frames - 1) * 2], 2.0, "末尾应已切换到下一首");
+    }
+
+    #[test]
+    fn splice_resets_frame_counter_so_next_crossfade_waits() {
+        // 纯拼接（不是交叉提升）也要把帧计数重置到新曲起点。
+        // 否则接上 B 之后，「尾段判定」仍以为在曲尾，一旦槽里又有 C，
+        // 会立刻把 C 交叉混进来（B 才刚开头就被换掉）。
+        let slot = new_next_slot();
+        let b_frames = 1000usize;
+        *slot.lock().unwrap() = Some(PreparedSource {
+            producer: Box::new(ConstProducer::new(b_frames, 2, 2.0)),
+            sample_rate: 1000,
+            channels: 2,
+            duration: Some(Duration::from_millis(1000)),
+        });
+        let transition = Arc::new(TransitionState::new());
+        // A 只有 850 帧 → 交叉从 800 帧开始、A 在窗内结束 → 走纯拼接路径
+        let mut p = QueueProducer::new(
+            Box::new(ConstProducer::new(850, 2, 1.0)),
+            1000,
+            2,
+            Some(Duration::from_millis(1000)),
+            slot.clone(),
+            transition.clone(),
+        );
+        p.set_crossfade(Duration::from_millis(200));
+        // drain 到拼接完（A 850 帧 + 交叉段消耗的 B 帧之后，进入纯 B）
+        let mut produced = 0usize;
+        while produced < 900 {
+            let b = p.produce(16).expect("应有样本");
+            produced += b.len() / 2;
+        }
+        assert_eq!(
+            transition.seq.load(Ordering::Relaxed),
+            1,
+            "应已拼接到 B"
+        );
+        // 现在槽里放 C，并继续产出：B 才播到开头，不该立刻把 C 混进来
+        *slot.lock().unwrap() = Some(PreparedSource {
+            producer: Box::new(ConstProducer::new(1000, 2, 3.0)),
+            sample_rate: 1000,
+            channels: 2,
+            duration: Some(Duration::from_millis(1000)),
+        });
+        let mut window = Vec::new();
+        while window.len() / 2 < 50 {
+            let b = p.produce(64).expect("应有样本");
+            window.extend_from_slice(&b);
+        }
+        assert!(
+            window.iter().all(|s| *s == 2.0),
+            "接上 B 后 50 帧内应全是 B，不该已经混进 C（实得 {:?}）",
+            window.iter().find(|s| **s != 2.0)
+        );
+    }
+
+    #[test]
+    fn seek_aborts_pending_crossfade_and_returns_next() {
+        // 交叉混音途中 seek：交叉必须中止（否则 seek 后的 A 会和 B 继续混），
+        // 已取出的下一首要退回槽里；并且向后 seek 后不能因为"帧计数还停在旧位置"
+        // 而立刻又进入交叉。
+        let slot = new_next_slot();
+        *slot.lock().unwrap() = Some(PreparedSource {
+            producer: Box::new(ConstProducer::new(500, 2, 2.0)),
+            sample_rate: 1000,
+            channels: 2,
+            duration: Some(Duration::from_millis(500)),
+        });
+        let transition = Arc::new(TransitionState::new());
+        let mut p = QueueProducer::new(
+            Box::new(ConstProducer::new(1000, 2, 1.0)),
+            1000,
+            2,
+            Some(Duration::from_millis(1000)),
+            slot.clone(),
+            transition.clone(),
+        );
+        p.set_crossfade(Duration::from_millis(200));
+        // 推进到交叉进行中（尾段起点是第 800 帧）
+        let mut produced = 0usize;
+        while produced < 850 {
+            let b = p.produce(16).expect("应有样本");
+            produced += b.len() / 2;
+        }
+        assert!(
+            slot.lock().unwrap().is_none(),
+            "交叉开始后下一首应已从槽里取出"
+        );
+        // 向后 seek 到 100ms
+        p.try_seek(Duration::from_millis(100)).unwrap();
+        assert!(
+            slot.lock().unwrap().is_some(),
+            "seek 中止交叉后，下一首应退回槽里等新位置播完"
+        );
+        // 之后 100 帧内必须是纯本曲：既没有残留混音，也没有因为帧计数过期
+        // 而立刻重新进入交叉
+        let mut window = Vec::new();
+        while window.len() / 2 < 100 {
+            let b = p.produce(64).expect("应有样本");
+            window.extend_from_slice(&b);
+        }
+        assert!(
+            window.iter().all(|s| *s == 1.0),
+            "seek 后 100 帧内应全是本曲，实得含 {:?}",
+            window.iter().find(|s| **s != 1.0)
+        );
+        assert_eq!(
+            transition.seq.load(Ordering::Relaxed),
+            0,
+            "被中止的交叉不应报过渡"
+        );
     }
 
     #[test]
