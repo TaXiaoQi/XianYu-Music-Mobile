@@ -13,8 +13,6 @@ String _firstString(List<dynamic Function()> getters) {
   return '';
 }
 
-/// 与桌面端 nestedValue 对齐：先取顶层，缺失时下钻一层 rawData。
-/// （酷狗 musicfree 插件把 mvHash/platform 等放在 rawData 里）
 Object? _nestedValue(Object? value, String key) {
   if (value is! Map) return null;
   final v = value[key];

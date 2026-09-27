@@ -19,7 +19,6 @@ class NotificationService {
   bool _checking = false;
   bool _listenResetShown = false;
 
-  /// 调试页重复测试听歌重置弹窗用：清除「本会话已展示」标记。
   void resetListenResetNoticeForDebug() => _listenResetShown = false;
 
   Future<void> checkOnStartup(BuildContext context) async {

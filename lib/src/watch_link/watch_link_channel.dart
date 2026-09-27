@@ -111,9 +111,8 @@ class WatchLinkChannel {
     } catch (_) {}
   }
 
-  // ---- Wear Engine（华为运动健康通道）：查询/授权/远程拉起腕上端 ----
+  // ---- Wear Engine ----
 
-  /// 运动健康是否已安装（Android 11+ 包可见性已在清单声明）。
   Future<bool> hasWearEngine() async {
     try {
       return await _ch.invokeMethod('wearHasEngine') == true;
@@ -122,14 +121,12 @@ class WatchLinkChannel {
     }
   }
 
-  /// 跳转应用市场安装华为运动健康。
   Future<void> installHealth() async {
     try {
       await _ch.invokeMethod('wearInstallHealth');
     } catch (_) {}
   }
 
-  /// 请求 Wear Engine DEVICE_MANAGER 授权（未授权时弹华为授权页）。
   Future<WearAuthResult> wearAuthorize() async {
     try {
       return WearAuthResult.fromMap(await _ch.invokeMethod('wearAuthorize'));
@@ -138,7 +135,6 @@ class WatchLinkChannel {
     }
   }
 
-  /// 已绑定穿戴设备列表。
   Future<List<WearEngineDevice>> wearDevices() async {
     try {
       final list = await _ch.invokeMethod<List<dynamic>>('wearDevices');
@@ -148,7 +144,6 @@ class WatchLinkChannel {
     }
   }
 
-  /// ping 远程拉起腕上端（已安装未启动→冷启动，已启动→直接在线）。
   Future<WearWakeResult> wearWake({String? bundleName}) async {
     try {
       return WearWakeResult.fromMap(
@@ -160,7 +155,6 @@ class WatchLinkChannel {
   }
 }
 
-/// 华为运动健康通道已绑定的穿戴设备。
 class WearEngineDevice {
   const WearEngineDevice({required this.name, required this.connected});
 
@@ -176,7 +170,6 @@ class WearEngineDevice {
   }
 }
 
-/// Wear Engine 授权结果。
 class WearAuthResult {
   const WearAuthResult({
     required this.granted,
@@ -198,7 +191,6 @@ class WearAuthResult {
   }
 }
 
-/// Wear Engine ping 拉起结果。
 class WearWakeResult {
   const WearWakeResult({
     required this.ok,
@@ -208,7 +200,6 @@ class WearWakeResult {
 
   final bool ok;
 
-  /// 201=冷启动拉起，202=已在运行，200=手表端未安装，404=无绑定设备。
   final int code;
   final String message;
 

@@ -62,7 +62,6 @@ class AccountApi {
     }, fetchTimeoutMs: 15000);
   }
 
-  /// 服务器下发的隐私政策。null 表示无下发（用客户端内置版本）。
   Future<PrivacyPolicyRemote?> fetchPrivacyPolicy() async {
     try {
       final data = await _action('get_privacy_policy', {
@@ -80,7 +79,6 @@ class AccountApi {
     }
   }
 
-  /// 确认上报（失败忽略，弹窗与否由客户端本地 fingerprint 判断）。
   Future<void> confirmPrivacyPolicy(PrivacyPolicyRemote policy) async {
     try {
       await _action('confirm_privacy_policy', {

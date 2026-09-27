@@ -45,7 +45,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   final Map<String, bool> _hasVars = {};
   bool _collectingVars = false;
 
-  // 已检测出的插件更新结果缓存：点更新直接安装，免重复检测与弹窗（对齐桌面端）
   final Map<String, PluginUpdateCheckResult> _updateCheckResults = {};
   final Set<String> _updatingIds = {};
 
@@ -594,7 +593,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     }
   }
 
-  // 对齐桌面端：已检出更新则点击直接安装；未检出时先检测并提示再次点击，全程无确认弹窗
   Future<void> _updatePlugin(BuildContext context, PluginSource source) async {
     if (_updatingIds.contains(source.id)) return;
     _updatingIds.add(source.id);
@@ -1621,4 +1619,3 @@ class _InstallOption extends ConsumerWidget {
     );
   }
 }
-

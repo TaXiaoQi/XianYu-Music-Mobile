@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// 应用真实 logo：白色圆角底 + 「予」字形音符 glyph（与启动图标、桌面端同源）。
-/// glyph 原色为深炭色，必须放在浅色底上展示。
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 72, this.radius = 20});
 

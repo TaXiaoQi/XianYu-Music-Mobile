@@ -45,9 +45,6 @@ void _showToast(
   overlay.insert(entry);
 }
 
-/// 进度型常驻 toast（对齐桌面端 showProgressToast）：
-/// update 逐项刷新文本与进度（progress 传 null 走不确定态），
-/// complete/fail 显示最终文案后自动关闭，close 立即关闭。
 class XianYuProgressToastHandle {
   XianYuProgressToastHandle._();
 

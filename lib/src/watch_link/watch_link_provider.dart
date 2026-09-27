@@ -92,7 +92,7 @@ class WatchLinkController {
   bool _lastLiked = false;
   DateTime _lastPosPush = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // ---- 起播自动唤起（Wear Engine 静默 ping） ----
+  // ---- 起播自动唤起 ----
 
   bool _wakeInFlight = false;
   DateTime _lastWakeAttempt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -134,13 +134,11 @@ class WatchLinkController {
       },
     ));
 
-    // 音效状态变化 → 推送到手表（节流，滑条拖动结束时触发一次）
     _providerSubs.add(_container.listen<SoundEffectState>(
       soundEffectProvider,
       (_, _) => _pushEffectsDebounced(),
     ));
 
-    // MV 加载进度 → 推送到手表（节流；resolve/init/buffered 每次变化）
     _providerSubs.add(_container.listen<MvState>(
       mvProvider,
       (_, _) => _pushMvPhaseDebounced(),
@@ -180,8 +178,6 @@ class WatchLinkController {
       return;
     }
     if (_running) return;
-    // 开屏静默：已授权才启动通道；未授权不弹窗，等用户触发
-    // （设置页腕上联动开关、连接手表）时再申请
     if (!await _channel.hasPermission()) return;
     await _channel.start();
     _running = true;
@@ -255,8 +251,6 @@ class WatchLinkController {
         if (_cloudRunning) {
           _cloudReconnect?.cancel();
           _cloudReconnect = Timer(_cloudBackoff, () {
-            // 封顶 15s：手表随时可能来连，手机 relay 长时间离线会让
-            // 表端一直「连接中」（表端退避更短，两端节奏要匹配）。
             _cloudBackoff = _cloudBackoff * 2 > const Duration(seconds: 15)
                 ? const Duration(seconds: 15)
                 : _cloudBackoff * 2;
@@ -278,8 +272,6 @@ class WatchLinkController {
     _resetTxPump();
   }
 
-  /// 复位发送泵：旧泵可能挂死在未完成的 BLE 写上（GATT 写在断连边界
-  /// 可能永不返回），若不复位 _txDraining，重连后所有下行帧将永久停发。
   void _resetTxPump() {
     _txGen++;
     _txDraining = false;
@@ -289,10 +281,8 @@ class WatchLinkController {
 
   // ---- 设备管理（设置页） ----
 
-  /// 蓝牙权限是否已授予（设置页腕上联动开关触发申请用）。
   Future<bool> hasLinkPermission() => _channel.hasPermission();
 
-  /// 发起蓝牙运行时权限申请，授权结果经 onPermission 事件回传并自动启动通道。
   Future<void> requestLinkPermission() => _channel.requestPermission();
 
   Future<List<WatchBondedDevice>> loadPairedDevices() =>
@@ -317,22 +307,16 @@ class WatchLinkController {
     }
   }
 
-  // ---- Wear Engine：华为运动健康通道远程冷启动腕上端 ----
+  // ---- Wear Engine ----
 
-  /// 运动健康是否已安装（Wear Engine 服务宿主），UI 用于弹窗引导。
   Future<bool> hasWearEngine() => _channel.hasWearEngine();
 
-  /// 跳转应用市场安装华为运动健康（经弹窗确认后由 UI 调用）。
   Future<void> installHealth() => _channel.installHealth();
 
-  /// 请求 Wear Engine DEVICE_MANAGER 授权（未授权时弹华为授权页，已授权免弹窗）。
   Future<WearAuthResult> wearAuthorize() => _channel.wearAuthorize();
 
-  /// 已绑定的华为穿戴设备列表（Wear Engine 设备查询，需先授权）。
   Future<List<WearEngineDevice>> wearDevices() => _channel.wearDevices();
 
-  /// ping 远程拉起腕上端（已安装未启动→冷启动，已启动→直接在线），
-  /// 返回用户可读提示；真实原因透传，不额外包装。
   Future<String> wearPing() async {
     final r = await _channel.wearWake();
     return r.message.isEmpty
@@ -452,7 +436,6 @@ class WatchLinkController {
     await _container.read(playerProvider.notifier).next();
   }
 
-  /// 收到腕上推送的备份文件：弹窗（禁止点击空白关闭），按结果回执给腕上。
   Future<void> _handleIncomingBackup(LinkMessage msg) async {
     if (_backupDialogActive) {
       _send(LinkMessage.backupAck(result: 'cancelled'));
@@ -484,8 +467,6 @@ class WatchLinkController {
     }
   }
 
-  /// 收到腕上推送的运行日志：弹窗提供系统分享（与「导出日志文件」一致），
-  /// 分享/留存后回执 saved，放弃回执 cancelled。
   Future<void> _handleIncomingLog(
     LinkMessage msg, {
     bool fromCloud = false,
@@ -526,7 +507,6 @@ class WatchLinkController {
   // ---- 状态推送 ----
 
   void _onPlayback(PlaybackState st) {
-    // 起播边沿触发自动唤起（无论腕上端是否已连接，未连接才有意义）
     if (st.isPlaying && !_lastSeenPlaying) _maybeAutoWakeWatch();
     _lastSeenPlaying = st.isPlaying;
     if (!_connected && !_cloudWatchOnline) return;
@@ -580,10 +560,6 @@ class WatchLinkController {
     }
   }
 
-  /// 起播自动唤起：联动开启且腕上端未连接（BLE/云端均不在线）时，经
-  /// Wear Engine 静默 ping 远程拉起腕上端（对标高德「开始导航即拉起手表版」）。
-  /// 全程无弹窗：未装运动健康/未授权/无设备/未安装均静默跳过并记日志，
-  /// 授权引导仍走设置页「唤醒手表应用」手动入口；60s 冷却防止频繁切歌连打。
   Future<void> _maybeAutoWakeWatch() async {
     if (_wakeInFlight) return;
     final s = _container.read(settingsProvider).valueOrNull;
@@ -611,7 +587,6 @@ class WatchLinkController {
         AppLog.warn('watch_link',
             '起播自动唤起失败: code=${r.code} ${r.message}');
       }
-      // 仅冷启动成功给提示（已在运行/失败静默，避免打扰）
       if (r.ok && r.code == 201) {
         final ctx = appNavigatorKey.currentContext;
         if (ctx != null && ctx.mounted) {
@@ -747,7 +722,6 @@ class WatchLinkController {
 
   // ---- MV 加载进度同步 ----
 
-  /// 当前 MV 加载进度提示；null 表示无 MV 活动态（加载完成或未开启）。
   String? _mvPhaseText() {
     final mv = _container.read(mvProvider);
     if (!mv.requested || mv.ready) return null;
@@ -780,7 +754,7 @@ class WatchLinkController {
     ));
   }
 
-  // ---- 音效同步（手机 → 手表推送 / 手表 → 手机命令） ----
+  // ---- 音效同步 ----
 
   void _pushEffectsDebounced() {
     _fxPushTimer?.cancel();
@@ -789,7 +763,6 @@ class WatchLinkController {
 
   void _sendEffects() {
     if (!_connected && !_cloudWatchOnline) return;
-    // 音效控制不依赖媒体传输授权，连接即同步
     final s = _container.read(soundEffectProvider).settings;
     _send(LinkMessage.effects(fx: s.toJson()));
   }
@@ -802,7 +775,6 @@ class WatchLinkController {
         Map<String, dynamic>.from(arg),
       );
       _container.read(soundEffectProvider.notifier).set(s);
-      // 变更经上方 provider 监听回推手表校正，无需在此手动 echo
     } catch (_) {}
   }
 
@@ -872,7 +844,7 @@ class WatchLinkController {
     } catch (_) {}
   }
 
-  // ---- 接下来五首批量预载（联动预缓存） ----
+  // ---- 接下来五首批量预载 ----
 
   void _maybePrecacheNext({bool cloud = false}) {
     if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
@@ -1029,8 +1001,6 @@ class WatchLinkController {
 
   bool _txDraining = false;
 
-  /// 发送泵代际：连接事件（断开/重连）递增，使挂死在旧代际的 drain
-  /// 退出后不再触碰泵状态，避免与新一代泵互相清队列。
   int _txGen = 0;
 
   void _send(LinkMessage msg, {bool cloud = false, bool low = false}) {
@@ -1062,8 +1032,6 @@ class WatchLinkController {
         if (useCloud) {
           await _cloud.send(frame);
         } else {
-          // BLE 写可能挂死（GATT 在断连边界不返回），超时视为本次失败，
-          // 抛出走 catch 清队列复位，泵可被下一次 _send 重新拉起
           await _channel.send(frame).timeout(const Duration(seconds: 5));
         }
         q.removeAt(0);
@@ -1117,8 +1085,6 @@ Future<String?> _encodeLinkCoverBytes(List<int> raw) async {
   }
 }
 
-/// 弹出联动授权弹窗并返回原始选项（'device' / 'once' / 'never' / null）。
-/// 供真实联动流程与调试页共用；调试页只取返回值做提示，不执行授权动作。
 Future<String?> showTransferConfirmDialog(
   BuildContext context, {
   String? watchName,
@@ -1272,12 +1238,11 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
       if (SafChannel.isSupported) {
         // 安卓：可自选保存位置
         final treeUri = await SafChannel.chooseFolderTree(persist: false);
-        if (treeUri == null) return; // 用户在系统选择器中放弃：保持弹窗
+        if (treeUri == null) return;
         final docId = await SafChannel.createTreeFile(
             treeUri, widget.fileName, widget.content);
         saved = docId.isEmpty ? null : widget.fileName;
       } else {
-        // 鸿蒙 / iOS：直接保存到私有备份目录
         final docs = await getApplicationDocumentsDirectory();
         final dir = Directory('${docs.path}/backups');
         if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -1297,7 +1262,6 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
     }
   }
 
-  /// 一键分享：写临时文件后直接调系统分享面板，与日志弹窗同一链路。
   Future<void> _share() async {
     if (_sharing) return;
     setState(() {
@@ -1477,8 +1441,6 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
   }
 }
 
-/// 收到腕上运行日志的弹窗：主按钮直接调系统分享面板分发日志文件，
-/// 与设置页「导出日志文件」的分享链路一致。
 class _IncomingLogDialog extends StatefulWidget {
   const _IncomingLogDialog({
     required this.fileName,

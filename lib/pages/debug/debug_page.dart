@@ -59,7 +59,6 @@ class DebugPage extends ConsumerWidget {
     importedAt: DateTime.now().millisecondsSinceEpoch,
   );
 
-  /// 云端假歌单：触发「删除范围选择」分支（假 id 不会真正删除）
   static ImportedPlaylist get _fakeCloudPlaylist => ImportedPlaylist(
     id: 'demo-cloud-playlist-id',
     name: tr('云端测试歌单'),
@@ -364,8 +363,6 @@ class DebugPage extends ConsumerWidget {
         ),
       );
 
-  /// 内测锁弹窗样式预览：UI 镜像 showBetaGateDialog（未申请内测分支），
-  /// 但「退出软件」「申请资格」仅弹模拟提示，不退出应用、不跳转申请页。
   void _showBetaGatePreview(BuildContext context) {
     showDialog<void>(
       context: context,

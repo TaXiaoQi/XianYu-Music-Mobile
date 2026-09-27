@@ -12,11 +12,6 @@ import '../widgets/sheet_dialog.dart';
 import 'playlist_provider.dart';
 import 'playlist_store.dart';
 
-/// 从源端（插件歌单）更新导入的歌单：
-/// 1. 用导入时记录的来源重新拉取源端歌曲；
-/// 2. 与本地对比得出新增 / 移除；
-/// 3. 有移除时弹窗让用户选择「仅添加」或「完全同步」；
-///    本软件内手动添加的歌曲（addedInApp）不参与删除。
 Future<void> updatePlaylistFromSource(
   BuildContext context,
   WidgetRef ref,
@@ -137,7 +132,6 @@ Future<List<ImportedSong>> _fetchSourceSongs(
       .toList();
 }
 
-/// 同步确认弹窗，样式对齐账号同步的删除范围选择
 Future<String?> _showSyncModeSheet(
   BuildContext context,
   int addCount,

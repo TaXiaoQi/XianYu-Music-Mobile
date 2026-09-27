@@ -259,7 +259,6 @@ class ModernDialogCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 底色对齐全局 dialogTheme（自绘 AlertDialog 基准），保证与普通弹窗一致。
     final bgColor = Theme.of(context).dialogTheme.backgroundColor ??
         (isDark ? scheme.surfaceContainerHigh : scheme.surface);
 

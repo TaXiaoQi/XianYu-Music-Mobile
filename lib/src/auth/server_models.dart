@@ -33,7 +33,6 @@ class Announcement {
       );
 }
 
-/// 服务器下发的隐私政策版本。
 class PrivacyPolicyRemote {
   final String id;
   final String content;

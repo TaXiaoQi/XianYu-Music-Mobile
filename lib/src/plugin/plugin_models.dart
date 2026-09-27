@@ -22,11 +22,9 @@ enum PluginFormat {
 }
 
 extension PluginFormatX on PluginFormat {
-  /// musicfree 兼容格式（musicfree / anime 共用同一套调用链）
   bool get isMfCompatible => this == PluginFormat.musicfree || this == PluginFormat.anime;
 }
 
-/// songJson.format 字符串版兼容判断（musicfree / anime 同链路）
 bool isMfFormatValue(String? v) => v == 'musicfree' || v == 'anime';
 
 class PluginSource {

@@ -386,7 +386,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       value: enabled,
       onChanged: (v) async {
         await n.setWatchLinkageEnabled(v);
-        // 仅在用户主动开启时申请蓝牙权限，开屏不再弹窗
         if (v) {
           final ctrl = ref.read(watchLinkControllerProvider);
           if (!await ctrl.hasLinkPermission()) {
@@ -560,7 +559,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
-  /// Wear Engine（华为运动健康通道）远程冷启动腕上端。
   Widget _watchWakeTile(BuildContext context, WidgetRef ref) {
     return _tile(
       context,
@@ -575,7 +573,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
 
   Future<void> _wakeWatchApp(BuildContext context, WidgetRef ref) async {
     final ctrl = ref.read(watchLinkControllerProvider);
-    // 未装运动健康：说明原因并引导安装（不静默跳转）
     if (!await ctrl.hasWearEngine()) {
       if (!context.mounted) return;
       final go = await showModernConfirmDialog(
@@ -588,7 +585,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       return;
     }
     if (!context.mounted) return;
-    // 高德同款：先弹窗确认，再经 Wear Engine 授权并拉起腕上端
     final ok = await showModernConfirmDialog(
       context: context,
       title: tr('同步到手表？'),
@@ -596,7 +592,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       isDanger: false,
     );
     if (!ok) return;
-    // 授权（已授权免弹窗）
     final auth = await ctrl.wearAuthorize();
     if (!context.mounted) return;
     if (!auth.granted) {
@@ -609,7 +604,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       );
       return;
     }
-    // 无华为绑定设备：远程唤醒仅支持华为手表，Wear OS 表引导常驻用法
     final devs = await ctrl.wearDevices();
     if (!context.mounted) return;
     if (devs.isEmpty) {
@@ -918,7 +912,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     AppSettings? s,
     SettingsNotifier n,
   ) {
-    // MV 期间桌面歌词不可用（音画由 MV 接管），总开关置灰并给出说明。
     final mvOn = ref.watch(mvProvider.select((state) => state.requested));
     return [
       _sectionHeader(context, tr('歌词显示')),
@@ -3777,7 +3770,6 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
     );
   }
 
-  /// 加密备份密码输入对话框；取消返回 null
   Future<String?> _askBackupPassword() async {
     final controller = TextEditingController();
     final result = await showPredictiveDialog<String>(

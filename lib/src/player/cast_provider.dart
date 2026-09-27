@@ -94,8 +94,6 @@ class CastNotifier extends StateNotifier<CastState> {
   int _consecutiveErrors = 0;
   int _lastVolumeSent = -1;
 
-  /// 电池优化白名单授权框每进程只弹一次：用户拒绝后靠下次冷启动再引导，
-  /// 避免每次连接设备都弹框打扰。
   bool _batteryPromptShown = false;
 
   String _mediaToken = '';
@@ -144,9 +142,6 @@ class CastNotifier extends StateNotifier<CastState> {
     }
   }
 
-  /// 投放会话网络保活：灭屏 Doze 的 dozable 防火墙会掐掉应用全部网络
-  /// （MagicOS 实测：手机显示投放中、播放端无声），需电池优化白名单豁免 +
-  /// WifiLock 防 Wi-Fi 省电断流。仅 Android 生效，其他平台静默跳过。
   Future<void> _ensureCastNetworkAlive() async {
     if (!_batteryPromptShown) {
       _batteryPromptShown = true;
@@ -372,9 +367,6 @@ class CastNotifier extends StateNotifier<CastState> {
     try {
       if (enabled) {
         if (state.rendererRunning) return;
-        // 先置位再启动：_dmrLoop 在 _enableRenderer 内部被 unawaited 拉起，
-        // 其首个 while 同步检查 rendererRunning——若等 enable 返回后才置位，
-        // 循环会当场退出，DMR 接收端 DOA（表现为被投放后毫无反应）。
         state = state.copyWith(rendererRunning: true, rendererName: name);
         final port = await _enableRenderer(name);
         state = state.copyWith(rendererPort: port);
@@ -453,7 +445,6 @@ class CastNotifier extends StateNotifier<CastState> {
         if (!uri.startsWith('http://') && !uri.startsWith('https://')) return;
         final player = _ref.read(playerProvider.notifier);
         if (state.isCasting) await disconnect(stopTv: false);
-        // DIDL 里的 albumArtURI（发送端 httpd 代理地址）作为封面
         final meta = cmd['metadata_xml'] as String? ?? '';
         final artMatch = RegExp(
           r'<upnp:albumArtURI[^>]*>([^<]+)</upnp:albumArtURI>',
@@ -468,7 +459,6 @@ class CastNotifier extends StateNotifier<CastState> {
           durationMs: (cmd['duration_ms'] as num? ?? 0).toInt(),
           coverUrl: coverUrl,
         );
-        // 对齐分享/深链体验：被投放时直接勾起播放页
         try {
           if (appRouter.routerDelegate.currentConfiguration.uri.toString() !=
               '/player') {
@@ -482,8 +472,6 @@ class CastNotifier extends StateNotifier<CastState> {
       case 'seek':
       case 'setVolume':
       case 'setMute':
-        // 渲染器模式收到的遥控必须执行：isCasting 指「本机作为发送端投出」，
-        // 与被投接收语义无关；曾被它拦截导致发起端完全无法控制播放。
         final player = _ref.read(playerProvider.notifier);
         switch (type) {
           case 'play':

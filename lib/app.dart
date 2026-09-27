@@ -73,12 +73,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   }
 
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
-    // 必须用根 Navigator 的 context：根 State 的 context 位于 Navigator 之上，
-    // 直接 showDialog 会因 Navigator.of 找不到 NavigatorState 而空断言崩溃
-    // （首次安装、尚未记录隐私同意时必现）。
     final navContext = appNavigatorKey.currentContext;
     if (navContext == null) {
-      // Router 尚未挂载，推迟一帧重试
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_runStartupAfterConsent(ref));
       });
@@ -177,8 +173,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         color: Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
       ),
-      // 弹窗统一样式（与 ModernDialogCard 对齐）：24 圆角、无 surface 染色，
-      // 暗色底 0xFF333333 与 ModernDialogCard 的 surfaceContainerHigh 一致。
       dialogTheme: DialogThemeData(
         backgroundColor: const Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
@@ -381,9 +375,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       case 'en':
         return I18nMode.en;
       case 'zh':
-        // 繁体命中链：zh-Hant（系统选「繁體中文」通用项，无地区码）/
-        // zh-TW / zh-HK / zh-MO。只看 countryCode 会漏掉 zh-Hant，
-        // 导致必须选「繁體中文(台灣)」才能切到繁体。
         final cc = first.countryCode;
         if (first.scriptCode == 'Hant' ||
             cc == 'TW' ||

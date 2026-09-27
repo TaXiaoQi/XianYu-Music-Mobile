@@ -79,7 +79,7 @@ class IosWidgetController {
     }
   }
 
-  // ---- 播放状态 → 小组件 / Live Activity ----
+  // ---- 播放状态 → 小组件 ----
 
   Future<void> _onPlayback(PlaybackState s) async {
     final item = s.current;
@@ -170,7 +170,7 @@ class IosWidgetController {
     } catch (_) {}
   }
 
-  // ---- 封面加载（与 Android 桥同源逻辑：本地 → SAF 兜底 → 在线代理落盘）----
+  // ---- 封面加载 ----
 
   bool _coverLoading = false;
   int _coverToken = 0;

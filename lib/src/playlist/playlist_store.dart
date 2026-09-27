@@ -12,7 +12,6 @@ class ImportedPlaylist {
   final int importedAt;
   final String? cloudId;
   final bool isCloud;
-  // 来源信息：用于从源端（插件歌单）更新
   final String? sourcePluginId;
   final String? sourceUrl;
   final Map<String, dynamic>? sourceRaw;
@@ -254,7 +253,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 记录歌单来源（插件 id + 用户输入的链接/ID + 源端条目原始数据）
   Future<List<ImportedPlaylist>> setSource(
     String id, {
     required String sourcePluginId,
@@ -280,9 +278,6 @@ class PlaylistStore {
     return result;
   }
 
-  /// 应用源端同步：
-  /// - 仅增加：追加本地缺失的源端歌曲；
-  /// - 完全同步：在仅增加的基础上，删除本地「非本软件添加」且源端已不存在的歌曲。
   Future<List<ImportedPlaylist>> applySourceSync(
     String id, {
     required List<ImportedSong> sourceSongs,

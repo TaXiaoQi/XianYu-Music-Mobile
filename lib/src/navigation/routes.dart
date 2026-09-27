@@ -643,9 +643,6 @@ bool _enablePredictiveBack(BuildContext context) =>
         ?.enablePredictiveBack ??
     true;
 
-/// 实时读取预测性返回开关：路由 push 时快照的 [Fallback] 仅在路由未挂载
-/// （无 context）时使用，挂载后始终以当前设置在判断，令开关改动即时生效，
-/// 无需退出设置页/重新进入。
 bool _livePredictiveBack(BuildContext? context, bool fallback) {
   if (context == null) return fallback;
   return ProviderScope.containerOf(context, listen: false)
@@ -810,7 +807,6 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
-                // 前段读完省 saveLayer（见 _PlayerCoverRoute 注释）。
                 opacity: CurvedAnimation(
                   parent: animation,
                   curve: const Interval(0, 0.45, curve: Curves.easeOutCubic),
@@ -904,9 +900,6 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
           curve: Curves.easeOutCubic,
           reverseCurve: Curves.easeInCubic,
         );
-        // fade 限制在前段读完：RenderAnimatedOpacity 在 opacity==1 时跳过
-        // 全屏 saveLayer，转场中段（全屏滑动 GPU 压力最大）零离屏合成，
-        // 避免「主页毛玻璃重采样 + 全屏 saveLayer」双全屏开销导致的卡顿。
         final fade = CurvedAnimation(
           parent: animation,
           curve: const Interval(0, 0.45, curve: Curves.easeOut),
@@ -1042,7 +1035,6 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
-                // 前段读完省 saveLayer（见 _PlayerCoverRoute 注释）。
                 opacity: CurvedAnimation(
                   parent: animation,
                   curve: const Interval(0, 0.45, curve: Curves.easeOutCubic),

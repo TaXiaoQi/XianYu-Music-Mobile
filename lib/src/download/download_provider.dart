@@ -380,7 +380,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
             ? await _resolvePluginUrl(parsed, q)
             : await _resolveLxUrl(songJson, q);
       } on PluginEngineException catch (e) {
-        // 鉴权失效（卡密/401）时终止下载任务，不再逐档空转
         if (PluginEngine.isAuthFailureMessage(e.message)) rethrow;
         continue;
       }
@@ -733,7 +732,6 @@ class DownloadManager extends StateNotifier<DownloadState> {
                 lyric['rawLrc']) as String? ??
             ''
         : ((lyric['lyric'] ?? lyric['rawLrc']) as String?) ?? '';
-    // 未解密的加密密文（QQ/酷我对特定歌曲返回 QRC/e-lrc hex）不能落盘
     if (text.isEmpty || pluginLyricLooksEncrypted(text)) return null;
     return text;
   }

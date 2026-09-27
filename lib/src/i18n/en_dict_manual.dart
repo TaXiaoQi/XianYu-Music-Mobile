@@ -1085,7 +1085,7 @@ const Map<String, String> enDictManual = {
   '最近听过的歌曲': 'Recently played songs',
   '最小': 'Compact',
 
-  // ---- 动态占位符形式（迁移时统一使用这些键） ----
+  // ---- 动态占位符形式 ----
   '{count} 首': '{count} songs',
   '{count} 首歌曲': '{count} songs',
   '{count} 个': '{count}',

@@ -69,9 +69,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     unawaited(_materializeOnlineArt(item));
   }
 
-  /// 把整个播放队列同步给系统媒体会话，使系统 MediaSession/鸿蒙播控中心
-  /// 能拿到当前在播项的队列下标（active item id），否则鸿蒙判定会话「未在播放」。
-  /// 队列元素与 [syncPlaybackState] 的 queueIndex 按下标对齐。
   void syncQueue(List<QueueItem> items, Map<String, String> artCache) {
     queue.add([
       for (final item in items)
@@ -258,10 +255,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   Future<void> onTaskRemoved() async {
     await _notifier?.pauseFromSystem();
     await super.stop();
-    // 划掉多任务卡片=彻底退出。audio_service 前台服务/悬浮歌词/DSP 引擎
-    // 全在同一进程，仅 stop 服务后进程仍存活，荣耀 MagicOS 会把空进程
-    // 重新挂回最近任务（表现为"划了又回来，要再滑一次"）。直接退出进程，
-    // 通知、悬浮窗随进程回收，卡片不再回挂。
     exit(0);
   }
 }
@@ -422,8 +415,6 @@ const Object _noChange = Object();
 
 typedef BeforePlayGate = Future<void> Function();
 
-/// 在线起播 10s 超时（load 挂死）。与普通失败区分，供 _playOnline
-/// 做同曲降级音质重试，避免被误当作「换候选/跳歌」以外的失败。
 class _StartOnlineTimeoutException implements Exception {
   _StartOnlineTimeoutException(this.message);
 
@@ -445,7 +436,6 @@ class _GatedAudioPlayer extends AudioPlayer {
     return super.play();
   }
 
-  // 记录最近一次起播音源，供 MV 频谱对齐（mv_auto_sync）取当前歌曲音频。
   @override
   Future<Duration?> setUrl(
     String url, {
@@ -487,16 +477,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     WidgetsBinding.instance.addObserver(this);
     activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
-    // 初始订阅五路流（位置/时长/播放态/处理态/错误）。此前订阅内联在 _init 里，
-    // 抽出 _subscribePlayerStreams 供楔死重建复用后，构造里漏了初始调用——
-    // 表现为进度条不走、播放状态不广播、通知栏播控失效。
     _subscribePlayerStreams();
     _init();
   }
 
   final Ref _ref;
-  // 非.final：平台主线程被挂死的 ExoPlayer release 阻塞时（楔死），需整体
-  // 重建播放器实例（新 UUID 不与原生残留注册撞号）才能恢复，见 _rebuildPlayer。
   AudioPlayer _player = _GatedAudioPlayer();
   bool _rebuildingPlayer = false;
   String? _activeProbeKey;
@@ -514,8 +499,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _onTrackEndBusy = false;
   Timer? _exclusiveTimer;
   Timer? _sfxSyncTimer;
-  // DSP 管线失败冷却：一次失败禁 60s 后自动重试（失败是立即报错，
-  // 重试仅毫秒级开销），避免一次瞬时/环境性失败把 DSP 禁用到会话结束
   DateTime _dspFailUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _dspSkipNextStart = false;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
@@ -533,20 +516,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
-  // 同曲重播（切音质）锚定门：加载新直链的窗口期内 _player.stop() 会让
-  // positionStream 吐 0、playerStateStream 吐 playing=false，若放行会把 UI
-  // 进度冲归零、按钮翻暂停（对齐桌面 reanchorPlaybackClock + requestId 守卫：
-  // 桌面同曲重播全程保持进度与播放态显示，无跳变）。门在 _playAt 起播请求
-  // 生命周期内有效：位置事件 < 锚点一律吞掉，播放态仅吞 idle（stop 所致），
-  // 真实起播（ready/buffering 的 playing=true 或位置 ≥ 锚点）自然放行。
   double? _replayAnchorSecs;
 
   static const MethodChannel _diagChannel = MethodChannel('xianyu/diag');
 
-  /// ExoPlayer 卡死现场转储：问题设备在用户手上无 adb，将原生播放器相关
-  /// 线程（ExoPlayer Loader/媒体编解码/音频）堆栈写入 App 日志，随「导出
-  /// 日志」回收。栈帧落在 socketRead=网络层挂、MediaCodec=解码初始化挂、
-  /// Object.wait(LoadControl)=缓冲逻辑，一望即知。
   Future<void> _dumpPlayerThreads() async {
     try {
       final out = await _diagChannel.invokeMethod<String>('threadDump');
@@ -578,8 +551,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 订阅当前 _player 的五路流（位置/时长/播放态/处理态/错误）。
-  /// 楔死重建换新实例后必须重跑，否则 UI 与统计全部失聪。
   void _subscribePlayerStreams() {
     _posSub?.cancel();
     _durSub?.cancel();
@@ -588,8 +559,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _errSub?.cancel();
     _posSub = _player.positionStream.listen((p) {
       final pos = p.inMilliseconds / 1000.0;
-      // 同曲重播加载窗口：新源尚未就绪时的归零/回跳位置事件一律吞掉，
-      // 保持 UI 锚定在续播点（首个 ≥ 锚点的事件放行并撤门）
       final anchor = _replayAnchorSecs;
       if (anchor != null) {
         if (pos < anchor) return;
@@ -601,17 +570,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
     _durSub = _player.durationStream.listen((d) {
       final dur = (d ?? Duration.zero).inMilliseconds / 1000.0;
-      // 播放器没载入音源时这里会收到 null。冷启动恢复会话时时长来自元数据，
-      // 被这一条冲成 0 会连带把进度条画成满格（position 被 clamp 到 max=1.0），
-      // 要手动点一次播放才恢复。已经拿到正时长时忽略 0。
       if (dur <= 0 && state.duration > 0) return;
       state = state.copyWith(duration: dur);
       _syncToSystemMediaSession();
     });
     _stateSub = _player.playerStateStream.listen((ps) {
       final playing = ps.playing;
-      // 同曲重播加载窗口：stop() 引发的 idle+playing=false 不放行，避免
-      // UI 播放态被翻成暂停；真实暂停（loading/ready 态）不受影响
       if (!playing &&
           ps.processingState == ProcessingState.idle &&
           _replayAnchorSecs != null) {
@@ -646,11 +610,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
   }
 
-  /// 楔死探测：向 xianyu/diag 发一次 ping（原生主线程执行，notImplemented
-  /// 也算响应）。2s 内无任何回包说明主线程被挂死的 ExoPlayer release/dispose
-  /// 阻塞——表现为 setUrl 静默挂到起播超时（proc=idle、buffered=0、exodump
-  /// 无任何加载任务）。用 diag 通道而非 player 自身调用：stop 后平台可能
-  /// 已降级到 idle 代理，player 调用会「假成功」探测不到楔死。
   Future<void> _probeAndRebuild(String reason) async {
     if (_rebuildingPlayer) return;
     try {
@@ -661,14 +620,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } on TimeoutException {
       // 主线程无响应 → 楔死，走重建
     } catch (_) {
-      return; // notImplemented/MissingPlugin 等错误同样证明通道有响应
+      return;
     }
     await _rebuildPlayer(reason);
   }
 
-  /// 重建播放器实例：旧实例 native 侧可能已永久挂死，且其 dispose 通道调用
-  /// 不可信，因此直接弃用换新（新 UUID 不与原生残留注册撞号，主线程恢复后
-  /// 即可正常工作）。dispose 用超时保护，绝不阻塞重建本身。
   Future<void> _rebuildPlayer(String reason) async {
     if (_rebuildingPlayer) return;
     _rebuildingPlayer = true;
@@ -694,9 +650,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _init() async {
     AudioSession.instance.then((session) async {
-      // 声明为音乐媒体会话（USAGE_MEDIA + CONTENT_TYPE_MUSIC）。不配置时系统
-      // 收到 CONTENT_TYPE_UNKNOWN，鸿蒙播控中心/系统媒体卡片不会把它当音乐播控源，
-      // 表现为通知栏可见但控制中心「未在播放」。
       try {
         await session.configure(const AudioSessionConfiguration.music());
       } catch (e) {
@@ -704,8 +657,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       _interruptionSub = session.interruptionEventStream.listen((event) async {
         if (!event.begin) {
-          // 临时打断（来电/导航语音）结束：仅当打断期间暂停过且设置允许时
-          // 自动恢复。永久焦点丢失（type=unknown）不会有结束事件。
           if (_interruptedByInterruption) {
             _interruptedByInterruption = false;
             final auto = _ref.read(settingsProvider).valueOrNull
@@ -885,8 +836,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required double startAtSecs,
     required bool isPlaying,
   }) async {
-    // 独占/共享 DSP 分支不经 _GatedAudioPlayer：本地文件在此兜底记录
-    //（http 代理 URL 由 _startOnlineUrl 记录，此处不覆盖）。
     if (!path.startsWith('http')) {
       LastAudioSource.recordFilePath(path);
     }
@@ -923,8 +872,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String path, {
     required double startAtSecs,
     required bool isPlaying,
-    // 在线流缓存直读（对齐桌面端 StreamingTempFile 模型）：Some 时 Rust 管线
-    // 经流缓存 Reader 解码（复用预热线程，单上游连接），path 仅作回退记录。
     String? streamCacheUrl,
     Map<String, String>? streamCacheHeaders,
   }) async {
@@ -967,7 +914,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return true;
     } catch (e) {
       state = state.copyWith(dspActive: false);
-      // 失败进入 60s 冷却，之后自动重试（成功即恢复接管）
       _dspFailUntil = DateTime.now().add(const Duration(seconds: 60));
       AppLog.warn('play', '[dsp] 启动失败(60s冷却后重试) 回退ExoPlayer: $e');
       return false;
@@ -1105,8 +1051,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       audioHandler?.syncMediaItem(item, state.duration);
-      // 同步整个队列 + 当前项下标，让系统 MediaSession/鸿蒙播控中心
-      // 能把会话判定为「正在播放」（active item id 对齐队列下标，否则 -1）。
       if (state.queue.isNotEmpty) {
         audioHandler?.syncQueue(state.queue, _notifCoverCache);
       }
@@ -1271,9 +1215,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final Map rawMeta = data['queueSongMeta'] as Map? ?? {};
       final int mode = (data['playMode'] as num?)?.toInt() ?? 0;
       final double pos = (data['currentPositionSecs'] as num?)?.toDouble() ?? 0;
-      // 被杀前是否在播（_persistSession 已持久化）。进程被系统 LMK 杀掉
-      // （典型场景：切相机等内存大户）重启后据此自动续播，避免「回来发现
-      // 播放被重置到暂停」的割裂感。
       final bool wasPlaying = data['isPlaying'] as bool? ?? false;
 
       if (rawQueue.isEmpty || curPath.isEmpty) {
@@ -1320,9 +1261,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         current: currentItem,
         isPlaying: false,
         position: pos,
-        // 时长必须一起恢复：进度条是按 position/duration 画的，duration 留 0
-        // 会让 position 被 clamp 到满格、右侧时间还显示成 00:01，
-        // 看起来像进度条坏了，直到起播后拿到真实时长才恢复。
         duration: currentItem.durationMs / 1000.0,
         playMode: mode,
       );
@@ -1346,7 +1284,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (wasPlaying) unawaited(_player.play());
         } else if (SafChannel.isSafPath(currentItem.path)) {
           _restoredLocalPending = pos;
-          // SAF 路径不能直接预载，复用 _playAt 续播。
           if (wasPlaying) {
             unawaited(Future.delayed(const Duration(milliseconds: 800), () {
               final idx = state.queueIndex;
@@ -1366,9 +1303,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
           if (!restored) {
             var path = currentItem.path;
-            // http 直链（DLNA 被投等）不能喂 DSP：request.path 直连内网地址
-            // 会被 SSRF 校验拒绝，还白置 60s 冷却；也不可 setFilePath——
-            // Uri.file 会把 scheme 冒号编码成 http%3A//（ExoPlayer no protocol）。
             final isHttpSource =
                 path.startsWith('http://') || path.startsWith('https://');
             if (_isTranscodePath(path) && !isHttpSource) {
@@ -1398,8 +1332,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       } else {
         _restoredOnlinePending = pos;
-        // 在线歌冷启动需重新解析直链，统一走 _playAt 入口续播；稍等
-        // 启动链（AudioService/设置流）就绪再续播，避免时序撞车。
         if (wasPlaying) {
           _restoredOnlinePending = null;
           unawaited(Future.delayed(const Duration(milliseconds: 800), () {
@@ -1407,7 +1339,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             if (idx >= 0 && idx < state.queue.length) {
               _playAt(idx, startAtSecs: pos, skipOnFailure: false)
                   .catchError((Object e) {
-                // 失败已在 _playAt 内置错误态，只吞 rethrow
               });
             }
           }));
@@ -1484,22 +1415,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> _playAt(
     int index, {
     double startAtSecs = 0,
-    // 对齐桌面端 playSong 选项：同一首换源续播（切音质）时保持统计会话
-    // 连续——切换前收听增量照常入账，但不重置累计时长与播放计数。
     bool continueStatsSession = false,
-    // 失败时是否走「自动换源/跳下一首」；切音质失败应停在当前歌报错，
-    // 而不是被拉去别的歌。
     bool skipOnFailure = true,
   }) async {
     if (index < 0 || index >= state.queue.length) return;
     _playEpoch++;
     final epoch = _playEpoch;
-    // 起播前播放态快照：切音质链路里 stop() 的 idle+playing=false 事件可能
-    // 在 _playOnline 读取前就把 state.isPlaying 翻成 false（锚定门被旧源
-    // 存活期位置事件提前撤掉时），届时再读会误判为暂停态导致新源不带
-    // play() 起播——表现为切音质后直接暂停
     final wasPlaying = state.isPlaying;
-    // 同曲重播（切音质）设锚定门；普通起播/切歌清门
     _replayAnchorSecs =
         (continueStatsSession && startAtSecs > 0) ? startAtSecs : null;
 
@@ -1548,8 +1470,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } catch (_) {}
       if (epoch != _playEpoch) return;
     }
-    // 同曲重播：对齐桌面 reanchorPlaybackClock——UI 进度锚定在续播点并
-    // 保持播放态，加载窗口期不归零、歌词不回卷；普通切歌仍归零
     final sameSongReplay = continueStatsSession;
     state = state.copyWith(
       queueIndex: index,
@@ -1568,15 +1488,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (_ref.read(dlnaCastProvider).isCasting) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
-          // 投放中同曲重播（切音质）：起始位置经 castMedia 的 startAtSecs
-          // 内建链路直达，普通起播 startAtSecs=0 行为不变
           await _castFollowPlay(item, epoch, startAtSecs: startAtSecs);
           if (epoch != _playEpoch) return;
         } else if (item.isOnline) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
-          // 锚定门在此之前会被旧源存活期的位置事件（pos≥锚点）提前撤掉，
-          // stop 前重设：挡住 stop 引发的 idle+playing=false 翻转 UI 播放态
           if (sameSongReplay && startAtSecs > 0) {
             _replayAnchorSecs = startAtSecs;
           }
@@ -1584,9 +1500,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             await _player.stop();
           } catch (_) {}
           if (epoch != _playEpoch) return;
-          // 暂停态同曲重播（切音质）不强制起播，维持之前的暂停承诺；
-          // 正常起播/会话恢复恒为播放。用 stop 前的快照而非实时
-          // state.isPlaying（stop 的 idle 事件可能已将其翻转）
           await _playOnline(
             item,
             startAtSecs: startAtSecs,
@@ -1605,9 +1518,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (epoch != _playEpoch) return;
         } else {
         var target = item.path;
-        // http 直链（DLNA 被投条目重播等）：直喂 DSP 会被 SSRF 内网校验拒绝
-        // （发送端 httpd 就是内网地址），统一走在线管线（回环代理 + 流缓存），
-        // 与 playExternalUri 同路；DSP 失败时 _startOnlineUrl 内部自动回退。
         if (target.startsWith('http://') || target.startsWith('https://')) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
@@ -1673,7 +1583,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _skipDepth = 0;
       if (epoch != _playEpoch) return;
       state = state.copyWith(resolving: false, error: null);
-      // 同一首换源续播（切音质）：不重复记历史/最近播放/播放上报
       if (!continueStatsSession) {
         _reportBehavior(item, 'play', 0);
         _recordRecentPlay(item);
@@ -1697,8 +1606,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await _player.stop();
       } catch (_) {}
       if (!skipOnFailure) {
-        // 切音质等同曲重播失败：不自动换源、不跳下一首，停在当前曲目报错，
-        // 异常上抛由调用方回滚会话级音质覆盖。
         final msg = e is PluginEngineException
             ? e.message
             : tr('播放失败：{e}', {'e': e.toString()});
@@ -1802,9 +1709,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               isPlaying: startPlayback);
           state = state.copyWith(currentQuality: start.quality);
         } on _StartOnlineTimeoutException {
-          // 二次超时自动降级音质重试：当前音质的 CDN 节点可能挂死
-          // （如 kg hw 节点对特定文件无响应），probe 已解析的更低音质
-          // 是不同直链，重试有机会成功。重试再超时则透传走失败流程。
           final lowerChain = _lowerQualityChain(start.quality, candidates);
           if (lowerChain.isEmpty) rethrow;
           AppLog.warn('play', '[playOnline] 起播超时，降级音质重试 '
@@ -1862,8 +1766,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _probeMvsAround(item);
   }
 
-  /// 起播成功后批量探测当前歌与队列后续在线歌的 MV 可用性（真实解析
-  /// 结论决定 MV 入口显隐，对齐音质预探测的思路）。
   void _probeMvsAround(QueueItem item) {
     try {
       final notifier = _ref.read(mvProvider.notifier);
@@ -1910,7 +1812,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 把探测失败的原始错误压成一句短提示（完整文本仍在日志里）。
   String _shortResolveReason(String raw) {
     if (raw.contains('熔断')) return '音源熔断中，稍后自动重试';
     if (raw.contains('鉴权') || raw.contains('卡密') || raw.contains('不支持')) {
@@ -2040,20 +1941,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (item == null || !item.isOnline) return false;
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return false;
-    // 与桌面端 selectQuality 同构：设会话级音质覆盖后按同一首经统一入口
-    // _playAt 重播，复用其输出仲裁（先停 DSP/USB 管线与旧源，避免双声与
-    // 双进度源打架）、候选降级链与超时兜底，进度无缝续播。
     if (quality == state.currentQuality) return true;
     final prevOverride = _sessionQualityOverride;
     _sessionQualityOverride = quality;
     try {
-      // 预解析目标音质直链（此间旧源继续出声）：对齐桌面端「旧源播到
-      // 新源就绪才停」的无缝观感。结果缓存在 probe 内，_playAt 里
-      // _playOnline 的 startBest 命中缓存瞬时返回，静音窗口只剩换源与
-      // 起播缓冲；解析失败静默，降级链交由 _playAt 常规流程处理
       await _prewarmQuality(item, quality);
-      // 预解析期间旧源持续走带，续播点取停旧源前的实时位置而非点击时刻，
-      // 避免长解析（秒级）导致切完进度跳回
       final resumePos = state.position;
       await _playAt(
         state.queueIndex,
@@ -2061,13 +1953,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         continueStatsSession: true,
         skipOnFailure: false,
       );
-      // 切档期间用户可能已切歌：当前曲目已变则按失败处理（不回写队列）
       if (state.current?.path != item.path) return false;
       final picked = state.currentQuality;
       if (picked != null && picked.isNotEmpty) {
-        // 降级链可能命中的是比请求档更低的可用档，按实际生效档回写；
-        // 以窗口期后的 state.current 为基，避免用捕获时的旧对象覆盖
-        // 期间其它链路（如歌词补全）已 patch 过的字段
         final updated = (state.current ?? item).copyWithQuality(picked);
         state = state.copyWith(
           current: updated,
@@ -2083,16 +1971,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 切音质前预解析目标音质直链并缓存到 probe：让旧源在解析期间继续
-  /// 出声，网络耗时不落入静音窗口。失败静默返回 null，正式起播链路
-  /// （startBest 降级链 + 超时兜底）自会处理。
-  ///
-  /// 解析命中后进一步预热流缓存：注册请求头并预启动 Rust 流式下载写盘，
-  /// 把「代理建条目 → CDN 握手 → 记录 Content-Length → 首块字节落盘」
-  /// 整段握手挪进旧源继续出声的窗口——停旧源后 _startOnlineUrl 的 Range
-  /// 请求到达时，_tryServeFromCache 面对的是已存活、总长已记录的缓存
-  /// 条目（省掉最长 3s 的 _waitForCacheTotal 空转），伺服直达或短暂等
-  /// 下载推进即回退直连，静音窗口从秒级压到亚秒级。
   Future<void> _prewarmQuality(QueueItem item, String quality) async {
     final json = item.onlineSongJson;
     if (json == null || json.isEmpty) return;
@@ -2107,13 +1985,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           .timeout(const Duration(seconds: 20), onTimeout: () => null);
     } catch (_) {}
     final res = resolved;
-    // 加密流（ekey/cek）走下载解密临时文件路径，不经流缓存伺服；
-    // 预启动下载反而可能与解密拉流对同一 URL 开双上游连接
     if (res == null || res.url.isEmpty || res.ekey != null || res.cek != null) {
       return;
     }
     try {
-      // 与 _startOnlineUrl 完全同构的 URL/头部归一，确保缓存键一致命中
       final clean = sanitizeMediaUrl(res.url);
       if (clean.isEmpty || !clean.startsWith('http')) return;
       final h = await withBilibiliStreamCookie(
@@ -2124,7 +1999,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           const <String, String>{};
       AudioHeadCache.instance.registerHeaders(clean, h);
       await AudioProxyServer.instance.ensureStarted();
-      // 预启动即返回：下载与旧源播放并行推进，不阻塞切换
       unawaited(streamCacheBeginUrlDownload(
           url: clean, headers: jsonEncode(h)));
     } catch (_) {}
@@ -2274,8 +2148,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<List<String>> _probeQualityOptions(
       {required bool forDownload}) async {
-    // 音质弹窗可能在 widget build 流程中调用本方法，
-    // 先让出当前帧，避免 building 期间同步修改 provider 抛异常
     await Future<void>.delayed(Duration.zero);
     final item = state.current;
     final json = item?.onlineSongJson ?? item?.onlineInfoJson;
@@ -2456,8 +2328,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return result;
   }
 
-  /// 降级重试链：候选中严格低于当前音质的档位（保持原顺序）。
-  /// 当前音质不在阶梯上（如自定义档）时无从降级，返回空。
   static List<String> _lowerQualityChain(
     String current,
     List<String> candidates,
@@ -2505,21 +2375,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         lower.endsWith('.dsd');
   }
 
-  // ==================== 音量平衡（ReplayGain 响度均衡） ====================
+  // ==================== 音量平衡 ====================
 
   double _rgGain = 1.0;
 
-  /// MV 音频接管时置 true：外部歌曲音频被静音，交由 MV 自带音轨出声。
   bool _mvAudioOverride = false;
 
-  /// MV 交叉淡化进行中的歌曲通道增益（1.0 正常，0.0 完全静音）。
   double _mvSongGain = 1.0;
 
-  /// 设置 MV 音频接管开关。接管时交由 MV 自带音轨出声，退出时还原歌曲通道。
-  /// 本身不瞬静也不瞬切：歌曲通道与 USB/DSP 管线音量始终跟随 `setMvSongGain`
-  /// 的增益，由调用方驱动交叉淡化。
-  /// DSP 共享管线 / USB 独占输出不经 _player，需同步作用到 Rust 管线音量，
-  /// 否则接管后歌曲照常从该管线出声，与 MV 音轨叠播。
   Future<void> setMvAudioOverride(bool value) async {
     if (_mvAudioOverride == value) return;
     _mvAudioOverride = value;
@@ -2533,8 +2396,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// MV 交叉淡化：调节歌曲通道增益（1.0 正常，0.0 静音），与 MV 音轨音量
-  /// 反向同步变化，形成等功率交叉淡化。USB/DSP 管线音量按比例同步缩放。
   Future<void> setMvSongGain(double gain) async {
     _mvSongGain = gain.clamp(0.0, 1.0);
     await _player.setVolume(_effectiveVolume());
@@ -2559,8 +2420,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<Duration?> _setLocalSource(String path) async {
     var target = path;
-    // DLNA 被投直链等 http 源误入本地回退时必须走 setUrl：setFilePath 经
-    // Uri.file 会把 scheme 冒号编码成 http%3A//（ExoPlayer 报 no protocol）。
     if (target.startsWith('http://') || target.startsWith('https://')) {
       return _player.setUrl(target);
     }
@@ -2806,7 +2665,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required QueueItem item,
     String? ekey,
     String? cek,
-    // 切音质复用本方法：从该秒数续播；isPlaying=false 时载入但不自动播
     double startAtSecs = 0,
     bool isPlaying = true,
   }) async {
@@ -2824,14 +2682,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     if (cek != null && cek.isNotEmpty) {
-      // CENC 加密流（如网易 dolby）：复用 ekey 的「下载到临时文件 + 解密」
-      // 离线模式，解密由 Rust 侧按 CENC（AES-CTR 样本级）执行。
       await _startEncryptedFile(clean, h, item, cek,
           isCenc: true, startAtSecs: startAtSecs, isPlaying: isPlaying);
       return;
     }
-    // DSP 共享管线分支不经 _GatedAudioPlayer，这里兜底记录真实直链 + 请求头
-    //（若 DSP 失败走 setUrl，会被后者以代理 URL 覆盖，两路均可还原直链）。
     LastAudioSource.recordUrl(clean, h);
     await AudioProxyServer.instance.ensureStarted();
     AudioHeadCache.instance.registerHeaders(clean, h);
@@ -2840,9 +2694,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       try {
         await _player.stop();
       } catch (_) {}
-      // DSP 直读流缓存：对齐桌面端 StreamingTempFile 模型——出声主体不再是
-      // 代理 HTTP 流，而是 Rust 流缓存文件 Reader（复用预热线程，单上游连接）。
-      // 代理仅保留给 ExoPlayer 兜底分支。
       final ok = await _tryStartDspPipeline(proxyUrl,
           streamCacheUrl: clean,
           streamCacheHeaders: h,
@@ -2852,7 +2703,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return;
       }
     }
-    // 代理路径：头注入/缓存伺服/流量收口；10s 超时回退直链作兜底。
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
     try {
       await _player.setUrl(playUrl,
@@ -2862,17 +2712,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                   : null)
           .timeout(const Duration(seconds: 10));
     } on TimeoutException {
-      // 起播超时：先抓现场（状态+线程堆栈随日志导出可离线定位）。
-      // 修复：不再对同一 player 二次 setUrl——首次 load 挂死时 just_audio
-      // 的串行锁会让后续 setUrl/pause/stop 全部排队挂死，导致旧源声音
-      // 叠加且暂停失效（双 ExoPlayer 线程组并存）。改为 fail-fast 交上层
-      // 走播放失败流程（换候选/跳歌），并尝试 2s 内 stop 打断挂死 load。
       AppLog.warn('play',
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
           'buffered=${_player.bufferedPosition.inMilliseconds}ms '
           'dur=${_player.duration?.inMilliseconds}ms url=$clean');
-      // 诊断探针只在超时后跑：正常链路必须只有预热缓存一条上游连接，
-      // 额外直连会被按 token 限并发的 CDN（酷狗）抢走伺服槽位。
       unawaited(_diagProbeUrl(clean, h));
       await _dumpPlayerThreads();
       unawaited(_player
@@ -2882,13 +2725,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           .timeout(const Duration(seconds: 2), onTimeout: () {
         AppLog.warn('play', '[startOnlineUrl] 超时后 stop 也挂起（控制通道被占）');
       }));
-      // 超时 + stop 假成功常意味着原生主线程被挂死 release 阻塞（ExoPlayer
-      // 无任何加载任务、setUrl 静默挂满 10s）：探测楔死并重建播放器通道。
       unawaited(_probeAndRebuild('[startOnlineUrl] 起播超时'));
       throw _StartOnlineTimeoutException(tr('音源起播超时，已跳过'));
     } on PlatformException catch (e) {
-      // 原生注册表异常（如 Platform player already exists）：此前未捕获会
-      // 冒泡成未处理异常刷 *** 堆栈。走正常失败流程并探测楔死。
       AppLog.error('play', '[startOnlineUrl] 平台通道异常 code=${e.code}');
       unawaited(_probeAndRebuild('平台通道异常 ${e.code}'));
       throw StateError(tr('播放器通道异常'));
@@ -2907,8 +2746,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _triggerOnlinePrecache(item);
   }
 
-  // 诊断探针(B)：绕过本地代理直连真实 URL，测远端到底回不回字节、速率多少——
-  // 据此区分「代理层卡」还是「网络/OS 节流」。仅打日志，不影响播放链路。
   Future<void> _diagProbeUrl(String url, Map<String, String>? headers) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     final sw = Stopwatch()..start();
@@ -3489,10 +3326,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       if (resolved != null) return resolved;
-      // 解析失败不上抛兄弟换源：本函数被音质探测回调共用，探测每档失败
-      // 都会走到这里，若在此兜底换源会绕过「起播失败行为」设置门控与
-      // _autoSwitchSource 的防抖（表现为未开启自动换源也频繁触发换源）。
-      // 换源统一由起播失败路径 _autoSwitchSource 按 settings 门控执行。
       return null;
     } catch (e) {
       return null;
@@ -3509,8 +3342,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return v?.toString() ?? '';
   }
 
-  /// musicfree 插件的歌曲 musicInfo 常不带 platform/source 字段，
-  /// 平台标签为空时从插件元数据兜底（exports 的 platform / pluginName / name）。
   Future<String> _platformLabelFromPluginMeta(
     PluginEngine engine,
     String pluginId,
@@ -3817,7 +3648,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await _player.stop();
     } catch (_) {}
     state = const PlaybackState();
-    // 同步落盘空会话，防止下次启动恢复出已清空的队列
     await _persistSession();
   }
 
@@ -3890,9 +3720,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   bool mvSuppressFocusLoss = false;
 
-  /// 音频焦点被其他应用打断：暂停当前出声主体。DSP/USB 独占管线必须走
-  /// Pause 命令（_player 只控制 ExoPlayer，停不了 Rust 侧 AAudio 流）；
-  /// 投放中输出主体不在本机，焦点变化不影响被投端，忽略。
   Future<void> _pauseForInterruption() async {
     if (_ref.read(dlnaCastProvider).isCasting) return;
     try {
@@ -3912,7 +3739,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  /// 临时打断结束后恢复播放（与 toggle 恢复分支同构，但不涉及冷启动续播）。
   Future<void> _resumeAfterInterruption() async {
     if (_ref.read(dlnaCastProvider).isCasting) return;
     try {
@@ -3952,10 +3778,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     if (state.usbExclusive || state.dspActive) {
-      // 暂停/恢复必须走 Pause/Resume（Rust 侧仅切换流状态，samples_played
-      // 冻结不动，位置严格连续）。不可用 Seek(state.position) 实现——显示
-      // 位置比实际解码位置滞后至多一个轮询周期，且 try_seek 失败时错误被
-      // 吞、进度基准仍被无条件重设，恢复播放后音频位置与进度条脱节（乱飞）。
       if (state.isPlaying) {
         _flushPlayStats();
         _lastUserPauseAt = DateTime.now();
@@ -3979,13 +3801,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final pendingPos = _restoredOnlinePending;
       if (pendingPos != null) {
         _restoredOnlinePending = null;
-        // 在线歌冷启动恢复：直链需重新解析，统一走 _playAt 入口续播
         final idx = state.queueIndex;
         if (idx >= 0 && idx < state.queue.length) {
           try {
             await _playAt(idx, startAtSecs: pendingPos, skipOnFailure: false);
           } catch (_) {
-            // 失败已在 _playAt 内置错误态（不换源不跳歌），这里只吞 rethrow
           }
           _persistSession();
           return;
@@ -4008,8 +3828,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   Future<void> seek(double secs) async {
-    // 诊断插桩：定位 DLNA 被投场景下「起播 ~200ms 内 DSP 死亡」是否有
-    // 隐性 seek 参与（watch_link / MediaSession / DMR 均是候选来源）。
     final st = StackTrace.current.toString().split('\n').take(4).join(' <- ');
     AppLog.info('play', '[seek] t=$secs $st');
     if (_ref.read(dlnaCastProvider).isCasting) {
@@ -4332,8 +4150,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final settings = _ref.read(settingsProvider).valueOrNull;
       final item = state.current;
       if (item == null || state.queue.isEmpty) {
-        // 空队列（如清空播放队列后）也要落盘空会话，否则旧会话残留
-        // 会在下次启动被 _restoreSession 原样恢复，表现为队列清不掉
         await savePlaybackSession(
           dbPath: dbPath,
           sessionJson: jsonEncode({
@@ -4449,9 +4265,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
     _syncToSystemMediaSession();
     try {
-      // 走在线管线而非 _startUrl：被投 URL 指向发送端 httpd（内网地址），
-      // 直喂 DSP 会被 SSRF 校验拒绝；经本机回环代理后 DSP 拿到 127.0.0.1
-      // 天然放行，同时获得流缓存/进度 seek 支持与正常的播放上报链路。
       await _startOnlineUrl(uri, item: item);
       state = state.copyWith(isPlaying: true);
       _trackStartTime = DateTime.now();
@@ -4549,9 +4362,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       await _player.stop();
     } catch (_) {}
-    // castMedia 内建 SetUri→Play→Seek 链（startAtSecs 直达，设备不响应
-    // seek 时静默降级从头播），与桌面 castFromPlayAudio 的 startOffsetMs
-    // 语义对齐，无需调用方事后补偿 seek
     await _ref.read(dlnaCastProvider.notifier).castMedia(
           title: item.title,
           artist: item.artist,

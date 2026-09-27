@@ -421,8 +421,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final lp = _localPath;
     if (lp == null || !File(lp).existsSync()) return;
     await _disposePreviewVideo();
-    // 先登记控制器，避免 initialize 期间页面被 pop 时 in-flight 控制器无人 dispose
-    // （在真正赋值前就把它挂上，dispose() 才能在半途销毁它，否则异步回调里访问已回收原生对象会崩）
     final controller = VideoPlayerController.file(File(lp))
       ..setLooping(true)
       ..setVolume(0);
@@ -443,7 +441,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     setState(() {
       _previewVideoReady = true;
     });
-    // 预览同样强制无声，规避初始化完成时音量被重置
     await controller.setVolume(0);
     unawaited(controller.play());
   }
@@ -489,7 +486,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final id = widget.wallpaper['id'];
     final sha = (widget.wallpaper['videoSha256'] as String?) ?? '';
     final ext = isVideo ? 'mp4' : 'jpg';
-    // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
     final cacheKey = isVideo && sha.isNotEmpty ? sha.substring(0, 8) : '';
     final file = File(
       p.join(
@@ -1367,8 +1363,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     }
   }
 
-  // 准备图片：GIF 动图直接 copy 原文件(Image.file 原生循环播放，不做解码校验以免当单帧)；
-  // JPEG/PNG 也 copy 原文件(保留 EXIF 方向)；解不了(HEIC 等)再交给原生 BitmapFactory 转 JPEG。
   Future<String?> _prepareImageForWallpaper(File src, String target) async {
     try {
       final raf = src.openSync();
@@ -1402,7 +1396,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
       await src.copy(target);
       return target;
     } catch (_) {
-      // Flutter 解不了 → 原生解码转 JPEG
     }
     final converted = await FlutterImageCompress.compressAndGetFile(
       src.path,

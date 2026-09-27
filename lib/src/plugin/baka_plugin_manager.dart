@@ -140,7 +140,6 @@ class BakaPluginManager {
           requestedKey: requestedKey);
     } catch (e) {
       final msg = e is PluginEngineException ? e.message : e.toString();
-      // 鉴权失效（卡密/401）时向上抛出，终止剩余档位
       if (PluginEngine.isAuthFailureMessage(msg)) rethrow;
       return null;
     }

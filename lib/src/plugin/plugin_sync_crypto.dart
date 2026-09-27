@@ -22,7 +22,6 @@ abstract class PluginUserVarCrypto {
     }
   }
 
-  /// 通用字符串解密（加密备份文件整体解密，与用户变量同构：AES-CBC/PKCS7，密钥 sha256(口令)）
   static String? decryptString(String password, Map<String, dynamic>? block) {
     if (block == null) return null;
     try {

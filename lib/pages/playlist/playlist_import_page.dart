@@ -98,7 +98,6 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1：备份文件导入（BakaMusic / MusicFree / 洛雪 备份，选择本地文件）
 // ---------------------------------------------------------------------------
 
 class _BackupImportTab extends ConsumerStatefulWidget {
@@ -290,7 +289,6 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 2：本地文件夹导入（SAF 选目录 → fd 解析 → 创建本地歌曲歌单）
 // ---------------------------------------------------------------------------
 
 class _LocalFolderTab extends ConsumerStatefulWidget {
@@ -526,7 +524,6 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 3：云端导入（MusicFree 插件搜索歌单/链接自动识别平台 → 拉取详情 → 建歌单）
 // ---------------------------------------------------------------------------
 
 class _CloudImportTab extends ConsumerStatefulWidget {
@@ -725,7 +722,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         return;
       }
       await manager.addSongs(created.last.id, songs);
-      // 记录来源，供后续「从源端更新」使用
       final keyword = _keywordCtrl.text.trim();
       final isUrlImport = sheet.raw['_importedTracks'] != null;
       Map<String, dynamic>? sourceRaw;

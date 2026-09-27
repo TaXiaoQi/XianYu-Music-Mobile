@@ -33,7 +33,6 @@ class FloatingLyricsController {
   ProviderSubscription<AsyncValue<AppSettings>>? _settingsSub;
   ProviderSubscription<PlaybackState>? _playerSub;
 
-  /// MV 是否已开启。MV 期间桌面歌词整体不可用：设置里即使开着也不显示浮窗。
   ProviderSubscription<bool>? _mvSub;
   bool _mvActive = false;
 
@@ -78,7 +77,6 @@ class FloatingLyricsController {
   // ---- 设置变化 ----
 
   void _onSettingsChanged(AppSettings s) {
-    // MV 期间不显示浮窗，即使设置里是开着的。
     final enabled = s.floatingLyricsEnabled && !_mvActive;
     if (enabled && !_enabled) {
       _enabled = true;
@@ -105,7 +103,6 @@ class FloatingLyricsController {
     if (want == _enabled) return;
     _enabled = want;
     if (want) {
-      // MV 结束且设置仍开着：把浮窗放回来（_show 内部会补齐设置/歌词/进度）。
       _show();
     } else {
       _hide();

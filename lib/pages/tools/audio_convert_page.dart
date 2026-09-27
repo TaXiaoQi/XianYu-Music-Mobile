@@ -394,8 +394,6 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         color: appCardColor(context),
         borderRadius: BorderRadius.circular(12),
       ),
-      // Material 透明层让 SwitchListTile 的背景/水波纹画在这里，
-      // 否则被外层 DecoratedBox 遮住并触发框架断言。
       child: Material(
         type: MaterialType.transparency,
         child: Column(

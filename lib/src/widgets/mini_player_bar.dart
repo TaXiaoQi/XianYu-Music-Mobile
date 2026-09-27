@@ -556,10 +556,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Impeller 的 BackdropFilter backdrop 快照按层 bounds 裁剪缓存，
-          // 失效条件是「backdrop 内容变化」。拖拽移层时页面静止，快照不
-          // 失效，玻璃折射便冻结在旧位置。此点位于玻璃 z 序之下、随拖拽
-          // 移动，每帧改写 backdrop 内容强制重采样，实现拖拽实时折射。
           ValueListenableBuilder<bool>(
             valueListenable: globalIsDragging,
             builder: (context, dragging, _) => dragging
@@ -766,7 +762,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
   static Future<ui.FragmentProgram>? _programFuture;
 
-  /// 引擎能力降级原因只报一次（进程级），避免 build 热路径刷屏。
   static bool _kCapabilityWarned = false;
 
   AnimationController? _tickC;
@@ -777,8 +772,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         value: 3.0,
       );
 
-  // 激进省电：静止即冻结。只有拖动/滚动/转场等瞬时活动才跑 8s 循环重绘，
-  // 让折射实时跟手；活动停止 _kIdleFreezeMs 后停 tick，冻结最后一帧省 GPU。
   static const _kIdleFreezeMs = 1600;
   Timer? _idleTimer;
 
@@ -811,8 +804,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     globalIsTransitioning.addListener(_onTransitionChanged);
     globalIsDragging.addListener(_onDraggingChanged);
     globalScrollTick.addListener(_onScrollTick);
-    // 挂载首帧即渲染一次实时玻璃（几何/uniforms 已就绪），避免静止态
-    // 一直停在 blur 降级面；此后才进入「静止冻结、活动激活」。
     if (!_frozen) _nudgeLive();
   }
 
@@ -826,8 +817,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     super.dispose();
   }
 
-  /// 舒适光：切到静止，正是此刻。外部发生一次「折射应实时跟手」的活动
-  /// （拖动/滚动/转场收尾），唤起 tick 并重置冻结计时。
   void _nudgeLive() {
     if (!mounted) return;
     if (!_frozen) _tick.repeat();
@@ -908,8 +897,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   Widget build(BuildContext context) {
     final shader = _shader;
     if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      // 转场/降级期用同款 blur + 液态底色的毛玻璃过渡，避免
-      // 「实心色块 ↔ 液态玻璃」来回硬切产生闪跳。
       if (!_frozen && !_kCapabilityWarned && shader != null) {
         _kCapabilityWarned = true;
         AppLog.warn('glass',

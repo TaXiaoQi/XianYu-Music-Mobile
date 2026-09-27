@@ -71,20 +71,11 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   bool _idle = false;
 
-  /// 路由切换期间为 true：跳过 shader/BackdropFilter 层，改用纯色回退。
-  /// 原因有二：① 平移动画中 RouteStaticSnapshot 会把整页 toImage 截图，
-  /// 离屏渲染里 BackdropFilter 无背景可采样，玻璃条会变成纯黑；
-  /// ② 平行滑动时外壳条（底栏/播放条）两侧露出透明缝隙，live 采样到
-  /// 空背景同样发黑。切换期间用纯色条过渡，动画结束自动恢复玻璃。
   bool _routeTransition = false;
 
   bool _capturing = false;
   Timer? _idleDebounce;
 
-  /// 转场收尾冷却：markTransitionActivity 的 400ms 窗口短于部分路由动画
-  /// （如播放页 450ms），窗口过期后的 idle 截图会把收尾动画中的画面
-  /// （播放页下滑的深色残影）定格进 _frozen，静止期间持续显示深色玻璃，
-  /// 直到滚动/切页才恢复。转场结束后冷却期内禁止截图，玻璃保持 live。
   DateTime _captureCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   late final AnimationController _fade;
@@ -124,30 +115,21 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (_routeTransition == globalIsTransitioning.value) return;
     setState(() => _routeTransition = globalIsTransitioning.value);
     if (_routeTransition) return;
-    // 转场收尾：丢弃遗留快照（可能在隐藏期/收尾动画中采到深色残像），
-    // 强制回 live 重绘；截图进入冷却期，确保下次截图只发生在画面稳定后。
     _idleDebounce?.cancel();
     _captureCooldownUntil =
         DateTime.now().add(const Duration(milliseconds: 700));
     final old = _frozen;
     if (old != null) {
       _frozen = null;
-      // 快照可能仍被本帧 scene 引用，延迟到本帧渲染后再释放。
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
       setState(() {});
     }
   }
 
-  /// 冻结快照的唯一定时释放点。渲染层只解除引用不释放（见
-  /// RenderLiquidBacking._onScrollTick），所有权收口在 State 这一层：
-  /// 此前两边各自 dispose 同一张 ui.Image，会触发 double dispose——
-  /// release 下表现为「native peer collected (nullptr)」崩溃。
   void _onOwnerScrollTick() {
     if (!mounted || _frozen == null) return;
     final old = _frozen!;
     _frozen = null;
-    // 该图可能仍被本帧 scene 引用（tick 可能在合成通知阶段同步触发），
-    // 延迟到本帧渲染后再释放。
     SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
     setState(() {});
   }
@@ -228,9 +210,6 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   void _startFadeOut() {
     if (_frozen == null && _fade.value <= 0.001) return;
-    // 记录本次淡出对应的快照：_capture 里 _fade.value = 0 会打断进行中的
-    // 动画使 whenComplete 提前触发，此时 _frozen 可能已换成新图——
-    // 不做身份校验会把新图误释放，后续再 dispose 同一张图即崩溃。
     final captured = _frozen;
     _fade.animateTo(
       0,
@@ -607,11 +586,6 @@ class RenderLiquidBacking extends RenderBox {
   }
 
   void _onScrollTick() {
-    // 横向滚动（来源气泡等 transform 平移）不改变竖向 globalScrollOffset，
-    // 也不会触发 markScrollActivity 变更 _frozen；须强制回归 live 重绘，
-    // 否则折射采样位置停留在玻璃平移前的屏幕坐标。
-    // 这里只解除引用、不 dispose：图像所有权在 State（State 监听同一
-    // globalScrollTick 统一释放），两边都释放会 double dispose 崩溃。
     if (_frozen != null) {
       _frozen = null;
       _fadeBlend = 0;

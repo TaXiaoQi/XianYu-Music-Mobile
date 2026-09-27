@@ -134,7 +134,7 @@ class _CatalogItem {
   bool get isDirectPlay => directSource != null && directSongs.isNotEmpty;
 }
 
-// ==================== 在线搜索会话（跨搜索页/结果页两级路由） ====================
+// ==================== 在线搜索会话 ====================
 
 class SearchSession {
   final String query;
@@ -157,7 +157,7 @@ class SearchSessionNotifier extends Notifier<SearchSession> {
       state = SearchSession(query: state.query, sourceId: id);
 }
 
-// ==================== 横屏搜索容器（参考桌面端：顶栏即搜索输入） ====================
+// ==================== 横屏搜索容器 ====================
 
 final landscapeSearchOpenProvider = StateProvider<bool>((ref) => false);
 
@@ -383,8 +383,6 @@ class _SearchPageState extends ConsumerState<SearchPage>
     ref.read(searchHistoryProvider.notifier).add(q);
     final sourceId = ref.read(searchSessionProvider).sourceId;
     ref.read(searchSessionProvider.notifier).startSearch(q, sourceId);
-    // 结果页已紧邻本页下方（结果页→搜索页→再搜索）时直接返回复用它，
-    // 否则 pushReplacement 会不断堆叠结果页，退出需逐层弹出。
     final matches = GoRouter.of(context).routerDelegate.currentConfiguration.matches;
     final below = matches.length >= 2 ? matches[matches.length - 2] : null;
     if (below is RouteMatch && below.matchedLocation == '/search/result') {
@@ -540,7 +538,6 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     _tab = TabController(length: 4, vsync: this);
     _tab.addListener(_onTabChanged);
     ref.listenManual(pluginManagerProvider, (_, _) => _refreshSources());
-    // 从搜索页提交新关键词后 pop 回本页时，同步搜索框文本（结果页签 watch 会话自动刷新）。
     ref.listenManual(searchSessionProvider, (prev, next) {
       if (next.query != _queryCtrl.text) {
         _queryCtrl.text = next.query;
@@ -901,7 +898,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     context.push(q.isEmpty ? '/search' : '/search?q=${Uri.encodeComponent(q)}');
   }
 }
-// ==================== 默认页（搜索历史 + 大家都在搜） ====================
+// ==================== 默认页 ====================
 
 final _hotSearchProvider = FutureProvider<List<HotSearchItem>>((ref) {
   return ref.read(accountApiProvider).fetchHotSearch(limit: 10);
@@ -1258,8 +1255,6 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       if (!mounted) return;
       if (_searchedHash != hash) return;
       setState(() {
-        // 失败后重置 hash：避免 KeepAlive 复用 state 时，同关键词重进/切源因
-        // hash == _searchedHash 跳过重搜而残留上一次的失败/空态。
         _searchedHash = '';
         _searchError = e.toString();
         _results = const [];
@@ -1509,7 +1504,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   }
 }
 
-// ==================== 歌手 / 专辑 / 歌单 tab ====================
+// ==================== 歌手/专辑/歌单 tab ====================
 
 class _CatalogTab extends ConsumerStatefulWidget {
   final _CatalogKind kind;
@@ -1602,8 +1597,6 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
       if (!mounted) return;
       if (_searchedHash != hash) return;
       setState(() {
-        // 失败后重置 hash：与 _TrackTab 一致，避免 KeepAlive 复用 state 时
-        // 同关键词重进/切源因 hash == _searchedHash 跳过重搜而残留旧空态。
         _searchedHash = '';
         _items = const [];
         _loading = false;

@@ -75,11 +75,6 @@ class LyricsRepository {
         AppLog.debug('lyric',
             '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
         if (encrypted) {
-          // Baka 系插件自身返回 QRC/e-lrc 密文（插件注释即声明「由应用层
-          // 解密」）——直接用后端 qrc_decrypt 解密复用（三端同一后端能力）。
-          // 原生歌词源兜底（fetch_lyric_from_source）是 lx:// 系专用：需要
-          // 完整平台 songInfo（songId 等），Baka musicInfo 只有 songmid，
-          // 两条 QQ 接口都查不到——密文场景不降级它，解密失败即无歌词。
           final decrypted = await _decryptEncryptedLyric(mainText);
           if (decrypted != null && decrypted.trim().isNotEmpty) {
             AppLog.debug('lyric', '插件歌词: 密文解密成功 len=${decrypted.length}');
@@ -99,7 +94,6 @@ class LyricsRepository {
             return parseLyrics(rawLyrics: '$mainText\n$tlyric');
           }
           if (tlyric.isEmpty) {
-            // 插件没带翻译（如 QQ 音源）→ 原生歌词源补齐翻译
             final native = await _fetchNativeLyricResult(item);
             final nTrans = native?['tlyric']?.trim() ?? '';
             if (nTrans.isNotEmpty && !mainText.contains('tlyric')) {
@@ -111,7 +105,6 @@ class LyricsRepository {
       } else {
         AppLog.debug('lyric', '插件歌词: 无结果');
       }
-      // 插件无歌词，或返回的是未解密的加密密文 → 原生歌词源整包兜底
       final native = await _fetchNativeLyricResult(item);
       if (native != null) {
         final lx = (native['lxlyric'] ?? '').trim();
@@ -130,8 +123,6 @@ class LyricsRepository {
       }
       return '';
     }
-    // DLNA 被投条目（http 直链、无本地库记录）：按标题/歌手走插件搜索
-    // 拿到插件歌曲信息后取歌词，与分享深链同一套插件链路。
     if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
       final online = await _searchCastLyricSource(item);
       if (online != null) {
@@ -145,7 +136,6 @@ class LyricsRepository {
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
   }
 
-  /// DLNA 被投曲目按标题/歌手搜索插件音源，返回带插件信息的 QueueItem。
   Future<QueueItem?> _searchCastLyricSource(QueueItem item) async {
     final name = item.title.trim();
     if (name.isEmpty || name.contains('DLNA')) {
@@ -174,8 +164,6 @@ class LyricsRepository {
     return null;
   }
 
-  /// 解密插件返回的加密歌词密文（QQ QRC / 酷我 e-lrc，3DES+zlib hex），
-  /// 走 Rust 侧与原生歌词源同一套解密实现。失败/空结果返回 null。
   Future<String?> _decryptEncryptedLyric(String hex) async {
     try {
       final out = await decryptPluginLyric(
@@ -188,8 +176,6 @@ class LyricsRepository {
     }
   }
 
-  /// 原生歌词源兜底：插件歌曲没有 source/onlineInfoJson，
-  /// 从 onlineSongJson.musicInfo 推导平台（仅支持原生实现了歌词抓取的四家）。
   static const _nativeLyricSources = {'tx', 'wy', 'kw', 'kg'};
 
   Future<Map<String, String>?> _fetchNativeLyricResult(QueueItem item) async {
@@ -218,11 +204,6 @@ class LyricsRepository {
         item.source ??
         '';
     if (!_nativeLyricSources.contains(sourceKey)) {
-      // 统一归一化映射：sourceKey 可能是空标签（Baka 系 musicInfo 不带
-      // source/platform），也可能是原始平台标签（如「QQ音乐[L1]」/「酷我
-      // 音乐[T]」）——都先过 lxSourceKeyForPlatform 映射到原生源 key
-      // （'tx'/'wy'/...），与换源空标签修复同一套归一化。映射不出再回退
-      // 插件元数据 platform。否则此处静默 return null，原生兜底失效。
       var mapped = lxSourceKeyForPlatform(sourceKey);
       if (!_nativeLyricSources.contains(mapped) &&
           pluginId != null &&
@@ -299,9 +280,6 @@ class LyricsRepository {
   }
 }
 
-/// 插件歌词结果的主文本挑选：lxlyric（逐字）→ yrc → qrc → eslrc → lyric → rawLrc。
-/// rawLrc 是 Baka 系 musicfree 插件（如 QQ音乐[L1]）的歌词字段——新接口带
-/// crypt:1 时返回未解密的 QRC hex 密文，由上层 pluginLyricLooksEncrypted 拦截。
 String pickPluginMainText(Map<String, dynamic> res) {
   return (res['lxlyric'] ??
           res['yrc'] ??
@@ -312,10 +290,6 @@ String pickPluginMainText(Map<String, dynamic> res) {
       '';
 }
 
-/// 是否为未解密的加密歌词密文：部分音源（QQ 的 QRC / 酷我的 e-lrc）对特定
-/// 歌曲会返回十六进制密文（3DES+zlib 压缩包的 hex），不能当歌词展示或落盘。
-/// 判据：剥掉空白后几乎全是十六进制字符，且不含任何 `[mm:ss` 时间戳——
-/// 真实歌词（LRC/QRC/YRC/lys）必然带时间戳。
 bool pluginLyricLooksEncrypted(String text) {
   final t = text.replaceAll(RegExp(r'\s'), '');
   if (t.length < 48) return false;
@@ -340,8 +314,6 @@ String _cleanLyricText(String raw) {
   return text.trim();
 }
 
-/// 逐字文本清理：与 [_cleanLyricText] 类似但不 trim，
-/// 单词首尾的空格是英语逐字歌词的单词间隔，trim 掉会导致单词连在一起。
 String _cleanLyricWordText(String raw) {
   if (raw.isEmpty) return '';
   String text = raw.replaceAll('\u200b', '').replaceAll('\u2063', '');

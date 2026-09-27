@@ -102,7 +102,6 @@ class PluginBackupPlaylist {
   final int originalSongCount;
   final String? cloudId;
   final bool isCloud;
-  // 来源信息：云同步/备份链路透传，保证导入歌单跨设备保留源端更新能力
   final String? sourcePluginId;
   final String? sourceUrl;
   final Map<String, dynamic>? sourceRaw;
@@ -1059,7 +1058,7 @@ PreparedPluginBackupImport preparePluginBackupImport(
   );
 }
 
-// ==================== M3U / M3U8 / 椒盐音乐 TXT 解析 ====================
+// ==================== M3U / M3U8 ====================
 
 typedef LocalSongRef = ({
   String path,

@@ -794,7 +794,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('volumeBalancePreventClipping') ?? true,
       autoResumeAfterInterruption:
           prefs.getBool('autoResumeAfterInterruption') ?? true,
-      // 'stop' 选项已移除（与 pause 语义重复），存量值归一为 'pause'
       onlineFailureBehavior:
           prefs.getString('onlineFailureBehavior') == 'autoswitch'
               ? 'autoswitch'

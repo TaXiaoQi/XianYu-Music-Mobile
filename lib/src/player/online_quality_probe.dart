@@ -36,11 +36,6 @@ bool isDegradedLossless(String quality, String url) {
   return _lossyHints.any(u.contains);
 }
 
-/// 酷狗「蝰蛇」音效流（quviper_atmos 全景声 / quviper_clear 超清母带）是
-/// 酷狗自研 VIPER 编码伪装的 .flac 后缀，标准 FLAC 解码得到错乱 PCM——
-/// 表现为破音/撕裂（atmos 档还会解出伪 6ch、clear 档伪 96kHz）。客户端
-/// 无 VIPER 解码器，解析命中这类流时视为该档不可用，降级尝试下一档
-/// （hires/quhigh 等标准流正常）。
 bool isViperEncodedStream(String url) {
   final u = url.toLowerCase().split('?').first;
   return u.contains('quviper_atmos_') || u.contains('quviper_clear_');
@@ -73,7 +68,6 @@ class QualityProbeResult {
 
   final String? ekey;
 
-  /// CENC 内容密钥（32-hex），与 ekey（QMC2）互斥使用。
   final String? cek;
 }
 
@@ -95,7 +89,6 @@ class SongQualityProbe {
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
   final List<QualityProbeResult> _done = [];
 
-  /// 最近一次探测失败的原因（音质: 错误文本），用于失败提示透传。
   String? lastFailureReason;
   List<String> _trustedDeclared = const [];
   final ListQueue<Future<void> Function()> _queue = ListQueue();
@@ -285,7 +278,6 @@ class SongQualityProbe {
     for (final q in chain) {
       final res = await probe(q);
       if (res != null && res.url.isNotEmpty) {
-        // 蝰蛇音效流无法被标准解码器还原，跳过该档继续降级。
         if (isViperEncodedStream(res.url)) {
           AppLog.debug('quality',
               '跳过蝰蛇音效流 q=$q（VIPER 编码不可解）');
