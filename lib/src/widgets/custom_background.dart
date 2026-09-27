@@ -9,6 +9,150 @@ import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
 
+class WallpaperMediaAspect {
+  WallpaperMediaAspect._();
+
+  static final Map<String, Size> _cache = <String, Size>{};
+  static final Set<String> _failed = <String>{};
+  static final Map<String, Set<VoidCallback>> _pending =
+      <String, Set<VoidCallback>>{};
+
+  static Size? of(String path) => _cache[path];
+
+  static void probe(String path, VoidCallback onChanged) {
+    if (path.isEmpty || path.toLowerCase().endsWith('.mp4')) return;
+    if (_cache.containsKey(path)) {
+      onChanged();
+      return;
+    }
+    if (_failed.contains(path)) return;
+    final pending = _pending.putIfAbsent(path, () => <VoidCallback>{});
+    pending.add(onChanged);
+    if (pending.length > 1) return;
+    _startProbe(path);
+  }
+
+  static void _startProbe(String path) {
+    final file = File(path);
+    if (!file.existsSync()) {
+      _failed.add(path);
+      _finishProbe(path);
+      return;
+    }
+    final stream = ResizeImage(
+      FileImage(file),
+      width: 96,
+    ).resolve(const ImageConfiguration());
+    late ImageStreamListener listener;
+    var done = false;
+    listener = ImageStreamListener(
+      (info, _) {
+        if (done) return;
+        done = true;
+        stream.removeListener(listener);
+        final w = info.image.width.toDouble();
+        final h = info.image.height.toDouble();
+        if (w > 0 && h > 0) {
+          if (_cache.length > 16) _cache.clear();
+          _cache[path] = Size(w, h);
+        } else {
+          _failed.add(path);
+        }
+        _finishProbe(path);
+      },
+      onError: (_, _) {
+        if (done) return;
+        done = true;
+        _failed.add(path);
+        _finishProbe(path);
+      },
+    );
+    stream.addListener(listener);
+  }
+
+  static void _finishProbe(String path) {
+    final cbs = _pending.remove(path);
+    if (cbs == null) return;
+    for (final cb in cbs) {
+      cb();
+    }
+  }
+}
+
+Size wallpaperCoverBox(double w, double h, Size? src) {
+  final vw = src?.width ?? 0;
+  final vh = src?.height ?? 0;
+  if (vw <= 0 || vh <= 0 || w <= 0 || h <= 0) return Size(w, h);
+  final containerRatio = w / h;
+  final srcRatio = vw / vh;
+  if (srcRatio > containerRatio) {
+    return Size(h * srcRatio, h);
+  }
+  return Size(w, w / srcRatio);
+}
+
+Offset wallpaperMaxTranslate(double w, double h, Size box, double s) {
+  final maxDx = ((box.width * s - w) / 2).clamp(0.0, double.infinity);
+  final maxDy = ((box.height * s - h) / 2).clamp(0.0, double.infinity);
+  return Offset(maxDx.toDouble(), maxDy.toDouble());
+}
+
+class WallpaperMediaLayer extends StatelessWidget {
+  const WallpaperMediaLayer({
+    super.key,
+    required this.box,
+    required this.scale,
+    required this.offset,
+    required this.blurSigma,
+    required this.opacity,
+    required this.child,
+  });
+
+  final Size box;
+
+  final double scale;
+  final Offset offset;
+  final double blurSigma;
+  final double opacity;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget layer(Size b) => Transform.translate(
+      offset: offset,
+      child: Transform.scale(
+        scale: scale,
+        alignment: Alignment.center,
+        child: OverflowBox(
+          alignment: Alignment.center,
+          minWidth: b.width,
+          maxWidth: b.width,
+          minHeight: b.height,
+          maxHeight: b.height,
+          child: ImageFiltered(
+            imageFilter: cheapBackdropBlur(blurSigma),
+            child: child,
+          ),
+        ),
+      ),
+    );
+    if (blurSigma <= 0) {
+      return Opacity(opacity: opacity, child: layer(box));
+    }
+    final pad = (blurSigma * 2.5).clamp(4.0, 64.0);
+    return Opacity(
+      opacity: opacity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          layer(Size(box.width + pad * 2, box.height + pad * 2)),
+          layer(box),
+        ],
+      ),
+    );
+  }
+}
+
 class CustomBackgroundLayer extends ConsumerStatefulWidget {
   const CustomBackgroundLayer({
     super.key,
@@ -18,7 +162,6 @@ class CustomBackgroundLayer extends ConsumerStatefulWidget {
 
   final CustomBackground? background;
 
-  /// 预览框内强制按指定方向取参（竖屏下预览横屏样式时使用）
   final Orientation? forceOrientation;
 
   @override
@@ -44,6 +187,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _syncVideo(widget.background);
+    _syncAspect(widget.background);
   }
 
   @override
@@ -54,6 +198,18 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         oldWidget.background?.mediaType != cb?.mediaType) {
       _syncVideo(cb);
     }
+    _syncAspect(cb);
+  }
+
+  void _syncAspect(CustomBackground? cb) {
+    if (cb == null ||
+        cb.mediaType != WallpaperMediaType.image ||
+        cb.imagePath.isEmpty) {
+      return;
+    }
+    WallpaperMediaAspect.probe(cb.imagePath, () {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -104,11 +260,8 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
       _videoSize = (rot == 90 || rot == 270)
           ? Size(size.height, size.width)
           : size;
-      debugPrint(
-        'customBg video init raw=$size rot=$rot display=$_videoSize',
-      );
+      debugPrint('customBg video init raw=$size rot=$rot display=$_videoSize');
     });
-    // 壁纸视频必须无声：初始化后再静音一次，规避部分实现初始化完成时重置音量的情况
     await controller.setVolume(0);
     if (_videoShouldAutoPlay &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
@@ -165,7 +318,19 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         final useTy = isLandscape ? cb.landscapeTranslateY : cb.translateY;
         final dx = useTx / 100 * w;
         final dy = useTy / 100 * h;
-        final videoBox = videoReady ? _coverBox(w, h, _videoSize) : null;
+        final sEff = (useScale / 100).clamp(1.0, 10.0).toDouble();
+        final imgBox = wallpaperCoverBox(
+          w,
+          h,
+          WallpaperMediaAspect.of(file.path),
+        );
+        final videoBox = videoReady
+            ? wallpaperCoverBox(w, h, _videoSize)
+            : null;
+        final box = isVideo ? (videoBox ?? Size(w, h)) : imgBox;
+        final maxT = wallpaperMaxTranslate(w, h, box, sEff);
+        final ddx = dx.clamp(-maxT.dx, maxT.dx).toDouble();
+        final ddy = dy.clamp(-maxT.dy, maxT.dy).toDouble();
         final logSig = videoReady ? '$videoBox|${w}x$h' : null;
         if (logSig != null && logSig != _lastVideoLogSig) {
           _lastVideoLogSig = logSig;
@@ -179,34 +344,23 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
                 if (hasMedia)
                   ClipRect(
                     child: !isVideo
-                        ? Transform.translate(
-                            offset: Offset(dx, dy),
-                            child: Transform.scale(
-                              scale: useScale / 100,
-                              alignment: Alignment.center,
-                              child: ImageFiltered(
-                                imageFilter: cheapBackdropBlur(blurSig),
-                                child: Opacity(
-                                  opacity: cb.opacity / 100,
-                                  child: Image.file(
-                                    key: ValueKey('wallpaper-${file.path}'),
-                                    file,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
-                                        const SizedBox.shrink(),
-                                  ),
-                                ),
-                              ),
-                            ),
+                        ? _buildImageLayer(
+                            file: file,
+                            box: imgBox,
+                            scale: sEff,
+                            dx: ddx,
+                            dy: ddy,
+                            cb: cb,
+                            blurSig: blurSig,
                           )
                         : videoBox == null
                         ? const ColoredBox(color: Colors.black)
                         : _buildVideoLayer(
                             video!,
                             videoBox,
-                            dx,
-                            dy,
-                            useScale.toDouble(),
+                            ddx,
+                            ddy,
+                            sEff * 100,
                             cb,
                           ),
                   ),
@@ -224,16 +378,28 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     );
   }
 
-  Size? _coverBox(double w, double h, Size? videoSize) {
-    final vw = videoSize?.width ?? 0;
-    final vh = videoSize?.height ?? 0;
-    if (vw <= 0 || vh <= 0 || w <= 0 || h <= 0) return null;
-    final containerRatio = w / h;
-    final videoRatio = vw / vh;
-    if (videoRatio > containerRatio) {
-      return Size(h * videoRatio, h);
-    }
-    return Size(w, w / videoRatio);
+  Widget _buildImageLayer({
+    required File file,
+    required Size box,
+    required double scale,
+    required double dx,
+    required double dy,
+    required CustomBackground cb,
+    required double blurSig,
+  }) {
+    return WallpaperMediaLayer(
+      box: box,
+      scale: scale,
+      offset: Offset(dx, dy),
+      blurSigma: blurSig,
+      opacity: (cb.opacity / 100).clamp(0.0, 1.0),
+      child: Image.file(
+        key: ValueKey('wallpaper-${file.path}'),
+        file,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
+    );
   }
 
   Widget _buildVideoLayer(
@@ -244,9 +410,6 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     double scale,
     CustomBackground cb,
   ) {
-    // box 是按旋转后显示比例算出的 cover 框。但 VideoPlayer 纹理本身是原始编码比例，
-    // 且视频带旋转元数据时会由内部 RotatedBox 旋转。若直接按显示比例拉伸纹理，旋转后必然变形。
-    // 因此带 90/270 旋转时把纹理框的宽高交换，让纹理按原始比例拉伸，旋转后再对回 box。
     final rot = video.value.rotationCorrection;
     final isRotated = rot == 90 || rot == 270;
     final halfW0 = box.width / 2;
@@ -304,14 +467,6 @@ class AppPageBackground extends ConsumerWidget {
   }
 }
 
-/// 覆盖式转场中跟随新页滑入的页面底。页面 Scaffold 是透明的
-/// （scaffoldBackgroundColor 全局 transparent，为了根部视频壁纸能透出），
-/// 覆盖转场若不垫底，新页滑入区域会直接透出旧页内容造成混叠。
-/// - 无壁纸：垫 appSurfaceBg，与根 Stack 的 ColoredBox 同源，视觉一致；
-/// - 图片壁纸：渲一份与根部对齐的壁纸副本（Image.file 走 ImageCache，开销小），
-///   转场结束后常驻也与底层壁纸无缝；
-/// - 视频壁纸：转场期间垫纯色、[completion] 动画完成后变透明露出底层视频
-///   （避免每个转场页各挂一路视频解码器）。
 class RoutePageBackdrop extends ConsumerWidget {
   const RoutePageBackdrop({super.key, this.completion, required this.child});
 
@@ -321,8 +476,7 @@ class RoutePageBackdrop extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plain =
-        ColoredBox(color: appSurfaceBg(context), child: child);
+    final plain = ColoredBox(color: appSurfaceBg(context), child: child);
     if (!ref.watch(wallpaperActiveProvider)) return plain;
     final cb = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.customBackground),
@@ -333,10 +487,9 @@ class RoutePageBackdrop extends ConsumerWidget {
       if (anim == null) return plain;
       return AnimatedBuilder(
         animation: anim,
-        builder: (context, child) =>
-            anim.status == AnimationStatus.completed
-                ? (child ?? const SizedBox.shrink())
-                : ColoredBox(color: appSurfaceBg(context), child: child!),
+        builder: (context, child) => anim.status == AnimationStatus.completed
+            ? (child ?? const SizedBox.shrink())
+            : ColoredBox(color: appSurfaceBg(context), child: child!),
         child: child,
       );
     }
