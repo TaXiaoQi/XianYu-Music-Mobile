@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show HttpClient, HttpStatus;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
@@ -124,6 +125,19 @@ class LyricsRepository {
       return '';
     }
     if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
+      // DLNA 直传歌词（桌面端随投屏下发）优先，失败回退插件搜索
+      final directUrl = item.lyricUrl;
+      if (directUrl != null && directUrl.isNotEmpty) {
+        try {
+          final text = await _fetchLyricText(directUrl);
+          if (text.trim().isNotEmpty) {
+            AppLog.info('lyric', 'DLNA 直传歌词命中: len=${text.length}');
+            return await parseLyrics(rawLyrics: text);
+          }
+        } catch (e) {
+          AppLog.warn('lyric', 'DLNA 直传歌词拉取失败: $e');
+        }
+      }
       final online = await _searchCastLyricSource(item);
       if (online != null) {
         final payload = await _fetchLyricsJson(online);
@@ -134,6 +148,19 @@ class LyricsRepository {
     }
     final dbPath = await _ref.read(dbPathProvider.future);
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
+  }
+
+  /// 拉取 DLNA 直传歌词原文（桌面端 httpd 伺服的纯文本）
+  Future<String> _fetchLyricText(String url) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      if (res.statusCode != HttpStatus.ok) return '';
+      return await res.transform(utf8.decoder).join();
+    } finally {
+      client.close();
+    }
   }
 
   Future<QueueItem?> _searchCastLyricSource(QueueItem item) async {

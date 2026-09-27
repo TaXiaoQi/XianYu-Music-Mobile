@@ -451,6 +451,12 @@ class CastNotifier extends StateNotifier<CastState> {
           caseSensitive: false,
         ).firstMatch(meta);
         final coverUrl = artMatch?.group(1)?.trim() ?? '';
+        // 桌面端自研扩展元素：歌词原文直传地址（本机 httpd 伺服）
+        final lyricMatch = RegExp(
+          r'<xianyu:lyric[^>]*>([^<]+)</xianyu:lyric>',
+          caseSensitive: false,
+        ).firstMatch(meta);
+        final lyricUrl = lyricMatch?.group(1)?.trim() ?? '';
         await player.playExternalUri(
           uri: uri,
           title: cmd['title'] as String? ?? '',
@@ -458,6 +464,7 @@ class CastNotifier extends StateNotifier<CastState> {
           album: cmd['album'] as String? ?? '',
           durationMs: (cmd['duration_ms'] as num? ?? 0).toInt(),
           coverUrl: coverUrl,
+          lyricUrl: lyricUrl,
         );
         try {
           if (appRouter.routerDelegate.currentConfiguration.uri.toString() !=

@@ -272,6 +272,8 @@ class QueueItem {
   final String? source;
   final String? onlineInfoJson;
   final bool fromDailyRecommend;
+  /// DLNA 直传歌词地址（桌面端经 httpd 伺服的 xianyu:lyric），仅被投曲目携带
+  final String? lyricUrl;
   const QueueItem({
     required this.path,
     required this.title,
@@ -285,6 +287,7 @@ class QueueItem {
     this.source,
     this.onlineInfoJson,
     this.fromDailyRecommend = false,
+    this.lyricUrl,
   });
 
   bool get isOnline =>
@@ -305,6 +308,7 @@ class QueueItem {
         source: source,
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
+        lyricUrl: lyricUrl,
       );
 
   QueueItem copyWithQuality(String quality) => QueueItem(
@@ -320,6 +324,7 @@ class QueueItem {
         source: source,
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
+        lyricUrl: lyricUrl,
       );
 
   QueueItem copyWithOnlineSource({
@@ -340,6 +345,7 @@ class QueueItem {
         source: source ?? this.source,
         onlineInfoJson: onlineInfoJson ?? this.onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
+        lyricUrl: lyricUrl,
       );
 }
 
@@ -874,6 +880,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     required bool isPlaying,
     String? streamCacheUrl,
     Map<String, String>? streamCacheHeaders,
+    bool castPlayback = false,
   }) async {
     if (DateTime.now().isBefore(_dspFailUntil)) {
       AppLog.warn('play', '[dsp] 跳过接管: 失败冷却中(至 $_dspFailUntil)');
@@ -888,7 +895,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       LastAudioSource.recordFilePath(path);
     }
     try {
-      final sfx = _ref.read(soundEffectProvider).settings;
+      var sfx = _ref.read(soundEffectProvider).settings;
+      if (castPlayback) {
+        // 被投播放按 DLNA 语义强制原速原调，其余音效（EQ/混响等）保持
+        sfx = sfx.copyWith(playbackRate: 100.0, pitchShift: 100.0);
+      }
       final settings = _ref.read(settingsProvider).valueOrNull;
       final deviceName = await startUsbExclusivePlayback(
         path: path,
@@ -2667,6 +2678,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String? cek,
     double startAtSecs = 0,
     bool isPlaying = true,
+    bool castPlayback = false,
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
@@ -2697,7 +2709,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final ok = await _tryStartDspPipeline(proxyUrl,
           streamCacheUrl: clean,
           streamCacheHeaders: h,
-          startAtSecs: startAtSecs, isPlaying: isPlaying);
+          startAtSecs: startAtSecs, isPlaying: isPlaying, castPlayback: castPlayback);
       if (ok) {
         _triggerOnlinePrecache(item);
         return;
@@ -2740,6 +2752,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       throw StateError(tr('直链已失效（返回内容与歌曲不符）'));
     }
     await _player.setVolume(_effectiveVolume());
+    if (castPlayback) {
+      // ExoPlayer 速度跨曲目残留（仅音效设置变更时会被重写），
+      // 被投播放强制回原速
+      try {
+        await _player.setSpeed(1.0);
+        await _player.setPitch(1.0);
+      } catch (_) {}
+    }
     if (isPlaying) {
       await _player.play();
     }
@@ -4233,6 +4253,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     String album = '',
     int durationMs = 0,
     String coverUrl = '',
+    String lyricUrl = '',
   }) async {
     await _stopExclusive();
     _playEpoch++;
@@ -4252,6 +4273,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       album: album,
       durationMs: durationMs,
       coverUrl: coverUrl.isEmpty ? null : coverUrl,
+      lyricUrl: lyricUrl.isEmpty ? null : lyricUrl,
     );
     state = state.copyWith(
       queue: [item],
@@ -4265,7 +4287,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
     _syncToSystemMediaSession();
     try {
-      await _startOnlineUrl(uri, item: item);
+      // 被投播放按 DLNA 语义强制原速：DSP 管线与 ExoPlayer 均不吃
+      // 本机音效里的变速/变调设置，否则桌面端原速音频会被加速播放
+      await _startOnlineUrl(uri, item: item, castPlayback: true);
       state = state.copyWith(isPlaying: true);
       _trackStartTime = DateTime.now();
       _syncToSystemMediaSession();
