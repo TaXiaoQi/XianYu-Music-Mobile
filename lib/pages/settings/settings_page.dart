@@ -427,6 +427,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           category: SettingsCategory.watch, embedded: true),
       '/settings/dlna' => const SettingsCategoryPage(
           category: SettingsCategory.dlna, embedded: true),
+      '/settings/desktop' => const SettingsCategoryPage(
+          category: SettingsCategory.desktop, embedded: true),
       '/settings/tools' => const SettingsCategoryPage(
           category: SettingsCategory.tools, embedded: true),
       '/settings/advanced' => const SettingsCategoryPage(
@@ -545,6 +547,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Icons.cast_outlined,
           tr('投放歌曲到电视、音箱等 DLNA 设备'),
           '/settings/dlna',
+        ),
+        _CategoryEntry(
+          tr('桌面联动'),
+          Icons.computer_outlined,
+          tr('扫描并遥控同一局域网的电脑端播放'),
+          '/settings/desktop',
         ),
       ],
     ),
@@ -794,6 +802,8 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 传递 询问 记住 默认 自动'),
   _SearchItem(label: 'DLNA 投放', section: '设置分类', path: '/settings/dlna', categoryName: 'DLNA 投放', isCategory: true, keywords: 'DLNA 投屏 投放 电视 音箱 局域网'),
   _SearchItem(label: 'DLNA 投放', section: 'DLNA 投放', path: '/settings/dlna', categoryName: 'DLNA 投放', keywords: 'DLNA 投屏 投放 电视 音箱 局域网 选择设备'),
+  _SearchItem(label: '桌面联动', section: '设置分类', path: '/settings/desktop', categoryName: '桌面联动', isCategory: true, keywords: '桌面 电脑 遥控 局域网 配对 连接'),
+  _SearchItem(label: '桌面联动', section: '桌面联动', path: '/settings/desktop', categoryName: '桌面联动', keywords: '桌面 电脑 遥控 播放 配对 扫描'),
   _SearchItem(label: '存储设置', section: '存储空间', path: '/settings/general', categoryName: '常规', keywords: '缓存 空间 清理'),
 
   _SearchItem(label: '主题模式', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '深色 浅色 跟随系统 暗色 明亮'),

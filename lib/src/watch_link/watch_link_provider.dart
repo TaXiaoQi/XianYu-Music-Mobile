@@ -16,6 +16,7 @@ import '../backup/app_backup.dart';
 import '../core/application_logger.dart';
 import '../core/platform_caps.dart';
 import '../core/settings.dart';
+import '../desktop_link/desktop_link_provider.dart';
 import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
 import '../i18n/i18n.dart';
@@ -382,6 +383,12 @@ class WatchLinkController {
   }
 
   Future<void> _onCmd(LinkMessage msg) async {
+    // 桌面联动已连接：腕表指令转发给桌面端遥控，不再控本机
+    if (_container.read(desktopLinkProvider).phase ==
+            DesktopLinkPhase.connected &&
+        _container.read(desktopLinkProvider.notifier).relayCmd(msg)) {
+      return;
+    }
     final notifier = _container.read(playerProvider.notifier);
     switch (msg.action()) {
       case LinkCmdAction.toggle:

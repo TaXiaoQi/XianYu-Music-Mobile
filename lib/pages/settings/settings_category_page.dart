@@ -33,6 +33,7 @@ import '../../src/library/saf_channel.dart';
 import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 import '../../src/widgets/dlna_device_dialog.dart';
+import 'desktop_link_page.dart';
 
 enum SettingsCategory {
   general,
@@ -43,6 +44,7 @@ enum SettingsCategory {
   tools,
   watch,
   dlna,
+  desktop,
   advanced;
 
   static SettingsCategory fromPath(String p) => switch (p) {
@@ -53,6 +55,7 @@ enum SettingsCategory {
     'tools' => SettingsCategory.tools,
     'watch' => SettingsCategory.watch,
     'dlna' => SettingsCategory.dlna,
+    'desktop' => SettingsCategory.desktop,
     'advanced' => SettingsCategory.advanced,
     _ => SettingsCategory.general,
   };
@@ -66,6 +69,7 @@ enum SettingsCategory {
     SettingsCategory.tools => tr('工具'),
     SettingsCategory.watch => tr('腕上联动'),
     SettingsCategory.dlna => tr('DLNA 投放'),
+    SettingsCategory.desktop => tr('桌面联动'),
     SettingsCategory.advanced => tr('高级设置'),
   };
 }
@@ -178,6 +182,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         return _watch(context, ref, settings, notifier);
       case SettingsCategory.dlna:
         return _dlna(context, ref, settings, notifier);
+      case SettingsCategory.desktop:
+        return [const DesktopLinkSection()];
       case SettingsCategory.advanced:
         return _advanced(context, settings, notifier);
     }
