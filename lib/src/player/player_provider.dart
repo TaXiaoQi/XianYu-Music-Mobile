@@ -1227,7 +1227,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _gaplessNextPath = item.path;
     try {
       setUsbExclusiveNext(path: item.path);
-      AppLog.info('play', '[gapless] 预排下一首 index=$next path=${item.path}');
+      AppLog.info('play',
+          '[gapless] 预排下一首 index=$next path=$_gaplessNextPath');
     } catch (e) {
       _gaplessNextIndex = -1;
       _gaplessNextPath = null;

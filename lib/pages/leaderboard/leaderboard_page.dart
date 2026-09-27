@@ -8,6 +8,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
+import 'leaderboard_prefetch.dart';
 import '../../src/core/settings.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -201,8 +202,17 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
 
   Future<void> _load() async {
     final requestId = ++_requestId;
+    // 已经有内容时（重新进入/切周期/下拉刷新）：不退回骨架屏、不重播进场动画，
+    // 否则会先闪一屏灰色占位卡。骨架只留给“什么都没有”的首次加载。
+    final hadEntries = _entries.isNotEmpty;
+    // 预热命中：先用缓存内容顶上，转场那几百毫秒里就不是一屏空骨架了
+    final cached = hadEntries ? null : readCachedLeaderboard(ref, widget.period);
     setState(() {
-      _loading = true;
+      if (cached != null) {
+        _entries = cached;
+        _enter.value = 1;
+      }
+      _loading = cached == null;
       _error = false;
     });
     try {
@@ -219,7 +229,13 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
         _entries = list;
         _loading = false;
       });
-      _enter.forward(from: 0);
+      // 回写缓存：下次进入直接命中
+      storeCachedLeaderboard(ref, widget.period, list);
+      if (hadEntries || cached != null) {
+        _enter.value = 1;
+      } else {
+        _enter.forward(from: 0);
+      }
     } catch (_) {
       if (!mounted || requestId != _requestId) return;
       setState(() {
@@ -235,7 +251,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
     final scheme = Theme.of(context).colorScheme;
     final loggedIn = ref.watch(authProvider).isLoggedIn;
 
-    if (_loading) {
+    if (_loading && _entries.isEmpty) {
       final skeleton = Container(
         height: 56,
         margin: const EdgeInsets.only(bottom: 8),

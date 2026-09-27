@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+
+import '../leaderboard/leaderboard_prefetch.dart';
 
 import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
@@ -47,7 +50,12 @@ class StatsSummaryCard extends ConsumerWidget {
     final stats = ref.watch(listenStatsProvider);
     final data = stats.valueOrNull;
     return _CardContainer(
-      onTap: () => openDiscoverEntry(context, ref, '/leaderboard'),
+      onTap: () {
+        // 先把榜单数据拉起来：页面打开即命中缓存，转场那几百毫秒里
+        // 就不会只剩一屏空骨架（"点进去先闪一下"的成因）
+        unawaited(prefetchLeaderboard(ref));
+        openDiscoverEntry(context, ref, '/leaderboard');
+      },
       child: Row(
         children: [
           Expanded(

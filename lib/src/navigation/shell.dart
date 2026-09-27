@@ -42,6 +42,7 @@ import '../../pages/download/download_page.dart';
 import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
 import '../../pages/leaderboard/leaderboard_page.dart';
+import '../../pages/leaderboard/leaderboard_prefetch.dart';
 import '../../pages/search/search_page.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
@@ -187,6 +188,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   void initState() {
     super.initState();
     ref.read(autoSyncProvider).start();
+    // 启动即静默预热排行榜：进个人中心点统计卡时直接命中缓存，
+    // 不再先闪一屏空骨架（预热失败/未完成时页面行为与以前一致）
+    unawaited(prefetchLeaderboard(ref));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (ref.read(authProvider).user != null) {
         ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
