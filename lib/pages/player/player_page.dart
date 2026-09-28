@@ -10,8 +10,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_router/go_router.dart';
 
+import '../effects/effects_page.dart';
+import '../../src/navigation/routes.dart'
+    show playerNavigatorKey, coverPageRoute;
 import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
@@ -39,6 +41,7 @@ import '../../src/widgets/bilipai_glass.dart';
 import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -658,12 +661,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       ],
                     );
                   },
-                  child: CoverReturnSource(
-                    songPath: current?.path,
-                    networkUrl: current?.coverUrl,
-                    child: _BigCover(
-                      current: current,
-                      size: MediaQuery.of(context).size.width * 0.64,
+                  child: FlyingCoverAnchor(
+                    child: CoverReturnSource(
+                      songPath: current?.path,
+                      networkUrl: current?.coverUrl,
+                      child: _BigCover(
+                        current: current,
+                        size: MediaQuery.of(context).size.width * 0.64,
+                      ),
                     ),
                   ),
                 ),
@@ -846,12 +851,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   scheme.primary.withValues(alpha: 0.72),
                                 ],
                               ),
-                          child: CoverReturnSource(
-                            songPath: current?.path,
-                            networkUrl: current?.coverUrl,
-                            child: _BigCover(
-                              current: current,
-                              size: coverSize,
+                          child: FlyingCoverAnchor(
+                            child: CoverReturnSource(
+                              songPath: current?.path,
+                              networkUrl: current?.coverUrl,
+                              child: _BigCover(
+                                current: current,
+                                size: coverSize,
+                              ),
                             ),
                           ),
                         ),
@@ -1622,16 +1629,18 @@ class _TraditionalPlayerLayoutState
                     ],
                   );
                 },
-                child: CoverReturnSource(
-                  songPath: widget.current?.path,
-                  networkUrl: widget.current?.coverUrl,
-                  child: _TraditionalCover(
-                    size: coverSize,
-                    current: widget.current,
-                    eq: _eq,
-                    flash: _flashOn,
-                    playing: isPlaying,
-                    onTap: () => _switchPage(1),
+                child: FlyingCoverAnchor(
+                  child: CoverReturnSource(
+                    songPath: widget.current?.path,
+                    networkUrl: widget.current?.coverUrl,
+                    child: _TraditionalCover(
+                      size: coverSize,
+                      current: widget.current,
+                      eq: _eq,
+                      flash: _flashOn,
+                      playing: isPlaying,
+                      onTap: () => _switchPage(1),
+                    ),
                   ),
                 ),
               ),
@@ -1812,7 +1821,9 @@ class _TraditionalPlayerLayoutState
             tooltip: tr('音效'),
             active: !bypass && _hasPlayerEffects(sfx),
             enabled: !mvRequested,
-            onTap: () => context.push('/effects'),
+            onTap: () => playerNavigatorKey.currentState?.push(
+              coverPageRoute<void>(context, (_) => const EffectsPage()),
+            ),
           ))),
           Expanded(child: Center(child: _qualityActionItem(
             context,
@@ -4705,7 +4716,11 @@ class _LandscapeControlsRow extends ConsumerWidget {
                 ? Colors.white.withValues(alpha: 0.32)
                 : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
           ),
-          onPressed: mvRequested ? null : () => context.push('/effects'),
+          onPressed: mvRequested
+              ? null
+              : () => playerNavigatorKey.currentState?.push(
+                    coverPageRoute<void>(context, (_) => const EffectsPage()),
+                  ),
         ),
         IconButton(
           iconSize: 28,

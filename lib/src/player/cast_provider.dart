@@ -467,9 +467,8 @@ class CastNotifier extends StateNotifier<CastState> {
           lyricUrl: lyricUrl,
         );
         try {
-          if (appRouter.routerDelegate.currentConfiguration.uri.toString() !=
-              '/player') {
-            appRouter.push('/player');
+          if (!playerOpenNotifier.value) {
+            openPlayer();
           }
         } catch (_) {}
         break;

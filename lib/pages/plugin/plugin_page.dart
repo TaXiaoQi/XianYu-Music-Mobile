@@ -21,6 +21,7 @@ import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 import 'plugin_delete.dart';
 
@@ -939,6 +940,8 @@ class _PluginCard extends ConsumerWidget {
     String tagLabel,
   ) {
     final manager = ref.read(pluginManagerProvider.notifier);
+    final subTag =
+        pluginSubTagInfo(source, ref.watch(pluginSubscriptionsProvider));
 
     final icon = Container(
       width: 40,
@@ -985,6 +988,28 @@ class _PluginCard extends ConsumerWidget {
                     fontWeight: FontWeight.w600),
               ),
             ),
+            if (subTag != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6A23C).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: const Color(0xFFE6A23C).withValues(alpha: 0.4),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  subTag.label,
+                  style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFFE6A23C),
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
             if (source.updateAvailable) ...[
               const SizedBox(width: 6),
               Container(

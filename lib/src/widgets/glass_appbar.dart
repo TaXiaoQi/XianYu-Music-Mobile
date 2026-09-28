@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
-import 'blur_budget.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 
@@ -65,8 +64,9 @@ class GlassTopBar extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final routeTransition = ref.watch(isTransitioningProvider);
-    final solid = forceSolid || prefSolid || routeTransition;
+    // 转场期间路由内容已被 RouteStaticSnapshot 冻结为快照，
+    // 顶栏保持全量玻璃即可呈现「最后一帧」的静止观感
+    final solid = forceSolid || prefSolid;
     final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
     final sigma = navSurfaceBlurSigma(ref);

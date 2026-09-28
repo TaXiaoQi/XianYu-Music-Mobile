@@ -9,7 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../library/library_provider.dart';
-import '../navigation/routes.dart' show appNavigatorKey;
+import '../navigation/routes.dart'
+    show appNavigatorKey, openPlayer, playerOpenNotifier;
 import '../online/online_search_provider.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_models.dart';
@@ -467,10 +468,10 @@ class XianYuDeepLink {
   }
 
   static void _openPlayerOnce(GoRouter router) {
-    if (router.routerDelegate.currentConfiguration.uri.toString() == '/player') {
+    if (playerOpenNotifier.value) {
       return;
     }
-    router.push('/player');
+    openPlayer();
   }
 
   static Future<void> _importOpenedPlugin(

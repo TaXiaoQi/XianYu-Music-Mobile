@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../home/home_providers.dart';
+import '../navigation/routes.dart' show openPlayer;
 import '../player/player_provider.dart';
 import 'cover_image.dart';
 import '../i18n/i18n.dart';
@@ -86,7 +86,7 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
                 item: sel.current,
                 isPlaying: sel.playing,
                 eq: _eq,
-                onTap: () => context.push('/player'),
+                onTap: () => openPlayer(),
               ),
               const _StatsCard(),
             ],

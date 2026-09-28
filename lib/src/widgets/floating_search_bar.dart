@@ -91,6 +91,8 @@ class FloatingGlassSurface extends ConsumerWidget {
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
     final settling = ref.watch(chromeGlassSettlingProvider);
+    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
+    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -109,7 +111,7 @@ class FloatingGlassSurface extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: settling
+        backgroundColor: warmup
             ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
             : bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
@@ -162,6 +164,8 @@ class BiliPaiPill extends ConsumerWidget {
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
     final settling = ref.watch(chromeGlassSettlingProvider);
+    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
+    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -192,7 +196,7 @@ class BiliPaiPill extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: settling
+        backgroundColor: warmup
             ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
             : bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),

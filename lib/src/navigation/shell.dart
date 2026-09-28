@@ -25,7 +25,7 @@ import '../widgets/app_toast.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
-import '../widgets/mini_player_bar.dart';
+import '../widgets/mini_player_bar.dart' show LiveLiquidSurface;
 import '../widgets/page_search_bar.dart';
 import '../widgets/bilipai_glass.dart';
 import '../../pages/library/library_page.dart';
@@ -381,10 +381,25 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     scheduleMicrotask(() {
       if (!mounted) return;
       ref.read(chromeGlassSettlingProvider.notifier).state = true;
+      // 液态面仅在显隐头几帧用实底热身，之后保持实时玻璃不卸载折射
+      ref.read(chromeGlassWarmupProvider.notifier).state = true;
+      _endChromeGlassWarmup(3);
     });
     _chromeSettleTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
       ref.read(chromeGlassSettlingProvider.notifier).state = false;
+    });
+  }
+
+  void _endChromeGlassWarmup(int remaining) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      remaining--;
+      if (remaining > 0) {
+        _endChromeGlassWarmup(remaining);
+        return;
+      }
+      ref.read(chromeGlassWarmupProvider.notifier).state = false;
     });
   }
 
@@ -516,34 +531,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       }
   }
 
-  double? _playerTop;
-  double? _playerLeft;
-
-  Offset? _lastSeenShared;
-
-  bool? _lastFloating;
-  bool? _lastSide;
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final floating = ref.read(
-            settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
-        true;
     final screen = MediaQuery.maybeOf(context);
     final landscape = screen == null ||
         screen.size.width >= screen.size.height * 1.05;
-    final side = landscape ||
-        (ref.read(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) ==
-            NavBarPosition.side);
-    if ((_lastFloating != null && _lastFloating != floating) ||
-        (_lastSide != null && _lastSide != side)) {
-      _playerTop = null;
-      _playerLeft = null;
-    }
-    _lastFloating = floating;
-    _lastSide = side;
 
     if (_lastImmersive != landscape) {
       _lastImmersive = landscape;
@@ -570,80 +563,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   }
 
   bool _lastImmersive = false;
-
-  bool _isPlayerDragging = false;
-
-  void _onPlayerPanStart(DragStartDetails details) {
-    setState(() {
-      _isPlayerDragging = true;
-      _playerLeft ??= MiniBarPositionStore.shared?.dx;
-      _playerTop ??= MiniBarPositionStore.shared?.dy;
-    });
-    setGlobalDragging(true);
-  }
-
-  double _playerMinTop(double paddingTop, bool landscape) =>
-      paddingTop + 8.0 + (landscape ? 44.0 : 40.0) + 8.0;
-
-  void _onPlayerPanUpdate(
-    DragUpdateDetails details,
-    Size screenSize,
-    EdgeInsets padding,
-    double defaultLeft,
-    double defaultTop,
-    double maxTop,
-    double miniBarW,
-    double landscapeLeftBound,
-    double landscapeRightBound,
-    bool landscape,
-  ) {
-    final currentLeft = _playerLeft ?? defaultLeft;
-    final currentTop = _playerTop ?? defaultTop;
-
-    final barW = landscape ? miniBarW : (screenSize.width - 24.0);
-    final minLeft = landscape ? landscapeLeftBound : 6.0;
-    final maxLeft = landscape
-        ? landscapeRightBound
-        : (screenSize.width - barW - 6.0);
-    final minTop = _playerMinTop(padding.top, landscape);
-
-    setState(() {
-      _playerLeft = (currentLeft + details.delta.dx).clamp(
-        minLeft,
-        maxLeft > minLeft ? maxLeft : minLeft,
-      );
-      _playerTop = (currentTop + details.delta.dy).clamp(
-        minTop,
-        maxTop > minTop ? maxTop : minTop,
-      );
-    });
-  }
-
-  void _onPlayerPanEnd(
-    DragEndDetails details,
-    double defaultLeft,
-    double defaultTop,
-  ) {
-    setState(() {
-      _isPlayerDragging = false;
-    });
-    setGlobalDragging(false);
-
-    final l = _playerLeft;
-    final t = _playerTop;
-    if (l != null && t != null) {
-      MiniBarPositionStore.shared = Offset(l, t);
-      _playerLeft = null;
-      _playerTop = null;
-    }
-  }
-
-  void _onPlayerPanCancel() {
-    setState(() {
-      _isPlayerDragging = false;
-    });
-    setGlobalDragging(false);
-  }
 
   Widget _landscapeFadePanel({
     required bool useCameraArea,
@@ -821,85 +740,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     final expanded = ref.watch(sideBarExpandedProvider);
 
-    final isPlayerPage =
-        GoRouterState.of(context).uri.toString() == '/player';
-
-    final miniBarLow = hiddenCount > 0 || (!_isRootPath && !isPlayerPage);
-
-    final hideShellMiniBar = accountOpen;
-
-    final miniBarW = landscape
-        ? math.min(screenSize.width * 0.55, 520.0)
-        : (screenSize.width - 24.0);
-
-    final leftCutout = landscape ? padding.left : 0.0;
-    final rightCutout = landscape ? padding.right : 0.0;
-
-    late final double defaultLeft;
-    var landscapeLeftBound = 6.0;
-    var landscapeRightBound = 30.0;
-    if (landscape) {
-      landscapeLeftBound = math.max(leftCutout, 6.0);
-      landscapeRightBound = screenSize.width -
-          miniBarW -
-          (rightCutout > 0 ? rightCutout + 12 : 16);
-      defaultLeft = landscapeRightBound > landscapeLeftBound
-          ? ((screenSize.width - miniBarW) / 2.0)
-              .clamp(landscapeLeftBound, landscapeRightBound)
-          : landscapeLeftBound;
-    } else {
-      defaultLeft = 12.0;
-    }
-    final defaultTop = isSide
-        ? (screenSize.height - safeBottom - 58.0 - 12.0)
-        : (floating
-            ? (miniBarLow
-                ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                : (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0))
-            : (screenSize.height - safeBottom - 58.0 - 64.0));
-
-    final batchLift = ref.watch(batchBarLiftProvider);
-    final liftedDefaultTop = defaultTop - batchLift;
-
-    final dragMaxTop = () {
-      final barH = 58.0;
-      if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
-      if (floating) {
-        return hidden
-            ? (screenSize.height - padding.bottom - barH - 12.0)
-            : (screenSize.height - safeBottom - 18.0 - 70.0 - barH - batchLift);
-      }
-      return hidden
-          ? (screenSize.height - padding.bottom - barH - 12.0)
-          : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
-    }();
-
-    final shared = MiniBarPositionStore.shared;
-    final shellMinLeft = landscape ? landscapeLeftBound : 6.0;
-    final shellMaxLeft = landscape
-        ? landscapeRightBound
-        : (screenSize.width - (screenSize.width - 24.0) - 6.0);
-    final actualLeft = (_playerLeft ?? shared?.dx ?? defaultLeft)
-        .clamp(shellMinLeft,
-            shellMaxLeft > shellMinLeft ? shellMaxLeft : shellMinLeft)
-        .toDouble();
-    final minTopClamped = _playerMinTop(padding.top, landscape);
-    final actualTop = (_playerTop ?? shared?.dy ?? liftedDefaultTop)
-        .clamp(
-            minTopClamped, math.max(minTopClamped, dragMaxTop.toDouble()))
-        .toDouble();
-
-    final adoptedExternal =
-        shared != null && shared != _lastSeenShared && !_isPlayerDragging;
-    _lastSeenShared = shared;
-
-    final rootBarTop = (isSide
-            ? (screenSize.height - safeBottom - 58.0 - 12.0)
-            : (floating
-                ? (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0)
-                : (screenSize.height - safeBottom - 58.0 - 64.0))) -
-        batchLift;
-
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
@@ -1042,42 +882,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             ),
 
           if (landscape) buildRailDivider(),
-
-          if (!hideShellMiniBar)
-            AnimatedPositioned(
-                duration: (_isPlayerDragging || adoptedExternal)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 320),
-                curve: Curves.easeOutCubic,
-                left: actualLeft,
-                top: actualTop,
-                width: miniBarW,
-                child: MiniPlayerBar(
-                  onPanStart: _onPlayerPanStart,
-                  onPanUpdate: (d) => _onPlayerPanUpdate(
-                      d,
-                      screenSize,
-                      padding,
-                      defaultLeft,
-                      defaultTop,
-                      dragMaxTop,
-                      miniBarW,
-                      landscapeLeftBound,
-                      landscapeRightBound,
-                      landscape),
-                  onPanEnd: (d) =>
-                      _onPlayerPanEnd(d, defaultLeft, defaultTop),
-                  onPanCancel: _onPlayerPanCancel,
-                  registerTarget: !(hiddenCount > 0 && !isPlayerPage),
-                  heroTag: (hiddenCount > 0 && !isPlayerPage) ? null : 'player-cover',
-                  returnTarget: () => Rect.fromLTWH(
-                    actualLeft,
-                    rootBarTop,
-                    46,
-                    46,
-                  ),
-                ),
-              ),
 
           if (isSide && !landscape)
             _SideNavRail(
@@ -1493,6 +1297,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
 
     final realLiquid = liquid;
     final dropletQuality = liquidGlassQualitySetting(ref);
+    final warmup = ref.watch(chromeGlassWarmupProvider);
     final tabs = _SlidingNavBottom(
       index: index,
       lens: realLiquid,
@@ -1501,7 +1306,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       dropletChroma: bilipaiIndicatorChromaOf(dropletQuality),
       glassBuilder: liquid
           ? (Widget content) =>
-              _liquidGlass(context, ref, content, solid: effectiveSettling)
+              _liquidGlass(context, ref, content, solid: warmup)
           : null,
       onSelect: (i) {
         triggerHaptic(haptic);

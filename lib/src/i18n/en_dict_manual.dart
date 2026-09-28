@@ -70,6 +70,7 @@ const Map<String, String> enDictManual = {
   '未连接': 'Not connected',
   '未开启': 'Off',
   '在线': 'Online',
+  '付费': 'Paid',
   '离线': 'Offline',
   '蓝牙：{bt} · 云端：{cloud}': 'Bluetooth: {bt} · Cloud: {cloud}',
   '主动连接手表': 'Connect to watch',
@@ -607,6 +608,9 @@ const Map<String, String> enDictManual = {
       'This device has not been granted beta access and cannot use the beta build.\nTap "Apply" to submit your reason. Once approved by an admin, you can continue using the app.',
   '该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。':
       'The beta application for this device is under review. Please wait patiently for the admin to process it; the result will be sent as a feedback reply.',
+  '正在检测内测资格…': 'Checking beta access…',
+  '当前设备已加入内测渠道，无需重复申请。':
+      'This device has already joined the beta channel. No need to apply again.',
   '提示': 'Notice',
   '确定': 'OK',
   '退出软件': 'Exit app',

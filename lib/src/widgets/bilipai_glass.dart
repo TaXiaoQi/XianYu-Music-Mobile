@@ -114,10 +114,17 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (!mounted) return;
     if (_routeTransition == globalIsTransitioning.value) return;
     setState(() => _routeTransition = globalIsTransitioning.value);
-    if (_routeTransition) return;
+    if (_routeTransition) {
+      // 转场期间冻结液态波动相位，落定后从原相位继续，避免高光跳变
+      _ripple.stop();
+      return;
+    }
     _idleDebounce?.cancel();
     _captureCooldownUntil =
         DateTime.now().add(const Duration(milliseconds: 700));
+    if (widget.alwaysLive || !_idle) {
+      if (!_ripple.isAnimating) _ripple.repeat();
+    }
     final old = _frozen;
     if (old != null) {
       _frozen = null;
@@ -194,7 +201,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       }
     } else {
       _idleDebounce?.cancel();
-      if (!_ripple.isAnimating) _ripple.repeat();
+      // 转场中不重启波动，落定时由 _onTransitionChanged 恢复相位
+      if (!_routeTransition && !_ripple.isAnimating) _ripple.repeat();
       _startFadeOut();
     }
   }
@@ -278,9 +286,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    if (!ui.ImageFilter.isShaderFilterSupported ||
-        shader == null ||
-        _routeTransition) {
+    // 转场期间底层内容已被 RouteStaticSnapshot 冻结为快照，
+    // 液态玻璃保持实时渲染即可呈现「最后一帧」的静止观感
+    if (!ui.ImageFilter.isShaderFilterSupported || shader == null) {
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return Container(
         decoration: BoxDecoration(

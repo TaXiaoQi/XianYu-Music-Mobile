@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../core/application_logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,8 @@ import '../core/settings.dart';
 import '../player/player_provider.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
+import '../navigation/routes.dart'
+    show appRouter, openPlayer, playerOpenNotifier;
 import 'cover_hero.dart';
 import 'cover_image.dart';
 import 'flying_cover.dart';
@@ -183,7 +186,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (widget.onPanUpdate == null && _router == null) {
-      _router = GoRouter.of(context);
+      _router = appRouter;
       _router!.routerDelegate.addListener(_onRouteChanged);
     }
     if (widget.onPanUpdate == null && _lastLandscape == null) {
@@ -301,10 +304,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   void _syncReturnRegistration() {
     final internal = widget.onPanUpdate == null;
     if (internal) {
-      final onPlayer =
-          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
-              '/player';
-      if (onPlayer) {
+      if (playerOpenNotifier.value) {
         final s = _returnSourceProvider;
         if (s != null) {
           PredictiveCoverReturn.instance.unregisterSource(s);
@@ -447,7 +447,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             child: cover,
           );
 
-    final content = Padding(
+    // 顶层宿主模式（MaterialApp.builder）下无 Material 祖先，
+    // Text 会落入 Flutter 的 _errorTextStyle（红字+黄色双下划线），
+    // 显式提供与 Material 环境一致的默认文字样式
+    final content = DefaultTextStyle(
+      style: Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 10, 6),
       child: Row(
         children: [
@@ -500,29 +505,41 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           ),
         ],
       ),
+      ),
     );
 
+    // chrome 显隐翻转（推入/返回页面）后的 3 帧实底热身：
+    // 淡入恢复绘制首帧引擎 backdrop 采样未就绪，防止闪黑
+    final warmup = ref.watch(chromeGlassWarmupProvider);
     final bar = GestureDetector(
       onPanStart: _handlePanStart,
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
       onPanCancel: _handlePanCancel,
-      onTap: () => context.push('/player'),
+      onTap: () {
+        final ro = _coverKey.currentContext?.findRenderObject();
+        if (ro is RenderBox && ro.hasSize) {
+          final from = ro.localToGlobal(Offset.zero) & ro.size;
+          unawaited(FlyingCover.instance.launch(
+            fromRect: from,
+            songPath: current.path,
+            networkUrl: current.coverUrl,
+            radius: 23,
+            targetProvider: () =>
+                FlyingCover.instance.outboundTargetProvider?.call() ?? from,
+          ));
+        }
+        openPlayer();
+      },
       behavior: HitTestBehavior.opaque,
       child: liquid
-          ? _liquidSurface(context, content)
+          ? _liquidSurface(context, content, solid: warmup)
           : _frostedSurface(context, content,
-              lowPerf: lowPerf, budget: budget),
+              lowPerf: lowPerf, budget: budget, forceSolid: warmup),
     );
 
     if (widget.onPanUpdate == null) {
-      final isPlayerPage = GoRouter.of(context)
-              .routerDelegate
-              .currentConfiguration
-              .uri
-              .path ==
-          '/player';
-      if (isPlayerPage) {
+      if (playerOpenNotifier.value) {
         final p = _targetProvider;
         if (p != null) {
           FlyingCover.instance.unregisterTarget(p);
@@ -549,8 +566,10 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return bar;
   }
 
-  Widget _liquidSurface(BuildContext context, Widget content) {
+  Widget _liquidSurface(BuildContext context, Widget content,
+      {bool solid = false}) {
     final quality = liquidGlassQualitySetting(ref);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       height: 58,
       child: Stack(
@@ -576,7 +595,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
               blurSigma: bilipaiBackdropBlurOf(quality),
-              backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+              backgroundColor: solid
+                  ? (isDark
+                      ? const Color(0xE62A2A2E)
+                      : const Color(0xF0FFFFFF))
+                  : bilipaiSurfaceTint(context, ref, quality),
               specular: bilipaiSpecularOf(quality),
               edgeAmount: bilipaiEdgeOf(quality),
               saturation: bilipaiSaturationOf(quality),
@@ -591,10 +614,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   Widget _frostedSurface(BuildContext context,
       Widget content, {
       bool lowPerf = false,
-      BlurBudget? budget}) {
+      BlurBudget? budget,
+      bool forceSolid = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final solid =
-        glassShouldUseSolid(ref, lowPerf: lowPerf);
+        forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
@@ -836,6 +860,17 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (!mounted) return;
     final active = globalIsTransitioning.value;
     if (active == _frozen) return;
+    // 转场通知可能由 Navigator didPush/didPop 在 build 阶段同步广播，
+    // 本 surface 挂在 Navigator 之外（builder 层），此时 setState 会被
+    // "markNeedsBuild during build" 断言拒绝——推迟到帧末执行。
+    // 转场动画本就从下一帧开始，晚一帧冻结/解冻无视觉差异。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onTransitionChanged();
+      });
+      return;
+    }
     setState(() => _frozen = active);
     if (active) {
       _idleTimer?.cancel();

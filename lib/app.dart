@@ -12,6 +12,7 @@ import 'src/core/settings.dart';
 import 'src/core/app_colors.dart';
 import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
+import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
@@ -45,6 +46,8 @@ class XianYuApp extends ConsumerStatefulWidget {
 }
 
 class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
+  // 飞行封面顶层宿主（第一级）：位于 Navigator 与 mini 播放条之上的独立 Overlay
+  final GlobalKey<OverlayState> _flyingOverlayKey = GlobalKey<OverlayState>();
   int? _cachedAccent;
   bool? _cachedPredictiveBack;
   WallpaperTextColor _cachedTextMode = WallpaperTextColor.follow;
@@ -329,7 +332,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             routerConfig: appRouter,
             builder: (context, child) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                final overlay = appNavigatorKey.currentState?.overlay;
+                final overlay = _flyingOverlayKey.currentState;
                 if (overlay != null) FlyingCover.instance.attach(overlay);
               });
               final fontSize = settings?.fontSize ?? AppFontSize.system;
@@ -346,6 +349,20 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                       child: const CustomBackgroundLayer(),
                     ),
                     ScrollOffsetCapture(child: child!),
+                    // mini 播放条顶层宿主：位于 Navigator 之上，
+                    // 所有页面（含播放页）转场都从播放条背后滑过
+                    const MiniPlayerOverlay(),
+                    // 播放页独立 Navigator（五级模型第二级）：位于播放条
+                    // 之上、飞行封面之下——播放页转场物理盖过播放条
+                    const PlayerNavigatorHost(),
+                    // 飞行封面顶层宿主（第一级）：高于播放条与一切路由，
+                    // 预测性返回的页面缩放不再牵连封面飞行
+                    Overlay(
+                      key: _flyingOverlayKey,
+                      initialEntries: [
+                        OverlayEntry(builder: (_) => const SizedBox.shrink()),
+                      ],
+                    ),
                   ],
                 ),
               );

@@ -18,6 +18,10 @@ class FlyingCover {
   Rect Function()? get _targetProvider =>
       _targets.isEmpty ? null : _targets.last;
 
+  /// 播放页大封面锚点（FlyingCoverAnchor 挂载）：
+  /// 播放条 → 播放页的飞行封面用它的实时矩形作目标
+  Rect Function()? outboundTargetProvider;
+
   void attach(OverlayState overlay) => _overlay = overlay;
 
   void registerTarget(Rect Function() provider) {
@@ -54,6 +58,7 @@ class FlyingCover {
     String? networkUrl,
     String? thumbPath,
     double radius = 6,
+    Rect? Function()? targetProvider,
   }) {
     final overlay = _overlay;
     if (overlay == null) return Future.value(true);
@@ -74,7 +79,7 @@ class FlyingCover {
     entry = OverlayEntry(
       builder: (_) => _FlyingCoverOverlay(
         fromRect: fromRect,
-        targetProvider: _targetProvider,
+        targetProvider: targetProvider ?? _targetProvider,
         songPath: songPath,
         networkUrl: networkUrl,
         thumbPath: thumbPath,
@@ -170,6 +175,45 @@ Future<bool> launchFlyCover(
   );
 }
 
+/// 播放页封面锚点：把播放页大封面的实时矩形注册为
+/// [FlyingCover.outboundTargetProvider]，供播放条 → 播放页的
+/// 飞行封面取目标（播放条在 Navigator 之外，Hero 无法配对）。
+class FlyingCoverAnchor extends StatefulWidget {
+  const FlyingCoverAnchor({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<FlyingCoverAnchor> createState() => _FlyingCoverAnchorState();
+}
+
+class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
+  late final Rect Function() _provider = () {
+    final ro = context.findRenderObject();
+    if (ro is RenderBox && ro.attached && ro.hasSize) {
+      return ro.localToGlobal(Offset.zero) & ro.size;
+    }
+    return Rect.zero;
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    FlyingCover.instance.outboundTargetProvider = _provider;
+  }
+
+  @override
+  void dispose() {
+    if (identical(FlyingCover.instance.outboundTargetProvider, _provider)) {
+      FlyingCover.instance.outboundTargetProvider = null;
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _FlyingCoverOverlay extends StatefulWidget {
   const _FlyingCoverOverlay({
     required this.fromRect,
@@ -183,7 +227,7 @@ class _FlyingCoverOverlay extends StatefulWidget {
   });
 
   final Rect fromRect;
-  final Rect Function()? targetProvider;
+  final Rect? Function()? targetProvider;
   final String? songPath;
   final String? networkUrl;
   final String? thumbPath;

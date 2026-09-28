@@ -79,22 +79,18 @@ Widget frostedCardSurface({
   final wallpaper = wallpaperGlassActive(ref);
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
-  // 转场/切页中玻璃层在亚像素位置平移，BackdropFilter 逐帧重排会让文字抖动，
-  // 期间降级为实色渲染，落定后再恢复模糊
-  final settling = ref.watch(isTransitioningProvider) ||
-      ref.watch(isTabSwitchingProvider);
   final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  // fill/sigma 与 pseudoLiquidSurface 的导航面（条类表面）对齐，
+  // 避免材质开启后卡片与顶栏/底栏/播放条观感割裂
   final frostedFill = isDark
-      ? Colors.white.withValues(alpha: 0.20)
-      : Colors.white.withValues(alpha: 0.52);
+      ? Colors.white.withValues(alpha: 0.06)
+      : Colors.white.withValues(alpha: 0.34);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : settling
-          ? (isDark ? const Color(0xF02A2A2E) : const Color(0xF7FFFFFF))
-          : (wallpaperTransparent
-              ? wallpaperGlassFill(context, ref)
-              : frostedFill);
+      : (wallpaperTransparent
+          ? wallpaperGlassFill(context, ref)
+          : frostedFill);
   final border = solid
       ? null
       : Border.all(
@@ -111,11 +107,11 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
-  final sigma = settling
-      ? 0.0
-      : wallpaperTransparent
-          ? wallpaperGlassSigma(context)
-          : frostedBlurSigma(ref);
+  // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
+  // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
+  final sigma = wallpaperTransparent
+      ? wallpaperGlassSigma(context)
+      : 8.0 * frostedBlurScale(ref);
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -227,6 +223,11 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
 
 final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
 
+/// chrome 显隐瞬间的液态玻璃热身窗口（约 3 帧）：
+/// 头几帧用实底防止 backdrop 采样黑闪，之后保持实时液态玻璃，
+/// 避免整个显隐动画期间实底化导致折射卸载与落定跳变
+final chromeGlassWarmupProvider = StateProvider<bool>((ref) => false);
+
 final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
 ImageFilter cachedBlur(double sigma) {
   final hit = _blurFilterCache[sigma];
@@ -283,11 +284,9 @@ Widget pseudoLiquidSurface({
   final wallpaper = wallpaperGlassActive(ref);
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
-  final settling = ref.watch(isTransitioningProvider) ||
-      ref.watch(isTabSwitchingProvider);
   final wallTransparent = wallpaper && !frostedOn;
   final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-  final solid = forceSolid || prefSolid || settling;
+  final solid = forceSolid || prefSolid;
   final keepAlive = forceSolid && keepFilter && !prefSolid;
   final navSurface = surfaceType == BlurSurfaceType.header ||
       surfaceType == BlurSurfaceType.bottomBar;
@@ -308,13 +307,16 @@ Widget pseudoLiquidSurface({
       : Colors.white.withValues(alpha: 0.5);
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
+  // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
+  // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
   final sigma = wallpaperNav
       ? navSurfaceBlurSigma(ref)
       : wallTransparent
           ? wallpaperGlassSigma(context)
           : (budget == null
               ? 8.0 * scale
-              : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType));
+              : surfaceBlurSigma(
+                  base: 8 * scale, budget: budget, type: surfaceType));
   final surface = Container(
     decoration: BoxDecoration(
       color: fill,

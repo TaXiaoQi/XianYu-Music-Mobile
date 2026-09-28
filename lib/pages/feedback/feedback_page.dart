@@ -42,6 +42,10 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   bool _compressing = false;
   bool _attachAllLogs = false;
 
+  // 内测资格检测（与启动检测同源，避免重复申请）
+  String _betaAccessState = 'unknown'; // unknown | checking | allowed | pending | denied
+  bool _betaAccessChecked = false;
+
   List<FeedbackItem> _myFeedback = const [];
   bool _loadingFeedback = false;
 
@@ -56,10 +60,18 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       initialIndex: widget.initialTab.clamp(0, 2),
     );
     _tab.addListener(() {
+      if (_tab.index == 1) {
+        _checkBetaAccess();
+      }
       if (_tab.index == 2 && _myFeedback.isEmpty && !_loadingFeedback) {
         _loadMyFeedback();
       }
     });
+    if (widget.initialTab == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _checkBetaAccess();
+      });
+    }
     if (widget.initialTab == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _myFeedback.isEmpty && !_loadingFeedback) {
@@ -203,6 +215,23 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _checkBetaAccess() async {
+    if (_betaAccessChecked) return;
+    if (!ref.read(authProvider).isLoggedIn) return; // 未登录由登录提示兜底
+    _betaAccessChecked = true;
+    setState(() => _betaAccessState = 'checking');
+    try {
+      final (allowed, pending) =
+          await ref.read(accountApiProvider).checkBetaAccess();
+      if (!mounted) return;
+      setState(() =>
+          _betaAccessState = allowed ? 'allowed' : (pending ? 'pending' : 'denied'));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _betaAccessState = 'denied'); // 检测失败按无资格处理，正常展示申请表单
     }
   }
 
@@ -441,36 +470,81 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _betaCtrl,
-            maxLines: 6,
-            maxLength: 1000,
-            decoration: InputDecoration(
-              hintText: tr('请填写内测申请理由…'),
-              filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
+          if (_betaAccessState == 'checking')
+            _betaBanner(
+              tr('正在检测内测资格…'),
+              const Color(0xFF6B7280),
+              const Color(0x1A6B7280),
+              leading: const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_betaAccessState == 'allowed')
+            _betaBanner(
+              tr('当前设备已加入内测渠道，无需重复申请。'),
+              const Color(0xFF16A34A),
+              const Color(0x1A16A34A),
+            )
+          else if (_betaAccessState == 'pending')
+            _betaBanner(
+              tr('该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。'),
+              const Color(0xFFB45309),
+              const Color(0x1AB45309),
+            ),
+          if (_betaAccessState == 'unknown' || _betaAccessState == 'denied') ...[
+            TextField(
+              controller: _betaCtrl,
+              maxLines: 6,
+              maxLength: 1000,
+              decoration: InputDecoration(
+                hintText: tr('请填写内测申请理由…'),
+                filled: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _submitting ? null : _submitBeta,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _submitting ? null : _submitBeta,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(tr('提交申请'),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
-            child: _submitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(tr('提交申请'),
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _betaBanner(String text, Color color, Color bg, {Widget? leading}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (leading != null) ...[
+            leading,
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(text,
+                style: TextStyle(fontSize: 12.5, height: 1.5, color: color)),
           ),
         ],
       ),
