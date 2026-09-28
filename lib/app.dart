@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -341,7 +342,22 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   : TextScaler.linear(fontSize.scale);
               return MediaQuery(
                 data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-                child: Stack(
+                child: NotificationListener<NavigationNotification>(
+                  onNotification: (notification) {
+                    // 自管 frameworkHandlesBack：子树里每个 Navigator（含
+                    // 播放页独立 Navigator）的路由变化都会发 NavigationNotification，
+                    // 后发者直接覆盖前值——播放页 pop 后其 idle 待机页（canPop
+                    // 恒 false）会把 appNavigator 的 true 干成 false，引擎随即
+                    // 注销返回回调，下一次手势被系统直接 finish 退软件。
+                    // 这里吞掉全部通知，按 OR 聚合后直设：播放页开着或根栈
+                    // 有二级页都算「框架处理返回」；根部为 false 回退经典链
+                    //（didPopRoute → PredictiveBackOffFallback 再按一次退出）
+                    final canPop = playerOpenNotifier.value ||
+                        (appNavigatorKey.currentState?.canPop() ?? false);
+                    SystemNavigator.setFrameworkHandlesBack(canPop);
+                    return true;
+                  },
+                  child: Stack(
                   fit: StackFit.expand,
                   children: [
                     ColoredBox(
@@ -364,6 +380,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                       ],
                     ),
                   ],
+                ),
                 ),
               );
             },

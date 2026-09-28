@@ -206,14 +206,14 @@ class _PlayerIdleRoute extends Route<void> {
   List<OverlayEntry> get overlayEntries => <OverlayEntry>[_entry];
 }
 
-/// 预测返回关闭时的兜底认领者。
+/// 预测返回手势的兜底认领者。
 ///
-/// manifest 的 enableOnBackInvokedCallback 是静态开关：设置里关掉预测返回后，
-/// 系统仍按预测管线派发手势，各路由 detector 会全部 decline
-/// （popGestureEnabled=false）；而引擎对无人认领的手势不再派发 commit，
-/// didPopRoute 经典兜底链收不到任何事件，播放页/二级页返回就静默失效。
-/// 这里在设置关闭时主动认领，保住引擎的 commit 派发，
-/// commit 时按经典返回处理（播放页优先，其余走 go_router 栈）。
+/// 引擎只在有认领者时才派发 commit：各路由 detector 因预测关闭、根部
+/// （无可弹路由）或任何 popGestureEnabled=false 而 decline 时，若无人
+/// 认领，commit 不进 Dart，系统按默认行为直接 finish 退出应用。
+/// 这里无条件兜底认领（observer 逆序遍历中 detector 先被问，认领时
+/// 轮不到这里），commit 时按经典返回处理（播放页优先，其余走 go_router
+/// 栈：pop 二级页 / 切回主 tab / 再按一次退出）。
 class PredictiveBackOffFallback with WidgetsBindingObserver {
   PredictiveBackOffFallback._();
 
@@ -228,24 +228,17 @@ class PredictiveBackOffFallback with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(instance);
   }
 
-  bool _predictiveEnabled() {
-    final context =
-        playerNavigatorKey.currentContext ?? appNavigatorKey.currentContext;
-    if (context == null) return false;
-    // 空态回落与 _livePredictiveBack 对齐（true），避免设置未加载窗口期双重认领
-    return ProviderScope.containerOf(context, listen: false)
-            .read(settingsProvider)
-            .valueOrNull
-            ?.enablePredictiveBack ??
-        true;
-  }
-
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    // 按键返回走经典链路（escape KeyDown / popRoute），不认领；
-    // 预测返回开启时交给路由 detector；关闭时认领——
-    // 引擎只在有认领者时才派发 commit，否则返回静默失效
-    return !backEvent.isButtonEvent && !_predictiveEnabled();
+    // 按键返回走经典链路（escape KeyDown / popRoute），不认领
+    if (backEvent.isButtonEvent) return false;
+    // 兜底认领：observer 逆序遍历中，各路由的 detector（注册更晚）先被问，
+    // detector 认领（预测开且该页 popGestureEnabled）时轮不到这里；
+    // 全部 decline 时（预测关、根部、或任何 popGestureEnabled=false 的页面）
+    // 由这里保住 commit 派发——否则引擎不派发 commit，系统按默认行为
+    // 直接 finish 退出应用。commit 统一走 handleCommitBackGesture
+    // （播放页优先，其余根栈 maybePop 回退到经典返回）
+    return true;
   }
 
   @override
