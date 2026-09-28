@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/plugin/plugin_backup_file.dart';
@@ -32,7 +33,7 @@ class PlaylistImportPage extends ConsumerStatefulWidget {
 }
 
 class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, HideMiniBar {
   late TabController _tabCtrl = TabController(length: 3, vsync: this);
   bool _cloudTab = true;
 

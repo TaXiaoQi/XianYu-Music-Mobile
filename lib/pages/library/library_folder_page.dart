@@ -33,7 +33,8 @@ class LibraryFolderPage extends ConsumerStatefulWidget {
   ConsumerState<LibraryFolderPage> createState() => _LibraryFolderPageState();
 }
 
-class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
+class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
+    with HideMiniBar {
   final Set<String> _expanded = {};
   bool _scanning = false;
   bool _adding = false;
