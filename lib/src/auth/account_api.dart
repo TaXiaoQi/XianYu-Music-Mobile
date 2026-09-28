@@ -590,6 +590,7 @@ class AccountApi {
   Future<Map<String, dynamic>> reportListenStatsDelta({
     required int deltaTotal,
     required int deltaDaily,
+    int elapsedSecs = -1,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -601,6 +602,7 @@ class AccountApi {
         'stats_mode': 'delta',
         'delta_duration': deltaTotal.clamp(0, 1 << 31),
         'delta_daily_duration': deltaDaily.clamp(0, 1 << 31),
+        'elapsed_secs': elapsedSecs,
       }, fetchTimeoutMs: 8000);
       final resetAt = data['reset_at'];
       if (resetAt is String && resetAt.isNotEmpty) {

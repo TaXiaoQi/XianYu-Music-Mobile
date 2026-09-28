@@ -182,13 +182,26 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
         final baseTotal = (baseline['total'] as num?)?.toInt() ?? 0;
         var baseDaily = (baseline['daily'] as num?)?.toInt() ?? 0;
         final baseDate = baseline['date'] as String? ?? today;
+        final reportedAt = (baseline['reported_at'] as num?)?.toInt() ?? 0;
         if (baseDate != today) baseDaily = 0;
-        final deltaTotal = (totalSecs - baseTotal).clamp(0, 1 << 31);
-        final deltaDaily = (todaySecs - baseDaily).clamp(0, 1 << 31);
+        var deltaTotal = (totalSecs - baseTotal).clamp(0, 1 << 31);
+        var deltaDaily = (todaySecs - baseDaily).clamp(0, deltaTotal);
+
+        // 防全量重报护栏：baseline 丢失/重置时 delta 会等于本地全部历史累计。
+        // 单次上报物理上限 = 自上次成功上报以来的墙钟时间 × 3 + 10 分钟（倍速与
+        // 时钟误差余量；首次无时间戳给 2 小时兜底），超限截断，baseline 只推进
+        // 已上报部分，剩余留给后续上报分批追平——宁可少报，绝不重报。
+        final elapsedSecs = reportedAt > 0
+            ? ((now - reportedAt) / 1000).floor().clamp(0, 30 * 86400).toInt()
+            : 0;
+        final maxDelta = reportedAt > 0 ? elapsedSecs * 3 + 600 : 7200;
+        if (deltaTotal > maxDelta) deltaTotal = maxDelta;
+        if (deltaDaily > deltaTotal) deltaDaily = deltaTotal;
 
         final resp = await api.reportListenStatsDelta(
           deltaTotal: deltaTotal,
           deltaDaily: deltaDaily,
+          elapsedSecs: reportedAt > 0 ? elapsedSecs : -1,
         );
 
         if (resp['resetAt'] != null) {
@@ -202,8 +215,23 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
           ref.read(listenServerSnapshotProvider.notifier).state =
               const ListenServerSnapshot(total: 0, daily: 0, weekly: 0);
         } else if (resp.isNotEmpty) {
-          await _persistJson(_listenBaselineKey,
-              {'total': totalSecs, 'daily': todaySecs, 'date': today});
+          // 响应回执对账：服务端确认量 = 回执总量 − 上次快照总量，两方对上账
+          // 才推进 baseline；服务端截断/异常时只推进确认部分，剩余留本地追报
+          final prevSnap = await _loadJson(_listenSnapshotKey);
+          final prevTotal = (prevSnap?['total'] as num?)?.toInt() ?? 0;
+          final respTotal = (resp['total'] as num?)?.toInt() ?? 0;
+          final serverDelta = respTotal - prevTotal;
+          final confirmedTotal = serverDelta >= 0 && serverDelta < deltaTotal
+              ? serverDelta
+              : deltaTotal;
+          final confirmedDaily = deltaDaily < confirmedTotal ? deltaDaily : confirmedTotal;
+          // 只推进已上报的部分：截断场景下剩余 delta 留在本地，下次继续追
+          await _persistJson(_listenBaselineKey, {
+            'total': baseTotal + confirmedTotal,
+            'daily': baseDaily + confirmedDaily,
+            'date': today,
+            'reported_at': now,
+          });
           final snap = ListenServerSnapshot(
             total: (resp['total'] as num?)?.toInt() ?? 0,
             daily: (resp['daily'] as num?)?.toInt() ?? 0,
