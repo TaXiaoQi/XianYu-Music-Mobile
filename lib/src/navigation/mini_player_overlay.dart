@@ -1,10 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart'
-    show ImperativeRouteMatch, RouteMatchBase, ShellRouteMatch;
 
 import '../core/settings.dart';
 import '../widgets/blur_budget.dart';
@@ -14,9 +11,11 @@ import 'shell.dart';
 
 /// mini 播放条顶层宿主：
 /// 挂载在 MaterialApp.builder 中 Navigator 之上的兄弟层级，
-/// 让播放条成为全局最上层 chrome——所有页面（含播放页）的转场
-/// 都从播放条背后滑过，实现无缝衔接。
-/// 显隐跟随 chrome（hidden），与顶栏/底栏的节奏保持一致。
+/// 让播放条成为全局唯一、常驻最上层的 chrome——所有页面（含播放页）
+/// 的转场都从播放条背后滑过，页面不再内嵌自己的播放条。
+/// 显隐与位置档位（底栏上方/屏幕底）实时跟随当前页面，变化通过与
+/// 切换动画同节奏的隐式动画过渡，与页面转场同步完成。
+/// 拖动松手时若停在底部停靠带内则吸附归位，恢复档位跟随。
 class MiniPlayerOverlay extends ConsumerStatefulWidget {
   const MiniPlayerOverlay({super.key});
 
@@ -35,79 +34,32 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
   bool _isPlayerDragging = false;
 
-  bool _isRootPath = true;
-
-  /// 上一帧的 hidden：用于判定转场起点是否可见
-  bool _lastHidden = false;
-
-  /// 从根路径推入二级页时置位：转场中全局条保持可见，
-  /// 落定（globalIsTransitioning 复位）后清零并淡出交接
-  bool _pendingHide = false;
-
-  static const _rootPaths = {'/', '/home', '/mine'};
-
-  /// 栈顶路由的真实路径。
-  /// go_router 的 currentConfiguration.uri 只统计非 imperative 匹配：
-  /// push('/player') 之后它仍是 '/'，必须下钻 ImperativeRouteMatch。
-  String get _topPath {
-    final config = appRouter.routerDelegate.currentConfiguration;
-    RouteMatchBase m = config.matches.last;
-    while (m is ShellRouteMatch && m.matches.isNotEmpty) {
-      m = m.matches.last;
-    }
-    if (m is ImperativeRouteMatch) return m.matches.uri.path;
-    return config.uri.path;
-  }
+  /// 位置档位（是否坐在页面底部低位）：实时跟随当前页面，
+  /// 变化通过与页面切换同节奏的隐式动画同步过渡
+  bool _lowState = false;
 
   @override
   void initState() {
     super.initState();
-    _isRootPath = _rootPaths.contains(_topPath);
-    appRouter.routerDelegate.addListener(_onRouteChanged);
-    globalIsTransitioning.addListener(_onTransitionChanged);
+    _lowState = ref.read(navBarHiddenProvider) > 0;
+    // hiddenCount 的增减都发生在页面进出（转场）期间，变化立即同步：
+    // 档位滑动、显隐淡入淡出与页面切换动画同节奏、同步完成
+    ref.listenManual(navBarHiddenProvider, (_, _) => _syncLow());
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
   }
 
   @override
   void dispose() {
-    appRouter.routerDelegate.removeListener(_onRouteChanged);
-    globalIsTransitioning.removeListener(_onTransitionChanged);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
     super.dispose();
   }
 
-  void _onRouteChanged() {
+  void _syncLow() {
     if (!mounted) return;
-    setState(() {
-      final next = _rootPaths.contains(_topPath);
-      // 从根路径（条可见）覆盖推入二级页：转场中保持全局条原位可见，
-      // 页面从条背后滑过；不能依赖此处读 globalIsTransitioning——
-      // routerDelegate 通知先于 NavigatorObserver.didPush 触发
-      if (_isRootPath && !next && !_lastHidden) {
-        _pendingHide = true;
-      }
-      _isRootPath = next;
-    });
-  }
-
-  void _onTransitionChanged() {
-    if (!mounted) return;
-    // 转场通知可能由 Navigator didPush/didPop 在 build 阶段同步广播，
-    // 本宿主挂在 Navigator 之外（builder 层），setState 会被
-    // "markNeedsBuild during build" 断言拒绝——推迟到帧末执行
-    void apply() {
-      if (!mounted) return;
-      setState(() {
-        if (!globalIsTransitioning.value) _pendingHide = false;
-      });
-    }
-
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => apply());
-      return;
-    }
-    apply();
+    // 档位实时跟随当前页面：变化通过与页面切换同节奏的隐式动画
+    // 与转场同步完成，吸附也随切换动画同步执行
+    final low = ref.read(navBarHiddenProvider) > 0;
+    if (low != _lowState) setState(() => _lowState = low);
   }
 
   void _onPlayerOpenChanged() {
@@ -187,6 +139,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     DragEndDetails details,
     double defaultLeft,
     double defaultTop,
+    double maxTop,
   ) {
     setState(() {
       _isPlayerDragging = false;
@@ -195,11 +148,17 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
     final l = _playerLeft;
     final t = _playerTop;
-    if (l != null && t != null) {
-      MiniBarPositionStore.shared = Offset(l, t);
+    if (l == null || t == null) return;
+    if (t >= maxTop - 48.0) {
+      // 停在底部停靠带内：吸附归位——清除自定义位置，条滑回当前页面的
+      // 停靠档位并恢复档位跟随（主页底栏上方、二级页屏幕底部）
       _playerLeft = null;
       _playerTop = null;
+      return;
     }
+    MiniBarPositionStore.shared = Offset(l, t);
+    _playerLeft = null;
+    _playerTop = null;
   }
 
   void _onPlayerPanCancel() {
@@ -228,20 +187,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
     final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
 
-    final hiddenCount = ref.watch(navBarHiddenProvider);
-
     final playerOpen = playerOpenNotifier.value;
 
-    final hidden = hiddenCount > 0 ||
-        playerOpen ||
-        (!_isRootPath &&
-            // 转场期间保持转场起点的可见状态：从根路径覆盖推入二级页时，
-            // 全局条原位静止在切换动画图层之上，页面（含其内嵌条）从
-            // 背后滑过；落定后再按新路径状态淡出，交接给页面内嵌条
-            !_pendingHide);
-
-    final miniBarLow =
-        hiddenCount > 0 || (!_isRootPath && !playerOpen);
+    // 黑名单页（设置/搜索等 HideMiniBar）持有期间隐藏：变化通过与
+    // 切换动画同节奏的隐式动画与页面转场同步完成
+    final pageHidesBar = ref.watch(miniBarHiddenProvider) > 0;
+    final hidden = playerOpen || pageHidesBar;
 
     final miniBarW = landscape
         ? math.min(screenSize.width * 0.55, 520.0)
@@ -268,7 +219,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     final defaultTop = isSide
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
-            ? (miniBarLow
+            ? (_lowState
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
                 : (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0))
             : (screenSize.height - safeBottom - 58.0 - 64.0));
@@ -280,11 +231,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       final barH = 58.0;
       if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
       if (floating) {
-        return hidden
+        return _lowState
             ? (screenSize.height - padding.bottom - barH - 12.0)
             : (screenSize.height - safeBottom - 18.0 - 70.0 - barH - batchLift);
       }
-      return hidden
+      return _lowState
           ? (screenSize.height - padding.bottom - barH - 12.0)
           : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
     }();
@@ -317,11 +268,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
     if (accountOpen) return const SizedBox.shrink();
 
-    _lastHidden = hidden;
-
     // 播放页在五级模型中高于播放条：推入时条立即让位（播放页物理盖过，
-    // 无需渐隐）；其余显隐（返回露出/根↔二级交接）走 240ms 渐变
-    final chromeDur = (hiddenCount > 0 || playerOpen)
+    // 无需渐隐）；返回露出时走 240ms 渐变
+    final chromeDur = playerOpen
         ? Duration.zero
         : const Duration(milliseconds: 240);
 
@@ -356,10 +305,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
                   landscapeLeftBound,
                   landscapeRightBound,
                   landscape),
-              onPanEnd: (d) => _onPlayerPanEnd(d, defaultLeft, defaultTop),
+              onPanEnd: (d) =>
+                  _onPlayerPanEnd(d, defaultLeft, defaultTop, dragMaxTop),
               onPanCancel: _onPlayerPanCancel,
-              registerTarget: !(hiddenCount > 0 && !playerOpen),
-              heroTag: (hiddenCount > 0 && !playerOpen) ? null : 'player-cover',
+              registerTarget: !hidden,
+              heroTag: hidden ? null : 'player-cover',
               returnTarget: () => Rect.fromLTWH(
                 actualLeft,
                 rootBarTop,

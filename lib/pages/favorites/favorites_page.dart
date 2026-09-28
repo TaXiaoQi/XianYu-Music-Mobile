@@ -18,7 +18,6 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/batch_action_bar.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/floating_search_bar.dart';
@@ -354,7 +353,6 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                           bottom: tabBar,
                         )),
             ),
-            if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
       ),

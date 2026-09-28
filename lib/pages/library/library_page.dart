@@ -493,8 +493,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
               right: (inMusicPane || floating) && floating ? 12 : 0,
               child: header,
             ),
-            if (!inMusicPane && lib.songs.isNotEmpty)
-              const MiniPlayerBar(),
           ],
         ),
         ),

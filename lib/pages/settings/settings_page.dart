@@ -6,7 +6,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/developer_mode.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/navigation/shell.dart'
-    show landscapeSettingsCategoryProvider;
+    show HideMiniBar, landscapeSettingsCategoryProvider;
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -26,7 +26,8 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends ConsumerState<SettingsPage> {
+class _SettingsPageState extends ConsumerState<SettingsPage>
+    with HideMiniBar {
   String _query = '';
   final _searchCtrl = TextEditingController();
 

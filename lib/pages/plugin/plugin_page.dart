@@ -506,8 +506,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     );
   }
 
-  Future<void> _installUrl(String url) async {
-    if (url.trim().isEmpty) return;
+  /// 返回 null 表示成功（关弹窗）；返回错误文案以便弹窗保留输入状态重试
+  Future<String?> _installUrl(String url) async {
+    if (url.trim().isEmpty) return tr('链接不能为空');
     final progress = showXianYuProgressToast(context, tr('正在导入插件...'));
     setState(() => _installing = true);
     try {
@@ -517,20 +518,24 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             url,
             onProgress: (msg, p) => progress.update(msg, progress: p),
           );
-      if (!mounted) return;
+      if (!mounted) return null;
       if (result.success) {
         final summary = result.failCount > 0
             ? tr('成功 {ok} 个，失败 {fail} 个', {'ok': result.names.length, 'fail': result.failCount})
             : tr('成功 {ok} 个：{names}', {'ok': result.names.length, 'names': result.names.join('、')});
         progress.complete(tr('插件安装完成，{summary}', {'summary': summary}));
-      } else {
-        final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
-        progress.fail(tr('所有插件安装失败{detail}', {'detail': detail}));
+        return null;
       }
+      final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
+      final msg = tr('所有插件安装失败{detail}', {'detail': detail});
+      progress.fail(msg);
+      return msg;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      progress.fail(tr('安装失败：{msg}', {'msg': msg}));
+      final text = tr('安装失败：{msg}', {'msg': msg});
+      progress.fail(text);
+      return text;
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -1497,7 +1502,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
 
 class _UrlInstallSheet extends StatefulWidget {
   const _UrlInstallSheet({required this.onInstallUrl});
-  final Future<void> Function(String url) onInstallUrl;
+  final Future<String?> Function(String url) onInstallUrl;
 
   @override
   State<_UrlInstallSheet> createState() => _UrlInstallSheetState();
@@ -1506,6 +1511,7 @@ class _UrlInstallSheet extends StatefulWidget {
 class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   final _urlCtrl = TextEditingController();
   bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -1515,13 +1521,21 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
 
   Future<void> _installFromUrl() async {
     final url = _urlCtrl.text.trim();
-    if (url.isEmpty) return;
-    setState(() => _loading = true);
-    try {
-      await widget.onInstallUrl(url);
-      if (mounted) Navigator.pop(context);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    if (url.isEmpty || _loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final error = await widget.onInstallUrl(url);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context);
+    } else {
+      // 失败：保留已输入链接与键盘状态，错误原因显示在弹窗内便于重试
+      setState(() {
+        _loading = false;
+        _error = error;
+      });
     }
   }
 
@@ -1554,6 +1568,13 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
               keyboardType: TextInputType.url,
               onSubmitted: (_) => _installFromUrl(),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(fontSize: 12, color: scheme.error),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

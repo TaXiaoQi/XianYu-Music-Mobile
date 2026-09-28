@@ -10,7 +10,6 @@ import '../../src/player/player_provider.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
@@ -103,9 +102,8 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                 title:   Text(tr('每日推荐')),
               ),
             ),
-          if (!widget.embedded) const _BottomPlayBar(),
-        ],
-      ),
+          ],
+        ),
     );
   }
   Widget _floatHost(bool floating, Widget child) {
@@ -124,17 +122,6 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
           top: widget.embedded ? 0 : GlassTopBar.height(context)),
       child: child,
     );
-  }
-}
-
-class _BottomPlayBar extends ConsumerWidget {
-  const _BottomPlayBar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
-    if (!hasSong) return const SizedBox.shrink();
-    return const MiniPlayerBar();
   }
 }
 

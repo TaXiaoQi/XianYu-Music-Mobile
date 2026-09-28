@@ -131,6 +131,7 @@ class _PlayerNavigatorHostState extends ConsumerState<PlayerNavigatorHost>
   @override
   void initState() {
     super.initState();
+    PredictiveBackOffFallback.instance.ensureRegistered();
     _pageOpen = playerOpenNotifier.value; // 通知早于挂载时的兜底对齐
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
     HardwareKeyboard.instance.addHandler(_onKey);
@@ -203,6 +204,60 @@ class _PlayerIdleRoute extends Route<void> {
 
   @override
   List<OverlayEntry> get overlayEntries => <OverlayEntry>[_entry];
+}
+
+/// 预测返回关闭时的兜底认领者。
+///
+/// manifest 的 enableOnBackInvokedCallback 是静态开关：设置里关掉预测返回后，
+/// 系统仍按预测管线派发手势，各路由 detector 会全部 decline
+/// （popGestureEnabled=false）；而引擎对无人认领的手势不再派发 commit，
+/// didPopRoute 经典兜底链收不到任何事件，播放页/二级页返回就静默失效。
+/// 这里在设置关闭时主动认领，保住引擎的 commit 派发，
+/// commit 时按经典返回处理（播放页优先，其余走 go_router 栈）。
+class PredictiveBackOffFallback with WidgetsBindingObserver {
+  PredictiveBackOffFallback._();
+
+  static final PredictiveBackOffFallback instance =
+      PredictiveBackOffFallback._();
+
+  static bool _registered = false;
+
+  void ensureRegistered() {
+    if (_registered) return;
+    _registered = true;
+    WidgetsBinding.instance.addObserver(instance);
+  }
+
+  bool _predictiveEnabled() {
+    final context =
+        playerNavigatorKey.currentContext ?? appNavigatorKey.currentContext;
+    if (context == null) return false;
+    // 空态回落与 _livePredictiveBack 对齐（true），避免设置未加载窗口期双重认领
+    return ProviderScope.containerOf(context, listen: false)
+            .read(settingsProvider)
+            .valueOrNull
+            ?.enablePredictiveBack ??
+        true;
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    // 按键返回走经典链路（escape KeyDown / popRoute），不认领；
+    // 预测返回开启时交给路由 detector；关闭时认领——
+    // 引擎只在有认领者时才派发 commit，否则返回静默失效
+    return !backEvent.isButtonEvent && !_predictiveEnabled();
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    // 与 didPopRoute 同序：播放页优先，其余交给根栈
+    // （shell 的 PopScope 决定 pop 二级页 / 切回主 tab / 再按一次退出）
+    if (playerOpenNotifier.value) {
+      playerNavigatorKey.currentState?.maybePop();
+      return;
+    }
+    appNavigatorKey.currentState?.maybePop();
+  }
 }
 
 final _branchKeys = <GlobalKey>[GlobalKey(), GlobalKey()];
@@ -984,7 +1039,9 @@ class _PlayerCoverPage extends Page<void> {
           final src = PredictiveCoverReturn.instance.sourceRect;
           if (src.isEmpty) return;
           final (sp, nu, tp) = PredictiveCoverReturn.instance.coverSource;
-          unawaited(FlyingCover.instance.launch(
+          // 普通返回：飞行期间同样隐藏播放页真封面（避免双封面），
+          // flight 在落地瞬间完成，真封面恢复、副本淡出叠回
+          final flight = FlyingCover.instance.launch(
             fromRect: src,
             songPath: sp,
             networkUrl: nu,
@@ -993,7 +1050,11 @@ class _PlayerCoverPage extends Page<void> {
             targetProvider: () =>
                 FlyingCover.instance.targetRect ??
                 PredictiveCoverReturn.instance.targetRect,
-          ));
+          );
+          PredictiveCoverReturn.instance.returning.value = true;
+          unawaited(flight.whenComplete(() {
+            PredictiveCoverReturn.instance.returning.value = false;
+          }));
         },
         child: builder(context),
       ),

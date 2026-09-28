@@ -120,6 +120,10 @@ final navBarInsetProvider = Provider<double>((ref) {
 
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
 
+/// mini 播放条页面黑名单计数：混入 HideMiniBar 的页面（设置、搜索等）
+/// 持有期间 >0，全局播放条在该页面落定后隐藏、离开后恢复
+final miniBarHiddenProvider = StateProvider<int>((ref) => 0);
+
 final sideBarExpandedProvider = StateProvider<bool>((ref) => false);
 
 class EmbeddedShellScope extends InheritedWidget {
@@ -162,6 +166,42 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
       if (container != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final notifier = container.read(navBarHiddenProvider.notifier);
+          if (notifier.state > 0) notifier.state--;
+        });
+      }
+    }
+    super.dispose();
+  }
+}
+
+/// 页面级 mini 播放条黑名单：混入的页面（设置、搜索等）持有期间
+/// miniBarHiddenProvider >0，全局播放条在该页面落定后隐藏、离开后恢复；
+/// 转场期间不生效（条不受切换动画影响，落定后才淡出/淡入）
+mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+  ProviderContainer? _miniBarContainer;
+
+  bool _miniBarCounted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (EmbeddedShellScope.of(context)) return;
+      _miniBarContainer = ProviderScope.containerOf(context, listen: false);
+      _miniBarCounted = true;
+      _miniBarContainer!.read(miniBarHiddenProvider.notifier).state++;
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_miniBarCounted) {
+      final container = _miniBarContainer;
+      _miniBarCounted = false;
+      if (container != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final notifier = container.read(miniBarHiddenProvider.notifier);
           if (notifier.state > 0) notifier.state--;
         });
       }

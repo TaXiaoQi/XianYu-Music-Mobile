@@ -525,6 +525,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             songPath: current.path,
             networkUrl: current.coverUrl,
             radius: 23,
+            // 飞入播放页期间隐藏目的地真封面，落地才露出
+            hideTarget: true,
             targetProvider: () =>
                 FlyingCover.instance.outboundTargetProvider?.call() ?? from,
           ));

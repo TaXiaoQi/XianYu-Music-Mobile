@@ -19,7 +19,6 @@ import '../../src/recognize/recognize_service.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
@@ -448,10 +447,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
                     onTap: _active ? _cancel : _start,
                     onRestart: () => setState(() => _phase = _Phase.idle),
                   ),
-                const Positioned(
-                  left: 0, right: 0, bottom: 0,
-                  child: BottomPlayBarSlot(),
-                ),
               ],
             ),
           ),

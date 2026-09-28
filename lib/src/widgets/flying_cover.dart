@@ -22,6 +22,10 @@ class FlyingCover {
   /// 播放条 → 播放页的飞行封面用它的实时矩形作目标
   Rect Function()? outboundTargetProvider;
 
+  /// true = 目标端真封面在飞行期间隐藏（飞行副本是唯一封面），
+  /// 落地瞬间恢复显示，副本 0.92→0 淡出正好叠回真封面
+  final ValueNotifier<bool> targetHidden = ValueNotifier<bool>(false);
+
   void attach(OverlayState overlay) => _overlay = overlay;
 
   void registerTarget(Rect Function() provider) {
@@ -59,6 +63,7 @@ class FlyingCover {
     String? thumbPath,
     double radius = 6,
     Rect? Function()? targetProvider,
+    bool hideTarget = false,
   }) {
     final overlay = _overlay;
     if (overlay == null) return Future.value(true);
@@ -74,7 +79,10 @@ class FlyingCover {
         prevCompleter.complete(false);
       }
       prevEntry.remove();
+      // 旧飞行被打断，目标端真封面恢复显示
+      targetHidden.value = false;
     }
+    if (hideTarget) targetHidden.value = true;
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _FlyingCoverOverlay(
@@ -85,8 +93,10 @@ class FlyingCover {
         thumbPath: thumbPath,
         radius: radius,
         onLanded: () {
-          if (id == _flyId && !completer.isCompleted) {
-            completer.complete(true);
+          if (id == _flyId) {
+            // 落地：真封面恢复显示，副本随后淡出叠回
+            targetHidden.value = false;
+            if (!completer.isCompleted) completer.complete(true);
           }
         },
         onDone: () {
@@ -110,6 +120,7 @@ class FlyingCover {
     final completer = _currentCompleter;
     _currentEntry = null;
     _currentCompleter = null;
+    targetHidden.value = false;
     if (completer != null && !completer.isCompleted) {
       completer.complete(false);
     }
@@ -211,7 +222,16 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: FlyingCover.instance.targetHidden,
+      builder: (context, hidden, _) => Opacity(
+        // 飞行副本在途时隐藏真封面（Opacity 不影响布局，矩形追踪照常）
+        opacity: hidden ? 0.0 : 1.0,
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 class _FlyingCoverOverlay extends StatefulWidget {
