@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+
+import '../leaderboard/leaderboard_prefetch.dart';
 
 import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
@@ -47,14 +50,19 @@ class StatsSummaryCard extends ConsumerWidget {
     final stats = ref.watch(listenStatsProvider);
     final data = stats.valueOrNull;
     return _CardContainer(
-      onTap: () => openDiscoverEntry(context, ref, '/leaderboard'),
+      onTap: () {
+        // 先把榜单数据拉起来：页面打开即命中缓存，转场那几百毫秒里
+        // 就不会只剩一屏空骨架（"点进去先闪一下"的成因）
+        unawaited(prefetchLeaderboard(ref));
+        openDiscoverEntry(context, ref, '/leaderboard');
+      },
       child: Row(
         children: [
           Expanded(
             child: _statCell(
               scheme,
               icon: Icons.headphones_outlined,
-              label: tr('累计听歌'),
+              label: tr('累计时长'),
               value: data?.totalDurationText ?? '—',
             ),
           ),
@@ -99,11 +107,15 @@ class StatsSummaryCard extends ConsumerWidget {
         const SizedBox(height: 6),
         Text(
           value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 3),
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
               fontSize: 11, color: scheme.onSurfaceVariant),
         ),

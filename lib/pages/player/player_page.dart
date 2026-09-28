@@ -25,6 +25,7 @@ import '../../src/effects/sound_effect_provider.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/lyrics/floating_lyrics.dart';
+import '../../src/library/library_provider.dart';
 import '../../src/lyrics/lyric_font.dart';
 import '../../src/lyrics/lyric_model.dart';
 import '../../src/lyrics/lyrics_repository.dart';
@@ -1675,6 +1676,7 @@ class _TraditionalPlayerLayoutState
 
   Widget _buildCaption(BuildContext context, {required double inset}) {
     final c = widget.current;
+    final chain = _resolveAudioChain(ref, c);
     final isFav = c != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
     final fromDaily = c?.fromDailyRecommend ?? false;
@@ -1711,6 +1713,13 @@ class _TraditionalPlayerLayoutState
                       fontSize: 14,
                       height: 1.2,
                     ),
+                  ),
+                ],
+                if (chain.known) ...[
+                  const SizedBox(height: 7),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _AudioFormatBadge(chain: chain, dense: true),
                   ),
                 ],
               ],
@@ -3409,6 +3418,7 @@ class _TitleRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final chain = _resolveAudioChain(ref, current);
     final isFav = ref.watch(favoritesProvider).contains(current.path);
     final currentQuality = ref.watch(
       playerProvider.select((s) => s.currentQuality),
@@ -3484,6 +3494,10 @@ class _TitleRow extends ConsumerWidget {
                     ),
                   ),
                 ),
+              if (chain.known) ...[
+                const SizedBox(width: 6),
+                _AudioFormatBadge(chain: chain, dense: true),
+              ],
               const SizedBox(width: 4),
               InkWell(
                 borderRadius: BorderRadius.circular(10),
@@ -3648,6 +3662,257 @@ String _qualityLabel(String? q) {
   }
 }
 
+String _fmtKhz(int rate) {
+  final k = rate % 1000 == 0
+      ? '${rate ~/ 1000}'
+      : (rate / 1000).toStringAsFixed(1);
+  return '${k}kHz';
+}
+
+/// 当前播放链路的音频格式快照：源文件格式 + Rust 管线实际输出格式。
+///
+/// 源格式取自曲库扫描结果（`sample_rate`/`bit_depth`/`codec`），输出格式取自
+/// AAudio 流的真实参数，所以能判断出「有没有被重采样」以及是否 bit-perfect。
+class _AudioChain {
+  const _AudioChain({
+    required this.codecLabel,
+    required this.sourceRate,
+    required this.sourceBits,
+    required this.outRate,
+    required this.outChannels,
+    required this.bitPerfect,
+    required this.exclusive,
+    required this.dspActive,
+  });
+
+  final String codecLabel;
+  final int sourceRate;
+  final int? sourceBits;
+  final int outRate;
+  final int outChannels;
+  final bool bitPerfect;
+  final bool exclusive;
+  final bool dspActive;
+
+  bool get known => codecLabel.isNotEmpty || sourceRate > 0 || sourceBits != null;
+
+  /// 是否走 Rust 管线（USB 独占或共享 DSP），否则是系统播放器。
+  bool get rustEngine => exclusive || dspActive;
+
+  /// 输出采样率与源不一致即发生重采样。
+  bool get resampled =>
+      rustEngine && outRate > 0 && sourceRate > 0 && outRate != sourceRate;
+
+  /// 源格式短标签：`FLAC 24bit/96kHz`、`MP3 44.1kHz`、`在线 320K`
+  String get sourceLabel {
+    final parts = <String>[];
+    if (codecLabel.isNotEmpty) parts.add(codecLabel);
+    if (sourceRate > 0 && sourceBits != null) {
+      parts.add('${sourceBits}bit/${_fmtKhz(sourceRate)}');
+    } else if (sourceRate > 0) {
+      parts.add(_fmtKhz(sourceRate));
+    } else if (sourceBits != null) {
+      parts.add('${sourceBits}bit');
+    }
+    return parts.join(' ');
+  }
+
+  /// 输出格式短标签：`96kHz 立体声`
+  String get outLabel {
+    if (outRate <= 0) return '';
+    final ch = switch (outChannels) {
+      1 => ' 单声道',
+      2 => ' 立体声',
+      _ => '',
+    };
+    return '${_fmtKhz(outRate)}$ch';
+  }
+
+  /// 状态短标签：`直出` / `重采样` / `独占输出` / `音效引擎` / `系统混音`
+  String get statusLabel {
+    if (!rustEngine) return tr('系统混音');
+    if (bitPerfect) return tr('直出');
+    if (resampled) return tr('重采样');
+    return exclusive ? tr('独占输出') : tr('音效引擎');
+  }
+
+  /// 徽标上的单行摘要。
+  String get badge => rustEngine
+      ? [sourceLabel, statusLabel].where((e) => e.isNotEmpty).join(' · ')
+      : sourceLabel;
+}
+
+/// 组装当前音频链路快照。只在曲目或输出参数变化时触发重建，
+/// 不被 250ms 的进度轮询带着刷。
+_AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
+  final sel = ref.watch(playerProvider.select((s) => (
+        s.usbExclusive,
+        s.dspActive,
+        s.outSampleRate,
+        s.outChannels,
+        s.outBitPerfect,
+      )));
+  var codec = '';
+  var rate = 0;
+  int? bits;
+  if (item != null) {
+    if (item.isOnline) {
+      final q = (item.onlineQuality ?? '').trim();
+      codec = q.isEmpty ? tr('在线') : '${tr('在线')} ${_qualityLabel(q)}';
+    } else {
+      final song = ref.watch(songByPathProvider.select((m) => m[item.path]));
+      if (song != null) {
+        codec = (song.codec ?? song.format).toUpperCase().trim();
+        rate = song.sampleRate;
+        bits = song.bitDepth;
+      } else {
+        // 不在曲库里的本地/远程文件：退到扩展名，至少能显示容器类型
+        final dot = item.path.lastIndexOf('.');
+        if (dot > 0 && dot < item.path.length - 1) {
+          codec = item.path.substring(dot + 1).toUpperCase();
+        }
+      }
+    }
+  }
+  return _AudioChain(
+    codecLabel: codec,
+    sourceRate: rate,
+    sourceBits: bits,
+    outRate: sel.$3,
+    outChannels: sel.$4,
+    bitPerfect: sel.$5,
+    exclusive: sel.$1,
+    dspActive: sel.$2,
+  );
+}
+
+/// 紧凑的音频格式徽标：`FLAC 24bit/96kHz · 直出`。
+class _AudioFormatBadge extends StatelessWidget {
+  const _AudioFormatBadge({required this.chain, this.dense = false});
+
+  final _AudioChain chain;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!chain.known || chain.badge.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final color = chain.bitPerfect
+        ? scheme.primary
+        : chain.resampled
+            ? Colors.white.withValues(alpha: 0.62)
+            : Colors.white.withValues(alpha: 0.80);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 7 : 9,
+        vertical: dense ? 2 : 3,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        chain.badge,
+        style: TextStyle(
+          fontSize: dense ? 10 : 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+}
+
+/// 音质弹层里的「当前音频」只读区块：源 / 输出 / 引擎。
+class _AudioChainPanel extends StatelessWidget {
+  const _AudioChainPanel({required this.chain});
+
+  final _AudioChain chain;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!chain.known) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final engine = chain.exclusive
+        ? (chain.bitPerfect ? tr('USB 独占 · bit-perfect 直出') : tr('USB 独占输出'))
+        : chain.dspActive
+            ? tr('Rust DSP 共享管线')
+            : tr('系统播放器（未走音效引擎）');
+    final rows = <(String, String)>[
+      (tr('源格式'), chain.sourceLabel.isEmpty ? tr('未知') : chain.sourceLabel),
+      if (chain.rustEngine)
+        (
+          tr('输出'),
+          chain.outLabel.isEmpty
+              ? tr('未知')
+              : '${chain.outLabel} · ${chain.statusLabel}',
+        ),
+      (tr('引擎'), engine),
+    ];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.graphic_eq, size: 15, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                tr('当前音频'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 56,
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 String _compactSize(int bytes) {
   final mb = bytes / 1024 / 1024;
   if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)}G';
@@ -3761,6 +4026,12 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
               ),
             ),
             const SizedBox(height: 12),
+            _AudioChainPanel(
+              chain: _resolveAudioChain(
+                ref,
+                ref.watch(playerProvider.select((s) => s.current)),
+              ),
+            ),
             FutureBuilder<List<String>>(
               future: _future,
               builder: (ctx, snap) {

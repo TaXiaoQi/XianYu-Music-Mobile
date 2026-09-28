@@ -230,6 +230,12 @@ class AppSettings {
     this.usbExclusiveOutput = false,
     this.bitPerfectOutput = false,
     this.dsdNativePassthrough = false,
+    this.skipSilenceEnabled = false,
+    this.skipSilenceThresholdDb = -45.0,
+    this.skipSilenceKeepMs = 500,
+    this.gaplessEnabled = true,
+    this.crossfadeEnabled = false,
+    this.crossfadeSeconds = 5,
     this.volumeBalanceEnabled = false,
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
@@ -368,6 +374,22 @@ class AppSettings {
   final bool bitPerfectOutput;
 
   final bool dsdNativePassthrough;
+
+  /// 跳过静音：静音段只保留 [skipSilenceKeepMs]，多出来的丢掉。
+  final bool skipSilenceEnabled;
+  /// 静音判定阈值（dBFS，负值）。
+  final double skipSilenceThresholdDb;
+  /// 静音段保留时长（毫秒）。
+  final int skipSilenceKeepMs;
+
+  /// 无缝播放：本地曲目之间不留缝（采样率/声道不一致时自动退回普通切歌）。
+  final bool gaplessEnabled;
+
+    /// 曲间交叉淡入淡出：本地曲目之间按等功率曲线交叠换曲。
+    final bool crossfadeEnabled;
+
+    /// 交叉时长（秒，1–12）。
+    final int crossfadeSeconds;
 
   final bool volumeBalanceEnabled;
 
@@ -513,6 +535,12 @@ class AppSettings {
     bool? usbExclusiveOutput,
     bool? bitPerfectOutput,
     bool? dsdNativePassthrough,
+    bool? skipSilenceEnabled,
+    double? skipSilenceThresholdDb,
+    int? skipSilenceKeepMs,
+    bool? gaplessEnabled,
+    bool? crossfadeEnabled,
+    int? crossfadeSeconds,
     bool? volumeBalanceEnabled,
     double? volumeBalanceGainOffsetDb,
     bool? volumeBalancePreventClipping,
@@ -628,6 +656,13 @@ class AppSettings {
       bitPerfectOutput: bitPerfectOutput ?? this.bitPerfectOutput,
       dsdNativePassthrough:
           dsdNativePassthrough ?? this.dsdNativePassthrough,
+      skipSilenceEnabled: skipSilenceEnabled ?? this.skipSilenceEnabled,
+      skipSilenceThresholdDb:
+          skipSilenceThresholdDb ?? this.skipSilenceThresholdDb,
+      skipSilenceKeepMs: skipSilenceKeepMs ?? this.skipSilenceKeepMs,
+      gaplessEnabled: gaplessEnabled ?? this.gaplessEnabled,
+      crossfadeEnabled: crossfadeEnabled ?? this.crossfadeEnabled,
+      crossfadeSeconds: crossfadeSeconds ?? this.crossfadeSeconds,
       volumeBalanceEnabled: volumeBalanceEnabled ?? this.volumeBalanceEnabled,
       volumeBalanceGainOffsetDb:
           volumeBalanceGainOffsetDb ?? this.volumeBalanceGainOffsetDb,
@@ -787,6 +822,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       bitPerfectOutput: prefs.getBool('bitPerfectOutput') ?? false,
       dsdNativePassthrough: prefs.getBool('dsdNativePassthrough')
           ?? false,
+      skipSilenceEnabled: prefs.getBool('skipSilenceEnabled') ?? false,
+      skipSilenceThresholdDb:
+          prefs.getDouble('skipSilenceThresholdDb') ?? -45.0,
+      skipSilenceKeepMs: prefs.getInt('skipSilenceKeepMs') ?? 500,
+      gaplessEnabled: prefs.getBool('gaplessEnabled') ?? true,
+      crossfadeEnabled: prefs.getBool('crossfadeEnabled') ?? false,
+      crossfadeSeconds: prefs.getInt('crossfadeSeconds') ?? 5,
       volumeBalanceEnabled: prefs.getBool('volumeBalanceEnabled') ?? false,
       volumeBalanceGainOffsetDb:
           prefs.getDouble('volumeBalanceGainOffsetDb') ?? 0,
@@ -1009,6 +1051,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('usbExclusiveOutput', next.usbExclusiveOutput),
       prefs.setBool('bitPerfectOutput', next.bitPerfectOutput),
       prefs.setBool('dsdNativePassthrough', next.dsdNativePassthrough),
+      prefs.setBool('skipSilenceEnabled', next.skipSilenceEnabled),
+      prefs.setDouble('skipSilenceThresholdDb', next.skipSilenceThresholdDb),
+      prefs.setInt('skipSilenceKeepMs', next.skipSilenceKeepMs),
+      prefs.setBool('gaplessEnabled', next.gaplessEnabled),
+      prefs.setBool('crossfadeEnabled', next.crossfadeEnabled),
+      prefs.setInt('crossfadeSeconds', next.crossfadeSeconds),
       prefs.setBool('volumeBalanceEnabled', next.volumeBalanceEnabled),
       prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
       prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
@@ -1173,6 +1221,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
 
   Future<void> setAutoResumeAfterInterruption(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(autoResumeAfterInterruption: v));
   Future<void> setBitPerfectOutput(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(bitPerfectOutput: v));
+  Future<void> setSkipSilenceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(skipSilenceEnabled: v));
+  Future<void> setSkipSilenceThresholdDb(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(skipSilenceThresholdDb: v));
+  Future<void> setSkipSilenceKeepMs(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(skipSilenceKeepMs: v));
+  Future<void> setGaplessEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(gaplessEnabled: v));
+  Future<void> setCrossfadeEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(crossfadeEnabled: v));
+  Future<void> setCrossfadeSeconds(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(crossfadeSeconds: v));
   Future<void> setDsdNativePassthrough(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(dsdNativePassthrough: v));
   Future<void> setVolumeBalanceEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceEnabled: v));
   Future<void> setVolumeBalanceGainOffsetDb(double v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(volumeBalanceGainOffsetDb: v));

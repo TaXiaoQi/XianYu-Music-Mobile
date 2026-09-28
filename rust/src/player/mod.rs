@@ -6,6 +6,8 @@ pub mod equalizer;
 pub mod cenc;
 pub mod loudness;
 pub mod buffered_source;
+pub mod silence_skip;
+pub mod queue_producer;
 pub mod channel_downmix;
 pub mod http_source;
 pub mod sound_effect;

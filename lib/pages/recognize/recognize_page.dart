@@ -504,47 +504,85 @@ class _MicView extends StatelessWidget {
     final failed = phase == _Phase.done && error != null && error!.isNotEmpty;
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, 20, 24, 32),
+      padding: EdgeInsets.fromLTRB(24, 28, 24, 32),
       children: [
+        // 分层发光：外圈柔光 + 中圈光环 + 实心圆盘带辉光。
+        // 原来空闲态只是一个 alpha 0.10 的暗圆盘，看不出是"按钮"。
         SizedBox(
-          height: 96,
+          height: 132,
           child: Center(
             child: SizedBox(
-              width: 80,
-              height: 80,
+              width: 128,
+              height: 128,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
+                  Container(
+                    width: 122,
+                    height: 122,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: primary.withValues(alpha: 0.05),
+                    ),
+                  ),
                   if (active && !recognizing)
                     ScaleTransition(
-                      scale: Tween(begin: 0.92, end: 1.08).animate(CurvedAnimation(
+                      scale: Tween(begin: 0.94, end: 1.06).animate(CurvedAnimation(
                           parent: pulse, curve: Curves.easeInOut)),
                       child: Container(
-                        width: 80,
-                        height: 80,
+                        width: 98,
+                        height: 98,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: primary.withValues(alpha: 0.18),
                         ),
                       ),
+                    )
+                  else
+                    Container(
+                      width: 98,
+                      height: 98,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: primary.withValues(alpha: 0.10),
+                      ),
                     ),
-                  Material(
-                    color: active && !recognizing ? primary : primary.withValues(alpha: 0.10),
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: onTap,
-                      child: SizedBox(
-                        width: 64,
-                        height: 64,
-                        child: Icon(
-                          recognizing
-                              ? Icons.mic_off
-                              : active
-                                  ? Icons.mic
-                                  : Icons.mic_none_rounded,
-                          color: active && !recognizing ? Colors.white : primary,
-                          size: 28,
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: primary
+                              .withValues(alpha: active ? 0.32 : 0.18),
+                          blurRadius: 22,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: active && !recognizing
+                          ? primary
+                          : primary.withValues(alpha: 0.16),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: onTap,
+                        child: SizedBox(
+                          width: 76,
+                          height: 76,
+                          child: Icon(
+                            recognizing
+                                ? Icons.mic_off
+                                : active
+                                    ? Icons.mic
+                                    : Icons.mic_none_rounded,
+                            color: active && !recognizing
+                                ? Colors.white
+                                : primary,
+                            size: 32,
+                          ),
                         ),
                       ),
                     ),
@@ -555,14 +593,14 @@ class _MicView extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Text(
           statusText,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 14,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            color: active ? primary : scheme.onSurfaceVariant,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: active ? primary : scheme.onSurface,
           ),
         ),
 
@@ -594,23 +632,55 @@ class _MicView extends StatelessWidget {
           )
         else if (failed)
           const SizedBox.shrink()
-        else ...[
-          Text(
-            tr('识别外放中的音乐，请先播放音乐，再点击识别按钮'),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11.5,
-              height: 1.6,
-              color: scheme.outline,
+        else
+          // 空闲/失败态：把原来两行 11px 淡字收进一张卡片，并补上"识别成功后会怎样"。
+          // 这一页原来下半屏是纯黑，信息密度太低，看着就"简陋"。
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              children: [
+                for (final (icon, text) in <(IconData, String)>[
+                  if (active)
+                    (Icons.stop_circle_outlined, tr('再次点击麦克风即停止识别'))
+                  else
+                    (Icons.volume_up_outlined, tr('请先让音乐外放，再点上面的麦克风')),
+                  (
+                    Icons.library_music_outlined,
+                    tr('优先匹配本地曲库，本地没有的走在线音源解析')
+                  ),
+                  (
+                    Icons.play_circle_outline,
+                    tr('识别成功后可直接播放、收藏或加入歌单')
+                  ),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(icon, size: 16, color: scheme.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            text,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            active ? tr('点击停止') : tr('播放优先匹配本地曲库，在线按可用音源解析'),
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: scheme.outline),
-          ),
-        ],
 
         if (failed && !active) ...[
           const SizedBox(height: 24),
@@ -618,6 +688,21 @@ class _MicView extends StatelessWidget {
             child: _ReRecognizeButton(onTap: onRestart),
           ),
         ],
+
+        // 下半屏角色位：把图放到 assets/mascot/recognize.png 并在 pubspec 声明即可生效。
+        // 文件不存在时 errorBuilder 直接不渲染，页面不会因此变空或抛错。
+        const SizedBox(height: 20),
+        Center(
+          child: Opacity(
+            opacity: 0.92,
+            child: Image.asset(
+              'assets/mascot/recognize.png',
+              height: 240,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
       ],
     );
   }

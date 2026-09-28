@@ -485,6 +485,7 @@ const Map<String, String> enDictManual = {
   '酷我': 'Kuwo',
   '酷我音乐': 'Kuwo Music',
   '宽度': 'Width',
+  '累计时长': 'All time',
   '累计听歌': 'All-time listening',
   '累计听歌时长排行': 'All-time listening time ranking',
   '累计听歌总时长': 'Total listening time',

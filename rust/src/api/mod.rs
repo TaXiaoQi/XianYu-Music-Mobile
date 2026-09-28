@@ -1028,6 +1028,9 @@ pub fn start_usb_exclusive_playback(
     shared_mode: bool,
     stream_cache_url: Option<String>,
     stream_cache_headers: Option<String>,
+    skip_silence_enabled: bool,
+    skip_silence_threshold_db: f32,
+    skip_silence_keep_ms: u32,
 ) -> Result<String, String> {
     let stream_cache_headers: Option<std::collections::HashMap<String, String>> =
         stream_cache_headers.and_then(|s| serde_json::from_str(&s).ok());
@@ -1046,6 +1049,9 @@ pub fn start_usb_exclusive_playback(
             shared_mode,
             stream_cache_url,
             stream_cache_headers,
+            skip_silence_enabled,
+            skip_silence_threshold_db,
+            skip_silence_keep_ms,
         },
     )
 }
@@ -1125,9 +1131,69 @@ pub fn set_usb_exclusive_bit_perfect(enabled: bool) {
     .ok();
 }
 
+/// 运行时切换跳过静音：静音段只保留 `keep_ms`，多出来的丢掉。
+/// 位置上报会把丢掉的时长加回去，所以进度条仍按原曲时间轴走。
+pub fn set_usb_exclusive_skip_silence(
+    enabled: bool,
+    threshold_db: f32,
+    keep_ms: u32,
+) {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetSkipSilence {
+            enabled,
+            threshold_db,
+            keep_ms,
+        },
+    )
+    .ok();
+}
+
+/// 预排下一首：格式与当前流一致时，当前曲播完直接接上（无缝），
+/// 不一致或准备失败会自动退回普通切歌，不需要前端处理。
+pub fn set_usb_exclusive_next(
+    path: String,
+    stream_cache_url: Option<String>,
+    stream_cache_headers_json: Option<String>,
+) {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetNext {
+            path,
+            stream_cache_url,
+            stream_cache_headers_json,
+        },
+    )
+    .ok();
+}
+
+/// 取消预排（手动切歌/插队/seek 越界时调用）。
+pub fn cancel_usb_exclusive_next() {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::CancelNext,
+    )
+    .ok();
+}
+
+/// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。运行期可改，不用重启管线。
+pub fn set_usb_exclusive_crossfade(ms: u32) {
+    crate::player::commands::dispatch_playback_command(
+        crate::player::commands::PlaybackCommand::SetCrossfade(ms),
+    )
+    .ok();
+}
+
 /// 当前独占播放是否处于 Bit-perfect 直出状态。
 pub fn get_usb_exclusive_bit_perfect() -> bool {
     crate::player::output::is_exclusive_bit_perfect()
+}
+
+/// 取出并清空当前管线的诊断信息（seek/拼接/交叉/跳过静音等关键事件）。
+///
+/// 供前端在排查「无缝/淡入淡出/跳静音有没有真的生效」时打日志用。
+pub fn take_usb_exclusive_pipeline_diag() -> String {
+    if crate::player::output::is_exclusive_active() {
+        return crate::player::output::take_exclusive_pipeline_diag();
+    }
+    String::new()
 }
 
 /// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出设备。

@@ -30,6 +30,12 @@ class Song {
   final int duration;
   final String format;
   final String? coverThumbPath;
+  /// 源文件采样率（Hz，0=未知）。Rust 扫描时就已入库，直接取自 `sample_rate`。
+  final int sampleRate;
+  /// 源文件位深（bit，null=未知：如 MP3 这类无损压缩容器没有固定位深）。
+  final int? bitDepth;
+  /// 实际编码格式（如 flac / alac / mp3），比容器 format 更精确，可为空。
+  final String? codec;
   const Song({
     required this.path,
     required this.title,
@@ -39,6 +45,9 @@ class Song {
     required this.duration,
     required this.format,
     this.coverThumbPath,
+    this.sampleRate = 0,
+    this.bitDepth,
+    this.codec,
   });
 
   factory Song.fromJson(Map<String, dynamic> j) => Song(
@@ -50,6 +59,9 @@ class Song {
         duration: (j['duration'] as num?)?.toInt() ?? 0,
         format: j['format'] as String? ?? '',
         coverThumbPath: j['cover_thumb_path'] as String?,
+        sampleRate: (j['sample_rate'] as num?)?.toInt() ?? 0,
+        bitDepth: (j['bit_depth'] as num?)?.toInt(),
+        codec: j['codec'] as String?,
       );
 
   QueueItem toQueueItem() => QueueItem(
@@ -563,3 +575,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>(
   (ref) => LibraryNotifier(ref),
 );
+
+/// path → Song 索引。播放页按当前曲目查源格式（采样率/位深/编码）用，
+/// 只在曲库列表变更时重建，不被播放进度之类的刷新带着跑。
+final songByPathProvider = Provider<Map<String, Song>>((ref) {
+  final songs = ref.watch(libraryProvider.select((s) => s.songs));
+  return {for (final s in songs) s.path: s};
+});

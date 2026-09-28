@@ -1247,6 +1247,62 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.dsdNativePassthrough ?? false,
             onChanged: (v) => n.setDsdNativePassthrough(v),
           ),
+          _switchTile(
+            context,
+            icon: Icons.link,
+            title: tr('无缝播放'),
+            subtitle: tr(
+                '本地曲目之间不留缝：当前曲播完直接在输出流里接上下一首。'
+                '采样率或声道与当前流不一致时自动退回普通切歌'),
+            value: s?.gaplessEnabled ?? true,
+            onChanged: (v) => n.setGaplessEnabled(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.swap_horiz,
+            title: tr('曲间淡入淡出'),
+            subtitle: tr(
+                '本地曲目之间按等功率曲线交叠换曲（交叉段本身就是无缝的，'
+                '开启时优先于「无缝播放」）；太短的曲子不交叉'),
+            value: s?.crossfadeEnabled ?? false,
+            onChanged: (v) => n.setCrossfadeEnabled(v),
+          ),
+          if (s?.crossfadeEnabled ?? false)
+            _tile(
+              context,
+              icon: Icons.timer_outlined,
+              title: tr('交叉时长'),
+              trailing: Text('${s?.crossfadeSeconds ?? 5} s'),
+              onTap: () => _pickCrossfadeSeconds(context, s, n),
+            ),
+          _switchTile(
+            context,
+            icon: Icons.content_cut,
+            title: tr('跳过静音'),
+            subtitle: tr(
+                '把过长的静音段压到「保留时长」，多出来的直接跳过（播客/有声书/现场专辑友好）；'
+                '只作用于走音效引擎的播放，进度条仍按原曲时间轴显示'),
+            value: s?.skipSilenceEnabled ?? false,
+            onChanged: (v) => n.setSkipSilenceEnabled(v),
+          ),
+          if (s?.skipSilenceEnabled ?? false) ...[
+            _tile(
+              context,
+              icon: Icons.vertical_align_center,
+              title: tr('静音判定阈值'),
+              trailing: Text(
+                '${(s?.skipSilenceThresholdDb ?? -45).toStringAsFixed(0)} dB',
+              ),
+              onTap: () => _pickSkipSilenceThreshold(context, s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.timer_outlined,
+              title: tr('静音保留时长'),
+              trailing: Text('${s?.skipSilenceKeepMs ?? 500} ms'),
+              onTap: () => _pickSkipSilenceKeep(context, s, n),
+            ),
+          ],
         ],
       ),
       _sectionHeader(context, tr('分享')),
@@ -2575,6 +2631,84 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setSharePlaybackFailureBehavior(choice.value as String);
+    }
+  }
+
+  /// 曲间交叉淡入淡出的时长（秒）。
+  Future<void> _pickCrossfadeSeconds(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) async {
+    final cur = s?.crossfadeSeconds ?? 5;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        [
+          for (final sec in const [2, 3, 5, 8, 12])
+            _Choice('$sec s', sec,
+                subtitle: sec == 5 ? tr('默认') : null),
+        ],
+        cur,
+        labelOf: (v) => '${v as int} s',
+      ),
+    );
+    if (choice != null) {
+      await n.setCrossfadeSeconds(choice.value as int);
+    }
+  }
+
+  /// 跳过静音：静音判定阈值档位。
+  Future<void> _pickSkipSilenceThreshold(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) async {
+    final cur = (s?.skipSilenceThresholdDb ?? -45.0).round();
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        [
+          _Choice('-35 dB', -35, subtitle: tr('更灵敏：较安静的段落也会被剪')),
+          _Choice('-40 dB', -40),
+          _Choice('-45 dB', -45, subtitle: tr('默认：适合大多数歌曲')),
+          _Choice('-50 dB', -50),
+          _Choice('-55 dB', -55, subtitle: tr('更保守：只剪接近数字静音的段落')),
+        ],
+        cur,
+        labelOf: (v) => '${v as int} dB',
+      ),
+    );
+    if (choice != null) {
+      await n.setSkipSilenceThresholdDb((choice.value as int).toDouble());
+    }
+  }
+
+  /// 跳过静音：静音段保留时长。
+  Future<void> _pickSkipSilenceKeep(
+    BuildContext context,
+    AppSettings? s,
+    SettingsNotifier n,
+  ) async {
+    final cur = s?.skipSilenceKeepMs ?? 500;
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        [
+          _Choice('200 ms', 200, subtitle: tr('激进：长静音几乎只剩一小截')),
+          _Choice('500 ms', 500, subtitle: tr('默认')),
+          _Choice('1000 ms', 1000),
+          _Choice('2000 ms', 2000, subtitle: tr('保守：只剪很长的静音段')),
+        ],
+        cur,
+        labelOf: (v) => '${v as int} ms',
+      ),
+    );
+    if (choice != null) {
+      await n.setSkipSilenceKeepMs(choice.value as int);
     }
   }
 
