@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -185,6 +187,11 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   bool _miniBarCounted = false;
 
+  /// 本页被上层路由覆盖（push 了详情/子页）时是否继续压住播放条。
+  /// 默认 true 维持整树隐藏（设置体系等依赖父级计数连坐）；
+  /// 音源榜单等"详情页应恢复播放条"的页面覆写为 false。
+  bool get hideMiniBarWhenCovered => true;
+
   @override
   void initState() {
     super.initState();
@@ -194,7 +201,38 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       _miniBarContainer = ProviderScope.containerOf(context, listen: false);
       _miniBarCounted = true;
       _miniBarContainer!.read(miniBarHiddenProvider.notifier).state++;
+      if (hideMiniBarWhenCovered) return;
+      // 监听被覆盖状态：覆盖层落定（secondaryAnimation completed）释放
+      // 计数让播放条回归，覆盖层 pop 回来（dismissed）后重新压住
+      final coverAnim = ModalRoute.of(context)?.secondaryAnimation;
+      coverAnim?.addStatusListener(_onCoverStatusChanged);
+      // 极端情况：页面创建时已被覆盖（如状态恢复），直接释放
+      if (coverAnim?.status == AnimationStatus.completed) _releaseCount();
     });
+  }
+
+  void _onCoverStatusChanged(AnimationStatus status) {
+    if (hideMiniBarWhenCovered) return;
+    if (status == AnimationStatus.completed) {
+      // 覆盖层落定：本页不可见，释放计数（已释放时幂等）
+      _releaseCount();
+    } else if (status == AnimationStatus.dismissed) {
+      // 覆盖层离开、本页重新可见：重新压住
+      if (_miniBarCounted || !mounted) return;
+      _miniBarContainer?.read(miniBarHiddenProvider.notifier).state++;
+      _miniBarCounted = true;
+    }
+    // forward/reverse 为转场途中，保持前一状态不动
+  }
+
+  void _releaseCount() {
+    if (!_miniBarCounted) return;
+    _miniBarCounted = false;
+    final container = _miniBarContainer;
+    if (container != null) {
+      final notifier = container.read(miniBarHiddenProvider.notifier);
+      if (notifier.state > 0) notifier.state--;
+    }
   }
 
   @override
@@ -428,27 +466,44 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     scheduleMicrotask(() {
       if (!mounted) return;
       ref.read(chromeGlassSettlingProvider.notifier).state = true;
-      // 液态面仅在显隐头几帧用实底热身，之后保持实时玻璃不卸载折射
-      ref.read(chromeGlassWarmupProvider.notifier).state = true;
-      _endChromeGlassWarmup(3);
+      // #region debug-point D:chrome-settle
+      _dbgReport('D', 'chrome-settle-up', {});
+      // #endregion
     });
     _chromeSettleTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
       ref.read(chromeGlassSettlingProvider.notifier).state = false;
+      // #region debug-point D:chrome-settle
+      _dbgReport('D', 'chrome-settle-down', {});
+      // #endregion
     });
   }
 
-  void _endChromeGlassWarmup(int remaining) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      remaining--;
-      if (remaining > 0) {
-        _endChromeGlassWarmup(remaining);
-        return;
-      }
-      ref.read(chromeGlassWarmupProvider.notifier).state = false;
-    });
+  // #region debug-point Z:report
+  // 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
+  static final HttpClient _dbgClient = HttpClient()
+    ..connectionTimeout = const Duration(milliseconds: 500);
+
+  void _dbgReport(String hyp, String event, Map<String, Object?> data) {
+    try {
+      debugPrint('[DBG][$hyp] $event $data');
+      _dbgClient
+          .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
+          .then((rq) {
+        rq.headers.contentType = ContentType.json;
+        rq.write(jsonEncode({
+          'sessionId': 'liquid-glass-page-flash',
+          'runId': 'pre',
+          'hypothesisId': hyp,
+          'location': 'shell.dart',
+          'msg': '[DEBUG] $event',
+          'data': data,
+        }));
+        return rq.close();
+      }).then((_) {}).catchError((_) {});
+    } catch (_) {}
   }
+  // #endregion
 
   @override
   void didChangeMetrics() {
@@ -949,7 +1004,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  opacity: hidden ? 0.0 : 1.0,
+                  // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧
+                  // backdrop 采样未就绪闪黑；隐去期间保持绘制即无黑闪
+                  opacity: hidden ? 0.01 : 1.0,
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 240),
                     curve: Curves.easeOutCubic,
@@ -975,11 +1032,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
+                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
                 opacity: (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
                         !hidden)
                     ? 1.0
-                    : 0.0,
+                    : 0.01,
                 child: IgnorePointer(
                   ignoring: !(floatingSearchBar &&
                       (widget.index == 0 || widget.index == 1) &&
@@ -1044,9 +1102,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
+                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
                 opacity: (widget.index == 0 || widget.index == 1) && !hidden
                     ? 1.0
-                    : 0.0,
+                    : 0.01,
                 child: IgnorePointer(
                   ignoring: hidden,
                   child: GlassTopBar(
@@ -1350,7 +1409,6 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
 
     final realLiquid = liquid;
     final dropletQuality = liquidGlassQualitySetting(ref);
-    final warmup = ref.watch(chromeGlassWarmupProvider);
     final tabs = _SlidingNavBottom(
       index: index,
       lens: realLiquid,
@@ -1358,8 +1416,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       edgeBoost: bilipaiIndicatorEdgeBoostOf(dropletQuality),
       dropletChroma: bilipaiIndicatorChromaOf(dropletQuality),
       glassBuilder: liquid
-          ? (Widget content) =>
-              _liquidGlass(context, ref, content, solid: warmup)
+          ? (Widget content) => _liquidGlass(context, ref, content)
           : null,
       onSelect: (i) {
         triggerHaptic(haptic);
@@ -1377,11 +1434,9 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         keepFilter: effectiveSettling);
   }
 
-  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs,
-      {bool solid = false}) {
+  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final glass = BiliPaiGlass(
       radius: 30,
       refract: bilipaiRefractOf(quality),

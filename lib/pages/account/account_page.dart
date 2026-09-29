@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/sync/sync_provider.dart' show syncProvider;
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/app_logo.dart';
@@ -30,7 +31,7 @@ class AccountPage extends ConsumerStatefulWidget {
 }
 
 class _AccountPageState extends ConsumerState<AccountPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
   final _nicknameCtrl = TextEditingController();
   final _idCtrl = TextEditingController();

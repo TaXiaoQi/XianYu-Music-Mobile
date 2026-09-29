@@ -33,7 +33,8 @@ class RecentPage extends ConsumerStatefulWidget {
   ConsumerState<RecentPage> createState() => _RecentPageState();
 }
 
-class _RecentPageState extends ConsumerState<RecentPage> {
+class _RecentPageState extends ConsumerState<RecentPage>
+    with HidesShellChrome {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 

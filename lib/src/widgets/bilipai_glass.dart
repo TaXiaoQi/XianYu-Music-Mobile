@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -9,6 +11,32 @@ import 'package:flutter/scheduler.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
+
+// #region debug-point Z:report
+// 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
+final HttpClient _dbgClient = HttpClient()
+  ..connectionTimeout = const Duration(milliseconds: 500);
+
+void _dbgReport(String hyp, String event, Map<String, Object?> data) {
+  try {
+    debugPrint('[DBG][$hyp] $event $data');
+    _dbgClient
+        .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
+        .then((rq) {
+      rq.headers.contentType = ContentType.json;
+      rq.write(jsonEncode({
+        'sessionId': 'liquid-glass-page-flash',
+        'runId': 'pre',
+        'hypothesisId': hyp,
+        'location': 'bilipai_glass.dart',
+        'msg': '[DEBUG] $event',
+        'data': data,
+      }));
+      return rq.close();
+    }).then((_) {}).catchError((_) {});
+  } catch (_) {}
+}
+// #endregion
 
 typedef BackingOverlayCallback =
     void Function(PaintingContext context, Offset offset);
@@ -60,6 +88,9 @@ class BiliPaiGlass extends StatefulWidget {
 
 class _BiliPaiGlassState extends State<BiliPaiGlass>
     with TickerProviderStateMixin {
+  static int _dbgSeq = 0;
+  late final int _dbgId = ++_dbgSeq;
+
   ui.FragmentShader? _shader;
 
   static ui.FragmentProgram? _cachedProgram;
@@ -74,7 +105,14 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   bool _routeTransition = false;
 
   bool _capturing = false;
+
+  // 是否成功烘焙过至少一次：区分「新实例等待首烘」（实底兜底）与
+  // 「滚动中临时炸图」（实时渲染，backdrop 已就绪不会黑）
+  bool _hasCaptured = false;
   Timer? _idleDebounce;
+  // 首烘重试用独立 Timer：滚动信号翻转 busy 会 cancel _idleDebounce，
+  // 若共用会让打字/滑动等高频滚动场景的首烘永远被推迟
+  Timer? _captureRetry;
 
   DateTime _captureCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -108,36 +146,96 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalIsDragging.addListener(_onGlobalState);
     globalScrollTick.addListener(_onOwnerScrollTick);
     _routeTransition = globalIsTransitioning.value;
+    // #region debug-point A:init
+    _dbgReport('A', 'bg-init', {
+      'id': _dbgId,
+      'alwaysLive': widget.alwaysLive,
+      'trans': globalIsTransitioning.value,
+    });
+    // #endregion
   }
 
   void _onTransitionChanged() {
     if (!mounted) return;
     if (_routeTransition == globalIsTransitioning.value) return;
     setState(() => _routeTransition = globalIsTransitioning.value);
+    // #region debug-point A:trans
+    _dbgReport('A', _routeTransition ? 'bg-trans-start' : 'bg-trans-end', {
+      'id': _dbgId,
+      'frozen': _frozen != null,
+      'fade': double.parse(_fade.value.toStringAsFixed(3)),
+    });
+    // #endregion
     if (_routeTransition) {
       // 转场期间冻结液态波动相位，落定后从原相位继续，避免高光跳变
       _ripple.stop();
+      _captureRetry?.cancel();
       return;
     }
     _idleDebounce?.cancel();
     _captureCooldownUntil =
         DateTime.now().add(const Duration(milliseconds: 700));
+    // _onGlobalState 不监听 transitioning 翻转：转场结束时若
+    // scrolling/dragging 已归位，手动把 _idle 同步回 true，
+    // 否则首烘会被 stale 检查（!_idle）永久拒绝
+    if (!globalIsScrolling.value && !globalIsDragging.value) {
+      _idle = true;
+    }
     if (widget.alwaysLive || !_idle) {
       if (!_ripple.isAnimating) _ripple.repeat();
+    } else {
+      _ripple.stop();
     }
-    final old = _frozen;
-    if (old != null) {
-      _frozen = null;
-      SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
-      setState(() {});
+    if (_frozen != null) {
+      // 转场结束路由子树刚从 Offstage 还原，首帧 backdrop 采样未就绪；
+      // 直接丢烘焙图转实时会闪黑。先继续整帧展示预烘焙图（纯 drawImage，
+      // 不推 backdrop 层，无采样），再交叉淡回实时玻璃——既无黑闪也不跳色
+      _startTransitionResume();
+    } else if (!widget.alwaysLive) {
+      // 新实例还没有烘焙图：主动安排首烘（撞冷却会自动重试），
+      // 否则要等下一次滚动事件才有机会，期间一直裸采样闪黑
+      _scheduleCapture();
     }
   }
 
+  void _startTransitionResume() {
+    // #region debug-point C:resume
+    _dbgReport('C', 'bg-resume', {
+      'id': _dbgId,
+      'fadeBefore': double.parse(_fade.value.toStringAsFixed(3)),
+    });
+    // #endregion
+    if (_fade.value < 0.999) {
+      _fade.value = 1;
+    }
+    final captured = _frozen;
+    _fade.animateTo(
+      0,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
+    ).whenComplete(() {
+      if (!mounted) return;
+      if (_frozen != null &&
+          identical(_frozen, captured) &&
+          _fade.value <= 0.001) {
+        final old = _frozen!;
+        _frozen = null;
+        old.dispose();
+        setState(() {});
+      }
+    });
+  }
+
   void _onOwnerScrollTick() {
-    if (!mounted || _frozen == null) return;
-    final old = _frozen!;
-    _frozen = null;
-    SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+    if (!mounted) return;
+    // 转场中保图：IME 弹起等视口变化会在转场中产生滚动信号，此时炸图
+    // 会让玻璃从烘焙图突变为实底（跳变）；转场落定后由 resume 接管
+    if (_frozen != null && !_routeTransition) {
+      final old = _frozen!;
+      _frozen = null;
+      SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
+    // frozen == null 时也要重建：滚动信号切换实底/实时渲染模式
     setState(() {});
   }
 
@@ -177,6 +275,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalIsDragging.removeListener(_onGlobalState);
     globalScrollTick.removeListener(_onOwnerScrollTick);
     _idleDebounce?.cancel();
+    _captureRetry?.cancel();
     _fade.dispose();
     _ripple.dispose();
     _frozen?.dispose();
@@ -224,7 +323,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
     ).whenComplete(() {
-      if (!mounted || _idle) return;
+      // 转场中保持烘焙图：Offstage 期间无处展示，丢图会让转场结束
+      // 的还原首帧直接裸采样（闪黑），还原时由 _startTransitionResume 接管
+      if (!mounted || _idle || _routeTransition) return;
       if (_frozen != null &&
           identical(_frozen, captured) &&
           _fade.value <= 0.001) {
@@ -245,9 +346,29 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   Future<void> _capture() async {
     if (_capturing || !mounted || _frozen != null) return;
-    if (DateTime.now().isBefore(_captureCooldownUntil)) return;
+    if (DateTime.now().isBefore(_captureCooldownUntil)) {
+      // #region debug-point C:cap-cooldown
+      _dbgReport('C', 'bg-cap-cooldown', {'id': _dbgId});
+      // #endregion
+      // 冷却结束后自动重试首烘（独立 Timer，不受滚动信号 cancel 影响）；
+      // 否则首烘被冷却吞掉后要等下一次滚动/轮播事件才有机会
+      _captureRetry?.cancel();
+      _captureRetry = Timer(
+        _captureCooldownUntil.difference(DateTime.now()) +
+            const Duration(milliseconds: 16),
+        () {
+          if (mounted) _capture();
+        },
+      );
+      return;
+    }
     final ro = _backingKey.currentContext?.findRenderObject();
-    if (ro is! RenderRepaintBoundary) return;
+    if (ro is! RenderRepaintBoundary) {
+      // #region debug-point C:cap-noro
+      _dbgReport('C', 'bg-cap-noro', {'id': _dbgId});
+      // #endregion
+      return;
+    }
     if (ro.debugNeedsPaint) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _frozen == null) _capture();
@@ -264,19 +385,28 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         return;
       }
       if (!mounted ||
-          !_idle ||
-          globalIsScrolling.value ||
-          globalIsTransitioning.value ||
-          globalIsDragging.value) {
+          globalIsTransitioning.value) {
         image.dispose();
+        // #region debug-point C:cap-stale
+        _dbgReport('C', 'bg-cap-stale', {'id': _dbgId});
+        // #endregion
         return;
       }
+      _captureRetry?.cancel();
       setState(() {
         _frozen?.dispose();
         _frozen = image;
+        _hasCaptured = true;
         _fade.value = 0;
         _onFadeTicked();
       });
+      // #region debug-point C:cap-ok
+      _dbgReport('C', 'bg-cap-ok', {
+        'id': _dbgId,
+        'w': image.width,
+        'h': image.height,
+      });
+      // #endregion
       _startFadeIn();
     } finally {
       _capturing = false;
@@ -299,6 +429,17 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       );
     }
 
+    // 切换期玻璃纯色回退（恢复 d4ae3b16 语义）：转场中一律实底渲染，
+    // 优先级高于烘焙图展示——平移动画中离屏截图/live 采样都无背景可采，
+    // 纯色条过渡，落定后由 resume 交叉淡回实时玻璃
+    final solidOnly = !widget.alwaysLive &&
+        (_routeTransition ||
+            (_frozen == null &&
+                (!_hasCaptured ||
+                    (DateTime.now().isBefore(_captureCooldownUntil) &&
+                        !globalIsScrolling.value &&
+                        !globalIsDragging.value))));
+
     return Stack(
       children: [
         Positioned.fill(
@@ -318,6 +459,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               frozen: _frozen,
               fadeBlend: _fade.value,
               freshBackdrop: widget.freshBackdrop,
+              solidOnly: solidOnly,
             ),
           ),
         ),
@@ -345,6 +487,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     this.frozen,
     this.fadeBlend = 1.0,
     this.freshBackdrop = false,
+    this.solidOnly = false,
   });
 
   final ui.FragmentShader shader;
@@ -364,6 +507,8 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 
   final bool freshBackdrop;
 
+  final bool solidOnly;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -380,6 +525,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       frozen: frozen,
       fadeBlend: fadeBlend,
       freshBackdrop: freshBackdrop,
+      solidOnly: solidOnly,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -402,6 +548,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       ..depthEffect = depthEffect
       ..frozen = frozen
       ..freshBackdrop = freshBackdrop
+      ..solidOnly = solidOnly
       ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
@@ -421,6 +568,7 @@ class RenderLiquidBacking extends RenderBox {
     required ui.Image? frozen,
     required double fadeBlend,
     required bool freshBackdrop,
+    required bool solidOnly,
     required double dpr,
   }) : _shader = shader,
        _radius = radius,
@@ -435,6 +583,7 @@ class RenderLiquidBacking extends RenderBox {
        _frozen = frozen,
        _fadeBlend = fadeBlend,
        _freshBackdrop = freshBackdrop,
+       _solidOnly = solidOnly,
        _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -542,6 +691,14 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  bool _solidOnly = false;
+  bool get solidOnly => _solidOnly;
+  set solidOnly(bool value) {
+    if (_solidOnly == value) return;
+    _solidOnly = value;
+    markNeedsPaint();
+  }
+
   double uiTime = 0;
 
   double _devicePixelRatio;
@@ -594,7 +751,9 @@ class RenderLiquidBacking extends RenderBox {
   }
 
   void _onScrollTick() {
-    if (_frozen != null) {
+    // 转场中保图（同 State 层 _onOwnerScrollTick）：转场中的滚动信号
+    // 来自 IME 弹起等视口变化，炸图会造成烘焙图→实底的跳变
+    if (_frozen != null && !globalIsTransitioning.value) {
       _frozen = null;
       _fadeBlend = 0;
     }
@@ -606,7 +765,10 @@ class RenderLiquidBacking extends RenderBox {
     if (size.isEmpty) return;
     final frozen = _frozen;
     final fade = _fadeBlend;
-    if (frozen != null && fade > 0.001) {
+    if (_solidOnly) {
+      // 切换期/无图态纯色回退优先级最高：即使有烘焙图也不展示
+      _paintSolid(context, offset);
+    } else if (frozen != null && fade > 0.001) {
       if (fade >= 0.999) {
         _paintFrozen(context, offset, frozen);
       } else {
@@ -615,6 +777,21 @@ class RenderLiquidBacking extends RenderBox {
     } else {
       _paintLive(context, offset);
     }
+  }
+
+  void _paintSolid(PaintingContext context, Offset offset) {
+    // 尚无烘焙图（新实例/转场还原首帧）：backdrop 层未就绪，实时渲染
+    // 裸采样会闪黑。先以不透明底色渲染同一圆角形状，烘焙完成后由
+    // _startFadeIn 交叉淡入玻璃——全程无采样、无黑帧
+    final rect = offset & size;
+    final canvas = context.canvas;
+    canvas.save();
+    canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(_radius)));
+    canvas.drawRect(
+      rect,
+      Paint()..color = _backgroundColor.withValues(alpha: 1),
+    );
+    canvas.restore();
   }
 
   void _paintFrozen(

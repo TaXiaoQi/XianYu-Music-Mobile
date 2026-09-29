@@ -449,7 +449,8 @@ class PlaylistDetailPage extends ConsumerStatefulWidget {
       _PlaylistDetailPageState();
 }
 
-class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
+class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
+    with HidesShellChrome {
   final SongBatchController _batch = SongBatchController();
 
   final TextEditingController _searchCtrl = TextEditingController();

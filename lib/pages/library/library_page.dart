@@ -37,7 +37,7 @@ class LibraryPage extends ConsumerStatefulWidget {
 }
 
 class _LibraryPageState extends ConsumerState<LibraryPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
 
   final TextEditingController _searchCtrl = TextEditingController();

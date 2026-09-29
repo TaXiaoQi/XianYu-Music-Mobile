@@ -46,7 +46,7 @@ class FavoritesPage extends ConsumerStatefulWidget {
 }
 
 class _FavoritesPageState extends ConsumerState<FavoritesPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
   final SongBatchController _batch = SongBatchController();
 

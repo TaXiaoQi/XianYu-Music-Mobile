@@ -92,8 +92,6 @@ class FloatingGlassSurface extends ConsumerWidget {
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
     final settling = ref.watch(chromeGlassSettlingProvider);
-    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
-    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -101,7 +99,6 @@ class FloatingGlassSurface extends ConsumerWidget {
 
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
         radius: radius,
         refract: bilipaiRefractOf(quality),
@@ -112,9 +109,7 @@ class FloatingGlassSurface extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: warmup
-            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-            : bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -165,8 +160,6 @@ class BiliPaiPill extends ConsumerWidget {
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
     final settling = ref.watch(chromeGlassSettlingProvider);
-    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
-    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -184,7 +177,6 @@ class BiliPaiPill extends ConsumerWidget {
 
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
         radius: radius,
         alwaysLive: alwaysLive,
@@ -197,9 +189,7 @@ class BiliPaiPill extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: warmup
-            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-            : bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),

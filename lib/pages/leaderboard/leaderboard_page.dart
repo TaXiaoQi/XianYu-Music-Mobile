@@ -10,6 +10,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import 'leaderboard_prefetch.dart';
 import '../../src/core/settings.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
@@ -24,7 +25,10 @@ class LeaderboardPage extends ConsumerStatefulWidget {
 }
 
 class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
+  @override
+  bool get hidesChrome => !widget.embedded;
+
   static List<({String value, String label})> get _periods => [
     (value: 'daily', label: tr('日榜')),
     (value: 'weekly', label: tr('周榜')),

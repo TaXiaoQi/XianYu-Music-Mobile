@@ -222,18 +222,15 @@ double bilipaiIndicatorChromaOf(LiquidGlassQuality q) => switch (q) {
 
 bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
   if (lowPerf) return true;
-  if (wallpaperGlassActive(ref)) return false;
+  // 壁纸模式下转场还原首帧的采样黑闪由 BiliPaiGlass 的预烘焙图续展
+  // （_startTransitionResume）兜住，不再用实底热身切换材质（暗色下
+  // 实底本身读作「黑一下再出玻璃」）
   return !(ref.watch(settingsProvider.select(
           (s) => s.valueOrNull?.frostedGlass)) ??
       false);
 }
 
 final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
-
-/// chrome 显隐瞬间的液态玻璃热身窗口（约 3 帧）：
-/// 头几帧用实底防止 backdrop 采样黑闪，之后保持实时液态玻璃，
-/// 避免整个显隐动画期间实底化导致折射卸载与落定跳变
-final chromeGlassWarmupProvider = StateProvider<bool>((ref) => false);
 
 final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
 ImageFilter cachedBlur(double sigma) {

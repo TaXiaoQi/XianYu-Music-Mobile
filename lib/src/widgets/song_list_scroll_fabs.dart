@@ -121,7 +121,10 @@ class _Slot extends StatelessWidget {
     return IgnorePointer(
       ignoring: !visible,
       child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
+        // 最低压到 0.01 而非归零：opacity=0 会让整树停止绘制，再次显示
+        // 时首帧引擎 backdrop 采样未就绪闪黑；隐去期间保持绘制即可
+        // 消除出现/消失两侧的黑闪
+        opacity: visible ? 1 : 0.01,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         child: AnimatedScale(
@@ -160,8 +163,10 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
   bool? _lastVisible;
   bool _warmup = false;
 
-  // 出现的头几帧引擎 backdrop 采样可能尚未就绪（先闪黑底再出玻璃），
-  // 参照底栏导航的做法：出现瞬间先用实底热身数帧，再切回实时液态玻璃
+  // 每次出现都以实底热身数帧（浅色白底/深色黑底，跟随主题），
+  // 再交叉切回实时液态玻璃：出现瞬间引擎 backdrop 采样可能尚未跟上，
+  // 直接出玻璃会先闪黑底。路由推入/返回（Offstage 换快照→还原）造成
+  // 的重进由 BiliPaiGlass 的预烘焙图续展（_startTransitionResume）兜底
   void _syncVisible() {
     final visible = widget.visible;
     if (_lastVisible == visible) return;
@@ -169,7 +174,9 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
     _lastVisible = visible;
     if (!rising || _warmup) return;
     _warmup = true;
-    var remaining = 3;
+    // 10 帧（~160ms）：0.01 低透明度下引擎可能裁剪 backdrop readback，
+    // 采样真正就绪偏晚；热身过短会在切回玻璃后残留一两帧黑底
+    var remaining = 10;
     void tick() {
       if (!mounted) return;
       remaining--;

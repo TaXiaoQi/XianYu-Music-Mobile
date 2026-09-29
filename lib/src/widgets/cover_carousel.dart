@@ -76,21 +76,26 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
       children: [
         SizedBox(
           height: 240,
-          child: PageView(
-            controller: _controller,
-            onPageChanged: (i) {
-              setState(() => _index = i);
-              _startTimer();
-            },
-            children: [
-              _NowPlayingCard(
-                item: sel.current,
-                isPlaying: sel.playing,
-                eq: _eq,
-                onTap: () => openPlayer(),
-              ),
-              const _StatsCard(),
-            ],
+          child: NotificationListener<ScrollMetricsNotification>(
+            // 轮播自动翻页不上报全局滚动信号：markScrollActivity 会清空
+            // 全部液态玻璃的预烘焙图，造成每 5 秒一轮无谓的重采样
+            onNotification: (_) => true,
+            child: PageView(
+              controller: _controller,
+              onPageChanged: (i) {
+                setState(() => _index = i);
+                _startTimer();
+              },
+              children: [
+                _NowPlayingCard(
+                  item: sel.current,
+                  isPlaying: sel.playing,
+                  eq: _eq,
+                  onTap: () => openPlayer(),
+                ),
+                const _StatsCard(),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 10),

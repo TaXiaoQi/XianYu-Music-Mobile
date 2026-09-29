@@ -252,6 +252,19 @@ class PredictiveBackOffFallback with WidgetsBindingObserver {
     }
     appNavigatorKey.currentState?.maybePop();
   }
+
+  // 按键返回（引擎 popRoute）链路：handlePopRoute 按注册顺序遍历，
+  // 本 observer 在 app initState 注册、先于 Router——播放页开着时
+  // 先关播放页，防止根栈二级页被 go_router 抢先 pop（返回手势
+  // 走 handleCommitBackGesture 已天然播放页优先，无此问题）
+  @override
+  Future<bool> didPopRoute() async {
+    if (playerOpenNotifier.value) {
+      playerNavigatorKey.currentState?.maybePop();
+      return true;
+    }
+    return false;
+  }
 }
 
 final _branchKeys = <GlobalKey>[GlobalKey(), GlobalKey()];
@@ -358,7 +371,9 @@ final appRouter = GoRouter(
         final args = state.extra as SongListArgs;
         return _coverBackPage(
           context,
-          (_) => SongListPage(title: args.title, loader: args.loader),
+          (_) => HideShellChrome(
+            child: SongListPage(title: args.title, loader: args.loader),
+          ),
           key: state.pageKey,
         );
       },
@@ -477,9 +492,11 @@ final appRouter = GoRouter(
       path: '/playlists',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => KeyedSubtree(
-          key: musicLibraryPageKeys[3],
-          child: const PlaylistsPage(),
+        (_) => HideShellChrome(
+          child: KeyedSubtree(
+            key: musicLibraryPageKeys[3],
+            child: const PlaylistsPage(),
+          ),
         ),
         key: state.pageKey,
       ),
@@ -531,7 +548,7 @@ final appRouter = GoRouter(
       path: '/download',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => const DownloadPage(),
+        (_) => const HideShellChrome(child: DownloadPage()),
         key: state.pageKey,
       ),
     ),

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
 import '../widgets/blur_budget.dart';
@@ -38,18 +39,36 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   /// 变化通过与页面切换同节奏的隐式动画同步过渡
   bool _lowState = false;
 
+  /// 与 _FixedChrome 的塌缩判据同源：根路径之外一律低位档。
+  /// HidesShellChrome 计数保留作 OR 输入，但不再单独兜底——
+  /// pushReplacement 等特殊入口下计数可能丢失，路由位置是可靠信号
+  static const _rootPaths = {'/', '/home', '/mine'};
+
+  static String _routerTopPath(RouteMatchList config) {
+    final last = config.matches.lastOrNull;
+    if (last is ImperativeRouteMatch) return last.matches.uri.path;
+    if (last is RouteMatch) return last.matchedLocation;
+    if (last is ShellRouteMatch) return last.matchedLocation;
+    return config.uri.path;
+  }
+
+  bool get _routeLow => !_rootPaths
+      .contains(_routerTopPath(appRouter.routerDelegate.currentConfiguration));
+
   @override
   void initState() {
     super.initState();
-    _lowState = ref.read(navBarHiddenProvider) > 0;
-    // hiddenCount 的增减都发生在页面进出（转场）期间，变化立即同步：
+    _lowState = ref.read(navBarHiddenProvider) > 0 || _routeLow;
+    // hiddenCount 的增减与路由切换都发生在页面进出（转场）期间，变化立即同步：
     // 档位滑动、显隐淡入淡出与页面切换动画同节奏、同步完成
     ref.listenManual(navBarHiddenProvider, (_, _) => _syncLow());
+    appRouter.routerDelegate.addListener(_syncLow);
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
   }
 
   @override
   void dispose() {
+    appRouter.routerDelegate.removeListener(_syncLow);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
     super.dispose();
   }
@@ -58,7 +77,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     if (!mounted) return;
     // 档位实时跟随当前页面：变化通过与页面切换同节奏的隐式动画
     // 与转场同步完成，吸附也随切换动画同步执行
-    final low = ref.read(navBarHiddenProvider) > 0;
+    final low = ref.read(navBarHiddenProvider) > 0 || _routeLow;
     if (low != _lowState) setState(() => _lowState = low);
   }
 
@@ -149,10 +168,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     final l = _playerLeft;
     final t = _playerTop;
     if (l == null || t == null) return;
-    if (t >= maxTop - 48.0) {
-      // 停在底部停靠带内：吸附归位——清除自定义位置，条滑回当前页面的
-      // 停靠档位并恢复档位跟随（store 必须一并清空，否则 stale 的
-      // 自定义位置会在 build 回退链中被重新采用，条永远回不到停靠档）
+    if (t >= maxTop - 12.0) {
+      // 手动贴底（距停靠档 12px 内）才触发吸附归位——清除自定义位置，
+      // 条滑回当前页面的停靠档位并恢复档位跟随（store 必须一并清空，
+      // 否则 stale 的自定义位置会在 build 回退链中被重新采用，
+      // 条永远回不到停靠档）
       _playerLeft = null;
       _playerTop = null;
       MiniBarPositionStore.shared = null;
@@ -224,7 +244,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
             ? (_lowState
                 ? (screenSize.height - safeBottom - 58.0 - 18.0)
                 : (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0))
-            : (screenSize.height - safeBottom - 58.0 - 64.0));
+            : (_lowState
+                // 固定底栏在二级页同样塌缩隐藏（_FixedChrome 高度归零），
+                // 低位停靠档与悬浮模式一致
+                ? (screenSize.height - safeBottom - 58.0 - 18.0)
+                : (screenSize.height - safeBottom - 58.0 - 64.0)));
 
     final batchLift = ref.watch(batchBarLiftProvider);
     final liftedDefaultTop = defaultTop - batchLift;
@@ -287,7 +311,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       child: AnimatedOpacity(
         duration: chromeDur,
         curve: Curves.easeOutCubic,
-        opacity: hidden ? 0.0 : 1.0,
+        // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧 backdrop
+        // 采样未就绪闪黑；隐去期间保持绘制即无黑闪
+        opacity: hidden ? 0.01 : 1.0,
         child: AnimatedScale(
           duration: chromeDur,
           curve: Curves.easeOutCubic,

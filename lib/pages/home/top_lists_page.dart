@@ -25,6 +25,11 @@ class TopListsPage extends ConsumerStatefulWidget {
 
 class _TopListsPageState extends ConsumerState<TopListsPage>
     with HidesShellChrome, HideMiniBar {
+  // 进入榜单详细页（online-detail）时恢复播放条：
+  // 详细页是常规浏览页，不该被榜单页的黑名单连坐
+  @override
+  bool get hideMiniBarWhenCovered => false;
+
   List<PluginSource> _sources = const [];
   String? _selectedId;
   PageController? _pageCtrl;

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
@@ -512,9 +514,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       ),
     );
 
-    // chrome 显隐翻转（推入/返回页面）后的 3 帧实底热身：
-    // 淡入恢复绘制首帧引擎 backdrop 采样未就绪，防止闪黑
-    final warmup = ref.watch(chromeGlassWarmupProvider);
+    // 淡入/还原首帧的采样黑闪由 overlay 层 0.01 保底持续绘制 +
+    // BiliPaiGlass 预烘焙图续展兜住，液态面保持实时玻璃不切实底
     final bar = GestureDetector(
       onPanStart: _handlePanStart,
       onPanUpdate: _handlePanUpdate,
@@ -539,9 +540,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       },
       behavior: HitTestBehavior.opaque,
       child: liquid
-          ? _liquidSurface(context, content, solid: warmup)
+          ? _liquidSurface(context, content)
           : _frostedSurface(context, content,
-              lowPerf: lowPerf, budget: budget, forceSolid: warmup),
+              lowPerf: lowPerf, budget: budget),
     );
 
     if (widget.onPanUpdate == null) {
@@ -572,10 +573,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return bar;
   }
 
-  Widget _liquidSurface(BuildContext context, Widget content,
-      {bool solid = false}) {
+  Widget _liquidSurface(BuildContext context, Widget content) {
     final quality = liquidGlassQualitySetting(ref);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       height: 58,
       child: Stack(
@@ -799,6 +798,32 @@ class LiveLiquidSurface extends StatefulWidget {
 
 class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
+  // #region debug-point Z:report
+  // 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
+  static final HttpClient _dbgClient = HttpClient()
+    ..connectionTimeout = const Duration(milliseconds: 500);
+
+  void _dbgReport(String hyp, String event, Map<String, Object?> data) {
+    try {
+      debugPrint('[DBG][$hyp] $event $data');
+      _dbgClient
+          .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
+          .then((rq) {
+        rq.headers.contentType = ContentType.json;
+        rq.write(jsonEncode({
+          'sessionId': 'liquid-glass-page-flash',
+          'runId': 'pre',
+          'hypothesisId': hyp,
+          'location': 'mini_player_bar.dart',
+          'msg': '[DEBUG] $event',
+          'data': data,
+        }));
+        return rq.close();
+      }).then((_) {}).catchError((_) {});
+    } catch (_) {}
+  }
+  // #endregion
+
   static Future<ui.FragmentProgram>? _programFuture;
 
   static bool _kCapabilityWarned = false;
@@ -887,6 +912,9 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       return;
     }
     setState(() => _frozen = active);
+    // #region debug-point D:live-frozen
+    _dbgReport('D', active ? 'live-frozen' : 'live-live', {});
+    // #endregion
     if (active) {
       _idleTimer?.cancel();
       _tick.stop();
