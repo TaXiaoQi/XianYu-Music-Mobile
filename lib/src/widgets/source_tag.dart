@@ -47,7 +47,9 @@ String? _brandFromUrl(String? url) {
   if (url == null || url.isEmpty) return null;
   final v = Uri.tryParse(url)?.queryParameters['source']?.trim();
   if (v == null || v.isEmpty) return null;
-  return kSubSourceBrandAlias[v.toLowerCase()] ?? v;
+  // 仅识别已知付费品牌别名：公开订阅也会用 source= 传自定义标识（如 quandouyao），
+  // 未知值不再视为付费，避免免费插件被误标
+  return kSubSourceBrandAlias[v.toLowerCase()];
 }
 
 bool _urlHasKey(String? url) {
@@ -56,10 +58,16 @@ bool _urlHasKey(String? url) {
   return v != null && v.isNotEmpty;
 }
 
-String? _urlHost(String? url) {
-  final host = Uri.tryParse(url ?? '')?.host;
-  return (host == null || host.isEmpty) ? null : host;
+String? _sourceValue(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final v = Uri.tryParse(url)?.queryParameters['source']?.trim();
+  return (v == null || v.isEmpty) ? null : v;
 }
+
+/// 订阅 URL 的 source 常带 .json 后缀（如 quandouyao.json），插件安装 URL 是去后缀的
+/// 标识（如 quandouyao）——归属判定前统一去掉 .json 再比较
+String _normSourceValue(String v) =>
+    v.toLowerCase().replaceFirst(RegExp(r'\.json$'), '');
 
 /// 插件名/作者内置品牌词（ikun 插件 URL 只有 key 无 source，靠名称识别）
 const List<(String, String)> kSubSourceBrandKeywords = [
@@ -76,9 +84,9 @@ String? _brandFromIdentity(String name, String author) {
   return null;
 }
 
-/// 插件付费订阅标签：优先看插件自身安装 URL 与内置品牌词；否则按「订阅名=插件名」或
-/// 「订阅 host=安装 URL host」匹配订阅记录（订阅条目 URL 常不带 key/source，
-/// 如咪咕/汽水/bilibili）；都未命中返回 null，按普通音源显示。
+/// 插件付费订阅标签：优先看插件自身安装 URL/来源订阅 URL 与内置品牌词；插件 URL 带
+/// source 标识时按 source 值精确归属订阅——同一台主机可挂多个订阅（公共+付费并存），
+/// 禁止按 host/名称猜归属；都未命中返回 null，按普通音源显示。
 ({String label, bool highlight})? _pluginSubTag(
   PluginSource p,
   List<PluginSubscription> subs,
@@ -90,13 +98,12 @@ String? _brandFromIdentity(String name, String author) {
   if (_urlHasKey(p.sourceUrl) || _urlHasKey(p.filePath)) {
     return (label: tr('付费'), highlight: true);
   }
-  final ownHost = _urlHost(p.sourceUrl.isNotEmpty ? p.sourceUrl : p.filePath);
-  final pname = p.name.trim();
+  final ownSrc = _sourceValue(p.filePath) ?? _sourceValue(p.sourceUrl);
+  if (ownSrc == null) return null;
+  final ownKey = _normSourceValue(ownSrc);
   for (final sub in subs) {
-    final subName = sub.name.trim();
-    final matched = (subName.isNotEmpty && subName == pname) ||
-        (ownHost != null && _urlHost(sub.url) == ownHost);
-    if (!matched) continue;
+    final subSrc = _sourceValue(sub.url);
+    if (subSrc == null || _normSourceValue(subSrc) != ownKey) continue;
     final brand = _brandFromUrl(sub.url);
     if (brand != null) return (label: brand, highlight: true);
     if (_urlHasKey(sub.url)) return (label: tr('付费'), highlight: true);
@@ -110,7 +117,12 @@ String? _brandFromIdentity(String name, String author) {
   PluginSource p,
   List<PluginSubscription> subs,
 ) {
-  return _pluginSubTag(p, subs);
+  final tag = _pluginSubTag(p, subs);
+  if (tag == null) return null;
+  // 付费品牌标签加「付费」前缀（付费聆澜/付费ikun）；回落「付费」不重复前缀
+  final paid = tr('付费');
+  if (tag.label == paid || tag.label == '付费') return tag;
+  return (label: '$paid${tag.label}', highlight: tag.highlight);
 }
 
 /// SourceTag 专用：普通音源名之前先解析付费订阅品牌/付费标记（金色高亮）。
@@ -122,19 +134,7 @@ String? _brandFromIdentity(String name, String author) {
   String? onlineSongJson,
   String? pluginId,
 }) {
-  if (isOnline) {
-    final pid = pluginId ?? _pluginIdFromJson(onlineSongJson);
-    if (pid != null && pid.isNotEmpty) {
-      final pluginState = ref.watch(pluginManagerProvider);
-      for (final p in pluginState.sources) {
-        if (p.id != pid) continue;
-        final tag =
-            _pluginSubTag(p, ref.watch(pluginSubscriptionsProvider));
-        if (tag != null) return tag;
-        break;
-      }
-    }
-  }
+  // 歌曲页等场景维持原样（来源标签显示音源/插件名）；付费品牌标签只在插件管理页展示
   return (
     label: songSourceLabel(
       ref,

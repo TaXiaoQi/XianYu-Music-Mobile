@@ -556,7 +556,10 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   List<PluginSource> get _plugins => ref
       .watch(pluginManagerProvider)
       .sources
-      .where((s) => s.enabled && s.format == PluginFormat.musicfree)
+      .where((s) =>
+          s.enabled &&
+          (s.format == PluginFormat.musicfree ||
+              s.format == PluginFormat.anime))
       .toList();
 
   PluginSource? get _selected {
