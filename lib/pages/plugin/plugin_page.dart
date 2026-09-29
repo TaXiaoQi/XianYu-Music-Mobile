@@ -1350,7 +1350,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                   children: [
                     SizedBox(
                       width: 64,
-                      child: Text(tr('链接'),
+                      child: Text(tr('音源'),
                           style: TextStyle(
                               fontSize: 13, color: scheme.onSurfaceVariant)),
                     ),
@@ -1376,6 +1376,50 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                                             color: scheme.primary)),
                                   ),
                               ],
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: Text(tr('插件链接'),
+                          style: TextStyle(
+                              fontSize: 13, color: scheme.onSurfaceVariant)),
+                    ),
+                    Expanded(
+                      child: source.sourceUrl.isEmpty
+                          ? const Text('—', style: TextStyle(fontSize: 13))
+                          : InkWell(
+                              onTap: () async {
+                                await Clipboard.setData(
+                                    ClipboardData(text: source.sourceUrl));
+                                if (context.mounted) {
+                                  showXianYuToast(context, tr('插件链接已复制'));
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(source.sourceUrl,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: scheme.primary)),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.copy_rounded,
+                                      size: 13, color: scheme.primary),
+                                ],
+                              ),
                             ),
                     ),
                   ],

@@ -544,16 +544,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
           '/settings/watch',
         ),
         _CategoryEntry(
-          tr('DLNA 投放'),
-          Icons.cast_outlined,
-          tr('投放歌曲到电视、音箱等 DLNA 设备'),
-          '/settings/dlna',
-        ),
-        _CategoryEntry(
           tr('桌面联动'),
           Icons.computer_outlined,
           tr('扫描并遥控同一局域网的电脑端播放'),
           '/settings/desktop',
+        ),
+        _CategoryEntry(
+          tr('DLNA 投放'),
+          Icons.cast_outlined,
+          tr('投放歌曲到电视、音箱等 DLNA 设备'),
+          '/settings/dlna',
         ),
       ],
     ),

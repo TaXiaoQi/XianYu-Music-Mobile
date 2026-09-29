@@ -25,7 +25,7 @@ class AppLogo extends StatelessWidget {
       ),
       padding: EdgeInsets.all(size * 0.12),
       child: Image.asset(
-        'assets/icon/logo.png',
+        'assets/icon/logo.webp',
         fit: BoxFit.contain,
         filterQuality: FilterQuality.medium,
       ),

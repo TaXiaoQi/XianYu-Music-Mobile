@@ -494,6 +494,8 @@ const Map<String, String> enDictManual = {
   '例如：我的流行': 'e.g. My Pop',
   '连接成功': 'Connected',
   '链接': 'Link',
+  '插件链接': 'Plugin link',
+  '插件链接已复制': 'Plugin link copied',
   '两次输入的密码不一致': 'Passwords do not match',
   '两次新密码不一致': 'New passwords do not match',
   '列表': 'Lists',

@@ -151,9 +151,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     if (l == null || t == null) return;
     if (t >= maxTop - 48.0) {
       // 停在底部停靠带内：吸附归位——清除自定义位置，条滑回当前页面的
-      // 停靠档位并恢复档位跟随（主页底栏上方、二级页屏幕底部）
+      // 停靠档位并恢复档位跟随（store 必须一并清空，否则 stale 的
+      // 自定义位置会在 build 回退链中被重新采用，条永远回不到停靠档）
       _playerLeft = null;
       _playerTop = null;
+      MiniBarPositionStore.shared = null;
       return;
     }
     MiniBarPositionStore.shared = Offset(l, t);

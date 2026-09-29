@@ -558,11 +558,14 @@ class AccountApi {
     required String description,
     required String category,
     required String imageData,
+    String? videoData,
+    int videoDuration = 0,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录账号后再上传壁纸'));
     }
+    final isVideo = videoData != null && videoData.isNotEmpty;
     await _action('upload_wallpaper', {
       'ciyuanxi_id': ciyuanxiId,
       'nickname': _auth.currentState.user?.nickname ?? '',
@@ -571,7 +574,9 @@ class AccountApi {
       'category': category.trim().isEmpty ? tr('用户上传') : category.trim(),
       'platform': 'mobile',
       'image_data': imageData,
-    }, fetchTimeoutMs: 90000);
+      if (isVideo) 'video_data': videoData,
+      if (isVideo) 'video_duration': videoDuration,
+    }, fetchTimeoutMs: isVideo ? 600000 : 90000);
   }
 
   Future<LeaderboardData> fetchLeaderboard({

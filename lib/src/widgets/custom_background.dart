@@ -1,13 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
 import 'glass_settings.dart';
+
+/// 视频壁纸帧平均色（含遮罩/模糊后的实际观感）：
+/// 由 CustomBackgroundLayer 低频采样，供转场底色（RoutePageBackdrop）
+/// 取代固定 appSurfaceBg，消除切页时底色与视频壁纸的跳变
+final videoWallpaperColorProvider = StateProvider<Color?>((ref) => null);
 
 class WallpaperMediaAspect {
   WallpaperMediaAspect._();
@@ -177,6 +184,9 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   Size? _videoSize;
   String? _lastVideoLogSig;
 
+  final GlobalKey _captureKey = GlobalKey();
+  Timer? _colorTimer;
+
   bool get _videoShouldAutoPlay {
     final s = ref.read(settingsProvider);
     return s.valueOrNull?.performanceMode != PerformanceMode.performance;
@@ -229,6 +239,9 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     final key = isVideo ? cb.imagePath : null;
     if (_videoKey == key) return;
     _videoKey = key;
+    _colorTimer?.cancel();
+    _colorTimer = null;
+    ref.read(videoWallpaperColorProvider.notifier).state = null;
 
     final old = _videoController;
     _videoController = null;
@@ -267,10 +280,56 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       unawaited(controller.play());
     }
+    _startColorSampling();
+  }
+
+  /// 转场底色取色：低频采样视频帧平均色写入 videoWallpaperColorProvider，
+  /// 供 RoutePageBackdrop 在转场期间垫底，避免固定底色与视频壁纸跳变
+  void _startColorSampling() {
+    _colorTimer?.cancel();
+    _colorTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      final v = _videoController;
+      if (v == null || !v.value.isPlaying) return;
+      unawaited(_captureColor());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_captureColor());
+    });
+  }
+
+  Future<void> _captureColor() async {
+    final ctx = _captureKey.currentContext;
+    if (ctx == null) return;
+    final ro = ctx.findRenderObject();
+    if (ro is! RenderRepaintBoundary || !ro.attached) return;
+    final sz = ro.size;
+    if (sz.width < 8 || sz.height < 8) return;
+    try {
+      final pr = (24.0 / sz.width).clamp(0.005, 1.0);
+      final img = await ro.toImage(pixelRatio: pr);
+      final bd = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+      img.dispose();
+      if (bd == null || !mounted) return;
+      final px = bd.buffer.asUint8List();
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var i = 0; i + 3 < px.length; i += 4) {
+        if (px[i + 3] < 8) continue;
+        r += px[i];
+        g += px[i + 1];
+        b += px[i + 2];
+        n++;
+      }
+      if (n == 0) return;
+      ref.read(videoWallpaperColorProvider.notifier).state =
+          Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+    } catch (_) {
+      // 边界已销毁/纹理未就绪等场景静默放弃，下一轮再采
+    }
   }
 
   @override
   void dispose() {
+    _colorTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _videoController?.dispose();
     super.dispose();
@@ -337,6 +396,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
           debugPrint('customBg videoBox=$videoBox container=${w}x$h');
         }
         return RepaintBoundary(
+          key: _captureKey,
           child: SizedBox.expand(
             child: Stack(
               fit: StackFit.expand,
@@ -485,11 +545,15 @@ class RoutePageBackdrop extends ConsumerWidget {
     if (cb!.mediaType == WallpaperMediaType.video) {
       final anim = completion;
       if (anim == null) return plain;
+      // 转场底色优先用视频帧采样平均色：固定 appSurfaceBg 与视频壁纸
+      // 观感差异大，切页进出时跳变明显
+      final sampled = ref.watch(videoWallpaperColorProvider);
+      final base = sampled ?? appSurfaceBg(context);
       return AnimatedBuilder(
         animation: anim,
         builder: (context, child) => anim.status == AnimationStatus.completed
             ? (child ?? const SizedBox.shrink())
-            : ColoredBox(color: appSurfaceBg(context), child: child!),
+            : ColoredBox(color: base, child: child!),
         child: child,
       );
     }

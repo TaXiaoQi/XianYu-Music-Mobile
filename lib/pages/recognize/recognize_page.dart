@@ -683,21 +683,6 @@ class _MicView extends StatelessWidget {
             child: _ReRecognizeButton(onTap: onRestart),
           ),
         ],
-
-        // 下半屏角色位：把图放到 assets/mascot/recognize.png 并在 pubspec 声明即可生效。
-        // 文件不存在时 errorBuilder 直接不渲染，页面不会因此变空或抛错。
-        const SizedBox(height: 20),
-        Center(
-          child: Opacity(
-            opacity: 0.92,
-            child: Image.asset(
-              'assets/mascot/recognize.png',
-              height: 240,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
-        ),
       ],
     );
   }
