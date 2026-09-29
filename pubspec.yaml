@@ -1,5 +1,5 @@
 name: xianyu_music_mobile
-description: "A new Flutter project."
+description: "弦予音乐移动端：本地 / 在线音乐播放，逐字歌词、插件音源与跨设备协同。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

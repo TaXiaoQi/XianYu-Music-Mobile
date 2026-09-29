@@ -60,15 +60,15 @@ class AboutConfig {
   final String officialSiteUrl;
   final bool updateEnabled;
   final String projectUrl;
-  final String referenceProjectUrl;
   final String joinGroupUrl;
+  final List<AcknowledgementItem> referenceProjects;
   final List<AcknowledgementItem> acknowledgements;
   const AboutConfig({
     this.officialSiteUrl = 'https://www.xianyumusic.cn',
     this.updateEnabled = true,
     this.projectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Mobile',
-    this.referenceProjectUrl = 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
     this.joinGroupUrl = '',
+    this.referenceProjects = const [],
     this.acknowledgements = const [],
   });
 
@@ -78,10 +78,11 @@ class AboutConfig {
         projectUrl:
             (j['projectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Mobile')
                 .toString(),
-        referenceProjectUrl:
-            (j['referenceProjectUrl'] ?? 'https://github.com/TaXiaoQi/XianYu-Music-Desktop')
-                .toString(),
         joinGroupUrl: (j['joinGroupUrl'] ?? '').toString(),
+        referenceProjects: (j['referenceProjects'] as List?)
+                ?.map((e) => AcknowledgementItem.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
         acknowledgements: (j['acknowledgements'] as List?)
                 ?.map((e) => AcknowledgementItem.fromJson(e as Map<String, dynamic>))
                 .toList() ??
