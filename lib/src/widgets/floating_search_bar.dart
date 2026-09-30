@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import '../plugin/plugin_provider.dart';
+import '../theme/theme_tint.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
@@ -254,6 +255,13 @@ class FloatingSourcePill extends ConsumerWidget {
         ),
         padding: EdgeInsets.symmetric(horizontal: 14),
         alignment: Alignment.center,
+        // sr.pill 的底色画在这层内层 Container 上，不必改公共玻璃原语 BiliPaiPill。
+        // 未启用主题时 themeTintOrNull 返回 null，即不上色——观感与接线前一致。
+        // 必须带圆角：这一层自身没有圆角，方形底色会从胶囊圆角边缘漏出来。
+        decoration: BoxDecoration(
+          color: themeTintOrNull(ref, 'sr.pill'),
+          borderRadius: BorderRadius.circular(radius),
+        ),
         child: Text(
           name,
           maxLines: 1,
@@ -437,7 +445,7 @@ class FloatingGlassSearchField extends ConsumerWidget {
   }
 }
 
-class FloatingTabPill extends StatelessWidget {
+class FloatingTabPill extends ConsumerWidget {
   const FloatingTabPill({super.key, required this.child, this.height = 48});
 
   final Widget child;
@@ -445,20 +453,30 @@ class FloatingTabPill extends StatelessWidget {
   final double height;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return FloatingGlassSurface(
       radius: height / 2,
       child: SizedBox(
         height: height,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-          child: Theme(
-            data: Theme.of(context).copyWith(
-              tabBarTheme: TabBarThemeData(
-                dividerColor: Colors.transparent,
-              ),
+          // sr.chips 的底色画在这层内层 Container 上，不改公共玻璃原语。
+          // 未启用主题时 themeTintOrNull 返回 null → 不上色，观感与接线前一致。
+          // 这一层被外层 Padding(6) 内缩，故圆角取 height/2-6 才与玻璃圆角贴合。
+          child: Container(
+            decoration: BoxDecoration(
+              color: themeTintOrNull(ref, 'sr.chips'),
+              borderRadius:
+                  BorderRadius.circular((height / 2 - 6).clamp(0.0, 999.0)),
             ),
-            child: child,
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                tabBarTheme: TabBarThemeData(
+                  dividerColor: Colors.transparent,
+                ),
+              ),
+              child: child,
+            ),
           ),
         ),
       ),
