@@ -43,11 +43,11 @@ void main() {
   });
 
   group('floatingNavBar 设置项', () {
-    test('默认启用悬浮底栏', () async {
+    test('默认不启用悬浮底栏', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       final s = await c.read(settingsProvider.future);
-      expect(s.floatingNavBar, isTrue);
+      expect(s.floatingNavBar, isFalse);
     });
 
     test('切换后可持久化读回', () async {
@@ -60,18 +60,18 @@ void main() {
 
     test('copyWith 正确覆盖该字段', () {
       const base = AppSettings();
-      expect(base.floatingNavBar, isTrue);
-      expect(base.copyWith(floatingNavBar: false).floatingNavBar, isFalse);
-      expect(base.copyWith(volume: 0.5).floatingNavBar, isTrue);
+      expect(base.floatingNavBar, isFalse);
+      expect(base.copyWith(floatingNavBar: true).floatingNavBar, isTrue);
+      expect(base.copyWith(volume: 0.5).floatingNavBar, isFalse);
     });
   });
 
   group('liquidGlass 设置项', () {
-    test('默认启用液态玻璃', () async {
+    test('默认不启用液态玻璃', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       final s = await c.read(settingsProvider.future);
-      expect(s.liquidGlass, isTrue);
+      expect(s.liquidGlass, isFalse);
     });
 
     test('关闭后可持久化读回', () async {
@@ -84,9 +84,9 @@ void main() {
 
     test('copyWith 与其他字段互不干扰', () {
       const base = AppSettings();
-      expect(base.copyWith(liquidGlass: false).liquidGlass, isFalse);
-      expect(base.copyWith(liquidGlass: false).floatingNavBar, isTrue);
-      expect(base.copyWith(floatingNavBar: false).liquidGlass, isTrue);
+      expect(base.copyWith(liquidGlass: true).liquidGlass, isTrue);
+      expect(base.copyWith(liquidGlass: true).floatingNavBar, isFalse);
+      expect(base.copyWith(floatingNavBar: true).liquidGlass, isFalse);
     });
 
     test('两项设置可独立持久化', () async {
