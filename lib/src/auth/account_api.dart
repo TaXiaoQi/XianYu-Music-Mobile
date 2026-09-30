@@ -692,6 +692,27 @@ class AccountApi {
     });
   }
 
+  /// 主题广场：服务端只返回已过审（status=normal）的 mobile 主题。
+  ///
+  /// 必须走 [AuthNotifier.requestActionList]：该 action 的 `data` 是**数组**，
+  /// 走 `requestAction` 会在把 `data` 转 `Map` 时抛类型错。
+  Future<dynamic> listThemes({String platform = 'mobile'}) {
+    return _auth.requestActionList('list_themes', {'platform': platform});
+  }
+
+  /// 我的上传：返回该弦予号上传的全部主题（服务端不过滤 status，含待审）。
+  ///
+  /// 同上，`data` 为数组，用 [AuthNotifier.requestActionList]。
+  Future<dynamic> myThemes({
+    required String ciyuanxiId,
+    String platform = 'mobile',
+  }) {
+    return _auth.requestActionList('my_themes', {
+      'ciyuanxi_id': ciyuanxiId,
+      'platform': platform,
+    });
+  }
+
   Future<Map<String, dynamic>> _deviceInfo() async {
     final dev = await fetchDeviceInfo();
     return {

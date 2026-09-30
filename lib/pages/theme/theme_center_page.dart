@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/i18n/i18n.dart';
+import '../../src/theme/remote_theme.dart';
+import '../../src/theme/remote_theme_store.dart';
+import '../../src/theme/remote_theme_tile.dart';
 import '../../src/theme/theme_package.dart';
 import '../../src/theme/theme_store.dart';
 import '../../src/widgets/app_toast.dart';
@@ -101,17 +104,125 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          if (library.packages.isEmpty)
-            _emptyHint(scheme)
-          else
-            for (final pkg in library.packages)
-              _packageCard(scheme, pkg, isActive: pkg.id == library.activeId),
-        ],
+      body: DefaultTabController(
+        length: 4,
+        child: Column(
+          children: [
+            TabBar(
+              tabs: [
+                Tab(text: tr('本地')),
+                Tab(text: tr('广场')),
+                Tab(text: tr('我的上传')),
+                Tab(text: tr('我的下载')),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  // 本地已导入：沿用原有列表，行为与接线前一致。
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                    children: [
+                      if (library.packages.isEmpty)
+                        _emptyHint(scheme)
+                      else
+                        for (final pkg in library.packages)
+                          _packageCard(scheme, pkg,
+                              isActive: pkg.id == library.activeId),
+                    ],
+                  ),
+                  _remoteList(ref.watch(themeSquareProvider), scheme),
+                  _remoteList(ref.watch(myThemesProvider), scheme),
+                  _downloadsHint(scheme),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// 远端列表三态渲染：加载中 / 失败 / 列表。
+  ///
+  /// 失败时不退化成空列表——那会让用户以为「没有主题」，与真实的加载失败混淆。
+  Widget _remoteList(AsyncValue<List<RemoteTheme>> async, ColorScheme scheme) {
+    return async.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) => _hintBlock(
+        scheme,
+        icon: Icons.cloud_off_outlined,
+        title: tr('加载失败'),
+        detail: tr('请检查网络后重试'),
+      ),
+      data: (list) => list.isEmpty
+          ? _hintBlock(
+              scheme,
+              icon: Icons.palette_outlined,
+              title: tr('暂无主题'),
+              detail: '',
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+              itemCount: list.length,
+              itemBuilder: (context, i) => RemoteThemeTile(
+                theme: list[i],
+                onTap: () => _applyRemote(list[i]),
+              ),
+            ),
+    );
+  }
+
+  /// 我的下载：服务端尚无对应 action，先占位。
+  Widget _downloadsHint(ColorScheme scheme) => _hintBlock(
+        scheme,
+        icon: Icons.download_outlined,
+        title: tr('我的下载'),
+        detail: tr('该页依赖服务端接口，待接入后开放'),
+      );
+
+  Widget _hintBlock(
+    ColorScheme scheme, {
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(top: 96),
+        child: Column(
+          children: [
+            Icon(icon, size: 44, color: scheme.outline),
+            const SizedBox(height: 14),
+            Text(title, style: TextStyle(color: scheme.onSurfaceVariant)),
+            if (detail.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+            ],
+          ],
+        ),
+      );
+
+  /// 应用远端主题。
+  ///
+  /// 接口回的 `payload` 是 Map，而导入器收的是 JSON 字符串，故先 jsonEncode。
+  Future<void> _applyRemote(RemoteTheme theme) async {
+    try {
+      final pkg = await ref
+          .read(themeLibraryProvider.notifier)
+          .importJson(jsonEncode(theme.payload));
+      if (!mounted) return;
+      if (pkg == null) {
+        showXianYuToast(context, tr('该主题包格式不正确，无法应用'));
+        return;
+      }
+      await _activate(pkg);
+    } catch (e) {
+      if (mounted) showXianYuToast(context, tr('应用失败：{e}', {'e': '$e'}));
+    }
   }
 
   Widget _emptyHint(ColorScheme scheme) => Padding(
