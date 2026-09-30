@@ -1418,9 +1418,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       backgroundColor: themeTint(
         ref,
         'nav.bar',
-        solid
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : bilipaiSurfaceTint(context, ref, quality),
+        bilipaiSurfaceTint(context, ref, quality),
       ),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
