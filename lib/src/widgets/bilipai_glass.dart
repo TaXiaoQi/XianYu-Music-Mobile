@@ -77,6 +77,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   ui.Image? _frozen;
 
+  // _frozen 是否为整屏 chrome 缓存帧（决定 frozen 绘制走裁剪还是整图）
+  bool _frozenIsChromeFrame = false;
+
   bool _idle = false;
 
   bool _routeTransition = false;
@@ -164,9 +167,11 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       final frame = widget.useChromeFrame ? chromeGlassFrame.value : null;
       if (frame != null) {
         _frozen = frame.image.clone();
+        _frozenIsChromeFrame = true;
         _fade.value = 1;
         _fade.reverse();
       } else {
+        _frozenIsChromeFrame = false;
         _fade.value = 0;
       }
       if (old != null) {
@@ -189,6 +194,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (_frozen != null && !_routeTransition) {
       final old = _frozen!;
       _frozen = null;
+      _frozenIsChromeFrame = false;
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
     // frozen == null 时也要重建：滚动信号切换实底/实时渲染模式
@@ -358,6 +364,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               freshBackdrop: widget.freshBackdrop,
               solidOnly: solidOnly,
               useChromeFrame: widget.useChromeFrame,
+              frozenIsChromeFrame: _frozenIsChromeFrame,
             ),
           ),
         ),
@@ -387,6 +394,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     this.freshBackdrop = false,
     this.solidOnly = false,
     this.useChromeFrame = false,
+    this.frozenIsChromeFrame = false,
   });
 
   final ui.FragmentShader shader;
@@ -410,6 +418,8 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 
   final bool useChromeFrame;
 
+  final bool frozenIsChromeFrame;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -428,6 +438,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       freshBackdrop: freshBackdrop,
       solidOnly: solidOnly,
       useChromeFrame: useChromeFrame,
+      frozenIsChromeFrame: frozenIsChromeFrame,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -452,6 +463,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     ..freshBackdrop = freshBackdrop
     ..solidOnly = solidOnly
     ..useChromeFrame = useChromeFrame
+    ..frozenIsChromeFrame = frozenIsChromeFrame
     ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
@@ -473,6 +485,7 @@ class RenderLiquidBacking extends RenderBox {
     required bool freshBackdrop,
     required bool solidOnly,
     required bool useChromeFrame,
+    required bool frozenIsChromeFrame,
     required double dpr,
   }) : _shader = shader,
        _radius = radius,
@@ -489,6 +502,7 @@ class RenderLiquidBacking extends RenderBox {
        _freshBackdrop = freshBackdrop,
        _solidOnly = solidOnly,
        _useChromeFrame = useChromeFrame,
+       _frozenIsChromeFrame = frozenIsChromeFrame,
        _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -612,6 +626,14 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  bool _frozenIsChromeFrame = false;
+  bool get frozenIsChromeFrame => _frozenIsChromeFrame;
+  set frozenIsChromeFrame(bool value) {
+    if (_frozenIsChromeFrame == value) return;
+    _frozenIsChromeFrame = value;
+    markNeedsPaint();
+  }
+
   // chrome 缓存帧当前是否可用作本面的裁剪源：
   // 存在、抓帧 dpr 与当前一致、抓帧逻辑尺寸与当前屏一致（旋转/分屏后失效）
   bool _chromeFrameUsable() {
@@ -728,7 +750,7 @@ class RenderLiquidBacking extends RenderBox {
     // 缓存帧是上次正常合成的液态输出——直接画自己区域的裁剪即可复现
     // 上次观感，无任何采样。优先级最高（覆盖实底兜底/交叉淡入分支）
     if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
-      _paintChromeFrame(context, offset);
+      _paintChromeFrame(context, offset, chromeGlassFrame.value!.image);
       return;
     }
     // 转场中已验证实例（_solidOnly=false）一律实时渲染，与毛玻璃行为对齐：
@@ -772,9 +794,13 @@ class RenderLiquidBacking extends RenderBox {
 
   // 画整屏缓存帧中本面区域的裁剪：源矩形按当前全局位置×抓帧 dpr 映射，
   // 裁剪到圆角矩形（缓存帧里圆角外是旧页面像素，不能带出来）。
-  // 纯 drawImageRect，无 backdrop 层无采样
-  void _paintChromeFrame(PaintingContext context, Offset offset) {
-    final frame = chromeGlassFrame.value!;
+  // 纯 drawImageRect，无 backdrop 层无采样。alpha 供落定交叉淡回叠加用
+  void _paintChromeFrame(
+    PaintingContext context,
+    Offset offset,
+    ui.Image image, {
+    double alpha = 1.0,
+  }) {
     final dpr = _devicePixelRatio;
     final globalPos = localToGlobal(Offset.zero);
     final src = Rect.fromLTWH(
@@ -786,8 +812,8 @@ class RenderLiquidBacking extends RenderBox {
     final imgRect = Rect.fromLTWH(
       0,
       0,
-      frame.image.width.toDouble(),
-      frame.image.height.toDouble(),
+      image.width.toDouble(),
+      image.height.toDouble(),
     );
     final clipped = src.intersect(imgRect);
     if (clipped.isEmpty) return;
@@ -797,7 +823,7 @@ class RenderLiquidBacking extends RenderBox {
       RRect.fromRectAndRadius(offset & size, Radius.circular(_radius)),
     );
     canvas.drawImageRect(
-      frame.image,
+      image,
       clipped,
       Rect.fromLTWH(
         offset.dx + (clipped.left - src.left) / dpr,
@@ -805,7 +831,9 @@ class RenderLiquidBacking extends RenderBox {
         clipped.width / dpr,
         clipped.height / dpr,
       ),
-      Paint()..filterQuality = FilterQuality.medium,
+      Paint()
+        ..filterQuality = FilterQuality.medium
+        ..color = Colors.white.withValues(alpha: alpha),
     );
     canvas.restore();
   }
@@ -815,6 +843,11 @@ class RenderLiquidBacking extends RenderBox {
     Offset offset,
     ui.Image image,
   ) {
+    // chrome 缓存帧是整屏图：画本面区域裁剪，整图缩进玻璃矩形会串页
+    if (_frozenIsChromeFrame) {
+      _paintChromeFrame(context, offset, image);
+      return;
+    }
     final rect = offset & size;
     final canvas = context.canvas;
     canvas.save();
@@ -841,6 +874,12 @@ class RenderLiquidBacking extends RenderBox {
     double fade,
   ) {
     _paintLive(context, offset, overlay: (context, offset) {
+      // chrome 缓存帧是整屏图：叠加必须裁剪到本面区域——原实现把整图
+      // 无裁剪画在玻璃原点上，上一页整屏叠在当前页上
+      if (_frozenIsChromeFrame) {
+        _paintChromeFrame(context, offset, image, alpha: fade);
+        return;
+      }
       final rect = offset & size;
       context.canvas.drawImageRect(
         image,

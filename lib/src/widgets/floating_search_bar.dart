@@ -11,11 +11,19 @@ import 'glass_settings.dart';
 import 'page_search_bar.dart';
 
 class FloatingSearchBar extends ConsumerWidget {
-  const FloatingSearchBar({super.key, required this.onTap, this.onRecognize});
+  const FloatingSearchBar({
+    super.key,
+    required this.onTap,
+    this.onRecognize,
+    this.chromeFrame = false,
+  });
 
   final VoidCallback onTap;
 
   final VoidCallback? onRecognize;
+
+  // 仅 shell 常驻悬浮顶栏内的搜索条开启 chrome 缓存帧
+  final bool chromeFrame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -73,16 +81,24 @@ class FloatingSearchBar extends ConsumerWidget {
       ),
     );
 
-    return FloatingGlassSurface(child: content);
+    return FloatingGlassSurface(chromeFrame: chromeFrame, child: content);
   }
 }
 
 class FloatingGlassSurface extends ConsumerWidget {
-  const FloatingGlassSurface({super.key, required this.child, this.radius = 22});
+  const FloatingGlassSurface({
+    super.key,
+    required this.child,
+    this.radius = 22,
+    this.chromeFrame = false,
+  });
 
   final Widget child;
 
   final double radius;
+
+  // chrome 缓存帧：仅 shell 常驻 chrome 条开启（见 BiliPaiGlass.useChromeFrame）
+  final bool chromeFrame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -100,6 +116,7 @@ class FloatingGlassSurface extends ConsumerWidget {
       final quality = liquidGlassQualitySetting(ref);
       final glass = BiliPaiGlass(
         radius: radius,
+        useChromeFrame: chromeFrame,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
@@ -317,6 +334,7 @@ class FloatingTopBar extends StatelessWidget {
     required this.onSearchTap,
     this.onRecognize,
     this.actions = const [],
+    this.chromeFrame = false,
   });
 
   final Widget title;
@@ -327,12 +345,16 @@ class FloatingTopBar extends StatelessWidget {
 
   final List<Widget> actions;
 
+  // shell 常驻悬浮顶栏传入 true：转场降级窗口复用 chrome 缓存帧
+  final bool chromeFrame;
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         BiliPaiPill(
           radius: 20,
+          chromeFrame: chromeFrame,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: SizedBox(
@@ -346,6 +368,7 @@ class FloatingTopBar extends StatelessWidget {
           child: FloatingSearchBar(
             onTap: onSearchTap,
             onRecognize: onRecognize,
+            chromeFrame: chromeFrame,
           ),
         ),
         for (final action in actions) ...[

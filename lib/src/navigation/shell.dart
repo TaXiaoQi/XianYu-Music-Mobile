@@ -30,6 +30,7 @@ import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart' show LiveLiquidSurface;
 import '../widgets/page_search_bar.dart';
 import '../widgets/bilipai_glass.dart';
+import '../widgets/chrome_glass_frame.dart';
 import '../../pages/library/library_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
@@ -283,6 +284,26 @@ class _AppShellState extends ConsumerState<AppShell> {
           .checkOnStartup(context)
           .catchError((_) {});
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 页签切换（首页⇄我的）不走路由转场，转场 false 沿的抓帧触发不到；
+    // 而底栏/顶栏的透底内容已换页，必须刷新 chrome 缓存帧——否则在新
+    // 页签推入二级页时，转场裁剪出的是旧页签的透底
+    if (widget.navigationShell.currentIndex !=
+        oldWidget.navigationShell.currentIndex) {
+      // 旧页签的缓存帧立即失效：补抓完成前 chrome 面拿到的帧为 null，
+      // 转场裁剪/adopt 落到毛玻璃兜底——宁缺勿错，绝不裁出上个页签的透底
+      final stale = chromeGlassFrame.value;
+      chromeGlassFrame.value = null;
+      if (stale != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+            (_) => stale.image.dispose());
+      }
+      schedule(const Duration(milliseconds: 300));
+    }
   }
 
   @override
@@ -758,6 +779,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
 
+    // chrome 缓存帧抓取门控：竖屏悬浮 chrome（底栏/悬浮顶栏）可见且为
+    // 液态材质时才允许抓帧，保证缓存帧里的 chrome 区域是有效液态输出
+    chromeGlassFrameActive.value = !landscape &&
+        !hidden &&
+        (ref.watch(settingsProvider.select(
+                (s) => s.valueOrNull?.liquidGlass)) ??
+            true) &&
+        !ref.watch(settingsProvider.select(
+            (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       if (searchOpenRaw) closeLandscapeSearch(ref);
@@ -1048,6 +1079,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                       (widget.index == 0 || widget.index == 1) &&
                       !hidden),
                   child: FloatingTopBar(
+                    chromeFrame: true,
                     title: widget.index == 1
                         ? Text(
                             tr('个人中心'),
@@ -1374,6 +1406,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final glass = BiliPaiGlass(
       radius: 30,
+      useChromeFrame: true,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
       blurSigma: surfaceBlurSigma(
