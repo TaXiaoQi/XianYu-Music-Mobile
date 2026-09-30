@@ -5,6 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/application_logger.dart';
+// 循环依赖说明：detector 需要感知播放页开合来做跨 navigator 认领互斥
+//（routes.dart 已 import 本文件；本文件仅取其顶层 notifier/key，无初始化环）
+import '../navigation/routes.dart'
+    show playerNavigatorKey, playerOpenNotifier;
 
 const bool kFrameworkPredictiveCompare = false;
 
@@ -22,6 +26,16 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     with WidgetsBindingObserver {
   bool get _isEnabled {
     return widget.route.isCurrent && widget.route.popGestureEnabled;
+  }
+
+  /// 播放页开着时手势属于播放页（视觉覆盖一切）：其他 navigator 的
+  /// detector 让位。各 navigator 的 isCurrent 相互独立（二级页是 appNavigator
+  /// 栈顶、播放页是 playerNavigator 栈顶），不加这条两个 detector 会同时
+  /// 认领，commit 时一次手势 pop 两个页面
+  bool get _coveredByPlayerPage {
+    if (!playerOpenNotifier.value) return false;
+    final nav = widget.route.navigator;
+    return nav == null || nav != playerNavigatorKey.currentState;
   }
 
   String get _routeName =>
@@ -72,6 +86,10 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    if (_coveredByPlayerPage) {
+      AppLog.debug('backgesture', 'decline $_routeName coveredByPlayer');
+      return false;
+    }
     final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
     if (!gestureInProgress) {
       if (!backEvent.isButtonEvent && widget.route.isCurrent) {
@@ -106,7 +124,9 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
       _zeroStreak++;
     } else {
       _zeroStreak = 0;
-      _synth = false;
+      // 系统 progress 有噪声（0→微值→0 抖动）。单帧微值就关 synth 会让页面在
+      // touch 合成进度与系统微进度之间逐帧横跳（抽搐），只在系统真正接管时交还。
+      if (p > 0.02) _synth = false;
     }
     if (_updateCount == 1) {
       AppLog.debug('backgesture',

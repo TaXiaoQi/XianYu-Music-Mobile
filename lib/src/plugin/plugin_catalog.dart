@@ -235,8 +235,9 @@ class PluginCatalogService {
     return null;
   }
 
-  Future<bool> supportsSheetImport(PluginSource source) =>
-      _availableMethods(source).then((m) => m.contains('importMusicSheet'));
+  Future<bool> supportsSheetImport(PluginSource source) => _availableMethods(
+      source).then((m) =>
+      m.contains('importMusicSheet') || m.contains('importPlaylist'));
 
   Future<List<Map<String, dynamic>>> _importSheetRaw(
       PluginSource source, String urlLike) async {
@@ -275,8 +276,35 @@ class PluginCatalogService {
     return r.name.isEmpty ? null : r;
   }
 
+  /// 判断输入是否像歌单分享链接或纯数字歌单 ID。
+  /// 自己的歌单只能靠链接/ID 精确导入，公开搜索搜不到。
+  static bool looksLikeSheetLinkOrId(String keyword) {
+    final t = keyword.trim().toLowerCase();
+    if (t.isEmpty) return false;
+    if (RegExp(r'^\d{6,}$').hasMatch(t)) return true;
+    return RegExp(
+            r'https?://|\.com|\.cn|\.cc|netease|kugou|kuwo|qishui|douyin|qq\.com')
+        .hasMatch(t);
+  }
+
   Future<List<MfSheetItem>> searchSheets(
       PluginSource source, String keyword) async {
+    // 链接/歌单 ID 优先走 importMusicSheet 精确导入：公开搜索会把链接当
+    // 关键词，搜出来的全是别人的同名歌单。
+    final linkLike = looksLikeSheetLinkOrId(keyword);
+    if (linkLike) {
+      // am 插件（animemusic/1）歌单导入：importPlaylist 返回真实歌单
+      // 名/封面/创建者，优先走它
+      final methods = await _availableMethods(source);
+      if (methods.contains('importPlaylist')) {
+        final raw = await _tryCallRaw(source, 'importPlaylist', [keyword]);
+        final sheet = _sheetFromAnimeImport(source, keyword, raw);
+        if (sheet != null) return [sheet];
+      }
+      final direct =
+          await _tryCallRawList(source, 'importMusicSheet', [keyword]);
+      if (direct.isNotEmpty) return _sheetFromImportedTracks(source, keyword, direct);
+    }
     for (final type in ['sheet', 'playlist', 'album']) {
       final list = await _tryCallRawList(source, 'search', [keyword, 1, type]);
       if (list.isEmpty) continue;
@@ -286,26 +314,61 @@ class PluginCatalogService {
       }).where((s) => s.title.isNotEmpty).toList();
       if (sheets.isNotEmpty) return sheets;
     }
-    final rawTracks = await _tryCallRawList(source, 'importMusicSheet', [keyword]);
-    if (rawTracks.isNotEmpty) {
-      final title = tr('{name}收藏夹', {'name': source.name});
-      return [
-        MfSheetItem(
-          id: keyword,
-          title: title,
-          coverUrl: _extractCover(rawTracks.first),
-          trackCount: rawTracks.length,
-          platform: source.name,
-          pluginId: source.id,
-          raw: {
-            'id': keyword,
-            'title': title,
-            '_importedTracks': rawTracks,
-          },
-        ),
-      ];
+    if (!linkLike) {
+      final rawTracks =
+          await _tryCallRawList(source, 'importMusicSheet', [keyword]);
+      if (rawTracks.isNotEmpty) {
+        return _sheetFromImportedTracks(source, keyword, rawTracks);
+      }
     }
     return const [];
+  }
+
+  List<MfSheetItem> _sheetFromImportedTracks(
+      PluginSource source, String keyword, List<Map<String, dynamic>> tracks) {
+    final title = tr('{name}收藏夹', {'name': source.name});
+    return [
+      MfSheetItem(
+        id: keyword,
+        title: title,
+        coverUrl: _extractCover(tracks.first),
+        trackCount: tracks.length,
+        platform: source.name,
+        pluginId: source.id,
+        raw: {
+          'id': keyword,
+          'title': title,
+          '_importedTracks': tracks,
+        },
+      ),
+    ];
+  }
+
+  /// am importPlaylist 返回 {id,title,cover,creator,desc,total,list}，
+  /// 曲目结构同 search；用真实歌单元数据包成单一导入结果
+  MfSheetItem? _sheetFromAnimeImport(
+      PluginSource source, String keyword, dynamic raw) {
+    if (raw is! Map) return null;
+    final list = raw['list'];
+    if (list is! List || list.isEmpty) return null;
+    final tracks =
+        list.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    final title = (raw['title'] ?? '').toString().trim();
+    final total = _toInt(raw['total']) ?? 0;
+    return MfSheetItem(
+      id: keyword,
+      title: title.isNotEmpty ? title : tr('{name}歌单', {'name': source.name}),
+      artist: (raw['creator'] ?? '').toString(),
+      coverUrl: (raw['cover'] ?? '').toString(),
+      trackCount: total > 0 ? total : tracks.length,
+      platform: source.name,
+      pluginId: source.id,
+      raw: {
+        'id': keyword,
+        'title': title,
+        '_importedTracks': tracks,
+      },
+    );
   }
 
   // ==================== 歌手 ====================

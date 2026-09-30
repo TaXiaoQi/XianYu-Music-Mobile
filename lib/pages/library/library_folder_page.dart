@@ -20,7 +20,6 @@ import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../settings/folder_picker_page.dart';
@@ -34,7 +33,8 @@ class LibraryFolderPage extends ConsumerStatefulWidget {
   ConsumerState<LibraryFolderPage> createState() => _LibraryFolderPageState();
 }
 
-class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
+class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
+    with HideMiniBar {
   final Set<String> _expanded = {};
   bool _scanning = false;
   bool _adding = false;
@@ -360,7 +360,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final lib = ref.watch(libraryProvider);
     final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
     final lost =
         ref.watch(libraryProvider.select((s) => s.unauthorizedFolders));
@@ -480,7 +479,6 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
                   title: Text(tr('文件夹')),
                 ),
               ),
-              if (lib.songs.isNotEmpty) const MiniPlayerBar(),
             ],
           ),
         ),

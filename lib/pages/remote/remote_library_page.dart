@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/library/library_provider.dart';
 import '../../src/remote/remote_library_service.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
@@ -52,7 +51,6 @@ class RemoteLibraryPage extends ConsumerWidget {
                     _buildCacheCard(context, ref, state),
                   ],
                 ),
-                const BottomPlayBarSlot(),
               ],
             )),
           ),

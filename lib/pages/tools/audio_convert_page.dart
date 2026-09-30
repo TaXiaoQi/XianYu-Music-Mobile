@@ -23,7 +23,7 @@ class _Format {
   });
 }
 
-const _FORMATS = [
+const _formats = [
   _Format(value: 'mp3', label: 'MP3', lossless: false),
   _Format(value: 'wav', label: 'WAV', lossless: true),
   _Format(value: 'flac', label: 'FLAC', lossless: true),
@@ -57,7 +57,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   bool _keepLyrics = true;
   int _sampleRate = 0;
 
-  static const _SAMPLE_RATES = [
+  static const _sampleRates = [
     (0, '保留原采样率'),
     (22050, '22050 Hz'),
     (32000, '32000 Hz'),
@@ -68,13 +68,12 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   ];
 
   _Format get _fmt =>
-      _FORMATS.firstWhere((f) => f.value == _format, orElse: () => _FORMATS.first);
+      _formats.firstWhere((f) => f.value == _format, orElse: () => _formats.first);
 
   Future<void> _pickFiles() async {
     if (_busy) return;
     final files = await FilePicker.pickFiles(
       type: FileType.audio,
-      allowMultiple: true,
     );
     if (files.isEmpty) return;
 
@@ -186,6 +185,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
     final defaultDir = _selected.isNotEmpty
         ? _selected.first.originalDir
         : (await getTemporaryDirectory()).path;
+    if (!mounted) return null;
 
     String? choice;
     await showDialog<void>(
@@ -199,7 +199,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           TextButton(
             onPressed: () async {
               final d = await FilePicker.getDirectoryPath();
-              if (d != null && mounted) {
+              if (d != null && ctx.mounted) {
                 choice = d;
                 Navigator.pop(ctx);
               }
@@ -352,7 +352,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _FORMATS.map((f) {
+          children: _formats.map((f) {
             final selected = _format == f.value;
             return ChoiceChip(
               label: Text('${f.label}${f.lossless ? ' ⭐' : ''}'),
@@ -375,7 +375,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         Wrap(
           spacing: 6,
           runSpacing: 6,
-          children: _SAMPLE_RATES.map((s) {
+          children: _sampleRates.map((s) {
             final selected = _sampleRate == s.$1;
             return ChoiceChip(
               label: Text(s.$2),
@@ -394,8 +394,6 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         color: appCardColor(context),
         borderRadius: BorderRadius.circular(12),
       ),
-      // Material 透明层让 SwitchListTile 的背景/水波纹画在这里，
-      // 否则被外层 DecoratedBox 遮住并触发框架断言。
       child: Material(
         type: MaterialType.transparency,
         child: Column(
@@ -579,7 +577,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: ok.length.clamp(0, 5),
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (_, i) {
                 final r = ok[i];
                 return Container(

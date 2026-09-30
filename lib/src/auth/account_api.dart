@@ -62,7 +62,6 @@ class AccountApi {
     }, fetchTimeoutMs: 15000);
   }
 
-  /// 服务器下发的隐私政策。null 表示无下发（用客户端内置版本）。
   Future<PrivacyPolicyRemote?> fetchPrivacyPolicy() async {
     try {
       final data = await _action('get_privacy_policy', {
@@ -80,7 +79,6 @@ class AccountApi {
     }
   }
 
-  /// 确认上报（失败忽略，弹窗与否由客户端本地 fingerprint 判断）。
   Future<void> confirmPrivacyPolicy(PrivacyPolicyRemote policy) async {
     try {
       await _action('confirm_privacy_policy', {
@@ -560,11 +558,14 @@ class AccountApi {
     required String description,
     required String category,
     required String imageData,
+    String? videoData,
+    int videoDuration = 0,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录账号后再上传壁纸'));
     }
+    final isVideo = videoData != null && videoData.isNotEmpty;
     await _action('upload_wallpaper', {
       'ciyuanxi_id': ciyuanxiId,
       'nickname': _auth.currentState.user?.nickname ?? '',
@@ -573,7 +574,9 @@ class AccountApi {
       'category': category.trim().isEmpty ? tr('用户上传') : category.trim(),
       'platform': 'mobile',
       'image_data': imageData,
-    }, fetchTimeoutMs: 90000);
+      if (isVideo) 'video_data': videoData,
+      if (isVideo) 'video_duration': videoDuration,
+    }, fetchTimeoutMs: isVideo ? 600000 : 90000);
   }
 
   Future<LeaderboardData> fetchLeaderboard({
@@ -592,6 +595,7 @@ class AccountApi {
   Future<Map<String, dynamic>> reportListenStatsDelta({
     required int deltaTotal,
     required int deltaDaily,
+    int elapsedSecs = -1,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -603,6 +607,7 @@ class AccountApi {
         'stats_mode': 'delta',
         'delta_duration': deltaTotal.clamp(0, 1 << 31),
         'delta_daily_duration': deltaDaily.clamp(0, 1 << 31),
+        'elapsed_secs': elapsedSecs,
       }, fetchTimeoutMs: 8000);
       final resetAt = data['reset_at'];
       if (resetAt is String && resetAt.isNotEmpty) {

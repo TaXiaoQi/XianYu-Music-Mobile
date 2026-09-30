@@ -13,7 +13,6 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/flying_cover.dart';
@@ -300,7 +299,6 @@ class _RecentPageState extends ConsumerState<RecentPage> {
                         ],
                       ),
               ),
-            if (!inMusicPane) const BottomPlayBarSlot(),
           ],
         ),
       ),

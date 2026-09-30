@@ -19,7 +19,6 @@ import '../../src/recognize/recognize_service.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
@@ -448,10 +447,6 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
                     onTap: _active ? _cancel : _start,
                     onRestart: () => setState(() => _phase = _Phase.idle),
                   ),
-                const Positioned(
-                  left: 0, right: 0, bottom: 0,
-                  child: BottomPlayBarSlot(),
-                ),
               ],
             ),
           ),
@@ -688,21 +683,6 @@ class _MicView extends StatelessWidget {
             child: _ReRecognizeButton(onTap: onRestart),
           ),
         ],
-
-        // 下半屏角色位：把图放到 assets/mascot/recognize.png 并在 pubspec 声明即可生效。
-        // 文件不存在时 errorBuilder 直接不渲染，页面不会因此变空或抛错。
-        const SizedBox(height: 20),
-        Center(
-          child: Opacity(
-            opacity: 0.92,
-            child: Image.asset(
-              'assets/mascot/recognize.png',
-              height: 240,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
-        ),
       ],
     );
   }

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
-import 'blur_budget.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 
@@ -65,14 +64,12 @@ class GlassTopBar extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    // 路由切换期间转纯色：平移动画中页面会被 RouteStaticSnapshot 离屏截图
-    // （toImage），离屏场景里 BackdropFilter 无背景可采样，毛玻璃顶栏会
-    // 被截成黑色条；切换期间用纯色顶栏，动画结束后恢复。
-    final routeTransition = ref.watch(isTransitioningProvider);
-    final solid = forceSolid || prefSolid || routeTransition;
+    // 转场期间路由内容已被 RouteStaticSnapshot 冻结为快照，
+    // 顶栏保持全量玻璃即可呈现「最后一帧」的静止观感
+    final solid = forceSolid || prefSolid;
     final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
-    final sigma = kNavSurfaceBlurSigma;
+    final sigma = navSurfaceBlurSigma(ref);
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper

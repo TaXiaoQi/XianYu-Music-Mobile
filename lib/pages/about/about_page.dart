@@ -40,24 +40,43 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     ('@TaXiaoQi', 'https://github.com/TaXiaoQi'),
   ];
 
-  static List<AcknowledgementItem> get _extraAcknowledgements =>
+  static List<AcknowledgementItem> get _defaultAcknowledgements =>
       const <AcknowledgementItem>[
         AcknowledgementItem(
-            name: '@知难辞', url: 'https://github.com/88541'),
+            name: '@Zencok', url: 'https://github.com/Zencok'),
         AcknowledgementItem(
-            name: '@绛狐', url: 'https://github.com/kaishui-server'),
+            name: '@jay3-yy', url: 'https://github.com/jay3-yy'),
+        AcknowledgementItem(
+            name: '@QFDY-GZC', url: 'https://github.com/QFDY-GZC'),
       ];
 
   List<AcknowledgementItem> get _allAcknowledgements {
-    final merged = <AcknowledgementItem>[
-      ..._config.acknowledgements,
-      ..._extraAcknowledgements,
-    ];
+    final base = _config.acknowledgements.isNotEmpty
+        ? _config.acknowledgements
+        : _defaultAcknowledgements;
     final seen = <String>{};
-    return merged
+    return base
         .where((it) => seen.add(it.name))
         .toList(growable: false);
   }
+
+  static List<AcknowledgementItem> get _defaultReferenceProjects =>
+      const <AcknowledgementItem>[
+        AcknowledgementItem(
+            name: '弦予音乐桌面端',
+            url: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop'),
+        AcknowledgementItem(
+            name: 'BakaMusic', url: 'https://github.com/Zencok/BakaMusic'),
+        AcknowledgementItem(
+            name: 'BiliPai', url: 'https://github.com/jay3-yy/BiliPai/releases'),
+        AcknowledgementItem(
+            name: 'RawS', url: 'https://github.com/QFDY-GZC/RawS-Music'),
+      ];
+
+  List<AcknowledgementItem> get _allReferenceProjects =>
+      _config.referenceProjects.isNotEmpty
+          ? _config.referenceProjects
+          : _defaultReferenceProjects;
 
   @override
   void initState() {
@@ -103,7 +122,12 @@ class _AboutPageState extends ConsumerState<AboutPage> {
 
   Future<void> _openUrl(String url) async => openExternalUrl(context, url);
 
-  Future<void> _showAcknowledgements(List<AcknowledgementItem> items) {
+  Future<void> _showItemsSheet(
+    List<AcknowledgementItem> items, {
+    required String title,
+    required String subtitle,
+    required String emptyText,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final chipItems = List<AcknowledgementItem>.from(items);
     return showSheetDialog<void>(
@@ -113,12 +137,12 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(tr('致谢名单'),
+            Text(title,
                 style: const TextStyle(
                     fontSize: 17, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Text(
-              tr('感谢以下项目创意或功能的贡献者，排名不分先后'),
+              subtitle,
               textAlign: TextAlign.center,
               style:
                   TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
@@ -128,7 +152,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  tr('暂无致谢名单'),
+                  emptyText,
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
               )
@@ -161,6 +185,22 @@ class _AboutPageState extends ConsumerState<AboutPage> {
     );
   }
 
+  Future<void> _showAcknowledgements(List<AcknowledgementItem> items) =>
+      _showItemsSheet(
+        items,
+        title: tr('致谢名单'),
+        subtitle: tr('感谢以下项目创意或功能的贡献者，排名不分先后'),
+        emptyText: tr('暂无致谢名单'),
+      );
+
+  Future<void> _showReferenceProjects(List<AcknowledgementItem> items) =>
+      _showItemsSheet(
+        items,
+        title: tr('参考项目'),
+        subtitle: tr('本项目的开发借鉴了以下优秀开源项目，排名不分先后'),
+        emptyText: tr('暂无参考项目'),
+      );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -171,8 +211,6 @@ class _AboutPageState extends ConsumerState<AboutPage> {
         (icon: Icons.group, label: tr('加入群组'), url: _config.joinGroupUrl),
       if (_config.projectUrl.isNotEmpty)
         (icon: Icons.code, label: tr('开源地址'), url: _config.projectUrl),
-      if (_config.referenceProjectUrl.isNotEmpty)
-        (icon: Icons.book_outlined, label: tr('参考项目'), url: _config.referenceProjectUrl),
     ];
     final portraitFloating = !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
@@ -255,6 +293,13 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                     ),
                     Divider(height: 1, indent: 52, color: scheme.outlineVariant),
                   ],
+                  ListTile(
+                    leading: Icon(Icons.book_outlined, color: scheme.primary),
+                    title: Text(tr('参考项目')),
+                    trailing: Icon(Icons.chevron_right,
+                        size: 18, color: scheme.outline),
+                    onTap: () => _showReferenceProjects(_allReferenceProjects),
+                  ),
                   if (_allAcknowledgements.isNotEmpty)
                     ListTile(
                       leading: Icon(Icons.favorite_outline, color: scheme.primary),

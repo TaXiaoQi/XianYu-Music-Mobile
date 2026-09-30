@@ -34,10 +34,8 @@ class LinkMsgType {
 
   static const int backupAck = 0x22;
 
-  /// 腕上端运行日志推送到手机；回执复用 backupAck（saved/cancelled）。
   static const int watchLogFile = 0x23;
 
-  /// 手机 → 手表的音效设置推送（payload: {'fx': SoundEffectSettings.toJson()}）。
   static const int effects = 0x24;
 
   static const int chunk = 0x30;
@@ -108,7 +106,6 @@ class LinkCmdAction {
   static const String seek = 'seek';
   static const String volume = 'volume';
 
-  /// 手表 → 手机：修改音效（arg = SoundEffectSettings.toJson() 全量）。
   static const String fx = 'fx';
 }
 
@@ -186,7 +183,6 @@ class LinkMessage {
   static LinkMessage cmd(String action, [Map<String, dynamic>? arg]) =>
       LinkMessage(LinkMsgType.cmd, {'action': action, 'arg': ?arg});
 
-  /// 手机 → 手表：音效设置全量推送。
   static LinkMessage effects({required Map<String, dynamic> fx}) =>
       LinkMessage(LinkMsgType.effects, {'fx': fx});
 
@@ -202,7 +198,6 @@ class LinkMessage {
   static LinkMessage backupAck({required String result}) =>
       LinkMessage(LinkMsgType.backupAck, {'result': result});
 
-  /// 腕上端运行日志推送：name=文件名，content=日志全文（超限自动分片）。
   static LinkMessage watchLogFile({
     required String name,
     required String content,

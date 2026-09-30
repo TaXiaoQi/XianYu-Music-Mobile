@@ -17,7 +17,6 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
-import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
@@ -500,8 +499,6 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ),
-          if (_songs.isNotEmpty)
-            const MiniPlayerBar(),
         ],
       ),
     );

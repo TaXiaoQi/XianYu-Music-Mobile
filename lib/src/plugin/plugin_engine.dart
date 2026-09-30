@@ -86,7 +86,6 @@ class PluginEngine {
     return false;
   }
 
-  /// animemusic/1 格式识别（meta + call 统一入口）
   bool isAnimePluginScript(String script) =>
       RegExp(r"""["']animemusic\/1["']""").hasMatch(script);
 
@@ -286,8 +285,6 @@ class PluginEngine {
   static const Duration _authBanTtlMax = Duration(minutes: 5);
   static const int _authBanThreshold = 5;
 
-  /// 指数退避：30s → 1m → 2m → … → 5m 封顶。偶发鉴权抖动快速恢复，
-  /// 持续失效时逐级拉长挡连环刷。
   static Duration _banTtlFor(int streak) {
     final doublings = (streak - _authBanThreshold).clamp(0, 8);
     final secs = _authBanTtlBase.inSeconds << doublings;
@@ -302,7 +299,6 @@ class PluginEngine {
     return '${(secs / 60).ceil()} 分钟';
   }
 
-  // 三端统一鉴权失效关键词（与桌面端 AUTH_FAIL_RE / isAuthError 一致）
   static bool isAuthFailureMessage(String msg) =>
       RegExp(r'API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断',
               caseSensitive: false)
@@ -322,8 +318,6 @@ class PluginEngine {
   }
 
   static void _markAuthFailure(String pluginId, String msg) {
-    // 熔断期间被挡住的重试会再次走到这里（错误同样含鉴权关键词），
-    // 不刷新熔断截止时间，否则「一直点播放就永远熔断」。
     if (isAuthBanned(pluginId)) return;
     final streak = (_authFailStreak[pluginId] ?? 0) + 1;
     _authFailStreak[pluginId] = streak;
@@ -547,7 +541,6 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
-    // anime 插件 qualities 键可被 Baka 识别规则命中，需排除
     if (source.format != PluginFormat.anime &&
         bakaManager.isBakaPlugin(source.id)) {
       return bakaManager.getMediaSource(
@@ -569,7 +562,6 @@ class PluginEngine {
       } catch (e) {
         final msg = e is PluginEngineException ? e.message : e.toString();
         if (isUnsupportedQualityError(msg)) unsupportedQuality = true;
-        // 鉴权失效（卡密/401）时剩余档位必然失败，直接终止
         if (isAuthFailureMessage(msg)) rethrow;
       }
     }
@@ -635,9 +627,6 @@ class PluginEngine {
           reported = _normalizeQualityKey(qField);
         }
         final h = obj['headers'];
-        // ekey（QMC2，base64）与 cek（CENC，32-hex）是两种加密体系，
-        // 必须分开提取——不能 `??` 合并，否则 CENC 密钥会被当成 QMC2
-        // ekey 解析而必然失败（与桌面端 bakaPluginManagerMedia 一致）。
         final ekey = obj['ekey'] as String?;
         final cek = obj['cek'] as String?;
         return ResolvedMediaUrl(
@@ -658,9 +647,6 @@ class PluginEngine {
     Map<String, dynamic> songInfo,
     String quality,
   ) async {
-    // lx request 的 source 必须是平台码（tx/kg/kw/wy/mg）。跨格式换源或
-    // 导入歌单产生的歌曲可能携带中文展示名（如「QQ音乐」），源端会直接
-    // 报「不支持的音源」，这里统一归一化兜底（已是平台码则原样返回）。
     final mapped = lxSourceKeyForPlatform(sourceKey);
     final effectiveKey = mapped.isNotEmpty ? mapped : sourceKey;
     final response = await lxRequest(source, 'musicUrl', {

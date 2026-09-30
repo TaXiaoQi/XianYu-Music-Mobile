@@ -44,8 +44,6 @@ void releaseGlobalDragging() {
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);
 Timer? _transitionTimer;
 
-// 600ms 须覆盖最长的路由转场动画（播放页 450ms），否则收尾尾段玻璃回 live
-// 会采样到滑动中的画面，随后 idle 截图把残影定格（深色玻璃条粘滞）。
 void markTransitionActivity() {
   globalIsTransitioning.value = true;
   _transitionTimer?.cancel();
@@ -102,6 +100,10 @@ final isScrollingProvider =
 final isTransitioningProvider =
     NotifierProvider<_ValueNotifierState, bool>(
       () => _ValueNotifierState(globalIsTransitioning),
+    );
+final isTabSwitchingProvider =
+    NotifierProvider<_ValueNotifierState, bool>(
+      () => _ValueNotifierState(globalIsTabSwitching),
     );
 
 enum BlurSurfaceType {

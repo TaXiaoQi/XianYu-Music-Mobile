@@ -8,7 +8,7 @@ import 'blur_budget.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
-        FrostedGlassLevel.strongest));
+        FrostedGlassLevel.light));
 
 bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
@@ -50,12 +50,18 @@ List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
 double wallpaperGlassSigma(BuildContext context) => 0.0;
 
 double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
-      FrostedGlassLevel.strongest => 1.0,
-      FrostedGlassLevel.medium => 0.6,
-      FrostedGlassLevel.light => 0.4,
+      // 旧档位（1.0/0.6/0.4）整体偏重，以原轻档 0.4 为新重档下压
+      FrostedGlassLevel.strongest => 0.4,
+      FrostedGlassLevel.medium => 0.28,
+      FrostedGlassLevel.light => 0.18,
     };
 
+/// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
 const double kNavSurfaceBlurSigma = 16.0;
+
+/// 导航面（悬浮导航/mini 播放条/appbar 等）随档位缩放的模糊强度
+double navSurfaceBlurSigma(WidgetRef ref) =>
+    kNavSurfaceBlurSigma * frostedBlurScaleOf(frostedGlassLevelSetting(ref));
 
 double frostedBlurSigma(WidgetRef ref) => 16 * frostedBlurScale(ref);
 
@@ -75,9 +81,11 @@ Widget frostedCardSurface({
       (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallpaperTransparent = wallpaper && !frostedOn;
   final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
+  // fill/sigma 与 pseudoLiquidSurface 的导航面（条类表面）对齐，
+  // 避免材质开启后卡片与顶栏/底栏/播放条观感割裂
   final frostedFill = isDark
-      ? Colors.white.withValues(alpha: 0.20)
-      : Colors.white.withValues(alpha: 0.52);
+      ? Colors.white.withValues(alpha: 0.06)
+      : Colors.white.withValues(alpha: 0.34);
   final fill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
       : (wallpaperTransparent
@@ -99,9 +107,11 @@ Widget frostedCardSurface({
     child: child,
   );
   if (solid) return surface;
+  // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
+  // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
   final sigma = wallpaperTransparent
       ? wallpaperGlassSigma(context)
-      : frostedBlurSigma(ref);
+      : 8.0 * frostedBlurScale(ref);
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -208,10 +218,15 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
   if (wallpaperGlassActive(ref)) return false;
   return !(ref.watch(settingsProvider.select(
           (s) => s.valueOrNull?.frostedGlass)) ??
-      true);
+      false);
 }
 
 final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
+
+/// chrome 显隐瞬间的液态玻璃热身窗口（约 3 帧）：
+/// 头几帧用实底防止 backdrop 采样黑闪，之后保持实时液态玻璃，
+/// 避免整个显隐动画期间实底化导致折射卸载与落定跳变
+final chromeGlassWarmupProvider = StateProvider<bool>((ref) => false);
 
 final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
 ImageFilter cachedBlur(double sigma) {
@@ -292,13 +307,16 @@ Widget pseudoLiquidSurface({
       : Colors.white.withValues(alpha: 0.5);
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
   final scale = frostedScale ?? frostedBlurScaleOf(FrostedGlassLevel.light);
+  // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
+  // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
   final sigma = wallpaperNav
-      ? kNavSurfaceBlurSigma
+      ? navSurfaceBlurSigma(ref)
       : wallTransparent
           ? wallpaperGlassSigma(context)
           : (budget == null
               ? 8.0 * scale
-              : surfaceBlurSigma(base: 8 * scale, budget: budget, type: surfaceType));
+              : surfaceBlurSigma(
+                  base: 8 * scale, budget: budget, type: surfaceType));
   final surface = Container(
     decoration: BoxDecoration(
       color: fill,
@@ -320,4 +338,4 @@ Widget pseudoLiquidSurface({
     ),
   );
 }
-
+

@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
@@ -421,8 +422,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final lp = _localPath;
     if (lp == null || !File(lp).existsSync()) return;
     await _disposePreviewVideo();
-    // 先登记控制器，避免 initialize 期间页面被 pop 时 in-flight 控制器无人 dispose
-    // （在真正赋值前就把它挂上，dispose() 才能在半途销毁它，否则异步回调里访问已回收原生对象会崩）
     final controller = VideoPlayerController.file(File(lp))
       ..setLooping(true)
       ..setVolume(0);
@@ -443,7 +442,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     setState(() {
       _previewVideoReady = true;
     });
-    // 预览同样强制无声，规避初始化完成时音量被重置
     await controller.setVolume(0);
     unawaited(controller.play());
   }
@@ -489,7 +487,6 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     final id = widget.wallpaper['id'];
     final sha = (widget.wallpaper['videoSha256'] as String?) ?? '';
     final ext = isVideo ? 'mp4' : 'jpg';
-    // 文件名含 sha8：服务端 hash 变化自动产生新文件，命中即复用免下载
     final cacheKey = isVideo && sha.isNotEmpty ? sha.substring(0, 8) : '';
     final file = File(
       p.join(
@@ -975,7 +972,12 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _categoryCtrl = TextEditingController();
+  final _upPosterKey = GlobalKey();
   XFile? _picked;
+  String? _videoPath;
+  int _videoDuration = 0;
+  VideoPlayerController? _upVideo;
+  bool _posterFromStill = false;
   bool _uploading = false;
   String? _error;
 
@@ -984,7 +986,53 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
     _titleCtrl.dispose();
     _descCtrl.dispose();
     _categoryCtrl.dispose();
+    _upVideo?.dispose();
     super.dispose();
+  }
+
+  Future<void> _disposeUploadVideo() async {
+    final old = _upVideo;
+    if (old == null) return;
+    _upVideo = null;
+    if (mounted) setState(() {});
+    try {
+      await old.dispose();
+    } catch (_) {}
+  }
+
+  Future<void> _setupUploadVideo(String path, {XFile? still}) async {
+    setState(() {
+      _videoPath = path;
+      _picked = still;
+      _posterFromStill = still != null;
+      _error = null;
+    });
+    await _disposeUploadVideo();
+    final c = VideoPlayerController.file(File(path));
+    try {
+      await c.initialize();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _videoPath = null;
+          _error = tr('视频无法解析，请换一个文件');
+        });
+      }
+      try {
+        await c.dispose();
+      } catch (_) {}
+      return;
+    }
+    if (!mounted) {
+      try {
+        await c.dispose();
+      } catch (_) {}
+      return;
+    }
+    setState(() {
+      _upVideo = c;
+      _videoDuration = c.value.duration.inSeconds;
+    });
   }
 
   Future<void> _pickImage() async {
@@ -993,13 +1041,75 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
         source: ImageSource.gallery,
         imageQuality: 100,
       );
-      if (picked != null && mounted) {
-        setState(() {
-          _picked = picked;
-          _error = null;
-        });
+      if (picked == null || !mounted) return;
+      // 实况照片：提取内嵌视频后按视频壁纸走
+      final tmp = await getTemporaryDirectory();
+      final dir = Directory(p.join(tmp.path, 'upload_wallpapers'));
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final videoTarget = p.join(
+        dir.path,
+        'upload_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+      final extracted = await extractMotionPhotoVideo(
+        File(picked.path),
+        videoTarget,
+      );
+      if (extracted != null && mounted) {
+        await _setupUploadVideo(extracted, still: picked);
+        return;
       }
+      await _disposeUploadVideo();
+      if (!mounted) return;
+      setState(() {
+        _picked = picked;
+        _videoPath = null;
+        _error = null;
+      });
     } catch (_) {}
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+      await _setupUploadVideo(picked.path);
+    } catch (_) {}
+  }
+
+  /// 从预览 RepaintBoundary 抓当前视频帧作为封面
+  Future<String?> _capturePosterDataUrl() async {
+    final ctx = _upPosterKey.currentContext;
+    final ro = ctx?.findRenderObject();
+    if (ro is! RenderRepaintBoundary || !ro.attached) return null;
+    try {
+      final c = _upVideo;
+      if (c != null && c.value.isInitialized) {
+        await c.pause();
+        await c.seekTo(Duration.zero);
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+      final size = ro.size;
+      if (size.width < 8 || size.height < 8) return null;
+      final pixelRatio = (720.0 / size.width).clamp(0.5, 3.0);
+      final captured = await ro.toImage(pixelRatio: pixelRatio);
+      final byteData = await captured.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      final w = captured.width;
+      final h = captured.height;
+      captured.dispose();
+      if (byteData == null) return null;
+      final frame = img.Image.fromBytes(
+        width: w,
+        height: h,
+        bytes: byteData.buffer,
+        order: img.ChannelOrder.rgba,
+      );
+      final jpeg = img.encodeJpg(frame, quality: 85);
+      return 'data:image/jpeg;base64,${base64Encode(jpeg)}';
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String> _compressToDataUrl(XFile file) async {
@@ -1021,8 +1131,8 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       setState(() => _error = tr('请填写壁纸标题'));
       return;
     }
-    if (_picked == null) {
-      setState(() => _error = tr('请选择壁纸图片'));
+    if (_videoPath == null && _picked == null) {
+      setState(() => _error = tr('请选择壁纸图片或视频'));
       return;
     }
     setState(() {
@@ -1030,15 +1140,35 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       _error = null;
     });
     try {
-      final imageData = await _compressToDataUrl(_picked!);
-      await ref
-          .read(accountApiProvider)
-          .uploadWallpaper(
-            title: title,
-            description: _descCtrl.text.trim(),
-            category: _categoryCtrl.text.trim(),
-            imageData: imageData,
-          );
+      if (_videoPath != null) {
+        final poster = _posterFromStill && _picked != null
+            ? await _compressToDataUrl(_picked!)
+            : await _capturePosterDataUrl();
+        if (poster == null || poster.isEmpty) {
+          throw Exception(tr('视频封面生成失败，请重试'));
+        }
+        final bytes = await File(_videoPath!).readAsBytes();
+        await ref
+            .read(accountApiProvider)
+            .uploadWallpaper(
+              title: title,
+              description: _descCtrl.text.trim(),
+              category: _categoryCtrl.text.trim(),
+              imageData: poster,
+              videoData: 'data:video/mp4;base64,${base64Encode(bytes)}',
+              videoDuration: _videoDuration,
+            );
+      } else {
+        final imageData = await _compressToDataUrl(_picked!);
+        await ref
+            .read(accountApiProvider)
+            .uploadWallpaper(
+              title: title,
+              description: _descCtrl.text.trim(),
+              category: _categoryCtrl.text.trim(),
+              imageData: imageData,
+            );
+      }
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -1066,47 +1196,124 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 14),
-          GestureDetector(
-            onTap: _uploading ? null : _pickImage,
-            child: Container(
-              height: 160,
-              decoration: BoxDecoration(
-                color: appCardColor(context),
+          _videoPath != null && _upVideo != null && _upVideo!.value.isInitialized
+          ? SizedBox(
+              height: 200,
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-              ),
-              child: _picked == null
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 40,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            tr('点击选择图片\n(JPG / PNG / WEBP，30MB 以内)'),
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.file(
-                        File(_picked!.path),
-                        fit: BoxFit.cover,
-                        width: double.infinity,
+              child: RepaintBoundary(
+                key: _upPosterKey,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const ColoredBox(color: Colors.black),
+                    Center(
+                      child: AspectRatio(
+                        aspectRatio:
+                            _upVideo!.value.aspectRatio == 0
+                            ? 16 / 9
+                            : _upVideo!.value.aspectRatio,
+                        child: VideoPlayer(_upVideo!),
                       ),
                     ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.videocam,
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              tr('视频壁纸'),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          )
+          : GestureDetector(
+              onTap: _uploading ? null : _pickImage,
+              child: Container(
+                height: 160,
+                decoration: BoxDecoration(
+                  color: appCardColor(context),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: _picked == null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_photo_alternate_outlined,
+                              size: 40,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              tr('点击选择图片或视频\n(JPG / PNG / WEBP / MP4)'),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.file(
+                          File(_picked!.path),
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _uploading ? null : _pickImage,
+                  icon: const Icon(Icons.photo_outlined, size: 18),
+                  label: Text(tr('选图片')),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _uploading ? null : _pickVideo,
+                  icon: const Icon(Icons.movie_outlined, size: 18),
+                  label: Text(tr('选视频')),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1367,8 +1574,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     }
   }
 
-  // 准备图片：GIF 动图直接 copy 原文件(Image.file 原生循环播放，不做解码校验以免当单帧)；
-  // JPEG/PNG 也 copy 原文件(保留 EXIF 方向)；解不了(HEIC 等)再交给原生 BitmapFactory 转 JPEG。
   Future<String?> _prepareImageForWallpaper(File src, String target) async {
     try {
       final raf = src.openSync();
@@ -1402,7 +1607,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
       await src.copy(target);
       return target;
     } catch (_) {
-      // Flutter 解不了 → 原生解码转 JPEG
     }
     final converted = await FlutterImageCompress.compressAndGetFile(
       src.path,

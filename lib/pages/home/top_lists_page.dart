@@ -24,7 +24,7 @@ class TopListsPage extends ConsumerStatefulWidget {
 }
 
 class _TopListsPageState extends ConsumerState<TopListsPage>
-    with HidesShellChrome {
+    with HidesShellChrome, HideMiniBar {
   List<PluginSource> _sources = const [];
   String? _selectedId;
   PageController? _pageCtrl;

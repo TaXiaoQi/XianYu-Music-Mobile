@@ -10,7 +10,6 @@ import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/bottom_play_bar_slot.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -77,7 +76,6 @@ class DownloadPage extends ConsumerWidget {
                   ],
                 ),
               ),
-            if (!embedded) const BottomPlayBarSlot(),
           ],
         ),
       ),
@@ -162,7 +160,7 @@ class DownloadPage extends ConsumerWidget {
   }
 }
 
-// ==================== 下载列表（独立订阅播放状态调底部留白） ====================
+// ==================== 下载列表 ====================
 
 class _DownloadList extends ConsumerWidget {
   const _DownloadList({

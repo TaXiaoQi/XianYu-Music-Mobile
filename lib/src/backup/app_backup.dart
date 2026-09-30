@@ -22,15 +22,12 @@ import '../rust/api.dart';
 const _kBackupSchema = 'xianyu-music.app-backup';
 const _kBackupVersion = 2;
 
-/// 三端名称（settings 分槽 / platform 标记用）。
 const kBackupPlatformMobile = 'mobile';
 const kBackupPlatformDesktop = 'desktop';
 const kBackupPlatformWatch = 'watch';
 
-/// 本端写入 / 读取的 settings 槽位键。
 const kBackupSelfSettingKey = kBackupPlatformMobile;
 
-/// 加密备份需要密码时抛出
 class BackupPasswordRequiredException implements Exception {}
 
 class AppBackupSummary {
@@ -135,7 +132,6 @@ class AppBackupService {
         },
         if (includePlugins) 'plugins': plugins,
         if (includeRecent) 'recentHistory': recent,
-        // 设置按端分槽：本端只写自己的槽位，其余端留空位，导入互不影响。
         'settings': {
           kBackupPlatformMobile:
               includeSettings && settings != null ? _settingsToJson(settings) : null,
@@ -147,8 +143,6 @@ class AppBackupService {
     return const JsonEncoder.withIndent('  ').convert(backup);
   }
 
-  /// 最近播放：读 stats db 的 recent history，逐条补全歌曲元数据（本地/在线
-  /// 各取对应来源），生成与其他端统一的 [{path, playedAt, song}] 结构。
   Future<List<Map<String, dynamic>>> _collectRecentForExport() async {
     final out = <Map<String, dynamic>>[];
     try {
@@ -170,7 +164,6 @@ class AppBackupService {
               await getLibrarySongsByPaths(dbPath: dbPath, paths: localPaths);
           for (final e in jsonDecode(songsJson) as List) {
             final m = (e as Map).cast<String, dynamic>();
-            // 库查询结果已是歌曲字段（path/title/artist... 等），直接用。
             songMap[m['path'] as String? ?? ''] = m;
           }
         } catch (_) {}
@@ -197,7 +190,6 @@ class AppBackupService {
   bool _isOnlinePath(String p) =>
       p.startsWith('lx://') || p.startsWith('plugin://');
 
-  /// 在线歌曲 QueueItem → 统一歌曲 dict（供最近播放导出）。
   Map<String, dynamic> _queueItemToSongMap(QueueItem? q) {
     if (q == null) return const {};
     return {
@@ -253,7 +245,6 @@ class AppBackupService {
       throw   FormatException(tr('无法识别的备份格式，请选择本应用导出的备份文件'));
     }
     if (data['encrypted'] == true) {
-      // 加密备份：用密码解密内部 JSON 后重新解析
       if (password == null || password.isEmpty) {
         throw BackupPasswordRequiredException();
       }
@@ -293,8 +284,6 @@ class AppBackupService {
     );
   }
 
-  /// 取出写给「本端」的 settings 槽位。v2 起按端分槽；旧 v1 备份的 settings
-  /// 是扁平对象（无端概念），视为旧结构、不导入设置（提示可见但跳过写入）。
   Map<String, dynamic>? _selfSettings(Map<String, dynamic> data) {
     final settings = data['settings'];
     if (settings is Map) {
@@ -344,7 +333,6 @@ class AppBackupService {
             nameOverride: source.name.isNotEmpty ? source.name : null,
             versionOverride: source.version.isNotEmpty ? source.version : null,
           );
-          // 恢复备份中的用户变量值（跨端迁移卡密等配置）
           final userVarsRaw = entry['userVariables'];
           if (userVarsRaw is Map && userVarsRaw.isNotEmpty) {
             final values = userVarsRaw
@@ -457,9 +445,6 @@ class AppBackupService {
     );
   }
 
-  /// 最近播放：读 [{path, playedAt}]，与现有历史按 path 合并（保留较新时间戳），
-  /// 再整体重写。stats 端 add_to_history 以「当前时刻」落时间戳，故按 playedAt
-  /// 降序重插可保持相对先后（最近优先）。
   Future<void> _importRecent(dynamic raw) async {
     final list = raw is List ? raw.whereType<Map>().toList() : const <Map>[];
     if (list.isEmpty) return;

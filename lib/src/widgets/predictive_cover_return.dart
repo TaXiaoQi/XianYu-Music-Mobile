@@ -199,7 +199,10 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
     _entry?.remove();
     _entry = null;
     _anchoredSource = null;
-    PredictiveCoverReturn.instance.returning.value = false;
+    // 复位推迟到帧末：unmount 发生在 finalizeTree 锁定期，此刻写 notifier
+    // 会触发监听者 setState 直接 fatal；postFrame 后再复位是安全的
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => PredictiveCoverReturn.instance.returning.value = false);
     super.dispose();
   }
 

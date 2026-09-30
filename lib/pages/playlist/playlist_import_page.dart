@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
 import '../../src/plugin/plugin_backup_file.dart';
@@ -32,7 +33,7 @@ class PlaylistImportPage extends ConsumerStatefulWidget {
 }
 
 class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, HideMiniBar {
   late TabController _tabCtrl = TabController(length: 3, vsync: this);
   bool _cloudTab = true;
 
@@ -98,7 +99,6 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1：备份文件导入（BakaMusic / MusicFree / 洛雪 备份，选择本地文件）
 // ---------------------------------------------------------------------------
 
 class _BackupImportTab extends ConsumerStatefulWidget {
@@ -290,7 +290,6 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 2：本地文件夹导入（SAF 选目录 → fd 解析 → 创建本地歌曲歌单）
 // ---------------------------------------------------------------------------
 
 class _LocalFolderTab extends ConsumerStatefulWidget {
@@ -526,7 +525,6 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 3：云端导入（MusicFree 插件搜索歌单/链接自动识别平台 → 拉取详情 → 建歌单）
 // ---------------------------------------------------------------------------
 
 class _CloudImportTab extends ConsumerStatefulWidget {
@@ -558,7 +556,10 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   List<PluginSource> get _plugins => ref
       .watch(pluginManagerProvider)
       .sources
-      .where((s) => s.enabled && s.format == PluginFormat.musicfree)
+      .where((s) =>
+          s.enabled &&
+          (s.format == PluginFormat.musicfree ||
+              s.format == PluginFormat.anime))
       .toList();
 
   PluginSource? get _selected {
@@ -572,6 +573,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     'qq': [tr('qq音乐'), 'qqmusic', tr('腾讯'), 'tx', 'qq'],
     'kuwo': ['kuwo', tr('酷我'), 'kw'],
     'kugou': ['kugou', tr('酷狗'), 'kg'],
+    'qishui': [tr('汽水'), 'qishui', 'douyin'],
   };
 
   String? _detectPlatformFromUrl(String input) {
@@ -586,6 +588,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     if (t.contains('kugou.com') || t.contains('t.kugou.com')) {
       return 'kugou';
     }
+    if (t.contains('qishui') || t.contains('汽水')) return 'qishui';
     return null;
   }
 
@@ -725,7 +728,6 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         return;
       }
       await manager.addSongs(created.last.id, songs);
-      // 记录来源，供后续「从源端更新」使用
       final keyword = _keywordCtrl.text.trim();
       final isUrlImport = sheet.raw['_importedTracks'] != null;
       Map<String, dynamic>? sourceRaw;
@@ -864,7 +866,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         ),
         const SizedBox(height: 10),
         Text(
-          tr('选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。'),
+          tr('选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 14),

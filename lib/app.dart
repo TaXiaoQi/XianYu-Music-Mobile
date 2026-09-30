@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import 'src/core/settings.dart';
 import 'src/core/app_colors.dart';
 import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
+import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
@@ -45,6 +47,8 @@ class XianYuApp extends ConsumerStatefulWidget {
 }
 
 class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserver {
+  // 飞行封面顶层宿主（第一级）：位于 Navigator 与 mini 播放条之上的独立 Overlay
+  final GlobalKey<OverlayState> _flyingOverlayKey = GlobalKey<OverlayState>();
   int? _cachedAccent;
   bool? _cachedPredictiveBack;
   WallpaperTextColor _cachedTextMode = WallpaperTextColor.follow;
@@ -73,12 +77,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   }
 
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
-    // 必须用根 Navigator 的 context：根 State 的 context 位于 Navigator 之上，
-    // 直接 showDialog 会因 Navigator.of 找不到 NavigatorState 而空断言崩溃
-    // （首次安装、尚未记录隐私同意时必现）。
     final navContext = appNavigatorKey.currentContext;
     if (navContext == null) {
-      // Router 尚未挂载，推迟一帧重试
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_runStartupAfterConsent(ref));
       });
@@ -177,8 +177,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         color: Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
       ),
-      // 弹窗统一样式（与 ModernDialogCard 对齐）：24 圆角、无 surface 染色，
-      // 暗色底 0xFF333333 与 ModernDialogCard 的 surfaceContainerHigh 一致。
       dialogTheme: DialogThemeData(
         backgroundColor: const Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
@@ -335,7 +333,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             routerConfig: appRouter,
             builder: (context, child) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                final overlay = appNavigatorKey.currentState?.overlay;
+                final overlay = _flyingOverlayKey.currentState;
                 if (overlay != null) FlyingCover.instance.attach(overlay);
               });
               final fontSize = settings?.fontSize ?? AppFontSize.system;
@@ -344,7 +342,23 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   : TextScaler.linear(fontSize.scale);
               return MediaQuery(
                 data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-                child: Stack(
+                child: NotificationListener<NavigationNotification>(
+                  onNotification: (_) {
+                    // app 完全接管返回（frameworkHandlesBack 恒 true）：
+                    // 1) 系统永不自动处理返回——根部退出不再触发系统的
+                    //    back-to-home 预测预览（app 内关闭预测开关后，
+                    //    退出软件就不走系统预测路线了）；
+                    // 2) 手势/返回键全部进 Dart：预测开时 detector 认领走
+                    //    预测转场；detector 全 decline（预测关/根部）时
+                    //    PredictiveBackOffFallback 兜底走经典链（根部
+                    //    「再按一次退出」）。
+                    // 吞掉子树全部 NavigationNotification，防播放页 idle
+                    // 待机页的后发 canPop=false 覆盖导致引擎注销回调、
+                    // 下一次手势被系统直接 finish 退软件
+                    SystemNavigator.setFrameworkHandlesBack(true);
+                    return true;
+                  },
+                  child: Stack(
                   fit: StackFit.expand,
                   children: [
                     ColoredBox(
@@ -352,7 +366,22 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                       child: const CustomBackgroundLayer(),
                     ),
                     ScrollOffsetCapture(child: child!),
+                    // mini 播放条顶层宿主：位于 Navigator 之上，
+                    // 所有页面（含播放页）转场都从播放条背后滑过
+                    const MiniPlayerOverlay(),
+                    // 播放页独立 Navigator（五级模型第二级）：位于播放条
+                    // 之上、飞行封面之下——播放页转场物理盖过播放条
+                    const PlayerNavigatorHost(),
+                    // 飞行封面顶层宿主（第一级）：高于播放条与一切路由，
+                    // 预测性返回的页面缩放不再牵连封面飞行
+                    Overlay(
+                      key: _flyingOverlayKey,
+                      initialEntries: [
+                        OverlayEntry(builder: (_) => const SizedBox.shrink()),
+                      ],
+                    ),
                   ],
+                ),
                 ),
               );
             },
@@ -381,9 +410,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       case 'en':
         return I18nMode.en;
       case 'zh':
-        // 繁体命中链：zh-Hant（系统选「繁體中文」通用项，无地区码）/
-        // zh-TW / zh-HK / zh-MO。只看 countryCode 会漏掉 zh-Hant，
-        // 导致必须选「繁體中文(台灣)」才能切到繁体。
         final cc = first.countryCode;
         if (first.scriptCode == 'Hant' ||
             cc == 'TW' ||

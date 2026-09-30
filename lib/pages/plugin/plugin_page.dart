@@ -21,6 +21,7 @@ import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 import 'plugin_delete.dart';
 
@@ -45,7 +46,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
   final Map<String, bool> _hasVars = {};
   bool _collectingVars = false;
 
-  // 已检测出的插件更新结果缓存：点更新直接安装，免重复检测与弹窗（对齐桌面端）
   final Map<String, PluginUpdateCheckResult> _updateCheckResults = {};
   final Set<String> _updatingIds = {};
 
@@ -506,8 +506,9 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     );
   }
 
-  Future<void> _installUrl(String url) async {
-    if (url.trim().isEmpty) return;
+  /// 返回 null 表示成功（关弹窗）；返回错误文案以便弹窗保留输入状态重试
+  Future<String?> _installUrl(String url) async {
+    if (url.trim().isEmpty) return tr('链接不能为空');
     final progress = showXianYuProgressToast(context, tr('正在导入插件...'));
     setState(() => _installing = true);
     try {
@@ -517,20 +518,24 @@ class _PluginPageState extends ConsumerState<PluginPage> {
             url,
             onProgress: (msg, p) => progress.update(msg, progress: p),
           );
-      if (!mounted) return;
+      if (!mounted) return null;
       if (result.success) {
         final summary = result.failCount > 0
             ? tr('成功 {ok} 个，失败 {fail} 个', {'ok': result.names.length, 'fail': result.failCount})
             : tr('成功 {ok} 个：{names}', {'ok': result.names.length, 'names': result.names.join('、')});
         progress.complete(tr('插件安装完成，{summary}', {'summary': summary}));
-      } else {
-        final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
-        progress.fail(tr('所有插件安装失败{detail}', {'detail': detail}));
+        return null;
       }
+      final detail = result.errors.isNotEmpty ? '（${result.errors.first}）' : '';
+      final msg = tr('所有插件安装失败{detail}', {'detail': detail});
+      progress.fail(msg);
+      return msg;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       final msg = e is PluginEngineException ? e.message : e.toString();
-      progress.fail(tr('安装失败：{msg}', {'msg': msg}));
+      final text = tr('安装失败：{msg}', {'msg': msg});
+      progress.fail(text);
+      return text;
     } finally {
       if (mounted) setState(() => _installing = false);
     }
@@ -594,7 +599,6 @@ class _PluginPageState extends ConsumerState<PluginPage> {
     }
   }
 
-  // 对齐桌面端：已检出更新则点击直接安装；未检出时先检测并提示再次点击，全程无确认弹窗
   Future<void> _updatePlugin(BuildContext context, PluginSource source) async {
     if (_updatingIds.contains(source.id)) return;
     _updatingIds.add(source.id);
@@ -941,6 +945,8 @@ class _PluginCard extends ConsumerWidget {
     String tagLabel,
   ) {
     final manager = ref.read(pluginManagerProvider.notifier);
+    final subTag =
+        pluginSubTagInfo(source, ref.watch(pluginSubscriptionsProvider));
 
     final icon = Container(
       width: 40,
@@ -987,6 +993,28 @@ class _PluginCard extends ConsumerWidget {
                     fontWeight: FontWeight.w600),
               ),
             ),
+            if (subTag != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6A23C).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: const Color(0xFFE6A23C).withValues(alpha: 0.4),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  subTag.label,
+                  style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFFE6A23C),
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
             if (source.updateAvailable) ...[
               const SizedBox(width: 6),
               Container(
@@ -1322,7 +1350,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                   children: [
                     SizedBox(
                       width: 64,
-                      child: Text(tr('链接'),
+                      child: Text(tr('音源'),
                           style: TextStyle(
                               fontSize: 13, color: scheme.onSurfaceVariant)),
                     ),
@@ -1348,6 +1376,50 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                                             color: scheme.primary)),
                                   ),
                               ],
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: Text(tr('插件链接'),
+                          style: TextStyle(
+                              fontSize: 13, color: scheme.onSurfaceVariant)),
+                    ),
+                    Expanded(
+                      child: source.sourceUrl.isEmpty
+                          ? const Text('—', style: TextStyle(fontSize: 13))
+                          : InkWell(
+                              onTap: () async {
+                                await Clipboard.setData(
+                                    ClipboardData(text: source.sourceUrl));
+                                if (context.mounted) {
+                                  showXianYuToast(context, tr('插件链接已复制'));
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(source.sourceUrl,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: scheme.primary)),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.copy_rounded,
+                                      size: 13, color: scheme.primary),
+                                ],
+                              ),
                             ),
                     ),
                   ],
@@ -1474,7 +1546,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
 
 class _UrlInstallSheet extends StatefulWidget {
   const _UrlInstallSheet({required this.onInstallUrl});
-  final Future<void> Function(String url) onInstallUrl;
+  final Future<String?> Function(String url) onInstallUrl;
 
   @override
   State<_UrlInstallSheet> createState() => _UrlInstallSheetState();
@@ -1483,6 +1555,7 @@ class _UrlInstallSheet extends StatefulWidget {
 class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   final _urlCtrl = TextEditingController();
   bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -1492,13 +1565,21 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
 
   Future<void> _installFromUrl() async {
     final url = _urlCtrl.text.trim();
-    if (url.isEmpty) return;
-    setState(() => _loading = true);
-    try {
-      await widget.onInstallUrl(url);
-      if (mounted) Navigator.pop(context);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    if (url.isEmpty || _loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final error = await widget.onInstallUrl(url);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context);
+    } else {
+      // 失败：保留已输入链接与键盘状态，错误原因显示在弹窗内便于重试
+      setState(() {
+        _loading = false;
+        _error = error;
+      });
     }
   }
 
@@ -1531,6 +1612,13 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
               keyboardType: TextInputType.url,
               onSubmitted: (_) => _installFromUrl(),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(fontSize: 12, color: scheme.error),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -1621,4 +1709,3 @@ class _InstallOption extends ConsumerWidget {
     );
   }
 }
-

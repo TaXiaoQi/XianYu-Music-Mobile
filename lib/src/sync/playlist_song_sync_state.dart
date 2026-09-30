@@ -28,7 +28,7 @@ abstract final class PlaylistSongSyncState {
     }
   }
 
-  // ==================== 仅删本地墓碑（cloudKeep） ====================
+  // ==================== 仅删本地墓碑 ====================
 
   static Future<Map<String, String>> cloudKeepSongs(String cloudId) async {
     if (cloudId.isEmpty) return const {};
@@ -65,7 +65,7 @@ abstract final class PlaylistSongSyncState {
     await _writeMap(_cloudKeepKey, map);
   }
 
-  // ==================== 仅保留本地墓碑（localOnly） ====================
+  // ==================== 仅保留本地墓碑 ====================
 
   static Future<Set<String>> localOnlySongs(String cloudId) async {
     if (cloudId.isEmpty) return const {};
@@ -101,7 +101,7 @@ abstract final class PlaylistSongSyncState {
     await _writeMap(_localOnlyKey, map);
   }
 
-  // ==================== 待上报删除墓碑（pendingDeleted） ====================
+  // ==================== 待上报删除墓碑 ====================
 
   static Future<Set<String>> pendingDeletedSongs(String cloudId) async {
     if (cloudId.isEmpty) return const {};

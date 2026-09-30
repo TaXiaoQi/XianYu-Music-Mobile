@@ -49,8 +49,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   void _onStatus(AnimationStatus status) {
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
-      // 状态监听在帧中途同步触发，此时树可能刚标脏未 paint，
-      // 直接 toImage 会撞 !debugNeedsPaint 断言；推到帧末再截。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _moving) _capture();
       });
@@ -64,7 +62,7 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   @override
   void dispose() {
-    _token++; // 作废在途截图，防止完成后误 setState / 误用旧图
+    _token++;
     widget.animation.removeStatusListener(_onStatus);
     _image?.dispose();
     _image = null;
@@ -82,9 +80,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       _capturing = false;
       return;
     }
-    // detached 后 toImage 会炸（native peer collected）：pop 拆树窗口
-    // 里 boundary 可能已被卸载，必须先挡掉。未绘制首帧的 layer! 空断言
-    // 无法提前判断（layer 是 protected），由下方 try/catch 兜底。
     if (box.size.isEmpty || !box.attached) {
       _capturing = false;
       return;
@@ -98,9 +93,8 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       );
     } catch (e) {
       img = null;
-      // 帧中标脏（新路由首帧、Offstage 切换、动画 tick）会让 toImage 撞
-      // !debugNeedsPaint 断言；推迟一帧重试最多两次，覆盖所有时序。
-      if (e.toString().contains('debugNeedsPaint') && attempt < 2 && mounted) {
+      if (attempt < 2 && mounted) {
+        // push 后首帧图层未就绪时 toImage 可能抛空断言，不只 debugNeedsPaint 一种
         _capturing = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _capture(attempt: attempt + 1);

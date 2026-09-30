@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
+import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
+import '../plugin/plugin_subscriptions.dart';
 
 const Map<String, String> kSourceAliasToReal = {
   '小蜗': '酷我',
@@ -33,6 +35,117 @@ String truncateSource(String label) {
   if (label.length <= kSourceTagMaxChars) return label;
   final runes = label.runes.take(kSourceTagMaxChars);
   return '${String.fromCharCodes(runes)}…';
+}
+
+/// 付费订阅来源品牌：订阅/插件安装 URL 的 query 带 source=（聆澜/ikun 等）时，
+/// 标签直接显示来源品牌名；仅带 key= 无来源名时回落显示「付费」。
+const Map<String, String> kSubSourceBrandAlias = {
+  'linglan': '聆澜',
+};
+
+String? _brandFromUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final v = Uri.tryParse(url)?.queryParameters['source']?.trim();
+  if (v == null || v.isEmpty) return null;
+  // 仅识别已知付费品牌别名：公开订阅也会用 source= 传自定义标识（如 quandouyao），
+  // 未知值不再视为付费，避免免费插件被误标
+  return kSubSourceBrandAlias[v.toLowerCase()];
+}
+
+bool _urlHasKey(String? url) {
+  if (url == null || url.isEmpty) return false;
+  final v = Uri.tryParse(url)?.queryParameters['key']?.trim();
+  return v != null && v.isNotEmpty;
+}
+
+String? _sourceValue(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final v = Uri.tryParse(url)?.queryParameters['source']?.trim();
+  return (v == null || v.isEmpty) ? null : v;
+}
+
+/// 订阅 URL 的 source 常带 .json 后缀（如 quandouyao.json），插件安装 URL 是去后缀的
+/// 标识（如 quandouyao）——归属判定前统一去掉 .json 再比较
+String _normSourceValue(String v) =>
+    v.toLowerCase().replaceFirst(RegExp(r'\.json$'), '');
+
+/// 插件名/作者内置品牌词（ikun 插件 URL 只有 key 无 source，靠名称识别）
+const List<(String, String)> kSubSourceBrandKeywords = [
+  ('聆澜', '聆澜'),
+  ('ikun', 'ikun'),
+];
+
+String? _brandFromIdentity(String name, String author) {
+  final hay = '${name.trim()} ${author.trim()}'.toLowerCase();
+  if (hay.trim().isEmpty) return null;
+  for (final (kw, brand) in kSubSourceBrandKeywords) {
+    if (hay.contains(kw)) return brand;
+  }
+  return null;
+}
+
+/// 插件付费订阅标签：优先看插件自身安装 URL/来源订阅 URL 与内置品牌词；插件 URL 带
+/// source 标识时按 source 值精确归属订阅——同一台主机可挂多个订阅（公共+付费并存），
+/// 禁止按 host/名称猜归属；都未命中返回 null，按普通音源显示。
+({String label, bool highlight})? _pluginSubTag(
+  PluginSource p,
+  List<PluginSubscription> subs,
+) {
+  final own = _brandFromUrl(p.sourceUrl) ?? _brandFromUrl(p.filePath);
+  if (own != null) return (label: own, highlight: true);
+  final named = _brandFromIdentity(p.name, p.author);
+  if (named != null) return (label: named, highlight: true);
+  if (_urlHasKey(p.sourceUrl) || _urlHasKey(p.filePath)) {
+    return (label: tr('付费'), highlight: true);
+  }
+  final ownSrc = _sourceValue(p.filePath) ?? _sourceValue(p.sourceUrl);
+  if (ownSrc == null) return null;
+  final ownKey = _normSourceValue(ownSrc);
+  for (final sub in subs) {
+    final subSrc = _sourceValue(sub.url);
+    if (subSrc == null || _normSourceValue(subSrc) != ownKey) continue;
+    final brand = _brandFromUrl(sub.url);
+    if (brand != null) return (label: brand, highlight: true);
+    if (_urlHasKey(sub.url)) return (label: tr('付费'), highlight: true);
+    break;
+  }
+  return null;
+}
+
+/// 插件管理页等直接持有 PluginSource 的场景使用
+({String label, bool highlight})? pluginSubTagInfo(
+  PluginSource p,
+  List<PluginSubscription> subs,
+) {
+  final tag = _pluginSubTag(p, subs);
+  if (tag == null) return null;
+  // 付费品牌标签加「付费」前缀（付费聆澜/付费ikun）；回落「付费」不重复前缀
+  final paid = tr('付费');
+  if (tag.label == paid || tag.label == '付费') return tag;
+  return (label: '$paid${tag.label}', highlight: tag.highlight);
+}
+
+/// SourceTag 专用：普通音源名之前先解析付费订阅品牌/付费标记（金色高亮）。
+({String label, bool highlight}) songSourceTagInfo(
+  WidgetRef ref, {
+  required String path,
+  required bool isOnline,
+  String? source,
+  String? onlineSongJson,
+  String? pluginId,
+}) {
+  // 歌曲页等场景维持原样（来源标签显示音源/插件名）；付费品牌标签只在插件管理页展示
+  return (
+    label: songSourceLabel(
+      ref,
+      path: path,
+      isOnline: isOnline,
+      source: source,
+      onlineSongJson: onlineSongJson,
+      pluginId: pluginId,
+    ),
+    highlight: false,
+  );
 }
 
 String songSourceLabel(
@@ -151,33 +264,38 @@ class SourceTag extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final label = truncateSource(
-      songSourceLabel(
-        ref,
-        path: path,
-        isOnline: isOnline,
-        source: source,
-        onlineSongJson: onlineSongJson,
-        pluginId: pluginId,
-      ),
+    final info = songSourceTagInfo(
+      ref,
+      path: path,
+      isOnline: isOnline,
+      source: source,
+      onlineSongJson: onlineSongJson,
+      pluginId: pluginId,
     );
+    // 付费订阅来源（聆澜/ikun 等品牌或「付费」）用金色高亮，与普通音源区分
+    const highlightColor = Color(0xFFE6A23C);
+    final highlight = info.highlight;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+        color: highlight
+            ? highlightColor.withValues(alpha: 0.15)
+            : scheme.surfaceContainerHigh.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.3),
+          color: highlight
+              ? highlightColor.withValues(alpha: 0.4)
+              : scheme.outlineVariant.withValues(alpha: 0.3),
           width: 0.5,
         ),
       ),
       child: Text(
-        label,
+        truncateSource(info.label),
         maxLines: 1,
         overflow: TextOverflow.clip,
         style: TextStyle(
           fontSize: 11,
-          color: scheme.onSurfaceVariant,
+          color: highlight ? highlightColor : scheme.onSurfaceVariant,
           fontWeight: FontWeight.w500,
         ),
       ),

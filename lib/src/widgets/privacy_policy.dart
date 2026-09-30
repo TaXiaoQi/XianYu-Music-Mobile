@@ -14,7 +14,6 @@ const kPrivacyPolicyUrl = 'https://xianyumusic.cn/privacy.html';
 
 const kPrivacyConsentPrefKey = 'privacy_policy_agreed_v1';
 
-/// 已确认的服务器下发版本 fingerprint（id_updatedAt）。
 const kPrivacyConsentFingerprintKey = 'privacy_policy_agreed_fp';
 
 const kPrivacyPolicyDefaultUpdatedAt = '2026-09-04';
@@ -74,11 +73,6 @@ Future<bool> showPrivacyPolicyModal({required BuildContext context}) {
   );
 }
 
-/// 启动时的隐私同意闸门：
-/// 1. 拉取服务器下发版本（6s 超时，失败/无下发用内置默认版）；
-/// 2. 已同意旧版且服务器无更新 → 直接放行；
-/// 3. 未同意或服务器有更新版 → 弹窗（没确认过才弹，确认状态存本地
-///    fingerprint，机制与公告一致），同意后上报服务器留存。
 Future<bool> ensurePrivacyConsent(BuildContext context) async {
   final container = ProviderScope.containerOf(context, listen: false);
   final prefs = await SharedPreferences.getInstance();
@@ -87,7 +81,6 @@ Future<bool> ensurePrivacyConsent(BuildContext context) async {
   final remoteFp =
       remote == null ? '' : '${remote.id}_${remote.updatedAt}';
   final confirmedFp = prefs.getString(kPrivacyConsentFingerprintKey) ?? '';
-  // 已同意过内置版：服务器无下发或已确认过该下发版本时放行。
   if (agreedV1 &&
       (remote == null ||
           remoteFp.isEmpty ||
@@ -162,7 +155,6 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
     if (remote != null) {
       await prefs.setString(
           kPrivacyConsentFingerprintKey, '${remote.id}_${remote.updatedAt}');
-      // 确认上报（留存用，失败不影响本地放行）。
       unawaitedConfirm(remote);
     }
     if (!mounted) return;
@@ -219,7 +211,6 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
                         color: scheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 16),
-                  // 更新日期放内容最底部。
                   Text(
                     '${tr('更新日期')}：$updatedAt',
                     style: TextStyle(fontSize: 12, color: scheme.outline),
@@ -229,8 +220,6 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
             ),
           ),
         ),
-        // 控件一行横排（同普通弹窗）：左侧不同意，右侧同意。
-        // OverflowBar 在窄约束下放不下时自动换行堆叠，避免 RenderFlex 溢出。
         actions: [
           OverflowBar(
             alignment: MainAxisAlignment.spaceBetween,

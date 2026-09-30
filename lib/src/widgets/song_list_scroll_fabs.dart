@@ -84,6 +84,7 @@ class SongListScrollFabs extends ConsumerWidget {
               _Slot(
                 visible: showTop,
                 child: _ScrollFab(
+                  visible: showTop,
                   wallpaper: wallpaper,
                   icon: Icons.keyboard_double_arrow_up_rounded,
                   tooltip: tr('回到顶部'),
@@ -94,6 +95,7 @@ class SongListScrollFabs extends ConsumerWidget {
               _Slot(
                 visible: showLocate,
                 child: _ScrollFab(
+                  visible: showLocate,
                   wallpaper: wallpaper,
                   icon: Icons.my_location_rounded,
                   tooltip: tr('定位当前播放歌曲'),
@@ -133,13 +135,16 @@ class _Slot extends StatelessWidget {
   }
 }
 
-class _ScrollFab extends ConsumerWidget {
+class _ScrollFab extends ConsumerStatefulWidget {
   const _ScrollFab({
+    required this.visible,
     required this.wallpaper,
     required this.icon,
     required this.tooltip,
     required this.onTap,
   });
+
+  final bool visible;
 
   final bool wallpaper;
 
@@ -148,12 +153,43 @@ class _ScrollFab extends ConsumerWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ScrollFab> createState() => _ScrollFabState();
+}
+
+class _ScrollFabState extends ConsumerState<_ScrollFab> {
+  bool? _lastVisible;
+  bool _warmup = false;
+
+  // 出现的头几帧引擎 backdrop 采样可能尚未就绪（先闪黑底再出玻璃），
+  // 参照底栏导航的做法：出现瞬间先用实底热身数帧，再切回实时液态玻璃
+  void _syncVisible() {
+    final visible = widget.visible;
+    if (_lastVisible == visible) return;
+    final rising = visible && _lastVisible != true;
+    _lastVisible = visible;
+    if (!rising || _warmup) return;
+    _warmup = true;
+    var remaining = 3;
+    void tick() {
+      if (!mounted) return;
+      remaining--;
+      if (remaining > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+        return;
+      }
+      setState(() => _warmup = false);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _syncVisible();
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final Widget iconWidget =
-        Icon(icon, size: 20, color: scheme.onSurfaceVariant);
+    final iconWidget = Icon(widget.icon, size: 20, color: scheme.onSurfaceVariant);
+    final onTap = widget.onTap;
 
     final lowPerf = ref.watch(
         settingsProvider.select((s) => performancePriority(s.valueOrNull ?? const AppSettings())));
@@ -180,7 +216,9 @@ class _ScrollFab extends ConsumerWidget {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: bilipaiBackdropBlurOf(quality),
-        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: _warmup
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -198,8 +236,8 @@ class _ScrollFab extends ConsumerWidget {
       surface = ClipOval(
         child: BackdropFilter(
           filter: ImageFilter.blur(
-            sigmaX: wallpaper ? kNavSurfaceBlurSigma : 10,
-            sigmaY: wallpaper ? kNavSurfaceBlurSigma : 10,
+            sigmaX: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
+            sigmaY: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
           ),
           child: button(
             Container(
@@ -207,7 +245,7 @@ class _ScrollFab extends ConsumerWidget {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: wallpaper
+                color: widget.wallpaper
                     ? wallpaperNavGlassFill(context)
                     : (isDark
                         ? const Color(0x99000000)
@@ -215,7 +253,7 @@ class _ScrollFab extends ConsumerWidget {
                 border: Border.all(
                   color: scheme.outlineVariant.withValues(alpha: 0.35),
                 ),
-                boxShadow: wallpaper
+                boxShadow: widget.wallpaper
                     ? const []
                     : [
                         BoxShadow(
@@ -232,6 +270,6 @@ class _ScrollFab extends ConsumerWidget {
         ),
       );
     }
-    return Tooltip(message: tooltip, child: surface);
+    return Tooltip(message: widget.tooltip, child: surface);
   }
 }

@@ -1516,6 +1516,7 @@
   var ANIME_CATALOG_METHODS = [
     'getTopLists', 'getTopListDetail', 'getMusicSheetInfo', 'getArtistWorks',
     'getArtistInfo', 'getAlbumInfo', 'getMusicComments', 'getMvSource',
+    'importPlaylist',
   ];
 
   function makeAnimeAdapter(instance, meta) {
@@ -1793,6 +1794,43 @@
         var p = resolvePlatform(sheetItem);
         if (p) params.platform = p;
         return callAction('playlistDetail', params).then(envToList);
+      },
+
+      // 歌单导入（am v2.1.0+ importPlaylist）：分享链接/分享文案/纯数字歌单ID →
+      // 歌单元数据+歌曲。纯数字ID必须带 platform，聚合插件无固化平台时交由
+      // 服务端报错提示；服务端按链接域名自动识别平台，短链自动跟随重定向
+      importPlaylist: function (urlOrText) {
+        var input = String(urlOrText || '').trim();
+        var params = { url: input, limit: 100 };
+        if (singlePlatform) params.platform = singlePlatform;
+        // 分页拉全曲目（limit≤100/页）；页数兜底防上游 hasMore 异常死循环
+        var maxPages = 50;
+        var step = function (page, list, hasMore, total) {
+          if (!hasMore || page >= maxPages) return Promise.resolve(list);
+          var p = {};
+          for (var k in params) p[k] = params[k];
+          p.page = page + 1;
+          return callAction('importPlaylist', p).then(function (env) {
+            if (!env || !Array.isArray(env.list) || !env.list.length) return list;
+            list = list.concat(env.list);
+            return step(page + 1, list, env.hasMore !== false && (!total || list.length < total), total);
+          });
+        };
+        return callAction('importPlaylist', params).then(function (first) {
+          var list = Array.isArray(first.list) ? first.list.slice() : [];
+          var total = Number(first.total) || 0;
+          return step(1, list, first.hasMore !== false && (!total || list.length < total), total).then(function (all) {
+            return {
+              id: first.id != null ? String(first.id) : input,
+              title: first.title || '',
+              cover: first.cover || '',
+              creator: first.creator || '',
+              desc: first.desc || '',
+              total: total,
+              list: all.map(injectPlatform),
+            };
+          });
+        });
       },
 
       // 歌手热门歌曲（music）/ 歌手专辑列表（album）

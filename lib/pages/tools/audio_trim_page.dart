@@ -47,7 +47,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   final _controllerStart = TextEditingController();
   final _controllerEnd = TextEditingController();
 
-  static const _RECODE_FORMATS = ['mp3', 'wav', 'flac'];
+  static const _recodeFormats = ['mp3', 'wav', 'flac'];
 
   @override
   void dispose() {
@@ -126,12 +126,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   Future<void> _pickFile() async {
     if (_trimming || _probing) return;
-    final files = await FilePicker.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-    if (files.isEmpty) return;
-    final f = files.single;
+    final f = await FilePicker.pickFile(type: FileType.audio);
+    if (f == null) return;
 
     final tmpDir = await getTemporaryDirectory();
     String? fallbackDir;
@@ -281,6 +277,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     final defaultDir = _originalDir != null
         ? _originalDir!
         : (await getTemporaryDirectory()).path;
+    if (!mounted) return null;
 
     String? choice;
     await showDialog<void>(
@@ -294,7 +291,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
           TextButton(
             onPressed: () async {
               final d = await FilePicker.getDirectoryPath();
-              if (d != null && mounted) {
+              if (d != null && ctx.mounted) {
                 choice = d;
                 Navigator.pop(ctx);
               }
@@ -722,7 +719,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: _RECODE_FORMATS.map((f) {
+            children: _recodeFormats.map((f) {
               final selected = _recodeFmt == f;
               return ChoiceChip(
                 label: Text(f.toUpperCase()),

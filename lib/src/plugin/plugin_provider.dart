@@ -30,11 +30,6 @@ const _bilibiliCookieKeys = {
   'sid',
 };
 
-/// 带重试的插件脚本抓取（在线导入与订阅更新共用）。
-///
-/// 部分网络下握手阶段被对端重置（errno 104 Connection reset by peer）
-/// 高发，多为瞬时性故障（服务端抖动/链路不稳），逐次重试可提高成功率；
-/// HTTP 4xx/5xx 是确定性结果，直接失败不重试。
 Future<String?> fetchPluginScriptWithRetry(
   String url, {
   Duration connectionTimeout = const Duration(seconds: 15),
@@ -123,7 +118,6 @@ class PluginInstallResult {
   bool get success => names.isNotEmpty;
 }
 
-/// 取第一个非空白的文本值（null/空串/空白都视为缺失，回退下一项）。
 String? _firstNonEmptyText(Iterable<Object?> values) {
   for (final v in values) {
     if (v == null) continue;
@@ -133,8 +127,6 @@ String? _firstNonEmptyText(Iterable<Object?> values) {
   return null;
 }
 
-/// 插件展示名：历史版本可能把空串存成名字（musicfree 插件的 pluginName
-/// 恒为 ''，真名在 platform 字段），展示时空名回退为「未知插件」。
 String pluginDisplayName(PluginSource source) {
   final s = source.name.trim();
   return s.isNotEmpty ? s : tr('未知插件');
@@ -206,8 +198,6 @@ class PluginManager extends StateNotifier<PluginListState> {
     final path = await engine.store.saveScript(id, trimmed);
 
     final sources = _extractSources(isLx, metadata);
-    // 名称回退链需跳过空串/空白：musicfree 插件的 pluginName 恒为 ''（真名在
-    // platform 字段），空串不是 null，`??` 不会回退，导致本地导入插件无名字。
     final fallbackName = _firstNonEmptyText(isLx
             ? [info['name'], fileName]
             : [
@@ -305,8 +295,6 @@ class PluginManager extends StateNotifier<PluginListState> {
       if (items.isEmpty) return null;
       return items;
     } catch (e) {
-      // 订阅链接返回非 JSON（反爬 HTML/登录页）时会静默走到单插件解析，
-      // 记一条便于识别被风控页劫持的情况。
       AppLog.warn('plugin', 'plugin list parse failed: $e');
       return null;
     }
@@ -530,7 +518,6 @@ class PluginManager extends StateNotifier<PluginListState> {
       }
       return const [];
     }
-    // anime 聚合插件优先 platforms 列表
     final platforms = metadata['platforms'];
     if (platforms is List && platforms.isNotEmpty) {
       return platforms.map((e) => e.toString()).toList();

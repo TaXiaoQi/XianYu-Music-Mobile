@@ -10,8 +10,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:go_router/go_router.dart';
 
+import '../effects/effects_page.dart';
+import '../../src/navigation/routes.dart'
+    show playerNavigatorKey, coverPageRoute;
 import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
@@ -40,6 +42,7 @@ import '../../src/widgets/bilipai_glass.dart';
 import '../../src/widgets/blur_budget.dart';
 import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -53,8 +56,6 @@ import '../../src/i18n/i18n.dart';
 final Map<String, List<_LyricLineItem>> _lyricsCache = {};
 const int _lyricsCacheMax = 24;
 
-/// 传统布局「封面 ↔ 歌词」的切换时长/曲线。普通状态下由 [PageView] 翻页，
-/// 播放 MV 时没有 PageView，靠 MV 画面和歌词页各自的进出场动画对齐同样的时长。
 const Duration _mvSwitchDuration = Duration(milliseconds: 260);
 const Curve _mvSwitchCurve = Curves.easeOutCubic;
 
@@ -66,9 +67,6 @@ void _cacheLyrics(String path, List<_LyricLineItem> lines) {
   }
 }
 
-/// LyricsRepository 仓储模型（LyricLine）→ 播放页渲染模型
-/// （_LyricLineItem）的字段子集映射。在线歌词链路复用仓储取词，
-/// 两套模型在此对齐。
 List<_LyricLineItem> _lyricLinesToViewItems(List<LyricLine> lines) {
   return [
     for (final l in lines)
@@ -393,9 +391,6 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
 class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _showLyrics = false;
 
-  /// 传统布局切到「歌词」时上报：歌词页会盖住画面，视频层留着只会从歌词背后
-  /// 透出来。为真时 MV 画面滑走并淡出（保持挂载，动画期间还要能看到画面；
-  /// 到 opacity 0 后不再绘制）。MV 本身仍在播放，切回「封面」即恢复。
   bool _hideMvVideo = false;
 
   final GlobalKey _lyricsKey = GlobalKey();
@@ -432,8 +427,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final mv = ref.watch(mvProvider);
 
     ref.listen(playerProvider.select((s) => s.current), (prev, next) {
-      // 换歌同步 MV 已下沉到 MvNotifier 内部监听：播放页退出后本 widget
-      // 的 listen 会一并销毁，挂在页面上会导致页面不在时切歌不同步 MV。
       if (prev != null && next == null && mounted) {
         if (ModalRoute.of(context)?.isCurrent == true) {
           final nav = Navigator.of(context);
@@ -464,8 +457,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final hasRomaji = _lyricsViewHasRomaji;
     final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
 
-    // 只有传统布局会把「歌词」当作盖住画面的整页，需要连视频层一起去掉；
-    // 高级布局在 MV 播放时不渲染歌词，别把 MV 藏没了。
     final hideMvVideo = _hideMvVideo && playerStyle == PlayerStyle.traditional;
 
     final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
@@ -505,8 +496,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
           if (mv.ready && mv.controller != null)
             Positioned.fill(
-              // 切到歌词页时让 MV 画面滑走并淡出，和歌词页的进场动画同步；
-              // 保持挂载是为了动画期间还能看到画面，opacity 到 0 后不会绘制。
               child: IgnorePointer(
                 child: AnimatedSlide(
                   offset: hideMvVideo ? const Offset(-0.08, 0) : Offset.zero,
@@ -673,12 +662,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       ],
                     );
                   },
-                  child: CoverReturnSource(
-                    songPath: current?.path,
-                    networkUrl: current?.coverUrl,
-                    child: _BigCover(
-                      current: current,
-                      size: MediaQuery.of(context).size.width * 0.64,
+                  child: FlyingCoverAnchor(
+                    child: CoverReturnSource(
+                      songPath: current?.path,
+                      networkUrl: current?.coverUrl,
+                      child: _BigCover(
+                        current: current,
+                        size: MediaQuery.of(context).size.width * 0.64,
+                      ),
                     ),
                   ),
                 ),
@@ -861,12 +852,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   scheme.primary.withValues(alpha: 0.72),
                                 ],
                               ),
-                          child: CoverReturnSource(
-                            songPath: current?.path,
-                            networkUrl: current?.coverUrl,
-                            child: _BigCover(
-                              current: current,
-                              size: coverSize,
+                          child: FlyingCoverAnchor(
+                            child: CoverReturnSource(
+                              songPath: current?.path,
+                              networkUrl: current?.coverUrl,
+                              child: _BigCover(
+                                current: current,
+                                size: coverSize,
+                              ),
                             ),
                           ),
                         ),
@@ -1011,16 +1004,13 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
 
   final bool mvReady;
 
-  /// MV 加载阶段（'resolve'=解析地址 / 'init'=初始化画面）。
   final String mvPhase;
 
-  /// 初始化期间已缓冲秒数。
   final int mvBufferedSec;
 
   final bool mvSupported;
   final VoidCallback? onToggleMv;
 
-  /// 上报「歌词页是否需要隐藏 MV 视频层」，见 [_hideMvVideo]。
   final ValueChanged<bool>? onHideMvChanged;
 
   @override
@@ -1035,11 +1025,8 @@ class _TraditionalPlayerLayoutState
 
   bool _wasLandscape = false;
 
-  /// MV 播放时 PageView 会被替换成占位，退出 MV 后 PageView 是重新挂载的
-  /// （停在封面页）。用这个标记在退出 MV 的那一帧把页码同步回 [_showLyrics]。
   bool _wasMvReady = false;
 
-  /// 最近一次上报给外层的 [onHideMvChanged] 值。
   bool? _reportedHideMv;
 
   bool _lyricsViewHasRomaji = false;
@@ -1161,9 +1148,6 @@ class _TraditionalPlayerLayoutState
   }
 
   void _switchPage(int i) {
-    // 播放 MV 时 PageView 不在树里（flexible 被替换成占位），此时控制器没有
-    // 关联的滚动视图，animateToPage 会抛异常并中断整个方法，表现就是顶栏的
-    // 「歌词」按钮点了没反应。所以只在真的有附着视图时才翻页。
     if (_pageController.hasClients) {
       _pageController.animateToPage(
         i,
@@ -1172,13 +1156,11 @@ class _TraditionalPlayerLayoutState
       );
     }
     if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
-    // 这里同步上报，避免歌词页先叠在视频上再抽掉视频层、闪一帧画面。
     _notifyHideMv(ref.read(mvProvider).ready &&
         _showLyrics &&
         !ref.read(isLandscapeProvider));
   }
 
-  /// 通知外层是否要把 MV 视频层整个去掉。
   void _notifyHideMv(bool hide) {
     if (_reportedHideMv == hide) return;
     _reportedHideMv = hide;
@@ -1214,7 +1196,6 @@ class _TraditionalPlayerLayoutState
       _wasLandscape = isLandscape;
     }
     if (!mvReady && _wasMvReady && !isLandscape && _showLyrics) {
-      // 退出 MV 后 PageView 才重新挂载并停在封面页，若之前在看歌词要把页码同步回来。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted &&
             _pageController.hasClients &&
@@ -1224,13 +1205,9 @@ class _TraditionalPlayerLayoutState
       });
     }
     if (mvReady && !_wasMvReady && _showLyrics) {
-      // 播放 MV 时顶栏不再有「封面/歌词」切换（整屏就是 MV 画面），
-      // 歌词若还开着就没有回画面的入口了，所以进入 MV 直接回到画面。
       _showLyrics = false;
     }
     _wasMvReady = mvReady;
-    // 兜底同步：[_showLyrics] 也会在 build 里被改（例如横屏转回竖屏时重置），
-    // 那种路径走不到 [_switchPage]，所以这里再核对一次，只能延迟到帧末上报。
     final hideMv = mvReady && _showLyrics && !isLandscape;
     if (_reportedHideMv != hideMv) {
       _reportedHideMv = hideMv;
@@ -1247,8 +1224,6 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  /// 歌词页内容。MV 播放时 [PageView] 不在树中，同一份内容会作为叠在 MV 上的
-  /// 歌词层复用，保证顶栏的「歌词」按钮在两种状态下都能切到歌词。
   Widget _buildLyricsPage(QueueItem? current) {
     return ClipRect(
       child: RepaintBoundary(
@@ -1275,8 +1250,6 @@ class _TraditionalPlayerLayoutState
         _buildTopBar(context),
       ],
       flexible: mvReady
-          // MV 播放时没有 PageView 可翻，歌词页和 MV 画面各自做进出场动画，
-          // 方向和翻页一致：歌词从右侧进来，MV 画面往左退掉。
           ? AnimatedSlide(
               offset: _showLyrics ? Offset.zero : const Offset(0.08, 0),
               duration: _mvSwitchDuration,
@@ -1578,7 +1551,6 @@ class _TraditionalPlayerLayoutState
                       ),
                     )
                   : widget.mvReady
-                  // 整屏都是 MV 画面，封面/歌词切换没有意义，顶栏只留歌名。
                   ? Text(
                       widget.current?.title ?? tr('正在播放'),
                       maxLines: 1,
@@ -1658,16 +1630,18 @@ class _TraditionalPlayerLayoutState
                     ],
                   );
                 },
-                child: CoverReturnSource(
-                  songPath: widget.current?.path,
-                  networkUrl: widget.current?.coverUrl,
-                  child: _TraditionalCover(
-                    size: coverSize,
-                    current: widget.current,
-                    eq: _eq,
-                    flash: _flashOn,
-                    playing: isPlaying,
-                    onTap: () => _switchPage(1),
+                child: FlyingCoverAnchor(
+                  child: CoverReturnSource(
+                    songPath: widget.current?.path,
+                    networkUrl: widget.current?.coverUrl,
+                    child: _TraditionalCover(
+                      size: coverSize,
+                      current: widget.current,
+                      eq: _eq,
+                      flash: _flashOn,
+                      playing: isPlaying,
+                      onTap: () => _switchPage(1),
+                    ),
                   ),
                 ),
               ),
@@ -1855,9 +1829,10 @@ class _TraditionalPlayerLayoutState
             icon: Icons.graphic_eq,
             tooltip: tr('音效'),
             active: !bypass && _hasPlayerEffects(sfx),
-            // MV 的音轨不走音效引擎，控制不了它，MV 开启时入口置灰不可点。
             enabled: !mvRequested,
-            onTap: () => context.push('/effects'),
+            onTap: () => playerNavigatorKey.currentState?.push(
+              coverPageRoute<void>(context, (_) => const EffectsPage()),
+            ),
           ))),
           Expanded(child: Center(child: _qualityActionItem(
             context,
@@ -2071,7 +2046,6 @@ class _TraditionalPlayerLayoutState
                 },
               ),
               ListTile(
-                // MV 开启时画面就是 MV，桌面歌词没有意义，整行禁用。
                 enabled: !widget.mvEnabled,
                 leading: Icon(
                   Icons.closed_caption_outlined,
@@ -2178,9 +2152,6 @@ class _TraditionalPlayerLayoutState
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
-        // 只约束最小点击热区（36×36），宽度交给文字自行撑开：
-        // 音质缩写长度不一（HQ/SQ/HRA/AT+ 与 MV 画质 480P/720P/1080P），
-        // 原先写死 width:36 会让 480P 这类 4~5 字符在 16px 字号下折行成两行。
         child: Container(
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -2354,8 +2325,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
   List<_LyricLineItem> _lines = const [];
   bool _loading = false;
 
-  // 逐字渲染需要逐帧播放位置：与主歌词页同一套「锚点+Stopwatch」模拟，
-  // 播放中每帧插值推进 _progress，seek/暂停由 provider 流重置锚点。
   final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   double _anchorPos = 0;
   final Stopwatch _anchorWatch = Stopwatch();
@@ -2430,7 +2399,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
     _loading = true;
     try {
       if (item!.isOnline) {
-        // 在线歌曲与主歌词页同源：统一走 LyricsRepository（含密文解密）。
         final lines =
             _lyricLinesToViewItems(await ref.read(lyricsRepositoryProvider).fetchLyrics(item));
         if (lines.isNotEmpty) _cacheLyrics(path, lines);
@@ -2497,8 +2465,6 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
                 'right' => Alignment.centerRight,
                 _ => Alignment.centerLeft,
               };
-              // 当前行带逐字时间轴（YRC/QRC 等）时按卡拉OK渲染，
-              // 超宽单行整体缩放（FittedBox）保持一行不溢出。
               Widget lineChild;
               if (isActive && line.words.isNotEmpty) {
                 lineChild = RepaintBoundary(
@@ -3420,7 +3386,7 @@ class _GlassControlCard extends ConsumerWidget {
             : Colors.white.withValues(alpha: 0.6));
 
     final sigma = wallpaperGlassActive(ref)
-        ? kNavSurfaceBlurSigma
+        ? navSurfaceBlurSigma(ref)
         : surfaceBlurSigma(
             base: 15,
             budget: budget,
@@ -3535,7 +3501,6 @@ class _TitleRow extends ConsumerWidget {
               const SizedBox(width: 4),
               InkWell(
                 borderRadius: BorderRadius.circular(10),
-                // MV 开启时画面就是 MV，桌面歌词没有意义，这里置灰不可点。
                 onTap: mvRequested
                     ? null
                     : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
@@ -4011,9 +3976,6 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
     }
   }
 
-  /// 探测收尾后仍无体积的档位视为假音质（声明了但解析不出直链、
-  /// 元数据也无体积），从列表剔除，对齐桌面端规则。
-  /// 体积尚未就绪（_sizes 为空）时不过滤，避免误伤本地/未探测场景。
   List<String> dropFakeQualities(List<String> shown, Set<String> keep) {
     final sizes = _sizes;
     if (sizes.isEmpty) return shown;
@@ -4093,7 +4055,6 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                 if (cur != null && cur.isNotEmpty) combined.add(cur);
                 final shown =
                     kQualityLadder.reversed.where(combined.contains).toList();
-                // 探测收尾后仍无体积的档位视为假音质剔除（对齐桌面端），
                 // 探测中或体积结果未就绪时不过滤
                 final probing = ref.watch(
                   playerProvider.select((s) => s.qualityMenuProbing),
@@ -4125,8 +4086,6 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                           onTap: q == cur
                               ? () {}
                               : () async {
-                                  // 先关弹窗再后台切换：切换含网络解析与
-                                  // 起播，耗时可能长达数秒，不能让弹窗
                                   // 挂着等结果
                                   final overlay = Overlay.of(
                                     ctx,
@@ -4505,8 +4464,6 @@ class _DownloadQualitySheetState
                   playerProvider.select((s) => s.availableQualities),
                 );
                 final probed = opts.isNotEmpty ? opts : fallbackOpts;
-                // 体积探测基于当前播放歌曲，仅在下载对象就是播放歌曲时
-                // 剔除假音质（对齐桌面端）；探测中或体积未就绪时不过滤
                 final probing = ref.watch(
                   playerProvider.select((s) => s.qualityMenuProbing),
                 );
@@ -4585,11 +4542,6 @@ class _DownloadQualitySheetState
   }
 }
 
-/// 音频跳转 + 让 MV 同步跟随。
-///
-/// MV 的自动同步（[MvNotifier._syncTimeline]）对所有 seek 都施加 5 秒冷却，
-/// 冷却期内只做 ±8% 变速微调、不发 seek——用户主动跳转若落进该窗口就完全不动，
-/// 表现为「拖了进度条 MV 自己放自己的」。所以用户侧跳转必须显式告知 MV。
 void _seekAudioWithMv(WidgetRef ref, PlayerNotifier notifier, double secs) {
   notifier.seek(secs);
   ref.read(mvProvider.notifier).alignToAudioSeconds(secs);
@@ -4610,8 +4562,6 @@ class _ProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 音频被 MV 接管后，进度条整体切到 MV 时间轴：位置、总时长、拖动
-    // 都以 MV 为准，所见即所听。
     final mvCtrl = ref.watch(mvProvider
         .select((s) => (s.audioTakenOver && s.ready) ? s.controller : null));
     if (mvCtrl != null && mvCtrl.value.isInitialized) {
@@ -4648,9 +4598,6 @@ class _ProgressBar extends ConsumerWidget {
     required double dur,
     required void Function(double secs) onCommit,
   }) {
-    // 时长未知时（还没起播、或恢复的会话里没带时长）不能拿 1.0 顶替 max，
-    // 否则 position 会被 clamp 到满格、右侧显示 00:01，看着就像进度条坏了。
-    // 这里和底部时间行的做法一致：位置照实显示，总时长用 --:--。
     final hasDuration = dur > 0;
     return Column(
       children: [
@@ -4990,7 +4937,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
               ),
             ),
           ),
-          // MV 开启时画面就是 MV，桌面歌词没有意义，置灰不可点。
           onPressed: mvRequested
               ? null
               : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
@@ -5013,8 +4959,6 @@ class _LandscapeControlsRow extends ConsumerWidget {
                 showXianYuToast(context, tr('本地音乐以原音质播放'));
               }
             },
-            // 同 _qualityActionItem：只约束最小热区，宽度交给文字撑开，
-            // 避免 480P/720P/1080P 等较长画质标签在 36px 内折行。
             child: Container(
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -5043,8 +4987,11 @@ class _LandscapeControlsRow extends ConsumerWidget {
                 ? Colors.white.withValues(alpha: 0.32)
                 : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
           ),
-          // MV 的音轨不走音效引擎，控制不了它，MV 开启时置灰不可点。
-          onPressed: mvRequested ? null : () => context.push('/effects'),
+          onPressed: mvRequested
+              ? null
+              : () => playerNavigatorKey.currentState?.push(
+                    coverPageRoute<void>(context, (_) => const EffectsPage()),
+                  ),
         ),
         IconButton(
           iconSize: 28,
@@ -5255,8 +5202,6 @@ String _cleanLyricText(String raw) {
   return text.trim();
 }
 
-/// 逐字文本清理：与 [_cleanLyricText] 类似但不 trim，
-/// 单词首尾的空格是英语逐字歌词的单词间隔，trim 掉会导致单词连在一起。
 String _cleanLyricWordText(String raw) {
   if (raw.isEmpty) return '';
 
@@ -5502,7 +5447,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   double _fontScale = 1.0;
 
-  // ---- RwaS 换行拽动（LyricPullEngine 移植）----
+  // ---- RwaS 换行拽动 ----
   bool _pullActive = false;
   int _pullAnchor = -1;
   double _pullDistance = 0;
@@ -5547,7 +5492,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
 
   Timer? _viewportChangeDebounce;
 
-  // ==================== 模糊行静态烘焙缓存（稳态省逐帧高斯模糊） ====================
+  // ==================== 模糊行静态烘焙缓存 ====================
 
   int _blurSteadyAtMs = 0;
   Timer? _blurSteadyTimer;
@@ -5734,7 +5679,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  // ==================== RwaS 换行拽动（LyricPullEngine 移植） ====================
+  // ==================== RwaS 换行拽动 ====================
 
   static double _pullEase(double p) {
     p = p.clamp(0.0, 1.0);
@@ -5906,7 +5851,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     }
   }
 
-  // ==================== 拖动选行播放（移植自 MusicFree） ====================
+  // ==================== 拖动选行播放 ====================
 
   void _onLineMeasured(int index, double viewportDy, double height) {
     if (!mounted) return;
@@ -5990,12 +5935,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           _lines = cached;
         });
         _reportRomaji();
-        // 歌词就绪后强制校准：等待期间旧歌词残留可能已推进 _lastActiveIndex，
-        // 与新歌词当前行恰好相等时普通去重会跳过定位，首屏停旧行、慢一句才追上
         _lastActiveIndex = -1;
         _renderActiveIndex = -1;
-        // 保留居中待跳标记：此时新布局可能尚未生成，force 先按估算定位，
-        // 下一帧布局就绪后 _tryPendingCenterJump 再精确居中
         _pendingCenterJump = true;
         _autoScrollToActiveLine(force: true);
       }
@@ -6011,9 +5952,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       String jsonStr = '';
 
       if (item.isOnline) {
-        // 在线歌曲统一走 LyricsRepository：含插件密文 QRC/e-lrc 解密、
-        // 翻译解密、原生兜底与 payload 缓存。此前播放页独立取词对密文
-        // 直接判空，Baka 系 QQ 插件密文歌词显示「暂无歌词」。
         final repoLines = await ref.read(lyricsRepositoryProvider).fetchLyrics(item);
         final viewLines = _lyricLinesToViewItems(repoLines);
         if (viewLines.isNotEmpty && mounted) {
@@ -6023,8 +5961,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             _loading = false;
           });
           _reportRomaji();
-          // 歌词就绪后强制校准（同缓存分支）：异步加载期间 _lastActiveIndex
-          // 可能已在旧歌词上推进，需立即按当前播放位置定位到正在唱的行
           _lastActiveIndex = -1;
           _renderActiveIndex = -1;
           _pendingCenterJump = true;
@@ -6047,8 +5983,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             _loading = false;
           });
           _reportRomaji();
-          // 歌词就绪后强制校准（同缓存分支）：异步加载期间 _lastActiveIndex
-          // 可能已在旧歌词上推进，需立即按当前播放位置定位到正在唱的行
           _lastActiveIndex = -1;
           _renderActiveIndex = -1;
           _pendingCenterJump = true;
@@ -6791,8 +6725,6 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 }
 
-/// 卡拉OK逐字渲染：word.start/end（秒）区间内按进度渐变着色，
-/// 当前字有轻微上浮+放大动效。主歌词页与封面页预览小歌词共用。
 Widget _buildKaraokeWord(
   _LyricWordItem word,
   double position,
