@@ -59,7 +59,7 @@ echo.
 
 echo ============================================
 echo   Cache cleaned! Run "flutter run" or "flutter build apk" to rebuild.
-echo   (Rust is compiled automatically via android gradle-rust-hook.ps1)
+echo   (Rust is compiled automatically via scripts\gradle-rust-hook.ps1)
 echo ============================================
 echo.
 pause
