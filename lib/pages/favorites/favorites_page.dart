@@ -11,6 +11,8 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/favorites/favorites_delete.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/responsive/landscape.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -669,6 +671,9 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
           final entry = entries[i];
           if (inBatch) {
             final row = CoverRow(
+              background: useLandscape(ref)
+                  ? themeTintOrNull(ref, 'ls-lib.row')
+                  : null,
               cover: CoverImage(
                 songPath: entry.path,
                 networkUrl: entry.coverUrl,
@@ -774,6 +779,9 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                   itemBuilder: (context, i) {
                     final entry = visible[i];
                     final row = CoverRow(
+                      background: useLandscape(ref)
+                          ? themeTintOrNull(ref, 'ls-lib.row')
+                          : null,
                       cover: CoverImage(
                         songPath: entry.path,
                         networkUrl: entry.coverUrl,

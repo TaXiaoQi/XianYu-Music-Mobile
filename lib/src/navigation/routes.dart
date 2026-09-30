@@ -48,6 +48,7 @@ import '../../pages/tools/qmc_decrypt_page.dart';
 import '../../pages/tools/audio_convert_page.dart';
 import '../../pages/tools/audio_trim_page.dart';
 import '../../pages/wallpaper/wallpaper_center_page.dart';
+import '../../pages/theme/theme_center_page.dart';
 import '../../pages/recognize/recognize_page.dart';
 import '../../pages/scan/scan_page.dart';
 import '../../pages/scan/tv_login_confirm_page.dart';
@@ -543,6 +544,14 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/theme',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const ThemeCenterPage(),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
       path: '/batch-rename',
       pageBuilder: (context, state) => _coverPage(
         context,
@@ -616,12 +625,21 @@ class BottomNavItem {
   final String title;
   final IconData icon;
   final String location;
-  const BottomNavItem(this.title, this.icon, this.location);
+
+  /// 主题图标槽位 id；为 null 表示该导航项不参与主题换图。
+  ///
+  /// 保留 [icon] 不动、另加一个可选槽位，是为了让"未启用主题时渲染与之前完全
+  /// 一致"这件事在类型层面就成立——不必把 IconData 改成可空或联合类型，
+  /// 三个渲染点（底栏/侧栏/横屏 rail）也不需各自处理空值。
+  final String? themeSlot;
+
+  const BottomNavItem(this.title, this.icon, this.location, {this.themeSlot});
 }
 
 final List<BottomNavItem> bottomNavItems = [
-  BottomNavItem(tr('首页'), Icons.home, '/home'),
-  BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine'),
+  BottomNavItem(tr('首页'), Icons.home, '/home', themeSlot: 'nav.home'),
+  BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine',
+      themeSlot: 'nav.settings'),
 ];
 
 String navTitle(BuildContext context, BottomNavItem item) {

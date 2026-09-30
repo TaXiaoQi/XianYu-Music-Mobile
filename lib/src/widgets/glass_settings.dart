@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../theme/theme_tint.dart';
 import 'blur_budget.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
@@ -74,6 +75,7 @@ Widget frostedCardSurface({
   required double radius,
   required Widget child,
   bool lowPerf = false,
+  String? themeSlot,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
@@ -86,11 +88,13 @@ Widget frostedCardSurface({
   final frostedFill = isDark
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.white.withValues(alpha: 0.34);
-  final fill = solid
+  final baseFill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
       : (wallpaperTransparent
           ? wallpaperGlassFill(context, ref)
           : frostedFill);
+  final fill =
+      themeSlot == null ? baseFill : themeTint(ref, themeSlot, baseFill);
   final border = solid
       ? null
       : Border.all(
@@ -128,13 +132,16 @@ Color contrastSearchColor(BuildContext context) =>
         : const Color(0xF0FFFFFF);
 
 Color searchBoxFill(BuildContext context, WidgetRef ref) {
+  final Color base;
   if (wallpaperGlassActive(ref)) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? const Color(0x14FFFFFF) : const Color(0x14000000);
+    base = isDark ? const Color(0x14FFFFFF) : const Color(0x14000000);
+  } else {
+    base = glassShouldUseSolid(ref, lowPerf: false)
+        ? contrastSearchColor(context)
+        : const Color(0x00000000);
   }
-  return glassShouldUseSolid(ref, lowPerf: false)
-      ? contrastSearchColor(context)
-      : const Color(0x00000000);
+  return themeTint(ref, 'search.box', base);
 }
 
 LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(

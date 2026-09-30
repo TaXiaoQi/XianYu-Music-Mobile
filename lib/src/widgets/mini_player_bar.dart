@@ -12,6 +12,8 @@ import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
 import '../player/player_provider.dart';
+import '../theme/theme_icon.dart';
+import '../theme/theme_tint.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
 import '../navigation/routes.dart'
@@ -486,20 +488,22 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.skip_previous),
+            icon: themeSlotIcon(ref, 'player.prev',
+                fallback: Icons.skip_previous, size: 22),
             iconSize: 22,
             onPressed: () => ref.read(playerProvider.notifier).previous(),
           ),
           IconButton(
-            icon: Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-              color: scheme.primary,
-            ),
+            icon: themeSlotIcon(ref, 'player.play',
+                fallback: isPlaying ? Icons.pause : Icons.play_arrow,
+                size: 26,
+                color: scheme.primary),
             iconSize: 26,
             onPressed: () => ref.read(playerProvider.notifier).toggle(),
           ),
           IconButton(
-            icon: const Icon(Icons.skip_next),
+            icon: themeSlotIcon(ref, 'player.next',
+                fallback: Icons.skip_next, size: 22),
             iconSize: 22,
             onPressed: () => ref.read(playerProvider.notifier).next(),
           ),
@@ -597,11 +601,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
               blurSigma: bilipaiBackdropBlurOf(quality),
-              backgroundColor: solid
-                  ? (isDark
-                      ? const Color(0xE62A2A2E)
-                      : const Color(0xF0FFFFFF))
-                  : bilipaiSurfaceTint(context, ref, quality),
+              backgroundColor: themeTint(
+                ref,
+                'mini.bar',
+                solid
+                    ? (isDark
+                        ? const Color(0xE62A2A2E)
+                        : const Color(0xF0FFFFFF))
+                    : bilipaiSurfaceTint(context, ref, quality),
+              ),
               specular: bilipaiSpecularOf(quality),
               edgeAmount: bilipaiEdgeOf(quality),
               saturation: bilipaiSaturationOf(quality),
@@ -632,7 +640,12 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
-    final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
+    final fill = themeTint(
+        ref,
+        'mini.bar',
+        (budget == null || solid || wallpaper)
+            ? bg
+            : surfaceFillWithBudget(bg, budget));
     final navFloating =
         (ref.watch(settingsProvider.select(
                 (s) => s.valueOrNull?.floatingNavBar)) ??

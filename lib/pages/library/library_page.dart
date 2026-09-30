@@ -703,6 +703,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
             ? Center(child: Text(tr('没有匹配的歌曲')))
             : widget.sort == _SongSort.none
                 ? SongsListView(
+                    themeSlot: 'ls-lib.row',
                     songs: songs,
                     enableScrollFabs: true,
                     batch: widget.batch,

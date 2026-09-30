@@ -11,6 +11,8 @@ import 'package:go_router/go_router.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/responsive/landscape.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/cover_image.dart';
@@ -535,6 +537,8 @@ class _RecentTile extends ConsumerWidget {
     });
     return g.wrap(
       CoverRow(
+        background:
+            useLandscape(ref) ? themeTintOrNull(ref, 'ls-lib.row') : null,
         horizontalPadding: 16,
         verticalPadding: m.vPad,
         onTap: g.onTap,

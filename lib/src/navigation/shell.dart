@@ -15,6 +15,8 @@ import '../core/app_logger.dart';
 import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
+import '../theme/theme_icon.dart';
+import '../theme/theme_tint.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/glass_settings.dart';
 import '../widgets/landscape_page_fade.dart';
@@ -115,7 +117,8 @@ final navBarInsetProvider = Provider<double>((ref) {
   final landscape = ref.watch(isLandscapeProvider);
   final s = ref.watch(settingsProvider).valueOrNull;
   if (landscape || s?.navBarPosition == NavBarPosition.side) return 82;
-  return 175;
+  // 悬浮底栏是覆盖式，页面需多留白避让；固定底栏占位在布局内，只需留 mini 播放条。
+  return (s?.floatingNavBar ?? false) ? 175 : 82;
 });
 
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
@@ -1015,13 +1018,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     actions: [
                       if (widget.index == 0)
                         BiliPaiIconButton(
-                          iconChild: const SkinIcon(),
+                          iconChild: themeSlotWidget(ref, 'entry.wallpaper',
+                              fallback: const SkinIcon()),
                           tooltip: tr('皮肤'),
                           onTap: () => context.push('/wallpaper'),
                         )
                       else
                         BiliPaiIconButton(
-                          icon: Icons.settings_outlined,
+                          iconChild: themeSlotWidget(ref, 'mine.settings',
+                              fallback: const Icon(Icons.settings_outlined)),
                           tooltip: tr('设置'),
                           onTap: () => context.push('/settings'),
                         ),
@@ -1071,14 +1076,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     actions: [
                       if (widget.index == 0) ...[
                         IconButton(
-                          icon: const SkinIcon(),
+                          icon: themeSlotWidget(ref, 'entry.wallpaper',
+                              fallback: const SkinIcon()),
                           tooltip: tr('皮肤'),
                           onPressed: () => context.push('/wallpaper'),
                         ),
                         const SizedBox(width: 16),
                       ] else ...[
                         IconButton(
-                          icon: const Icon(Icons.settings_outlined),
+                          icon: themeSlotIcon(ref, 'mine.settings',
+                              fallback: Icons.settings_outlined),
                           tooltip: tr('设置'),
                           onPressed: () => context.push('/settings'),
                         ),
@@ -1175,8 +1182,10 @@ class _FixedNavBar extends ConsumerWidget {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final glassFill =
-        (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget);
+    final glassFill = themeTint(
+        ref,
+        'nav.bar',
+        (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
@@ -1383,9 +1392,13 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: solid
-          ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-          : bilipaiSurfaceTint(context, ref, quality),
+      backgroundColor: themeTint(
+        ref,
+        'nav.bar',
+        solid
+            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+            : bilipaiSurfaceTint(context, ref, quality),
+      ),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
@@ -1411,8 +1424,10 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final fill =
-        (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
+    final fill = themeTint(
+        ref,
+        'nav.bar',
+        (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget));
     final sigma = navSurfaceBlurSigma(ref);
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
@@ -1512,24 +1527,36 @@ class _LandscapeRail extends ConsumerWidget {
         if (!collapsed)
           Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text.rich(
-            TextSpan(
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: scheme.onSurface,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
+              themeSlotWidget(
+                ref,
+                'landscape.logo',
+                size: 22,
+                fallback: const SizedBox.shrink(),
               ),
-              children: [
-                TextSpan(text: tr('弦予')),
+              Text.rich(
                 TextSpan(
-                  text: tr('音乐'),
-                  style: const TextStyle(
-                    color: Color(0xFFEC4141),
+                  style: TextStyle(
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
+                    color: scheme.onSurface,
                   ),
+                  children: [
+                    TextSpan(text: tr('弦予')),
+                    TextSpan(
+                      text: tr('音乐'),
+                      style: const TextStyle(
+                        color: Color(0xFFEC4141),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -1540,7 +1567,9 @@ class _LandscapeRail extends ConsumerWidget {
               for (var i = 0; i < primary.length; i++)
                 _railItem(
                   context,
+                  ref,
                   icon: primary[i].icon,
+                  themeSlot: primary[i].themeSlot,
                   title: navTitle(context, primary[i]),
                   collapsed: collapsed,
                   selected: libSel == null && i == index,
@@ -1553,6 +1582,7 @@ class _LandscapeRail extends ConsumerWidget {
               for (var j = 0; j < library.length; j++)
                 _railItem(
                   context,
+                  ref,
                   icon: library[j].$2,
                   title: library[j].$1,
                   collapsed: collapsed,
@@ -1565,6 +1595,20 @@ class _LandscapeRail extends ConsumerWidget {
             ],
           ),
         ),
+        const Spacer(),
+        // 主题提供侧栏贴纸时才出现；未启用主题时零尺寸，观感不变。
+        if (!collapsed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: themeSlotSticker(
+                ref,
+                'ls-sidebar.bottom',
+                width: (railWidth - 24).clamp(24.0, 240.0),
+              ),
+            ),
+          ),
       ],
     );
 
@@ -1591,12 +1635,14 @@ class _LandscapeRail extends ConsumerWidget {
   }
 
   Widget _railItem(
-    BuildContext context, {
+    BuildContext context,
+    WidgetRef ref, {
     required IconData icon,
     required String title,
     required bool selected,
     required VoidCallback onTap,
     bool collapsed = false,
+    String? themeSlot,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected
@@ -1626,7 +1672,8 @@ class _LandscapeRail extends ConsumerWidget {
             mainAxisAlignment:
                 collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
-              Icon(icon, size: 20, color: color),
+              themeSlotIcon(ref, themeSlot,
+                  fallback: icon, size: 20, color: color),
               if (!collapsed) ...[
                 const SizedBox(width: 9),
                 Text(
@@ -2141,7 +2188,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   }
 }
 
-class _NavTab extends StatelessWidget {
+class _NavTab extends ConsumerWidget {
   const _NavTab({
     required this.item,
     required this.selected,
@@ -2158,7 +2205,7 @@ class _NavTab extends StatelessWidget {
   final bool suppressSplash;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final primary = scheme.primary;
     final color = selected
@@ -2172,7 +2219,8 @@ class _NavTab extends StatelessWidget {
         children: [
           Transform.scale(
             scale: iconScale,
-            child: Icon(item.icon, size: 22, color: color),
+            child: themeSlotIcon(ref, item.themeSlot,
+                fallback: item.icon, size: 22, color: color),
           ),
           const SizedBox(height: 3),
           Text(
@@ -2648,7 +2696,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
   }
 }
 
-class _SideNavTab extends StatelessWidget {
+class _SideNavTab extends ConsumerWidget {
   const _SideNavTab({
     required this.item,
     required this.selected,
@@ -2660,7 +2708,7 @@ class _SideNavTab extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final primary = scheme.primary;
     final color = selected
@@ -2684,7 +2732,8 @@ class _SideNavTab extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(item.icon, size: 22, color: color),
+              themeSlotIcon(ref, item.themeSlot,
+                  fallback: item.icon, size: 22, color: color),
               const SizedBox(height: 4),
               Text(
                 navTitle(context, item),

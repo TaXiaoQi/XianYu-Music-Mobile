@@ -10,6 +10,8 @@ import '../../src/home/home_providers.dart';
 import '../../src/home/top_lists_preview_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
+import '../../src/theme/theme_icon.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/online_cover.dart';
 import 'online_detail_page.dart';
@@ -50,6 +52,7 @@ class StatsSummaryCard extends ConsumerWidget {
     final stats = ref.watch(listenStatsProvider);
     final data = stats.valueOrNull;
     return _CardContainer(
+      themeSlot: 'mine.stats',
       onTap: () {
         // 先把榜单数据拉起来：页面打开即命中缓存，转场那几百毫秒里
         // 就不会只剩一屏空骨架（"点进去先闪一下"的成因）
@@ -61,7 +64,9 @@ class StatsSummaryCard extends ConsumerWidget {
           Expanded(
             child: _statCell(
               scheme,
+              ref,
               icon: Icons.headphones_outlined,
+              themeSlot: 'mine.stat_listen',
               label: tr('累计时长'),
               value: data?.totalDurationText ?? '—',
             ),
@@ -70,7 +75,9 @@ class StatsSummaryCard extends ConsumerWidget {
           Expanded(
             child: _statCell(
               scheme,
+              ref,
               icon: Icons.today_outlined,
+              themeSlot: 'mine.stat_today',
               label: tr('今日时长'),
               value: data?.todayDurationText ?? '—',
             ),
@@ -79,7 +86,9 @@ class StatsSummaryCard extends ConsumerWidget {
           Expanded(
             child: _statCell(
               scheme,
+              ref,
               icon: Icons.audiotrack_outlined,
+              themeSlot: 'mine.stat_count',
               label: tr('今日首数'),
               value: data == null ? '—' : tr('{n} 首', {'n': data.todayPlayCount}),
             ),
@@ -96,14 +105,17 @@ class StatsSummaryCard extends ConsumerWidget {
       );
 
   Widget _statCell(
-    ColorScheme scheme, {
+    ColorScheme scheme,
+    WidgetRef ref, {
     required IconData icon,
     required String label,
     required String value,
+    String? themeSlot,
   }) {
     return Column(
       children: [
-        Icon(icon, size: 19, color: scheme.primary),
+        themeSlotIcon(ref, themeSlot,
+            fallback: icon, size: 19, color: scheme.primary),
         const SizedBox(height: 6),
         Text(
           value,
@@ -167,6 +179,9 @@ class _DailyCard extends ConsumerWidget {
     }
     final items = state?.items.take(3).toList() ?? const [];
     return _CardContainer(
+      // 该区块在竖屏首页与横屏发现页共用（_discoverBlocks 两处渲染），
+      // 而槽位是横屏专属，必须按方向判定，不能写死 ls- 槽。
+      themeSlot: useLandscape(ref) ? 'ls-home.daily' : null,
       onTap: () => openDiscoverEntry(context, ref, '/home/daily'),
       child: async.isLoading && items.isEmpty
           ? const Padding(
@@ -346,16 +361,20 @@ class _TopListsBody extends ConsumerWidget {
 }
 
 class _CardContainer extends ConsumerWidget {
-  const _CardContainer({required this.child, this.onTap});
+  const _CardContainer({required this.child, this.onTap, this.themeSlot});
 
   final Widget child;
   final VoidCallback? onTap;
+
+  /// 主题色块槽位 id；为空则不加叠色（多数调用点不需要）。
+  final String? themeSlot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return frostedCardSurface(
       context: context,
       ref: ref,
+      themeSlot: themeSlot,
       radius: 13,
       child: Material(
         color: Colors.transparent,

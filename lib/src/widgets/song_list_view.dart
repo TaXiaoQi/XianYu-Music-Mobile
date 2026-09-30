@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../theme/theme_tint.dart';
 import '../library/library_provider.dart';
 import 'batch_action_bar.dart';
 import 'cover_image.dart';
@@ -47,6 +48,7 @@ class CoverRow extends StatelessWidget {
     this.horizontalPadding = 16,
     this.verticalPadding = 8,
     this.gap = 12,
+    this.background,
   });
 
   final Widget cover;
@@ -59,9 +61,12 @@ class CoverRow extends StatelessWidget {
   final double verticalPadding;
   final double gap;
 
+  /// 主题色块叠色；为空时不加背景（多数调用点不需要），行为与接线前一致。
+  final Color? background;
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final row = InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
@@ -94,6 +99,15 @@ class CoverRow extends StatelessWidget {
         ),
       ),
     );
+
+    if (background == null) return row;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: row,
+    );
   }
 }
 
@@ -107,6 +121,10 @@ class SongsListView extends ConsumerStatefulWidget {
   final ScrollController? controller;
   final bool enableScrollFabs;
   final SongBatchController? batch;
+
+  /// 主题色块槽位 id。该列表被多页共用（竖屏本地库/歌单页等），
+  /// 只有横屏音乐库三页需要叠色，故由调用方显式传入。
+  final String? themeSlot;
   const SongsListView({
     super.key,
     required this.songs,
@@ -118,6 +136,7 @@ class SongsListView extends ConsumerStatefulWidget {
     this.controller,
     this.enableScrollFabs = false,
     this.batch,
+    this.themeSlot,
   });
 
   @override
@@ -154,6 +173,9 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
         (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
             'single';
     final m = ListMetrics.ofRef(ref);
+    final themeSlot = widget.themeSlot;
+    final rowBackground =
+        themeSlot == null ? null : themeTintOrNull(ref, themeSlot);
 
     final onPlay = widget.onPlay;
     final enableActions = widget.enableActions;
@@ -163,6 +185,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
       final hlColor = Theme.of(context).colorScheme.primary;
       if (inBatch && batch != null) {
         final row = CoverRow(
+          background: rowBackground,
           cover: SongCover(song: s, size: m.songCover),
           title: Text(
             s.title,
@@ -215,6 +238,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
                   )
               : null;
           final row = CoverRow(
+            background: rowBackground,
             cover: Builder(
               builder: (c) {
                 coverCtx = c;

@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../src/backup/app_backup.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
@@ -733,6 +734,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             subtitle: tr('自定义背景与动态壁纸'),
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/wallpaper'),
+          ),
+          _tile(
+            context,
+            icon: Icons.palette_outlined,
+            title: tr('主题中心'),
+            subtitle: tr('导入主题包并应用图标、贴纸与组件色块'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/theme'),
           ),
           _tile(
             context,
@@ -3117,6 +3126,7 @@ class _CardGroup extends ConsumerWidget {
       context: context,
       ref: ref,
       radius: 16,
+      themeSlot: useLandscape(ref) ? 'ls-settings.detail' : null,
       child: Material(
         color: Colors.transparent,
         clipBehavior: Clip.antiAlias,

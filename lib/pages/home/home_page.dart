@@ -165,6 +165,8 @@ class _MostPlayedList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final most = ref.watch(mostPlayedProvider);
+    // 同一行卡在竖屏首页与横屏发现页复用，槽位随方向不同。
+    final themeSlot = useLandscape(ref) ? 'ls-home.most' : 'home.song';
     return most.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -195,7 +197,7 @@ class _MostPlayedList extends ConsumerWidget {
         return Column(
           children: [
             for (var i = 0; i < entries.length; i++) ...[
-              _MostPlayedRow(entry: entries[i]),
+              _MostPlayedRow(entry: entries[i], themeSlot: themeSlot),
               if (i != entries.length - 1) const SizedBox(height: 8),
             ],
           ],
@@ -206,9 +208,10 @@ class _MostPlayedList extends ConsumerWidget {
 }
 
 class _MostPlayedRow extends ConsumerWidget {
-  const _MostPlayedRow({required this.entry});
+  const _MostPlayedRow({required this.entry, required this.themeSlot});
 
   final MostPlayedEntry entry;
+  final String themeSlot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -222,6 +225,7 @@ class _MostPlayedRow extends ConsumerWidget {
       context: context,
       ref: ref,
       radius: 13,
+      themeSlot: themeSlot,
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),

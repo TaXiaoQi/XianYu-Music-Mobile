@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/theme/theme_icon.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -143,7 +144,12 @@ class _StatsRow extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context, ref: ref, radius: 16, child: card);
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: card,
+      themeSlot: useLandscape(ref) ? 'ls-mine.count' : null,
+    );
   }
 }
 
@@ -415,7 +421,11 @@ class _AccountArea extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context, ref: ref, radius: 16, child: accountCard);
+        context: context,
+        ref: ref,
+        radius: 16,
+        child: accountCard,
+        themeSlot: 'mine.user');
   }
 
   Widget _fallback(ColorScheme scheme, String nickname) {
@@ -464,6 +474,7 @@ class _QuickEntries extends ConsumerWidget {
       required String label,
       required String count,
       required VoidCallback onTap,
+      String? themeSlot,
     }) {
       return Expanded(
         child: InkWell(
@@ -480,7 +491,8 @@ class _QuickEntries extends ConsumerWidget {
                     color: scheme.primary.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: scheme.primary, size: 24),
+                  child: themeSlotIcon(ref, themeSlot,
+                      fallback: icon, color: scheme.primary, size: 24),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -518,18 +530,21 @@ class _QuickEntries extends ConsumerWidget {
           children: [
             entry(
               icon: Icons.favorite_rounded,
+              themeSlot: 'mine.grid_favorite',
               label: tr('喜欢'),
               count: '$favCount',
               onTap: () => context.push('/favorites'),
             ),
             entry(
               icon: Icons.history_rounded,
+              themeSlot: 'mine.grid_recent',
               label: tr('最近'),
               count: '$recentCount',
               onTap: () => context.push('/recent'),
             ),
             entry(
               icon: Icons.library_music_rounded,
+              themeSlot: 'mine.grid_local',
               label: tr('本地'),
               count: '$localCount',
               onTap: () => context.push('/library?tab=0'),
@@ -538,6 +553,7 @@ class _QuickEntries extends ConsumerWidget {
                 .select((s) => s.sources.any((p) => p.enabled))))
               entry(
                 icon: Icons.download_rounded,
+                themeSlot: 'mine.grid_download',
                 label: tr('下载'),
                 count: '$dlCount',
                 onTap: () => context.push('/download'),
@@ -547,7 +563,11 @@ class _QuickEntries extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context, ref: ref, radius: 16, child: entriesCard);
+        context: context,
+        ref: ref,
+        radius: 16,
+        child: entriesCard,
+        themeSlot: 'mine.grid');
   }
 }
 
@@ -641,7 +661,11 @@ class _ReorderCard extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context, ref: ref, radius: 16, child: reorderCard);
+        context: context,
+        ref: ref,
+        radius: 16,
+        child: reorderCard,
+        themeSlot: 'mine.sheet');
   }
 }
 
@@ -674,11 +698,12 @@ class _MyPlaylistsSection extends ConsumerWidget {
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _pillButton(context, scheme, Icons.add, '新建',
+              _pillButton(context, ref, scheme, Icons.add, '新建',
                   () => _promptCreate(context, manager)),
               const SizedBox(width: 8),
-              _pillButton(context, scheme, Icons.file_download_outlined, '导入',
-                  () => context.push('/playlist-import')),
+              _pillButton(context, ref, scheme, Icons.file_download_outlined, '导入',
+                  () => context.push('/playlist-import'),
+                  themeSlot: 'entry.import'),
             ],
           ),
         ),
@@ -697,11 +722,12 @@ class _MyPlaylistsSection extends ConsumerWidget {
     );
   }
 
-  Widget _pillButton(BuildContext context, ColorScheme scheme, IconData icon,
-      String label, VoidCallback onTap) {
+  Widget _pillButton(BuildContext context, WidgetRef ref, ColorScheme scheme,
+      IconData icon, String label, VoidCallback onTap,
+      {String? themeSlot}) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 15),
+      icon: themeSlotIcon(ref, themeSlot, fallback: icon, size: 15),
       label: Text(tr(label), style: TextStyle(fontSize: 13)),
       style: OutlinedButton.styleFrom(
         visualDensity: VisualDensity.compact,

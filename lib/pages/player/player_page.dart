@@ -17,6 +17,7 @@ import '../../src/navigation/routes.dart'
 import 'comment_sheet.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
+import '../../src/theme/theme_icon.dart';
 import '../../src/player/mv_source.dart';
 import '../../src/player/mv_provider.dart';
 import 'package:video_player/video_player.dart';
@@ -1569,8 +1570,10 @@ class _TraditionalPlayerLayoutState
             ),
           ),
           IconButton(
-            icon: const Icon(
-              Icons.ios_share,
+            icon: themeSlotIcon(
+              ref,
+              'action.share',
+              fallback: Icons.ios_share,
               size: 20,
               color: Colors.white,
             ),
@@ -1757,8 +1760,10 @@ class _TraditionalPlayerLayoutState
             },
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: Icon(
-                isFav ? Icons.favorite : Icons.favorite_border,
+              child: themeSlotIcon(
+                ref,
+                'action.favorite',
+                fallback: isFav ? Icons.favorite : Icons.favorite_border,
                 size: 28,
                 color: isFav
                     ? const Color(0xFFEC4141)
@@ -1871,11 +1876,16 @@ class _TraditionalPlayerLayoutState
           Expanded(child: Center(child: _actionItem(
             context,
             icon: Icons.chat_bubble_outline,
-            iconWidget: _MessageCircleIcon(
+            iconWidget: themeSlotWidget(
+              ref,
+              'player.comment',
               size: 24,
-              color: current != null && current.isOnline
-                  ? Colors.white.withValues(alpha: 0.85)
-                  : Colors.white.withValues(alpha: 0.32),
+              fallback: _MessageCircleIcon(
+                size: 24,
+                color: current != null && current.isOnline
+                    ? Colors.white.withValues(alpha: 0.85)
+                    : Colors.white.withValues(alpha: 0.32),
+              ),
             ),
             tooltip: tr('评论'),
             enabled: current != null && current.isOnline,
@@ -1915,8 +1925,10 @@ class _TraditionalPlayerLayoutState
     return IconButton(
       iconSize: 28,
       tooltip: tr('更多'),
-      icon: Icon(
-        Icons.more_horiz,
+      icon: themeSlotIcon(
+        ref,
+        'action.more',
+        fallback: Icons.more_horiz,
         size: 24,
         color: Colors.white.withValues(alpha: 0.85),
       ),
@@ -2132,8 +2144,11 @@ class _TraditionalPlayerLayoutState
                 color: Colors.white.withValues(alpha: 0.8),
               ),
             )
-          : Icon(
-              dlDone ? Icons.check_circle_outline : Icons.download_outlined,
+          : themeSlotIcon(
+              ref,
+              'action.download',
+              fallback:
+                  dlDone ? Icons.check_circle_outline : Icons.download_outlined,
               color: dlDone
                   ? const Color(0xFF07C160)
                   : Colors.white.withValues(alpha: 0.85),
@@ -2157,16 +2172,29 @@ class _TraditionalPlayerLayoutState
           padding: const EdgeInsets.symmetric(horizontal: 2),
           alignment: Alignment.center,
           decoration: const BoxDecoration(shape: BoxShape.circle),
-          child: Text(
-            _qualityAbbr(quality),
-            maxLines: 1,
-            softWrap: false,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.85),
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _qualityAbbr(quality),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.85),
+                ),
+              ),
+              // 主题提供倍速/音效图时才出现；未启用主题时是零尺寸，观感不变。
+              themeSlotWidget(
+                ref,
+                'player.speed',
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.85),
+                fallback: const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
       ),
@@ -3542,8 +3570,10 @@ class _TitleRow extends ConsumerWidget {
               IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                 padding: EdgeInsets.zero,
-                icon: Icon(
-                  isFav ? Icons.favorite : Icons.favorite_border,
+                icon: themeSlotIcon(
+                  ref,
+                  'action.favorite',
+                  fallback: isFav ? Icons.favorite : Icons.favorite_border,
                   size: 22,
                   color: isFav
                       ? const Color(0xFFEC4141)
@@ -3555,8 +3585,10 @@ class _TitleRow extends ConsumerWidget {
               IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                 padding: EdgeInsets.zero,
-                icon: Icon(
-                  Icons.ios_share,
+                icon: themeSlotIcon(
+                  ref,
+                  'action.share',
+                  fallback: Icons.ios_share,
                   size: 22,
                   color: Colors.white.withValues(alpha: 0.85),
                 ),
@@ -3567,8 +3599,10 @@ class _TitleRow extends ConsumerWidget {
                 IconButton(
                   constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                   padding: EdgeInsets.zero,
-                  icon: Icon(
-                    Icons.download_outlined,
+                  icon: themeSlotIcon(
+                    ref,
+                    'action.download',
+                    fallback: Icons.download_outlined,
                     size: 22,
                     color: Colors.white.withValues(alpha: 0.85),
                   ),
@@ -3579,8 +3613,10 @@ class _TitleRow extends ConsumerWidget {
                 IconButton(
                   constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                   padding: EdgeInsets.zero,
-                  icon: Icon(
-                    Icons.mode_comment_outlined,
+                  icon: themeSlotIcon(
+                    ref,
+                    'player.comment',
+                    fallback: Icons.mode_comment_outlined,
                     size: 22,
                     color: Colors.white.withValues(alpha: 0.85),
                   ),
@@ -4659,10 +4695,15 @@ class _Controls extends ConsumerWidget {
         children: [
           Expanded(child: Center(child: IconButton(
             iconSize: 28,
-            icon: _PlayModeIcon(
-              mode: playMode,
-              color: scheme.onSurfaceVariant,
+            icon: themeSlotWidget(
+              ref,
+              'player.mode',
               size: 28,
+              fallback: _PlayModeIcon(
+                mode: playMode,
+                color: scheme.onSurfaceVariant,
+                size: 28,
+              ),
             ),
             onPressed: notifier.cyclePlayMode,
           ))),
@@ -4699,7 +4740,7 @@ class _Controls extends ConsumerWidget {
                   ),
           ))),
           Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next))),
-          Expanded(child: Center(child: IconButton(iconSize: 28, icon: Icon(Icons.queue_music, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
+          Expanded(child: Center(child: IconButton(iconSize: 28, icon: themeSlotIcon(ref, 'player.queue', fallback: Icons.queue_music, size: 28, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
         ],
       ),
     );
@@ -4826,8 +4867,12 @@ class _LandscapeControlsRow extends ConsumerWidget {
                     color: Colors.white.withValues(alpha: 0.8),
                   ),
                 )
-              : Icon(
-                  dlDone ? Icons.check_circle_outline : Icons.download_outlined,
+              : themeSlotIcon(
+                  ref,
+                  'action.download',
+                  fallback: dlDone
+                      ? Icons.check_circle_outline
+                      : Icons.download_outlined,
                   color: dlDone ? const Color(0xFF07C160) : idle,
                 ),
           onPressed: () {
@@ -4849,8 +4894,10 @@ class _LandscapeControlsRow extends ConsumerWidget {
         IconButton(
           iconSize: 28,
           tooltip: tr('收藏'),
-          icon: Icon(
-            isFav ? Icons.favorite : Icons.favorite_border,
+          icon: themeSlotIcon(
+            ref,
+            'action.favorite',
+            fallback: isFav ? Icons.favorite : Icons.favorite_border,
             color: isFav ? const Color(0xFFEC4141) : idle,
           ),
           onPressed: () {
@@ -4867,7 +4914,12 @@ class _LandscapeControlsRow extends ConsumerWidget {
       children: [
         IconButton(
           iconSize: 28,
-          icon: _PlayModeIcon(mode: playMode, color: idle, size: 28),
+          icon: themeSlotWidget(
+            ref,
+            'player.mode',
+            size: 28,
+            fallback: _PlayModeIcon(mode: playMode, color: idle, size: 28),
+          ),
           onPressed: notifier.cyclePlayMode,
         ),
         IconButton(
@@ -4995,7 +5047,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
         ),
         IconButton(
           iconSize: 28,
-          icon: Icon(Icons.queue_music, color: idle),
+          icon: themeSlotIcon(ref, 'player.queue',
+              fallback: Icons.queue_music, size: 28, color: idle),
           onPressed: () => showSheetDialog<void>(
             context,
             (_) => _QueueSheet(player: ref.read(playerProvider)),

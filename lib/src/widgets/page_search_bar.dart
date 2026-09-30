@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../i18n/i18n.dart';
 import '../plugin/plugin_provider.dart';
+import '../theme/theme_icon.dart';
 import 'glass_settings.dart';
 
 class PageSearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
@@ -49,7 +50,10 @@ class PageSearchBar extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
           child: Row(
             children: [
-              Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+              themeSlotIcon(ref, 'entry.search',
+                  fallback: Icons.search,
+                  size: 18,
+                  color: scheme.onSurfaceVariant),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -74,8 +78,10 @@ class PageSearchBar extends ConsumerWidget {
                       color: const Color(0xFFEC4141).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.mic_none,
-                        size: 17, color: Color(0xFFEC4141)),
+                    child: themeSlotIcon(ref, 'entry.mic',
+                        fallback: Icons.mic_none,
+                        size: 17,
+                        color: const Color(0xFFEC4141)),
                   ),
                 ),
               ],

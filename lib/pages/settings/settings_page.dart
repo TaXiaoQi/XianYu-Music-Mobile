@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/core/developer_mode.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/navigation/shell.dart'
@@ -106,6 +107,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             right: 0,
             child: GlassTopBar(
               forceDocked: true,
+              themeSlot: 'settings.topbar',
               leading: const BackButton(),
               title: Text(tr('设置')),
               bottom: searchBox,
@@ -281,7 +283,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: Colors.transparent,
+            color: themeTintOrNull(ref, 'ls-settings.nav') ?? Colors.transparent,
             child: SizedBox(
               width: _navWidth,
               child: SafeArea(
@@ -711,6 +713,7 @@ class _CardGroup extends ConsumerWidget {
       context: context,
       ref: ref,
       radius: 16,
+      themeSlot: 'settings.group',
       child: Material(
         color: Colors.transparent,
         clipBehavior: Clip.antiAlias,
@@ -810,6 +813,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '主题模式', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '深色 浅色 跟随系统 暗色 明亮'),
   _SearchItem(label: '主题色', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '品牌色 强调色 颜色 HEX 预设 自定义 红色'),
   _SearchItem(label: '壁纸中心', section: '主题', path: '/wallpaper', categoryName: '外观', keywords: '自定义背景 动态壁纸 图片'),
+  _SearchItem(label: '主题中心', section: '主题', path: '/theme', categoryName: '外观', keywords: '主题包 导入 应用 JSON 图标 贴纸 色块'),
   _SearchItem(label: '毛玻璃材质', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: '磨砂 模糊 frosted 透明'),
   _SearchItem(label: '毛玻璃效果', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: '模糊强度 档位'),
   _SearchItem(label: '液态玻璃', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: 'liquid 悬浮底栏 shader 折射'),

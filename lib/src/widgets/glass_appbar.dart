@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../theme/theme_tint.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 
@@ -18,6 +19,7 @@ class GlassTopBar extends ConsumerWidget {
     this.flatBackdrop = false,
     this.forceSolid = false,
     this.forceDocked = false,
+    this.themeSlot,
   });
 
   final Widget? leading;
@@ -31,6 +33,9 @@ class GlassTopBar extends ConsumerWidget {
   final bool forceDocked;
 
   final bool flatBackdrop;
+
+  /// 主题色块槽位 id；该组件被多页复用，只在需要叠色的页面传入。
+  final String? themeSlot;
 
   static double height(BuildContext context, {PreferredSizeWidget? bottom}) {
     return MediaQuery.of(context).padding.top +
@@ -77,7 +82,8 @@ class GlassTopBar extends ConsumerWidget {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.20)
                 : Colors.white.withValues(alpha: 0.52)));
-    final glassFill = fill;
+    final slot = themeSlot;
+    final glassFill = slot == null ? fill : themeTint(ref, slot, fill);
 
     final bar = _bar(context, statusBarHeight);
     final inner = Container(

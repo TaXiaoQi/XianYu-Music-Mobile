@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../pages/search/search_page.dart';
 import '../auth/account_api.dart';
 import '../i18n/i18n.dart';
+import '../theme/theme_icon.dart';
 import '../navigation/shell.dart'
     show
         landscapeDownloadOpenProvider,
@@ -152,13 +153,15 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
               ),
               const SizedBox(width: 10),
               BiliPaiIconButton(
-                iconChild: const SkinIcon(),
+                iconChild: themeSlotWidget(ref, 'landscape.wallpaper',
+                    fallback: const SkinIcon()),
                 tooltip: tr('皮肤'),
                 onTap: () => context.push('/wallpaper'),
               ),
               const SizedBox(width: 8),
               BiliPaiIconButton(
-                icon: Icons.settings_outlined,
+                iconChild: themeSlotWidget(ref, 'landscape.settings',
+                    fallback: const Icon(Icons.settings_outlined)),
                 tooltip: tr('设置'),
                 onTap: () => context.push('/settings'),
               ),
@@ -191,13 +194,15 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
       ),
       actions: [
         IconButton(
-          icon: const SkinIcon(),
+          icon: themeSlotWidget(ref, 'landscape.wallpaper',
+              fallback: const SkinIcon()),
           tooltip: tr('皮肤'),
           onPressed: () => context.push('/wallpaper'),
         ),
         const SizedBox(width: 8),
         IconButton(
-          icon: const Icon(Icons.settings_outlined),
+          icon: themeSlotIcon(ref, 'landscape.settings',
+              fallback: Icons.settings_outlined),
           tooltip: tr('设置'),
           onPressed: () => context.push('/settings'),
         ),

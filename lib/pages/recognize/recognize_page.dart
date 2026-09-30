@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/theme/theme_icon.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/online/online_search_provider.dart';
@@ -419,6 +421,21 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
+          // 主题提供底部装饰贴纸时才出现；未启用主题时零尺寸，观感不变。
+          // 放在 Stack 首位（内容之下），避免遮挡识别按钮；IgnorePointer 保证不拦手势。
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: themeSlotSticker(
+                ref,
+                'recognize.deco',
+                width: MediaQuery.sizeOf(context).width,
+                height: 120,
+              ),
+            ),
+          ),
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
             child: Stack(
@@ -472,7 +489,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
 
 // ==================== 麦克风主视图 ====================
 
-class _MicView extends StatelessWidget {
+class _MicView extends ConsumerWidget {
   const _MicView({
     required this.phase,
     required this.active,
@@ -492,7 +509,7 @@ class _MicView extends StatelessWidget {
   final VoidCallback onRestart;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final primary = const Color(0xFFEC4141);
     final recognizing = phase == _Phase.recognizing;
@@ -557,9 +574,12 @@ class _MicView extends StatelessWidget {
                       ],
                     ),
                     child: Material(
-                      color: active && !recognizing
-                          ? primary
-                          : primary.withValues(alpha: 0.16),
+                      color: themeTint(
+                          ref,
+                          'recognize.btn',
+                          active && !recognizing
+                              ? primary
+                              : primary.withValues(alpha: 0.16)),
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
@@ -567,8 +587,10 @@ class _MicView extends StatelessWidget {
                         child: SizedBox(
                           width: 76,
                           height: 76,
-                          child: Icon(
-                            recognizing
+                          child: themeSlotIcon(
+                            ref,
+                            'recognize.mic',
+                            fallback: recognizing
                                 ? Icons.mic_off
                                 : active
                                     ? Icons.mic
@@ -634,7 +656,8 @@ class _MicView extends StatelessWidget {
             margin: const EdgeInsets.only(top: 2),
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+              color: themeTint(ref, 'recognize.hint',
+                  scheme.surfaceContainerHighest.withValues(alpha: 0.45)),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Column(

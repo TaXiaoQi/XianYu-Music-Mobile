@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../theme/theme_icon.dart';
 
 class _HoldDragStartListener extends StatefulWidget {
   const _HoldDragStartListener({required this.index, required this.child});
@@ -78,7 +81,7 @@ class ReorderableRowDragStart extends StatelessWidget {
   }
 }
 
-class DragHandle extends StatelessWidget {
+class DragHandle extends ConsumerWidget {
   const DragHandle({
     super.key,
     required this.index,
@@ -95,9 +98,11 @@ class DragHandle extends StatelessWidget {
   final double height;
 
   @override
-  Widget build(BuildContext context) {
-    final icon = Icon(
-      Icons.drag_indicator,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final icon = themeSlotIcon(
+      ref,
+      'lib.drag',
+      fallback: Icons.drag_indicator,
       size: size,
       color: Theme.of(context).colorScheme.outline,
     );

@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/core/settings.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
@@ -276,7 +277,9 @@ class _PlaylistCard extends ConsumerWidget {
     final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
     return Material(
-      color: appCardFill(context, ref),
+      color: useLandscape(ref)
+          ? themeTint(ref, 'ls-sheets.card', appCardFill(context, ref))
+          : appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

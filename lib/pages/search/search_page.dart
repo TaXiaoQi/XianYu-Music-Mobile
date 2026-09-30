@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
+import '../../src/theme/theme_tint.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/app_logger.dart';
 import '../../src/core/application_logger.dart';
@@ -1033,18 +1034,19 @@ class SearchIdleView extends ConsumerWidget {
 
 /// 搜索页空闲态的分组卡片：两段内容（历史/热搜）用同一套圆角容器，
 /// 与个人中心统计卡观感一致。
-class _IdleCard extends StatelessWidget {
+class _IdleCard extends ConsumerWidget {
   const _IdleCard({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        color: themeTint(ref, 'search.panel',
+            scheme.surfaceContainerHighest.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(14),
       ),
       child: child,
@@ -1122,42 +1124,50 @@ class _HotTile extends ConsumerWidget {
         : index == 1
             ? 15.0
             : 14.5;
-    return InkWell(
-      onTap: () => onTap(item.keyword),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 26,
-              child: Text(
-                '${index + 1}',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+    final itemTint = themeTintOrNull(ref, 'search.item');
+    return Container(
+      decoration: itemTint == null
+          ? null
+          : BoxDecoration(
+              color: itemTint,
+              borderRadius: BorderRadius.circular(8),
+            ),
+      child: InkWell(
+        onTap: () => onTap(item.keyword),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 26,
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: Text(
-                item.keyword,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: size,
-                  fontWeight: hot ? FontWeight.w600 : FontWeight.w400,
-                  color: scheme.onSurface,
+              Expanded(
+                child: Text(
+                  item.keyword,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: size,
+                    fontWeight: hot ? FontWeight.w600 : FontWeight.w400,
+                    color: scheme.onSurface,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              tr('{n}人搜', {'n': item.count}),
-              style: TextStyle(
-                  fontSize: 11, color: scheme.outline),
-            ),
-          ],
+              Text(
+                tr('{n}人搜', {'n': item.count}),
+                style: TextStyle(fontSize: 11, color: scheme.outline),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1416,6 +1426,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             builder: (rowContext) {
               BuildContext? coverCtx;
               return CoverRow(
+                background: themeTintOrNull(ref, 'sr.item'),
                 cover: Builder(
                   builder: (c) {
                     coverCtx = c;
@@ -1459,6 +1470,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
           builder: (rowContext) {
             BuildContext? coverCtx;
             return CoverRow(
+              background: themeTintOrNull(ref, 'sr.item'),
               cover: Builder(
                 builder: (c) {
                   coverCtx = c;

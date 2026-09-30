@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/core/db_path.dart';
 import '../../src/rust/api.dart' as rust;
 import '../../src/sync/sync_provider.dart';
@@ -653,6 +654,7 @@ class _GlassCard extends ConsumerWidget {
       context: context,
       ref: ref,
       radius: 16,
+      themeSlot: useLandscape(ref) ? 'ls-settings.detail' : null,
       child: Column(children: items),
     );
   }

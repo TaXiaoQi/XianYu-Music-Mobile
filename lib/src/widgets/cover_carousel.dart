@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../home/home_providers.dart';
+import '../theme/theme_tint.dart';
 import '../navigation/routes.dart' show openPlayer;
 import '../player/player_provider.dart';
 import 'cover_image.dart';
@@ -200,7 +201,7 @@ class _StatsCard extends ConsumerWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF1E2638),
+            themeTint(ref, 'home.stat', const Color(0xFF1E2638)),
             scheme.surfaceContainerHigh,
           ],
         ),
