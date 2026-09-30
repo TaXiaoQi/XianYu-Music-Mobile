@@ -105,7 +105,7 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage> {
         ],
       ),
       body: DefaultTabController(
-        length: 4,
+        length: 3,
         child: Column(
           children: [
             TabBar(
@@ -113,7 +113,6 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage> {
                 Tab(text: tr('本地')),
                 Tab(text: tr('广场')),
                 Tab(text: tr('我的上传')),
-                Tab(text: tr('我的下载')),
               ],
             ),
             Expanded(
@@ -133,7 +132,6 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage> {
                   ),
                   _remoteList(ref.watch(themeSquareProvider), scheme),
                   _remoteList(ref.watch(myThemesProvider), scheme),
-                  _downloadsHint(scheme),
                 ],
               ),
             ),
@@ -172,14 +170,6 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage> {
             ),
     );
   }
-
-  /// 我的下载：服务端尚无对应 action，先占位。
-  Widget _downloadsHint(ColorScheme scheme) => _hintBlock(
-        scheme,
-        icon: Icons.download_outlined,
-        title: tr('我的下载'),
-        detail: tr('该页依赖服务端接口，待接入后开放'),
-      );
 
   Widget _hintBlock(
     ColorScheme scheme, {
