@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
@@ -798,32 +796,6 @@ class LiveLiquidSurface extends StatefulWidget {
 
 class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     with SingleTickerProviderStateMixin {
-  // #region debug-point Z:report
-  // 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
-  static final HttpClient _dbgClient = HttpClient()
-    ..connectionTimeout = const Duration(milliseconds: 500);
-
-  void _dbgReport(String hyp, String event, Map<String, Object?> data) {
-    try {
-      debugPrint('[DBG][$hyp] $event $data');
-      _dbgClient
-          .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
-          .then((rq) {
-        rq.headers.contentType = ContentType.json;
-        rq.write(jsonEncode({
-          'sessionId': 'liquid-glass-page-flash',
-          'runId': 'pre',
-          'hypothesisId': hyp,
-          'location': 'mini_player_bar.dart',
-          'msg': '[DEBUG] $event',
-          'data': data,
-        }));
-        return rq.close();
-      }).then((_) {}).catchError((_) {});
-    } catch (_) {}
-  }
-  // #endregion
-
   static Future<ui.FragmentProgram>? _programFuture;
 
   static bool _kCapabilityWarned = false;
@@ -912,9 +884,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       return;
     }
     setState(() => _frozen = active);
-    // #region debug-point D:live-frozen
-    _dbgReport('D', active ? 'live-frozen' : 'live-live', {});
-    // #endregion
     if (active) {
       _idleTimer?.cancel();
       _tick.stop();

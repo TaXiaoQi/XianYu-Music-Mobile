@@ -24,6 +24,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/motion_photo.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/routes.dart' show coverPageRoute;
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/custom_background.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -41,7 +42,7 @@ class WallpaperCenterPage extends ConsumerStatefulWidget {
 }
 
 class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
-    with TickerProviderStateMixin {
+    with HideMiniBar, TickerProviderStateMixin {
   late TabController _tab;
   bool _tabReady = false;
   bool? _lastLoggedIn;
@@ -1652,14 +1653,33 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
       );
       AppLog.warn('wallpaper', 'pickImage motionExtract=$extracted');
       if (extracted != null) {
-        _cleanupOldBackgroundFiles(dir, keep: extracted);
-        if (!mounted) return;
-        setState(
-          () => _draft = _draft.copyWith(
-            imagePath: extracted,
-            mediaType: WallpaperMediaType.video,
-          ),
+        // 动态图片：静帧与内嵌视频都保留，可在编辑器切换展示形态
+        final stillTarget = p.join(dir.path, 'wallpaper_$ts.jpg');
+        final still = await _prepareImageForWallpaper(
+          File(picked.path),
+          stillTarget,
         );
+        if (!mounted) return;
+        if (still != null) {
+          _cleanupOldBackgroundFiles(dir, keep: extracted, alsoKeep: still);
+          setState(
+            () => _draft = _draft.copyWith(
+              imagePath: still,
+              motionVideoPath: extracted,
+              mediaType: WallpaperMediaType.video,
+            ),
+          );
+        } else {
+          // 静帧处理失败：退回纯视频模式（与旧行为一致）
+          _cleanupOldBackgroundFiles(dir, keep: extracted);
+          setState(
+            () => _draft = _draft.copyWith(
+              imagePath: extracted,
+              motionVideoPath: '',
+              mediaType: WallpaperMediaType.video,
+            ),
+          );
+        }
         return;
       }
       final ext = p.extension(picked.path).toLowerCase();
@@ -1675,6 +1695,7 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
         setState(
           () => _draft = _draft.copyWith(
             imagePath: ready,
+            motionVideoPath: '',
             mediaType: WallpaperMediaType.image,
           ),
         );
@@ -1705,6 +1726,7 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
       setState(
         () => _draft = _draft.copyWith(
           imagePath: target,
+          motionVideoPath: '',
           mediaType: WallpaperMediaType.video,
         ),
       );
@@ -1714,15 +1736,25 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     }
   }
 
-  void _cleanupOldBackgroundFiles(Directory dir, {required String keep}) {
+  void _cleanupOldBackgroundFiles(
+    Directory dir, {
+    required String keep,
+    String? alsoKeep,
+  }) {
     try {
-      final appliedPath =
-          ref.read(settingsProvider).valueOrNull?.customBackground.imagePath ??
-          '';
+      final applied =
+          ref.read(settingsProvider).valueOrNull?.customBackground;
+      final appliedPath = applied?.imagePath ?? '';
+      final appliedMotion = applied?.motionVideoPath ?? '';
       for (final e in dir.listSync()) {
         if (e is! File) continue;
         final path = e.path;
-        if (path == keep || path == appliedPath) continue;
+        if (path == keep ||
+            path == appliedPath ||
+            path == appliedMotion ||
+            path == alsoKeep) {
+          continue;
+        }
         if (p.basename(path).startsWith('wallpaper_')) {
           e.deleteSync();
         }
@@ -1774,11 +1806,11 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     double scale = (_landscape ? _draft.landscapeScale : _draft.scale)
         .toDouble();
     if (d.pointerCount >= 2) {
-      scale = (baseScale * d.scale).clamp(80.0, 160.0);
+      scale = (baseScale * d.scale).clamp(80.0, 240.0);
     }
 
     final sEff = (scale / 100).clamp(1.0, 10.0).toDouble();
-    final maxTx = ((sEff - 1) / 2 * 100).clamp(0.0, 50.0).toDouble();
+    final maxTx = ((sEff - 1) / 2 * 100).clamp(0.0, 100.0).toDouble();
     final maxTy = maxTx;
     final tx = (baseTx + d.focalPointDelta.dx / bw * 100)
         .clamp(-maxTx, maxTx)
@@ -1881,6 +1913,26 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
                     setState(() => _draft = _draft.copyWith(maskAlpha: v)),
               ),
               const SizedBox(height: 4),
+              if (_draft.motionVideoPath.isNotEmpty) ...[
+                SegmentedButton<WallpaperMediaType>(
+                  segments: [
+                    ButtonSegment(
+                      value: WallpaperMediaType.video,
+                      label: Text(tr('展示视频')),
+                    ),
+                    ButtonSegment(
+                      value: WallpaperMediaType.image,
+                      label: Text(tr('展示图片')),
+                    ),
+                  ],
+                  selected: {_draft.mediaType},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) => setState(
+                    () => _draft = _draft.copyWith(mediaType: selection.first),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               SegmentedButton<bool>(
                 segments: [
                   ButtonSegment(value: false, label: Text(tr('竖屏'))),
@@ -1896,8 +1948,8 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
                 label: tr('缩放'),
                 value: _landscape ? _draft.landscapeScale : _draft.scale,
                 min: 80,
-                max: 160,
-                divisions: 80,
+                max: 240,
+                divisions: 160,
                 onChanged: (v) => setState(
                   () => _draft = _landscape
                       ? _draft.copyWith(landscapeScale: v)
@@ -1910,9 +1962,9 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
                 value: _landscape
                     ? _draft.landscapeTranslateX
                     : _draft.translateX,
-                min: -50,
-                max: 50,
-                divisions: 100,
+                min: -100,
+                max: 100,
+                divisions: 200,
                 onChanged: (v) => setState(
                   () => _draft = _landscape
                       ? _draft.copyWith(landscapeTranslateX: v)
@@ -1925,9 +1977,9 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
                 value: _landscape
                     ? _draft.landscapeTranslateY
                     : _draft.translateY,
-                min: -50,
-                max: 50,
-                divisions: 100,
+                min: -100,
+                max: 100,
+                divisions: 200,
                 onChanged: (v) => setState(
                   () => _draft = _landscape
                       ? _draft.copyWith(landscapeTranslateY: v)

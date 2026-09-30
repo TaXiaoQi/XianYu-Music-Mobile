@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -9,34 +7,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'blur_budget.dart';
+import 'chrome_glass_frame.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
-
-// #region debug-point Z:report
-// 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
-final HttpClient _dbgClient = HttpClient()
-  ..connectionTimeout = const Duration(milliseconds: 500);
-
-void _dbgReport(String hyp, String event, Map<String, Object?> data) {
-  try {
-    debugPrint('[DBG][$hyp] $event $data');
-    _dbgClient
-        .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
-        .then((rq) {
-      rq.headers.contentType = ContentType.json;
-      rq.write(jsonEncode({
-        'sessionId': 'liquid-glass-page-flash',
-        'runId': 'pre',
-        'hypothesisId': hyp,
-        'location': 'bilipai_glass.dart',
-        'msg': '[DEBUG] $event',
-        'data': data,
-      }));
-      return rq.close();
-    }).then((_) {}).catchError((_) {});
-  } catch (_) {}
-}
-// #endregion
 
 typedef BackingOverlayCallback =
     void Function(PaintingContext context, Offset offset);
@@ -55,6 +28,7 @@ class BiliPaiGlass extends StatefulWidget {
     this.depthEffect = 0.0,
     this.alwaysLive = false,
     this.freshBackdrop = false,
+    this.useChromeFrame = false,
     required this.child,
   });
 
@@ -80,6 +54,12 @@ class BiliPaiGlass extends StatefulWidget {
 
   final bool freshBackdrop;
 
+  // chrome 缓存帧开关：转场降级窗口（shader 采样失效）改为画整屏缓存帧中
+  // 自己区域的裁剪（无采样），落定后交叉淡回实时渲染——液态观感全程连续。
+  // 仅 shell 常驻 chrome 条开启（底栏/悬浮顶栏/悬浮搜索条）；
+  // 页内玻璃不开启（其转场观感由路由快照保护）
+  final bool useChromeFrame;
+
   final Widget child;
 
   @override
@@ -88,9 +68,6 @@ class BiliPaiGlass extends StatefulWidget {
 
 class _BiliPaiGlassState extends State<BiliPaiGlass>
     with TickerProviderStateMixin {
-  static int _dbgSeq = 0;
-  late final int _dbgId = ++_dbgSeq;
-
   ui.FragmentShader? _shader;
 
   static ui.FragmentProgram? _cachedProgram;
@@ -146,35 +123,25 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalIsDragging.addListener(_onGlobalState);
     globalScrollTick.addListener(_onOwnerScrollTick);
     _routeTransition = globalIsTransitioning.value;
-    // #region debug-point A:init
-    _dbgReport('A', 'bg-init', {
-      'id': _dbgId,
-      'alwaysLive': widget.alwaysLive,
-      'trans': globalIsTransitioning.value,
-    });
-    // #endregion
   }
 
   void _onTransitionChanged() {
     if (!mounted) return;
     if (_routeTransition == globalIsTransitioning.value) return;
-    setState(() => _routeTransition = globalIsTransitioning.value);
-    // #region debug-point A:trans
-    _dbgReport('A', _routeTransition ? 'bg-trans-start' : 'bg-trans-end', {
-      'id': _dbgId,
-      'frozen': _frozen != null,
-      'fade': double.parse(_fade.value.toStringAsFixed(3)),
-    });
-    // #endregion
-    if (_routeTransition) {
-      // 转场期间冻结液态波动相位，落定后从原相位继续，避免高光跳变
+    if (globalIsTransitioning.value) {
+      // 转场开始：静默记录，不 setState、不改渲染参数——RepaintBoundary
+      // 不重绘，合成器继续使用转场前最后一次正常渲染的 layer（静态帧）。
+      // 屏上玻璃观感连续且无采样；任何 toImage 产物一律不参与展示
+      _routeTransition = true;
       _ripple.stop();
       _captureRetry?.cancel();
       return;
     }
     _idleDebounce?.cancel();
+    // 冷却只需覆盖「转场动画刚结束 backdrop 层短暂重建」的窗口；
+    // 700ms 会让转场中挂载的新实例白底拖太久
     _captureCooldownUntil =
-        DateTime.now().add(const Duration(milliseconds: 700));
+        DateTime.now().add(const Duration(milliseconds: 350));
     // _onGlobalState 不监听 transitioning 翻转：转场结束时若
     // scrolling/dragging 已归位，手动把 _idle 同步回 true，
     // 否则首烘会被 stale 检查（!_idle）永久拒绝
@@ -186,44 +153,33 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     } else {
       _ripple.stop();
     }
-    if (_frozen != null) {
-      // 转场结束路由子树刚从 Offstage 还原，首帧 backdrop 采样未就绪；
-      // 直接丢烘焙图转实时会闪黑。先继续整帧展示预烘焙图（纯 drawImage，
-      // 不推 backdrop 层，无采样），再交叉淡回实时玻璃——既无黑闪也不跳色
-      _startTransitionResume();
-    } else if (!widget.alwaysLive) {
-      // 新实例还没有烘焙图：主动安排首烘（撞冷却会自动重试），
-      // 否则要等下一次滚动事件才有机会，期间一直裸采样闪黑
-      _scheduleCapture();
-    }
-  }
-
-  void _startTransitionResume() {
-    // #region debug-point C:resume
-    _dbgReport('C', 'bg-resume', {
-      'id': _dbgId,
-      'fadeBefore': double.parse(_fade.value.toStringAsFixed(3)),
-    });
-    // #endregion
-    if (_fade.value < 0.999) {
-      _fade.value = 1;
-    }
-    final captured = _frozen;
-    _fade.animateTo(
-      0,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOut,
-    ).whenComplete(() {
-      if (!mounted) return;
-      if (_frozen != null &&
-          identical(_frozen, captured) &&
-          _fade.value <= 0.001) {
-        final old = _frozen!;
-        _frozen = null;
-        old.dispose();
-        setState(() {});
+    setState(() {
+      _routeTransition = false;
+      // 烘焙图（toImage 离屏采样产物）不可展示：转场结束直接丢图，
+      // 恢复实时渲染——此时 backdrop 已就绪，静态帧切 live 观感连续。
+      // chrome 缓存帧例外：它是屏上合成产物（非离屏采样），可以展示——
+      // 落定后继续画缓存帧，交叉淡回实时渲染，液态观感无缝续展
+      final old = _frozen;
+      _frozen = null;
+      final frame = widget.useChromeFrame ? chromeGlassFrame.value : null;
+      if (frame != null) {
+        _frozen = frame.image.clone();
+        _fade.value = 1;
+        _fade.reverse();
+      } else {
+        _fade.value = 0;
+      }
+      if (old != null) {
+        SchedulerBinding.instance
+            .addPostFrameCallback((_) => old.dispose());
       }
     });
+    // 转场中挂载的新实例（hasCaptured=false，一直在实底兜底）：
+    // 必须在这里主动安排首烘，否则 _idle 翻转后没有任何机制唤醒它，
+    // 要等用户下一次滚动才有机会——白底会一直挂死不恢复玻璃
+    if (!widget.alwaysLive && !_hasCaptured) {
+      _scheduleCapture();
+    }
   }
 
   void _onOwnerScrollTick() {
@@ -293,48 +249,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     _idle = idle;
     if (idle) {
       _ripple.stop();
-      if (_frozen != null) {
-        _startFadeIn();
-      } else {
-        _scheduleCapture();
-      }
+      if (!_hasCaptured) _scheduleCapture();
     } else {
       _idleDebounce?.cancel();
       // 转场中不重启波动，落定时由 _onTransitionChanged 恢复相位
       if (!_routeTransition && !_ripple.isAnimating) _ripple.repeat();
-      _startFadeOut();
     }
-  }
-
-  void _startFadeIn() {
-    if (_fade.value >= 0.999) return;
-    _fade.animateTo(
-      1,
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOut,
-    );
-  }
-
-  void _startFadeOut() {
-    if (_frozen == null && _fade.value <= 0.001) return;
-    final captured = _frozen;
-    _fade.animateTo(
-      0,
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOut,
-    ).whenComplete(() {
-      // 转场中保持烘焙图：Offstage 期间无处展示，丢图会让转场结束
-      // 的还原首帧直接裸采样（闪黑），还原时由 _startTransitionResume 接管
-      if (!mounted || _idle || _routeTransition) return;
-      if (_frozen != null &&
-          identical(_frozen, captured) &&
-          _fade.value <= 0.001) {
-        final old = _frozen!;
-        _frozen = null;
-        old.dispose();
-        setState(() {});
-      }
-    });
   }
 
   void _scheduleCapture() {
@@ -345,11 +265,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   }
 
   Future<void> _capture() async {
-    if (_capturing || !mounted || _frozen != null) return;
+    if (_capturing || !mounted || _frozen != null || _hasCaptured) return;
     if (DateTime.now().isBefore(_captureCooldownUntil)) {
-      // #region debug-point C:cap-cooldown
-      _dbgReport('C', 'bg-cap-cooldown', {'id': _dbgId});
-      // #endregion
       // 冷却结束后自动重试首烘（独立 Timer，不受滚动信号 cancel 影响）；
       // 否则首烘被冷却吞掉后要等下一次滚动/轮播事件才有机会
       _captureRetry?.cancel();
@@ -364,9 +281,6 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     }
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is! RenderRepaintBoundary) {
-      // #region debug-point C:cap-noro
-      _dbgReport('C', 'bg-cap-noro', {'id': _dbgId});
-      // #endregion
       return;
     }
     if (ro.debugNeedsPaint) {
@@ -387,27 +301,18 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       if (!mounted ||
           globalIsTransitioning.value) {
         image.dispose();
-        // #region debug-point C:cap-stale
-        _dbgReport('C', 'bg-cap-stale', {'id': _dbgId});
-        // #endregion
         return;
       }
       _captureRetry?.cancel();
       setState(() {
-        _frozen?.dispose();
-        _frozen = image;
         _hasCaptured = true;
         _fade.value = 0;
         _onFadeTicked();
       });
-      // #region debug-point C:cap-ok
-      _dbgReport('C', 'bg-cap-ok', {
-        'id': _dbgId,
-        'w': image.width,
-        'h': image.height,
-      });
-      // #endregion
-      _startFadeIn();
+      // toImage 离屏渲染中 shader 的 backdrop 采样无内容（产物恒黑），
+      // 图不保存不展示——capture 仅作为「backdrop 已验证就绪」的一次性
+      // 标志，图立即释放（从未上屏，无 scene 引用）
+      image.dispose();
     } finally {
       _capturing = false;
     }
@@ -416,8 +321,6 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    // 转场期间底层内容已被 RouteStaticSnapshot 冻结为快照，
-    // 液态玻璃保持实时渲染即可呈现「最后一帧」的静止观感
     if (!ui.ImageFilter.isShaderFilterSupported || shader == null) {
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return Container(
@@ -429,16 +332,10 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       );
     }
 
-    // 切换期玻璃纯色回退（恢复 d4ae3b16 语义）：转场中一律实底渲染，
-    // 优先级高于烘焙图展示——平移动画中离屏截图/live 采样都无背景可采，
-    // 纯色条过渡，落定后由 resume 交叉淡回实时玻璃
-    final solidOnly = !widget.alwaysLive &&
-        (_routeTransition ||
-            (_frozen == null &&
-                (!_hasCaptured ||
-                    (DateTime.now().isBefore(_captureCooldownUntil) &&
-                        !globalIsScrolling.value &&
-                        !globalIsDragging.value))));
+    // 静态帧方案：转场中靠「不重绘」保留转场前的正常玻璃 layer（见
+    // _onTransitionChanged），实底只兜「从未验证过 backdrop」的新实例；
+    // 已验证实例其余时刻一律实时渲染（静止/滚动/落定 backdrop 均就绪）
+    final solidOnly = !widget.alwaysLive && !_hasCaptured;
 
     return Stack(
       children: [
@@ -460,6 +357,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               fadeBlend: _fade.value,
               freshBackdrop: widget.freshBackdrop,
               solidOnly: solidOnly,
+              useChromeFrame: widget.useChromeFrame,
             ),
           ),
         ),
@@ -488,6 +386,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     this.fadeBlend = 1.0,
     this.freshBackdrop = false,
     this.solidOnly = false,
+    this.useChromeFrame = false,
   });
 
   final ui.FragmentShader shader;
@@ -509,6 +408,8 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 
   final bool solidOnly;
 
+  final bool useChromeFrame;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -526,6 +427,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       fadeBlend: fadeBlend,
       freshBackdrop: freshBackdrop,
       solidOnly: solidOnly,
+      useChromeFrame: useChromeFrame,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -547,9 +449,10 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       ..saturation = saturation
       ..depthEffect = depthEffect
       ..frozen = frozen
-      ..freshBackdrop = freshBackdrop
-      ..solidOnly = solidOnly
-      ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    ..freshBackdrop = freshBackdrop
+    ..solidOnly = solidOnly
+    ..useChromeFrame = useChromeFrame
+    ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
 
@@ -569,6 +472,7 @@ class RenderLiquidBacking extends RenderBox {
     required double fadeBlend,
     required bool freshBackdrop,
     required bool solidOnly,
+    required bool useChromeFrame,
     required double dpr,
   }) : _shader = shader,
        _radius = radius,
@@ -584,6 +488,7 @@ class RenderLiquidBacking extends RenderBox {
        _fadeBlend = fadeBlend,
        _freshBackdrop = freshBackdrop,
        _solidOnly = solidOnly,
+       _useChromeFrame = useChromeFrame,
        _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -699,6 +604,28 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  bool _useChromeFrame = false;
+  bool get useChromeFrame => _useChromeFrame;
+  set useChromeFrame(bool value) {
+    if (_useChromeFrame == value) return;
+    _useChromeFrame = value;
+    markNeedsPaint();
+  }
+
+  // chrome 缓存帧当前是否可用作本面的裁剪源：
+  // 存在、抓帧 dpr 与当前一致、抓帧逻辑尺寸与当前屏一致（旋转/分屏后失效）
+  bool _chromeFrameUsable() {
+    final frame = chromeGlassFrame.value;
+    if (frame == null) return false;
+    if ((frame.dpr - _devicePixelRatio).abs() > 0.01) return false;
+    final screen = _screenSize;
+    if ((frame.logicalSize.width - screen.width).abs() > 0.5 ||
+        (frame.logicalSize.height - screen.height).abs() > 0.5) {
+      return false;
+    }
+    return true;
+  }
+
   double uiTime = 0;
 
   double _devicePixelRatio;
@@ -737,23 +664,55 @@ class RenderLiquidBacking extends RenderBox {
     super.attach(owner);
     globalScrollOffset.addListener(_onScrollChanged);
     globalScrollTick.addListener(_onScrollTick);
+    globalSnapshotReady.addListener(_onSnapshotReady);
+    globalIsTransitioning.addListener(_onTransitionBlurSync);
+    _liveUseShader = !globalIsTransitioning.value;
   }
 
   @override
   void detach() {
     globalScrollOffset.removeListener(_onScrollChanged);
     globalScrollTick.removeListener(_onScrollTick);
+    globalSnapshotReady.removeListener(_onSnapshotReady);
+    globalIsTransitioning.removeListener(_onTransitionBlurSync);
     super.detach();
   }
 
+  // 转场中 shader 降级开关（由 _onTransitionBlurSync 维护）
+  bool _liveUseShader = true;
+
+  void _onTransitionBlurSync() {
+    // 转场边沿必须各重绘一次：即使 Dart 侧不重绘，retained 的旧图层树
+    // 每帧仍会在合成期重新采样 backdrop——转场动画中 ImageFilter.shader
+    // 的 backdrop 采样在部分设备/Impeller 上失效（毛玻璃普通 blur 同场景
+    // 正常，液态玻璃整段色块且因静态帧"不更新"）。上升沿换纯 blur 层
+    // （=毛玻璃路径，已验证可用），下降沿恢复 shader
+    _liveUseShader = !globalIsTransitioning.value;
+    markNeedsPaint();
+  }
+
+  void _onSnapshotReady() {
+    // 上升沿驱动：转场中快照图就绪的瞬间，把兜底白底的实例重绘成
+    // live 玻璃（此刻 backdrop=快照内容，采样安全）；降沿不重绘，
+    // 避免落定帧再切回实底闪一下
+    if (globalSnapshotReady.value && globalIsTransitioning.value) {
+      markNeedsPaint();
+    }
+  }
+
   void _onScrollChanged() {
+    // 转场中完全静默：滚动信号（含转场动画/IME 视口变化驱动）持续到来
+    // 时若每帧 markNeedsPaint，静态帧被反复重绘、兜底实底每帧生效，
+    // 玻璃条整段变成纯色块——静默才能让旧 layer 静态帧真正保留
+    if (globalIsTransitioning.value) return;
     if (_frozen == null) markNeedsPaint();
   }
 
   void _onScrollTick() {
-    // 转场中保图（同 State 层 _onOwnerScrollTick）：转场中的滚动信号
-    // 来自 IME 弹起等视口变化，炸图会造成烘焙图→实底的跳变
-    if (_frozen != null && !globalIsTransitioning.value) {
+    // 转场中保帧（同上）：滚动信号来自 IME 弹起等视口变化，
+    // 炸图/重绘都会破坏静态帧
+    if (globalIsTransitioning.value) return;
+    if (_frozen != null) {
       _frozen = null;
       _fadeBlend = 0;
     }
@@ -765,8 +724,25 @@ class RenderLiquidBacking extends RenderBox {
     if (size.isEmpty) return;
     final frozen = _frozen;
     final fade = _fadeBlend;
+    // 转场降级窗口（_liveUseShader=false）：shader 采样失效，但 chrome
+    // 缓存帧是上次正常合成的液态输出——直接画自己区域的裁剪即可复现
+    // 上次观感，无任何采样。优先级最高（覆盖实底兜底/交叉淡入分支）
+    if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
+      _paintChromeFrame(context, offset);
+      return;
+    }
+    // 转场中已验证实例（_solidOnly=false）一律实时渲染，与毛玻璃行为对齐：
+    // 毛玻璃全程无守卫、实时采样 backdrop，转场从不出问题——因为快照层
+    // 的 live 子树恒定完整渲染，backdrop 任何时刻都有内容可采。此前的
+    // transitionSolid（transitioning && !snapshotReady）会把整个转场打成
+    // 纯色块：globalSnapshotReady 只在「img 上屏且 moving」的 build 里置
+    // true，而 capture 普遍晚于动画结束（debug 首帧阻塞下必然如此），
+    // pop 又从 dismissed 起步 moving 恒 false——ready 转场中恒 false，
+    // 任何一次被迫重绘都会把静态帧换成色块并因静默一直挂到转场结束
     if (_solidOnly) {
-      // 切换期/无图态纯色回退优先级最高：即使有烘焙图也不展示
+      // 从未验证过 backdrop 的新实例：backdrop 层未就绪，实时渲染
+      // 裸采样会闪黑。先以不透明底色渲染同一圆角形状，烘焙完成后由
+      // _startFadeIn 交叉淡入玻璃——全程无采样、无黑帧
       _paintSolid(context, offset);
     } else if (frozen != null && fade > 0.001) {
       if (fade >= 0.999) {
@@ -790,6 +766,46 @@ class RenderLiquidBacking extends RenderBox {
     canvas.drawRect(
       rect,
       Paint()..color = _backgroundColor.withValues(alpha: 1),
+    );
+    canvas.restore();
+  }
+
+  // 画整屏缓存帧中本面区域的裁剪：源矩形按当前全局位置×抓帧 dpr 映射，
+  // 裁剪到圆角矩形（缓存帧里圆角外是旧页面像素，不能带出来）。
+  // 纯 drawImageRect，无 backdrop 层无采样
+  void _paintChromeFrame(PaintingContext context, Offset offset) {
+    final frame = chromeGlassFrame.value!;
+    final dpr = _devicePixelRatio;
+    final globalPos = localToGlobal(Offset.zero);
+    final src = Rect.fromLTWH(
+      globalPos.dx * dpr,
+      globalPos.dy * dpr,
+      size.width * dpr,
+      size.height * dpr,
+    );
+    final imgRect = Rect.fromLTWH(
+      0,
+      0,
+      frame.image.width.toDouble(),
+      frame.image.height.toDouble(),
+    );
+    final clipped = src.intersect(imgRect);
+    if (clipped.isEmpty) return;
+    final canvas = context.canvas;
+    canvas.save();
+    canvas.clipRRect(
+      RRect.fromRectAndRadius(offset & size, Radius.circular(_radius)),
+    );
+    canvas.drawImageRect(
+      frame.image,
+      clipped,
+      Rect.fromLTWH(
+        offset.dx + (clipped.left - src.left) / dpr,
+        offset.dy + (clipped.top - src.top) / dpr,
+        clipped.width / dpr,
+        clipped.height / dpr,
+      ),
+      Paint()..filterQuality = FilterQuality.medium,
     );
     canvas.restore();
   }
@@ -873,33 +889,43 @@ class RenderLiquidBacking extends RenderBox {
     final a = bg.a;
     final refractPx =
         math.min(_refract, math.min(size.width, size.height) * 0.375) * dpr;
-    _shader
-      ..setFloat(0, screen.width * dpr)
-      ..setFloat(1, screen.height * dpr)
-      ..setFloat(2, globalScrollOffset.value)
-      ..setFloat(3, refractPx)
-      ..setFloat(4, _chroma)
-      ..setFloat(5, 0.0)
-      ..setFloat(6, bg.r * a)
-      ..setFloat(7, bg.g * a)
-      ..setFloat(8, bg.b * a)
-      ..setFloat(9, a)
-      ..setFloat(10, _specular)
-      ..setFloat(11, _radius * dpr)
-      ..setFloat(12, glassOrigin.dx)
-      ..setFloat(13, glassOrigin.dy)
-      ..setFloat(14, glassSize.width)
-      ..setFloat(15, glassSize.height)
-      ..setFloat(
-        16,
-        math.min(_edgeAmount, math.min(size.width, size.height) * 0.42) * dpr,
-      )
-      ..setFloat(17, _saturation)
-      ..setFloat(18, _depthEffect)
-      ..setFloat(19, uiTime);
-
-    final shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
-    shaderLayer.filter = ui.ImageFilter.shader(_shader);
+    // 转场中降级为纯 blur（毛玻璃路径）：转场动画里 ImageFilter.shader
+    // 的 backdrop 采样在部分设备/Impeller 上失效——毛玻璃同场景正常、
+    // 液态玻璃整段色块。合成期会拿 retained 的旧 shader 层持续产出坏帧，
+    // 所以必须由 _onTransitionBlurSync 在边沿重绘换层
+    final useShader = _liveUseShader;
+    final BackdropFilterLayer? shaderLayer;
+    if (useShader) {
+      _shader
+        ..setFloat(0, screen.width * dpr)
+        ..setFloat(1, screen.height * dpr)
+        ..setFloat(2, globalScrollOffset.value)
+        ..setFloat(3, refractPx)
+        ..setFloat(4, _chroma)
+        ..setFloat(5, 0.0)
+        ..setFloat(6, bg.r * a)
+        ..setFloat(7, bg.g * a)
+        ..setFloat(8, bg.b * a)
+        ..setFloat(9, a)
+        ..setFloat(10, _specular)
+        ..setFloat(11, _radius * dpr)
+        ..setFloat(12, glassOrigin.dx)
+        ..setFloat(13, glassOrigin.dy)
+        ..setFloat(14, glassSize.width)
+        ..setFloat(15, glassSize.height)
+        ..setFloat(
+          16,
+          math.min(_edgeAmount, math.min(size.width, size.height) * 0.42) * dpr,
+        )
+        ..setFloat(17, _saturation)
+        ..setFloat(18, _depthEffect)
+        ..setFloat(19, uiTime);
+      shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
+      shaderLayer.filter = ui.ImageFilter.shader(_shader);
+    } else {
+      _shaderHandle.layer = null;
+      shaderLayer = null;
+    }
 
     _clipHandle.layer = context.pushClipPath(
       needsCompositing,
@@ -918,7 +944,9 @@ class RenderLiquidBacking extends RenderBox {
           );
         }
         context.pushLayer(blurLayer, (context, offset) {}, offset);
-        context.pushLayer(shaderLayer, (context, offset) {}, offset);
+        if (shaderLayer != null) {
+          context.pushLayer(shaderLayer, (context, offset) {}, offset);
+        }
         overlay?.call(context, offset);
       },
     );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,6 +32,11 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   double _end = 0;
 
   final AudioPlayer _player = AudioPlayer();
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<bool>? _playingSub;
+  // 播放器是否已加载音源：不读 _player.sequence 判空——鸿蒙 fork (0.10.5) 里
+  // sequence 不可空，判空恒真；换文件后需置 false 强制重新加载新源
+  bool _playerLoaded = false;
   bool _isPlaying = false;
   bool _isLoading = false;
   double _playProgress = 0;
@@ -50,7 +56,28 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   static const _recodeFormats = ['mp3', 'wav', 'flac'];
 
   @override
+  void initState() {
+    super.initState();
+    // 进度/播放态监听只注册一次：原先每次 _startPreview 都重复 listen 且从不
+    // 注销，监听器随试听次数累积，回调和 setState 成倍触发
+    _posSub = _player.positionStream.listen((pos) {
+      final cur = pos.inMilliseconds / 1000.0;
+      final max = _previewRange ? _end : _duration;
+      if (cur >= max) {
+        _player.stop();
+        return;
+      }
+      if (mounted) setState(() => _playProgress = cur);
+    });
+    _playingSub = _player.playingStream.listen((playing) {
+      if (mounted) setState(() => _isPlaying = playing);
+    });
+  }
+
+  @override
   void dispose() {
+    _posSub?.cancel();
+    _playingSub?.cancel();
     _player.stop();
     _player.dispose();
     _controllerStart.dispose();
@@ -61,8 +88,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   // ===== 试听 =====
 
   Future<void> _startPreview({bool fromStartPoint = true}) async {
-    if (_filePath == null || _duration <= 0) return;
-    if (_isLoading) return;
+    if (_filePath == null || _duration <= 0 || _isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -71,19 +97,8 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
     try {
       await _player.setFilePath(_filePath!);
+      _playerLoaded = true;
       await _player.seek(Duration(milliseconds: (_playStartOffset * 1000).round()));
-      _player.positionStream.listen((pos) {
-        final cur = pos.inMilliseconds / 1000.0;
-        final max = _previewRange ? _end : _duration;
-        if (cur >= max) {
-          _player.stop();
-          return;
-        }
-        if (mounted) setState(() => _playProgress = cur);
-      });
-      _player.playingStream.listen((playing) {
-        if (mounted) setState(() => _isPlaying = playing);
-      });
       await _player.play();
     } catch (_) {
       // ignore
@@ -95,14 +110,13 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     if (_isPlaying) {
       await _player.pause();
     } else {
-      if (_player.sequence != null) {
+      if (_playerLoaded) {
         final curMs = _player.position.inMilliseconds;
         final startMs = (_playStartOffset * 1000).round();
         final maxMs =
             (_previewRange ? _end : _duration).round() * 1000;
-        if (curMs >= maxMs - 100) {
-          await _player.seek(Duration(milliseconds: startMs));
-        } else if (curMs < startMs - 50) {
+        // 已播到选区末尾、或仍停在起点之前（上次 stop 归零/手动拖动过），都回到起点续播
+        if (curMs >= maxMs - 100 || curMs < startMs - 50) {
           await _player.seek(Duration(milliseconds: startMs));
         }
         await _player.play();
@@ -126,8 +140,11 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   Future<void> _pickFile() async {
     if (_trimming || _probing) return;
-    final f = await FilePicker.pickFile(type: FileType.audio);
-    if (f == null) return;
+    // pickFiles（而非 12.x 新增的 pickFile）：鸿蒙态 vendored file_picker
+    // (10.3.8+静态门面 shim) 无 pickFile 成员，全工程其余调用点均为 pickFiles
+    final files = await FilePicker.pickFiles(type: FileType.audio);
+    if (files.isEmpty) return;
+    final f = files.first;
 
     final tmpDir = await getTemporaryDirectory();
     String? fallbackDir;
@@ -153,6 +170,10 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
       path = tmp.path;
       originalDir = fallbackDir;
     }
+    // 换文件后停掉旧源并强制下次试听重新加载新文件（否则已加载标志会把
+    // 旧音源当成仍有效，续播的是上一首歌）
+    _playerLoaded = false;
+    await _player.stop();
     setState(() {
       _filePath = path;
       _originalDir = originalDir;
@@ -238,7 +259,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     final safeBase = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
     try {
-      final sw = Stopwatch()..start();
       final options = jsonEncode({
         'targetFormat': _recodeFmt,
         'sampleRate': null,
@@ -253,7 +273,6 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
         outDir: outDir,
         optionsJson: options,
       );
-      sw.stop();
       final r = jsonDecode(raw) as Map<String, dynamic>;
       if (r['success'] == true) {
         setState(() => _outPath = r['outputPath'] as String?);
@@ -325,23 +344,18 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   static String _fmtSecs(double s) {
     if (s < 0) s = 0;
     final m = (s ~/ 60).toString().padLeft(2, '0');
-    final secs = (s % 60);
-    final sec = secs.toStringAsFixed(1).padLeft(4, '0');
+    final sec = (s % 60).toStringAsFixed(1).padLeft(4, '0');
     return '$m:$sec';
   }
 
   static double? _parseSecs(String s) {
-    try {
-      final parts = s.trim().split(':');
-      if (parts.length == 2) {
-        final m = int.tryParse(parts[0]);
-        final sec = double.tryParse(parts[1]);
-        if (m != null && sec != null) return m * 60 + sec;
-      }
-      return double.tryParse(s.trim());
-    } catch (_) {
-      return null;
+    final parts = s.trim().split(':');
+    if (parts.length == 2) {
+      final m = int.tryParse(parts[0]);
+      final sec = double.tryParse(parts[1]);
+      if (m != null && sec != null) return m * 60 + sec;
     }
+    return double.tryParse(s.trim());
   }
 
   // ===== UI =====

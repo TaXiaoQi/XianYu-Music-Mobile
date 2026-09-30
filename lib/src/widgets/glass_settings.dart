@@ -151,7 +151,7 @@ LiquidGlassQuality liquidGlassQualitySetting(WidgetRef ref) => ref.watch(
 double bilipaiRefractOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 24.0,
       LiquidGlassQuality.medium => 24.0,
-      LiquidGlassQuality.high => 8.0,
+      LiquidGlassQuality.high => 24.0,
     };
 
 double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
@@ -164,7 +164,7 @@ Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
   final a = switch (quality) {
     LiquidGlassQuality.low => 0.40,
     LiquidGlassQuality.medium => 0.40,
-    LiquidGlassQuality.high => 0.54,
+    LiquidGlassQuality.high => 0.40,
   };
   return isDark
       ? Color.fromARGB((a * 255).round(), 0x26, 0x26, 0x2A)
@@ -180,43 +180,43 @@ Color bilipaiSurfaceTint(BuildContext context, WidgetRef ref,
 
 double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.20,
-      LiquidGlassQuality.medium => 0.38,
-      LiquidGlassQuality.high => 0.55,
+      LiquidGlassQuality.medium => 0.29,
+      LiquidGlassQuality.high => 0.38,
     };
 
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 1.5,
-      LiquidGlassQuality.medium => 2.75,
-      LiquidGlassQuality.high => 4.0,
+      LiquidGlassQuality.medium => 2.1,
+      LiquidGlassQuality.high => 2.75,
     };
 
 double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 24.0,
       LiquidGlassQuality.medium => 24.0,
-      LiquidGlassQuality.high => 8.0,
+      LiquidGlassQuality.high => 24.0,
     };
 
 double bilipaiSaturationOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 1.5,
       LiquidGlassQuality.medium => 1.5,
-      LiquidGlassQuality.high => 1.24,
+      LiquidGlassQuality.high => 1.5,
     };
 
 double bilipaiIndicatorLensBoostOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 1.35,
-      LiquidGlassQuality.medium => 1.0,
-      LiquidGlassQuality.high => 0.78,
+      LiquidGlassQuality.medium => 1.18,
+      LiquidGlassQuality.high => 1.0,
     };
 
 double bilipaiIndicatorEdgeBoostOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 1.40,
-      LiquidGlassQuality.medium => 1.0,
-      LiquidGlassQuality.high => 0.82,
+      LiquidGlassQuality.medium => 1.20,
+      LiquidGlassQuality.high => 1.0,
     };
 
 double bilipaiIndicatorChromaOf(LiquidGlassQuality q) => switch (q) {
       LiquidGlassQuality.low => 0.0,
-      LiquidGlassQuality.medium => 0.5,
+      LiquidGlassQuality.medium => 0.25,
       LiquidGlassQuality.high => 0.5,
     };
 
@@ -230,7 +230,10 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
       false);
 }
 
-final chromeGlassSettlingProvider = StateProvider<bool>((ref) => false);
+/// 转场中快照图是否正以 1.0 不透明度覆盖 backdrop：
+/// 就绪时玻璃 shader 采样 backdrop 是安全的（内容=快照图），
+/// 未就绪窗口（抓取中/失败）采样≈0.01 透明 live 层≈无内容（黑）
+final ValueNotifier<bool> globalSnapshotReady = ValueNotifier<bool>(false);
 
 final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
 ImageFilter cachedBlur(double sigma) {

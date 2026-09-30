@@ -110,20 +110,72 @@ class SongListScrollFabs extends ConsumerWidget {
   }
 }
 
-class _Slot extends StatelessWidget {
+class _Slot extends StatefulWidget {
   const _Slot({required this.visible, required this.child});
 
   final bool visible;
   final Widget child;
 
   @override
+  State<_Slot> createState() => _SlotState();
+}
+
+class _SlotState extends State<_Slot> {
+  bool? _lastVisible;
+
+  // 渲显分离：出现时先保持不可见（0.01 保底绘制）让玻璃管线把
+  // backdrop 采样跑就绪，数帧后再淡入——小组件晚百来毫秒出现无感知，
+  // 好过实底色块遮丑或采样黑帧；淡入淡出同为 180ms 对称动效，
+  // 组件树常驻待命不销毁
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastVisible = widget.visible;
+    if (widget.visible) _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(_Slot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final visible = widget.visible;
+    if (_lastVisible == visible) return;
+    _lastVisible = visible;
+    if (visible) {
+      _scheduleReveal();
+    } else {
+      setState(() => _shown = false);
+    }
+  }
+
+  void _scheduleReveal() {
+    if (_shown) return;
+    // 6 帧（~100ms）：0.01 低透明度下引擎可能裁剪 backdrop readback，
+    // 采样真正就绪偏晚；帧数不足切回玻璃会残留一两帧黑底
+    var remaining = 6;
+    void tick() {
+      if (!mounted) return;
+      if (!widget.visible) return;
+      remaining--;
+      if (remaining > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+        return;
+      }
+      setState(() => _shown = true);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => tick());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final visible = widget.visible && _shown;
     return IgnorePointer(
       ignoring: !visible,
       child: AnimatedOpacity(
-        // 最低压到 0.01 而非归零：opacity=0 会让整树停止绘制，再次显示
-        // 时首帧引擎 backdrop 采样未就绪闪黑；隐去期间保持绘制即可
-        // 消除出现/消失两侧的黑闪
+        // 最低压到 0.01 而非归零：opacity=0 会让整树停止绘制，玻璃管线
+        // 与 backdrop 采样也随之停摆，渲染就绪无从谈起
         opacity: visible ? 1 : 0.01,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
@@ -131,7 +183,7 @@ class _Slot extends StatelessWidget {
           scale: visible ? 1 : 0.6,
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          child: child,
+          child: widget.child,
         ),
       ),
     );
@@ -160,39 +212,8 @@ class _ScrollFab extends ConsumerStatefulWidget {
 }
 
 class _ScrollFabState extends ConsumerState<_ScrollFab> {
-  bool? _lastVisible;
-  bool _warmup = false;
-
-  // 每次出现都以实底热身数帧（浅色白底/深色黑底，跟随主题），
-  // 再交叉切回实时液态玻璃：出现瞬间引擎 backdrop 采样可能尚未跟上，
-  // 直接出玻璃会先闪黑底。路由推入/返回（Offstage 换快照→还原）造成
-  // 的重进由 BiliPaiGlass 的预烘焙图续展（_startTransitionResume）兜底
-  void _syncVisible() {
-    final visible = widget.visible;
-    if (_lastVisible == visible) return;
-    final rising = visible && _lastVisible != true;
-    _lastVisible = visible;
-    if (!rising || _warmup) return;
-    _warmup = true;
-    // 10 帧（~160ms）：0.01 低透明度下引擎可能裁剪 backdrop readback，
-    // 采样真正就绪偏晚；热身过短会在切回玻璃后残留一两帧黑底
-    var remaining = 10;
-    void tick() {
-      if (!mounted) return;
-      remaining--;
-      if (remaining > 0) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => tick());
-        return;
-      }
-      setState(() => _warmup = false);
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => tick());
-  }
-
   @override
   Widget build(BuildContext context) {
-    _syncVisible();
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final iconWidget = Icon(widget.icon, size: 20, color: scheme.onSurfaceVariant);
@@ -223,9 +244,7 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: bilipaiBackdropBlurOf(quality),
-        backgroundColor: _warmup
-            ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-            : bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),

@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -417,7 +415,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     WidgetsBinding.instance.removeObserver(this);
     _router.routerDelegate.removeListener(_onRouteChanged);
     _libPaneMountTimer?.cancel();
-    _chromeSettleTimer?.cancel();
     _rotationSub?.cancel();
     super.dispose();
   }
@@ -445,6 +442,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   bool _libPaneMountable = true;
   Timer? _libPaneMountTimer;
 
+  // 转场中顶栏复用的旧 widget 实例（identical → 子树跳过 rebuild 保帧）
+  Widget? _topBarCache;
+
   void _deferLibPaneMount() {
     _libPaneMountable = false;
     _libPaneMountTimer?.cancel();
@@ -453,57 +453,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       if (mounted) setState(() => _libPaneMountable = true);
     });
   }
-
-  bool? _lastChromeHidden;
-  Timer? _chromeSettleTimer;
-
-  void _syncChromeGlassSettle(bool hidden) {
-    if (_lastChromeHidden == hidden) return;
-    final first = _lastChromeHidden == null;
-    _lastChromeHidden = hidden;
-    if (first) return;
-    _chromeSettleTimer?.cancel();
-    scheduleMicrotask(() {
-      if (!mounted) return;
-      ref.read(chromeGlassSettlingProvider.notifier).state = true;
-      // #region debug-point D:chrome-settle
-      _dbgReport('D', 'chrome-settle-up', {});
-      // #endregion
-    });
-    _chromeSettleTimer = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      ref.read(chromeGlassSettlingProvider.notifier).state = false;
-      // #region debug-point D:chrome-settle
-      _dbgReport('D', 'chrome-settle-down', {});
-      // #endregion
-    });
-  }
-
-  // #region debug-point Z:report
-  // 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
-  static final HttpClient _dbgClient = HttpClient()
-    ..connectionTimeout = const Duration(milliseconds: 500);
-
-  void _dbgReport(String hyp, String event, Map<String, Object?> data) {
-    try {
-      debugPrint('[DBG][$hyp] $event $data');
-      _dbgClient
-          .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
-          .then((rq) {
-        rq.headers.contentType = ContentType.json;
-        rq.write(jsonEncode({
-          'sessionId': 'liquid-glass-page-flash',
-          'runId': 'pre',
-          'hypothesisId': hyp,
-          'location': 'shell.dart',
-          'msg': '[DEBUG] $event',
-          'data': data,
-        }));
-        return rq.close();
-      }).then((_) {}).catchError((_) {});
-    } catch (_) {}
-  }
-  // #endregion
 
   @override
   void didChangeMetrics() {
@@ -808,7 +757,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
-    if (!landscape) _syncChromeGlassSettle(hidden);
 
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
@@ -816,6 +764,63 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       ref.read(landscapeContentPathProvider.notifier).state = null;
       widget.navigationShell.goBranch(
           i, initialLocation: i == widget.navigationShell.currentIndex);
+    }
+
+    // 转场中沿用上次构建的顶栏实例（identical → Element 跳过子树 rebuild）：
+    // 标题/按钮变化会连带毛玻璃 BackdropFilter 重新采样 backdrop 层，
+    // 转场中该层不稳定即闪黑；锁定后落定才更新标题
+    final Widget topBar;
+    if (globalIsTransitioning.value && _topBarCache != null) {
+      topBar = _topBarCache!;
+    } else {
+      topBar = _topBarCache = GlassTopBar(
+        titleSpacing: widget.index == 0 ? 18 : null,
+        forceSolid: false,
+        title: widget.index == 1
+            ? Text(tr('个人中心'))
+            : Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: tr('弦予')),
+                    TextSpan(
+                      text: tr('音乐'),
+                      style: const TextStyle(
+                        color: Color(0xFFEC4141),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+        actions: [
+          if (widget.index == 0) ...[
+            IconButton(
+              icon: themeSlotWidget(ref, 'entry.wallpaper',
+                  fallback: const SkinIcon()),
+              tooltip: tr('皮肤'),
+              onPressed: () => context.push('/wallpaper'),
+            ),
+            const SizedBox(width: 16),
+          ] else ...[
+            IconButton(
+              icon: themeSlotIcon(ref, 'mine.settings',
+                  fallback: Icons.settings_outlined),
+              tooltip: tr('设置'),
+              onPressed: () => context.push('/settings'),
+            ),
+            const SizedBox(width: 16),
+          ],
+        ],
+        bottom: PageSearchBarBottom(
+          onTap: () => context.push('/search'),
+          onRecognize: () => context.push('/recognize'),
+        ),
+      );
     }
 
     Widget buildRailDivider() => Positioned(
@@ -1094,7 +1099,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
             ),
 
-          if (!landscape && !floatingSearchBar)
+    if (!landscape && !floatingSearchBar)
             Positioned(
               top: 0,
               left: 0,
@@ -1106,57 +1111,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 opacity: (widget.index == 0 || widget.index == 1) && !hidden
                     ? 1.0
                     : 0.01,
-                child: IgnorePointer(
-                  ignoring: hidden,
-                  child: GlassTopBar(
-                    titleSpacing: widget.index == 0 ? 18 : null,
-                    forceSolid: ref.watch(chromeGlassSettlingProvider),
-                    title: widget.index == 1
-                        ? Text(tr('个人中心'))
-                        : Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: tr('弦予')),
-                                TextSpan(
-                                  text: tr('音乐'),
-                                  style: const TextStyle(
-                                    color: Color(0xFFEC4141),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                    actions: [
-                      if (widget.index == 0) ...[
-                        IconButton(
-                          icon: themeSlotWidget(ref, 'entry.wallpaper',
-                              fallback: const SkinIcon()),
-                          tooltip: tr('皮肤'),
-                          onPressed: () => context.push('/wallpaper'),
-                        ),
-                        const SizedBox(width: 16),
-                      ] else ...[
-                        IconButton(
-                          icon: themeSlotIcon(ref, 'mine.settings',
-                              fallback: Icons.settings_outlined),
-                          tooltip: tr('设置'),
-                          onPressed: () => context.push('/settings'),
-                        ),
-                        const SizedBox(width: 16),
-                      ],
-                    ],
-                    bottom: PageSearchBarBottom(
-                      onTap: () => context.push('/search'),
-                      onRecognize: () => context.push('/recognize'),
-                    ),
-                  ),
-                ),
+                child: IgnorePointer(ignoring: hidden, child: topBar),
               ),
             ),
           const OrientationTransitionOverlay(),
@@ -1230,8 +1185,7 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf) ||
-        ref.watch(chromeGlassSettlingProvider);
+    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     final fill = solid
@@ -1373,25 +1327,8 @@ class _LiquidNavBar extends ConsumerStatefulWidget {
 }
 
 class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
-  bool _holdSolid = false;
-  bool _lastSettling = false;
-
   @override
   Widget build(BuildContext context) {
-    final settling = ref.watch(chromeGlassSettlingProvider);
-    if (settling != _lastSettling) {
-      final prior = _lastSettling;
-      _lastSettling = settling;
-      if (prior && !settling) {
-        _holdSolid = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_holdSolid) return;
-          setState(() => _holdSolid = false);
-        });
-      }
-    }
-    final effectiveSettling = settling || _holdSolid;
-
     final index = widget.index;
     final onSelect = widget.onSelect;
     final lowPerf = ref.watch(
@@ -1429,9 +1366,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     }
     return _frostedGlass(context, ref, tabs,
         lowPerf: lowPerf,
-        budget: budget,
-        forceSolid: effectiveSettling,
-        keepFilter: effectiveSettling);
+        budget: budget);
   }
 
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
@@ -1465,8 +1400,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
       {bool lowPerf = false,
       BlurBudget? budget,
-      bool forceSolid = false,
-      bool keepFilter = false}) {
+      bool forceSolid = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final solid = forceSolid || prefSolid;

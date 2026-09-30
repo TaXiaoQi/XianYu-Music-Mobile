@@ -205,7 +205,8 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
     super.didUpdateWidget(oldWidget);
     final cb = widget.background;
     if (oldWidget.background?.imagePath != cb?.imagePath ||
-        oldWidget.background?.mediaType != cb?.mediaType) {
+        oldWidget.background?.mediaType != cb?.mediaType ||
+        oldWidget.background?.motionVideoPath != cb?.motionVideoPath) {
       _syncVideo(cb);
     }
     _syncAspect(cb);
@@ -236,7 +237,11 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   Future<void> _syncVideo(CustomBackground? cb) async {
     final isVideo =
         cb != null && cb.mediaType == WallpaperMediaType.video && cb.active;
-    final key = isVideo ? cb.imagePath : null;
+    // 动态图片：视频源取内嵌提取的 mp4（imagePath 是静帧）；
+    // 普通视频壁纸：视频源即 imagePath 本身
+    final videoPath =
+        isVideo && cb.motionVideoPath.isNotEmpty ? cb.motionVideoPath : cb?.imagePath ?? '';
+    final key = isVideo ? videoPath : null;
     if (_videoKey == key) return;
     _videoKey = key;
     _colorTimer?.cancel();
@@ -251,7 +256,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
 
     if (!isVideo) return;
 
-    final controller = VideoPlayerController.file(File(cb.imagePath))
+    final controller = VideoPlayerController.file(File(videoPath))
       ..setLooping(true)
       ..setVolume(0);
     try {
@@ -359,9 +364,12 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   Widget _render(CustomBackground cb) {
     final file = File(cb.imagePath);
     final hasMedia = file.path.isNotEmpty;
-    final isVideo =
-        cb.mediaType == WallpaperMediaType.video ||
-        file.path.toLowerCase().endsWith('.mp4');
+    // 动态图片（motionVideoPath 非空）按 mediaType 决定展示图片还是视频；
+    // 普通内容按 mediaType / 扩展名判定
+    final isVideo = cb.motionVideoPath.isNotEmpty
+        ? cb.mediaType == WallpaperMediaType.video
+        : cb.mediaType == WallpaperMediaType.video ||
+              file.path.toLowerCase().endsWith('.mp4');
     final video = _videoController;
     final videoReady = isVideo && _videoReady && video != null;
     final blurSig = cb.blur * 0.6;
@@ -551,9 +559,13 @@ class RoutePageBackdrop extends ConsumerWidget {
       final base = sampled ?? appSurfaceBg(context);
       return AnimatedBuilder(
         animation: anim,
-        builder: (context, child) => anim.status == AnimationStatus.completed
-            ? (child ?? const SizedBox.shrink())
-            : ColoredBox(color: base, child: child!),
+        // 结构必须恒定：按 status 切换「裸 child ↔ ColoredBox 包裹」会让
+        // child 的 element 深度变化，RouteStaticSnapshot（child=页面快照层）
+        // 在每次转场开始/结束时被销毁重建——快照图丢失，转场全程失去
+        // backdrop 保护（玻璃采样黑/白闪）。completed 与否只影响 base 色
+        // 是否叠在页面底下；页面本身不透明（AppPageBackground），恒定
+        // ColoredBox 无视觉差异
+        builder: (context, child) => ColoredBox(color: base, child: child!),
         child: child,
       );
     }

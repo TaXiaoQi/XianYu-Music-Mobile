@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -9,32 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../core/application_logger.dart';
-
-// #region debug-point Z:report
-// 调试会话 liquid-glass-page-flash 临时插桩，验证后整体清理
-final HttpClient _dbgClient = HttpClient()
-  ..connectionTimeout = const Duration(milliseconds: 500);
-
-void _dbgReport(String hyp, String event, Map<String, Object?> data) {
-  try {
-    debugPrint('[DBG][$hyp] $event $data');
-    _dbgClient
-        .openUrl('POST', Uri.parse('http://192.168.3.32:7777/event'))
-        .then((rq) {
-      rq.headers.contentType = ContentType.json;
-      rq.write(jsonEncode({
-        'sessionId': 'liquid-glass-page-flash',
-        'runId': 'pre',
-        'hypothesisId': hyp,
-        'location': 'route_static_snapshot.dart',
-        'msg': '[DEBUG] $event',
-        'data': data,
-      }));
-      return rq.close();
-    }).then((_) {}).catchError((_) {});
-  } catch (_) {}
-}
-// #endregion
+import 'glass_settings.dart';
 
 class RouteStaticSnapshot extends ConsumerStatefulWidget {
   const RouteStaticSnapshot({
@@ -60,6 +32,7 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   Size? _size;
   bool _enabled = true;
   bool _capturing = false;
+  bool _settleHold = false;
   int _token = 0;
 
   bool get _moving {
@@ -77,20 +50,28 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   }
 
   void _onStatus(AnimationStatus status) {
-    // #region debug-point A:snap-status
-    _dbgReport('A', 'snap-status', {
-      'status': status.name,
-      'moving': _moving,
-      'hasImg': _image != null,
-    });
-    // #endregion
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
+      _settleHold = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _moving) _capture();
+        // 无条件抓：首帧阻塞时 postFrame 会推迟到动画结束后才执行，
+        // 若再叠加 _moving 条件快照将永远抓不到图（转场全程无保护）
+        if (mounted) _capture();
       });
       return;
     }
+    // 转场结束不立即移除快照：被快照完全遮挡的 live 层会被引擎剔除渲染，
+    // 立即移除会让页面裸重渲染首帧玻璃采样黑。快照多保留一帧，
+    // live 层先在快照底下完整渲染，下一帧移除时无缝接管
     final wasMoving = _moving;
+    if (wasMoving && !_settleHold) {
+      _settleHold = true;
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _settleHold = false);
+      });
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !wasMoving) setState(() {});
     });
@@ -144,14 +125,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       img?.dispose();
       return;
     }
-    // #region debug-point A:snap-capture
-    _dbgReport('A', 'snap-capture', {
-      'ok': img != null,
-      'attempt': attempt,
-      'w': img?.width,
-      'h': img?.height,
-    });
-    // #endregion
     setState(() {
       _image?.dispose();
       _image = img;
@@ -164,7 +137,11 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
     final img = _image;
     final size = _size;
     final moving = _enabled && _moving;
-    final showImg = moving && img != null && size != null;
+    final showImg =
+        _enabled && (_moving || _settleHold) && img != null && size != null;
+    // 同步快照就绪信号给玻璃层：showImg=true 时 backdrop 被快照图
+    // （1.0 不透明）覆盖，转场中玻璃 shader 采样安全
+    globalSnapshotReady.value = showImg;
     return RepaintBoundary(
       key: _boundaryKey,
       child: Stack(
@@ -172,14 +149,13 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
         children: [
           // 不用 Offstage：整树停绘后再还原时，重进绘制管线首帧全场景
           // backdrop 采样失效（顶栏/底栏/播放条/页面内玻璃齐黑一帧）。
-          // 0.01 保底持续绘制让采样始终有效；live 层被顶层快照完全遮住，
-          // 视觉无差异。抓取只发生在 img==null（showImg=false）时，无抓废
+          // live 层恒 1.0 完整渲染：转场开始到快照抓取完成之间的窗口里
+          // （img 尚为 null）backdrop=完整页面内容，任何玻璃采样都不会黑；
+          // 快照图就绪后盖在 live 层上方，视觉无差异。抓取只发生在
+          // img==null（showImg=false）时，无抓废
           IgnorePointer(
             ignoring: showImg,
-            child: Opacity(
-              opacity: showImg ? 0.01 : 1.0,
-              child: widget.child,
-            ),
+            child: widget.child,
           ),
           if (img != null && size != null && moving)
             Positioned.fill(

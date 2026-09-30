@@ -91,7 +91,6 @@ class FloatingGlassSurface extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final settling = ref.watch(chromeGlassSettlingProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -126,8 +125,6 @@ class FloatingGlassSurface extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
-      forceSolid: settling,
-      keepFilter: settling,
     );
   }
 }
@@ -140,6 +137,7 @@ class BiliPaiPill extends ConsumerWidget {
     this.radius = 20,
     this.alwaysLive = false,
     this.freshBackdrop = false,
+    this.chromeFrame = false,
   });
 
   final Widget child;
@@ -152,6 +150,9 @@ class BiliPaiPill extends ConsumerWidget {
 
   final bool freshBackdrop;
 
+  // chrome 缓存帧：仅 shell 常驻 chrome 条开启（见 BiliPaiGlass.useChromeFrame）
+  final bool chromeFrame;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lowPerf = ref.watch(
@@ -159,7 +160,6 @@ class BiliPaiPill extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final settling = ref.watch(chromeGlassSettlingProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -181,6 +181,7 @@ class BiliPaiPill extends ConsumerWidget {
         radius: radius,
         alwaysLive: alwaysLive,
         freshBackdrop: freshBackdrop,
+        useChromeFrame: chromeFrame,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
@@ -206,8 +207,6 @@ class BiliPaiPill extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
-      forceSolid: settling,
-      keepFilter: settling,
     );
   }
 }
