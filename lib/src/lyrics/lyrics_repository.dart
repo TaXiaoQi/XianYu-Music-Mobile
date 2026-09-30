@@ -362,11 +362,7 @@ final _lrcLineStampPattern = RegExp(r'^\[(\d+):(\d{2})(?:[.:](\d{1,3}))?]');
 const _minAlignWindowMs = 150;
 const _maxAlignWindowMs = 5000;
 
-/// 行首 QRC/KRC/YRC 时间戳：`[起始毫秒,持续毫秒]`。
-///
-/// 插件主歌词经常直接就是 YRC/QRC —— pickPluginMainText 里 yrc、qrc 都排在
-/// lyric 之前，而这类行首没有 `[mm:ss]`。只认 LRC 时间戳时，对齐会在这种
-/// 主歌词上整段放弃，译文依旧配不上主行，界面还是一个中文都没有。
+/// 行首 QRC/KRC/YRC 时间戳：`[起始毫秒,持续毫秒]`（插件主文常是这种，无 `mm:ss`）。
 final _qrcLineStampPattern = RegExp(r'^\[(\d+),(\d+)]');
 
 int? _lrcLineStampMs(String line) {
@@ -397,13 +393,10 @@ String _msToLrcStamp(int ms) {
       '${millis.toString().padLeft(3, '0')}';
 }
 
-/// 译文行前缀。取值必须落在解析器识别的角色前缀表里
-/// （`[translation]` / `翻译:` / `翻译：` / `译文:` / `译文：` / `【翻译】` / `【译文】`），
-/// 否则该行不会进翻译轨。
+/// 译文行前缀，取值须在 Rust detect_explicit_role 的前缀表内，否则进不了翻译轨。
 const _translationMarker = '【翻译】';
 
-/// 主文是否为 QRC 内层逐字行（`[起始,持续]`）——与 Rust 的 parse_line_header
-/// 判据一致：行首必须是「整数,整数」。
+/// 主文是否为 QRC 内层逐字行（行首「整数,整数」，同 Rust parse_line_header）。
 bool _looksLikeQrcBody(String text) {
   for (final line in text.split('\n')) {
     final trimmed = line.trim();
@@ -414,15 +407,7 @@ bool _looksLikeQrcBody(String text) {
 }
 
 /// 组装插件歌词 raw：主文 + 已对齐的译文。
-///
-/// 主文是 QRC 内层时**必须补出 QRC 文档外壳** —— Rust 侧挂载插件译文的唯一
-/// 入口要求文本里存在 `</QrcInfos>`（lyrics.rs 的 attach_lrc_translation_lines
-/// 分支在 `normalized.find("</QrcInfos>")` 命中后才执行，按 ±2s 时间戳把尾部
-/// LRC 译文挂回主行）。缺这个哨兵标记时整段跳过：线上实测译文 821 字符、
-/// 时间戳与主行逐个一致，依然一个中文都不显示。
-///
-/// parse_qrc 只逐行认 `[起,时长]` 开头的行、不解析 XML 结构，所以外壳只需提供
-/// 该哨兵标记；正文放在属性外，避免歌词里的引号破坏属性转义。
+/// QRC 主文必须补文档外壳：Rust 只在该文本含 `</QrcInfos>` 时才挂载尾部译文 LRC。
 String composePluginLyricsRaw(String mainBody, String translationLrc) {
   if (mainBody.isEmpty || translationLrc.isEmpty) {
     return '$mainBody\n$translationLrc';
@@ -460,15 +445,7 @@ int _alignWindowMs(List<int> stamps, int index) {
 }
 
 /// 把插件返回的翻译行对齐到主歌词时间轴。
-///
-/// 插件直接转发的翻译行，时间戳要么与主歌词不一致、要么整份没有时间戳：
-/// 前者过不了歌词解析的归组容差，后者会在解析阶段被整行丢弃——两种都表现为
-/// 「开了翻译也不显示译文」。
-///
-/// 策略（行数不等时也不会把译文甩到远处的句子上）：
-/// 1. 有时间戳的译文吸附到最近的主行，须落在该主行的半行窗口内；
-/// 2. 没时间戳、或离任何主行都太远的，按剩余主行顺序依次补；
-/// 3. 译文行比主歌词多出来的，挂到最后一行——宁可重复也不丢文本。
+/// 有时间戳的吸附到最近主行（半行窗口内），其余按剩余行序补，多出的挂最后一行。
 String alignTranslationToMainLyric(String mainContent, String translation) {
   final stamps = _mainLineStamps(mainContent);
   final bodies = <String>[];
@@ -526,17 +503,12 @@ String alignTranslationToMainLyric(String mainContent, String translation) {
   }
 
   // 第 3 轮：主行不够用时挂到最后一行。
-  // 行首必须与主歌词同格式：解析器按首行定整份格式，混入另一种格式的译文行
-  // 会被整行丢弃（线上数据：主文 20 行 KRC + 译文 20 行 LRC → 带翻译 0 行）。
   final fallback = stamps.length - 1;
   final out = <String>[];
   for (var i = 0; i < bodies.length; i++) {
     final index = target[i] ?? fallback;
     final stamp = stamps[index];
-    // 译文一律写成「行级 LRC + 角色前缀」，与 Rust 侧期望一致：
-    // parse_raw_lyrics 里挂载插件译文的分支（attach_lrc_translation_lines）
-    // 注释明确写着"插件译文 LRC、按时间戳关联回主行"；前缀则决定它能否被
-    // detect_explicit_role 认成 ExplicitLineRole::Translation。
+    // 译文保持行级 LRC + 角色前缀，与 Rust 侧挂载分支的期望一致。
     out.add('[${_msToLrcStamp(stamp)}]$_translationMarker${bodies[i]}');
   }
   return out.join('\n');
