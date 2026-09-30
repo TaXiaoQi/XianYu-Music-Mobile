@@ -672,8 +672,11 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         _resolved = source;
         final sheet = hit;
         if (!mounted) return;
-        // 精确命中直接导入，与桌面端一致，不停在候选列表
-        await _importSheet(sheet);
+        // 精确命中也先进预览列表：展示歌单信息，用户点击条目才真正导入，
+        // 避免链接识别错误时直接落库（与公开搜索结果的行为一致）
+        setState(() {
+          _sheets = [sheet];
+        });
         return;
       }
       if (autoResolved) _resolved = source;
@@ -686,14 +689,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           return;
         }
       }
-      // 链接/ID 精确导入唯一命中时直接导入，与桌面端一致
-      // （公开搜索结果 raw 不带 _importedTracks，不会误触发）
-      if (sheets.length == 1 &&
-          PluginCatalogService.looksLikeSheetLinkOrId(keyword) &&
-          sheets.first.raw['_importedTracks'] != null) {
-        await _importSheet(sheets.first);
-        return;
-      }
+      // 链接/ID 精确命中的唯一结果同样只做预览：用户点击条目才开始导入
       setState(() {
         _sheets = sheets;
         if (sheets.isEmpty) _error = tr('未找到匹配的歌单，换个关键词或链接试试');

@@ -86,8 +86,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   bool _capturing = false;
 
-  // 是否成功烘焙过至少一次：区分「新实例等待首烘」（实底兜底）与
-  // 「滚动中临时炸图」（实时渲染，backdrop 已就绪不会黑）
+  // 是否成功烘焙过至少一次：区分「新实例等待首烘」（毛玻璃 blur+tint
+  // 兜底，禁 shader）与「滚动中临时炸图」（实时渲染，backdrop 已就绪不会黑）
   bool _hasCaptured = false;
   Timer? _idleDebounce;
   // 首烘重试用独立 Timer：滚动信号翻转 busy 会 cancel _idleDebounce，
@@ -142,7 +142,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     }
     _idleDebounce?.cancel();
     // 冷却只需覆盖「转场动画刚结束 backdrop 层短暂重建」的窗口；
-    // 700ms 会让转场中挂载的新实例白底拖太久
+    // 700ms 会让转场中挂载的新实例兜底拖太久
     _captureCooldownUntil =
         DateTime.now().add(const Duration(milliseconds: 350));
     // _onGlobalState 不监听 transitioning 翻转：转场结束时若
@@ -179,9 +179,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
             .addPostFrameCallback((_) => old.dispose());
       }
     });
-    // 转场中挂载的新实例（hasCaptured=false，一直在实底兜底）：
+    // 转场中挂载的新实例（hasCaptured=false，一直在 blur+tint 兜底）：
     // 必须在这里主动安排首烘，否则 _idle 翻转后没有任何机制唤醒它，
-    // 要等用户下一次滚动才有机会——白底会一直挂死不恢复玻璃
+    // 要等用户下一次滚动才有机会——兜底会一直挂死不启用液态 shader
     if (!widget.alwaysLive && !_hasCaptured) {
       _scheduleCapture();
     }
@@ -339,7 +339,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     }
 
     // 静态帧方案：转场中靠「不重绘」保留转场前的正常玻璃 layer（见
-    // _onTransitionChanged），实底只兜「从未验证过 backdrop」的新实例；
+    // _onTransitionChanged）；从未验证过 backdrop 的新实例先用毛玻璃
+    // blur+tint 渲染（见 paint/_paintLive，禁 shader），烘焙后切液态；
     // 已验证实例其余时刻一律实时渲染（静止/滚动/落定 backdrop 均就绪）
     final solidOnly = !widget.alwaysLive && !_hasCaptured;
 
@@ -748,48 +749,30 @@ class RenderLiquidBacking extends RenderBox {
     final fade = _fadeBlend;
     // 转场降级窗口（_liveUseShader=false）：shader 采样失效，但 chrome
     // 缓存帧是上次正常合成的液态输出——直接画自己区域的裁剪即可复现
-    // 上次观感，无任何采样。优先级最高（覆盖实底兜底/交叉淡入分支）
+    // 上次观感，无任何采样。优先级最高（覆盖兜底/交叉淡入分支）
     if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
       _paintChromeFrame(context, offset, chromeGlassFrame.value!.image);
       return;
     }
-    // 转场中已验证实例（_solidOnly=false）一律实时渲染，与毛玻璃行为对齐：
-    // 毛玻璃全程无守卫、实时采样 backdrop，转场从不出问题——因为快照层
-    // 的 live 子树恒定完整渲染，backdrop 任何时刻都有内容可采。此前的
-    // transitionSolid（transitioning && !snapshotReady）会把整个转场打成
-    // 纯色块：globalSnapshotReady 只在「img 上屏且 moving」的 build 里置
-    // true，而 capture 普遍晚于动画结束（debug 首帧阻塞下必然如此），
-    // pop 又从 dismissed 起步 moving 恒 false——ready 转场中恒 false，
-    // 任何一次被迫重绘都会把静态帧换成色块并因静默一直挂到转场结束
-    if (_solidOnly) {
-      // 从未验证过 backdrop 的新实例：backdrop 层未就绪，实时渲染
-      // 裸采样会闪黑。先以不透明底色渲染同一圆角形状，烘焙完成后由
-      // _startFadeIn 交叉淡入玻璃——全程无采样、无黑帧
-      _paintSolid(context, offset);
-    } else if (frozen != null && fade > 0.001) {
+    if (frozen != null && fade > 0.001) {
       if (fade >= 0.999) {
         _paintFrozen(context, offset, frozen);
       } else {
         _paintCrossfade(context, offset, frozen, fade);
       }
     } else {
+      // 所有实例（含未验证新实例）实时渲染，与毛玻璃行为对齐：毛玻璃
+      // 全程无守卫、实时采样 backdrop，转场从不出问题——因为快照层
+      // 的 live 子树恒定完整渲染，backdrop 任何时刻都有内容可采。此前的
+      // transitionSolid（transitioning && !snapshotReady）会把整个转场打成
+      // 纯色块：globalSnapshotReady 只在「img 上屏且 moving」的 build 里置
+      // true，而 capture 普遍晚于动画结束（debug 首帧阻塞下必然如此），
+      // pop 又从 dismissed 起步 moving 恒 false——ready 转场中恒 false，
+      // 任何一次被迫重绘都会把静态帧换成色块并因静默一直挂到转场结束。
+      // 未验证新实例不再画不透明实底（色块阶段可见），而是走同一条
+      // live 路径的纯 blur+tint 兜底，shader 由 _paintLive 内部禁用
       _paintLive(context, offset);
     }
-  }
-
-  void _paintSolid(PaintingContext context, Offset offset) {
-    // 尚无烘焙图（新实例/转场还原首帧）：backdrop 层未就绪，实时渲染
-    // 裸采样会闪黑。先以不透明底色渲染同一圆角形状，烘焙完成后由
-    // _startFadeIn 交叉淡入玻璃——全程无采样、无黑帧
-    final rect = offset & size;
-    final canvas = context.canvas;
-    canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(_radius)));
-    canvas.drawRect(
-      rect,
-      Paint()..color = _backgroundColor.withValues(alpha: 1),
-    );
-    canvas.restore();
   }
 
   // 画整屏缓存帧中本面区域的裁剪：源矩形按当前全局位置×抓帧 dpr 映射，
