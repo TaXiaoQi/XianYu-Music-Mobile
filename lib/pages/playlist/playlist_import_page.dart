@@ -618,6 +618,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
 
     final plugins = _plugins;
     var source = _selected;
+    var autoResolved = false;
     if (source == null) {
       final canonical = _detectPlatformFromUrl(keyword);
       if (canonical != null) {
@@ -628,15 +629,12 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           });
           return;
         }
+        autoResolved = true;
       } else if (plugins.length == 1) {
         source = plugins.first;
-      } else {
-        setState(() {
-          _error = tr('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
-        });
-        return;
+        autoResolved = true;
       }
-      _resolved = source;
+      // 仍无法锁定音源：链接/纯数字歌单 ID 在下方遍历音源精确导入
     }
 
     setState(() {
@@ -650,6 +648,38 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         engine,
         ref.read(pluginManagerProvider).sources,
       );
+      if (source == null) {
+        // 遍历音源精确导入（importMusicSheet + 宿主兜底，不落公开搜索：
+        // 公开搜索对链接/ID 只会返回噪音）。纯数字 ID 存在平台歧义，
+        // 以第一个命中的音源为准，也可手动切换音源重试。
+        MfSheetItem? hit;
+        if (PluginCatalogService.looksLikeSheetLinkOrId(keyword)) {
+          for (final p in plugins) {
+            hit = await catalog.importSheetExact(p, keyword);
+            if (hit != null) {
+              source = p;
+              break;
+            }
+          }
+        }
+        if (hit == null || source == null) {
+          if (!mounted) return;
+          setState(() {
+            _error = tr('无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接');
+          });
+          return;
+        }
+        _resolved = source;
+        final sheet = hit;
+        if (!mounted) return;
+        // 精确命中也先进预览列表：展示歌单信息，用户点击条目才真正导入，
+        // 避免链接识别错误时直接落库（与公开搜索结果的行为一致）
+        setState(() {
+          _sheets = [sheet];
+        });
+        return;
+      }
+      if (autoResolved) _resolved = source;
       final sheets = await catalog.searchSheets(source, keyword);
       if (!mounted) return;
       if (sheets.isEmpty) {
@@ -659,6 +689,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           return;
         }
       }
+      // 链接/ID 精确命中的唯一结果同样只做预览：用户点击条目才开始导入
       setState(() {
         _sheets = sheets;
         if (sheets.isEmpty) _error = tr('未找到匹配的歌单，换个关键词或链接试试');

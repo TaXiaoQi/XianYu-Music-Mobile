@@ -119,6 +119,12 @@ dependency_overrides:
   # （后台挂起冻结推流、恢复后即触发，见 0.9.46 _proxyHandlerForUri）。
   just_audio:
     path: third_party/just_audio
+  # octo_image 源钉住：audio_service 本地补丁经 cached_network_image_ce(git)
+  # 传递依赖 octo_image，宿主 cached_network_image ^3.4.1 也直接依赖它。
+  # 若 ce 侧按 git 源声明，同名包 git/hosted 混源会让 pub 全量重解必挂
+  # （lock 失效即触发，2026-09-29 APK 构建失败根因）。钉 hosted 统一来源；
+  # 鸿蒙态 pubspec_overrides 整体替换本块，ce 不在鸿蒙解析图里，无需此条。
+  octo_image: ^2.1.0
 
 dev_dependencies:
   flutter_test:

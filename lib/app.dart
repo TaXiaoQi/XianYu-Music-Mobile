@@ -19,6 +19,7 @@ import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/privacy_policy.dart';
 import 'src/widgets/custom_background.dart';
+import 'src/widgets/chrome_glass_frame.dart';
 import 'src/widgets/liquid_wave.dart';
 import 'l10n/gen/app_localizations.dart';
 
@@ -361,11 +362,21 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ColoredBox(
-                      color: appSurfaceBg(context),
-                      child: const CustomBackgroundLayer(),
+                    // chrome 液态玻璃缓存帧边界：包住背景层 + 路由子树
+                    // （含 shell 悬浮顶栏/底栏），供转场降级窗口复用
+                    // 上一帧液态渲染输出（见 chrome_glass_frame.dart）
+                    ChromeGlassFrameBoundary(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(
+                            color: appSurfaceBg(context),
+                            child: const CustomBackgroundLayer(),
+                          ),
+                          ScrollOffsetCapture(child: child!),
+                        ],
+                      ),
                     ),
-                    ScrollOffsetCapture(child: child!),
                     // mini 播放条顶层宿主：位于 Navigator 之上，
                     // 所有页面（含播放页）转场都从播放条背后滑过
                     const MiniPlayerOverlay(),

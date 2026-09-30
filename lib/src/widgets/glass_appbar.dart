@@ -69,8 +69,8 @@ class GlassTopBar extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    // 转场期间路由内容已被 RouteStaticSnapshot 冻结为快照，
-    // 顶栏保持全量玻璃即可呈现「最后一帧」的静止观感
+    // 转场中顶栏不重绘（不随转场切换渲染参数）：RepaintBoundary 保留
+    // 转场前的正常玻璃 layer，淡出/淡入只动 alpha 属性，无采样无黑帧
     final solid = forceSolid || prefSolid;
     final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);

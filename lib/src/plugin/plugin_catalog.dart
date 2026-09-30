@@ -6,9 +6,14 @@ import '../player/player_provider.dart';
 import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../rust/api.dart';
+import 'kg_sheet_import.dart';
+import 'kw_sheet_import.dart';
 import 'plugin_engine.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_models.dart';
+import 'qishui_sheet_import.dart';
+import 'tx_sheet_import.dart';
+import 'wy_sheet_import.dart';
 
 class MfSheetItem {
   final String id;
@@ -287,23 +292,46 @@ class PluginCatalogService {
         .hasMatch(t);
   }
 
+  /// 链接/歌单 ID 精确导入：am importPlaylist → 插件 importMusicSheet →
+  /// 五平台宿主兜底。返回 null 表示该音源无法精确导入此输入。
+  /// 供 searchSheets 与导入页「自动识别」遍历音源使用（不落公开搜索）。
+  Future<MfSheetItem?> importSheetExact(
+      PluginSource source, String keyword) async {
+    // am 插件（animemusic/1）歌单导入：importPlaylist 返回真实歌单
+    // 名/封面/创建者，优先走它
+    final methods = await _availableMethods(source);
+    if (methods.contains('importPlaylist')) {
+      final raw = await _tryCallRaw(source, 'importPlaylist', [keyword]);
+      final sheet = _sheetFromAnimeImport(source, keyword, raw);
+      if (sheet != null) return sheet;
+    }
+    final direct =
+        await _tryCallRawList(source, 'importMusicSheet', [keyword]);
+    if (direct.isNotEmpty) {
+      return _sheetFromImportedTracks(source, keyword, direct).first;
+    }
+    // 插件对部分平台歌单解析失败或返回空：宿主兜底
+    final kgSheet = await _kgFallbackSheet(source, keyword);
+    if (kgSheet != null) return kgSheet;
+    final qsSheet = await _qsFallbackSheet(source, keyword);
+    if (qsSheet != null) return qsSheet;
+    final wySheet = await _wyFallbackSheet(source, keyword);
+    if (wySheet != null) return wySheet;
+    final txSheet = await _txFallbackSheet(source, keyword);
+    if (txSheet != null) return txSheet;
+    final kwSheet = await _kwFallbackSheet(source, keyword);
+    if (kwSheet != null) return kwSheet;
+    return null;
+  }
+
   Future<List<MfSheetItem>> searchSheets(
       PluginSource source, String keyword) async {
     // 链接/歌单 ID 优先走 importMusicSheet 精确导入：公开搜索会把链接当
     // 关键词，搜出来的全是别人的同名歌单。
     final linkLike = looksLikeSheetLinkOrId(keyword);
     if (linkLike) {
-      // am 插件（animemusic/1）歌单导入：importPlaylist 返回真实歌单
-      // 名/封面/创建者，优先走它
-      final methods = await _availableMethods(source);
-      if (methods.contains('importPlaylist')) {
-        final raw = await _tryCallRaw(source, 'importPlaylist', [keyword]);
-        final sheet = _sheetFromAnimeImport(source, keyword, raw);
-        if (sheet != null) return [sheet];
-      }
-      final direct =
-          await _tryCallRawList(source, 'importMusicSheet', [keyword]);
-      if (direct.isNotEmpty) return _sheetFromImportedTracks(source, keyword, direct);
+      final exact = await importSheetExact(source, keyword);
+      if (exact != null) return [exact];
     }
     for (final type in ['sheet', 'playlist', 'album']) {
       final list = await _tryCallRawList(source, 'search', [keyword, 1, type]);
@@ -342,6 +370,151 @@ class PluginCatalogService {
         },
       ),
     ];
+  }
+
+  /// 酷狗歌单宿主兜底：插件 importMusicSheet 失败后调用。
+  /// 链接类输入直接尝试；纯数字 ID 仅在酷狗系插件下尝试。
+  Future<MfSheetItem?> _kgFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = KgSheetImport.isKgKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            KgSheetImport.isKgSource(source.name, source.sources));
+    if (!applicable) return null;
+    final kg = await KgSheetImport.import(keyword);
+    if (kg == null || kg.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, kg);
+  }
+
+  /// 汽水歌单宿主兜底：插件 importMusicSheet 返回空后调用。
+  Future<MfSheetItem?> _qsFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = QishuiSheetImport.isQishuiKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            QishuiSheetImport.isQishuiSource(source.name, source.sources));
+    if (!applicable) return null;
+    final qs = await QishuiSheetImport.import(keyword);
+    if (qs == null || qs.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, qs);
+  }
+
+  /// 网易云歌单宿主兜底：插件 importMusicSheet 返回空后调用。
+  Future<MfSheetItem?> _wyFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = WySheetImport.isWyKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            WySheetImport.isWySource(source.name, source.sources));
+    if (!applicable) return null;
+    final wy = await WySheetImport.import(keyword);
+    if (wy == null || wy.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, wy);
+  }
+
+  /// QQ 音乐歌单宿主兜底：插件 importMusicSheet 返回空后调用。
+  Future<MfSheetItem?> _txFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = TxSheetImport.isTxKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            TxSheetImport.isTxSource(source.name, source.sources));
+    if (!applicable) return null;
+    final tx = await TxSheetImport.import(keyword);
+    if (tx == null || tx.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, tx);
+  }
+
+  /// 酷我歌单宿主兜底：插件 importMusicSheet 返回空后调用。
+  Future<MfSheetItem?> _kwFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = KwSheetImport.isKwKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            KwSheetImport.isKwSource(source.name, source.sources));
+    if (!applicable) return null;
+    final kw = await KwSheetImport.import(keyword);
+    if (kw == null || kw.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, kw);
+  }
+
+  Future<MfSheetItem> _hostImportSheetItem(
+      PluginSource source, String keyword, HostSheetImportResult result) async {
+    final songs = result.tracks
+        .map((e) => mfItemToSearchResult(e, source))
+        .where((r) => r.name.isNotEmpty)
+        .toList();
+    final title = result.name.isNotEmpty
+        ? result.name
+        : tr('{name}收藏夹', {'name': source.name});
+    return MfSheetItem(
+      id: keyword,
+      title: title,
+      artist: result.author,
+      coverUrl: result.cover.isNotEmpty
+          ? result.cover
+          : (result.tracks.isNotEmpty ? _extractCover(result.tracks.first) : null),
+      trackCount: songs.isNotEmpty ? songs.length : result.tracks.length,
+      platform: source.name,
+      pluginId: source.id,
+      raw: {
+        'id': keyword,
+        'title': title,
+        '_importedTracks': result.tracks,
+      },
+    );
+  }
+
+  /// 宿主侧歌单兜底导入（歌单源更新链路用）：
+  /// 酷狗→汽水→网易云→QQ→酷我依次尝试（新三平台按来源门槛收敛数字 ID 歧义）。
+  /// 返回原始曲目 map。
+  Future<List<Map<String, dynamic>>> importHostSheetRaw(
+      PluginSource source, String urlLike) async {
+    final kg = await KgSheetImport.import(urlLike);
+    if (kg != null && kg.tracks.isNotEmpty) {
+      final songs = kg.tracks
+          .map((e) => mfItemToSearchResult(e, source))
+          .where((r) => r.name.isNotEmpty)
+          .toList();
+      if (songs.isNotEmpty) return kg.tracks;
+    }
+    final qs = await QishuiSheetImport.import(urlLike);
+    if (qs != null && qs.tracks.isNotEmpty) {
+      final songs = qs.tracks
+          .map((e) => mfItemToSearchResult(e, source))
+          .where((r) => r.name.isNotEmpty)
+          .toList();
+      if (songs.isNotEmpty) return qs.tracks;
+    }
+    if (WySheetImport.isWyKeyword(urlLike) ||
+        WySheetImport.isWySource(source.name, source.sources)) {
+      final wy = await WySheetImport.import(urlLike);
+      if (wy != null && wy.tracks.isNotEmpty) {
+        final songs = wy.tracks
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        if (songs.isNotEmpty) return wy.tracks;
+      }
+    }
+    if (TxSheetImport.isTxKeyword(urlLike) ||
+        TxSheetImport.isTxSource(source.name, source.sources)) {
+      final tx = await TxSheetImport.import(urlLike);
+      if (tx != null && tx.tracks.isNotEmpty) {
+        final songs = tx.tracks
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        if (songs.isNotEmpty) return tx.tracks;
+      }
+    }
+    if (KwSheetImport.isKwKeyword(urlLike) ||
+        KwSheetImport.isKwSource(source.name, source.sources)) {
+      final kw = await KwSheetImport.import(urlLike);
+      if (kw != null && kw.tracks.isNotEmpty) {
+        final songs = kw.tracks
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        if (songs.isNotEmpty) return kw.tracks;
+      }
+    }
+    return const [];
   }
 
   /// am importPlaylist 返回 {id,title,cover,creator,desc,total,list}，

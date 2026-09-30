@@ -206,7 +206,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       ..writeln('');
     for (final e in selected) {
       buffer.writeln(
-          '[${DateTime.fromMillisecondsSinceEpoch(e.timestamp, isUtc: true).toIso8601String()}] '
+          // 本地时间（与导出时间一致）；带 isUtc 会输出 UTC 并带 Z 后缀，
+          // 看起来像晚 8 小时，排查问题时易误判时段
+          '[${DateTime.fromMillisecondsSinceEpoch(e.timestamp).toIso8601String()}] '
           '[${e.level.value.toUpperCase()}] [${e.category}] ${e.message}');
     }
     return buffer.toString().trimRight();

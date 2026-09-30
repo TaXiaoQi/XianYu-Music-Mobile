@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import '../core/application_logger.dart';
+import 'glass_settings.dart';
 
 class RouteStaticSnapshot extends ConsumerStatefulWidget {
   const RouteStaticSnapshot({
@@ -31,6 +32,7 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   Size? _size;
   bool _enabled = true;
   bool _capturing = false;
+  bool _settleHold = false;
   int _token = 0;
 
   bool get _moving {
@@ -49,12 +51,27 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   void _onStatus(AnimationStatus status) {
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
+      _settleHold = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _moving) _capture();
+        // 无条件抓：首帧阻塞时 postFrame 会推迟到动画结束后才执行，
+        // 若再叠加 _moving 条件快照将永远抓不到图（转场全程无保护）
+        if (mounted) _capture();
       });
       return;
     }
+    // 转场结束不立即移除快照：被快照完全遮挡的 live 层会被引擎剔除渲染，
+    // 立即移除会让页面裸重渲染首帧玻璃采样黑。快照多保留一帧，
+    // live 层先在快照底下完整渲染，下一帧移除时无缝接管
     final wasMoving = _moving;
+    if (wasMoving && !_settleHold) {
+      _settleHold = true;
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _settleHold = false);
+      });
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !wasMoving) setState(() {});
     });
@@ -120,13 +137,26 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
     final img = _image;
     final size = _size;
     final moving = _enabled && _moving;
-    final showImg = moving && img != null && size != null;
+    final showImg =
+        _enabled && (_moving || _settleHold) && img != null && size != null;
+    // 同步快照就绪信号给玻璃层：showImg=true 时 backdrop 被快照图
+    // （1.0 不透明）覆盖，转场中玻璃 shader 采样安全
+    globalSnapshotReady.value = showImg;
     return RepaintBoundary(
       key: _boundaryKey,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Offstage(offstage: showImg, child: widget.child),
+          // 不用 Offstage：整树停绘后再还原时，重进绘制管线首帧全场景
+          // backdrop 采样失效（顶栏/底栏/播放条/页面内玻璃齐黑一帧）。
+          // live 层恒 1.0 完整渲染：转场开始到快照抓取完成之间的窗口里
+          // （img 尚为 null）backdrop=完整页面内容，任何玻璃采样都不会黑；
+          // 快照图就绪后盖在 live 层上方，视觉无差异。抓取只发生在
+          // img==null（showImg=false）时，无抓废
+          IgnorePointer(
+            ignoring: showImg,
+            child: widget.child,
+          ),
           if (img != null && size != null && moving)
             Positioned.fill(
               child: RawImage(

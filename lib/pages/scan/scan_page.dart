@@ -9,6 +9,7 @@ import 'package:zxing2/qrcode.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 
 class ScanPage extends ConsumerStatefulWidget {
@@ -18,7 +19,8 @@ class ScanPage extends ConsumerStatefulWidget {
   ConsumerState<ScanPage> createState() => _ScanPageState();
 }
 
-class _ScanPageState extends ConsumerState<ScanPage> {
+class _ScanPageState extends ConsumerState<ScanPage>
+    with HidesShellChrome {
   CameraController? _controller;
   bool _permissionDenied = false;
   bool _initFailed = false;

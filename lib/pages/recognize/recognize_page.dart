@@ -18,6 +18,7 @@ import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recognize/recognize_service.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart';
 import '../../src/widgets/app_toast.dart';
@@ -36,7 +37,7 @@ class RecognizePage extends ConsumerStatefulWidget {
 enum _Phase { idle, recording, recognizing, done }
 
 class _RecognizePageState extends ConsumerState<RecognizePage>
-    with SingleTickerProviderStateMixin {
+    with HidesShellChrome, SingleTickerProviderStateMixin {
   final RecognizeService _service = RecognizeService();
   _Phase _phase = _Phase.idle;
   double _progress = 0;

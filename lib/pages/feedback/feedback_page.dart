@@ -14,6 +14,7 @@ import '../../src/auth/server_models.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/core/application_logger.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/flat_top_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -31,7 +32,7 @@ class FeedbackPage extends ConsumerStatefulWidget {
 }
 
 class _FeedbackPageState extends ConsumerState<FeedbackPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
   final _contentCtrl = TextEditingController();
   final _betaCtrl = TextEditingController();

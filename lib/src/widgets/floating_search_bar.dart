@@ -11,11 +11,19 @@ import 'glass_settings.dart';
 import 'page_search_bar.dart';
 
 class FloatingSearchBar extends ConsumerWidget {
-  const FloatingSearchBar({super.key, required this.onTap, this.onRecognize});
+  const FloatingSearchBar({
+    super.key,
+    required this.onTap,
+    this.onRecognize,
+    this.chromeFrame = false,
+  });
 
   final VoidCallback onTap;
 
   final VoidCallback? onRecognize;
+
+  // 仅 shell 常驻悬浮顶栏内的搜索条开启 chrome 缓存帧
+  final bool chromeFrame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -73,16 +81,24 @@ class FloatingSearchBar extends ConsumerWidget {
       ),
     );
 
-    return FloatingGlassSurface(child: content);
+    return FloatingGlassSurface(chromeFrame: chromeFrame, child: content);
   }
 }
 
 class FloatingGlassSurface extends ConsumerWidget {
-  const FloatingGlassSurface({super.key, required this.child, this.radius = 22});
+  const FloatingGlassSurface({
+    super.key,
+    required this.child,
+    this.radius = 22,
+    this.chromeFrame = false,
+  });
 
   final Widget child;
 
   final double radius;
+
+  // chrome 缓存帧：仅 shell 常驻 chrome 条开启（见 BiliPaiGlass.useChromeFrame）
+  final bool chromeFrame;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,9 +107,6 @@ class FloatingGlassSurface extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final settling = ref.watch(chromeGlassSettlingProvider);
-    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
-    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -101,9 +114,9 @@ class FloatingGlassSurface extends ConsumerWidget {
 
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
         radius: radius,
+        useChromeFrame: chromeFrame,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
@@ -112,9 +125,7 @@ class FloatingGlassSurface extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: warmup
-            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-            : bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -131,8 +142,6 @@ class FloatingGlassSurface extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
-      forceSolid: settling,
-      keepFilter: settling,
     );
   }
 }
@@ -145,6 +154,7 @@ class BiliPaiPill extends ConsumerWidget {
     this.radius = 20,
     this.alwaysLive = false,
     this.freshBackdrop = false,
+    this.chromeFrame = false,
   });
 
   final Widget child;
@@ -157,6 +167,9 @@ class BiliPaiPill extends ConsumerWidget {
 
   final bool freshBackdrop;
 
+  // chrome 缓存帧：仅 shell 常驻 chrome 条开启（见 BiliPaiGlass.useChromeFrame）
+  final bool chromeFrame;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lowPerf = ref.watch(
@@ -164,9 +177,6 @@ class BiliPaiPill extends ConsumerWidget {
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
-    final settling = ref.watch(chromeGlassSettlingProvider);
-    // 液态面仅在 chrome 显隐头几帧实底热身，之后保持实时玻璃不卸载折射
-    final warmup = ref.watch(chromeGlassWarmupProvider);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -184,11 +194,11 @@ class BiliPaiPill extends ConsumerWidget {
 
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       final glass = BiliPaiGlass(
         radius: radius,
         alwaysLive: alwaysLive,
         freshBackdrop: freshBackdrop,
+        useChromeFrame: chromeFrame,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
         blurSigma: surfaceBlurSigma(
@@ -197,9 +207,7 @@ class BiliPaiPill extends ConsumerWidget {
           type: BlurSurfaceType.header,
           crispAtRest: true,
         ),
-        backgroundColor: warmup
-            ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-            : bilipaiSurfaceTint(context, ref, quality),
+        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
         specular: bilipaiSpecularOf(quality),
         edgeAmount: bilipaiEdgeOf(quality),
         saturation: bilipaiSaturationOf(quality),
@@ -216,8 +224,6 @@ class BiliPaiPill extends ConsumerWidget {
       surfaceType: BlurSurfaceType.header,
       budget: budget,
       frostedScale: frostedBlurScale(ref),
-      forceSolid: settling,
-      keepFilter: settling,
     );
   }
 }
@@ -328,6 +334,7 @@ class FloatingTopBar extends StatelessWidget {
     required this.onSearchTap,
     this.onRecognize,
     this.actions = const [],
+    this.chromeFrame = false,
   });
 
   final Widget title;
@@ -338,12 +345,16 @@ class FloatingTopBar extends StatelessWidget {
 
   final List<Widget> actions;
 
+  // shell 常驻悬浮顶栏传入 true：转场降级窗口复用 chrome 缓存帧
+  final bool chromeFrame;
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         BiliPaiPill(
           radius: 20,
+          chromeFrame: chromeFrame,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: SizedBox(
@@ -357,6 +368,7 @@ class FloatingTopBar extends StatelessWidget {
           child: FloatingSearchBar(
             onTap: onSearchTap,
             onRecognize: onRecognize,
+            chromeFrame: chromeFrame,
           ),
         ),
         for (final action in actions) ...[

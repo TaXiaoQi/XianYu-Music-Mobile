@@ -5,6 +5,8 @@ const Map<String, String> enDictManual = {
   '选择本地图片': 'Choose local image',
   '选择图片': 'Choose image',
   '选择视频': 'Choose video',
+  '展示视频': 'Show video',
+  '展示图片': 'Show image',
   '更换视频': 'Change video',
   '请先选择视频': 'Please choose a video first',
   '请先选择图片或视频': 'Please choose an image or video first',

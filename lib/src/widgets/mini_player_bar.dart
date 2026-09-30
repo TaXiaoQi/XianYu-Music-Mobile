@@ -512,9 +512,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       ),
     );
 
-    // chrome 显隐翻转（推入/返回页面）后的 3 帧实底热身：
-    // 淡入恢复绘制首帧引擎 backdrop 采样未就绪，防止闪黑
-    final warmup = ref.watch(chromeGlassWarmupProvider);
+    // 淡入/还原首帧的采样黑闪由 overlay 层 0.01 保底持续绘制 +
+    // BiliPaiGlass 预烘焙图续展兜住，液态面保持实时玻璃不切实底
     final bar = GestureDetector(
       onPanStart: _handlePanStart,
       onPanUpdate: _handlePanUpdate,
@@ -539,9 +538,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       },
       behavior: HitTestBehavior.opaque,
       child: liquid
-          ? _liquidSurface(context, content, solid: warmup)
+          ? _liquidSurface(context, content)
           : _frostedSurface(context, content,
-              lowPerf: lowPerf, budget: budget, forceSolid: warmup),
+              lowPerf: lowPerf, budget: budget),
     );
 
     if (widget.onPanUpdate == null) {
@@ -572,10 +571,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     return bar;
   }
 
-  Widget _liquidSurface(BuildContext context, Widget content,
-      {bool solid = false}) {
+  Widget _liquidSurface(BuildContext context, Widget content) {
     final quality = liquidGlassQualitySetting(ref);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       height: 58,
       child: Stack(
@@ -604,11 +601,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               backgroundColor: themeTint(
                 ref,
                 'mini.bar',
-                solid
-                    ? (isDark
-                        ? const Color(0xE62A2A2E)
-                        : const Color(0xF0FFFFFF))
-                    : bilipaiSurfaceTint(context, ref, quality),
+                bilipaiSurfaceTint(context, ref, quality),
               ),
               specular: bilipaiSpecularOf(quality),
               edgeAmount: bilipaiEdgeOf(quality),

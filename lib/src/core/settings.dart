@@ -101,6 +101,10 @@ class CustomBackground {
   final bool enabled;
   final String imagePath;
   final WallpaperMediaType mediaType;
+
+  /// 动态图片（实况照）内嵌提取出的视频：非空时 imagePath 为静帧、
+  /// mediaType 在 image/video 间切换展示形态（编辑器提供切换 UI）
+  final String motionVideoPath;
   final int blur;
   final int opacity;
   final int maskAlpha;
@@ -117,6 +121,7 @@ class CustomBackground {
     this.enabled = false,
     this.imagePath = '',
     this.mediaType = WallpaperMediaType.image,
+    this.motionVideoPath = '',
     this.blur = 20,
     this.opacity = 100,
     this.maskAlpha = 40,
@@ -138,6 +143,7 @@ class CustomBackground {
     bool? enabled,
     String? imagePath,
     WallpaperMediaType? mediaType,
+    String? motionVideoPath,
     int? blur,
     int? opacity,
     int? maskAlpha,
@@ -154,6 +160,7 @@ class CustomBackground {
       enabled: enabled ?? this.enabled,
       imagePath: imagePath ?? this.imagePath,
       mediaType: mediaType ?? this.mediaType,
+      motionVideoPath: motionVideoPath ?? this.motionVideoPath,
       blur: blur ?? this.blur,
       opacity: opacity ?? this.opacity,
       maskAlpha: maskAlpha ?? this.maskAlpha,
@@ -905,6 +912,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
         imagePath: prefs.getString('customBackgroundImagePath') ?? '',
         mediaType: WallpaperMediaType
             .values[prefs.getInt('customBackgroundMediaType') ?? 0],
+        motionVideoPath:
+            prefs.getString('customBackgroundMotionVideoPath') ?? '',
         blur: prefs.getInt('customBackgroundBlur') ?? 20,
         opacity: prefs.getInt('customBackgroundOpacity') ?? 100,
         maskAlpha: prefs.getInt('customBackgroundMaskAlpha') ?? 40,
@@ -1110,6 +1119,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('customBackgroundEnabled', next.customBackground.enabled),
       prefs.setString('customBackgroundImagePath', next.customBackground.imagePath),
       prefs.setInt('customBackgroundMediaType', next.customBackground.mediaType.index),
+      prefs.setString(
+          'customBackgroundMotionVideoPath', next.customBackground.motionVideoPath),
       prefs.setInt('customBackgroundBlur', next.customBackground.blur),
       prefs.setInt('customBackgroundOpacity', next.customBackground.opacity),
       prefs.setInt('customBackgroundMaskAlpha', next.customBackground.maskAlpha),
