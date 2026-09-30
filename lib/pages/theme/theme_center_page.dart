@@ -14,8 +14,8 @@ import '../../src/theme/theme_package.dart';
 import '../../src/theme/theme_store.dart';
 import '../../src/widgets/app_toast.dart';
 
-/// 主题中心（阶段 1：本地导入 + 应用）。
-/// 广场 / 我的上传 / 我的下载依赖服务端接口，待接入后补。
+/// 主题中心：本地导入 + 应用，并接入广场与我的上传。
+/// 「我的下载」已按产品决定删除——主题层无来源信息，做出来只会是「本地」的重复页。
 class ThemeCenterPage extends ConsumerStatefulWidget {
   const ThemeCenterPage({super.key});
 
