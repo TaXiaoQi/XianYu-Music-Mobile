@@ -86,7 +86,9 @@ class LyricsRepository {
             var combined = decrypted;
             if (tlyric.isNotEmpty && pluginLyricLooksEncrypted(tlyric)) {
               final dt = await _decryptEncryptedLyric(tlyric);
-              if (dt != null && dt.trim().isNotEmpty) combined = '$combined\n$dt';
+              if (dt != null && dt.trim().isNotEmpty) {
+                combined = composePluginLyricsRaw(combined, alignTranslationToMainLyric(combined, dt));
+              }
             }
             final payload = await parseLyrics(rawLyrics: combined);
             return payload;
@@ -96,14 +98,16 @@ class LyricsRepository {
         }
         if (mainText.trim().isNotEmpty && !encrypted) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
-            return parseLyrics(rawLyrics: '$mainText\n$tlyric');
+            return parseLyrics(
+                rawLyrics: composePluginLyricsRaw(mainText, alignTranslationToMainLyric(mainText, tlyric)));
           }
           if (tlyric.isEmpty) {
             // 插件没带翻译（如 QQ 音源）→ 原生歌词源补齐翻译
             final native = await _fetchNativeLyricResult(item);
             final nTrans = native?['tlyric']?.trim() ?? '';
             if (nTrans.isNotEmpty && !mainText.contains('tlyric')) {
-              return parseLyrics(rawLyrics: '$mainText\n$nTrans');
+              return parseLyrics(
+                  rawLyrics: composePluginLyricsRaw(mainText, alignTranslationToMainLyric(mainText, nTrans)));
             }
           }
           return parseLyrics(rawLyrics: mainText);
@@ -121,7 +125,7 @@ class LyricsRepository {
         if (main.isNotEmpty) {
           return parseLyrics(
               rawLyrics: t.isNotEmpty && !main.contains('tlyric')
-                  ? '$main\n$t'
+                  ? composePluginLyricsRaw(main, alignTranslationToMainLyric(main, t))
                   : main);
         }
         AppLog.warn('lyric', '原生歌词兜底: 结果主文本为空 keys=${native.keys.toList()}');
@@ -349,6 +353,193 @@ String _cleanLyricWordText(String raw) {
   text = text.replaceAll(RegExp(r'\[\d+,\d+\]'), '');
   text = text.replaceAll(RegExp(r'<[^>]*>'), '');
   return text;
+}
+
+/// 行首 LRC 时间戳（`[mm:ss]` / `[mm:ss.ms]`），词级内联的 `<mm:ss>` 不算。
+final _lrcLineStampPattern = RegExp(r'^\[(\d+):(\d{2})(?:[.:](\d{1,3}))?]');
+
+/// 单个主行能吸附多远的下限/上限（相邻行距的一半会被夹在这个区间里）。
+const _minAlignWindowMs = 150;
+const _maxAlignWindowMs = 5000;
+
+/// 行首 QRC/KRC/YRC 时间戳：`[起始毫秒,持续毫秒]`。
+///
+/// 插件主歌词经常直接就是 YRC/QRC —— pickPluginMainText 里 yrc、qrc 都排在
+/// lyric 之前，而这类行首没有 `[mm:ss]`。只认 LRC 时间戳时，对齐会在这种
+/// 主歌词上整段放弃，译文依旧配不上主行，界面还是一个中文都没有。
+final _qrcLineStampPattern = RegExp(r'^\[(\d+),(\d+)]');
+
+int? _lrcLineStampMs(String line) {
+  final qrc = _qrcLineStampPattern.firstMatch(line);
+  if (qrc != null) {
+    final startMs = int.tryParse(qrc.group(1)!);
+    if (startMs != null) return startMs;
+  }
+  final match = _lrcLineStampPattern.firstMatch(line);
+  if (match == null) return null;
+  final minutes = int.tryParse(match.group(1)!);
+  final seconds = int.tryParse(match.group(2)!);
+  if (minutes == null || seconds == null || seconds >= 60) return null;
+  final fraction = match.group(3);
+  final millis =
+      fraction == null ? 0 : int.tryParse(fraction.padRight(3, '0').substring(0, 3)) ?? 0;
+  return minutes * 60000 + seconds * 1000 + millis;
+}
+
+String _msToLrcStamp(int ms) {
+  final safe = ms < 0 ? 0 : ms;
+  final totalSeconds = safe ~/ 1000;
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  final millis = safe % 1000;
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${seconds.toString().padLeft(2, '0')}.'
+      '${millis.toString().padLeft(3, '0')}';
+}
+
+/// 译文行前缀。取值必须落在解析器识别的角色前缀表里
+/// （`[translation]` / `翻译:` / `翻译：` / `译文:` / `译文：` / `【翻译】` / `【译文】`），
+/// 否则该行不会进翻译轨。
+const _translationMarker = '【翻译】';
+
+/// 主文是否为 QRC 内层逐字行（`[起始,持续]`）——与 Rust 的 parse_line_header
+/// 判据一致：行首必须是「整数,整数」。
+bool _looksLikeQrcBody(String text) {
+  for (final line in text.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    return RegExp(r'^\[\d+,\d+]').hasMatch(trimmed);
+  }
+  return false;
+}
+
+/// 组装插件歌词 raw：主文 + 已对齐的译文。
+///
+/// 主文是 QRC 内层时**必须补出 QRC 文档外壳** —— Rust 侧挂载插件译文的唯一
+/// 入口要求文本里存在 `</QrcInfos>`（lyrics.rs 的 attach_lrc_translation_lines
+/// 分支在 `normalized.find("</QrcInfos>")` 命中后才执行，按 ±2s 时间戳把尾部
+/// LRC 译文挂回主行）。缺这个哨兵标记时整段跳过：线上实测译文 821 字符、
+/// 时间戳与主行逐个一致，依然一个中文都不显示。
+///
+/// parse_qrc 只逐行认 `[起,时长]` 开头的行、不解析 XML 结构，所以外壳只需提供
+/// 该哨兵标记；正文放在属性外，避免歌词里的引号破坏属性转义。
+String composePluginLyricsRaw(String mainBody, String translationLrc) {
+  if (mainBody.isEmpty || translationLrc.isEmpty) {
+    return '$mainBody\n$translationLrc';
+  }
+  if (!_looksLikeQrcBody(mainBody)) return '$mainBody\n$translationLrc';
+  return '<?xml version="1.0" encoding="utf-8"?>\n'
+      '<QrcInfos>\n'
+      '<QrcHeadInfo Version="100"/>\n'
+      '<LyricInfo LyricCount="1">\n'
+      '<Lyric_1 LyricType="1">\n'
+      '$mainBody\n'
+      '</Lyric_1>\n'
+      '</LyricInfo>\n'
+      '</QrcInfos>\n'
+      '$translationLrc';
+}
+
+/// 主歌词里按出现顺序取出的行级时间戳（毫秒）。
+List<int> _mainLineStamps(String mainContent) {
+  final stamps = <int>[];
+  for (final line in mainContent.split('\n')) {
+    final ms = _lrcLineStampMs(line.trim());
+    if (ms != null) stamps.add(ms);
+  }
+  return stamps;
+}
+
+int _alignWindowMs(List<int> stamps, int index) {
+  final gaps = <int>[];
+  if (index > 0) gaps.add(stamps[index] - stamps[index - 1]);
+  if (index + 1 < stamps.length) gaps.add(stamps[index + 1] - stamps[index]);
+  if (gaps.isEmpty) return _maxAlignWindowMs;
+  final half = gaps.reduce((a, b) => a < b ? a : b) ~/ 2;
+  return half.clamp(_minAlignWindowMs, _maxAlignWindowMs);
+}
+
+/// 把插件返回的翻译行对齐到主歌词时间轴。
+///
+/// 插件直接转发的翻译行，时间戳要么与主歌词不一致、要么整份没有时间戳：
+/// 前者过不了歌词解析的归组容差，后者会在解析阶段被整行丢弃——两种都表现为
+/// 「开了翻译也不显示译文」。
+///
+/// 策略（行数不等时也不会把译文甩到远处的句子上）：
+/// 1. 有时间戳的译文吸附到最近的主行，须落在该主行的半行窗口内；
+/// 2. 没时间戳、或离任何主行都太远的，按剩余主行顺序依次补；
+/// 3. 译文行比主歌词多出来的，挂到最后一行——宁可重复也不丢文本。
+String alignTranslationToMainLyric(String mainContent, String translation) {
+  final stamps = _mainLineStamps(mainContent);
+  final bodies = <String>[];
+  final times = <int?>[];
+  for (final raw in translation.split('\n')) {
+    final line = raw.trim();
+    if (line.isEmpty) continue;
+    final lrcMatch = _lrcLineStampPattern.firstMatch(line);
+    final qrcMatch = _qrcLineStampPattern.firstMatch(line);
+    final stripped = qrcMatch != null
+        ? line.substring(qrcMatch.end)
+        : (lrcMatch == null ? line : line.substring(lrcMatch.end));
+    final body = stripped.trim();
+    if (body.isEmpty) continue;
+    bodies.add(body);
+    times.add(_lrcLineStampMs(line));
+  }
+  if (stamps.isEmpty || bodies.isEmpty) return translation;
+
+  final taken = <int>{};
+  final target = List<int?>.filled(bodies.length, null);
+
+  // 第 1 轮：有时间戳的优先吸附到最近且未被占用的主行。
+  for (var i = 0; i < bodies.length; i++) {
+    final ms = times[i];
+    if (ms == null) continue;
+    var bestIndex = -1;
+    var bestDiff = 1 << 62;
+    for (var s = 0; s < stamps.length; s++) {
+      if (taken.contains(s)) continue;
+      final diff = (stamps[s] - ms).abs();
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIndex = s;
+      }
+    }
+    if (bestIndex >= 0 && bestDiff <= _alignWindowMs(stamps, bestIndex)) {
+      taken.add(bestIndex);
+      target[i] = bestIndex;
+    }
+  }
+
+  // 第 2 轮：剩下的按顺序填进尚未占用的主行。
+  var cursor = 0;
+  for (var i = 0; i < bodies.length; i++) {
+    if (target[i] != null) continue;
+    while (cursor < stamps.length && taken.contains(cursor)) {
+      cursor++;
+    }
+    if (cursor < stamps.length) {
+      taken.add(cursor);
+      target[i] = cursor;
+      cursor++;
+    }
+  }
+
+  // 第 3 轮：主行不够用时挂到最后一行。
+  // 行首必须与主歌词同格式：解析器按首行定整份格式，混入另一种格式的译文行
+  // 会被整行丢弃（线上数据：主文 20 行 KRC + 译文 20 行 LRC → 带翻译 0 行）。
+  final fallback = stamps.length - 1;
+  final out = <String>[];
+  for (var i = 0; i < bodies.length; i++) {
+    final index = target[i] ?? fallback;
+    final stamp = stamps[index];
+    // 译文一律写成「行级 LRC + 角色前缀」，与 Rust 侧期望一致：
+    // parse_raw_lyrics 里挂载插件译文的分支（attach_lrc_translation_lines）
+    // 注释明确写着"插件译文 LRC、按时间戳关联回主行"；前缀则决定它能否被
+    // detect_explicit_role 认成 ExplicitLineRole::Translation。
+    out.add('[${_msToLrcStamp(stamp)}]$_translationMarker${bodies[i]}');
+  }
+  return out.join('\n');
 }
 
 List<LyricLine> _parseLyricsJson(String jsonStr) {
