@@ -159,7 +159,13 @@ class EffectsPage extends ConsumerWidget {
             right: 0,
             child: GlassTopBar(
               title:   Text(tr('音效')),
-              leading: cutLeft > 0 ? SizedBox(width: cutLeft) : null,
+              // 该页原先 leading 传 null，没有任何返回入口。能从上层推入时给返回按钮，
+              // 顶层时仍留空，避免出现点了没反应的按钮。
+              leading: cutLeft > 0
+                  ? SizedBox(width: cutLeft)
+                  : (Navigator.canPop(context)
+                      ? BackButton(onPressed: () => Navigator.maybePop(context))
+                      : null),
               titleSpacing: 16,
               actions: [
                 TextButton.icon(
