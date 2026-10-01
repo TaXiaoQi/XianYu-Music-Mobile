@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -83,8 +84,9 @@ class SongListScrollFabs extends ConsumerWidget {
             children: [
               _Slot(
                 visible: showTop,
-                child: _ScrollFab(
+                childBuilder: (degraded) => _ScrollFab(
                   visible: showTop,
+                  degraded: degraded,
                   wallpaper: wallpaper,
                   icon: Icons.keyboard_double_arrow_up_rounded,
                   tooltip: tr('回到顶部'),
@@ -94,8 +96,9 @@ class SongListScrollFabs extends ConsumerWidget {
               const SizedBox(width: 10),
               _Slot(
                 visible: showLocate,
-                child: _ScrollFab(
+                childBuilder: (degraded) => _ScrollFab(
                   visible: showLocate,
+                  degraded: degraded,
                   wallpaper: wallpaper,
                   icon: Icons.my_location_rounded,
                   tooltip: tr('定位当前播放歌曲'),
@@ -111,10 +114,14 @@ class SongListScrollFabs extends ConsumerWidget {
 }
 
 class _Slot extends StatefulWidget {
-  const _Slot({required this.visible, required this.child});
+  const _Slot({required this.visible, required this.childBuilder});
 
   final bool visible;
-  final Widget child;
+
+  /// 回调携带 degraded（淡入淡出窗口内为 true）：窗口中 opacity<1
+  /// 产生 saveLayer，液态 shader 在其内采样图层自身内容会黑底，
+  /// 调用方据此先用磨砂兜底，窗口过了再上实时液态
+  final Widget Function(bool degraded) childBuilder;
 
   @override
   State<_Slot> createState() => _SlotState();
@@ -128,6 +135,20 @@ class _SlotState extends State<_Slot> {
   // 好过实底色块遮丑或采样黑帧；淡入淡出同为 180ms 对称动效，
   // 组件树常驻待命不销毁
   bool _shown = false;
+
+  /// 淡入淡出窗口标记：_shown 翻转后仍需覆盖 180ms 透明度过渡，
+  /// 期间 opacity<1（saveLayer）不能上液态 shader
+  bool _fading = false;
+
+  Timer? _fadeTimer;
+
+  void _markFading() {
+    _fadeTimer?.cancel();
+    setState(() => _fading = true);
+    _fadeTimer = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) setState(() => _fading = false);
+    });
+  }
 
   @override
   void initState() {
@@ -149,6 +170,12 @@ class _SlotState extends State<_Slot> {
     }
   }
 
+  @override
+  void dispose() {
+    _fadeTimer?.cancel();
+    super.dispose();
+  }
+
   void _scheduleReveal() {
     if (_shown) return;
     // 6 帧（~100ms）：0.01 低透明度下引擎可能裁剪 backdrop readback，
@@ -163,6 +190,7 @@ class _SlotState extends State<_Slot> {
         return;
       }
       setState(() => _shown = true);
+      _markFading();
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) => tick());
@@ -171,6 +199,8 @@ class _SlotState extends State<_Slot> {
   @override
   Widget build(BuildContext context) {
     final visible = widget.visible && _shown;
+    // degraded = 兜底窗口：0.01 保底期（ !_shown）、淡入过渡、淡出全程
+    final degraded = !visible || _fading;
     return IgnorePointer(
       ignoring: !visible,
       child: AnimatedOpacity(
@@ -183,7 +213,7 @@ class _SlotState extends State<_Slot> {
           scale: visible ? 1 : 0.6,
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          child: widget.child,
+          child: widget.childBuilder(degraded),
         ),
       ),
     );
@@ -193,6 +223,7 @@ class _SlotState extends State<_Slot> {
 class _ScrollFab extends ConsumerStatefulWidget {
   const _ScrollFab({
     required this.visible,
+    required this.degraded,
     required this.wallpaper,
     required this.icon,
     required this.tooltip,
@@ -200,6 +231,9 @@ class _ScrollFab extends ConsumerStatefulWidget {
   });
 
   final bool visible;
+
+  /// true 时跳过液态 shader（透明度过渡窗口内会黑底），走磨砂兜底
+  final bool degraded;
 
   final bool wallpaper;
 
@@ -239,25 +273,50 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
     Widget surface;
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
-      surface = BiliPaiGlass(
-        radius: 20,
-        refract: bilipaiRefractOf(quality),
-        chroma: bilipaiChromaOf(quality),
-        blurSigma: bilipaiBackdropBlurOf(quality),
-        backgroundColor: bilipaiSurfaceTint(context, ref, quality),
-        specular: bilipaiSpecularOf(quality),
-        edgeAmount: bilipaiEdgeOf(quality),
-        saturation: bilipaiSaturationOf(quality),
-        child: button(
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            child: iconWidget,
+      // 液态参数单点计算，兜底磨砂直接复用同一变量：液态磨砂公式
+      // 将来调整时兜底自动跟随，不会出现两处口径漂移
+      final blur = bilipaiBackdropBlurOf(quality);
+      final tint = bilipaiSurfaceTint(context, ref, quality);
+      if (widget.degraded) {
+        // 兜底磨砂（opacity<1 的 saveLayer 窗口内不能上 shader）
+        surface = ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: button(
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: tint,
+                ),
+                child: iconWidget,
+              ),
+            ),
           ),
-        ),
-      );
-      surface = liquidGlassShell(context, child: surface, radius: 20);
+        );
+      } else {
+        surface = BiliPaiGlass(
+          radius: 20,
+          refract: bilipaiRefractOf(quality),
+          chroma: bilipaiChromaOf(quality),
+          blurSigma: blur,
+          backgroundColor: tint,
+          specular: bilipaiSpecularOf(quality),
+          edgeAmount: bilipaiEdgeOf(quality),
+          saturation: bilipaiSaturationOf(quality),
+          child: button(
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              child: iconWidget,
+            ),
+          ),
+        );
+        surface = liquidGlassShell(context, child: surface, radius: 20);
+      }
     } else {
       surface = ClipOval(
         child: BackdropFilter(
@@ -272,7 +331,7 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.wallpaper
-                    ? wallpaperNavGlassFill(context)
+                    ? wallpaperGlassFill(context, ref)
                     : (isDark
                         ? const Color(0x99000000)
                         : const Color(0xE6FFFFFF)),

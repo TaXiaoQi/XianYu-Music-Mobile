@@ -68,7 +68,15 @@ class _ChromeGlassFrameBoundaryState extends State<ChromeGlassFrameBoundary>
     super.initState();
     _wire();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => schedule());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      schedule();
+      // 首抓落在冷启动早期：字体加载、布局、安全区插值尚未稳定时抓的
+      // 帧会被长期持有，之后转场裁剪与稳定后的实时渲染出现字形/位置
+      // 漂移（底栏 label 双影、两份不同字号）。启动后追加补抓，让缓存
+      // 帧追上稳定后的真实渲染。
+      Timer(const Duration(milliseconds: 2500), () => schedule());
+      Timer(const Duration(seconds: 6), () => schedule());
+    });
   }
 
   // 单例接线：转场结束（信号 false 沿）后安排抓帧，刷新缓存。
@@ -127,6 +135,30 @@ void _retry() {
   _debounce = Timer(const Duration(milliseconds: 250), _capture);
 }
 
+/// chrome 玻璃面静止原点登记表。
+///
+/// 抓帧只发生在静止屏，此时 localToGlobal 是准确的（无动画在飞），
+/// 顺手登记各玻璃面的布局原点；转场裁剪时直接查表，彻底绕开转场中
+/// 祖先变换（底栏 hidden 动画 AnimatedScale 0.92⇄1.0）对 localToGlobal
+/// 的污染——转场中污染值会把源矩形算偏，裁剪内容与实时渲染错位成
+/// 「两个页面叠一起」的双影。此前用沿布局链累计 parentData offset 的
+/// walk 规避，但 Scaffold 的 CustomMultiChildLayout 给 body 挂的
+/// MultiChildLayoutParentData 不是 BoxParentData，walk 必断链回退
+/// （悬浮底栏整树在 Scaffold body 里），双影复发——查表方案对树形
+/// 零假设。value 为 null 表示尚未随抓帧登记，调用方回退 localToGlobal
+/// （静止时才可能发生，此时 localToGlobal 本就准确）。
+final Map<RenderBox, Offset?> _chromeFaceOrigins = {};
+
+void registerChromeFace(RenderBox face) {
+  _chromeFaceOrigins[face] = null;
+}
+
+void unregisterChromeFace(RenderBox face) {
+  _chromeFaceOrigins.remove(face);
+}
+
+Offset? chromeFaceStaticOrigin(RenderBox face) => _chromeFaceOrigins[face];
+
 Future<void> _capture() async {
   if (_capturing) return;
   if (globalIsTransitioning.value ||
@@ -151,6 +183,11 @@ Future<void> _capture() async {
     if (!box.attached) {
       img.dispose();
       return;
+    }
+    // 静止屏上 localToGlobal 准确：刷新各玻璃面登记原点，供转场裁剪查表
+    _chromeFaceOrigins.removeWhere((face, _) => !face.attached);
+    for (final face in _chromeFaceOrigins.keys.toList()) {
+      _chromeFaceOrigins[face] = face.localToGlobal(Offset.zero);
     }
     final old = chromeGlassFrame.value;
     chromeGlassFrame.value = ChromeGlassFrame(

@@ -1001,12 +1001,20 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       _toast(tr('两次新密码不一致'));
       return;
     }
+    final captcha = await showHumanCaptchaDialog(
+      context,
+      notifier: widget.notifier,
+      title: tr('重置密码前验证'),
+      description: tr('完成验证后将重置该邮箱账号的密码。'),
+    );
+    if (captcha == null || !mounted) return;
     setState(() => _loading = true);
     try {
       await widget.notifier.resetPassword(
         email: email,
         verifyCode: code,
         newPassword: newPwd,
+        captcha: captcha,
       );
       if (!mounted) return;
       _toast(tr('密码已重置，请使用新密码登录'));

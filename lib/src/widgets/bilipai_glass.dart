@@ -94,9 +94,17 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   // 若共用会让打字/滑动等高频滚动场景的首烘永远被推迟
   Timer? _captureRetry;
 
+  // adopt 交叉淡回兜底 Timer：异常路径下 fadeBlend 卡住时强制归零
+  Timer? _adoptGuard;
+
   DateTime _captureCooldownUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   late final AnimationController _fade;
+
+  // 首烘渐显：兜底 blur+tint → 液态 shader 的交叉过渡。烘焙完成时 boot
+  // 从 0 升到 1，液态参数（折射/高光/边缘/tint）随之浮现，替代「下一帧
+  // 突变」的硬切；不用 opacity 包 shader（saveLayer 内采样会黑底）
+  late final AnimationController _boot;
 
   late final AnimationController _ripple;
 
@@ -115,6 +123,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       value: 0,
     );
     _fade.addListener(_onFadeTicked);
+    _boot = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: 1,
+    );
+    _boot.addListener(_onBootTicked);
     _ripple = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 8),
@@ -179,6 +193,18 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
             .addPostFrameCallback((_) => old.dispose());
       }
     });
+    // adopt 交叉淡回兜底：420ms 后 fade 必须归零回实时渲染。异常路径
+    // （监听时序、控制器被抢占）会让 fadeBlend 卡在中间值，缓存帧裁剪
+    // 带着旧内容永久叠在实时渲染上（顶/底栏旧页文字残影），且静止抓帧
+    // 会把残影烙进新帧自我延续——定时强制归零斩断该循环
+    _adoptGuard?.cancel();
+    _adoptGuard = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      if (_fade.value > 0) {
+        _fade.stop();
+        _fade.value = 0;
+      }
+    });
     // 转场中挂载的新实例（hasCaptured=false，一直在 blur+tint 兜底）：
     // 必须在这里主动安排首烘，否则 _idle 翻转后没有任何机制唤醒它，
     // 要等用户下一次滚动才有机会——兜底会一直挂死不启用液态 shader
@@ -190,14 +216,14 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   void _onOwnerScrollTick() {
     if (!mounted) return;
     // 转场中保图：IME 弹起等视口变化会在转场中产生滚动信号，此时炸图
-    // 会让玻璃从烘焙图突变为实底（跳变）；转场落定后由 resume 接管
+    // 会让玻璃从烘焙图突变为兜底 blur+tint（跳变）；转场落定后由 resume 接管
     if (_frozen != null && !_routeTransition) {
       final old = _frozen!;
       _frozen = null;
       _frozenIsChromeFrame = false;
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
-    // frozen == null 时也要重建：滚动信号切换实底/实时渲染模式
+    // frozen == null 时也要重建：滚动信号切换兜底/实时渲染模式
     setState(() {});
   }
 
@@ -205,6 +231,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (!mounted) return;
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is RenderLiquidBacking) ro.fadeBlend = _fade.value;
+  }
+
+  void _onBootTicked() {
+    if (!mounted) return;
+    final ro = _backingKey.currentContext?.findRenderObject();
+    if (ro is RenderLiquidBacking) ro.bootBlend = _boot.value;
   }
 
   void _onRippleTick() {
@@ -238,7 +270,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalScrollTick.removeListener(_onOwnerScrollTick);
     _idleDebounce?.cancel();
     _captureRetry?.cancel();
+    _adoptGuard?.cancel();
     _fade.dispose();
+    _boot.dispose();
     _ripple.dispose();
     _frozen?.dispose();
     _shader?.dispose();
@@ -310,11 +344,15 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         return;
       }
       _captureRetry?.cancel();
+      // 首烘渐显：boot 归零后 320ms 内液态参数从兜底观感平滑浮现
+      // （见 _paintLive 内 boot 缩放），替代烘焙完成即突变的硬切
+      _boot.value = 0;
       setState(() {
         _hasCaptured = true;
         _fade.value = 0;
         _onFadeTicked();
       });
+      _boot.forward();
       // toImage 离屏渲染中 shader 的 backdrop 采样无内容（产物恒黑），
       // 图不保存不展示——capture 仅作为「backdrop 已验证就绪」的一次性
       // 标志，图立即释放（从未上屏，无 scene 引用）
@@ -362,6 +400,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               depthEffect: widget.depthEffect,
               frozen: _frozen,
               fadeBlend: _fade.value,
+              bootBlend: _boot.value,
               freshBackdrop: widget.freshBackdrop,
               solidOnly: solidOnly,
               useChromeFrame: widget.useChromeFrame,
@@ -392,6 +431,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     required this.depthEffect,
     this.frozen,
     this.fadeBlend = 1.0,
+    this.bootBlend = 1.0,
     this.freshBackdrop = false,
     this.solidOnly = false,
     this.useChromeFrame = false,
@@ -412,6 +452,9 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
   final ui.Image? frozen;
 
   final double fadeBlend;
+
+  /// 首烘渐显：0=兜底观感（液态参数归零），1=完整液态
+  final double bootBlend;
 
   final bool freshBackdrop;
 
@@ -436,6 +479,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       depthEffect: depthEffect,
       frozen: frozen,
       fadeBlend: fadeBlend,
+      bootBlend: bootBlend,
       freshBackdrop: freshBackdrop,
       solidOnly: solidOnly,
       useChromeFrame: useChromeFrame,
@@ -461,6 +505,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       ..saturation = saturation
       ..depthEffect = depthEffect
       ..frozen = frozen
+    ..bootBlend = bootBlend
     ..freshBackdrop = freshBackdrop
     ..solidOnly = solidOnly
     ..useChromeFrame = useChromeFrame
@@ -483,6 +528,7 @@ class RenderLiquidBacking extends RenderBox {
     required double depthEffect,
     required ui.Image? frozen,
     required double fadeBlend,
+    double bootBlend = 1.0,
     required bool freshBackdrop,
     required bool solidOnly,
     required bool useChromeFrame,
@@ -500,6 +546,7 @@ class RenderLiquidBacking extends RenderBox {
        _depthEffect = depthEffect,
        _frozen = frozen,
        _fadeBlend = fadeBlend,
+       _bootBlend = bootBlend,
        _freshBackdrop = freshBackdrop,
        _solidOnly = solidOnly,
        _useChromeFrame = useChromeFrame,
@@ -603,6 +650,16 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  // 首烘渐显：0=兜底观感（液态参数归零），1=完整液态
+  double _bootBlend = 1.0;
+  double get bootBlend => _bootBlend;
+  set bootBlend(double value) {
+    final v = value.clamp(0.0, 1.0).toDouble();
+    if (_bootBlend == v) return;
+    _bootBlend = v;
+    markNeedsPaint();
+  }
+
   bool _freshBackdrop;
   bool get freshBackdrop => _freshBackdrop;
   set freshBackdrop(bool value) {
@@ -685,18 +742,18 @@ class RenderLiquidBacking extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
+    registerChromeFace(this);
     globalScrollOffset.addListener(_onScrollChanged);
     globalScrollTick.addListener(_onScrollTick);
-    globalSnapshotReady.addListener(_onSnapshotReady);
     globalIsTransitioning.addListener(_onTransitionBlurSync);
     _liveUseShader = !globalIsTransitioning.value;
   }
 
   @override
   void detach() {
+    unregisterChromeFace(this);
     globalScrollOffset.removeListener(_onScrollChanged);
     globalScrollTick.removeListener(_onScrollTick);
-    globalSnapshotReady.removeListener(_onSnapshotReady);
     globalIsTransitioning.removeListener(_onTransitionBlurSync);
     super.detach();
   }
@@ -714,19 +771,10 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
-  void _onSnapshotReady() {
-    // 上升沿驱动：转场中快照图就绪的瞬间，把兜底白底的实例重绘成
-    // live 玻璃（此刻 backdrop=快照内容，采样安全）；降沿不重绘，
-    // 避免落定帧再切回实底闪一下
-    if (globalSnapshotReady.value && globalIsTransitioning.value) {
-      markNeedsPaint();
-    }
-  }
-
   void _onScrollChanged() {
     // 转场中完全静默：滚动信号（含转场动画/IME 视口变化驱动）持续到来
-    // 时若每帧 markNeedsPaint，静态帧被反复重绘、兜底实底每帧生效，
-    // 玻璃条整段变成纯色块——静默才能让旧 layer 静态帧真正保留
+    // 时若每帧 markNeedsPaint，静态帧被反复重绘、兜底 blur+tint 每帧生效，
+    // 玻璃条整段失去静态帧——静默才能让旧 layer 静态帧真正保留
     if (globalIsTransitioning.value) return;
     if (_frozen == null) markNeedsPaint();
   }
@@ -775,7 +823,7 @@ class RenderLiquidBacking extends RenderBox {
     }
   }
 
-  // 画整屏缓存帧中本面区域的裁剪：源矩形按当前全局位置×抓帧 dpr 映射，
+  // 画整屏缓存帧中本面区域的裁剪：源矩形按静止布局位置×抓帧 dpr 映射，
   // 裁剪到圆角矩形（缓存帧里圆角外是旧页面像素，不能带出来）。
   // 纯 drawImageRect，无 backdrop 层无采样。alpha 供落定交叉淡回叠加用
   void _paintChromeFrame(
@@ -785,7 +833,11 @@ class RenderLiquidBacking extends RenderBox {
     double alpha = 1.0,
   }) {
     final dpr = _devicePixelRatio;
-    final globalPos = localToGlobal(Offset.zero);
+    // 采样原点取抓帧时登记的静止布局位置（chromeFaceStaticOrigin）：
+    // 转场中 localToGlobal 会被底栏 hidden 动画（AnimatedScale 0.92⇄1.0）
+    // 的祖先变换污染，源矩形算偏后裁剪内容与实时渲染错位成双影
+    final globalPos =
+        chromeFaceStaticOrigin(this) ?? localToGlobal(Offset.zero);
     final src = Rect.fromLTWH(
       globalPos.dx * dpr,
       globalPos.dy * dpr,
@@ -914,22 +966,30 @@ class RenderLiquidBacking extends RenderBox {
     // 转场中降级为纯 blur（毛玻璃路径）：转场动画里 ImageFilter.shader
     // 的 backdrop 采样在部分设备/Impeller 上失效——毛玻璃同场景正常、
     // 液态玻璃整段色块。合成期会拿 retained 的旧 shader 层持续产出坏帧，
-    // 所以必须由 _onTransitionBlurSync 在边沿重绘换层
-    final useShader = _liveUseShader;
+    // 所以必须由 _onTransitionBlurSync 在边沿重绘换层。
+    // 未验证实例（_solidOnly）一律禁 shader：backdrop 未经烘焙确认，
+    // 裸采样有闪黑风险；纯 blur（毛玻璃路径）无此风险——不透明实底
+    // 兜底由此替换为 blur+tint 兜底，首烘完成后才启用液态 shader
+    final useShader = _liveUseShader && !_solidOnly;
+    // 首烘渐显：boot=0 时液态参数归零、观感与兜底 blur+tint 一致，
+    // 1.0 为完整液态；平面 tint 以 (1-boot) 反向退场与 shader 内 tint
+    // 接力（总 tint 恒定），折射/高光/边缘平滑浮现——替代烘焙完成的
+    // 下一帧突变。不可用 opacity 包 shader：saveLayer 内采样黑底
+    final boot = _bootBlend;
     final BackdropFilterLayer? shaderLayer;
     if (useShader) {
       _shader
         ..setFloat(0, screen.width * dpr)
         ..setFloat(1, screen.height * dpr)
         ..setFloat(2, globalScrollOffset.value)
-        ..setFloat(3, refractPx)
+        ..setFloat(3, refractPx * boot)
         ..setFloat(4, _chroma)
         ..setFloat(5, 0.0)
-        ..setFloat(6, bg.r * a)
-        ..setFloat(7, bg.g * a)
-        ..setFloat(8, bg.b * a)
-        ..setFloat(9, a)
-        ..setFloat(10, _specular)
+        ..setFloat(6, bg.r * a * boot)
+        ..setFloat(7, bg.g * a * boot)
+        ..setFloat(8, bg.b * a * boot)
+        ..setFloat(9, a * boot)
+        ..setFloat(10, _specular * boot)
         ..setFloat(11, _radius * dpr)
         ..setFloat(12, glassOrigin.dx)
         ..setFloat(13, glassOrigin.dy)
@@ -937,10 +997,12 @@ class RenderLiquidBacking extends RenderBox {
         ..setFloat(15, glassSize.height)
         ..setFloat(
           16,
-          math.min(_edgeAmount, math.min(size.width, size.height) * 0.42) * dpr,
+          math.min(_edgeAmount, math.min(size.width, size.height) * 0.42) *
+              dpr *
+              boot,
         )
-        ..setFloat(17, _saturation)
-        ..setFloat(18, _depthEffect)
+        ..setFloat(17, 1.0 + (_saturation - 1.0) * boot)
+        ..setFloat(18, _depthEffect * boot)
         ..setFloat(19, uiTime);
       shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
       shaderLayer.filter = ui.ImageFilter.shader(_shader);
@@ -965,7 +1027,21 @@ class RenderLiquidBacking extends RenderBox {
                   .withValues(alpha: 1 / 255),
           );
         }
-        context.pushLayer(blurLayer, (context, offset) {}, offset);
+        context.pushLayer(blurLayer, (context, offset) {
+          // 兜底面 tint：未验证实例全强度（shader 关闭，boot 不参与）；
+          // 首烘渐显期以 (1-boot) 反向退场，与 shader 内 tint 接力使
+          // 总 tint 恒定；已烘焙实例的非渐显态不画（与原行为一致）
+          final flatTint =
+              _solidOnly ? 1.0 : (useShader ? 1.0 - boot : 0.0);
+          if (flatTint > 0.001) {
+            context.canvas.drawRect(
+              offset & size,
+              Paint()
+                ..color = _backgroundColor
+                    .withValues(alpha: _backgroundColor.a * flatTint),
+            );
+          }
+        }, offset);
         if (shaderLayer != null) {
           context.pushLayer(shaderLayer, (context, offset) {}, offset);
         }

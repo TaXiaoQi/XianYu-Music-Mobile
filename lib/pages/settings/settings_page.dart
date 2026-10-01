@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/settings.dart';
 import '../../src/theme/theme_tint.dart';
 import '../../src/core/developer_mode.dart';
 import '../../src/core/platform_caps.dart';
@@ -11,6 +12,7 @@ import '../../src/navigation/shell.dart'
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
+import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/landscape_page_fade.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
@@ -75,6 +77,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   }
 
   Widget _buildPortrait(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
+    // 悬浮口径与主题/壁纸中心一致:竖屏且开了悬浮搜索条时表头悬浮
+    final floating =
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+            (ref.watch(settingsProvider.select(
+                  (s) => s.valueOrNull?.floatingSearchBar ?? false,
+                )) ==
+                true);
+    // 悬浮态走主页同款一行式顶栏(返回钮+标题胶囊+搜索胶囊同行)
+    if (floating) return _buildPortraitFloating(context, groups);
     final searchBox = PreferredSize(
       preferredSize: const Size.fromHeight(54),
       child: Padding(
@@ -106,11 +117,87 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             left: 0,
             right: 0,
             child: GlassTopBar(
-              forceDocked: true,
               themeSlot: 'settings.topbar',
               leading: const BackButton(),
               title: Text(tr('设置')),
               bottom: searchBox,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 悬浮态顶栏:主页 FloatingTopBar 同款一行式——返回钮+「设置」标题胶囊+
+  /// 玻璃搜索胶囊(Expanded)同行,搜索框不再单独占一行;列表顶距按一行算
+  Widget _buildPortraitFloating(
+      BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
+    final statusBar = MediaQuery.of(context).padding.top;
+    return Scaffold(
+      backgroundColor: appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              statusBar + 8 + 44 + 12,
+              16,
+              92 + MediaQuery.of(context).padding.bottom,
+            ),
+            children: [
+              if (_query.trim().isEmpty)
+                ..._buildCategorySections(context, groups)
+              else
+                ..._buildSearchResults(context),
+            ],
+          ),
+          Positioned(
+            top: statusBar + 8,
+            left: 12,
+            right: 12,
+            child: Row(
+              children: [
+                BiliPaiIconButton(
+                  icon: Icons.arrow_back,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+                const SizedBox(width: 10),
+                BiliPaiPill(
+                  radius: 20,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: SizedBox(
+                      height: 40,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          tr('设置'),
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FloatingGlassSearchField(
+                    controller: _searchCtrl,
+                    hint: tr('搜索设置'),
+                    onChanged: (v) => setState(() => _query = v),
+                    showClear: _query.isNotEmpty,
+                    onClear: () {
+                      _searchCtrl.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -134,7 +221,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   }
 
   Widget _buildSearchBox(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -142,35 +228,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         color: searchBoxFill(context, ref),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (v) => setState(() => _query = v),
-              style: const TextStyle(fontSize: 15),
-              decoration: InputDecoration(
-                hintText: tr('搜索设置'),
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-                border: InputBorder.none,
-              ),
+      child: _buildSearchContent(context),
+    );
+  }
+
+  /// 搜索框内容:固定态套在自绘底色容器里,悬浮态直接装进玻璃胶囊
+  Widget _buildSearchContent(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(Icons.search, size: 18, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+            style: const TextStyle(fontSize: 15),
+            decoration: InputDecoration(
+              hintText: tr('搜索设置'),
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+              border: InputBorder.none,
             ),
           ),
-          if (_query.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.clear, size: 18),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 40),
-              onPressed: () {
-                _searchCtrl.clear();
-                setState(() => _query = '');
-              },
-            ),
-        ],
-      ),
+        ),
+        if (_query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 40),
+            onPressed: () {
+              _searchCtrl.clear();
+              setState(() => _query = '');
+            },
+          ),
+      ],
     );
   }
 
@@ -864,7 +956,7 @@ const _settingsSearchItems = <_SearchItem>[
 
   _SearchItem(label: '下载路径', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '保存 文件夹 目录'),
   _SearchItem(label: '下载音质', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '无损 Hi-Res 320k'),
-  _SearchItem(label: '同时下载歌词', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '歌词 lrc'),
+  _SearchItem(label: '下载独立歌词', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '歌词 lrc 独立 内嵌'),
   _SearchItem(label: '批量并发数', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '并发 数量'),
   _SearchItem(label: '文件名样式', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '命名 歌手 歌名'),
   _SearchItem(label: '覆盖同名文件', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '覆盖 重复 序号'),

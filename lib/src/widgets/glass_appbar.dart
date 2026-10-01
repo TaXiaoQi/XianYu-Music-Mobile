@@ -15,9 +15,9 @@ class GlassTopBar extends ConsumerWidget {
     this.title,
     this.actions,
     this.bottom,
+    this.bottomTabController,
     this.titleSpacing,
     this.flatBackdrop = false,
-    this.forceSolid = false,
     this.forceDocked = false,
     this.themeSlot,
   });
@@ -26,9 +26,11 @@ class GlassTopBar extends ConsumerWidget {
   final Widget? title;
   final List<Widget>? actions;
   final PreferredSizeWidget? bottom;
-  final double? titleSpacing;
 
-  final bool forceSolid;
+  /// 悬浮态下传给 FloatingTabPill 启用水滴选择块;固定态忽略
+  final TabController? bottomTabController;
+
+  final double? titleSpacing;
 
   final bool forceDocked;
 
@@ -59,29 +61,29 @@ class GlassTopBar extends ConsumerWidget {
         title: title ?? const SizedBox.shrink(),
         actions: actions ?? const [],
         bottom: bottom,
+        bottomTabController: bottomTabController,
       );
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final lowPerf = ref.watch(
-      settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
-    );
-    final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    // 转场中顶栏不重绘（不随转场切换渲染参数）：RepaintBoundary 保留
-    // 转场前的正常玻璃 layer，淡出/淡入只动 alpha 属性，无采样无黑帧
-    final solid = forceSolid || prefSolid;
-    final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
+    final frostedOn = ref.watch(settingsProvider.select(
+        (s) => s.valueOrNull?.frostedGlass ?? false));
+    // 毛玻璃关恢复实底兜底:非壁纸时白0.52+弱blur(navSurfaceBlurSigma 随
+    // light 档仅≈2.9)读作透底;壁纸模式不 solid,恒走组件色块滑条
+    final solid = !wallpaper && !frostedOn;
     final sigma = navSurfaceBlurSigma(ref);
+    // 壁纸模式组件色块:跟随设置的组件色块强度(widgetAlpha)与文字模式
+    // 底色,与底栏/mini 条/卡片口径一致;此前用导航面固定强度导致顶栏
+    // 与其他组件观感割裂
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-        : (wallpaper
-            ? wallpaperNavGlassFill(context)
+        : wallpaper
+            ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.20)
-                : Colors.white.withValues(alpha: 0.52)));
+                : Colors.white.withValues(alpha: 0.52));
     final slot = themeSlot;
     final glassFill = slot == null ? fill : themeTint(ref, slot, fill);
 
@@ -93,7 +95,7 @@ class GlassTopBar extends ConsumerWidget {
       ),
       child: bar,
     );
-    if ((solid && !keepFilterAlive) || flatBackdrop) return inner;
+    if (solid || flatBackdrop) return inner;
 
     return ClipRect(
       child: BackdropFilter(

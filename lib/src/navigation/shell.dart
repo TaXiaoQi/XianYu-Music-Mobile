@@ -806,7 +806,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     } else {
       topBar = _topBarCache = GlassTopBar(
         titleSpacing: widget.index == 0 ? 18 : null,
-        forceSolid: false,
         title: widget.index == 1
             ? Text(tr('个人中心'))
             : Text.rich(
@@ -1223,7 +1222,7 @@ class _FixedNavBar extends ConsumerWidget {
     final fill = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperNavGlassFill(context)
+            ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -1363,20 +1362,33 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   Widget build(BuildContext context) {
     final index = widget.index;
     final onSelect = widget.onSelect;
+    // 底栏隐藏（播放页/黑名单页等）时清顶层水滴快照：顶层 overlay 不随
+    // 底栏 opacity 淡出，不清会留残影
+    ref.listen(navBarHiddenProvider, (_, hidden) {
+      if (hidden > 0 && navDropletSnapshot.value != null) {
+        navDropletSnapshot.value = null;
+      }
+    });
     final lowPerf = ref.watch(
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    final liquid =
+    // 液态开关与引擎能力分开算:用户开了液态但引擎不支持 shader 时,
+    // BiliPaiGlass 自身会降级(blur+淡底),裸分支观感接近透明(用户读作透底),
+    // 但 lens 水滴的按住放大折射(LiveLiquidSurface 伪折射)是好的,必须保留。
+    // → 引擎支持才走裸分支;降级场景走 _frostedGlass(degradedLiquid:
+    //    磨砂级胶囊底+标准 blur,禁实底兜底),折射水滴原样保留。
+    final liquidGlassOn =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-            true) &&
+                true) &&
             !lowPerf;
+    final liquid = liquidGlassOn && ImageFilter.isShaderFilterSupported;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
-    final realLiquid = liquid;
+    final realLiquid = liquidGlassOn;
     final dropletQuality = liquidGlassQualitySetting(ref);
     final tabs = _SlidingNavBottom(
       index: index,
@@ -1398,7 +1410,8 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     }
     return _frostedGlass(context, ref, tabs,
         lowPerf: lowPerf,
-        budget: budget);
+        budget: budget,
+        degradedLiquid: liquidGlassOn);
   }
 
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
@@ -1431,16 +1444,20 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
       {bool lowPerf = false,
       BlurBudget? budget,
-      bool forceSolid = false}) {
+      bool forceSolid = false,
+      bool degradedLiquid = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final solid = forceSolid || prefSolid;
+    final effBudget = budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
+    // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
+    // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见
+    final solid = (forceSolid || prefSolid) && !degradedLiquid;
     final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperNavGlassFill(context)
+            ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -1448,7 +1465,15 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         ref,
         'nav.bar',
         (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget));
-    final sigma = navSurfaceBlurSigma(ref);
+    final sigma = degradedLiquid
+        ? surfaceBlurSigma(
+            // 液态降级胶囊用液态档 blur(磨砂观感,而非导航面弱模糊)
+            base: bilipaiBackdropBlurOf(liquidGlassQualitySetting(ref)),
+            budget: effBudget,
+            type: BlurSurfaceType.bottomBar,
+            crispAtRest: true,
+          )
+        : navSurfaceBlurSigma(ref);
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
@@ -1833,6 +1858,122 @@ class _ContentPane extends StatelessWidget {
   }
 }
 
+/// 顶层水滴快照：_SlidingNavBottom 每帧写入，NavDropletOverlay 消费渲染
+class NavDropletSnapshot {
+  const NavDropletSnapshot({
+    required this.rect,
+    required this.shear,
+    required this.liquid,
+    required this.radius,
+    required this.refract,
+    required this.band,
+    required this.chroma,
+    required this.press,
+    required this.isDark,
+  });
+
+  /// 水滴屏幕坐标矩形（帧末实测，含底栏显隐动画变换）
+  final Rect rect;
+
+  /// 拖拽水平剪切（果冻拉伸的斜切分量）
+  final double shear;
+
+  /// true=液态水滴（按住/滑动中），false=静息浅色胶囊
+  final bool liquid;
+  final double radius;
+  final double refract;
+  final double band;
+  final double chroma;
+  final double press;
+  final bool isDark;
+}
+
+final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot =
+    ValueNotifier(null);
+
+/// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
+/// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
+/// 内容（对齐 B 站参考效果），不再被顶层播放条盖住上缘。
+class NavDropletOverlay extends StatefulWidget {
+  const NavDropletOverlay({super.key});
+
+  @override
+  State<NavDropletOverlay> createState() => _NavDropletOverlayState();
+}
+
+class _NavDropletOverlayState extends State<NavDropletOverlay> {
+  @override
+  void initState() {
+    super.initState();
+    navDropletSnapshot.addListener(_onSnapshot);
+  }
+
+  @override
+  void dispose() {
+    navDropletSnapshot.removeListener(_onSnapshot);
+    super.dispose();
+  }
+
+  void _onSnapshot() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = navDropletSnapshot.value;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (s != null)
+              Positioned.fromRect(
+                rect: s.rect,
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..setEntry(0, 1, s.shear),
+                  child: s.liquid
+                      ? ClipOval(
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              LiveLiquidSurface(
+                                radius: s.radius,
+                                refract: s.refract,
+                                chroma: s.chroma,
+                                blurSigma: 0,
+                                backgroundColor: Colors.transparent,
+                                specular: 0.12,
+                                edgeAmount: s.band,
+                                saturation: 1.4,
+                                depthEffect: 1.2,
+                                child: const SizedBox.expand(),
+                              ),
+                              CustomPaint(
+                                painter: _DropletEdgePainter(s.press, s.isDark),
+                              ),
+                            ],
+                          ),
+                        )
+                      : DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: s.isDark
+                                ? Colors.white.withValues(alpha: 0.10)
+                                : Colors.black.withValues(alpha: 0.10),
+                            borderRadius:
+                                BorderRadius.circular(s.rect.shortestSide / 2),
+                          ),
+                        ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SlidingNavBottom extends StatefulWidget {
   const _SlidingNavBottom({
     required this.index,
@@ -1913,6 +2054,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   double _syPos = 0, _sySpd = 0;
   Duration? _lastDragTime;
 
+  /// 底栏玻璃胶囊定位键：顶层水滴快照在帧末用它实测栏的屏幕位置
+  final GlobalKey _barKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -1972,6 +2116,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
         double k = 1 + dragMf * 0.22 + pressG * 0.55;
         if (!overlayDroplet) {
+          // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
+          // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
+          // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
           k = math.min(k, maxH / dropH);
         }
         final stretchX = _dragging ? _sxPos : 0.0;
@@ -2101,26 +2248,38 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           final w = indicatorW * sx;
           final h = dropH * sy;
           final cx = 10 + pos * tabW + tabW / 2;
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              widget.glassBuilder!(SizedBox(height: maxH, child: gestures)),
-              Positioned(
-                left: cx - w / 2,
-                top: maxH / 2 - h / 2,
-                width: w,
-                height: h,
-                child: IgnorePointer(
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.12),
-                  child: indicator,
-                ),
-              ),
-              ),
-            ],
-          );
+          // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
+          // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
+          // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
+          // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
+          // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
+            if (b == null || !b.attached || !b.hasSize) return;
+            final origin = b.localToGlobal(Offset.zero);
+            navDropletSnapshot.value = NavDropletSnapshot(
+              rect: Rect.fromLTWH(origin.dx + cx - w / 2,
+                  origin.dy + maxH / 2 - h / 2, w, h),
+              shear: _dragVel.sign * _sxPos * 0.12,
+              liquid: dropletOn,
+              radius: d * sy / 2,
+              refract: d * 14.0 / 56.0 * mf * widget.lensBoost,
+              band: d * 10.0 / 56.0 * mf * widget.edgeBoost,
+              chroma: widget.dropletChroma,
+              press: pressG.clamp(0.0, 1.0),
+              isDark: isDark,
+            );
+          });
+          return widget.glassBuilder!(
+              SizedBox(key: _barKey, height: maxH, child: gestures));
+        }
+        if (navDropletSnapshot.value != null) {
+          // 降级为树内水滴（玻璃引擎不可用）时清掉顶层快照，避免残影
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) navDropletSnapshot.value = null;
+          });
         }
         return gestures;
         },

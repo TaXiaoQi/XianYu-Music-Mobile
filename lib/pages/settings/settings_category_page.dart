@@ -118,28 +118,27 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       );
     }
 
+    // 账号页同款透出做法:ListView 铺满整屏,顶距写进自身 padding,
+    // 内容可滚到悬浮表头/状态栏后面,而非被外层 Padding 硬垫开
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                24 + MediaQuery.of(context).padding.bottom,
-              ),
-              children: _buildItems(
-                context,
-                ref,
-                category,
-                settings,
-                notifier,
-                exclusivePlaying,
-              ),
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              GlassTopBar.height(context),
+              16,
+              24 + MediaQuery.of(context).padding.bottom,
+            ),
+            children: _buildItems(
+              context,
+              ref,
+              category,
+              settings,
+              notifier,
+              exclusivePlaying,
             ),
           ),
           Positioned(
@@ -147,8 +146,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
-              flatBackdrop: true,
-              forceDocked: true,
               leading: const BackButton(),
               title: Text(category.title),
             ),
@@ -729,19 +726,19 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
           _tile(
             context,
-            icon: Icons.wallpaper_outlined,
-            title: tr('壁纸中心'),
-            subtitle: tr('自定义背景与动态壁纸'),
-            trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/wallpaper'),
-          ),
-          _tile(
-            context,
             icon: Icons.palette_outlined,
             title: tr('主题中心'),
             subtitle: tr('导入主题包并应用图标、贴纸与组件色块'),
             trailing: const SizedBox.shrink(),
             onTap: () => context.push('/theme'),
+          ),
+          _tile(
+            context,
+            icon: Icons.wallpaper_outlined,
+            title: tr('壁纸中心'),
+            subtitle: tr('自定义背景与动态壁纸'),
+            trailing: const SizedBox.shrink(),
+            onTap: () => context.push('/wallpaper'),
           ),
           _tile(
             context,
@@ -1397,7 +1394,8 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
-            title: tr('同时下载歌词'),
+            title: tr('下载独立歌词'),
+            subtitle: tr('额外保存一份 .lrc 文件，歌词默认已嵌入音频'),
             value: s?.downloadLyrics ?? false,
             onChanged: (v) => n.setDownloadLyrics(v),
           ),
@@ -1448,7 +1446,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.lyrics_outlined,
             title: tr('嵌入歌词'),
-            subtitle: tr('需同时开启「同时下载歌词」'),
+            subtitle: tr('将歌词数据写入音频文件'),
             value: s?.embedDownloadLyrics ?? true,
             onChanged: (v) => n.setEmbedDownloadLyrics(v),
           ),

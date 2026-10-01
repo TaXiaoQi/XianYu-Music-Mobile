@@ -464,11 +464,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
     _updateTask(task.songPath, progressPercent: 85);
 
+    // 收尾项（嵌入/独立歌词）由 _finalizeExtras 内部按开关统一判断
     if (finalPath == destPath) {
-      final wantLyrics = settings?.downloadLyrics ?? true;
-      if (wantLyrics || (settings?.embedDownloadLyrics ?? false)) {
-        await _finalizeExtras(item, destPath, parsed, settings);
-      }
+      await _finalizeExtras(item, destPath, parsed, settings);
     }
 
     _updateTask(task.songPath, progressPercent: 95);
@@ -503,11 +501,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
       );
 
       final saveLyricsFile = settings?.downloadLyrics ?? true;
-      final wantLyrics =
-          saveLyricsFile || (settings?.embedDownloadLyrics ?? false);
-      if (wantLyrics) {
-        await _finalizeExtras(item, tempPath, parsed, settings);
-      }
+      // 收尾项由 _finalizeExtras 内部按开关统一判断
+      await _finalizeExtras(item, tempPath, parsed, settings);
 
       final relativePath = _mediaRelativePath(dir);
       final finalPath = await MediaStoreWriter.writeFromPath(
@@ -611,13 +606,15 @@ class DownloadManager extends StateNotifier<DownloadState> {
       final lyricsFormat = settings?.downloadLyricsFormat ?? 'lrc';
       final convertedLyrics = _convertLyricsFormat(lyricsText ?? '', lyricsFormat);
       final request = jsonEncode({
+        // 独立歌词文件仅在该开关开启时落盘，否则传 null（对齐桌面端口径）
         'lyricsText':
             (saveLyricsFile && convertedLyrics.isNotEmpty)
                 ? convertedLyrics
                 : null,
-        'lyricsPath': '$base.$lyricsFormat',
+        'lyricsPath': saveLyricsFile ? '$base.$lyricsFormat' : null,
+        // 封面仅在内存中用于嵌入，不单独写 .cover 文件
         'coverUrl': embedCover ? item.coverUrl : null,
-        'coverPath': '$base.cover',
+        'coverPath': null,
         'metadata': embedMetadata
             ? {
                 'filePath': filePath,

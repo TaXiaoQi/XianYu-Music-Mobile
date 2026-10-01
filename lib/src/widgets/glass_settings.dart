@@ -31,11 +31,6 @@ Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
 Color wallpaperGlassFill(BuildContext context, WidgetRef ref) =>
     wallpaperBlockFill(context, ref);
 
-Color wallpaperNavGlassFill(BuildContext context) {
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return isDark ? const Color(0x3DFFFFFF) : const Color(0x6BFFFFFF);
-}
-
 List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
   if (wallpaperGlassActive(ref)) return const [];
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -74,7 +69,6 @@ Widget frostedCardSurface({
   required WidgetRef ref,
   required double radius,
   required Widget child,
-  bool lowPerf = false,
   String? themeSlot,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -82,9 +76,9 @@ Widget frostedCardSurface({
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallpaperTransparent = wallpaper && !frostedOn;
-  final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-  // fill/sigma 与 pseudoLiquidSurface 的导航面（条类表面）对齐，
-  // 避免材质开启后卡片与顶栏/底栏/播放条观感割裂
+  // 毛玻璃关恢复实底兜底(回归修复):非壁纸时白0.34+弱blur 读作透底;
+  // 壁纸模式不 solid,恒走组件色块滑条(避免毛玻璃关时短路组件底色)
+  final solid = !wallpaper && !frostedOn;
   final frostedFill = isDark
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.white.withValues(alpha: 0.34);
@@ -110,12 +104,12 @@ Widget frostedCardSurface({
     ),
     child: child,
   );
-  if (solid) return surface;
   // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
   // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
   final sigma = wallpaperTransparent
       ? wallpaperGlassSigma(context)
       : 8.0 * frostedBlurScale(ref);
+  if (solid) return surface;
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -174,7 +168,10 @@ Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
 Color bilipaiSurfaceTint(BuildContext context, WidgetRef ref,
         LiquidGlassQuality quality) =>
     wallpaperGlassActive(ref)
-        ? wallpaperNavGlassFill(context)
+        // 壁纸模式组件色块：跟随设置的组件色块强度（widgetAlpha）与文字
+        // 模式底色，与其他壁纸组件口径一致；此前误用导航面固定强度，
+        // 导致组件色块设置在液态组件上无效（恒为满强度）
+        ? wallpaperGlassFill(context, ref)
         : bilipaiGlassTint(
             Theme.of(context).brightness == Brightness.dark, quality);
 
@@ -280,36 +277,30 @@ Widget pseudoLiquidSurface({
   required WidgetRef ref,
   required double radius,
   required Widget child,
-  bool lowPerf = false,
   BlurSurfaceType surfaceType = BlurSurfaceType.generic,
   BlurBudget? budget,
   double? frostedScale,
-  bool forceSolid = false,
-  bool keepFilter = false,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final wallpaper = wallpaperGlassActive(ref);
   final frostedOn = ref.watch(settingsProvider.select(
       (s) => s.valueOrNull?.frostedGlass ?? false));
   final wallTransparent = wallpaper && !frostedOn;
-  final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-  final solid = forceSolid || prefSolid;
-  final keepAlive = forceSolid && keepFilter && !prefSolid;
   final navSurface = surfaceType == BlurSurfaceType.header ||
       surfaceType == BlurSurfaceType.bottomBar;
   final wallpaperNav = wallpaper && navSurface;
+  // 毛玻璃关恢复实底兜底(回归修复):白0.34+弱blur 在浅色页面上读作透底;
+  // 壁纸模式不 solid,恒走组件色块滑条(widgetAlpha 驱动),导航面差异只在
+  // blur(navSurfaceBlurSigma 档位缩放)
+  final solid = !wallpaper && !frostedOn;
   final bg = solid
-      ? (keepAlive
-          ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-          : (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF)))
-      : (wallpaperNav
-          ? wallpaperNavGlassFill(context)
-          : wallTransparent
-              ? wallpaperGlassFill(context, ref)
-              : (isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white.withValues(alpha: 0.34)));
-  final border = isDark
+      ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+      : (wallTransparent
+          ? wallpaperGlassFill(context, ref)
+          : (isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.34)));
+  final borderColor = isDark
       ? Colors.white.withValues(alpha: 0.18)
       : Colors.white.withValues(alpha: 0.5);
   final fill = (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget);
@@ -328,14 +319,14 @@ Widget pseudoLiquidSurface({
     decoration: BoxDecoration(
       color: fill,
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: border),
+      border: solid ? null : Border.all(color: borderColor),
       boxShadow: surfaceType == BlurSurfaceType.header
           ? const []
           : navFloatShadows(context, ref),
     ),
     child: child,
   );
-  if (solid && !keepAlive) return surface;
+  if (solid) return surface;
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
