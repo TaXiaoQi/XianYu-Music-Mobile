@@ -16,6 +16,7 @@ import 'src/i18n/i18n.dart';
 import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
 import 'src/navigation/shell.dart' show NavDropletOverlay;
+import 'src/plugin/lx_update_alerts.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/privacy_policy.dart';
@@ -412,6 +413,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                         OverlayEntry(builder: (_) => const SizedBox.shrink()),
                       ],
                     ),
+                    // LX 插件自报更新（updateAlert）提示弹窗宿主
+                    const LxUpdateAlertHost(),
                   ],
                 ),
                 ),

@@ -148,17 +148,50 @@ class EngineLog {
       );
 }
 
+/// LX 插件自报更新（updateAlert）载荷（Rust 沙箱桥校验后随 load/call 结果送达）。
+class LxUpdateAlertPayload {
+  final String pluginId;
+  final String log;
+  final String? updateUrl;
+
+  const LxUpdateAlertPayload({
+    required this.pluginId,
+    required this.log,
+    this.updateUrl,
+  });
+
+  /// 会话内去重指纹。
+  String get fingerprint => '$pluginId|$log|$updateUrl';
+
+  factory LxUpdateAlertPayload.fromMap(Map<String, dynamic> json) =>
+      LxUpdateAlertPayload(
+        pluginId: (json['pluginId'] ?? '').toString(),
+        log: (json['log'] ?? '').toString(),
+        updateUrl: json['updateUrl']?.toString(),
+      );
+}
+
+List<LxUpdateAlertPayload> _parseLxUpdateAlerts(dynamic raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final e in raw)
+      if (e is Map) LxUpdateAlertPayload.fromMap(Map<String, dynamic>.from(e)),
+  ];
+}
+
 class EngineLoadResult {
   final bool ok;
   final String? error;
   final Map<String, dynamic>? metadata;
   final List<EngineLog> logs;
+  final List<LxUpdateAlertPayload> lxUpdateAlerts;
 
   EngineLoadResult({
     required this.ok,
     this.error,
     this.metadata,
     this.logs = const [],
+    this.lxUpdateAlerts = const [],
   });
 
   factory EngineLoadResult.fromJson(Map<String, dynamic> json) =>
@@ -172,6 +205,7 @@ class EngineLoadResult {
                 ?.map((e) => EngineLog.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        lxUpdateAlerts: _parseLxUpdateAlerts(json['lxUpdateAlerts']),
       );
 
   static EngineLoadResult fromJsonString(String json) {
@@ -189,12 +223,14 @@ class EngineCallResult {
   final String? error;
   final dynamic data;
   final List<EngineLog> logs;
+  final List<LxUpdateAlertPayload> lxUpdateAlerts;
 
   EngineCallResult({
     required this.ok,
     this.error,
     this.data,
     this.logs = const [],
+    this.lxUpdateAlerts = const [],
   });
 
   factory EngineCallResult.fromJson(Map<String, dynamic> json) =>
@@ -206,6 +242,7 @@ class EngineCallResult {
                 ?.map((e) => EngineLog.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             const [],
+        lxUpdateAlerts: _parseLxUpdateAlerts(json['lxUpdateAlerts']),
       );
 
   static EngineCallResult fromJsonString(String json) {

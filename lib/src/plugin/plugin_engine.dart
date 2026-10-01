@@ -25,6 +25,21 @@ class PluginEngine {
 
   final Map<String, String> _aliases = {};
 
+  // LX 插件自报更新（updateAlert）广播流
+  final StreamController<LxUpdateAlertPayload> _lxAlertController =
+      StreamController<LxUpdateAlertPayload>.broadcast();
+
+  /// LX 插件自报更新事件流（会话内按指纹去重由 UI 层负责）。
+  Stream<LxUpdateAlertPayload> get lxUpdateAlertStream =>
+      _lxAlertController.stream;
+
+  void _emitLxUpdateAlerts(List<LxUpdateAlertPayload> alerts) {
+    if (alerts.isEmpty || _lxAlertController.isClosed) return;
+    for (final alert in alerts) {
+      _lxAlertController.add(alert);
+    }
+  }
+
   static const Duration _lxUrlCacheTtl = Duration(minutes: 10);
   final Map<String, ({String url, String type, Map<String, String>? headers, DateTime expiresAt})>
       _lxUrlCache = {};
@@ -125,6 +140,7 @@ class PluginEngine {
       scriptInfoJson: jsonEncode(scriptInfo ?? {}),
     ));
     _emitLogs(result.logs);
+    _emitLxUpdateAlerts(result.lxUpdateAlerts);
     if (!result.ok) {
       _ready.remove(pluginId);
       throw PluginEngineException(result.error ?? tr('LX 插件初始化失败'));
@@ -155,6 +171,7 @@ class PluginEngine {
       userVarsJson: jsonEncode(userVars ?? {}),
     ));
     _emitLogs(result.logs);
+    _emitLxUpdateAlerts(result.lxUpdateAlerts);
     if (!result.ok) {
       _ready.remove(pluginId);
       throw PluginEngineException(result.error ?? tr('插件加载失败'));
@@ -193,6 +210,7 @@ class PluginEngine {
       timeoutMs: BigInt.from(timeoutMs),
     ));
     _emitLogs(result.logs);
+    _emitLxUpdateAlerts(result.lxUpdateAlerts);
     if (!result.ok) {
       final err = result.error ?? tr('方法调用失败');
       if (method == 'request' && _isAuthError(err)) {

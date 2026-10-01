@@ -2195,6 +2195,7 @@
     });
 
     var isInitedApi = false;
+    var isShowedUpdateAlert = false;
     var EVENT_NAMES = { request: 'request', inited: 'inited', updateAlert: 'updateAlert' };
     var eventNames = ['request', 'inited', 'updateAlert'];
 
@@ -2327,14 +2328,28 @@
             handleInit(data);
             resolve(undefined);
           } else if (eventName === EVENT_NAMES.updateAlert) {
-            // 参考 BakaMusic：LX 插件可自报更新（updateAlert），载荷通常是
-            // { updateUrl, log }。当前更新检查以"重取插件脚本 filePath + 订阅清单版本"
-            // 为准，这里不再静默丢弃，而是记录通告信息便于排查。
+            // 对齐 lx-music-desktop：插件自报更新（updateAlert），载荷 { log, updateUrl }。
+            // 每次脚本运行仅允许一次；log 必填且超长截断，updateUrl 非法则丢弃。
+            // 校验通过后经原生桥进入待处理队列，随 load/call 结果送达宿主前端。
+            if (isShowedUpdateAlert) {
+              reject(new Error('The update alert can only be called once.'));
+              return;
+            }
+            if (!data || typeof data !== 'object' || !data.log || typeof data.log !== 'string') {
+              reject(new Error('log is required.'));
+              return;
+            }
+            isShowedUpdateAlert = true;
             try {
-              G.console.log('[updateAlert] ' + (String(data && data.log || '').substring(0, 200)));
-              if (data && data.updateUrl) {
-                G.console.log('[updateAlert] updateUrl: ' + String(data.updateUrl).substring(0, 512));
+              var updatePayload = { log: data.log };
+              if (typeof data.updateUrl === 'string' && /^https?:\/\/\S+$/.test(data.updateUrl)) {
+                updatePayload.updateUrl = data.updateUrl;
               }
+              if (updatePayload.log.length > 1024) {
+                updatePayload.log = updatePayload.log.substring(0, 1024) + '...';
+              }
+              G.__xyNativeUpdateAlert(JSON.stringify(updatePayload));
+              G.console.log('[updateAlert] ' + updatePayload.log.substring(0, 200));
             } catch (e) { /* ignore */ }
             resolve(undefined);
           } else {
