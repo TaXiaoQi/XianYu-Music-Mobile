@@ -46,9 +46,45 @@ Future<String?> fetchPluginScriptWithRetry(
       final req = await client.getUrl(Uri.parse(url));
       req.headers.set('User-Agent', userAgent);
       req.headers.set('Accept', '*/*');
+      // 浏览器风格请求头：实测同一 URL 用浏览器能下载、在本客户端固定 403，
+      // 且换网络（WiFi/移动数据）无改善，故不是网络路径问题。部分站点前置了
+      // 机器人防护，只凭 UA + Accept 会被判为非浏览器请求直接拒绝。
+      final parsed = Uri.parse(url);
+      req.headers.set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
+      req.headers.set('Referer', '${parsed.scheme}://${parsed.host}/');
+      req.headers.set('Connection', 'keep-alive');
       final resp = await req.close().timeout(responseTimeout);
       if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        AppLog.warn('plugin', 'fetch script http ${resp.statusCode} $url');
+        // 记下状态码之外的响应体开头：403 既可能是 CDN 机器人拦截，也可能是
+        // key/鉴权被拒，两者修法不同，只看状态码分不出来（不重试，4xx 重试无意义）。
+        var snippet = '';
+        try {
+          snippet = (await resp.transform(utf8.decoder).join()).trim();
+          if (snippet.length > 200) snippet = snippet.substring(0, 200);
+        } catch (_) {}
+        AppLog.warn(
+          'plugin',
+          'fetch script http ${resp.statusCode} $url body=${snippet.isEmpty ? '(empty)' : snippet}',
+        );
+        // 403 可能是 Key 限制 UA（服务端响应体明说「User-Agent 已被限制」）。
+        // 只在这一种情况下用 LX 客户端 UA 重试一次，且不替换全局默认 UA：
+        // 多数源站依赖浏览器 UA，全局改会悄悄弄坏它们。
+        if (resp.statusCode == 403) {
+          try {
+            final retryReq = await client.getUrl(parsed);
+            retryReq.headers.set('User-Agent', 'lx-music-desktop/2.0.0');
+            retryReq.headers.set('Accept', '*/*');
+            final retryResp = await retryReq.close().timeout(responseTimeout);
+            if (retryResp.statusCode >= 200 && retryResp.statusCode < 300) {
+              AppLog.info('plugin', 'fetch script 403 后改用 LX UA 重试成功 $url');
+              return await retryResp.transform(utf8.decoder).join();
+            }
+            AppLog.warn('plugin',
+                'fetch script 403 后改用 LX UA 重试仍失败 ${retryResp.statusCode} $url');
+          } catch (e) {
+            AppLog.warn('plugin', 'fetch script 403 后改用 LX UA 重试异常: $e');
+          }
+        }
         return null;
       }
       return await resp.transform(utf8.decoder).join();
