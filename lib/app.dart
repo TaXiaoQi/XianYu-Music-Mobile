@@ -58,6 +58,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
 
+  /// 上次键盘高度（物理像素）：IME 收起键不经过框架、焦点残留在输入框，
+  /// 据 inset 归零主动失焦——全局清除键入状态，避免残留焦点把键盘再拉起
+  double? _lastKeyboardInset;
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +80,19 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     if ((settings?.language ?? AppLanguage.system) == AppLanguage.system) {
       setState(() {});
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+    if (view == null) return;
+    final inset = view.viewInsets.bottom;
+    if (_lastKeyboardInset != null &&
+        _lastKeyboardInset! > 0 &&
+        inset == 0) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    _lastKeyboardInset = inset;
   }
 
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
