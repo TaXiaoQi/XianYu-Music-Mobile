@@ -199,13 +199,15 @@ class FlyingCoverAnchor extends StatefulWidget {
 }
 
 class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
-  late final Rect Function() _provider = () {
+  late final Rect Function() _provider = _computeProviderRect;
+
+  Rect _computeProviderRect() {
     final ro = context.findRenderObject();
     if (ro is RenderBox && ro.attached && ro.hasSize) {
       return ro.localToGlobal(Offset.zero) & ro.size;
     }
     return Rect.zero;
-  };
+  }
 
   @override
   void initState() {

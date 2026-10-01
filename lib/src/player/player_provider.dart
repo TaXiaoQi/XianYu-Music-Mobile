@@ -574,6 +574,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _persistSession();
+    } else if (state == AppLifecycleState.resumed) {
+      // 回到前台刷新听歌时长：服务端快照可能在后台期间被桌面端上报推进
+      _ref.invalidate(listenStatsProvider);
     }
   }
 
