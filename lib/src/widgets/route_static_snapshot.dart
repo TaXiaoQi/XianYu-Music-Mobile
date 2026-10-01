@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/settings.dart';
 import '../core/application_logger.dart';
 import 'glass_settings.dart';
 
@@ -43,8 +42,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   @override
   void initState() {
     super.initState();
-    final s = ref.read(settingsProvider).valueOrNull;
-    _enabled = (s?.frostedGlass ?? false) || (s?.liquidGlass ?? false);
     widget.animation.addStatusListener(_onStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
   }
@@ -134,6 +131,9 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   @override
   Widget build(BuildContext context) {
+    // 材质开关实时生效：毛玻璃/液态全关（含性能优先）时快照管线整体
+    // 旁路——实底与纯壁纸色块的转场无 backdrop 采样，无需离屏缓存保护
+    _enabled = glassMaterialActive(ref);
     final img = _image;
     final size = _size;
     final moving = _enabled && _moving;

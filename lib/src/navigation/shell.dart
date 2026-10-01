@@ -800,6 +800,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         !ref.watch(settingsProvider.select(
             (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
 
+    // 材质开关：决定 chrome 显隐走 0.01 保底常绘（渲显分离）还是归零停绘
+    final materialOn = glassMaterialActive(ref);
+
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       if (searchOpenRaw) closeLandscapeSearch(ref);
@@ -1050,9 +1053,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧
-                  // backdrop 采样未就绪闪黑；隐去期间保持绘制即无黑闪
-                  opacity: hidden ? 0.01 : 1.0,
+                  // 材质开启时最低 0.01 不归零：opacity=0 会整树停绘，再次
+                  // 显示首帧 backdrop 采样未就绪闪黑；材质关闭（实底）无
+                  // 采样，隐去归零停绘
+                  opacity: hidden ? (materialOn ? 0.01 : 0.0) : 1.0,
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 240),
                     curve: Curves.easeOutCubic,
@@ -1078,12 +1082,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
+                // 材质开启时 0.01 保底持续绘制，防止显示首帧采样黑闪；
+                // 材质关闭（实底）归零停绘
                 opacity: (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
                         !hidden)
                     ? 1.0
-                    : 0.01,
+                    : (materialOn ? 0.01 : 0.0),
                 child: IgnorePointer(
                   ignoring: !(floatingSearchBar &&
                       (widget.index == 0 || widget.index == 1) &&
@@ -1149,10 +1154,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
+                // 材质开启时 0.01 保底持续绘制，防止显示首帧采样黑闪；
+                // 材质关闭（实底）归零停绘
                 opacity: (widget.index == 0 || widget.index == 1) && !hidden
                     ? 1.0
-                    : 0.01,
+                    : (materialOn ? 0.01 : 0.0),
                 child: IgnorePointer(ignoring: hidden, child: topBar),
               ),
             ),
@@ -1227,28 +1233,33 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式同步顶栏材质：不实底，恒走组件色块+导航面档位模糊
+    final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    // 实底兜底与顶栏/scaffold 同色全不透明，避免停靠栏透出页面内容
     final fill = solid
-        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper
             ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final glassFill = themeTint(
-        ref,
-        'nav.bar',
-        (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
+    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+    final glassFill = wallpaper
+        ? fill
+        : themeTint(
+            ref,
+            'nav.bar',
+            (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
     }
     final barSigma = navSurfaceBlurSigma(ref);
     return ClipRect(
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(barSigma),
+      child: ScrollAwareBackdropBlur(
+        sigma: barSigma,
         child: barBox,
       ),
     );
@@ -1400,7 +1411,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
                 true) &&
             !lowPerf;
-    final liquid = liquidGlassOn && ImageFilter.isShaderFilterSupported;
+    // 壁纸模式同步顶栏材质：栏面不上液态，走组件色块+导航面档位模糊；
+    // lens 水滴是交互折射效果，与栏面材质无关，保留
+    final wallpaper = wallpaperGlassActive(ref);
+    final liquid = liquidGlassOn &&
+        !wallpaper &&
+        ImageFilter.isShaderFilterSupported;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -1467,11 +1483,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final effBudget = budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
-    // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
-    // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见
-    final solid = (forceSolid || prefSolid) && !degradedLiquid;
-    final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
+    // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
+    // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见。
+    // 壁纸模式同步顶栏材质：不实底，恒走组件色块
+    final solid = !wallpaper && (forceSolid || prefSolid) && !degradedLiquid;
+    final keepFilterAlive = forceSolid && !prefSolid;
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
@@ -1479,11 +1496,16 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final fill = themeTint(
-        ref,
-        'nav.bar',
-        (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget));
-    final sigma = degradedLiquid
+    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+    final fill = wallpaper
+        ? bg
+        : themeTint(
+            ref,
+            'nav.bar',
+            (budget == null || solid || wallpaper)
+                ? bg
+                : surfaceFillWithBudget(bg, budget));
+    final sigma = degradedLiquid && !wallpaper
         ? surfaceBlurSigma(
             // 液态降级胶囊用液态档 blur(磨砂观感,而非导航面弱模糊)
             base: bilipaiBackdropBlurOf(liquidGlassQualitySetting(ref)),
@@ -1491,6 +1513,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             type: BlurSurfaceType.bottomBar,
             crispAtRest: true,
           )
+        // 壁纸模式同步顶栏材质：导航面档位模糊
         : navSurfaceBlurSigma(ref);
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
@@ -1508,8 +1531,8 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     if (solid && !keepFilterAlive) return capsule;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
+      child: ScrollAwareBackdropBlur(
+        sigma: sigma,
         child: capsule,
       ),
     );
@@ -1953,8 +1976,11 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOutCubic,
-          // 0.01 保底持续绘制，防止再次显示首帧采样未就绪闪黑（同底栏）
-          opacity: chromeHidden ? 0.01 : 1.0,
+          // 材质开启时 0.01 保底持续绘制，防止再次显示首帧采样未就绪闪黑
+          // （同底栏）；材质关闭（静息胶囊为纯色块）归零停绘
+          opacity: chromeHidden
+              ? (glassMaterialActive(ref) ? 0.01 : 0.0)
+              : 1.0,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -2094,6 +2120,33 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   /// 底栏玻璃胶囊定位键：顶层水滴快照在帧末用它实测栏的屏幕位置
   final GlobalKey _barKey = GlobalKey();
 
+  /// 本页被覆盖路由的转场动画。壳层视差平移（_SmoothFadeForwards 的
+  /// -25% 平移）由它驱动：转场每帧 tick 重建底栏 → _syncSnapshot 帧末
+  /// 量到实时几何 → 顶层水滴全程跟随，不会把转场中间几何烙进快照。
+  /// 没有它，pop 首帧 rebuild 时几何尚未变化（与冻结值相同）→ 追帧链
+  /// 不续 → 转场全程盲区，快照停在错误位置，直到下一次交互才飞回。
+  Animation<double>? _coverAnim;
+
+  void _onCoverAnimStatus(AnimationStatus status) {
+    // 转场落定/退场后强制同步一次：视差已停但栏显隐 scale 动画可能
+    // 未结束，补一帧让快照收敛到真实静息几何（防终点残偏）
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final anim = ModalRoute.of(context)?.secondaryAnimation;
+    if (!identical(anim, _coverAnim)) {
+      _coverAnim?.removeStatusListener(_onCoverAnimStatus);
+      _coverAnim = anim;
+      anim?.addStatusListener(_onCoverAnimStatus);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2120,6 +2173,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   void dispose() {
     // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影
     navDropletSnapshot.value = null;
+    _coverAnim?.removeStatusListener(_onCoverAnimStatus);
     _moveC?.dispose();
     _springTickerC?.dispose();
     _pressC?.dispose();
@@ -2130,7 +2184,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   Widget build(BuildContext context) {
     final items = bottomNavItems;
     return AnimatedBuilder(
-      animation: Listenable.merge([_move, _press]),
+      // _coverAnim（被覆盖路由转场）参与驱动：转场期间每帧重建并实测
+      // 栏几何，快照水滴跟随壳层视差全程移动，不再冻结在转场中间值
+      animation: Listenable.merge([_move, _press, _coverAnim]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
         final overlayDroplet = widget.lens && widget.glassBuilder != null;
@@ -2293,25 +2349,21 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
           // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
-            if (b == null || !b.attached || !b.hasSize) return;
-            final origin = b.localToGlobal(Offset.zero);
-            navDropletSnapshot.value = NavDropletSnapshot(
-              rect: Rect.fromLTWH(origin.dx + cx - w / 2,
-                  origin.dy + maxH / 2 - h / 2, w, h),
-              shear: _dragVel.sign * _sxPos * 0.12,
-              liquid: dropletOn,
-              radius: d * sy / 2,
-              refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
-              band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
-              chroma: widget.dropletChroma,
-              depth: 1.2 * mf,
-              press: pressG.clamp(0.0, 1.0),
-              isDark: isDark,
-            );
-          });
+          _syncSnapshot(
+            cx: cx,
+            w: w,
+            h: h,
+            maxH: maxH,
+            liquid: dropletOn,
+            radius: d * sy / 2,
+            refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
+            band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
+            chroma: widget.dropletChroma,
+            shear: _dragVel.sign * _sxPos * 0.12,
+            depth: 1.2 * mf,
+            press: pressG.clamp(0.0, 1.0),
+            isDark: isDark,
+          );
           return widget.glassBuilder!(
               SizedBox(key: _barKey, height: maxH, child: gestures));
         }
@@ -2333,6 +2385,82 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     } else if (!_dragging) {
       _press.reverse();
     }
+  }
+
+  /// 顶层水滴快照同步：帧末实测底栏几何写快照；rect 未稳定时逐帧重写
+  /// 直至收敛。仅靠 build 触发的单次写入会把显隐动画起步帧的几何烙进
+  /// 快照（AnimatedScale 0.92→1.0 的 paint 变换参与 localToGlobal）——
+  /// 静息态不再 rebuild，动画结束后顶层水滴停在错位处，直到下一次交互
+  /// 逐帧跳回（二级页返回时指示器「乱飞」的根因）
+  void _syncSnapshot({
+    required double cx,
+    required double w,
+    required double h,
+    required double maxH,
+    required bool liquid,
+    required double radius,
+    required double refract,
+    required double band,
+    required double chroma,
+    required double shear,
+    required double depth,
+    required double press,
+    required bool isDark,
+  }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
+      if (b == null || !b.attached || !b.hasSize) return;
+      // 逻辑中心点过同一 paint 变换（显隐动画 scale 参与矩阵），
+      // 避免未缩放逻辑 cx 与缩放后 origin 混算产生错位
+      final topLeft = b.localToGlobal(Offset(cx - w / 2, maxH / 2 - h / 2));
+      final rect = topLeft & Size(w, h);
+      final prev = navDropletSnapshot.value;
+      final rectStable = prev != null && prev.rect == rect;
+      // 交互中 press/refract 等随 rebuild 逐帧渐变，有变必须写快照；
+      // rect 稳定（且无 rebuild 驱动）后循环自然终止，静息零开销
+      final changed = prev == null ||
+          prev.rect != rect ||
+          prev.liquid != liquid ||
+          prev.press != press ||
+          prev.radius != radius ||
+          prev.refract != refract ||
+          prev.band != band ||
+          prev.depth != depth ||
+          prev.shear != shear;
+      if (changed) {
+        navDropletSnapshot.value = NavDropletSnapshot(
+          rect: rect,
+          shear: shear,
+          liquid: liquid,
+          radius: radius,
+          refract: refract,
+          band: band,
+          chroma: chroma,
+          depth: depth,
+          press: press,
+          isDark: isDark,
+        );
+      }
+      if (!rectStable) {
+        // 几何仍在过渡（显隐动画/布局变化）：下一帧继续同步
+        _syncSnapshot(
+          cx: cx,
+          w: w,
+          h: h,
+          maxH: maxH,
+          liquid: liquid,
+          radius: radius,
+          refract: refract,
+          band: band,
+          chroma: chroma,
+          shear: shear,
+          depth: depth,
+          press: press,
+          isDark: isDark,
+        );
+      }
+    });
   }
 
   void _onPointerDown(PointerDownEvent e, double tabW, int count) {
@@ -2871,8 +2999,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               ? panelBox
               : ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: cheapBackdropBlur(panelSigma),
+                  child: ScrollAwareBackdropBlur(
+                    sigma: panelSigma,
                     child: panelBox,
                   ),
                 );

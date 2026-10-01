@@ -49,6 +49,10 @@ bool _wired = false;
 // 补抓截止时刻：门控挡掉的抓帧在门控放开后自动重试，直到该时刻
 DateTime _retryUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
+// 滚动中节流抓帧的下次允许时刻：帧供玻璃画裁剪（无 backdrop 采样），
+// 50ms 节流（≈3 帧@60Hz）——透底内容滞后与液态波动离散化在模糊下无感
+DateTime _nextRollingCaptureAt = DateTime.fromMillisecondsSinceEpoch(0);
+
 /// builder 层边界：包住背景层 + 路由子树（含 shell chrome 条），
 /// 不含 mini 播放条/播放页/飞行封面（其玻璃不走 chrome 缓存）
 class ChromeGlassFrameBoundary extends StatefulWidget {
@@ -87,6 +91,21 @@ class _ChromeGlassFrameBoundaryState extends State<ChromeGlassFrameBoundary>
     globalIsTransitioning.addListener(() {
       if (!globalIsTransitioning.value) {
         schedule(const Duration(milliseconds: 350));
+      }
+    });
+    // 滚动中低频刷新帧：玻璃滚动中改画缓存帧裁剪（无 backdrop 采样），
+    // 帧必须跟手刷新才不会有「透底内容冻结」感——50ms 节流驱动
+    globalScrollTick.addListener(() {
+      if (!globalIsScrolling.value) return;
+      final now = DateTime.now();
+      if (now.isBefore(_nextRollingCaptureAt)) return;
+      _nextRollingCaptureAt = now.add(const Duration(milliseconds: 50));
+      schedule(Duration.zero);
+    });
+    // 停手补抓落定帧：滚动中帧内容滞后，落定帧供下一次转场裁剪使用
+    globalIsScrolling.addListener(() {
+      if (!globalIsScrolling.value) {
+        schedule(const Duration(milliseconds: 100));
       }
     });
   }
@@ -159,11 +178,40 @@ void unregisterChromeFace(RenderBox face) {
 
 Offset? chromeFaceStaticOrigin(RenderBox face) => _chromeFaceOrigins[face];
 
+/// 无读回抓帧：layer 树直接进 SceneBuilder，scene.toImageSync 产出
+/// GPU 常驻纹理（不发生 GPU→CPU 读回），比 RenderRepaintBoundary
+/// .toImage（读回型）便宜一个数量级——滚动中 50ms 节流刷新才可负担。
+/// dpr 缩放由 pushTransform 承担（Scene.toImageSync 不支持 pixelRatio）
+ui.Image? _captureSync(RenderRepaintBoundary box, double dpr) {
+  final layer = box.debugLayer;
+  if (layer is! OffsetLayer || !box.attached) return null;
+  final w = (box.size.width * dpr).round();
+  final h = (box.size.height * dpr).round();
+  if (w <= 0 || h <= 0) return null;
+  layer.updateSubtreeNeedsAddToScene();
+  final builder = ui.SceneBuilder();
+  try {
+    builder.pushTransform(
+        Matrix4.diagonal3Values(dpr, dpr, 1).storage);
+    layer.addToScene(builder);
+    builder.pop();
+    final scene = builder.build();
+    try {
+      return scene.toImageSync(w, h);
+    } finally {
+      scene.dispose();
+    }
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<void> _capture() async {
   if (_capturing) return;
-  if (globalIsTransitioning.value ||
-      globalIsScrolling.value ||
-      globalIsDragging.value) {
+  // 滚动中放行（由 scrollTick 的 50ms 节流控制频率）：帧刷新供玻璃画
+  // 裁剪，滚动中玻璃不再实时采样 backdrop。转场/拖拽中仍挡——转场要
+  // 保护静态帧，拖拽中面在动会污染 origin 登记表
+  if (globalIsTransitioning.value || globalIsDragging.value) {
     _retry();
     return;
   }
@@ -179,7 +227,10 @@ Future<void> _capture() async {
   final dpr = MediaQuery.devicePixelRatioOf(ctx);
   _capturing = true;
   try {
-    final img = await box.toImage(pixelRatio: dpr);
+    // 无读回抓帧优先：GPU 常驻纹理，比读回型便宜一个数量级；层未就绪
+    // 等异常回退读回型兜底
+    final img =
+        _captureSync(box, dpr) ?? await box.toImage(pixelRatio: dpr);
     if (!box.attached) {
       img.dispose();
       return;

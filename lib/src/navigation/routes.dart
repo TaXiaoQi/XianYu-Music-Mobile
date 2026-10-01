@@ -849,7 +849,15 @@ class _SmoothFadeForwards extends StatelessWidget {
             child: child,
           ),
         ),
-        child: child,
+        // 被覆盖侧（壳层/旧界面）同样冻结为静态快照：此前只有主动画侧
+        // （推入/弹出的页面）有 RouteStaticSnapshot，壳层的淡出/淡入
+        // 全程 live 渲染——整壳 saveLayer + 壳内玻璃 BackdropFilter
+        // 逐帧重采样，是转场卡顿主源。快照包在 Fade/Slide 之内，
+        // 冻结图随转场一起淡出平移；state 稳定（不随方向重建）。
+        child: RouteStaticSnapshot(
+          animation: ReverseAnimation(secondaryAnimation),
+          child: child!,
+        ),
       ),
     );
   }
