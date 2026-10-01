@@ -18,6 +18,8 @@ import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/sleep_timer.dart';
+import '../../src/player/sleep_timer_sheet.dart';
 import '../../src/player/mv_provider.dart';
 import '../../src/player/cast_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -1136,6 +1138,16 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             subtitle: exclusivePlaying
                 ? tr('Bit-perfect / DSD 直出中，音量由 DAC 控制')
                 : null,
+          ),
+          _tile(
+            context,
+            icon: Icons.bedtime_outlined,
+            title: tr('睡眠定时'),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            subtitle: ref.watch(sleepTimerProvider).active
+                ? tr('已开启，到点淡出并暂停')
+                : tr('到点淡出并暂停播放'),
+            onTap: () => showSleepTimerSheet(context),
           ),
           _switchTile(
             context,

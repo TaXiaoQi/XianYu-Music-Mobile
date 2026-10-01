@@ -779,6 +779,15 @@ const Map<String, String> enDictManual = {
   '无法读取所选文件': 'Cannot read the selected file',
   '无法获取播放链接': 'Cannot get the playback URL',
   '无法获取插件脚本，请检查 URL 与网络': 'Cannot fetch the plugin script; check the URL and network',
+  // 睡眠定时
+  '睡眠定时': 'Sleep timer',
+  '{n} 分钟': '{n} min',
+  '取消睡眠定时': 'Cancel sleep timer',
+  '将在 {n} 分钟后暂停播放': 'Pausing in {n} min',
+  '到点后淡出并暂停播放': 'Fade out and pause when it ends',
+  '到点淡出并暂停播放': 'Fade out and pause when it ends',
+  '已开启，到点淡出并暂停': 'On: fade out and pause when it ends',
+  '自定义时长（分钟）': 'Custom duration (minutes)',
   '无法解析图片': 'Cannot parse the image',
   '无法识别备份格式，请选择 BakaMusic、MusicFree 或洛雪音乐导出的备份文件':
       'Unrecognized backup format; choose a backup exported by BakaMusic, MusicFree or LX Music',
