@@ -42,6 +42,15 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   bool _barFading = false;
   Timer? _barFadeTimer;
 
+  /// 完全隐藏（淡出动画结束后）卸载播放条子树：Impeller 下 Opacity(0.01)
+  /// 常绘子树的 alpha 泄漏——子树内容以 ~10% 亮度透出成二级页幽灵 bar
+  /// （消融实验证实与 BackdropFilter 无关）。淡出结束后整树停绘，恢复
+  /// 显示时先挂回子树再从 0.01 淡入；恢复首帧即进磨砂降级窗口，shader
+  /// 在 saveLayer 内不活跃，无黑闪
+  bool _barGone = false;
+  bool? _lastHidden;
+  Timer? _barGoneTimer;
+
   /// 位置档位（是否坐在页面底部低位）：实时跟随当前页面，
   /// 变化通过与页面切换同节奏的隐式动画同步过渡
   bool _lowState = false;
@@ -105,7 +114,31 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     appRouter.routerDelegate.removeListener(_syncLow);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
     _barFadeTimer?.cancel();
+    _barGoneTimer?.cancel();
     super.dispose();
+  }
+
+  /// hidden 变化时调度子树卸载/挂回：淡出动画（240ms）结束后整树停绘；
+  /// 恢复显示立即挂回并同步进磨砂降级窗口（0.01 saveLayer 内 shader 不活跃）
+  void _syncBarGone(bool hidden) {
+    if (_lastHidden == hidden) return;
+    _lastHidden = hidden;
+    if (hidden) {
+      _barGoneTimer?.cancel();
+      _barGoneTimer = Timer(const Duration(milliseconds: 320), () {
+        if (mounted) setState(() => _barGone = true);
+      });
+    } else {
+      _barGoneTimer?.cancel();
+      if (_barGone) {
+        _barGone = false;
+        _barFadeTimer?.cancel();
+        _barFading = true;
+        _barFadeTimer = Timer(const Duration(milliseconds: 280), () {
+          if (mounted) setState(() => _barFading = false);
+        });
+      }
+    }
   }
 
   void _syncLow() {
@@ -268,6 +301,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     // 切换动画同节奏的隐式动画与页面转场同步完成
     final pageHidesBar = ref.watch(miniBarHiddenProvider) > 0;
     final hidden = playerOpen || pageHidesBar;
+    _syncBarGone(hidden);
 
     final miniBarW = landscape
         ? math.min(screenSize.width * 0.55, 520.0)
@@ -365,9 +399,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         duration: chromeDur,
         curve: Curves.easeOutCubic,
         // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧 backdrop
-        // 采样未就绪闪黑；隐去期间保持绘制即无黑闪
+        // 采样未就绪闪黑；隐去期间保持绘制即无黑闪。Impeller 下 0.01
+        // 常绘子树有 alpha 泄漏残影，淡出结束后由 _barGone 整树卸载
         opacity: hidden ? 0.01 : 1.0,
-        child: AnimatedScale(
+        child: _barGone
+            ? const SizedBox.shrink()
+            : AnimatedScale(
           duration: chromeDur,
           curve: Curves.easeOutCubic,
           scale: hidden ? 0.92 : 1.0,

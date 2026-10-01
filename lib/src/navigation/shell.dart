@@ -124,6 +124,11 @@ final navBarInsetProvider = Provider<double>((ref) {
 
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
 
+/// 当前是否处于根路径（'/'、'/home'、'/mine'）：底栏 hidden = 计数 >0 ||
+/// 非 root 路径，设置等未混 HidesShellChrome 的二级页面靠后者隐藏；
+/// 顶层 NavDropletOverlay 据此对齐底栏显隐
+final navOnRootPathProvider = StateProvider<bool>((ref) => true);
+
 /// mini 播放条页面黑名单计数：混入 HideMiniBar 的页面（设置、搜索等）
 /// 持有期间 >0，全局播放条在该页面落定后隐藏、离开后恢复
 final miniBarHiddenProvider = StateProvider<int>((ref) => 0);
@@ -398,7 +403,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     WidgetsBinding.instance.addObserver(this);
     _router = GoRouter.of(context);
     _isRootPath =
-        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+        _isRootPathOf(_routerTopPath(_router.routerDelegate.currentConfiguration));
+    ref.read(navOnRootPathProvider.notifier).state = _isRootPath;
     _router.routerDelegate.addListener(_onRouteChanged);
     if (defaultTargetPlatform == TargetPlatform.android) {
       _rotationSub = const EventChannel('xianyu/rotation/events')
@@ -420,10 +426,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   void _onRouteChanged() {
     if (!mounted) return;
-    final rootNow =
-        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+    // 不能用 currentConfiguration.uri.path：push 二级页（ImperativeRouteMatch）
+    // 后 uri.path 仍停留在 shell 分支的路径（/home 或 /mine），不会变成
+    // /settings——根因是它只反映 shell 分支 location。取 matches.last 的
+    // 实际位置（_routerTopPath），与底栏/横屏逻辑的判定保持同源
+    final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
+    final rootNow = _isRootPathOf(top);
     if (rootNow != _isRootPath) {
       setState(() => _isRootPath = rootNow);
+      ref.read(navOnRootPathProvider.notifier).state = rootNow;
     }
     if (rootNow) {
       final notifier = ref.read(navBarHiddenProvider.notifier);
@@ -1363,9 +1374,16 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final index = widget.index;
     final onSelect = widget.onSelect;
     // 底栏隐藏（播放页/黑名单页等）时清顶层水滴快照：顶层 overlay 不随
-    // 底栏 opacity 淡出，不清会留残影
+    // 底栏 opacity 淡出，不清会留残影。离开 root 路径（设置等页不增
+    // navBarHidden 计数，靠 !onRoot 隐藏）同样清——底栏隐藏期间不再
+    // rebuild，build 内的兜底清理不会执行，必须在事件点直接清
     ref.listen(navBarHiddenProvider, (_, hidden) {
       if (hidden > 0 && navDropletSnapshot.value != null) {
+        navDropletSnapshot.value = null;
+      }
+    });
+    ref.listen(navOnRootPathProvider, (_, onRoot) {
+      if (!onRoot && navDropletSnapshot.value != null) {
         navDropletSnapshot.value = null;
       }
     });
@@ -1868,6 +1886,7 @@ class NavDropletSnapshot {
     required this.refract,
     required this.band,
     required this.chroma,
+    required this.depth,
     required this.press,
     required this.isDark,
   });
@@ -1884,6 +1903,9 @@ class NavDropletSnapshot {
   final double refract;
   final double band;
   final double chroma;
+
+  /// 凸透镜深度（∝mf，长按渐强；驱动 shader 全表面放大+边带径向）
+  final double depth;
   final double press;
   final bool isDark;
 }
@@ -1894,14 +1916,14 @@ final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot =
 /// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
 /// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
 /// 内容（对齐 B 站参考效果），不再被顶层播放条盖住上缘。
-class NavDropletOverlay extends StatefulWidget {
+class NavDropletOverlay extends ConsumerStatefulWidget {
   const NavDropletOverlay({super.key});
 
   @override
-  State<NavDropletOverlay> createState() => _NavDropletOverlayState();
+  ConsumerState<NavDropletOverlay> createState() => _NavDropletOverlayState();
 }
 
-class _NavDropletOverlayState extends State<NavDropletOverlay> {
+class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
   @override
   void initState() {
     super.initState();
@@ -1921,53 +1943,68 @@ class _NavDropletOverlayState extends State<NavDropletOverlay> {
   @override
   Widget build(BuildContext context) {
     final s = navDropletSnapshot.value;
+    // 底栏 hidden = navBarHidden 计数 >0 || 非 root 路径（设置等页面走
+    // 后者且会 postFrame 重写快照，仅靠清快照拦不住残影），overlay 显隐
+    // 条件必须与 _ShellScaffold 的 hidden 完全一致
+    final chromeHidden = ref.watch(navBarHiddenProvider) > 0 ||
+        !ref.watch(navOnRootPathProvider);
     return Positioned.fill(
       child: IgnorePointer(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            if (s != null)
-              Positioned.fromRect(
-                rect: s.rect,
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()..setEntry(0, 1, s.shear),
-                  child: s.liquid
-                      ? ClipOval(
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              LiveLiquidSurface(
-                                radius: s.radius,
-                                refract: s.refract,
-                                chroma: s.chroma,
-                                blurSigma: 0,
-                                backgroundColor: Colors.transparent,
-                                specular: 0.12,
-                                edgeAmount: s.band,
-                                saturation: 1.4,
-                                depthEffect: 1.2,
-                                child: const SizedBox.expand(),
-                              ),
-                              CustomPaint(
-                                painter: _DropletEdgePainter(s.press, s.isDark),
-                              ),
-                            ],
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          // 0.01 保底持续绘制，防止再次显示首帧采样未就绪闪黑（同底栏）
+          opacity: chromeHidden ? 0.01 : 1.0,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // chromeHidden 时不渲染快照：快照是逐帧写入的「活性数据」，
+              // 底栏隐藏后不再更新，残留旧几何会被全亮画成灰圆残影
+              //（Impeller 下 0.01 兜底绘制也会以异常 alpha 泄漏）
+              if (!chromeHidden && s != null)
+                Positioned.fromRect(
+                  rect: s.rect,
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..setEntry(0, 1, s.shear),
+                    child: s.liquid
+                        ? ClipOval(
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                LiveLiquidSurface(
+                                  radius: s.radius,
+                                  refract: s.refract,
+                                  chroma: s.chroma,
+                                  blurSigma: 0,
+                                  backgroundColor: Colors.transparent,
+                                  specular: 0.12,
+                                  edgeAmount: s.band,
+                                  saturation: 1.4,
+                                  depthEffect: s.depth,
+                                  child: const SizedBox.expand(),
+                                ),
+                                CustomPaint(
+                                  painter:
+                                      _DropletEdgePainter(s.press, s.isDark),
+                                ),
+                              ],
+                            ),
+                          )
+                        : DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: s.isDark
+                                  ? Colors.white.withValues(alpha: 0.10)
+                                  : Colors.black.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(
+                                  s.rect.shortestSide / 2),
+                            ),
                           ),
-                        )
-                      : DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: s.isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.10),
-                            borderRadius:
-                                BorderRadius.circular(s.rect.shortestSide / 2),
-                          ),
-                        ),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2081,6 +2118,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   void dispose() {
+    // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影
+    navDropletSnapshot.value = null;
     _moveC?.dispose();
     _springTickerC?.dispose();
     _pressC?.dispose();
@@ -2137,8 +2176,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
         Widget indicator;
         if (widget.lens && dropletOn) {
-          final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
-          final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
+          final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
+          final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
           final isDark = Theme.of(context).brightness == Brightness.dark;
           final press = pressG.clamp(0.0, 1.0);
           indicator = ClipOval(
@@ -2265,9 +2304,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               shear: _dragVel.sign * _sxPos * 0.12,
               liquid: dropletOn,
               radius: d * sy / 2,
-              refract: d * 14.0 / 56.0 * mf * widget.lensBoost,
-              band: d * 10.0 / 56.0 * mf * widget.edgeBoost,
+              refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
+              band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
               chroma: widget.dropletChroma,
+              depth: 1.2 * mf,
               press: pressG.clamp(0.0, 1.0),
               isDark: isDark,
             );
