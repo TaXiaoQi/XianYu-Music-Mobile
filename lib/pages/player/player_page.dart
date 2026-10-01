@@ -3408,7 +3408,7 @@ class _GlassControlCard extends ConsumerWidget {
     }
 
     final glassColor = wallpaperGlassActive(ref)
-        ? wallpaperNavGlassFill(context)
+        ? wallpaperGlassFill(context, ref)
         : (isDark
             ? Colors.white.withValues(alpha: 0.08)
             : Colors.white.withValues(alpha: 0.6));

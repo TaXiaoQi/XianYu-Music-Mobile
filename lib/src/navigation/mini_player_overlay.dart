@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
   bool _isPlayerDragging = false;
 
+  /// 淡入淡出窗口标记：黑名单页显隐与播放页开合期间播放条透明度<1
+  /// （saveLayer 生效），LiveLiquidSurface 的 shader 在其中采样图层自身
+  /// 内容（空）→ 黑底；窗口内降级磨砂卡，动画结束后恢复实时液态
+  bool _barFading = false;
+  Timer? _barFadeTimer;
+
   /// 位置档位（是否坐在页面底部低位）：实时跟随当前页面，
   /// 变化通过与页面切换同节奏的隐式动画同步过渡
   bool _lowState = false;
@@ -43,6 +50,22 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   /// HidesShellChrome 计数保留作 OR 输入，但不再单独兜底——
   /// pushReplacement 等特殊入口下计数可能丢失，路由位置是可靠信号
   static const _rootPaths = {'/', '/home', '/mine'};
+
+  /// mini 播放条页面黑名单（HideMiniBar 混入页）的路由路径：
+  /// 持有期间播放条抹除吸附位置——原位淡出、不滑向低位档；
+  /// 退出后路径离开集合，档位自动恢复常规跟随
+  static const _barHiddenPaths = {
+    '/settings',
+    '/wallpaper',
+    '/library/folders',
+    '/search',
+    '/home/toplists',
+    '/account',
+    '/leaderboard',
+  };
+
+  static bool _routeHidesBarOnly(String path) =>
+      _barHiddenPaths.contains(path);
 
   static String _routerTopPath(RouteMatchList config) {
     final last = config.matches.lastOrNull;
@@ -55,13 +78,24 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   bool get _routeLow => !_rootPaths
       .contains(_routerTopPath(appRouter.routerDelegate.currentConfiguration));
 
+  bool get _routeKeepsBarHidden => _routeHidesBarOnly(
+      _routerTopPath(appRouter.routerDelegate.currentConfiguration));
+
   @override
   void initState() {
     super.initState();
     _lowState = ref.read(navBarHiddenProvider) > 0 || _routeLow;
+    if (_routeKeepsBarHidden) _lowState = false;
     // hiddenCount 的增减与路由切换都发生在页面进出（转场）期间，变化立即同步：
     // 档位滑动、显隐淡入淡出与页面切换动画同节奏、同步完成
     ref.listenManual(navBarHiddenProvider, (_, _) => _syncLow());
+    ref.listenManual(miniBarHiddenProvider, (_, _) {
+      _markBarFading();
+      // 黑名单计数归零（pop 回可显示页）后补一次档位同步：routerDelegate
+      // 的 pop 通知先于页面 dispose（计数帧末才减），若那次同步被跳过，
+      // 档位会卡在隐藏期的值——条停错档
+      _syncLow();
+    });
     appRouter.routerDelegate.addListener(_syncLow);
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
   }
@@ -70,20 +104,39 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   void dispose() {
     appRouter.routerDelegate.removeListener(_syncLow);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
+    _barFadeTimer?.cancel();
     super.dispose();
   }
 
   void _syncLow() {
     if (!mounted) return;
     // 档位实时跟随当前页面：变化通过与页面切换同节奏的隐式动画
-    // 与转场同步完成，吸附也随切换动画同步执行
-    final low = ref.read(navBarHiddenProvider) > 0 || _routeLow;
+    // 与转场同步完成，吸附也随切换动画同步执行；mini 播放条黑名单页
+    // 持有期间抹除吸附位置（原位淡出，无吸附滑动）
+    var low = ref.read(navBarHiddenProvider) > 0 || _routeLow;
+    if (_routeKeepsBarHidden) low = false;
     if (low != _lowState) setState(() => _lowState = low);
   }
 
   void _onPlayerOpenChanged() {
     if (!mounted) return;
+    _markBarFading();
     setState(() {});
+  }
+
+  /// 淡入淡出窗口内降级磨砂卡（chromeDur 约 240ms，留余量）：推迟到帧末
+  /// 置位，确保转场首帧（opacity 恒 1，无 saveLayer）不被降级打断
+  void _markBarFading() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _barFadeTimer?.cancel();
+      setState(() => _barFading = true);
+      _barFadeTimer = Timer(const Duration(milliseconds: 280), () {
+        if (!mounted) return;
+        setState(() => _barFading = false);
+      });
+    });
   }
 
   @override
@@ -321,6 +374,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
           child: IgnorePointer(
             ignoring: hidden,
             child: MiniPlayerBar(
+              degraded: hidden || _barFading,
               onPanStart: _onPlayerPanStart,
               onPanUpdate: (d) => _onPlayerPanUpdate(
                   d,

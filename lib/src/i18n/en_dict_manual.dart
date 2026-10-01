@@ -253,6 +253,7 @@ const Map<String, String> enDictManual = {
   '导入音频文件': 'Import audio files',
   '导入完成': 'Import complete',
   '导入为歌单': 'Import as playlist',
+  '到「广场」挑选主题，下载后会出现在这里': 'Pick a theme from the Square; downloaded themes will appear here',
   '地区限制': 'Region restricted',
   '未选择有效音频文件': 'No valid audio file selected',
   '沙盒目录（下载/导入的音乐）会自动扫描；也可点击右上角「+」导入音频文件':
@@ -407,6 +408,7 @@ const Map<String, String> enDictManual = {
   '过滤掉时长小于阈值的音频文件，重新扫描后生效':
       'Filters out audio files shorter than the threshold; takes effect after rescanning',
   '还没有安装插件': 'No plugins installed yet',
+  '还没有从广场下载主题': 'No themes downloaded from the Square yet',
   '还没有歌单': 'No playlists yet',
   '还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）':
       'No scan folders yet. Tap "+" in the top right to choose a folder with music\n(music read permission is requested only once)',
@@ -843,7 +845,8 @@ const Map<String, String> enDictManual = {
   '播放优先匹配本地曲库，在线按可用音源解析':
       'Playback prefers your local library; online resolves via available sources',
   '已匹配本地歌曲': 'Matched a local song',
-  '需同时开启「同时下载歌词」': 'Requires "Download lyrics too" to be enabled',
+  '额外保存一份 .lrc 文件，歌词默认已嵌入音频': 'Saves an extra .lrc file; lyrics are embedded by default',
+  '将歌词数据写入音频文件': 'Writes lyric data into the audio file',
   '需要麦克风权限，请在系统设置中授权': 'Microphone permission required; grant it in system settings',
   '悬浮导航 shader 折射光影，关闭时默认透明磨砂': 'Floating navigation shader refraction; translucent frost when off',
   '需开启悬浮底栏才可启用': 'Enable the floating nav bar first',
@@ -1021,6 +1024,9 @@ const Map<String, String> enDictManual = {
   '账号与安全': 'Account & security',
   '账号与系统': 'Account & system',
   '找回密码': 'Forgot password',
+  '重置密码前验证': 'Verify before password reset',
+  '完成验证后将重置该邮箱账号的密码。':
+      'After verification, the password for this email account will be reset.',
   '这是一条成功的提示消息': 'This is a success toast',
   '这是一条调试用的公告内容，用于验证公告弹窗的展示效果。\n\n':
       'This is a sample announcement used to verify the announcement dialog.\n\n',

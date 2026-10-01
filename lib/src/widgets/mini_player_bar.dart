@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import '../core/application_logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,7 +70,7 @@ Widget playbarGlassSurface(
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
       : (wallpaper
-          ? wallpaperNavGlassFill(context)
+          ? wallpaperGlassFill(context, ref)
           : (isDark
               ? Colors.white.withValues(alpha: 0.10)
               : Colors.white.withValues(alpha: 0.52)));
@@ -124,6 +123,7 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
     this.registerTarget = true,
     this.heroTag = 'player-cover',
     this.returnTarget,
+    this.degraded = false,
   });
 
   final GestureDragStartCallback? onPanStart;
@@ -136,6 +136,11 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
   final String? heroTag;
 
   final Rect Function()? returnTarget;
+
+  /// 磨砂降级：透明度<1 的淡入淡出窗口内产生 saveLayer，ImageFilter.shader
+  /// 在其中采样图层自身内容（空）会渲染出黑底；普通 blur 不受 saveLayer
+  /// 影响，故该窗口降级磨砂卡，其余时刻（含普通页面转场）保持实时液态
+  final bool degraded;
 
   @override
   ConsumerState<MiniPlayerBar> createState() => _MiniPlayerBarState();
@@ -606,6 +611,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               specular: bilipaiSpecularOf(quality),
               edgeAmount: bilipaiEdgeOf(quality),
               saturation: bilipaiSaturationOf(quality),
+              degraded: widget.degraded,
               child: content,
             ),
           ),
@@ -626,7 +632,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperNavGlassFill(context)
+            ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
@@ -770,6 +776,7 @@ class LiveLiquidSurface extends StatefulWidget {
     required this.edgeAmount,
     required this.saturation,
     this.depthEffect = 0.0,
+    this.degraded = false,
     required this.child,
   });
 
@@ -783,6 +790,9 @@ class LiveLiquidSurface extends StatefulWidget {
   final double saturation;
 
   final double depthEffect;
+
+  /// 磨砂降级（透明度<1 的 saveLayer 窗口内 shader 采样失效 → 黑底）
+  final bool degraded;
 
   final Widget child;
 
@@ -810,8 +820,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   ui.FragmentShader? _shader;
   final GlobalKey _surfaceKey = GlobalKey();
 
-  bool _frozen = false;
-
   double _glassDx = 0;
   double _glassDy = 0;
   double _glassW = 1;
@@ -831,17 +839,27 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       AppLog.warn('glass', 'bilipai_liquid.frag 加载失败：$e');
     });
     _tick.addListener(_onTick);
-    _frozen = globalIsTransitioning.value;
-    if (_frozen) _tick.stop();
-    globalIsTransitioning.addListener(_onTransitionChanged);
     globalIsDragging.addListener(_onDraggingChanged);
     globalScrollTick.addListener(_onScrollTick);
-    if (!_frozen) _nudgeLive();
+    _nudgeLive();
+  }
+
+  @override
+  void didUpdateWidget(LiveLiquidSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 宿主每帧重建（长按放大/拖动）时同步重测玻璃几何并刷 uniforms：
+    // 折射透镜矩形必须跟随水滴当前位置与尺寸。导航栏水滴的交互不经过
+    // globalIsDragging/globalScrollTick，自身 tick 空闲冻结后，这里是
+    // 唯一的几何刷新入口——不重测则透镜停在旧位置，折射看起来"消失"
+    final shader = _shader;
+    if (shader != null) {
+      _measureGeometry();
+      _writeUniforms(shader);
+    }
   }
 
   @override
   void dispose() {
-    globalIsTransitioning.removeListener(_onTransitionChanged);
     globalIsDragging.removeListener(_onDraggingChanged);
     globalScrollTick.removeListener(_onScrollTick);
     _idleTimer?.cancel();
@@ -851,10 +869,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
 
   void _nudgeLive() {
     if (!mounted) return;
-    if (!_frozen) _tick.repeat();
+    _tick.repeat();
     _idleTimer?.cancel();
     _idleTimer = Timer(const Duration(milliseconds: _kIdleFreezeMs), () {
-      if (mounted && !_frozen) _tick.stop();
+      if (mounted) _tick.stop();
     });
   }
 
@@ -863,30 +881,6 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   }
 
   void _onScrollTick() => _nudgeLive();
-
-  void _onTransitionChanged() {
-    if (!mounted) return;
-    final active = globalIsTransitioning.value;
-    if (active == _frozen) return;
-    // 转场通知可能由 Navigator didPush/didPop 在 build 阶段同步广播，
-    // 本 surface 挂在 Navigator 之外（builder 层），此时 setState 会被
-    // "markNeedsBuild during build" 断言拒绝——推迟到帧末执行。
-    // 转场动画本就从下一帧开始，晚一帧冻结/解冻无视觉差异。
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _onTransitionChanged();
-      });
-      return;
-    }
-    setState(() => _frozen = active);
-    if (active) {
-      _idleTimer?.cancel();
-      _tick.stop();
-    } else {
-      _nudgeLive();
-    }
-  }
 
   void _onTick() {
     if (!mounted) return;
@@ -939,8 +933,12 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   @override
   Widget build(BuildContext context) {
     final shader = _shader;
-    if (_frozen || shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      if (!_frozen && !_kCapabilityWarned && shader != null) {
+    // degraded：宿主处于透明度<1 的淡入淡出窗口（saveLayer 生效），shader
+    // 在其中采样图层自身内容（空）→ 黑底；普通 blur 不受影响，故降级磨砂卡
+    if (widget.degraded ||
+        shader == null ||
+        !ui.ImageFilter.isShaderFilterSupported) {
+      if (!_kCapabilityWarned && shader != null) {
         _kCapabilityWarned = true;
         AppLog.warn('glass',
             '液态玻璃降级：isShaderFilterSupported=false（引擎不支持 ImageFilter.shader）');

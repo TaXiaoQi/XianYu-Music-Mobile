@@ -232,6 +232,86 @@ void main() {
     });
   });
 
+  group('我的下载 · 下载来源记录（docs/theme-center-downloads-handoff.md）', () {
+    Future<ProviderContainer> boot() async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(themeLibraryProvider.notifier).ready;
+      await container.read(settingsProvider.future);
+      return container;
+    }
+
+    test('默认导入不产生下载标记，fromSquare 导入产生', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+
+      final local = (await n.importJson(pkgJson()))!;
+      expect(c.read(themeLibraryProvider).downloadedIds, isNot(contains(local.id)));
+
+      final remote =
+          (await n.importJson(pkgJson(name: '广场包'), fromSquare: true))!;
+      expect(c.read(themeLibraryProvider).downloadedIds, contains(remote.id));
+    });
+
+    test('标记只增不减：先下载、后文件导入同 id 不抹除', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(), fromSquare: true))!;
+
+      await n.importJson(pkgJson());
+
+      expect(c.read(themeLibraryProvider).downloadedIds, contains(pkg.id));
+    });
+
+    test('删除包时同步移除下载标记；再以文件导入不会诈尸', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(), fromSquare: true))!;
+
+      await n.remove(pkg.id);
+      expect(c.read(themeLibraryProvider).downloadedIds, isEmpty);
+
+      await n.importJson(pkgJson());
+      expect(c.read(themeLibraryProvider).downloadedIds, isEmpty);
+    });
+
+    test('激活 / 取消激活不丢下载标记', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(), fromSquare: true))!;
+
+      await n.activate(pkg.id);
+      expect(c.read(themeLibraryProvider).downloadedIds, contains(pkg.id));
+
+      await n.deactivate();
+      expect(c.read(themeLibraryProvider).downloadedIds, contains(pkg.id));
+    });
+
+    test('重启后从 prefs 恢复下载标记', () async {
+      final first = await boot();
+      final n = first.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(), fromSquare: true))!;
+      first.dispose();
+
+      final second = ProviderContainer();
+      addTearDown(second.dispose);
+      await second.read(themeLibraryProvider.notifier).ready;
+
+      expect(second.read(themeLibraryProvider).downloadedIds, {pkg.id});
+    });
+
+    test('prefs 里指向已删除包的下载 id 被净化', () async {
+      SharedPreferences.setMockInitialValues({
+        'xianyu_theme_packs_v1': <String>[pkgJson()],
+        'xianyu_downloaded_theme_ids_v1': <String>['deadbeef'],
+      });
+
+      final c = await boot();
+
+      expect(c.read(themeLibraryProvider).downloadedIds, isEmpty);
+    });
+  });
+
   group('图标/贴纸渲染入口（阶段3 契约 §4.1）', () {
     Future<ProviderContainer> boot() async {
       final container = ProviderContainer();

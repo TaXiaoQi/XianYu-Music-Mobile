@@ -52,8 +52,8 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
 
   PreferredSizeWidget get _tabBar => TabBar(
     controller: _tab,
-    isScrollable: true,
-    tabAlignment: TabAlignment.start,
+    // 固定不滚动,tab 等宽平均分布(与主题中心同口径)
+    isScrollable: false,
     tabs: [
       if (_lastLoggedIn == true) ...[
         Tab(text: tr('壁纸广场')),
@@ -123,6 +123,7 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
               leading: const BackButton(),
               title: Text(tr('壁纸中心')),
               bottom: _tabBar,
+              bottomTabController: _tab,
             ),
           ),
         ],

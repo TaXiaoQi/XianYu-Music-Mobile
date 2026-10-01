@@ -15,6 +15,7 @@ import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
 import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
+import 'src/navigation/shell.dart' show NavDropletOverlay;
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/privacy_policy.dart';
@@ -380,6 +381,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                     // mini 播放条顶层宿主：位于 Navigator 之上，
                     // 所有页面（含播放页）转场都从播放条背后滑过
                     const MiniPlayerOverlay(),
+                    // 底栏水滴顶层宿主：位于播放条之上——水滴独立于底栏
+                    // 树，长按放大鼓出栏缘、覆盖并折射上方内容
+                    const NavDropletOverlay(),
                     // 播放页独立 Navigator（五级模型第二级）：位于播放条
                     // 之上、飞行封面之下——播放页转场物理盖过播放条
                     const PlayerNavigatorHost(),

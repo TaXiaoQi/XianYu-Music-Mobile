@@ -204,7 +204,7 @@ const Map<String, String> enDictGen = {
   '通用输入弹窗': 'Generic input dialog',
   '同步': 'Sync',
   '同步间隔': 'Sync interval',
-  '同时下载歌词': 'Download lyrics too',
+  '下载独立歌词': 'Download standalone lyrics',
   '退出': 'Quit',
   '退出登录': 'Sign out',
   '外观': 'Appearance',
